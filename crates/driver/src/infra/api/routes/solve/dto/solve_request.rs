@@ -129,26 +129,32 @@ impl SolveRequest {
                     protocol_fees: order
                         .protocol_fees
                         .into_iter()
-                        .map(|policy| match policy {
-                            FeePolicy::Surplus {
-                                factor,
-                                max_volume_factor,
-                            } => competition::order::FeePolicy::Surplus {
-                                factor,
-                                max_volume_factor,
-                            },
-                            FeePolicy::PriceImprovement {
-                                factor,
-                                max_volume_factor,
-                                quote,
-                            } => competition::order::FeePolicy::PriceImprovement {
-                                factor,
-                                max_volume_factor,
-                                quote: quote.into_domain(order.sell_token, order.buy_token),
-                            },
-                            FeePolicy::Volume { factor } => {
-                                competition::order::FeePolicy::Volume { factor }
-                            }
+                        .map(|policy| {
+                            let policy = match policy {
+                                FeePolicy::Surplus {
+                                    factor,
+                                    max_volume_factor,
+                                } => competition::order::FeePolicy::Surplus {
+                                    factor,
+                                    max_volume_factor,
+                                },
+                                FeePolicy::PriceImprovement {
+                                    factor,
+                                    max_volume_factor,
+                                    quote,
+                                } => competition::order::FeePolicy::PriceImprovement {
+                                    factor,
+                                    max_volume_factor,
+                                    quote: quote.into_domain(order.sell_token, order.buy_token),
+                                },
+                                FeePolicy::Volume { factor } => {
+                                    competition::order::FeePolicy::Volume { factor }
+                                }
+                            };
+                            // Fees the autopilot assigns are captured as protocol revenue and
+                            // contribute to the score. The non-scoring haircut fee is injected
+                            // later, driver-side.
+                            competition::order::ProtocolFee::scored(policy)
                         })
                         .collect(),
                     quote: order

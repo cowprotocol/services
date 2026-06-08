@@ -42,7 +42,8 @@ impl Fulfillment {
     pub fn with_protocol_fees(&self, prices: ClearingPrices) -> Result<Self, Error> {
         let mut current_fulfillment = self.clone();
         for protocol_fee in &self.order().protocol_fees {
-            current_fulfillment = current_fulfillment.with_protocol_fee(prices, protocol_fee)?;
+            current_fulfillment =
+                current_fulfillment.with_protocol_fee(prices, &protocol_fee.policy)?;
         }
         Ok(current_fulfillment)
     }
@@ -82,7 +83,7 @@ impl Fulfillment {
             ),
         };
 
-        Fulfillment::new(order, executed, fee, self.haircut_fee()).map_err(Into::into)
+        Fulfillment::new(order, executed, fee).map_err(Into::into)
     }
 
     /// Computed protocol fee in surplus token.

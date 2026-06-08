@@ -68,9 +68,14 @@ impl Quote {
 
     /// Compute clearing prices for the quote.
     ///
-    /// Uses uniform clearing prices from the solution, adjusted for haircut
-    /// when enabled. Uses `custom_prices()` which includes haircut effects
-    /// to make quotes conservative for users.
+    /// Starts from the solution's uniform clearing prices and, when the solver
+    /// has a haircut configured, makes the quote conservative: it lowers the
+    /// buy amount reported for sell orders and raises the sell amount for buy
+    /// orders, mirroring the post-hoc haircut a real settlement would apply.
+    ///
+    /// Real auctions model the haircut as a non-scoring protocol fee, but quote
+    /// orders use a static fee that the protocol-fee path rejects, so quotes
+    /// apply it directly here from the solver's configured `haircut_bps`.
     fn compute_clearing_prices(
         solution: &competition::Solution,
     ) -> Result<HashMap<eth::Address, eth::U256>, Error> {
@@ -81,14 +86,18 @@ impl Quote {
             .map(|(token, amount)| (token.into(), amount))
             .collect();
 
+        let haircut_bps = solution.solver().haircut_bps();
+        if haircut_bps == 0 {
+            return Ok(prices);
+        }
+
         // Quote competitions contain only a single order (see `fake_auction()`),
         // so there's at most one fulfillment in the solution.
-        // Apply haircut adjustment to prices if there's a fulfillment with non-zero
-        // haircut.
-        if let Some(trade) = solution.trades().iter().find(|trade| match trade {
-            solution::Trade::Fulfillment(f) => f.haircut_fee() > eth::U256::ZERO,
-            _ => false,
-        }) {
+        if let Some(trade) = solution
+            .trades()
+            .iter()
+            .find(|trade| matches!(trade, solution::Trade::Fulfillment(_)))
+        {
             let sell_token: eth::Address = trade.sell().token.into();
             let buy_token: eth::Address = trade.buy().token.into();
             let uniform_clearing = solution::trade::ClearingPrices {
@@ -99,9 +108,22 @@ impl Quote {
                     .get(&buy_token)
                     .ok_or(QuotingFailed::ClearingBuyMissing)?,
             };
-            let custom_prices = trade
+            let mut custom_prices = trade
                 .custom_prices(&uniform_clearing)
                 .map_err(|_| QuotingFailed::Math)?;
+
+            // 10_000 bps == 100%.
+            let haircut = f64::from(haircut_bps) / 10_000.0;
+            let apply = |amount: eth::U256, factor: f64| {
+                eth::TokenAmount(amount)
+                    .apply_factor(factor)
+                    .map(|amount| amount.0)
+                    .ok_or(QuotingFailed::Math)
+            };
+            match trade.side() {
+                order::Side::Sell => custom_prices.sell = apply(custom_prices.sell, 1.0 - haircut)?,
+                order::Side::Buy => custom_prices.buy = apply(custom_prices.buy, 1.0 + haircut)?,
+            }
 
             prices.insert(sell_token, custom_prices.sell);
             prices.insert(buy_token, custom_prices.buy);

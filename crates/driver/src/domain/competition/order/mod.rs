@@ -9,7 +9,10 @@ use {
     eth_domain_types as eth,
     model::order::{BuyTokenDestination, SellTokenSource},
 };
-pub use {fees::FeePolicy, signature::Signature};
+pub use {
+    fees::{FeePolicy, ProtocolFee},
+    signature::Signature,
+};
 
 pub mod app_data;
 pub mod fees;
@@ -45,7 +48,7 @@ pub struct Order {
     /// The types of fees the protocol collects from the winning solver.
     /// Unless otherwise configured, the driver modifies solutions to take
     /// sufficient fee in the form of positive slippage.
-    pub protocol_fees: Vec<FeePolicy>,
+    pub protocol_fees: Vec<ProtocolFee>,
     /// The winning quote.
     pub quote: Option<Quote>,
 }

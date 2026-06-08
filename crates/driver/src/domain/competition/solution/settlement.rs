@@ -321,9 +321,10 @@ impl Settlement {
             .collect()
     }
 
-    /// Returns true if this settlement's solution has any trades with haircut.
-    pub fn has_haircut(&self) -> bool {
-        self.solution.has_haircut()
+    /// Returns true if this settlement's solution carries a non-scoring fee
+    /// (i.e. a haircut).
+    pub fn has_non_scoring_fee(&self) -> bool {
+        self.solution.has_non_scoring_fee()
     }
 }
 

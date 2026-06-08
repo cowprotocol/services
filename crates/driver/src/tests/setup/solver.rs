@@ -33,6 +33,9 @@ pub const NAME: &str = "test-solver";
 
 pub struct Solver {
     pub addr: SocketAddr,
+    /// Captures every notification the driver POSTs to this solver's `/notify`
+    /// endpoint, so tests can assert which (if any) notifications were sent.
+    pub notifications: Arc<Mutex<Vec<Value>>>,
 }
 
 #[derive(Debug)]
@@ -508,7 +511,21 @@ impl Solver {
             called: false,
             allow_multiple_solve_requests: config.allow_multiple_solve_requests,
         }));
+        let notifications: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
         let app = axum::Router::new()
+        .route(
+            "/notify",
+            axum::routing::post({
+                let notifications = notifications.clone();
+                move |axum::extract::Json(body): axum::extract::Json<Value>| {
+                    let notifications = notifications.clone();
+                    async move {
+                        notifications.lock().unwrap().push(body);
+                        axum::http::StatusCode::OK
+                    }
+                }
+            }),
+        )
         .route(
             "/solve",
             axum::routing::post(
@@ -542,7 +559,10 @@ impl Solver {
         let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        Self { addr }
+        Self {
+            addr,
+            notifications,
+        }
     }
 }
 

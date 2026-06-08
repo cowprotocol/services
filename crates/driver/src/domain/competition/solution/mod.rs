@@ -134,9 +134,6 @@ impl Solution {
                     },
                     jit.executed(),
                     Fee::Dynamic(jit.fee()),
-                    // JIT orders don't get haircut because they supply private
-                    // liquidity which should not prone to negative slippage.
-                    eth::U256::ZERO,
                 )
                 .map_err(error::Solution::InvalidJitTrade)?,
             );
@@ -565,13 +562,16 @@ impl Solution {
             })
     }
 
-    /// Returns true if any trade in this solution has a non-zero haircut fee.
-    /// Used to determine if simulation failures should suppress solver
-    /// notifications.
-    pub fn has_haircut(&self) -> bool {
-        self.trades.iter().any(|trade| match trade {
-            Trade::Fulfillment(fulfillment) => !fulfillment.haircut_fee().is_zero(),
-            Trade::Jit(_) => false, // JIT orders don't have haircut
+    /// Returns true if any trade in this solution carries a non-scoring fee
+    /// (i.e. a haircut). Used to suppress solver notifications on failures the
+    /// driver itself introduced via the haircut. JIT orders carry no protocol
+    /// fees, so they are naturally excluded.
+    pub fn has_non_scoring_fee(&self) -> bool {
+        self.trades.iter().any(|trade| {
+            trade
+                .protocol_fees()
+                .iter()
+                .any(|protocol_fee| !protocol_fee.contributes_to_score)
         })
     }
 }

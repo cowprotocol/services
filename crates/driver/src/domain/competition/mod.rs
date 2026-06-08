@@ -442,7 +442,7 @@ impl Competition {
                     .user_trades()
                     .map(|trade| trade.order().uid)
                     .collect();
-                let has_haircut = solution.has_haircut();
+                let has_non_scoring_fee = solution.has_non_scoring_fee();
                 match result {
                     Ok(encoded) => {
                         self.risk_detector.encoding_succeeded(&orders);
@@ -456,11 +456,13 @@ impl Competition {
                             self.solver.name(),
                             &id,
                             &err,
-                            has_haircut,
+                            has_non_scoring_fee,
                             &orders,
                         );
-                        // don't notify on errors for solutions with haircut
-                        if !has_haircut {
+                        // don't notify on errors for solutions carrying a haircut: the solver
+                        // doesn't know about the driver-introduced haircut and shouldn't be
+                        // penalised for a failure it caused.
+                        if !has_non_scoring_fee {
                             notify::encoding_failed(&self.solver, auction.id(), &id, &err);
                         }
                         None
@@ -622,9 +624,9 @@ impl Competition {
             Err(simulator::Error::Revert(err)) => err,
             _ => return None,
         };
-        let has_haircut = settlement.has_haircut();
-        observe::winner_voided(self.solver.name(), block, &err, has_haircut);
-        if !has_haircut {
+        let has_non_scoring_fee = settlement.has_non_scoring_fee();
+        observe::winner_voided(self.solver.name(), block, &err, has_non_scoring_fee);
+        if !has_non_scoring_fee {
             notify::simulation_failed(
                 &self.solver,
                 auction.id(),

@@ -54,6 +54,7 @@ use {
         collections::{HashMap, HashSet},
         path::PathBuf,
         str::FromStr,
+        sync::{Arc, Mutex},
     },
 };
 
@@ -995,7 +996,7 @@ impl Setup {
             .into_iter()
             .map(|order| blockchain.quote(&order))
             .collect::<Vec<_>>();
-        let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
+        let instances = join_all(self.solvers.iter().map(|solver| async {
             let instance = SolverInstance::new(solver::Config {
                 blockchain: &blockchain,
                 solutions: &solutions,
@@ -1012,9 +1013,17 @@ impl Setup {
             })
             .await;
 
-            (solver.clone(), instance.addr)
+            (solver.clone(), instance.addr, instance.notifications)
         }))
         .await;
+        let solver_notifications = instances
+            .iter()
+            .map(|(_, _, notifications)| notifications.clone())
+            .collect();
+        let solvers_with_address: Vec<_> = instances
+            .into_iter()
+            .map(|(solver, addr, _)| (solver, addr))
+            .collect();
 
         let driver = Driver::new(
             &driver::Config {
@@ -1043,6 +1052,7 @@ impl Setup {
             quote: self.quote,
             surplus_capturing_jit_order_owners,
             auction_id: self.auction_id,
+            solver_notifications,
         }
     }
 
@@ -1085,12 +1095,25 @@ pub struct Test {
     /// List of surplus capturing JIT-order owners
     surplus_capturing_jit_order_owners: Vec<eth::Address>,
     auction_id: i64,
+    /// Notification capture, one entry per mock solver (same order as the
+    /// `solvers(..)` config). Populated by the mock solver's `/notify` route.
+    solver_notifications: Vec<Arc<Mutex<Vec<serde_json::Value>>>>,
 }
 
 impl Test {
     /// Call the /solve endpoint.
     pub async fn solve(&self) -> Solve<'_> {
         self.solve_with_solver(solver::NAME).await
+    }
+
+    /// Snapshot of every notification the driver has POSTed to the mock
+    /// solvers so far (across all configured solvers). Notifications are sent
+    /// fire-and-forget, so callers typically poll this in a short sleep loop.
+    pub fn solver_notifications(&self) -> Vec<serde_json::Value> {
+        self.solver_notifications
+            .iter()
+            .flat_map(|notifications| notifications.lock().unwrap().clone())
+            .collect()
     }
 
     pub async fn solve_with_solver(&self, solver: &str) -> Solve<'_> {

@@ -7,11 +7,12 @@ use {
         tests::{
             self,
             cases::EtherExt,
-            setup::{ab_order, ab_pool, ab_solution},
+            setup::{Test, ab_order, ab_pool, ab_solution, test_solver},
         },
     },
     eth_domain_types as eth,
     number::{testing::ApproxEq, units::EthUnit},
+    std::time::Duration,
 };
 
 /// Haircut in basis points used across tests (500 bps = 5%)
@@ -307,4 +308,89 @@ async fn buy_order_haircut() {
             expected_sell
         );
     }
+}
+
+/// Control for [`haircut_suppresses_encoding_failure_notification`]: with no
+/// haircut, a solution that fails settlement encoding notifies the solver.
+///
+/// The failure is triggered the same way as
+/// [`super::internalization::untrusted_internalization`] — internalizing an
+/// untrusted token, which yields `NonBufferableTokensUsed` (one of the encoding
+/// errors that does notify). A limit order is used so it matches the
+/// haircut variant (the haircut only applies to limit orders).
+#[tokio::test]
+#[ignore]
+async fn encoding_failure_notifies_solver_without_haircut() {
+    let test = tests::setup()
+        .pool(ab_pool())
+        .order(
+            ab_order()
+                .internalize()
+                .kind(order::Kind::Limit)
+                .solver_fee(Some(eth::U256::from(100))),
+        )
+        .solution(ab_solution())
+        // The default solver has no haircut (haircut_bps = 0).
+        .done()
+        .await;
+
+    test.solve().await.ok().empty();
+
+    assert!(
+        notified_with_kind(&test, "nonBufferableTokensUsed").await,
+        "solver should be notified of the encoding failure when there is no haircut",
+    );
+}
+
+/// When a solution that carries a haircut fails settlement encoding, the driver
+/// suppresses the solver notification (the `if !has_non_scoring_fee` gate in
+/// `competition::Competition`). Solvers bid without knowing about the haircut,
+/// so they should not be penalised for a discrepancy the driver introduced.
+///
+/// Same failure trigger as the control above, but the solver is configured with
+/// a haircut so the (fulfilled-then-discarded) solution carries a non-scoring
+/// fee, making `Solution::has_non_scoring_fee()` true.
+#[tokio::test]
+#[ignore]
+async fn haircut_suppresses_encoding_failure_notification() {
+    let test = tests::setup()
+        .pool(ab_pool())
+        .order(
+            ab_order()
+                .internalize()
+                .kind(order::Kind::Limit)
+                .solver_fee(Some(eth::U256::from(100))),
+        )
+        .solution(ab_solution())
+        .solvers(vec![test_solver().haircut_bps(HAIRCUT_BPS)])
+        .done()
+        .await;
+
+    test.solve().await.ok().empty();
+
+    assert!(
+        !notified_with_kind(&test, "nonBufferableTokensUsed").await,
+        "solver notification must be suppressed for solutions with a haircut",
+    );
+}
+
+/// Polls the mock solver's captured notifications for up to ~2s, returning true
+/// as soon as one with the given `kind` tag is observed.
+///
+/// Notifications are fire-and-forget, so a short poll is needed for the
+/// positive case. The encoding decision — and thus whether a notification is
+/// spawned at all — is made synchronously before the `/solve` response returns,
+/// so a `false` result after the full wait reliably means none was sent.
+async fn notified_with_kind(test: &Test, kind: &str) -> bool {
+    for _ in 0..40 {
+        let seen = test
+            .solver_notifications()
+            .iter()
+            .any(|notification| notification.get("kind").and_then(|k| k.as_str()) == Some(kind));
+        if seen {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    false
 }

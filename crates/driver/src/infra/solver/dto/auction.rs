@@ -5,7 +5,7 @@ use {
             Flashloan,
             competition::{
                 self,
-                order::{self, Available, Side, fees, signature::Scheme},
+                order::{self, Side, fees, signature::Scheme},
             },
             liquidity,
         },
@@ -32,6 +32,13 @@ pub fn new(
     deadline: chrono::DateTime<chrono::Utc>,
     haircut_bps: u32,
 ) -> solvers_dto::auction::Auction {
+    // The solver's haircut is modelled as a non-scoring volume fee applied to
+    // every order (see `dto::haircut_fee`). `None` when no haircut is configured.
+    // Quotes (`/quote` requests have no auction id) handle the haircut directly
+    // when computing clearing prices, since their orders use a static fee that
+    // the protocol-fee path rejects.
+    let haircut_fee = auction.id().and_then(|_| super::haircut_fee(haircut_bps));
+
     let mut tokens: HashMap<eth::Address, _> = auction
         .tokens()
         .iter()
@@ -81,6 +88,11 @@ pub fn new(
                 if solver_native_token.wrap_address {
                     available.buy.token = available.buy.token.as_erc20(weth)
                 }
+                // The haircut only applies to orders whose fee the solver determines (limit
+                // orders); the protocol-fee path cannot adjust static-fee (market) orders.
+                let order_haircut_fee = haircut_fee
+                    .as_ref()
+                    .filter(|_| order.solver_determines_fee());
                 // In case of volume based fees, fee withheld by driver might be higher than the
                 // surplus of the solution. This would lead to violating limit prices when
                 // driver tries to withhold the volume based fee. To avoid this, we artificially
@@ -88,33 +100,39 @@ pub fn new(
                 // to force solvers to only submit solutions with enough surplus to cover the
                 // fee.
                 //
+                // The solver's haircut is one such fee (see `dto::haircut_fee`); it is included
+                // here so the make-room covers it too.
+                //
                 // https://github.com/cowprotocol/services/issues/2440
                 if fee_handler == FeeHandler::Driver {
-                    order.protocol_fees.iter().for_each(|protocol_fee| {
-                        if let fees::FeePolicy::Volume { factor } = protocol_fee {
-                            match order.side {
-                                Side::Buy => {
-                                    // reduce sell amount by factor
-                                    available.sell.amount = available
-                                        .sell
-                                        .amount
-                                        .apply_factor(1.0 / (1.0 + factor))
-                                        .unwrap_or_default();
-                                }
-                                Side::Sell => {
-                                    // increase buy amount by factor
-                                    available.buy.amount = available
-                                        .buy
-                                        .amount
-                                        .apply_factor(1.0 / (1.0 - factor))
-                                        .unwrap_or_default();
+                    order
+                        .protocol_fees
+                        .iter()
+                        .chain(order_haircut_fee)
+                        .for_each(|protocol_fee| {
+                            if let fees::FeePolicy::Volume { factor } = protocol_fee.policy {
+                                match order.side {
+                                    Side::Buy => {
+                                        // reduce sell amount by factor
+                                        available.sell.amount = available
+                                            .sell
+                                            .amount
+                                            .apply_factor(1.0 / (1.0 + factor))
+                                            .unwrap_or_default();
+                                    }
+                                    Side::Sell => {
+                                        // increase buy amount by factor
+                                        available.buy.amount = available
+                                            .buy
+                                            .amount
+                                            .apply_factor(1.0 / (1.0 - factor))
+                                            .unwrap_or_default();
+                                    }
                                 }
                             }
-                        }
-                    })
+                        })
                 }
 
-                apply_haircut(&mut available, order.side, haircut_bps, &order.uid);
                 solvers_dto::auction::Order {
                     uid: order.uid.into(),
                     sell_token: *available.sell.token,
@@ -156,8 +174,8 @@ pub fn new(
                         order
                             .protocol_fees
                             .iter()
-                            .cloned()
-                            .map(fee_policy_from_domain)
+                            .chain(order_haircut_fee)
+                            .map(|protocol_fee| fee_policy_from_domain(protocol_fee.policy.clone()))
                             .collect(),
                     ),
                     app_data: AppDataHash(order.app_data.hash().0.into()),
@@ -401,189 +419,6 @@ fn scaling_factor_to_decimal(
     bigdecimal::BigDecimal::new(scale.as_raw().into(), 18)
 }
 
-/// The driver applies a haircut to the solver's solution after it is returned
-/// (see `Solutions::into_domain`). This reduces the user's effective buy amount
-/// (sell orders) or increases their effective sell amount (buy orders) without
-/// the solver knowing about it. Tighten the order limits we send the solver by
-/// the same factor so that any solution it produces still respects the user's
-/// signed limit price after the haircut is applied.
-///
-/// Sell orders: `buy.amount := buy.amount / (1 - h)`.
-/// Buy orders:  `sell.amount := sell.amount / (1 + h)`.
-///
-/// `haircut_bps` is expected to be well below `super::MAX_BASE_POINT`; a debug
-/// assertion catches misconfigs in dev builds. On `apply_factor` failure (only
-/// reachable on overflow when scaling buy_amount upward) we fall back to `0`
-/// — matching the volume-fee pre-processing above — and log a warning so
-/// operators can spot the misconfiguration.
-fn apply_haircut(available: &mut Available, side: Side, haircut_bps: u32, order_uid: &order::Uid) {
-    if haircut_bps == 0 {
-        return;
-    }
-    debug_assert!(
-        haircut_bps <= super::MAX_BASE_POINT,
-        "haircut_bps {haircut_bps} must be <= {}",
-        super::MAX_BASE_POINT,
-    );
-    let haircut_factor = f64::from(haircut_bps) / f64::from(super::MAX_BASE_POINT);
-    let (amount, factor, leg) = match side {
-        Side::Buy => (
-            &mut available.sell.amount,
-            1.0 / (1.0 + haircut_factor),
-            "sell",
-        ),
-        Side::Sell => (
-            &mut available.buy.amount,
-            1.0 / (1.0 - haircut_factor),
-            "buy",
-        ),
-    };
-    let tightened = amount.apply_factor(factor);
-    if tightened.is_none() {
-        tracing::warn!(
-            ?order_uid,
-            haircut_bps,
-            ?side,
-            leg,
-            factor,
-            ?amount,
-            "failed to tighten order limit for haircut; falling back to default",
-        );
-    }
-    *amount = tightened.unwrap_or_default();
-}
-
-#[cfg(test)]
-mod tests {
-    use {super::*, alloy::primitives::Address};
-
-    fn asset(amount: eth::U256) -> eth::Asset {
-        eth::Asset {
-            amount: amount.into(),
-            token: Address::repeat_byte(0xaa).into(),
-        }
-    }
-
-    fn available(sell_amount: eth::U256, buy_amount: eth::U256) -> Available {
-        Available {
-            sell: asset(sell_amount),
-            buy: asset(buy_amount),
-        }
-    }
-
-    /// Zero haircut leaves the order limits unchanged.
-    #[test]
-    fn haircut_zero_is_noop() {
-        let sell = eth::U256::from(500_000_000u64);
-        let buy = eth::U256::from(441_289_983_646_158_011_001u128);
-
-        let mut a = available(sell, buy);
-        apply_haircut(&mut a, Side::Sell, 0, &order::Uid::default());
-        assert_eq!(a.sell.amount.0, sell);
-        assert_eq!(a.buy.amount.0, buy);
-
-        let mut a = available(sell, buy);
-        apply_haircut(&mut a, Side::Buy, 0, &order::Uid::default());
-        assert_eq!(a.sell.amount.0, sell);
-        assert_eq!(a.buy.amount.0, buy);
-    }
-
-    /// For sell orders, the buy amount sent to the solver is tightened
-    /// to `B / (1 - h)` so that the solver bids with enough headroom for
-    /// the driver's post-hoc haircut to still respect the signed limit `B`.
-    ///
-    /// Regression for the prod incident on order `0xa978e3ec…6a020c06`:
-    /// solver `0x4c52…f739` submitted a bid with ~83 bps headroom; the driver
-    /// applied the configured haircut and the on-chain `settle()` reverted
-    /// with `GPv2: limit price not respected`. With make-room, the limit the
-    /// solver sees is the tightened one, so the only solutions it can produce
-    /// already satisfy the signed limit post-haircut.
-    #[test]
-    fn haircut_tightens_buy_for_sell_order() {
-        let sell = eth::U256::from(500_000_000u64);
-        let signed_buy = eth::U256::from(441_289_983_646_158_011_001u128);
-
-        let mut a = available(sell, signed_buy);
-        apply_haircut(&mut a, Side::Sell, 100, &order::Uid::default()); // 1% haircut
-
-        // sell amount is untouched for sell orders.
-        assert_eq!(a.sell.amount.0, sell);
-
-        // Expected tightened buy: signed_buy / (1 - 0.01).
-        let expected = eth::TokenAmount(signed_buy)
-            .apply_factor(1.0 / 0.99)
-            .unwrap()
-            .0;
-        assert_eq!(a.buy.amount.0, expected);
-
-        // Sanity: any solver bid `E` that clears the tightened limit
-        // (`E >= expected`) survives the post-hoc haircut, i.e.
-        // `E * (1 - h) >= signed_buy`.
-        assert!(expected > signed_buy);
-        let post_haircut = a.buy.amount.apply_factor(0.99).unwrap().0;
-        // The post-haircut amount must be `>= signed_buy` (allow a tiny
-        // f64-rounding tolerance of a few wei).
-        let tolerance = eth::U256::from(10u64);
-        assert!(
-            post_haircut + tolerance >= signed_buy,
-            "post-haircut {post_haircut} < signed {signed_buy}"
-        );
-    }
-
-    /// Symmetric to the sell case: for buy orders the sell amount is
-    /// tightened to `S / (1 + h)` so the driver's post-hoc haircut (which
-    /// *adds* to the sell amount the user pays) still respects the signed
-    /// sell limit.
-    #[test]
-    fn haircut_tightens_sell_for_buy_order() {
-        let signed_sell = eth::U256::from(500_000_000u64);
-        let buy = eth::U256::from(441_289_983_646_158_011_001u128);
-
-        let mut a = available(signed_sell, buy);
-        apply_haircut(&mut a, Side::Buy, 100, &order::Uid::default()); // 1% haircut
-
-        // buy amount is untouched for buy orders.
-        assert_eq!(a.buy.amount.0, buy);
-
-        // Expected tightened sell: signed_sell / (1 + 0.01).
-        let expected = eth::TokenAmount(signed_sell)
-            .apply_factor(1.0 / 1.01)
-            .unwrap()
-            .0;
-        assert_eq!(a.sell.amount.0, expected);
-
-        // Solver pays at most `expected`; after the driver adds the haircut
-        // (`+ h`), the effective sell must not exceed `signed_sell`.
-        assert!(expected < signed_sell);
-        let post_haircut = a.sell.amount.apply_factor(1.01).unwrap().0;
-        let tolerance = eth::U256::from(10u64);
-        assert!(
-            post_haircut <= signed_sell + tolerance,
-            "post-haircut {post_haircut} > signed {signed_sell}"
-        );
-    }
-
-    /// `haircut_bps == MAX_BASE_POINT` makes `1 / (1 - 1) = inf`, the only
-    /// realistic way `apply_factor` returns `None` inside `apply_haircut`. The
-    /// fallback is `0` (matches the volume-fee pre-processing's
-    /// `unwrap_or_default()` behaviour). The debug-assert allows `<=
-    /// MAX_BASE_POINT` so this case is reachable in dev builds too.
-    #[test]
-    fn haircut_overflow_falls_back_to_default() {
-        let sell = eth::U256::from(500_000_000u64);
-        let signed_buy = eth::U256::from(441_289_983_646_158_011_001u128);
-
-        let mut a = available(sell, signed_buy);
-        apply_haircut(
-            &mut a,
-            Side::Sell,
-            super::super::MAX_BASE_POINT,
-            &order::Uid::default(),
-        );
-
-        // buy.amount tightened with an infinite factor → fallback to 0.
-        assert_eq!(a.buy.amount, eth::TokenAmount::default());
-        // sell.amount is untouched on the sell-side branch.
-        assert_eq!(a.sell.amount.0, sell);
-    }
-}
+// Make-room for the haircut is handled inline in `new`: the haircut is modelled
+// as a non-scoring volume fee (see `dto::haircut_fee`) and tightens limits via
+// the same loop as regular volume fees.

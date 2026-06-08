@@ -136,6 +136,8 @@ pub fn encoding_failed(
         has_haircut,
         "discarded solution: settlement encoding"
     );
+    // The metric reason-string is kept stable (dashboards depend on it); a
+    // non-scoring fee is exactly the haircut.
     let reason = if has_haircut {
         "SettlementEncodingHaircut"
     } else {

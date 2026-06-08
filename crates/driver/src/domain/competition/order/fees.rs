@@ -1,5 +1,40 @@
 use crate::domain::competition::order;
 
+/// A protocol fee policy attached to an order, together with whether it
+/// contributes to the solution score.
+///
+/// Almost all fees (the ones the autopilot assigns) are captured as protocol
+/// revenue and therefore raise the score. The haircut is the exception: it is a
+/// driver-injected fee used for conservative bidding that adjusts the executed
+/// amounts exactly like a [`FeePolicy::Volume`] fee but must *not* enter the
+/// score (it lowers it) and is not booked as revenue. Such fees carry
+/// `contributes_to_score == false`.
+#[derive(Clone, Debug)]
+pub struct ProtocolFee {
+    pub policy: FeePolicy,
+    pub contributes_to_score: bool,
+}
+
+impl ProtocolFee {
+    /// A regular protocol fee that is captured as revenue and contributes to
+    /// the score.
+    pub fn scored(policy: FeePolicy) -> Self {
+        Self {
+            policy,
+            contributes_to_score: true,
+        }
+    }
+
+    /// A fee that adjusts executed amounts but is excluded from the score (and
+    /// from revenue accounting). Used for the haircut.
+    pub fn non_scoring(policy: FeePolicy) -> Self {
+        Self {
+            policy,
+            contributes_to_score: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum FeePolicy {
     /// If the order receives more than limit price, take the protocol fee as a

@@ -31,7 +31,17 @@ impl Solutions {
         solver: Solver,
         flashloan_hints: &HashMap<competition::order::Uid, domain::flashloan::Flashloan>,
     ) -> Result<Vec<competition::Solution>, super::Error> {
-        let haircut_bps = solver.haircut_bps();
+        // Conservative bidding: a solver's haircut is modelled as a non-scoring
+        // volume fee injected into each fulfilled order. It tightens the order's
+        // limits (make-room) and reduces the reported execution exactly like a
+        // volume fee, but is excluded from the score and from revenue.
+        //
+        // Quotes (`/quote` requests have no auction id) instead apply the haircut
+        // directly when computing clearing prices, since their orders use a
+        // static fee that the protocol-fee path rejects.
+        let haircut_fee = auction
+            .id()
+            .and_then(|_| super::haircut_fee(solver.haircut_bps()));
 
         self.0
             .into_iter()
@@ -43,21 +53,16 @@ impl Solutions {
                         .iter()
                         .map(|trade| match trade {
                             solvers_dto::solution::Trade::Fulfillment(fulfillment) => {
-                                let order =
+                                let mut order =
                                     find_order(auction.orders(), &fulfillment.order)?.clone();
-
-                                // Calculate haircut fee for conservative bidding.
-                                // This reduces reported surplus without affecting executed amounts.
-                                let haircut_fee = if haircut_bps > 0 {
-                                    eth::U256::from(fulfillment.executed_amount)
-                                        .checked_mul(eth::U256::from(haircut_bps))
-                                        .and_then(|v| {
-                                            v.checked_div(eth::U256::from(super::MAX_BASE_POINT))
-                                        })
-                                        .unwrap_or_default()
-                                } else {
-                                    Default::default()
-                                };
+                                // The haircut only applies to orders whose fee the solver
+                                // determines (limit orders); the protocol-fee path cannot adjust
+                                // static-fee (market) orders.
+                                if order.solver_determines_fee()
+                                    && let Some(haircut_fee) = haircut_fee.clone()
+                                {
+                                    order.protocol_fees.push(haircut_fee);
+                                }
 
                                 competition::solution::trade::Fulfillment::new(
                                     order,
@@ -68,7 +73,6 @@ impl Solutions {
                                         ),
                                         None => competition::solution::trade::Fee::Static,
                                     },
-                                    haircut_fee,
                                 )
                                     .map(competition::solution::Trade::Fulfillment)
                                     .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))

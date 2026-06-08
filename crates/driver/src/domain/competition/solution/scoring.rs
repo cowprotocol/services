@@ -15,7 +15,7 @@ use {
     crate::domain::competition::{
         PriceLimits,
         auction,
-        order::FeePolicy,
+        order::{FeePolicy, ProtocolFee},
         solution::{
             error,
             fee::{self, adjust_quote_to_order_limits},
@@ -49,7 +49,7 @@ pub struct Trade {
     /// Price at which the order gets filled. This is based on the solution's
     /// price vector and the necessary adjustements to incorporate fees.
     custom_price: CustomClearingPrices,
-    policies: Vec<FeePolicy>,
+    policies: Vec<ProtocolFee>,
 }
 
 impl Trade {
@@ -59,7 +59,7 @@ impl Trade {
         side: Side,
         executed: order::TargetAmount,
         custom_price: CustomClearingPrices,
-        policies: Vec<FeePolicy>,
+        policies: Vec<ProtocolFee>,
     ) -> Self {
         Self {
             signed_sell,
@@ -169,18 +169,36 @@ impl Trade {
     }
 
     /// Protocol fees are defined by fee policies attached to the order.
+    ///
+    /// Only fees with `contributes_to_score` are summed into the returned score
+    /// component, but the price unwinding feeding `calculate_custom_prices`
+    /// must account for *every* applied fee (including the non-scoring
+    /// haircut), otherwise the surplus baseline seen by an outer
+    /// contributing fee would be off. We therefore track two running
+    /// totals.
     fn fees(&self) -> Result<eth::SurplusTokenAmount, Error> {
         let mut current_trade = self.clone();
-        let mut total = eth::SurplusTokenAmount::default();
+        // Sum of all applied fees, used to unwind the custom prices.
+        let mut unwound = eth::SurplusTokenAmount::default();
+        // Sum of only the fees that contribute to the score.
+        let mut scored = eth::SurplusTokenAmount::default();
         for protocol_fee in self.policies.iter().rev() {
-            total = total
+            let fee = current_trade.protocol_fee(&protocol_fee.policy)?;
+            unwound = unwound
                 .0
-                .checked_add(current_trade.protocol_fee(protocol_fee)?.0)
+                .checked_add(fee.0)
                 .ok_or(Error::Math(Math::Overflow))?
                 .into();
-            current_trade.custom_price = self.calculate_custom_prices(total)?;
+            if protocol_fee.contributes_to_score {
+                scored = scored
+                    .0
+                    .checked_add(fee.0)
+                    .ok_or(Error::Math(Math::Overflow))?
+                    .into();
+            }
+            current_trade.custom_price = self.calculate_custom_prices(unwound)?;
         }
-        Ok(total)
+        Ok(scored)
     }
 
     /// The effective amount that left the user's wallet including all fees.
