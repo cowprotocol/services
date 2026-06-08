@@ -403,8 +403,13 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
     tracing::info!("waiting for trade");
     // The buy side is native ETH (not an ERC20), so we check the native balance.
     // The order being settled at all proves the autopilot indexed it. We require
-    // the receiver to get back roughly the full sell amount (minus fee/slippage)
-    // to prove the native value actually round-tripped out, not just dust.
+    // the receiver to get back roughly the full sell amount to prove the native
+    // value actually round-tripped out, not just dust.
+    //
+    // 95% floor = 3% slippage tolerance (`include_slippage_bps(300)` above) plus
+    // headroom for the ethflow fee (deducted from the sell side). It's a "real
+    // value vs. dust" floor, not a tight bound; lower it if the slippage bps grow
+    // or the fee ever becomes a large fraction of the sell amount.
     let min_delivered = sell_amount * U256::from(95) / U256::from(100);
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
