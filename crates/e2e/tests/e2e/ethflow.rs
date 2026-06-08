@@ -298,8 +298,8 @@ async fn eth_flow_tx(web3: Web3) {
 ///    native ETH to the receiver, and finally runs the post-hook.
 ///
 /// The "bridge" is represented by a `Counter` contract whose `incrementCounter`
-/// we assert ran exactly once — the same hook-proving approach used elsewhere
-/// in the e2e suite.
+/// we assert ran exactly once — the same hook-proving approach used in
+/// `hooks.rs` and `submission.rs`.
 ///
 /// Note: on-chain ethflow orders are not subject to the orderbook's
 /// `SameTokensPolicy` during indexing, but the *quote* request is, so the
@@ -406,10 +406,9 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
     // the receiver to get back roughly the full sell amount to prove the native
     // value actually round-tripped out, not just dust.
     //
-    // 95% floor = 3% slippage tolerance (`include_slippage_bps(300)` above) plus
-    // headroom for the ethflow fee (deducted from the sell side). It's a "real
-    // value vs. dust" floor, not a tight bound; lower it if the slippage bps grow
-    // or the fee ever becomes a large fraction of the sell amount.
+    // 95% floor = the order's 3% slippage tolerance (`include_slippage_bps(300)`
+    // above) plus a small safety margin. It's a "real value vs. dust" floor, not
+    // a tight bound; lower it if the slippage bps grow.
     let min_delivered = sell_amount * U256::from(95) / U256::from(100);
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
