@@ -271,14 +271,18 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    /// Returns the block our `Settlement` event for `tx_hash` was found in, if
-    /// any. The event is only emitted on a successful settle, and `eth_getLogs`
-    /// carries the tx hash, so this sees it even when the receipt lookup lags.
-    pub async fn settlement_block(
+    /// Whether `tx_hash`'s successful `Settlement` event is present in `block`.
+    /// Only a successful settle emits it, and `eth_getLogs` carries the tx hash,
+    /// so this finds the tx even while the receipt-by-hash lookup still lags.
+    ///
+    /// `block` may be `Pending`, which not every node supports for log queries:
+    /// some error, others treat it as `latest`. Callers must read an error as
+    /// "unknown", never as "absent".
+    pub async fn contains_successful_tx(
         &self,
         tx_hash: eth::TxId,
         block: alloy::eips::BlockNumberOrTag,
-    ) -> Result<Option<eth::BlockNo>, Error> {
+    ) -> Result<bool, Error> {
         let logs = self
             .contracts()
             .settlement()
@@ -288,10 +292,8 @@ impl Ethereum {
             .query()
             .await?;
         Ok(logs
-            .into_iter()
-            .find(|(_, log)| log.transaction_hash == Some(tx_hash.0))
-            .and_then(|(_, log)| log.block_number)
-            .map(eth::BlockNo))
+            .iter()
+            .any(|(_, log)| log.transaction_hash == Some(tx_hash.0)))
     }
 
     #[instrument(skip(self), ret(level = Level::DEBUG))]

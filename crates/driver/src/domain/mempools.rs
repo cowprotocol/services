@@ -266,61 +266,60 @@ impl Mempools {
                                 submission_deadline,
                             });
                         }
-                        // A node can report a new block before its receipt index catches up.
-                        // Re-simulating then reverts on our own already-applied tx, a false
-                        // positive. Tell it apart from a real revert with our `Settlement` event
-                        // on `latest` (mined) and `pending` (about to mine).
+                        // A node can report a new block before its receipt index catches up,
+                        // so re-simulating reverts on our own already-applied tx. Before
+                        // treating that as a real revert, check whether our `Settlement` event
+                        // is already on `latest` (mined) or `pending` (about to mine).
                         let (gas, in_latest, in_pending) = futures::join!(
                             self.ethereum.estimate_gas(tx.clone()),
-                            self.ethereum.settlement_block(hash, BlockNumberOrTag::Latest),
-                            self.ethereum.settlement_block(hash, BlockNumberOrTag::Pending),
+                            self.ethereum.contains_successful_tx(hash, BlockNumberOrTag::Latest),
+                            self.ethereum.contains_successful_tx(hash, BlockNumberOrTag::Pending),
                         );
 
+                        // A lookup error is not evidence of non-inclusion. A `latest` failure is
+                        // unusual, a `pending` one is expected on nodes without pending-log
+                        // support, so they log at different levels.
+                        if let Err(err) = &in_latest {
+                            tracing::warn!(?hash, ?err, "settlement lookup on latest failed");
+                        }
+                        if let Err(err) = &in_pending {
+                            tracing::debug!(?hash, ?err, "settlement lookup on pending failed");
+                        }
+
+                        if matches!(&in_latest, Ok(true)) {
+                            // Mined already, the receipt is just lagging. Report success now
+                            // instead of risking the receipt arriving after the deadline.
+                            tracing::info!(
+                                ?hash,
+                                included_in_block = block.number,
+                                "settlement mined, treating as success despite a missing receipt"
+                            );
+                            return Ok(SubmissionSuccess {
+                                tx_hash: hash,
+                                submitted_at_block: submission_block,
+                                included_in_block: block.number.into(),
+                            });
+                        }
+
                         let resimulation_reverted = matches!(&gas, Err(err) if err.is_revert());
-                        match classify_resimulation(
-                            in_latest.unwrap_or_default(),
-                            in_pending.unwrap_or_default(),
-                            resimulation_reverted,
-                        ) {
-                            ResimOutcome::AlreadyMined(included_in_block) => {
-                                tracing::info!(
-                                    ?hash,
-                                    ?included_in_block,
-                                    "settlement found on-chain, treating as success despite a \
-                                     missing receipt"
-                                );
-                                return Ok(SubmissionSuccess {
-                                    tx_hash: hash,
-                                    submitted_at_block: submission_block,
-                                    included_in_block,
-                                });
-                            }
-                            ResimOutcome::PendingWillSucceed => {
-                                tracing::debug!(
-                                    ?hash,
-                                    "settlement present on the pending block, waiting for \
-                                     inclusion"
-                                );
-                            }
-                            ResimOutcome::Revert => {
-                                tracing::info!(
-                                    settle_tx_hash = ?hash,
-                                    err = ?gas.as_ref().err(),
-                                    "tx started failing in mempool, cancelling"
-                                );
-                                let _ = self
-                                    .cancel(mempool, final_gas_price, signer, nonce)
-                                    .await;
-                                return Err(Error::SimulationRevert {
-                                    submitted_at_block: submission_block,
-                                    reverted_at_block: block.number.into(),
-                                });
-                            }
-                            ResimOutcome::Inconclusive => {
-                                if let Err(err) = &gas {
-                                    tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
-                                }
-                            }
+                        if requires_cancellation(resimulation_reverted, &in_latest, &in_pending) {
+                            tracing::info!(
+                                settle_tx_hash = ?hash,
+                                err = ?gas.as_ref().err(),
+                                "tx started failing in mempool, cancelling"
+                            );
+                            let _ = self.cancel(mempool, final_gas_price, signer, nonce).await;
+                            return Err(Error::SimulationRevert {
+                                submitted_at_block: submission_block,
+                                reverted_at_block: block.number.into(),
+                            });
+                        } else if matches!(&in_pending, Ok(true)) {
+                            tracing::debug!(
+                                ?hash,
+                                "settlement in the pending block, waiting for inclusion"
+                            );
+                        } else if let Err(err) = &gas {
+                            tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
                         }
                     }
                 }
@@ -332,8 +331,8 @@ impl Mempools {
         .await;
 
         if result.is_err() {
-            // Do one last attempt to see if the transaction was confirmed (in case of race
-            // conditions or misclassified errors like `OrderFilled` simulation failures).
+            // One last check in case the tx landed after the loop exited, e.g. the
+            // receipt finally caught up to a block we had already processed.
             if let Ok(TxStatus::Executed { block_number }) =
                 self.ethereum.transaction_status(&hash).await
             {
@@ -663,41 +662,17 @@ impl Error {
     }
 }
 
-/// What to do with a submitted settlement whose receipt is not yet available. A
-/// node can report a block before its receipt index catches up, so
-/// re-simulation reverts on an already-mined tx. We disambiguate with our
-/// `Settlement` event on `latest` and `pending`.
-#[derive(Debug)]
-enum ResimOutcome {
-    /// Our settlement is already mined in this block. The receipt is just
-    /// lagging, so treat it as a success.
-    AlreadyMined(BlockNo),
-    /// Our settlement is in the pending block and will succeed once mined.
-    PendingWillSucceed,
-    /// Our settlement is on neither block and re-simulation reverted. Cancel.
-    Revert,
-    /// Re-simulation did not revert and our settlement is not on-chain yet.
-    Inconclusive,
-}
-
-/// Decides what to do when a submitted settlement's receipt is not yet
-/// available. `in_latest` / `in_pending` are the blocks our `Settlement` event
-/// was found in, if any. `resimulation_reverted` is whether re-simulating the
-/// tx reverted.
-fn classify_resimulation(
-    in_latest: Option<BlockNo>,
-    in_pending: Option<BlockNo>,
+/// Whether a submitted settlement whose receipt is missing should be cancelled.
+/// Cancel only on positive evidence it will not land: re-simulation reverted and
+/// both `latest` and `pending` confirm our `Settlement` event is absent. A failed
+/// lookup counts as "unknown", so we keep waiting rather than cancel a tx that may
+/// have mined.
+fn requires_cancellation<E>(
     resimulation_reverted: bool,
-) -> ResimOutcome {
-    if let Some(block) = in_latest {
-        ResimOutcome::AlreadyMined(block)
-    } else if in_pending.is_some() {
-        ResimOutcome::PendingWillSucceed
-    } else if resimulation_reverted {
-        ResimOutcome::Revert
-    } else {
-        ResimOutcome::Inconclusive
-    }
+    in_latest: &Result<bool, E>,
+    in_pending: &Result<bool, E>,
+) -> bool {
+    resimulation_reverted && matches!(in_latest, Ok(false)) && matches!(in_pending, Ok(false))
 }
 
 #[cfg(test)]
@@ -739,40 +714,27 @@ mod tests {
         assert_eq!(prepared.input, Bytes::from(expected));
     }
 
+    const PRESENT: Result<bool, ()> = Ok(true);
+    const ABSENT: Result<bool, ()> = Ok(false);
+    const LOOKUP_FAILED: Result<bool, ()> = Err(());
+
     #[test]
-    fn classify_prefers_already_mined() {
-        match classify_resimulation(Some(BlockNo(10)), None, true) {
-            ResimOutcome::AlreadyMined(block) => assert_eq!(block.0, 10),
-            other => panic!("expected AlreadyMined, got {other:?}"),
-        }
-        // `latest` wins even when `pending` also has it and re-simulation reverted.
-        assert!(matches!(
-            classify_resimulation(Some(BlockNo(10)), Some(BlockNo(10)), true),
-            ResimOutcome::AlreadyMined(_)
-        ));
+    fn cancels_only_on_revert_with_both_blocks_absent() {
+        assert!(requires_cancellation(true, &ABSENT, &ABSENT));
+        // Re-simulation still succeeds, so we wait instead of cancelling.
+        assert!(!requires_cancellation(false, &ABSENT, &ABSENT));
+        // Already present on one of the blocks, so it will land.
+        assert!(!requires_cancellation(true, &PRESENT, &ABSENT));
+        assert!(!requires_cancellation(true, &ABSENT, &PRESENT));
     }
 
     #[test]
-    fn classify_waits_when_only_pending_has_settlement() {
-        assert!(matches!(
-            classify_resimulation(None, Some(BlockNo(11)), true),
-            ResimOutcome::PendingWillSucceed
-        ));
-    }
-
-    #[test]
-    fn classify_cancels_on_genuine_revert() {
-        assert!(matches!(
-            classify_resimulation(None, None, true),
-            ResimOutcome::Revert
-        ));
-    }
-
-    #[test]
-    fn classify_inconclusive_when_not_reverted_and_not_on_chain() {
-        assert!(matches!(
-            classify_resimulation(None, None, false),
-            ResimOutcome::Inconclusive
-        ));
+    fn failed_lookup_is_never_treated_as_absent() {
+        // A failed lookup is unknown and must never trigger a cancel, even on a
+        // revert. Otherwise a flaky or unsupported log query reverts to the
+        // original bug: cancelling a tx that may have mined.
+        assert!(!requires_cancellation(true, &LOOKUP_FAILED, &LOOKUP_FAILED));
+        assert!(!requires_cancellation(true, &ABSENT, &LOOKUP_FAILED));
+        assert!(!requires_cancellation(true, &LOOKUP_FAILED, &ABSENT));
     }
 }
