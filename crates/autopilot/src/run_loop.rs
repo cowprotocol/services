@@ -296,9 +296,8 @@ impl RunLoop {
 
         // Only run the solvers if the auction or block has changed.
         let previous = prev_auction.replace(Arc::clone(&auction));
-        if previous.as_deref() == Some(auction.as_ref())
-            && prev_block.replace(start_block.hash) == Some(start_block.hash)
-        {
+        let block_changed = prev_block.replace(start_block.hash) != Some(start_block.hash);
+        if previous.as_deref() == Some(auction.as_ref()) && !block_changed {
             return None;
         }
 
