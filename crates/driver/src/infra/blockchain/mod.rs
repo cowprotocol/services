@@ -272,8 +272,9 @@ impl Ethereum {
     }
 
     /// Whether `tx_hash`'s successful `Settlement` event is present in `block`.
-    /// Only a successful settle emits it, and `eth_getLogs` carries the tx hash,
-    /// so this finds the tx even while the receipt-by-hash lookup still lags.
+    /// Only a successful settle emits it, and `eth_getLogs` carries the tx
+    /// hash, so this finds the tx even while the receipt-by-hash lookup
+    /// still lags.
     ///
     /// `block` may be `Pending`, which not every node supports for log queries:
     /// some error, others treat it as `latest`. Callers must read an error as

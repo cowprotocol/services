@@ -663,10 +663,10 @@ impl Error {
 }
 
 /// Whether a submitted settlement whose receipt is missing should be cancelled.
-/// Cancel only on positive evidence it will not land: re-simulation reverted and
-/// both `latest` and `pending` confirm our `Settlement` event is absent. A failed
-/// lookup counts as "unknown", so we keep waiting rather than cancel a tx that may
-/// have mined.
+/// Cancel only on positive evidence it will not land: re-simulation reverted
+/// and both `latest` and `pending` confirm our `Settlement` event is absent. A
+/// failed lookup counts as "unknown", so we keep waiting rather than cancel a
+/// tx that may have mined.
 fn requires_cancellation<E>(
     resimulation_reverted: bool,
     in_latest: &Result<bool, E>,
