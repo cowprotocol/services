@@ -271,30 +271,34 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    /// Whether `tx_hash`'s successful `Settlement` event is present in `block`.
-    /// Only a successful settle emits it, and `eth_getLogs` carries the tx
-    /// hash, so this finds the tx even while the receipt-by-hash lookup
-    /// still lags.
-    ///
-    /// `block` may be `Pending`, which not every node supports for log queries:
-    /// some error, others treat it as `latest`. Callers must read an error as
-    /// "unknown", never as "absent".
-    pub async fn contains_successful_tx(
-        &self,
-        tx_hash: eth::TxId,
-        block: alloy::eips::BlockNumberOrTag,
-    ) -> Result<bool, Error> {
+    /// Whether `tx_hash`'s successful `Settlement` event is in the latest block.
+    /// Only a successful settle emits it, and `eth_getLogs` reads a block's logs
+    /// even while the receipt-by-hash lookup still lags, so this sees a freshly
+    /// mined settlement that `eth_getTransactionReceipt` would still miss.
+    pub async fn contains_successful_tx(&self, tx_hash: eth::TxId) -> Result<bool, Error> {
         let logs = self
             .contracts()
             .settlement()
             .event_filter::<::contracts::GPv2Settlement::GPv2Settlement::Settlement>()
-            .from_block(block)
-            .to_block(block)
+            .from_block(alloy::eips::BlockNumberOrTag::Latest)
+            .to_block(alloy::eips::BlockNumberOrTag::Latest)
             .query()
             .await?;
         Ok(logs
             .iter()
             .any(|(_, log)| log.transaction_hash == Some(tx_hash.0)))
+    }
+
+    /// The signer's transaction count including the mempool (the `pending` tag).
+    /// When this exceeds the nonce we submitted with, our tx is still queued in
+    /// the mempool. When it equals that nonce, the tx is no longer there.
+    pub async fn pending_transaction_count(&self, address: eth::Address) -> Result<u64, Error> {
+        self.web3
+            .provider
+            .get_transaction_count(address)
+            .pending()
+            .await
+            .map_err(Into::into)
     }
 
     #[instrument(skip(self), ret(level = Level::DEBUG))]
