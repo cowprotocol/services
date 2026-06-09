@@ -27,10 +27,10 @@ pub trait Store {
     async fn read_watermark(&self) -> Result<Option<u64>, StoreError>;
 
     /// Move stale partials (>32 slots behind) to dead letter table.
-    async fn write_dead_letter(&self, entry: DeadLetterEntry);
+    async fn write_dead_letter(&self, entry: DeadLetterEntry) -> Result<(), StoreError>;
 
     /// Record gaps that fell outside the replay window (write-only in v0.1).
-    async fn record_lost_slot_range(&self, range: Range<u64>);
+    async fn record_lost_slot_range(&self, range: Range<u64>) -> Result<(), StoreError>;
 
     /// Primary promotion pass: fetch `confirmed` rows whose `slot` is at or
     /// above the finalization-window threshold (`slot >= newer_than_slot`).
