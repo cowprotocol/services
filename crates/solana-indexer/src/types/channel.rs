@@ -29,8 +29,8 @@ pub enum StreamUpdate {
     Account {
         /// Slot the message was observed at.
         slot: u64,
-        /// Optional signature linking the write back to its originating
-        /// transaction.
+        /// Optional transaction signature linking the write back to its
+        /// originating transaction.
         txn_signature: Option<Signature>,
         /// Wire message body.
         inner: Box<SubscribeUpdateAccountInfo>,

@@ -117,6 +117,7 @@ sha2 = "0.10"
 shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
+solana-client = "4"
 solana-indexer = { path = "crates/solana-indexer" }
 solana-sdk = "4"
 solver = { path = "crates/solver" }
