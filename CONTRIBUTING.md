@@ -61,7 +61,7 @@ A CLA bot will prompt you to sign on your first contribution. Please do.
 
 Reviews work best on small, focused PRs. Before opening one, please use the following as a self-check — if your change matches any of these, take it back to the issue and agree the approach with maintainers first:
 
-1. Changes more than 200 lines of production code (excluding tests, generated code, and documentation).
+1. Changes more than 200 lines of production code (excluding tests, generated contract bindings and related artifacts, and documentation).
 2. Touches more than one crate, module, or service.
 3. Modifies a public API or wire format.
 4. Introduces a new feature flag, configuration option, or environment variable.
