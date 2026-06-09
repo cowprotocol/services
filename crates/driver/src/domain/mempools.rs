@@ -6,7 +6,7 @@ use {
     },
     alloy::{
         consensus::Transaction,
-        eips::{BlockNumberOrTag, eip1559::Eip1559Estimation},
+        eips::eip1559::Eip1559Estimation,
         primitives::Bytes,
     },
     anyhow::{Context, anyhow},
@@ -267,26 +267,18 @@ impl Mempools {
                             });
                         }
                         // A node can report a new block before its receipt index catches up,
-                        // so re-simulating reverts on our own already-applied tx. Before
-                        // treating that as a real revert, check whether our `Settlement` event
-                        // is already on `latest` (mined) or `pending` (about to mine).
-                        let (gas, in_latest, in_pending) = futures::join!(
+                        // so re-simulating reverts on our own already-applied tx. Tell that
+                        // apart from a real revert with two signals: our `Settlement` event on
+                        // the latest block (which `eth_getLogs` sees even while the receipt
+                        // lags), and the signer's pending nonce (which still covers our tx
+                        // while it sits in the mempool).
+                        let (gas, mined, pending_nonce) = futures::join!(
                             self.ethereum.estimate_gas(tx.clone()),
-                            self.ethereum.contains_successful_tx(hash, BlockNumberOrTag::Latest),
-                            self.ethereum.contains_successful_tx(hash, BlockNumberOrTag::Pending),
+                            self.ethereum.contains_successful_tx(hash),
+                            self.ethereum.pending_transaction_count(signer),
                         );
 
-                        // A lookup error is not evidence of non-inclusion. A `latest` failure is
-                        // unusual, a `pending` one is expected on nodes without pending-log
-                        // support, so they log at different levels.
-                        if let Err(err) = &in_latest {
-                            tracing::warn!(?hash, ?err, "settlement lookup on latest failed");
-                        }
-                        if let Err(err) = &in_pending {
-                            tracing::debug!(?hash, ?err, "settlement lookup on pending failed");
-                        }
-
-                        if matches!(&in_latest, Ok(true)) {
+                        if matches!(mined, Ok(true)) {
                             // Mined already, the receipt is just lagging. Report success now
                             // instead of risking the receipt arriving after the deadline.
                             tracing::info!(
@@ -302,21 +294,27 @@ impl Mempools {
                         }
 
                         let resimulation_reverted = matches!(&gas, Err(err) if err.is_revert());
-                        if requires_cancellation(resimulation_reverted, &in_latest, &in_pending) {
+                        if requires_cancellation(resimulation_reverted, &pending_nonce, nonce) {
                             tracing::info!(
                                 settle_tx_hash = ?hash,
                                 err = ?gas.as_ref().err(),
-                                "tx started failing in mempool, cancelling"
+                                "tx dropped from the mempool without mining, cancelling"
                             );
                             let _ = self.cancel(mempool, final_gas_price, signer, nonce).await;
                             return Err(Error::SimulationRevert {
                                 submitted_at_block: submission_block,
                                 reverted_at_block: block.number.into(),
                             });
-                        } else if matches!(&in_pending, Ok(true)) {
+                        } else if let Err(err) = &pending_nonce {
+                            tracing::warn!(
+                                ?hash,
+                                ?err,
+                                "couldn't fetch the pending nonce, not cancelling"
+                            );
+                        } else if resimulation_reverted {
                             tracing::debug!(
                                 ?hash,
-                                "settlement in the pending block, waiting for inclusion"
+                                "tx still queued in the mempool, waiting for inclusion"
                             );
                         } else if let Err(err) = &gas {
                             tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
@@ -663,16 +661,17 @@ impl Error {
 }
 
 /// Whether a submitted settlement whose receipt is missing should be cancelled.
-/// Cancel only on positive evidence it will not land: re-simulation reverted
-/// and both `latest` and `pending` confirm our `Settlement` event is absent. A
-/// failed lookup counts as "unknown", so we keep waiting rather than cancel a
-/// tx that may have mined.
+/// We cancel only when the re-simulation reverts and the signer's pending nonce
+/// shows our tx is gone from the mempool (`pending_nonce <= submission_nonce`,
+/// so it was neither mined nor is it still queued). While the tx is still queued
+/// the revert is just our own pending tx re-applied, a false positive, so we
+/// keep waiting. A failed nonce lookup counts as "unknown" and never cancels.
 fn requires_cancellation<E>(
     resimulation_reverted: bool,
-    in_latest: &Result<bool, E>,
-    in_pending: &Result<bool, E>,
+    pending_nonce: &Result<u64, E>,
+    submission_nonce: u64,
 ) -> bool {
-    resimulation_reverted && matches!(in_latest, Ok(false)) && matches!(in_pending, Ok(false))
+    resimulation_reverted && matches!(pending_nonce, Ok(n) if *n <= submission_nonce)
 }
 
 #[cfg(test)]
@@ -714,27 +713,26 @@ mod tests {
         assert_eq!(prepared.input, Bytes::from(expected));
     }
 
-    const PRESENT: Result<bool, ()> = Ok(true);
-    const ABSENT: Result<bool, ()> = Ok(false);
-    const LOOKUP_FAILED: Result<bool, ()> = Err(());
+    const SUBMISSION_NONCE: u64 = 7;
+    const STILL_QUEUED: Result<u64, ()> = Ok(8); // pending advanced past our nonce
+    const DROPPED: Result<u64, ()> = Ok(7); // pending still at our nonce, tx is gone
+    const NONCE_LOOKUP_FAILED: Result<u64, ()> = Err(());
 
     #[test]
-    fn cancels_only_on_revert_with_both_blocks_absent() {
-        assert!(requires_cancellation(true, &ABSENT, &ABSENT));
-        // Re-simulation still succeeds, so we wait instead of cancelling.
-        assert!(!requires_cancellation(false, &ABSENT, &ABSENT));
-        // Already present on one of the blocks, so it will land.
-        assert!(!requires_cancellation(true, &PRESENT, &ABSENT));
-        assert!(!requires_cancellation(true, &ABSENT, &PRESENT));
+    fn cancels_only_when_reverted_and_tx_left_the_mempool() {
+        // Reverted and the tx is no longer queued: a real revert, cancel.
+        assert!(requires_cancellation(true, &DROPPED, SUBMISSION_NONCE));
+        // Reverted but still queued: the revert is our own pending tx, so wait.
+        assert!(!requires_cancellation(true, &STILL_QUEUED, SUBMISSION_NONCE));
+        // Re-simulation still succeeds: wait regardless of the nonce.
+        assert!(!requires_cancellation(false, &DROPPED, SUBMISSION_NONCE));
     }
 
     #[test]
-    fn failed_lookup_is_never_treated_as_absent() {
-        // A failed lookup is unknown and must never trigger a cancel, even on a
-        // revert. Otherwise a flaky or unsupported log query reverts to the
-        // original bug: cancelling a tx that may have mined.
-        assert!(!requires_cancellation(true, &LOOKUP_FAILED, &LOOKUP_FAILED));
-        assert!(!requires_cancellation(true, &ABSENT, &LOOKUP_FAILED));
-        assert!(!requires_cancellation(true, &LOOKUP_FAILED, &ABSENT));
+    fn failed_nonce_lookup_never_cancels() {
+        // An unknown pending nonce must never trigger a cancel, even on a revert.
+        // Otherwise a flaky nonce lookup reverts to the original bug: cancelling a
+        // tx that may have mined or is still queued.
+        assert!(!requires_cancellation(true, &NONCE_LOOKUP_FAILED, SUBMISSION_NONCE));
     }
 }
