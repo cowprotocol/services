@@ -664,9 +664,9 @@ impl Error {
 }
 
 /// What to do with a submitted settlement whose receipt is not yet available. A
-/// node can report a block before its receipt index catches up, so re-simulation
-/// reverts on an already-mined tx. We disambiguate with our `Settlement` event
-/// on `latest` and `pending`.
+/// node can report a block before its receipt index catches up, so
+/// re-simulation reverts on an already-mined tx. We disambiguate with our
+/// `Settlement` event on `latest` and `pending`.
 #[derive(Debug)]
 enum ResimOutcome {
     /// Our settlement is already mined in this block. The receipt is just
@@ -682,8 +682,8 @@ enum ResimOutcome {
 
 /// Decides what to do when a submitted settlement's receipt is not yet
 /// available. `in_latest` / `in_pending` are the blocks our `Settlement` event
-/// was found in, if any. `resimulation_reverted` is whether re-simulating the tx
-/// reverted.
+/// was found in, if any. `resimulation_reverted` is whether re-simulating the
+/// tx reverted.
 fn classify_resimulation(
     in_latest: Option<BlockNo>,
     in_pending: Option<BlockNo>,
