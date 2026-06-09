@@ -36,7 +36,7 @@ use {
     http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
-    observe::metrics::LivenessChecking,
+    observe::{config::EventBusConfig, metrics::LivenessChecking},
     price_estimation::{
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
@@ -153,6 +153,16 @@ pub async fn start(args: impl Iterator<Item = String>) {
     );
     observe::tracing::init::initialize(&obs_config);
     observe::panic_hook::install();
+    if let Some(event_bus) = &config.shared.event_bus {
+        observe::event_bus::init(EventBusConfig {
+            url: event_bus.url.clone(),
+            stream_name: event_bus.channel.clone(),
+            // Presence of `chain-id` alongside `event_bus` is enforced by
+            // `SharedConfig::validate` at startup.
+            chain_id: config.shared.chain_id.unwrap(),
+        })
+        .await;
+    }
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
 
@@ -477,6 +487,15 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         persistence.clone(),
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
+            config
+                .banned_users
+                .hermod
+                .clone()
+                .map(|hermod| infra::banned::HermodConfig {
+                    url: hermod.url,
+                    hmac_key: hermod.hmac_key,
+                    api_key: hermod.api_key,
+                }),
             config.banned_users.addresses,
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
         ),
@@ -734,7 +753,7 @@ async fn shadow_mode(config: Configuration) -> ! {
         orderbook,
         drivers,
         trusted_tokens,
-        config.run_loop.solve_deadline,
+        config.run_loop.min_solve_time,
         config.run_loop.compress_solve_request,
         liveness.clone(),
         current_block,

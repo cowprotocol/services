@@ -27,12 +27,14 @@ alloy-transport-ws = { version = "1.8.3", default-features = false }
 anyhow = "1.0.100"
 app-data = { path = "crates/app-data" }
 arc-swap = "1.7.1"
+async-nats = "0.48.0"
 async-stream = "0.3.5"
 async-trait = "0.1.80"
 autopilot = { path = "crates/autopilot" }
 aws-config = "1.5.1"
 aws-sdk-s3 = { version = "1.34.0", default-features = false }
 axum = "0.8"
+backtrace = { version = "0.3.76", default-features = false }
 bad-tokens = { path = "crates/bad-tokens" }
 balance-overrides = { path = "crates/balance-overrides" }
 base64 = "0.22.1"
@@ -115,18 +117,15 @@ sha2 = "0.10"
 shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
+solana-indexer = { path = "crates/solana-indexer" }
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
-sqlx = { version = "0.8", default-features = false, features = [
-  "bigdecimal",
-  "chrono",
-  "derive",
-  "macros",
-  "postgres",
-  "runtime-tokio",
-  "tls-native-tls"
-] }
+sqlx = {
+  version = "0.8",
+  default-features = false,
+  features = ["bigdecimal", "chrono", "derive", "macros", "postgres", "runtime-tokio", "tls-native-tls"]
+}
 strum = { version = "0.27.2", features = ["derive"] }
 syn = "2.0.108"
 tempfile = "3.10.1"

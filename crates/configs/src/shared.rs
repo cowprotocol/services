@@ -1,7 +1,8 @@
 use {
     crate::fee_factor::FeeFactor,
     alloy::primitives::Address,
-    serde::{Deserialize, Deserializer, de::Unexpected},
+    anyhow::ensure,
+    serde::{Deserialize, Deserializer, Serialize, de::Unexpected},
     std::{collections::HashSet, str::FromStr, time::Duration},
     tracing::Level,
     url::Url,
@@ -96,6 +97,20 @@ pub struct SharedConfig {
     /// By default, volume fees are NOT applied to same-token trades.
     #[serde(default)]
     pub enable_sell_equals_buy_volume_fee: bool,
+
+    /// Enables publishing events to a global events bus.
+    pub event_bus: Option<EventBusConfig>,
+}
+
+impl SharedConfig {
+    /// Cross-field invariants that cannot be expressed in the serde schema.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.event_bus.is_none() || self.chain_id.is_some(),
+            "`chain-id` is required when the event bus is configured",
+        );
+        Ok(())
+    }
 }
 
 impl Default for SharedConfig {
@@ -112,6 +127,7 @@ impl Default for SharedConfig {
             contracts: Default::default(),
             volume_fee_bucket_overrides: Vec::new(),
             enable_sell_equals_buy_volume_fee: false,
+            event_bus: None,
         }
     }
 }
@@ -311,6 +327,33 @@ where
     serializer.serialize_str(level.as_str())
 }
 
+/// Event bus configuration for a backend service.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct EventBusConfig {
+    /// Url of the event bus service.
+    pub url: Url,
+    /// Name of the channel to post events to. Must not contain spaces, tabs,
+    /// or `.` — NATS uses `.` as its subject hierarchy separator and disallows
+    /// whitespace in stream/subject names.
+    #[serde(deserialize_with = "deserialize_channel_name")]
+    pub channel: String,
+}
+
+fn deserialize_channel_name<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    if raw.contains([' ', '\t', '.']) {
+        return Err(serde::de::Error::invalid_value(
+            Unexpected::Str(&raw),
+            &"a channel name without spaces, tabs, or '.'",
+        ));
+    }
+    Ok(raw)
+}
+
 /// Gas price estimation strategy.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
@@ -403,6 +446,10 @@ mod tests {
             "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
             "0x6B175474E89094C44Da98b954EedeAC495271d0F",
         ]
+
+        [event-bus]
+        url = "localhost:4222"
+        channel = "main"
         "#;
 
         let config: SharedConfig = toml::from_str(toml).unwrap();
@@ -430,5 +477,69 @@ mod tests {
         assert!(config.enable_sell_equals_buy_volume_fee);
         assert_eq!(config.volume_fee_bucket_overrides.len(), 1);
         assert_eq!(config.volume_fee_bucket_overrides[0].tokens.len(), 2);
+        assert_eq!(
+            config.event_bus.as_ref().unwrap().url,
+            "localhost:4222".parse().unwrap()
+        );
+        assert_eq!(config.event_bus.as_ref().unwrap().channel, "main");
+    }
+
+    #[test]
+    fn rejects_invalid_event_bus_channel_at_deserialization() {
+        for bad in ["with space", "with\ttab", "with.dot"] {
+            let toml = format!(
+                r#"
+                chain-id = 1
+
+                [event-bus]
+                url = "localhost:4222"
+                channel = "{bad}"
+                "#,
+            );
+            assert!(
+                toml::from_str::<SharedConfig>(&toml).is_err(),
+                "channel {bad:?} should be rejected",
+            );
+        }
+
+        let ok = toml::from_str::<SharedConfig>(
+            r#"
+            chain-id = 1
+
+            [event-bus]
+            url = "localhost:4222"
+            channel = "main"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(ok.event_bus.unwrap().channel, "main");
+    }
+
+    #[test]
+    fn validate_event_bus_requires_chain_id() {
+        let with_event_bus_only = toml::from_str::<SharedConfig>(
+            r#"
+            [event-bus]
+            url = "localhost:4222"
+            channel = "main"
+            "#,
+        )
+        .unwrap();
+        assert!(with_event_bus_only.validate().is_err());
+
+        let with_both = toml::from_str::<SharedConfig>(
+            r#"
+            chain-id = 1
+
+            [event-bus]
+            url = "localhost:4222"
+            channel = "main"
+            "#,
+        )
+        .unwrap();
+        with_both.validate().unwrap();
+
+        // Default config has neither set; validation should pass.
+        SharedConfig::default().validate().unwrap();
     }
 }
