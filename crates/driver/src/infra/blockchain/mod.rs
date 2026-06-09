@@ -271,6 +271,29 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
+    /// Returns the block our `Settlement` event for `tx_hash` was found in, if
+    /// any. The event is only emitted on a successful settle, and `eth_getLogs`
+    /// carries the tx hash, so this sees it even when the receipt lookup lags.
+    pub async fn settlement_block(
+        &self,
+        tx_hash: eth::TxId,
+        block: alloy::eips::BlockNumberOrTag,
+    ) -> Result<Option<eth::BlockNo>, Error> {
+        let logs = self
+            .contracts()
+            .settlement()
+            .event_filter::<::contracts::GPv2Settlement::GPv2Settlement::Settlement>()
+            .from_block(block)
+            .to_block(block)
+            .query()
+            .await?;
+        Ok(logs
+            .into_iter()
+            .find(|(_, log)| log.transaction_hash == Some(tx_hash.0))
+            .and_then(|(_, log)| log.block_number)
+            .map(eth::BlockNo))
+    }
+
     #[instrument(skip(self), ret(level = Level::DEBUG))]
     pub(super) async fn simulation_gas_price(&self) -> Option<u128> {
         let base_fee = self.current_block().borrow().base_fee;
