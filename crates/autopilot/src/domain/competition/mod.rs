@@ -1,6 +1,6 @@
 use {
     super::auction::order,
-    crate::domain::{self, auction},
+    crate::domain,
     alloy::primitives::Address,
     derive_more::Display,
     eth_domain_types as eth,
@@ -21,7 +21,6 @@ pub struct Solution {
     id: SolutionId,
     solver: Address,
     orders: HashMap<domain::OrderUid, TradedOrder>,
-    prices: auction::Prices,
 }
 
 impl Solution {
@@ -29,14 +28,8 @@ impl Solution {
         id: SolutionId,
         solver: Address,
         orders: HashMap<domain::OrderUid, TradedOrder>,
-        prices: auction::Prices,
     ) -> Self {
-        Self {
-            id,
-            solver,
-            orders,
-            prices,
-        }
+        Self { id, solver, orders }
     }
 }
 
@@ -55,10 +48,6 @@ impl Solution {
 
     pub fn orders(&self) -> &HashMap<domain::OrderUid, TradedOrder> {
         &self.orders
-    }
-
-    pub fn prices(&self) -> &HashMap<eth::TokenAddress, auction::Price> {
-        &self.prices
     }
 }
 
@@ -132,8 +121,6 @@ pub struct ZeroScore;
 pub enum SolutionError {
     #[error(transparent)]
     ZeroScore(#[from] ZeroScore),
-    #[error(transparent)]
-    InvalidPrice(#[from] auction::InvalidPrice),
     #[error("the solver got deny listed")]
     SolverDenyListed,
 }
