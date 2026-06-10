@@ -4,12 +4,12 @@
 use {
     super::{PoolIds, TickEntry},
     crate::{
-        api::{ApiError, AppState, ensure_network_configured, latest_indexed_block},
+        api::{ApiError, AppState, latest_indexed_block},
         db::uniswap_v3 as db,
     },
     alloy_primitives::Address,
     axum::{
-        extract::{Path, Query, State},
+        extract::{Query, State},
         response::{IntoResponse, Json, Response},
     },
     serde::{Deserialize, Serialize},
@@ -46,11 +46,8 @@ pub struct BulkTicksResponse {
 /// via [`super::MAX_POOL_IDS_PER_REQUEST`].
 pub async fn get_ticks_bulk(
     State(state): State<Arc<AppState>>,
-    Path(network): Path<String>,
     Query(BulkTicksQuery { pool_ids }): Query<BulkTicksQuery>,
 ) -> Result<Response, ApiError> {
-    ensure_network_configured(&state, &network)?;
-
     let (block, ticks) = tokio::join!(
         latest_indexed_block(&state),
         db::get_ticks_for_pools(&state.db, &pool_ids.0),

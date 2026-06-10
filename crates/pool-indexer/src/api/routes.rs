@@ -3,17 +3,17 @@
 //! `super` so either side can change without churn in the other.
 
 use {
-    super::{AppState, uniswap_v3},
+    super::{ApiError, AppState, uniswap_v3},
     axum::{
         Router,
-        extract::{MatchedPath, Request},
+        extract::{MatchedPath, Path, Request, State},
         http::StatusCode,
         middleware::{self, Next},
         response::{IntoResponse, Response},
         routing::get,
     },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
     tower::ServiceBuilder,
     tower_http::trace::TraceLayer,
 };
@@ -21,24 +21,16 @@ use {
 /// Builds the axum `Router` for the pool-indexer API, and mounts
 /// the routes and the metrics middleware.
 pub fn router(state: Arc<AppState>) -> Router {
+    let v3_routes = Router::new()
+        .route("/pools", get(uniswap_v3::get_pools))
+        .route("/pools/by-ids", get(uniswap_v3::get_pools_by_ids))
+        .route("/pools/ticks", get(uniswap_v3::get_ticks_bulk))
+        .route("/pools/{pool_address}/ticks", get(uniswap_v3::get_ticks))
+        .route_layer(middleware::from_fn_with_state(state.clone(), network_guard));
+
     Router::new()
         .route("/health", get(health))
-        .route(
-            "/api/v1/{network}/uniswap/v3/pools",
-            get(uniswap_v3::get_pools),
-        )
-        .route(
-            "/api/v1/{network}/uniswap/v3/pools/by-ids",
-            get(uniswap_v3::get_pools_by_ids),
-        )
-        .route(
-            "/api/v1/{network}/uniswap/v3/pools/ticks",
-            get(uniswap_v3::get_ticks_bulk),
-        )
-        .route(
-            "/api/v1/{network}/uniswap/v3/pools/{pool_address}/ticks",
-            get(uniswap_v3::get_ticks),
-        )
+        .nest("/api/v1/{network}/uniswap/v3", v3_routes)
         .with_state(state)
         .layer(middleware::from_fn(record_request_metrics))
         .layer(
@@ -50,6 +42,23 @@ pub fn router(state: Arc<AppState>) -> Router {
 
 async fn health() -> impl IntoResponse {
     StatusCode::OK
+}
+
+/// Rejects requests whose `{network}` path segment doesn't match the
+/// network this process is configured for. Centralised here so every
+/// network-scoped handler is gated by one check instead of each one
+/// re-running the same guard.
+async fn network_guard(
+    State(state): State<Arc<AppState>>,
+    Path(params): Path<HashMap<String, String>>,
+    req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    let network = params.get("network").ok_or(ApiError::NetworkNotFound)?;
+    if !state.is_network_configured(network) {
+        return Err(ApiError::NetworkNotFound);
+    }
+    Ok(next.run(req).await)
 }
 
 /// Emits per-request `api_requests` (count) and `api_request_seconds`

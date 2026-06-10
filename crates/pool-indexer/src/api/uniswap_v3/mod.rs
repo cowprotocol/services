@@ -36,14 +36,7 @@ impl<'de> Deserialize<'de> for PoolIds {
         let out: Vec<Address> = raw
             .split(',')
             .map(str::trim)
-            .filter(|s| {
-                if s.is_empty() {
-                    tracing::warn!("pool_ids query contained an empty entry");
-                    false
-                } else {
-                    true
-                }
-            })
+            .filter(|s| !s.is_empty())
             .map(|entry| {
                 entry
                     .parse::<Address>()

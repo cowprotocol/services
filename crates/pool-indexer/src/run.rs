@@ -97,8 +97,12 @@ impl observe::metrics::LivenessChecking for AlwaysAlive {
 }
 
 fn initialize_observability(args: &Arguments) {
-    let obs_config =
-        observe::Config::new(&args.log, args.stderr_threshold, args.use_json_logs, None);
+    let obs_config = observe::Config::new(
+        args.logging.log_filter.as_str(),
+        args.logging.log_stderr_threshold,
+        args.logging.use_json_logs,
+        None,
+    );
     observe::tracing::init::initialize(&obs_config);
     observe::panic_hook::install();
 }

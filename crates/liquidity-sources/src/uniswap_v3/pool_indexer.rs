@@ -375,12 +375,7 @@ impl V3PoolDataSource for PoolIndexerClient {
     }
 }
 
-/// Maximum number of times [`PoolIndexerClient::fetch_batch_consistent`]
-/// retries the parallel pools + ticks fetch when the indexer advances
-/// between the two calls. A chunk commits every poll-interval (3-12s) and
-/// the two HTTP calls complete in 10s-of-ms, so mismatch is rare and
-/// resolves on the next attempt; capping at 3 prevents indefinite retry
-/// if the indexer is rapidly catching up on a cold start.
+/// Capped at 3 — mismatches are rare and typically resolve on the next attempt.
 const BATCH_CONSISTENCY_MAX_RETRIES: usize = 3;
 
 /// Result of a `pools/by-ids` fetch in wire form. The caller stamps

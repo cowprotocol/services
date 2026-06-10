@@ -113,24 +113,6 @@ impl UniV3SubgraphClient {
             .collect())
     }
 
-    /// Retrieves the pool data for all existing pools from the subgraph as of
-    /// `target_block`. The subgraph supports historical queries, so every
-    /// returned pool is consistently anchored at `target_block`.
-    pub async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
-        let variables = json_map! {
-            "block" => target_block,
-        };
-        let query = Self::all_pools_query(self.use_liquidity_net_filter);
-        let mut pools = self.get_pools(query, variables).await?;
-        for pool in &mut pools {
-            pool.block_number = target_block;
-        }
-        Ok(RegisteredPools {
-            fetched_block_number: target_block,
-            pools,
-        })
-    }
-
     async fn get_pools_by_pool_ids(
         &self,
         pool_ids: &[Address],
@@ -168,47 +150,6 @@ impl UniV3SubgraphClient {
         }
 
         Ok(all)
-    }
-
-    /// Retrieves the pool data and ticks data for pools with given pool ids as
-    /// of `target_block`. The subgraph supports historical queries, so the
-    /// returned snapshot is at exactly `target_block`.
-    pub async fn get_pools_with_ticks_by_ids(
-        &self,
-        ids: &[Address],
-        target_block: u64,
-    ) -> Result<PoolsWithTicks> {
-        let (pools, ticks) = futures::try_join!(
-            self.get_pools_by_pool_ids(ids, target_block),
-            self.get_ticks_by_pools_ids(ids, target_block)
-        )?;
-
-        // group ticks by pool ids
-        let mut ticks_mapped = HashMap::new();
-        for tick in ticks {
-            ticks_mapped
-                .entry(tick.pool_address)
-                .or_insert_with(Vec::new)
-                .push(tick);
-        }
-
-        let pools = pools
-            .into_iter()
-            .filter_map(|mut pool| {
-                ticks_mapped.get(&pool.id).map(|ticks| {
-                    pool.ticks = Some(ticks.clone());
-                    // Subgraph honors `block: { number: target_block }`
-                    // on both queries, so all data is consistent at the
-                    // anchor block.
-                    pool.block_number = target_block;
-                    pool
-                })
-            })
-            .collect();
-        Ok(PoolsWithTicks {
-            fetched_block_number: target_block,
-            pools,
-        })
     }
 
     /// Retrieves a recent block number for which it is safe to assume no
@@ -296,16 +237,57 @@ impl UniV3SubgraphClient {
 
 #[async_trait]
 impl V3PoolDataSource for UniV3SubgraphClient {
+    /// The subgraph supports historical queries, so every returned pool is
+    /// consistently anchored at `target_block`.
     async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
-        Self::get_registered_pools(self, target_block).await
+        let variables = json_map! {
+            "block" => target_block,
+        };
+        let query = Self::all_pools_query(self.use_liquidity_net_filter);
+        let mut pools = self.get_pools(query, variables).await?;
+        for pool in &mut pools {
+            pool.block_number = target_block;
+        }
+        Ok(RegisteredPools {
+            fetched_block_number: target_block,
+            pools,
+        })
     }
 
+    /// The subgraph supports historical queries, so the returned snapshot is
+    /// at exactly `target_block`.
     async fn get_pools_with_ticks_by_ids(
         &self,
         ids: &[Address],
         target_block: u64,
     ) -> Result<PoolsWithTicks> {
-        Self::get_pools_with_ticks_by_ids(self, ids, target_block).await
+        let (pools, ticks) = futures::try_join!(
+            self.get_pools_by_pool_ids(ids, target_block),
+            self.get_ticks_by_pools_ids(ids, target_block)
+        )?;
+
+        let mut ticks_by_pool: HashMap<Address, Vec<TickData>> = HashMap::new();
+        for tick in ticks {
+            ticks_by_pool
+                .entry(tick.pool_address)
+                .or_default()
+                .push(tick);
+        }
+
+        let pools = pools
+            .into_iter()
+            .filter_map(|mut pool| {
+                ticks_by_pool.get(&pool.id).map(|ticks| {
+                    pool.ticks = Some(ticks.clone());
+                    pool.block_number = target_block;
+                    pool
+                })
+            })
+            .collect();
+        Ok(PoolsWithTicks {
+            fetched_block_number: target_block,
+            pools,
+        })
     }
 }
 

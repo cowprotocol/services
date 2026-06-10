@@ -4,7 +4,7 @@
 use {
     super::TickEntry,
     crate::{
-        api::{ApiError, AppState, ensure_network_configured, latest_indexed_block},
+        api::{ApiError, AppState, latest_indexed_block},
         db::uniswap_v3 as db,
     },
     alloy_primitives::Address,
@@ -26,10 +26,8 @@ pub struct TicksResponse {
 /// Returns all non-zero ticks for one pool, ordered by `tick_idx`.
 pub async fn get_ticks(
     State(state): State<Arc<AppState>>,
-    Path((network, pool)): Path<(String, Address)>,
+    Path((_network, pool)): Path<(String, Address)>,
 ) -> Result<Response, ApiError> {
-    ensure_network_configured(&state, &network)?;
-
     let (block, ticks) = tokio::join!(
         latest_indexed_block(&state),
         db::get_ticks(&state.db, &pool),

@@ -82,9 +82,10 @@ pub struct NetworkConfig {
     pub chain_id: u64,
     #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
     pub rpc_url: Url,
-    /// One or more Uniswap V3 factories to index. Each factory runs its own
-    /// seed + live-indexing loop; pools from all factories share the same
-    /// DB namespace (one DB instance per network).
+    /// Uniswap V3 factory addresses to index on this network. Exactly one
+    /// factory is supported in this release (see [`NetworkConfig::validate`]);
+    /// the multi-factory case is tracked as a follow-up. Pools from all
+    /// configured factories share one DB (one DB instance per network).
     pub factories: Vec<FactoryConfig>,
     /// The number of pools to index in a single batch.
     #[serde(default = "default_chunk_size")]
@@ -130,7 +131,7 @@ impl NetworkConfig {
     }
 
     /// Sanity-checks called after TOML parsing. Per-network validation
-    /// only — cross-network uniqueness no longer applies because each
+    /// only. Cross-network uniqueness no longer applies because each
     /// process owns its own DB and serves a single network.
     fn validate(&self) -> Result<()> {
         anyhow::ensure!(
@@ -143,8 +144,8 @@ impl NetworkConfig {
     }
 }
 
-/// A single factory under [`NetworkConfig::factories`]. Each entry gets
-/// its own seed + live-indexing loop.
+/// A single factory address under [`NetworkConfig::factories`]. The
+/// indexer runs a dedicated seed + live-indexing loop per factory.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct FactoryConfig {
