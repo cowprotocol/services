@@ -1061,7 +1061,7 @@ mod tests {
                 let solution_uid = hash(solution_id);
                 solution_map.insert(
                     solution_id,
-                    create_bid(solution_uid, solver_address, trades, None).await,
+                    create_bid(solution_uid, solver_address, trades).await,
                 );
             }
 
@@ -1243,22 +1243,10 @@ mod tests {
         solution_id: u64,
         solver_address: Address,
         trades: Vec<(OrderUid, TradedOrder)>,
-        prices: Option<HashMap<TokenAddress, Price>>,
     ) -> Bid<Unscored> {
-        // The prices of the tokens do not affect the result but they keys must exist
-        // for every token of every trade
-        let prices = prices.unwrap_or({
-            let mut res = HashMap::new();
-            for (_, trade) in &trades {
-                res.insert(trade.buy.token, create_price(eth::U256::ONE));
-                res.insert(trade.sell.token, create_price(eth::U256::ONE));
-            }
-            res
-        });
-
         let trade_order_map: HashMap<OrderUid, TradedOrder> = trades.into_iter().collect();
 
-        let solution = Solution::new(solution_id, solver_address, trade_order_map, prices);
+        let solution = Solution::new(solution_id, solver_address, trade_order_map);
 
         let driver = Driver::try_new(
             url::Url::parse("http://localhost").unwrap(),
