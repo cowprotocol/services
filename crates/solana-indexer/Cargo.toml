@@ -16,13 +16,16 @@ name = "solana-indexer"
 path = "src/main.rs"
 
 [dependencies]
+dashmap = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 solana-client = { workspace = true }
 solana-sdk = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
 tracing = { workspace = true }
+yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 
 [lints]
