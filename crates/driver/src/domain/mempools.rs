@@ -472,8 +472,16 @@ impl From<&Result<SubmissionSuccess, Error>> for Outcome {
                 blocks_passed: s.blocks_passed(),
             },
             Err(Error::Disabled) => Outcome::Disabled,
-            Err(err @ (Error::Revert { .. } | Error::SimulationRevert { .. })) => Outcome::Failed {
+            // Real on-chain revert: the tx mined and reverted.
+            Err(err @ Error::Revert { .. }) => Outcome::Failed {
                 reason: "Revert",
+                blocks_passed: err.blocks_passed(),
+            },
+            // Simulation reverted so we never landed the tx (pre-submission check or
+            // a re-simulation while pending). Separate label from on-chain `Revert`
+            // so alerts can tell a driver-side skip from a real on-chain revert.
+            Err(err @ Error::SimulationRevert { .. }) => Outcome::Failed {
+                reason: "SimulationRevert",
                 blocks_passed: err.blocks_passed(),
             },
             Err(err @ Error::Expired { .. }) => Outcome::Failed {
