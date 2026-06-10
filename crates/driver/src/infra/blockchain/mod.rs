@@ -271,30 +271,33 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    /// Whether `tx_hash`'s successful `Settlement` event is in `block`. Only a
-    /// successful settle emits it, and `eth_getLogs` reads a block's logs even
-    /// while the receipt-by-hash lookup still lags, so this sees a freshly
-    /// mined settlement that `eth_getTransactionReceipt` would still miss.
-    /// The caller pins `block` to the number it got from the block stream,
-    /// so the query cannot race ahead to a later `latest` that the tx is
-    /// not in.
-    pub async fn contains_successful_tx(
+    /// The block our successful `Settlement` event for `tx_hash` landed in,
+    /// searching `[from_block, to_block]` inclusive, or `None` if it is not in
+    /// that range. Only a successful settle emits the event, and `eth_getLogs`
+    /// reads block logs even while the receipt-by-hash lookup still lags, so
+    /// this sees a freshly mined settlement that `eth_getTransactionReceipt`
+    /// would still miss. Scanning a range rather than a single block means a
+    /// block the (coalescing) block stream skipped on a fast chain is still
+    /// covered.
+    pub async fn successful_settlement_block(
         &self,
         tx_hash: eth::TxId,
-        block: u64,
-    ) -> Result<bool, Error> {
-        let block = alloy::eips::BlockNumberOrTag::Number(block);
+        from_block: u64,
+        to_block: u64,
+    ) -> Result<Option<eth::BlockNo>, Error> {
         let logs = self
             .contracts()
             .settlement()
             .event_filter::<::contracts::GPv2Settlement::GPv2Settlement::Settlement>()
-            .from_block(block)
-            .to_block(block)
+            .from_block(alloy::eips::BlockNumberOrTag::Number(from_block))
+            .to_block(alloy::eips::BlockNumberOrTag::Number(to_block))
             .query()
             .await?;
         Ok(logs
-            .iter()
-            .any(|(_, log)| log.transaction_hash == Some(tx_hash.0)))
+            .into_iter()
+            .find(|(_, log)| log.transaction_hash == Some(tx_hash.0))
+            .and_then(|(_, log)| log.block_number)
+            .map(eth::BlockNo))
     }
 
     /// The signer's transaction count including the mempool (the `pending`
