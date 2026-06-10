@@ -51,12 +51,14 @@ impl StateOverrides {
                 web3.clone(),
                 probing_depth,
                 verification_timeout,
+                crate::detector::DEFAULT_CONCURRENCY_LIMIT,
                 cache_size,
             ),
             approval_detector: approval::Detector::new(
                 web3,
                 probing_depth,
                 verification_timeout,
+                crate::detector::DEFAULT_CONCURRENCY_LIMIT,
                 cache_size,
             ),
         }

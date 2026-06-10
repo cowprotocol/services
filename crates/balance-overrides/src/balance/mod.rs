@@ -16,7 +16,7 @@ use {
     contracts::ERC20,
     ethrpc::Web3,
     moka::sync::Cache,
-    std::{collections::HashMap, iter, time::Duration},
+    std::{collections::HashMap, iter, sync::Arc, time::Duration},
 };
 
 /// These are the solady magic bytes for user balances
@@ -297,6 +297,7 @@ pub(crate) struct Detector {
     web3: Web3,
     probing_depth: u8,
     verification_timeout: Duration,
+    concurrency_limit: usize,
     pub(crate) cache: Cache<(Address, Option<Address>), Option<Strategy>>,
 }
 
@@ -305,12 +306,14 @@ impl Detector {
         web3: Web3,
         probing_depth: u8,
         verification_timeout: Duration,
+        concurrency_limit: usize,
         cache_size: u64,
     ) -> Self {
         Self {
             web3,
             probing_depth,
             verification_timeout,
+            concurrency_limit,
             cache: Cache::builder().max_capacity(cache_size).build(),
         }
     }
@@ -427,49 +430,65 @@ impl Detector {
             "testing candidate balance slots",
         );
 
-        for (i, strategy) in strategies.into_iter().enumerate() {
-            // Some tokens (e.g. reflection tokens like LuckyBlock) have
-            // `balanceOf` implementations that iterate over storage arrays.
-            // During verification we override storage slots with a test value —
-            // if that value lands on an array-length slot the EVM loops until
-            // the node's execution timeout. A per-strategy timeout prevents one
-            // slow slot from blocking the entire detection.
-            let result = tokio::time::timeout(
-                self.verification_timeout,
-                self.verify_strategy(token, holder, strategy.clone()),
-            )
-            .await;
+        let mut candidates = strategies;
+        candidates.truncate(self.probing_depth.into());
 
-            match result {
-                Ok(Ok(verified)) => {
-                    tracing::debug!(
-                        ?token,
-                        ?holder,
-                        strategy = ?verified,
-                        iterations = i + 1,
-                        total = storage_slots.len(),
-                        "verified balance strategy via testing",
-                    );
-                    return Ok(verified);
+        if candidates.is_empty() {
+            tracing::debug!(?token, "no balance slot candidates for token");
+            return Err(DetectionError::NotFound);
+        }
+
+        let n = candidates.len();
+        let concurrency = std::cmp::min(n, self.concurrency_limit);
+        let candidates = Arc::new(candidates);
+        let make_fut = move |idx: usize| -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = (usize, Option<Strategy>)> + Send>,
+        > {
+            let strategy = candidates[idx].clone();
+            let timeout = self.verification_timeout;
+            Box::pin(async move {
+                match tokio::time::timeout(
+                    timeout,
+                    self.verify_strategy(token, holder, strategy.clone()),
+                )
+                .await
+                {
+                    Ok(Ok(verified)) => (idx, Some(verified)),
+                    Ok(Err(err)) => {
+                        tracing::trace!(
+                            ?token,
+                            ?holder,
+                            ?strategy,
+                            ?err,
+                            "balance override strategy was not correct"
+                        );
+                        (idx, None)
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            ?token,
+                            ?holder,
+                            ?strategy,
+                            "balance override strategy verification timed out, skipping"
+                        );
+                        (idx, None)
+                    }
                 }
-                Err(_) => {
-                    tracing::warn!(
-                        ?token,
-                        ?holder,
-                        ?strategy,
-                        "balance override strategy verification timed out, skipping",
-                    );
-                }
-                Ok(Err(err)) => {
-                    tracing::trace!(
-                        ?token,
-                        ?holder,
-                        ?strategy,
-                        ?err,
-                        "balance override strategy was not correct",
-                    );
-                }
-            }
+            })
+        };
+
+        if let Some((idx, verified)) =
+            crate::detector::find_first_ordered_concurrent(n, concurrency, make_fut).await
+        {
+            tracing::debug!(
+                ?token,
+                ?holder,
+                strategy = ?verified,
+                candidate_rank = idx + 1,
+                total = storage_slots.len(),
+                "verified balance strategy via testing",
+            );
+            return Ok(verified);
         }
 
         tracing::debug!(
@@ -763,7 +782,13 @@ mod tests {
     async fn detects_storage_slots_mainnet() {
         use crate::detector::DEFAULT_VERIFICATION_TIMEOUT;
 
-        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
+        let detector = Detector::new(
+            Web3::new_from_env(),
+            60,
+            DEFAULT_VERIFICATION_TIMEOUT,
+            crate::detector::DEFAULT_CONCURRENCY_LIMIT,
+            100,
+        );
 
         let storage = detector
             .detect(
@@ -818,7 +843,13 @@ mod tests {
     async fn detects_storage_slots_arbitrum() {
         use crate::detector::DEFAULT_VERIFICATION_TIMEOUT;
 
-        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
+        let detector = Detector::new(
+            Web3::new_from_env(),
+            60,
+            DEFAULT_VERIFICATION_TIMEOUT,
+            crate::detector::DEFAULT_CONCURRENCY_LIMIT,
+            100,
+        );
 
         let storage = detector
             .detect(
@@ -848,7 +879,13 @@ mod tests {
         use crate::detector::DEFAULT_VERIFICATION_TIMEOUT;
 
         let ausd = address!("00000000efe302beaa2b3e6e1b18d08d69a9012a");
-        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
+        let detector = Detector::new(
+            Web3::new_from_env(),
+            60,
+            DEFAULT_VERIFICATION_TIMEOUT,
+            crate::detector::DEFAULT_CONCURRENCY_LIMIT,
+            100,
+        );
 
         let strategy = detector
             .detect(ausd, Address::with_last_byte(1))
