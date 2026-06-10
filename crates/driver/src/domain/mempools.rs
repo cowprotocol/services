@@ -276,12 +276,13 @@ impl Mempools {
 
                         if matches!(mined, Ok(true)) {
                             // Our event is in this block (we queried it by number), so the tx
-                            // mined here and the receipt is just lagging. Report success now
-                            // instead of risking the receipt arriving after the deadline.
+                            // mined here even though transaction_status has not confirmed it
+                            // yet. Report success now rather than wait on the receipt and risk
+                            // the deadline.
                             tracing::info!(
                                 ?hash,
                                 included_in_block = block.number,
-                                "settlement mined, treating as success despite a missing receipt"
+                                "settlement found on-chain via getLogs, treating as success"
                             );
                             return Ok(SubmissionSuccess {
                                 tx_hash: hash,
