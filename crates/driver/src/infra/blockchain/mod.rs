@@ -271,17 +271,25 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    /// Whether `tx_hash`'s successful `Settlement` event is in the latest block.
-    /// Only a successful settle emits it, and `eth_getLogs` reads a block's logs
-    /// even while the receipt-by-hash lookup still lags, so this sees a freshly
+    /// Whether `tx_hash`'s successful `Settlement` event is in `block`. Only a
+    /// successful settle emits it, and `eth_getLogs` reads a block's logs even
+    /// while the receipt-by-hash lookup still lags, so this sees a freshly
     /// mined settlement that `eth_getTransactionReceipt` would still miss.
-    pub async fn contains_successful_tx(&self, tx_hash: eth::TxId) -> Result<bool, Error> {
+    /// The caller pins `block` to the number it got from the block stream,
+    /// so the query cannot race ahead to a later `latest` that the tx is
+    /// not in.
+    pub async fn contains_successful_tx(
+        &self,
+        tx_hash: eth::TxId,
+        block: u64,
+    ) -> Result<bool, Error> {
+        let block = alloy::eips::BlockNumberOrTag::Number(block);
         let logs = self
             .contracts()
             .settlement()
             .event_filter::<::contracts::GPv2Settlement::GPv2Settlement::Settlement>()
-            .from_block(alloy::eips::BlockNumberOrTag::Latest)
-            .to_block(alloy::eips::BlockNumberOrTag::Latest)
+            .from_block(block)
+            .to_block(block)
             .query()
             .await?;
         Ok(logs
@@ -289,9 +297,11 @@ impl Ethereum {
             .any(|(_, log)| log.transaction_hash == Some(tx_hash.0)))
     }
 
-    /// The signer's transaction count including the mempool (the `pending` tag).
-    /// When this exceeds the nonce we submitted with, our tx is still queued in
-    /// the mempool. When it equals that nonce, the tx is no longer there.
+    /// The signer's transaction count including the mempool (the `pending`
+    /// tag). A count above the nonce we submitted with means our tx is
+    /// still queued in the mempool or has already mined (the count stays at
+    /// `nonce + 1` once it mines). A count equal to that nonce means the tx
+    /// left the mempool without mining.
     pub async fn pending_transaction_count(&self, address: eth::Address) -> Result<u64, Error> {
         self.web3
             .provider

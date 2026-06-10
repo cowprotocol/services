@@ -4,11 +4,7 @@ use {
         domain::{blockchain::TxStatus, competition::solution::Settlement},
         infra::{self, Ethereum, observe},
     },
-    alloy::{
-        consensus::Transaction,
-        eips::eip1559::Eip1559Estimation,
-        primitives::Bytes,
-    },
+    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
     anyhow::{Context, anyhow},
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
@@ -274,12 +270,13 @@ impl Mempools {
                         // while it sits in the mempool).
                         let (gas, mined, pending_nonce) = futures::join!(
                             self.ethereum.estimate_gas(tx.clone()),
-                            self.ethereum.contains_successful_tx(hash),
+                            self.ethereum.contains_successful_tx(hash, block.number),
                             self.ethereum.pending_transaction_count(signer),
                         );
 
                         if matches!(mined, Ok(true)) {
-                            // Mined already, the receipt is just lagging. Report success now
+                            // Our event is in this block (we queried it by number), so the tx
+                            // mined here and the receipt is just lagging. Report success now
                             // instead of risking the receipt arriving after the deadline.
                             tracing::info!(
                                 ?hash,
@@ -574,9 +571,9 @@ fn delegated_calldata(target: eth::Address, calldata: &Bytes) -> Bytes {
 
 pub struct SubmissionSuccess {
     pub tx_hash: eth::TxId,
-    /// At which block we started to submit the transaction.
-    pub included_in_block: eth::BlockNo,
     /// In which block the transaction actually appeared onchain.
+    pub included_in_block: eth::BlockNo,
+    /// At which block we started to submit the transaction.
     pub submitted_at_block: eth::BlockNo,
 }
 
@@ -663,9 +660,10 @@ impl Error {
 /// Whether a submitted settlement whose receipt is missing should be cancelled.
 /// We cancel only when the re-simulation reverts and the signer's pending nonce
 /// shows our tx is gone from the mempool (`pending_nonce <= submission_nonce`,
-/// so it was neither mined nor is it still queued). While the tx is still queued
-/// the revert is just our own pending tx re-applied, a false positive, so we
-/// keep waiting. A failed nonce lookup counts as "unknown" and never cancels.
+/// so it was neither mined nor is it still queued). While the tx is still
+/// queued the revert is just our own pending tx re-applied, a false positive,
+/// so we keep waiting. A failed nonce lookup counts as "unknown" and never
+/// cancels.
 fn requires_cancellation<E>(
     resimulation_reverted: bool,
     pending_nonce: &Result<u64, E>,
@@ -723,7 +721,11 @@ mod tests {
         // Reverted and the tx is no longer queued: a real revert, cancel.
         assert!(requires_cancellation(true, &DROPPED, SUBMISSION_NONCE));
         // Reverted but still queued: the revert is our own pending tx, so wait.
-        assert!(!requires_cancellation(true, &STILL_QUEUED, SUBMISSION_NONCE));
+        assert!(!requires_cancellation(
+            true,
+            &STILL_QUEUED,
+            SUBMISSION_NONCE
+        ));
         // Re-simulation still succeeds: wait regardless of the nonce.
         assert!(!requires_cancellation(false, &DROPPED, SUBMISSION_NONCE));
     }
@@ -733,6 +735,10 @@ mod tests {
         // An unknown pending nonce must never trigger a cancel, even on a revert.
         // Otherwise a flaky nonce lookup reverts to the original bug: cancelling a
         // tx that may have mined or is still queued.
-        assert!(!requires_cancellation(true, &NONCE_LOOKUP_FAILED, SUBMISSION_NONCE));
+        assert!(!requires_cancellation(
+            true,
+            &NONCE_LOOKUP_FAILED,
+            SUBMISSION_NONCE
+        ));
     }
 }
