@@ -76,6 +76,9 @@ pub struct Solution {
     score: eth::U256,
     #[serde_as(as = "HashMap<serde_ext::Hex, _>")]
     orders: HashMap<OrderId, TradedOrder>,
+    /// Deprecated: kept only for backward compatibility with autopilots
+    /// running the previous code during a rolling deploy. Will be removed in
+    /// a follow-up once the new autopilot is fully rolled out.
     #[serde_as(as = "HashMap<_, serde_ext::U256>")]
     clearing_prices: HashMap<eth::Address, eth::U256>,
 }

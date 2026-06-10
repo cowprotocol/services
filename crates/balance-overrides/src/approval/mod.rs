@@ -11,10 +11,10 @@ use {
     },
     alloy_sol_types::SolCall,
     alloy_transport::TransportErrorKind,
-    cached::{Cached, SizedCache},
     contracts::ERC20,
     ethrpc::Web3,
-    std::{iter, sync::Mutex, time::Duration},
+    moka::sync::Cache,
+    std::{iter, time::Duration},
 };
 
 /// These are the solady magic bytes for user allowances
@@ -184,7 +184,12 @@ impl ApprovalStrategy {
     }
 }
 
-type Cache = SizedCache<(Address, Option<(Address, Address)>), Option<ApprovalStrategy>>;
+// NOTE(jmg-duarte): ideally these would be new types, but this is simpler in
+// the current context (PR #4418) and doesn't require large refactors
+type Token = Address;
+type Holder = Address;
+type Spender = Address;
+type OverrideDetectorCacheKey = (Token, Option<(Holder, Spender)>);
 
 /// Heuristic approval override detector with integrated caching.
 ///
@@ -197,7 +202,7 @@ pub(crate) struct Detector {
     web3: Web3,
     probing_depth: u8,
     verification_timeout: Duration,
-    pub(crate) cache: Mutex<Cache>,
+    pub(crate) cache: Cache<OverrideDetectorCacheKey, Option<ApprovalStrategy>>,
 }
 
 impl Detector {
@@ -205,13 +210,13 @@ impl Detector {
         web3: Web3,
         probing_depth: u8,
         verification_timeout: Duration,
-        cache_size: usize,
+        cache_size: u64,
     ) -> Self {
         Self {
             web3,
             probing_depth,
             verification_timeout,
-            cache: Mutex::new(SizedCache::with_size(cache_size)),
+            cache: Cache::builder().max_capacity(cache_size).build(),
         }
     }
 
@@ -231,19 +236,18 @@ impl Detector {
         tracing::trace!(?token, "attempting to auto-detect approval slot");
 
         {
-            let mut cache = self.cache.lock().unwrap();
-            if let Some(strategy) = cache.cache_get(&(token, None)) {
+            if let Some(strategy_opt) = self.cache.get(&(token, None)) {
                 tracing::trace!(?token, "cache hit (strategy valid for all pairs)");
-                return strategy.clone();
+                return strategy_opt;
             }
-            if let Some(strategy) = cache.cache_get(&(token, Some((owner, spender)))) {
+            if let Some(strategy_opt) = self.cache.get(&(token, Some((owner, spender)))) {
                 tracing::trace!(
                     ?token,
                     ?owner,
                     ?spender,
                     "cache hit (pair-specific strategy)"
                 );
-                return strategy.clone();
+                return strategy_opt;
             }
         }
 
@@ -256,15 +260,9 @@ impl Detector {
                     token,
                     (!strategy.is_valid_for_all_pairs()).then_some((owner, spender)),
                 );
-                self.cache
-                    .lock()
-                    .unwrap()
-                    .cache_set(cache_key, Some(strategy.clone()));
+                self.cache.insert(cache_key, Some(strategy.clone()));
             } else {
-                self.cache
-                    .lock()
-                    .unwrap()
-                    .cache_set((token, Some((owner, spender))), None);
+                self.cache.insert((token, Some((owner, spender))), None);
             }
         } else {
             tracing::warn!(?token, ?result, "error auto-detecting approval strategy");

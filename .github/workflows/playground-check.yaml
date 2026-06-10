@@ -32,7 +32,7 @@ jobs:
         run: sudo apt-get -qq update && sudo apt-get -y -q install curl jq
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+        uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1.8.0
 
       - name: Setup environment
         run: |
@@ -78,6 +78,8 @@ jobs:
         id: slack
         uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
+          webhook: ${{ secrets.SLACK_PLAYGROUND_CI_WEBHOOK_URL }}
+          webhook-type: webhook-trigger
           payload: |
             {
               "channel_id": "C037PB929ME",
@@ -89,5 +91,3 @@ jobs:
               "step_test_script":"${{ steps.test_script.conclusion }}",
               "log_artifcat":"${{ steps.artifact-upload-step.outputs.artifact-url }}"
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_PLAYGROUND_CI_WEBHOOK_URL }}
