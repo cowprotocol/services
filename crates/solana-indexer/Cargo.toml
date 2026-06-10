@@ -1,0 +1,19 @@
+[package]
+name = "solana-indexer"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Solana settlement indexer for CoW Protocol"
+repository = "https://github.com/cowprotocol/services"
+
+[lib]
+name = "solana_indexer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "solana-indexer"
+path = "src/main.rs"
+
+[lints]
+workspace = true
