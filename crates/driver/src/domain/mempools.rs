@@ -264,30 +264,35 @@ impl Mempools {
                         }
                         // A node can report a new block before its receipt index catches up,
                         // so re-simulating reverts on our own already-applied tx. Tell that
-                        // apart from a real revert with two signals: our `Settlement` event on
-                        // the latest block (which `eth_getLogs` sees even while the receipt
-                        // lags), and the signer's pending nonce (which still covers our tx
-                        // while it sits in the mempool).
+                        // apart from a real revert with two signals: our `Settlement` event in
+                        // any block since submission (which `eth_getLogs` sees even while the
+                        // receipt lags), and the signer's pending nonce (which still covers our
+                        // tx while it sits in the mempool).
                         let (gas, mined, pending_nonce) = futures::join!(
                             self.ethereum.estimate_gas(tx.clone()),
-                            self.ethereum.contains_successful_tx(hash, block.number),
+                            self.ethereum.successful_settlement_block(
+                                hash,
+                                submission_block.0,
+                                block.number,
+                            ),
                             self.ethereum.pending_transaction_count(signer),
                         );
 
-                        if matches!(mined, Ok(true)) {
-                            // Our event is in this block (we queried it by number), so the tx
-                            // mined here even though transaction_status has not confirmed it
-                            // yet. Report success now rather than wait on the receipt and risk
-                            // the deadline.
+                        if let Ok(Some(included_in_block)) = mined {
+                            // Found on-chain in [submission_block, head]. The receipt-by-hash
+                            // lookup is just lagging, and scanning the whole range catches it
+                            // even if the block stream coalesced past the block it mined in.
+                            // Report success now rather than wait on the receipt and risk the
+                            // deadline.
                             tracing::info!(
                                 ?hash,
-                                included_in_block = block.number,
+                                ?included_in_block,
                                 "settlement found on-chain via getLogs, treating as success"
                             );
                             return Ok(SubmissionSuccess {
                                 tx_hash: hash,
                                 submitted_at_block: submission_block,
-                                included_in_block: block.number.into(),
+                                included_in_block,
                             });
                         }
 
