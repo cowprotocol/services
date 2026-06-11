@@ -184,6 +184,7 @@ impl Settlement {
             .inspect(|res| {
                 tracing::debug!(
                     block = eth.current_block().borrow().number,
+                    transaction = ?transaction.internalized,
                     ?res,
                     "simulated settlement"
                 )
