@@ -300,7 +300,7 @@ impl Detector {
                 DetectionError::Rpc(err)
             })?;
 
-        let storage_slots = extract_sload_slots(trace, token);
+        let storage_slots = extract_sload_slots(trace, token)?;
 
         if storage_slots.is_empty() {
             tracing::debug!(?token, "no SLOAD operations in allowance trace");

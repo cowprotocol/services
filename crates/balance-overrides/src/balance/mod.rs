@@ -411,10 +411,10 @@ impl Detector {
                 DetectionError::Rpc(err)
             })?;
 
-        let storage_slots = extract_sload_slots(trace, token);
+        let storage_slots = extract_sload_slots(trace, token)?;
 
         if storage_slots.is_empty() {
-            tracing::debug!("no SLOAD operations found in trace for token {:?}", token);
+            tracing::debug!(?token, "no SLOAD operations found in trace for token");
             return Err(DetectionError::NotFound);
         }
 

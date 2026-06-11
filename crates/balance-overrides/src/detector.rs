@@ -34,16 +34,23 @@ pub enum DetectionError<E> {
 pub(crate) fn extract_sload_slots(
     trace: GethTrace,
     initial_storage_context: Address,
-) -> Vec<(Address, B256)> {
+) -> Result<Vec<(Address, B256)>, SimulationError> {
+    let frame = trace
+        .try_into_default_frame()
+        .map_err(|e| SimulationError::Other(anyhow::Error::new(e).context("trace parse failed")))
+        .inspect_err(|err| {
+            tracing::warn!(
+                token = ?initial_storage_context,
+                ?err,
+                "failed to parse trace into default frame"
+            );
+        })?;
+
     let mut storage_context = vec![initial_storage_context];
     let mut slots = Vec::new();
     let mut seen = HashSet::new();
 
-    for log in &trace
-        .try_into_default_frame()
-        .unwrap_or_default()
-        .struct_logs
-    {
+    for log in &frame.struct_logs {
         let stack = log.stack.clone().unwrap_or_default();
         match log.op.as_ref() {
             "CALL" | "STATICCALL" if stack.len() >= 2 => {
@@ -83,7 +90,7 @@ pub(crate) fn extract_sload_slots(
         }
     }
 
-    slots
+    Ok(slots)
 }
 
 /// `keccak256(pad32(holder) ++ map_slot)` — the storage slot of
