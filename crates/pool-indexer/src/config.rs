@@ -43,7 +43,7 @@ const fn default_metrics_address() -> SocketAddr {
     ))
 }
 
-/// Network identifier used in API routes (e.g. "mainnet", "arbitrum-one").
+/// Network slug used in API routes (e.g. "mainnet", "arbitrum-one").
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(transparent)]
 pub struct NetworkName(String);
@@ -82,34 +82,30 @@ pub struct NetworkConfig {
     pub chain_id: u64,
     #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
     pub rpc_url: Url,
-    /// Uniswap V3 factory addresses to index on this network. Exactly one
-    /// factory is supported in this release (see [`NetworkConfig::validate`]);
-    /// the multi-factory case is tracked as a follow-up. Pools from all
-    /// configured factories share one DB (one DB instance per network).
+    /// Uniswap V3 factories to index. Exactly one is allowed in this release
+    /// (see [`NetworkConfig::validate`]); multi-factory is a follow-up.
     pub factories: Vec<FactoryConfig>,
-    /// The number of pools to index in a single batch.
+    /// Blocks per `eth_getLogs` chunk during catch-up.
     #[serde(default = "default_chunk_size")]
     pub chunk_size: u64,
-    /// The interval at which to poll for new blocks.
+    /// Interval for polling for new blocks during live indexing.
     #[serde(default = "default_poll_interval_secs")]
     pub poll_interval_secs: u64,
-    /// Number of `eth_getLogs` chunks fetched in parallel during the live
-    /// indexing loop.
+    /// Number of `eth_getLogs` chunks fetched in parallel during live indexing.
     #[serde(default = "default_fetch_concurrency")]
     pub fetch_concurrency: usize,
-    /// Number of `symbol()` / `decimals()` token-metadata RPC calls run in
-    /// parallel during the backfill passes for newly discovered tokens.
+    /// `symbol()` / `decimals()` token-metadata RPC calls in flight during
+    /// the backfill passes.
     #[serde(default = "default_prefetch_concurrency")]
     pub prefetch_concurrency: usize,
-    /// When `true`, use `latest` instead of `finalized` as the target block.
-    /// Useful for test environments where finality is not simulated (e.g. local
-    /// Anvil).
+    /// Use `latest` instead of `finalized` as the indexing head. Set by tests
+    /// against Anvil, which doesn't simulate finality.
     #[serde(skip)]
     pub use_latest: bool,
-    /// Subgraph GraphQL endpoint for seeding initial state.
+    /// Subgraph GraphQL endpoint for the initial seed.
     #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
     pub subgraph_url: Url,
-    /// Block number to seed at. Defaults to the subgraph's current block.
+    /// Block to seed at. Defaults to the subgraph's current block.
     pub seed_block: Option<u64>,
 }
 
@@ -130,9 +126,7 @@ impl NetworkConfig {
         }
     }
 
-    /// Sanity-checks called after TOML parsing. Per-network validation
-    /// only. Cross-network uniqueness no longer applies because each
-    /// process owns its own DB and serves a single network.
+    /// Post-parse sanity checks.
     fn validate(&self) -> Result<()> {
         anyhow::ensure!(
             self.factories.len() == 1,
@@ -144,15 +138,15 @@ impl NetworkConfig {
     }
 }
 
-/// A single factory address under [`NetworkConfig::factories`]. The
-/// indexer runs a dedicated seed + live-indexing loop per factory.
+/// One factory address. The indexer runs a dedicated seed + live-indexing
+/// loop per entry in [`NetworkConfig::factories`].
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct FactoryConfig {
     pub address: Address,
 }
 
-/// The subset of [`NetworkConfig`] that [`UniswapV3Indexer`] needs at runtime.
+/// Subset of [`NetworkConfig`] handed to [`UniswapV3Indexer`] at runtime.
 #[derive(Debug, Clone)]
 pub struct IndexerConfig {
     pub network: NetworkName,

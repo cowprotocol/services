@@ -20,14 +20,12 @@ pub use {
     pools_list::get_pools,
 };
 
-/// Upper bound on pool addresses accepted in a single bulk lookup. Keeps the
-/// URL under typical proxy limits and bounds DB query size.
+/// Max pool addresses per bulk lookup. Keeps URLs under proxy limits and
+/// caps the DB query size.
 pub(super) const MAX_POOL_IDS_PER_REQUEST: usize = 500;
 
-/// Newtype over `Vec<Address>` that deserializes from a comma-separated list
-/// of 20-byte hex addresses in URL query strings (`0x…,0x…`). Parsing +
-/// capping happen at the extractor boundary so handlers work with typed
-/// addresses instead of raw strings.
+/// Deserializes `?pool_ids=0x…,0x…` into typed addresses. Parsing and the
+/// cap happen at the extractor so handlers see a `Vec<Address>`.
 pub(crate) struct PoolIds(pub Vec<Address>);
 
 impl<'de> Deserialize<'de> for PoolIds {
@@ -52,9 +50,8 @@ impl<'de> Deserialize<'de> for PoolIds {
     }
 }
 
-/// A single tick entry with its net liquidity. Shared between the
-/// single-pool and bulk tick endpoints (and embedded in [`PoolResponse`]
-/// when ticks are requested inline).
+/// One tick with its net liquidity delta. Used by both tick endpoints
+/// and embedded in [`PoolResponse`] when ticks are requested inline.
 #[derive(Serialize)]
 pub struct TickEntry {
     pub tick_idx: i32,
@@ -74,7 +71,6 @@ impl From<db::TickRow> for TickEntry {
 /// ERC-20 token metadata embedded in pool responses.
 #[derive(Serialize)]
 pub struct TokenInfo {
-    /// Checksummed contract address.
     pub id: Address,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u8>,
@@ -82,10 +78,9 @@ pub struct TokenInfo {
     pub symbol: Option<String>,
 }
 
-/// A single Uniswap v3 pool. Used by both pool-listing endpoints.
+/// A single Uniswap v3 pool.
 #[derive(Serialize)]
 pub struct PoolResponse {
-    /// Checksummed pool contract address.
     pub id: Address,
     pub token0: TokenInfo,
     pub token1: TokenInfo,
@@ -97,18 +92,16 @@ pub struct PoolResponse {
     #[serde(serialize_with = "serialize_integer")]
     pub sqrt_price: BigDecimal,
     pub tick: i32,
-    /// Populated only when tick data is explicitly requested.
+    /// Set only when ticks are requested inline.
     pub ticks: Option<Vec<TickEntry>>,
 }
 
-/// Response envelope for pool listing and search endpoints.
 #[derive(Serialize)]
 pub struct PoolsResponse {
-    /// Latest block that has been fully indexed.
+    /// Latest fully-indexed block.
     pub block_number: u64,
     pub pools: Vec<PoolResponse>,
-    /// Cursor to pass as `after` to fetch the next page; `null` on the last
-    /// page.
+    /// Pass as `after=` to fetch the next page; `null` on the last page.
     pub next_cursor: Option<String>,
 }
 
@@ -135,15 +128,13 @@ impl From<&db::PoolRow> for PoolResponse {
     }
 }
 
-/// Empty strings are a "tried-and-failed" sentinel written by the symbol
-/// backfill task; surface them as missing rather than as `""`.
+/// The symbol backfill writes `""` as a "tried and failed" sentinel.
+/// Surface that as missing instead of as an empty string.
 pub(super) fn non_empty(s: Option<&str>) -> Option<String> {
     s.filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
-/// Converts a slice of DB rows into the on-the-wire [`PoolsResponse`]
-/// envelope, attaching the indexed-block tag and optional pagination
-/// cursor. Centralised here so every route emits the same JSON shape.
+/// Shared `PoolsResponse` builder for the listing endpoints.
 pub(super) fn pools_response(
     block_number: u64,
     rows: &[db::PoolRow],
@@ -157,7 +148,6 @@ pub(super) fn pools_response(
     .into_response()
 }
 
-/// Serializes any [`Display`](std::fmt::Display) value as a JSON string.
 pub(super) fn serialize_display<T: std::fmt::Display, S: serde::Serializer>(
     value: &T,
     serializer: S,
@@ -165,18 +155,16 @@ pub(super) fn serialize_display<T: std::fmt::Display, S: serde::Serializer>(
     serializer.serialize_str(&value.to_string())
 }
 
-/// Serializes a [`BigDecimal`] holding an integer value as a plain decimal
-/// string — never scientific notation. `BigDecimal`'s own `Display` emits
-/// `"Ne±M"` for some magnitudes, which breaks downstream parsers expecting
-/// `uint` strings (alloy's `U256::from_str`). The stored columns
-/// (`sqrt_price_x96`, `liquidity`, `liquidity_net`) are always integers, so
-/// converting via `BigInt` is lossless.
+/// Emits a `BigDecimal` as plain digits. `Display` falls back to `Ne+M`
+/// notation for some magnitudes, which `alloy::U256::from_str` rejects.
+/// All columns we serialize this way (`sqrt_price_x96`, `liquidity`,
+/// `liquidity_net`) hold integers, so the `to_bigint` round-trip is lossless.
 pub(super) fn serialize_integer<S: serde::Serializer>(
     value: &BigDecimal,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    // `to_bigint` truncates fractional values (1.5 → 1), so also verify the
-    // round-trip matches — otherwise we'd silently drop precision.
+    // `to_bigint` truncates fractional values; round-trip-check so we don't
+    // silently drop precision.
     match value.to_bigint() {
         Some(bi) if BigDecimal::from(bi.clone()) == *value => {
             serializer.serialize_str(&bi.to_string())
@@ -196,23 +184,17 @@ mod tests {
         std::str::FromStr,
     };
 
-    /// Postgres' NUMERIC wire encoding compresses trailing zeros into a
-    /// negative `BigDecimal` scale (`mantissa × 10^|scale|`). The default
-    /// `Display` stringifies this as scientific notation (`1E30`), which
-    /// `alloy::U256::from_str` rejects — `serialize_integer` must emit
-    /// plain digits instead.
+    /// Postgres NUMERIC compresses trailing zeros into a negative
+    /// `BigDecimal` scale, which `Display` renders as `Ne+M`. Verify the
+    /// serializer emits plain digits so `U256::from_str` can parse the
+    /// response on the driver side.
     #[test]
     fn serialize_integer_handles_negative_scale_bigdecimal() {
-        // negative-scale compression large enough to push `BigDecimal`'s `Display` into
-        // `Ne+M` notation.
         let mantissa = BigInt::from_str("79228162514264337593543950336").unwrap();
         let v = BigDecimal::new(mantissa, -30);
 
-        // Confirm the bug shape: default `Display` produces scientific
-        // notation that `U256::from_str` can't parse.
         assert_eq!(v.to_string(), "79228162514264337593543950336e+30");
 
-        // Our serializer normalizes to pure digits that the driver parses.
         #[derive(Serialize)]
         struct Wrapper {
             #[serde(serialize_with = "serialize_integer")]

@@ -207,13 +207,11 @@ pub async fn batch_update_pool_liquidity(
     Ok(())
 }
 
-/// Returns the subset of `candidates` that are already persisted pools
-/// belonging to `factory`. Used to gate event dispatch — only emitters
-/// previously created by our factory should affect indexed state, otherwise
-/// a malicious contract emitting the same event signatures could spoof
-/// pool updates. New pools created in the current chunk's `PoolCreated`
-/// events must be tracked separately by the caller; this lookup only
-/// reflects committed DB state.
+/// Filters `candidates` down to addresses already persisted as pools of
+/// `factory`. Used to gate event dispatch: an emitter we didn't create
+/// could otherwise spoof state via matching event signatures. Pools created
+/// in the current chunk aren't yet committed, so callers must track them
+/// separately.
 pub async fn known_pool_addresses(
     db: &PgPool,
     factory: &Address,
@@ -236,10 +234,9 @@ pub async fn known_pool_addresses(
         .collect()
 }
 
-/// Bulk-loads `(tick, liquidity)` for pools the caller is about to touch with
-/// `Mint`/`Burn` events. Pools absent from `uniswap_v3_pool_states` (not yet
-/// initialised) are omitted from the result — callers must treat absence as
-/// "skip the liquidity update for this pool."
+/// `(tick, liquidity)` for pools about to be touched by Mint/Burn events.
+/// Pools not yet in `uniswap_v3_pool_states` are absent from the result;
+/// callers treat absence as "skip this pool".
 pub async fn get_base_pool_states(
     db: &PgPool,
     factory: &Address,
@@ -292,23 +289,17 @@ pub async fn batch_update_ticks(
         .map(|delta| BigDecimal::from(delta.delta))
         .collect();
 
-    // Two-pronged invariant for zero-net ticks (we never keep a row with
-    // `liquidity_net = 0`):
+    // Invariant: never persist a row with `liquidity_net = 0`.
     //
-    //   1. INSERT path: skip rows whose aggregated delta is zero entirely, so no
-    //      row with `liquidity_net = 0` is ever inserted. The `DELETE` at the
-    //      bottom of the CTE can't see freshly-inserted rows in the same statement
-    //      (Postgres modifying-CTE snapshot rules — sibling CTEs run against the
-    //      pre-statement snapshot of the target table), so we have to gate this
-    //      case at the INSERT side instead.
-    //   2. UPDATE path: when an existing row's `+ EXCLUDED.liquidity_net` lands at
-    //      zero, the row is in the pre-statement snapshot, so the `DELETE ... USING
-    //      upserted` *can* see it and removes it.
+    // - INSERT: skip rows whose aggregated delta is zero. The trailing DELETE can't
+    //   see freshly-inserted rows in the same statement (Postgres modifying-CTE
+    //   snapshot rules), so we gate at the INSERT side instead.
+    // - UPDATE: when an existing row sums to zero, it's in the snapshot the DELETE
+    //   sees, so the DELETE removes it.
     //
-    // `into_chunk_changes` already filters `delta != 0` upstream, but that
-    // filter only blocks single zero entries — two in-batch entries summing
-    // to zero for the same `(pool, tick)` would still reach the SQL. The
-    // `AND i.total_delta <> 0` clause closes that gap.
+    // `into_chunk_changes` filters single zero entries upstream, but two
+    // in-batch entries summing to zero for the same `(pool, tick)` would
+    // still reach the SQL; `AND i.total_delta <> 0` closes that gap.
     sqlx::query(
         "WITH input AS (
              SELECT t.addr, t.tick_idx, SUM(t.delta) AS total_delta
@@ -344,9 +335,8 @@ pub async fn batch_update_ticks(
     Ok(())
 }
 
-/// Insert/replace tick `liquidity_net` values directly (no delta accumulation).
-/// Used by the subgraph seeder where the subgraph value IS the authoritative
-/// net.
+/// Set `liquidity_net` directly (no delta accumulation). Used by the seeder
+/// where the subgraph value is already the net.
 pub async fn batch_seed_ticks(
     tx: &mut Transaction<'_, Postgres>,
     factory: &Address,
@@ -392,9 +382,8 @@ pub async fn batch_seed_ticks(
     Ok(())
 }
 
-/// Deletes ticks for all pools owned by `factory`. Used by the subgraph
-/// seeder to clear stale state before reseeding. Scoped to this factory so a
-/// reseed on one factory doesn't wipe another's ticks.
+/// Deletes ticks for all pools of `factory`. Used by the seeder before a
+/// reseed. Scoped to one factory so other factories aren't affected.
 pub async fn delete_ticks_for_factory(
     tx: &mut Transaction<'_, Postgres>,
     factory: &Address,
@@ -412,7 +401,7 @@ pub async fn delete_ticks_for_factory(
     Ok(())
 }
 
-/// A pool with its current on-chain state (price, liquidity, tick).
+/// A pool joined with its current state row.
 pub struct PoolRow {
     pub address: Address,
     pub token0: Address,
@@ -436,9 +425,8 @@ impl TryFrom<PgRow> for PoolRow {
             token0: bytes_to_addr(r.get("token0"))?,
             token1: bytes_to_addr(r.get("token1"))?,
             fee: r.get::<i32, _>("fee").cast_unsigned(),
-            // The DB stores `-1` as the "tried, failed" sentinel written by
-            // the decimals backfill task. Drop those back to `None` so callers
-            // see "missing" rather than a misleading `Some(0)`.
+            // `-1` is the "tried, failed" sentinel from the decimals
+            // backfill; `u8::try_from` rejects it, surfacing it as `None`.
             token0_decimals: r
                 .get::<Option<i16>, _>("token0_decimals")
                 .and_then(|d| u8::try_from(d).ok()),
@@ -454,9 +442,8 @@ impl TryFrom<PgRow> for PoolRow {
     }
 }
 
-/// Fetches a page of pools ordered by address with their current state. Pass
-/// `cursor = None` for the first page, or the previous page's last address for
-/// keyset pagination.
+/// Page of pools ordered by address. `cursor = None` starts a new scan;
+/// otherwise pass the previous page's last address (keyset pagination).
 pub async fn get_pools(pool: &PgPool, cursor: Option<Vec<u8>>, limit: u64) -> Result<Vec<PoolRow>> {
     let rows = sqlx::query(
         "SELECT p.address, p.token0, p.token1, p.fee,
@@ -483,17 +470,15 @@ pub struct TickRow {
     pub liquidity_net: BigDecimal,
 }
 
-/// A tick tagged with its owning pool, used by bulk-tick queries that span
-/// multiple pools.
+/// A tick tagged with its owning pool, for bulk-tick queries.
 pub struct PoolTickRow {
     pub pool_address: Address,
     pub tick_idx: i32,
     pub liquidity_net: BigDecimal,
 }
 
-/// Fetches pools matching any of `addresses` with their current state. Returns
-/// fewer rows than requested when some addresses are unknown. Ordered by
-/// address to give callers a stable iteration order.
+/// Pools matching `addresses` with their current state. Unknown addresses
+/// are skipped; rows come back sorted by address.
 pub async fn get_pools_by_ids(pool: &PgPool, addresses: &[Address]) -> Result<Vec<PoolRow>> {
     if addresses.is_empty() {
         return Ok(Vec::new());
@@ -516,17 +501,15 @@ pub async fn get_pools_by_ids(pool: &PgPool, addresses: &[Address]) -> Result<Ve
     decode_pool_rows(rows)
 }
 
-/// Fetches ticks for multiple pools in one query. Rows are ordered by
-/// `(pool_address, tick_idx)` so callers can group in a single pass.
+/// Ticks for multiple pools, sorted by `(pool_address, tick_idx)` so the
+/// caller can group in one pass.
 ///
-/// No per-pool cap is applied: bulk callers already limit the number of pool
-/// addresses they request (see the driver-side `POOL_IDS_PER_REQUEST`), and
-/// real-world active-tick counts (~1500 on today's largest mainnet pool) are
-/// far below any number where the response size becomes a concern. If that
-/// changes, the right response is to surface truncation explicitly to the
-/// caller (e.g. a `truncated: bool` per pool in the API response) rather than
-/// silently drop tick rows — silently truncated tick data produces an
-/// incorrect price curve that the driver can't detect.
+/// No per-pool tick cap. Bulk callers already cap their pool list (driver-
+/// side `POOL_IDS_PER_REQUEST`), and the largest mainnet pool has ~1500
+/// active ticks — well below anything that would warrant truncation. If
+/// that changes, add a per-pool `truncated: bool` to the response rather
+/// than silently dropping rows: missing ticks produce a wrong price curve
+/// the driver can't detect.
 pub async fn get_ticks_for_pools(pool: &PgPool, addresses: &[Address]) -> Result<Vec<PoolTickRow>> {
     if addresses.is_empty() {
         return Ok(Vec::new());
@@ -574,7 +557,7 @@ pub async fn get_ticks(pool: &PgPool, pool_address: &Address) -> Result<Vec<Tick
     })
 }
 
-/// Returns all distinct token addresses that have no symbol recorded yet.
+/// All distinct token addresses with no `symbol` recorded.
 pub async fn get_tokens_missing_symbols(pool: &PgPool) -> Result<Vec<Address>> {
     let rows = sqlx::query(
         "SELECT DISTINCT token FROM (
@@ -592,7 +575,7 @@ pub async fn get_tokens_missing_symbols(pool: &PgPool) -> Result<Vec<Address>> {
         .collect()
 }
 
-/// Returns all distinct token addresses that have no decimals recorded yet.
+/// All distinct token addresses with no `decimals` recorded.
 pub async fn get_tokens_missing_decimals(pool: &PgPool) -> Result<Vec<Address>> {
     let rows = sqlx::query(
         "SELECT DISTINCT token FROM (
@@ -610,15 +593,14 @@ pub async fn get_tokens_missing_decimals(pool: &PgPool) -> Result<Vec<Address>> 
         .collect()
 }
 
-/// Batched update of `token0_decimals` / `token1_decimals` for every pool
-/// containing one of the provided tokens. Pass `-1` for entries that were
-/// "tried, failed" so the next backfill pass's `IS NULL` filter skips them.
+/// Sets `token0_decimals` / `token1_decimals` for every pool containing
+/// one of the input tokens. Pass `-1` for "tried, failed" so the next
+/// backfill's `IS NULL` filter still skips it.
 ///
-/// One round-trip via a writeable CTE: the side-by-side UPDATE ... FROM UNNEST
-/// pattern would mis-handle pools where both `token0` and `token1` appear in
-/// the batch (Postgres picks an arbitrary FROM row per target row, so only
-/// one side would get set). Splitting into two separate UPDATEs keyed on each
-/// side avoids that.
+/// Two separate UPDATEs (via a writeable CTE) keyed on `token0` and
+/// `token1` separately — a single `UPDATE ... FROM UNNEST` would let
+/// Postgres pick an arbitrary row when both columns matched, setting only
+/// one side.
 pub async fn batch_set_token_decimals(
     tx: &mut Transaction<'_, Postgres>,
     entries: &[(Address, i16)],
@@ -656,10 +638,8 @@ pub async fn batch_set_token_decimals(
     Ok(())
 }
 
-/// Batched update of `token0_symbol` / `token1_symbol` for every pool
-/// containing one of the provided tokens. Pass `""` for entries that were
-/// "tried, failed" so the next backfill pass's `IS NULL` filter skips them.
-/// See [`batch_set_token_decimals`] for the writeable-CTE rationale.
+/// Symbol-side counterpart of [`batch_set_token_decimals`]. Pass `""` for
+/// "tried, failed".
 pub async fn batch_set_token_symbols(
     tx: &mut Transaction<'_, Postgres>,
     entries: &[(Address, String)],

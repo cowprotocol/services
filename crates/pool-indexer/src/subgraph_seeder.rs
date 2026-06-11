@@ -1,18 +1,13 @@
-//! Bootstraps the pool-indexer database from a Uniswap V3 subgraph.
+//! Bootstraps the pool-indexer DB from a Uniswap V3 subgraph.
 //!
-//! Seeding happens in two phases:
+//! 1. **Pools** — fetched with keyset pagination, written page-by-page.
+//! 2. **Ticks** — fetched concurrently per pool (up to [`TICK_CONCURRENCY`] in
+//!    flight), buffered, then swapped in via a single delete-then-insert
+//!    transaction so the API never sees an empty tick set mid-reseed.
 //!
-//! 1. **Pools** — all pools and their current state are fetched with keyset
-//!    pagination and written to the DB in page-sized transactions.
-//! 2. **Ticks** — each pool's ticks are fetched concurrently (up to
-//!    [`TICK_CONCURRENCY`] at a time) and buffered; the existing tick rows are
-//!    then deleted and the buffered set inserted in a single transaction so the
-//!    API never observes an empty tick set mid-reseed.
-//!
-//! Both phases query the subgraph at the same fixed block number so the
-//! snapshot is consistent. After seeding, the caller should invoke
-//! `UniswapV3Indexer::catch_up` to replay any blocks the subgraph has already
-//! processed but that aren't yet in the DB.
+//! Both phases query at the same block so the snapshot is consistent. The
+//! caller catches up live state via `UniswapV3Indexer::catch_up` after
+//! seeding returns.
 
 use {
     crate::{
@@ -40,8 +35,8 @@ const TICK_CONCURRENCY: usize = 50;
 /// Timeout for individual subgraph HTTP requests.
 const SUBGRAPH_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Cursor value below the minimum Uniswap V3 tick index (-887272), ensuring the
-/// first GraphQL page includes the lowest possible tick.
+/// One below the minimum Uniswap V3 tick (-887272), so the first page
+/// includes the lowest valid tick.
 const TICK_IDX_CURSOR_START: i64 = -887_273;
 
 #[derive(Deserialize)]
@@ -87,7 +82,6 @@ struct SubgraphTick {
     liquidity_net: String,
 }
 
-/// Wrapper around the `{ _meta { block { number } } }` GraphQL response.
 #[derive(Deserialize)]
 struct MetaPage {
     #[serde(rename = "_meta")]
@@ -123,8 +117,8 @@ impl SubgraphClient {
         })
     }
 
-    /// Executes a GraphQL query and deserialises the `data` field.
-    /// Returns an error if the response contains a top-level `errors` array.
+    /// Runs a GraphQL query and decodes `data`. Errors if the response has
+    /// a top-level `errors` array.
     async fn query<T: for<'de> Deserialize<'de>>(&self, query: &str, vars: Value) -> Result<T> {
         let response = self
             .http
@@ -151,18 +145,13 @@ impl SubgraphClient {
         Ok(page.meta.block.number)
     }
 
-    /// Fetches the factory entity from the subgraph at `block`. Used as a
-    /// pre-seed sanity check: every row the seeder writes is stamped with
-    /// the *configured* factory address, so if the subgraph URL is actually
-    /// serving pools from a different factory (e.g. operator pointed a
-    /// Uniswap V3 config at a PancakeSwap V3 subgraph), seeding would
-    /// silently corrupt the DB with mis-stamped pools.
+    /// Reads the factory address from the subgraph. Used to catch
+    /// misconfigured deployments (e.g. a Uniswap V3 config pointed at a
+    /// PancakeSwap V3 subgraph) before any rows get written.
     ///
-    /// We query the top-level `factories` entity rather than `pool.factory`
-    /// because some forks of the Uniswap V3 subgraph schema (e.g. the
-    /// Goldsky-hosted Ink deployment) drop the per-pool `factory` field
-    /// while keeping the singleton `Factory` entity. The `Factory.id` is the
-    /// factory address — that's the canonical place to look.
+    /// Queried via `factories` rather than `pool.factory` because some
+    /// Goldsky-hosted Uniswap V3 schema forks (e.g. Ink) drop the per-pool
+    /// `factory` field but keep the singleton `Factory` entity.
     async fn fetch_factory_attestation(&self, block: u64) -> Result<Address> {
         #[derive(Deserialize)]
         struct ProbePage {
@@ -189,8 +178,8 @@ impl SubgraphClient {
             .context("parse factory address from subgraph probe")
     }
 
-    /// Fetches one page of pools at `block`, ordered by id and starting after
-    /// `cursor` (empty string to start from the beginning).
+    /// One page of pools at `block`, ordered by id, starting after
+    /// `cursor` (empty string for the first page).
     async fn fetch_pools_page(&self, block: u64, cursor: &str) -> Result<Vec<SubgraphPool>> {
         let query = "query($block: Int!, $cursor: String!) {
             pools(first: 1000, orderBy: id, where: {id_gt: $cursor}, block: {number: $block}) {
@@ -211,9 +200,10 @@ impl SubgraphClient {
         Ok(page.pools)
     }
 
-    /// Fetches all ticks for `pool_id` at `block` using keyset pagination.
-    /// Returns each tick as a [`TickDeltaData`] where `delta` is the subgraph's
-    /// `liquidityNet` (treated as an absolute value, not a running delta).
+    /// All ticks for `pool_id` at `block`, via keyset pagination over
+    /// `tickIdx`. Each `delta` is the subgraph's `liquidityNet` — an
+    /// absolute net, not a running delta — and the seeder writes it
+    /// directly (no accumulation).
     async fn fetch_ticks_for_pool(
         &self,
         pool_id: String,
@@ -303,10 +293,9 @@ impl<'a> SubgraphSeeder<'a> {
             "seeding pool-indexer from subgraph"
         );
 
-        // Verify the subgraph actually serves pools from our configured
-        // factory before writing anything. Without this, a misconfigured
-        // subgraph URL would silently produce DB rows whose `factory` column
-        // doesn't match the on-chain origin of the pool data they describe.
+        // Confirm the subgraph's factory matches our configured one before
+        // writing anything. Otherwise pools get stamped with a `factory`
+        // that doesn't reflect their on-chain origin.
         let subgraph_factory = self
             .subgraph
             .fetch_factory_attestation(self.snapshot_block)
@@ -383,14 +372,9 @@ impl<'a> SubgraphSeeder<'a> {
     }
 
     async fn seed_ticks(&self, pool_ids: &[String]) -> Result<usize> {
-        // All delete + insert work happens inside one transaction so the
-        // API never observes an empty tick set mid-reseed. Scoped to
-        // `self.factory` so a reseed doesn't wipe another factory's ticks.
-        //
-        // Subgraph fetches run outside the transaction — the result is
-        // buffered and only the final DB writes are transactional, which
-        // keeps the tx short and avoids holding a DB connection during
-        // slow HTTP I/O.
+        // Delete + insert run in one transaction so the API never sees an
+        // empty tick set mid-reseed. Subgraph fetches happen outside the
+        // tx so we don't hold a DB connection during slow HTTP I/O.
         let mut all_ticks: Vec<TickDeltaData> = Vec::new();
         for pool_batch in pool_ids.chunks(TICK_CONCURRENCY) {
             let ticks = self.fetch_tick_batch(pool_batch).await?;
@@ -476,9 +460,8 @@ fn parse_seeded_pool_state(
     }))
 }
 
-/// Seeds pools and ticks from the subgraph and returns the block number that
-/// was seeded. The caller is responsible for catching up to the current
-/// finalized block via `catch_up`.
+/// Seeds pools and ticks from the subgraph and returns the seeded block.
+/// The caller catches up from there via `UniswapV3Indexer::catch_up`.
 pub async fn seed(
     db: &PgPool,
     network: &str,

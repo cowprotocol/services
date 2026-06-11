@@ -1,5 +1,4 @@
-//! `GET /api/v1/{network}/uniswap/v3/pools` — cursor-paginated listing of
-//! all indexed pools.
+//! `GET /api/v1/{network}/uniswap/v3/pools` — cursor-paginated pool list.
 
 use {
     super::pools_response,
@@ -16,28 +15,21 @@ use {
     std::sync::Arc,
 };
 
-/// Default number of pools to return per page when the client doesn't
-/// specify a `limit`.
 const DEFAULT_PAGE_LIMIT: u64 = 1_000;
 
-/// Hard cap on `limit` to bound both query time and response size. Server
-/// applies this even if the client asks for more.
+/// Hard server-side cap on `limit`. Applied even if the client asks for more.
 const MAX_PAGE_LIMIT: u64 = 5_000;
 
-/// Query parameters for the `GET /pools` endpoint.
 #[derive(Deserialize)]
 pub struct ListPoolsQuery {
-    /// Opaque cursor returned by the previous page; omit to start from the
-    /// beginning. Currently the cursor is the last-seen pool address —
-    /// malformed values are rejected by axum's query extractor as 400.
+    /// Cursor from the previous page (the last-seen pool address); omit to
+    /// start from the beginning.
     pub after: Option<Address>,
-    /// Maximum number of pools to return. Clamped to `[1, MAX_PAGE_LIMIT]`;
-    /// defaults to `DEFAULT_PAGE_LIMIT`.
+    /// Clamped to `[1, MAX_PAGE_LIMIT]`; defaults to `DEFAULT_PAGE_LIMIT`.
     pub limit: Option<u64>,
 }
 
 impl ListPoolsQuery {
-    /// Resolve the effective page size.
     fn page_limit(&self) -> u64 {
         self.limit
             .unwrap_or(DEFAULT_PAGE_LIMIT)
@@ -45,7 +37,7 @@ impl ListPoolsQuery {
     }
 }
 
-/// Returns a cursor-paginated list of all indexed pools, ordered by address.
+/// All indexed pools, sorted by address.
 pub async fn get_pools(
     State(state): State<Arc<AppState>>,
     Query(query): Query<ListPoolsQuery>,

@@ -22,12 +22,11 @@ use {
     tracing::instrument,
 };
 
-/// Per-pool snapshot of `(tick, liquidity)` loaded from
-/// `uniswap_v3_pool_states` before processing a chunk's logs. Used as the
-/// *starting point* when a `Mint`/`Burn` arrives without a prior
-/// `Swap`/`Initialize` in the same chunk to set the in-memory tick. Pools
-/// missing from this map (not yet initialised) cause the liquidity update for
-/// that event to be skipped.
+/// Snapshot of `(tick, liquidity)` per pool, loaded from
+/// `uniswap_v3_pool_states` before a chunk's logs. Provides the starting
+/// state when a `Mint`/`Burn` lands without a `Swap`/`Initialize` earlier
+/// in the same chunk. Pools missing from the map are uninitialised; the
+/// liquidity update for that event is skipped.
 type BasePoolStates = HashMap<Address, (i32, u128)>;
 type DecimalsCache = HashMap<Address, u8>;
 
@@ -48,8 +47,7 @@ pub struct NewPoolData {
     pub created_block: u64,
 }
 
-/// Full pool state as of a given block, sourced from an `Initialize` or `Swap`
-/// event (both carry the current price, liquidity, and tick).
+/// Pool state at a given block, from an `Initialize` or `Swap` event.
 pub struct PoolStateData {
     pub pool_address: Address,
     pub block_number: u64,
@@ -58,33 +56,27 @@ pub struct PoolStateData {
     pub tick: i32,
 }
 
-/// A liquidity-only pool update sourced from a `Mint` or `Burn` event when no
-/// `Swap` or `Initialize` has been seen for the pool in the same chunk.
+/// Liquidity-only update for a pool that had a `Mint`/`Burn` but no
+/// `Swap`/`Initialize` in the same chunk.
 pub struct LiquidityUpdateData {
     pub pool_address: Address,
     pub block_number: u64,
     pub liquidity: u128,
 }
 
-/// A signed liquidity delta for a single tick boundary, accumulated from
-/// `Mint` (+amount) and `Burn` (-amount) events.
+/// Signed delta to a tick's `liquidity_net`. Accumulated from `Mint`
+/// (+amount) and `Burn` (-amount) events.
 pub struct TickDeltaData {
     pub pool_address: Address,
     pub tick_idx: i32,
-    /// Net signed change to `liquidity_net` at this tick.
     pub delta: i128,
 }
 
-/// All state changes extracted from a single block-range chunk of logs,
-/// ready to be written to the database in one transaction.
+/// All DB changes from one chunk of logs, ready to write in one tx.
 struct ChunkChanges {
     new_pools: Vec<NewPoolData>,
-    /// Full state updates (from `Initialize` / `Swap`).
     pool_states: Vec<PoolStateData>,
-    /// Liquidity-only updates (from `Mint`/`Burn` with no `Swap` in this
-    /// chunk).
     liquidity_updates: Vec<LiquidityUpdateData>,
-    /// Accumulated tick deltas.
     tick_deltas: Vec<TickDeltaData>,
 }
 
@@ -94,8 +86,8 @@ struct ChunkRange {
     end: u64,
 }
 
-/// Indexes Uniswap V3 events for a single factory contract, persisting pool
-/// state and tick liquidity to the database.
+/// Indexes Uniswap V3 events for one factory, persisting pool state and
+/// tick liquidity to Postgres.
 pub struct UniswapV3Indexer {
     provider: AlloyProvider,
     db: PgPool,
@@ -127,10 +119,8 @@ impl UniswapV3Indexer {
         }
     }
 
-    /// Per-factory live indexing loop. Symbol/decimals backfill tasks live at
-    /// the network level (see `run_network_indexer`) and are spawned into the
-    /// caller's `JoinSet` so a panic in either propagates as a process exit
-    /// rather than being silently dropped.
+    /// Per-factory live-indexing loop. Backfill tasks live at the network
+    /// level (see `run_network_indexer`).
     pub async fn run(self, poll_interval: std::time::Duration) -> ! {
         let mut interval = tokio::time::interval(poll_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -146,20 +136,18 @@ impl UniswapV3Indexer {
         }
     }
 
-    /// Bootstrap helper: brings a fresh factory up to the current finalized
-    /// block in one shot, then returns. Loops until no further
-    /// blocks remain (handles new blocks finalizing during a long catch-up).
-    /// Intended to run exactly once, right after seeding completes.
+    /// Brings a freshly-seeded factory up to the current finalized block
+    /// and returns. Loops in case more blocks finalize during a long
+    /// catch-up. Call exactly once, right after seeding.
     ///
-    /// `from_block` is the seed's snapshot block, and the subgraph's
-    /// `block: { number: X }` returns state *as of the end of* block `X` —
-    /// i.e. it includes events at block `X`. The checkpoint stores the *last
-    /// indexed* block, and `run_once` resumes at `checkpoint + 1`, so to
-    /// avoid re-processing (and double-applying Mint/Burn deltas at) the
-    /// seed block, we set the checkpoint to `from_block` itself.
+    /// The subgraph's `block: { number: X }` returns state as of the end
+    /// of block `X` — events at `X` are included. The checkpoint stores
+    /// the last indexed block and `run_once` resumes at `checkpoint + 1`,
+    /// so we set the checkpoint to `from_block` itself to avoid replaying
+    /// (and double-applying) the seed block's Mint/Burn events.
     ///
-    /// Errors if a checkpoint already exists — overwriting would silently
-    /// regress progress and re-index history.
+    /// Bails if a checkpoint already exists — overwriting would silently
+    /// regress and re-index history.
     pub async fn catch_up(&self, from_block: u64) -> Result<()> {
         if db::get_checkpoint(&self.db, &self.factory).await?.is_some() {
             anyhow::bail!(
@@ -199,7 +187,7 @@ impl UniswapV3Indexer {
             return Ok(());
         }
 
-        // Fetch chunks' logs in parallel; commit in order.
+        // Fetch chunks in parallel, commit in order.
         futures::stream::iter(self.pending_chunks(last_indexed_block, finalized_block))
             .map(|chunk| async move {
                 let logs = self.fetch_logs_bisecting(chunk.start, chunk.end).await?;
@@ -251,18 +239,19 @@ impl UniswapV3Indexer {
     }
 
     async fn fetch_logs_bisecting(&self, from: u64, to: u64) -> Result<Vec<Log>> {
-        // No address filter: `PoolCreated` is emitted by the factory but the
-        // other four events are emitted by each pool contract, and that
-        // address list (tens of thousands on mainnet) would blow past most
-        // RPCs' filter-size caps. `eth_getLogs` applies the address filter
-        // across all events at once, so we can't scope each topic
-        // independently. Instead, we filter client-side in
-        // `collect_log_changes`:
-        //   - PoolCreated must be emitted by `self.factory`.
-        //   - Mint/Burn/Swap/Initialize must be emitted by a pool either committed to
-        //     the DB or freshly created earlier in this chunk by the same factory.
-        // The SQL `WHERE EXISTS (… uniswap_v3_pools …)` guards on the batch
-        // writers are kept as defense-in-depth.
+        // No address filter on `eth_getLogs`: `PoolCreated` comes from the
+        // factory but the other four events come from each pool, and that
+        // list (tens of thousands of pools on mainnet) blows past most
+        // RPCs' filter-size cap. The filter would also apply across all
+        // topics at once, so we can't scope per-event.
+        //
+        // Instead we filter client-side in `collect_log_changes`:
+        //   - PoolCreated → emitter must be `self.factory`.
+        //   - Mint/Burn/Swap/Initialize → emitter must be a known pool of our factory
+        //     (DB or in-chunk PoolCreated).
+        //
+        // The `WHERE EXISTS (… uniswap_v3_pools …)` clauses in the batch
+        // writers stay as defense-in-depth.
         bisecting_get_logs(
             &self.provider,
             from,
@@ -286,11 +275,10 @@ impl UniswapV3Indexer {
         logs: Vec<Log>,
         target_block: u64,
     ) -> Result<()> {
-        // Pre-fetch `decimals` via eth_call and load base pool states + known
-        // pools from the DB in parallel before opening the chunk transaction.
-        // Symbols are intentionally excluded — a hung `symbol()` call must
-        // never block pool inserts; they're populated later by the async
-        // backfill task.
+        // Pre-fetch decimals + load base states + known pools in parallel
+        // before opening the chunk tx. Symbols are deliberately excluded:
+        // a hung `symbol()` call must never block pool inserts, so the
+        // async backfill picks them up later.
         use crate::metrics::HistogramVecExt;
 
         let metrics = crate::metrics::Metrics::get();
@@ -343,10 +331,9 @@ impl UniswapV3Indexer {
             .indexed_block
             .with_label_values(&[network])
             .set(i64::try_from(chunk.end).unwrap_or(i64::MAX));
-        // `target_block` was the finalized tip at the start of the enclosing
-        // `run_once`; refreshing this metric per-chunk lets dashboards watch
-        // the lag shrink in real time during a multi-chunk catch-up instead
-        // of only seeing the initial value.
+        // `target_block` is the finalized tip from the start of this
+        // `run_once`. Refreshing the lag metric per chunk lets dashboards
+        // watch it shrink during multi-chunk catch-ups.
         let lag = target_block.saturating_sub(chunk.end);
         metrics
             .indexer_lag_blocks
@@ -367,8 +354,8 @@ impl UniswapV3Indexer {
         Ok(())
     }
 
-    /// Parallel-fetch ERC-20 decimals for all tokens referenced in PoolCreated
-    /// events.
+    /// Concurrent `decimals()` fetches for tokens in this chunk's
+    /// PoolCreated events.
     async fn prefetch_decimals(&self, logs: &[Log]) -> DecimalsCache {
         futures::stream::iter(pool_created_token_addresses(self.factory, logs))
             .map(|token| async move {
@@ -382,10 +369,10 @@ impl UniswapV3Indexer {
     }
 }
 
-/// Wraps an alloy contract call with the indexer's standard retry policy:
-/// retry only on transient transport errors (`is_node_error`); contract
-/// reverts and missing-selector failures bail out immediately. On giveup,
-/// invokes `on_giveup` with the accumulated errors and returns `None`.
+/// Retries `f` while the error is a transient transport failure
+/// (`is_node_error`). Contract reverts and decoding failures bail out
+/// immediately. On giveup, hands `on_giveup` the accumulated errors and
+/// returns `None`.
 async fn retry_node_call<T, Fut>(
     f: impl Fn() -> Fut,
     on_giveup: impl FnOnce(&[alloy_contract::Error]),
@@ -404,10 +391,9 @@ where
     }
 }
 
-/// Returns the de-duplicated set of pool addresses with `Mint` or `Burn` events
-/// in the chunk. The pool-indexer pre-loads `(tick, liquidity)` for these from
-/// the DB so the in-event delta formula can compute the post-event liquidity
-/// without a historical RPC call.
+/// Unique addresses with a `Mint` or `Burn` in the chunk. We pre-load
+/// their `(tick, liquidity)` so the post-event liquidity can be derived
+/// from the in-event delta without an extra RPC.
 fn mint_burn_pool_addresses(logs: &[Log]) -> Vec<Address> {
     logs.iter()
         .filter_map(|log| {
@@ -418,12 +404,9 @@ fn mint_burn_pool_addresses(logs: &[Log]) -> Vec<Address> {
         .collect()
 }
 
-/// Returns the de-duplicated set of contract addresses that emitted any of
-/// the per-pool event types (`Initialize`/`Swap`/`Mint`/`Burn`) in the chunk.
-/// Used to gate dispatch — only emitters that the DB recognises as pools
-/// created by our factory are accepted. The wire `eth_getLogs` doesn't filter
-/// by address (see [`UniswapV3Indexer::fetch_logs_bisecting`]), so this
-/// candidate set is what we ask the DB to confirm.
+/// Unique emitter addresses for the per-pool events
+/// (`Initialize`/`Swap`/`Mint`/`Burn`). Feeds the DB lookup that filters
+/// out foreign emitters before `collect_log_changes` dispatches.
 fn pool_event_emitters(logs: &[Log]) -> Vec<Address> {
     logs.iter()
         .filter_map(|log| {
@@ -451,14 +434,11 @@ async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> 
     .await
 }
 
-/// Periodically fills in missing `token{0,1}_symbol` values on
-/// `uniswap_v3_pools`. Runs forever, sleeping `poll_interval` between passes so
-/// newly-indexed pools get their symbols backfilled.
+/// Periodically fills `token{0,1}_symbol` on newly-indexed pools.
 ///
-/// Tokens whose `symbol()` call fails (revert, decode error, empty result) are
-/// persisted as the empty string so subsequent passes skip them — otherwise we
-/// would hammer known-broken tokens on every tick. A process restart re-probes
-/// them once (cheap, and useful if the earlier failure was transient).
+/// Tokens whose `symbol()` call fails (revert / decode / empty) are stored
+/// as `""` so the next pass skips them — without this we'd hammer known-
+/// broken tokens forever. A restart re-probes them once.
 pub(crate) async fn backfill_symbols(
     provider: AlloyProvider,
     db: sqlx::PgPool,
@@ -491,9 +471,8 @@ async fn run_symbol_backfill_pass(
     crate::metrics::Metrics::get()
         .backfill_pending
         .with_label_values(&[network, "symbol"])
-        // -1 surfaces the impossible-but-defensive `usize → i64` overflow as
-        // a visible signal in metrics rather than masquerading as "no work
-        // pending".
+        // `-1` on overflow surfaces the defensive `usize → i64` case as a
+        // visible signal instead of masquerading as "no work pending".
         .set(i64::try_from(tokens.len()).unwrap_or(-1));
     if tokens.is_empty() {
         return Ok(());
@@ -504,13 +483,13 @@ async fn run_symbol_backfill_pass(
     let mut updated = 0usize;
     let mut processed = 0usize;
 
-    // Pipeline tokens through `symbol()` RPC concurrently and batch what's
-    // ready into DB writes. Faster tokens don't wait for slower ones in the
-    // same batch, only for the next ready_chunks slot.
+    // Pipeline tokens through `symbol()` concurrently and batch the
+    // results into DB writes. Faster tokens don't wait for slower ones in
+    // the same batch, only for the next `ready_chunks` slot.
     let mut stream = futures::stream::iter(tokens)
         .map(|token| async move {
-            // `None` → "" sentinel: marks the token as "tried and failed" so
-            // the next backfill pass's `IS NULL` filter skips it.
+            // `None` → `""` is the "tried and failed" sentinel; the
+            // `IS NULL` filter on the next pass skips it.
             let sym = fetch_symbol(provider, token).await.unwrap_or_default();
             (token, sym)
         })
@@ -546,11 +525,8 @@ async fn run_symbol_backfill_pass(
     Ok(())
 }
 
-/// Periodically fills in missing `token{0,1}_decimals` values on
-/// `uniswap_v3_pools`. Same shape as [`backfill_symbols`]: sleeps
-/// `poll_interval` between passes, persists `-1` as the "tried and failed"
-/// sentinel for tokens whose `decimals()` call fails so subsequent passes
-/// skip them. A process restart re-probes them once.
+/// Decimals counterpart of [`backfill_symbols`]. Uses `-1` as the "tried
+/// and failed" sentinel.
 pub(crate) async fn backfill_decimals(
     provider: AlloyProvider,
     db: sqlx::PgPool,
@@ -596,9 +572,8 @@ async fn run_decimals_backfill_pass(
 
     let mut stream = futures::stream::iter(tokens)
         .map(|token| async move {
-            // `None` → `-1` sentinel: marks the token as "tried and
-            // failed" so the next backfill pass's `IS NULL` filter skips
-            // it.
+            // `None` → `-1` is the "tried and failed" sentinel; the
+            // `IS NULL` filter on the next pass skips it.
             let dec = fetch_decimals(provider, token)
                 .await
                 .map(i16::from)
@@ -771,32 +746,27 @@ fn pool_created_token_addresses(
         .collect()
 }
 
-/// Accumulates per-event-type state changes while iterating over a chunk's
-/// logs.
+/// Per-event-type state accumulator for one chunk of logs.
 #[derive(Default)]
 struct LogAccumulator {
     new_pools: HashMap<Address, NewPoolData>,
-    /// Latest full state per pool, established by `Initialize` or `Swap`.
+    /// Latest full state per pool from this chunk's `Initialize`/`Swap`.
     full_states: HashMap<Address, PoolStateData>,
-    /// Liquidity-only update per pool, used when no full state exists yet in
-    /// the chunk (i.e. neither `Initialize` nor `Swap` has been seen). Stored
-    /// as `(block, liquidity, tick)`; the `tick` is carried so consecutive
-    /// `Mint`/`Burn`s in the same chunk reuse it (Mint/Burn don't change tick).
+    /// Liquidity-only state per pool, used when neither `Initialize` nor
+    /// `Swap` has been seen in this chunk. `(block, liquidity, tick)` — we
+    /// carry `tick` so consecutive Mint/Burns reuse it (they don't move it).
     liq_only: HashMap<Address, (u64, u128, i32)>,
-    /// Accumulated signed tick-liquidity deltas, keyed by `(pool, tick_idx)`.
+    /// Signed liquidity deltas keyed by `(pool, tick_idx)`.
     tick_deltas: HashMap<(Address, i32), i128>,
 }
 
 impl LogAccumulator {
-    /// Records a newly discovered pool, filling decimals from the prefetch
-    /// cache. Symbols are deliberately left `None` here — a hung `symbol()`
-    /// call must never block pool inserts, and symbol is informational only
-    /// (decimals is what's price-critical). The async backfill task picks
-    /// them up out-of-band.
+    /// Records a new pool, filling decimals from the prefetch cache.
+    /// Symbols are left `None`: a hung `symbol()` call must not block pool
+    /// inserts, and the async backfill picks them up later.
     ///
-    /// Returns the new pool's address so the caller can add it to the set
-    /// of emitters accepted for downstream events in the same chunk; `None`
-    /// if the log failed to decode.
+    /// Returns the pool address so the caller can add it to the chunk-
+    /// local emitter set; `None` if the log fails to decode.
     fn handle_pool_created(&mut self, log: &Log, dec_cache: &DecimalsCache) -> Option<Address> {
         let decoded = match PoolCreated::decode_log(&log.inner) {
             Ok(d) => d,
@@ -828,8 +798,8 @@ impl LogAccumulator {
         Some(pool)
     }
 
-    /// Records the initial price and tick from an `Initialize` event.
-    /// Preserves any liquidity already seen for this pool earlier in the chunk.
+    /// Records initial price and tick from an `Initialize` event.
+    /// Preserves any liquidity already seen for the pool in this chunk.
     fn handle_initialize(&mut self, log: &Log) {
         let decoded = match Initialize::decode_log(&log.inner) {
             Ok(d) => d,
@@ -859,7 +829,7 @@ impl LogAccumulator {
         self.liq_only.remove(&pool);
     }
 
-    /// Records a full pool-state update (price, liquidity, tick) from a `Swap`.
+    /// Records full pool state (price, liquidity, tick) from a `Swap`.
     fn handle_swap(&mut self, log: &Log) {
         let decoded = match Swap::decode_log(&log.inner) {
             Ok(d) => d,
@@ -884,9 +854,9 @@ impl LogAccumulator {
         self.liq_only.remove(&pool);
     }
 
-    /// Applies positive tick-liquidity deltas from a `Mint` and updates pool
-    /// liquidity from the event's `amount` (no chain call needed — see
-    /// [`Self::apply_position_delta_to_pool_liq`]).
+    /// Applies a `Mint`: positive tick deltas at the range bounds, plus a
+    /// pool-liquidity bump if the active tick is in range
+    /// (see [`Self::apply_position_delta_to_pool_liq`]).
     fn handle_mint(&mut self, log: &Log, base_states: &BasePoolStates) {
         let decoded = match Mint::decode_log(&log.inner) {
             Ok(d) => d,
@@ -912,8 +882,7 @@ impl LogAccumulator {
         );
     }
 
-    /// Applies negative tick-liquidity deltas from a `Burn` and updates pool
-    /// liquidity from the event's `amount`.
+    /// `handle_mint` with the sign flipped.
     fn handle_burn(&mut self, log: &Log, base_states: &BasePoolStates) {
         let decoded = match Burn::decode_log(&log.inner) {
             Ok(d) => d,
@@ -950,22 +919,21 @@ impl LogAccumulator {
         *self.tick_deltas.entry((pool, upper_tick)).or_default() -= liquidity_delta;
     }
 
-    /// Applies a position-liquidity delta from a `Mint` (+amount) or `Burn`
-    /// (-amount) to the pool's *active* liquidity. The Uniswap V3 rule is that
-    /// `pool.liquidity` only moves when the current `tick` falls within the
-    /// position's `[lower, upper)` range; positions outside the active range
-    /// affect ticks only, not the pool-level liquidity.
+    /// Applies a position-liquidity delta to the pool's *active*
+    /// liquidity. Uniswap V3 only moves `pool.liquidity` when the current
+    /// `tick` falls within `[lower, upper)`; positions outside that range
+    /// affect tick-level liquidity only.
     ///
-    /// The pre-event `(tick, liquidity)` comes from, in priority order:
-    /// `full_states[pool]` (a prior `Swap`/`Initialize` in this chunk) →
-    /// `liq_only[pool]` (a prior `Mint`/`Burn` in this chunk) →
-    /// `base_states[pool]` (loaded from `uniswap_v3_pool_states`).
+    /// Pre-event `(tick, liquidity)` is read in priority order from
+    /// `full_states[pool]` (this chunk's `Swap`/`Initialize`) →
+    /// `liq_only[pool]` (this chunk's earlier `Mint`/`Burn`) →
+    /// `base_states[pool]` (DB).
     ///
-    /// When none of the three has the pool we silently return. Foreign-factory
-    /// events are now filtered at dispatch (see [`collect_log_changes`]'s
-    /// known-pools gate), so reaching this method without state implies
-    /// Mint/Burn before `Initialize` for *our* pool — impossible per Uniswap
-    /// V3 contract semantics, so the "silent skip" doesn't hide a real bug.
+    /// If none of those has the pool, we return silently. Dispatch already
+    /// filters foreign emitters via `collect_log_changes`'s known-pools
+    /// gate, so reaching this with no state means Mint/Burn before
+    /// Initialize for one of our pools — impossible per V3 contract
+    /// semantics. The silent skip isn't hiding a real bug.
     fn apply_position_delta_to_pool_liq(
         &mut self,
         pool: Address,
@@ -1040,13 +1008,11 @@ fn collect_log_changes(
     known_pools_db: &HashSet<Address>,
 ) -> ChunkChanges {
     let mut acc = LogAccumulator::default();
-    // Pools created earlier in this same chunk. Combined with `known_pools_db`
-    // (committed state) this gives the set of legitimate emitters for the
-    // per-pool events that follow. Skipping events from foreign emitters here
-    // is defense-in-depth: the persistence-side SQL `WHERE EXISTS (… pools
-    // WHERE factory=$1)` guards would drop them at write time anyway, but
-    // gating at dispatch saves the wasted in-memory bookkeeping and makes
-    // the security contract local to one place.
+    // Pools created earlier in this chunk. With `known_pools_db` (already
+    // committed) this is the set of accepted emitters for the per-pool
+    // events that follow. The DB writers' `WHERE EXISTS (… pools WHERE
+    // factory=$1)` would also drop foreign-emitter writes, but gating here
+    // keeps the security check in one place and skips the in-memory work.
     let mut known_pools_chunk: HashSet<Address> = HashSet::new();
 
     for log in logs {
@@ -1054,7 +1020,7 @@ fn collect_log_changes(
         let topic = *t;
 
         if topic == PoolCreated::SIGNATURE_HASH {
-            // PoolCreated must be emitted *by* our factory contract.
+            // PoolCreated must come from our factory.
             if log.address() != factory {
                 continue;
             }
@@ -1064,8 +1030,8 @@ fn collect_log_changes(
             continue;
         }
 
-        // Per-pool events: the emitter must be a pool created by our factory,
-        // either committed to the DB or discovered earlier in this chunk.
+        // Per-pool event: emitter must be one of our factory's pools,
+        // either committed (DB) or created earlier in this chunk.
         let emitter = log.address();
         if !known_pools_db.contains(&emitter) && !known_pools_chunk.contains(&emitter) {
             continue;
@@ -1102,8 +1068,7 @@ mod tests {
     const POOL: Address = Address::repeat_byte(0x01);
     const TOKEN0: Address = Address::repeat_byte(0x02);
     const TOKEN1: Address = Address::repeat_byte(0x03);
-    // `sqrtPriceX96 = sqrt(price) * 2^96` is Uniswap V3's Q64.96 fixed-point
-    // price representation; for `price = 1` this is exactly `2^96`.
+    // `price = 1` in V3's Q64.96 = `sqrt(1) * 2^96 = 2^96`.
     const SQRT_PRICE_1: u128 = 1u128 << 96;
 
     fn t(n: i32) -> I24 {
@@ -1126,10 +1091,8 @@ mod tests {
         }
     }
 
-    /// Test helper: builds a `known_pools_db` set containing the listed
-    /// addresses. Tests pass this to gate `collect_log_changes`'s per-pool
-    /// event dispatch; passing an empty set is equivalent to "no pools
-    /// committed yet, only freshly-created in-chunk pools count."
+    /// `known_pools_db` builder for tests. An empty set means "no pools
+    /// committed yet — only in-chunk PoolCreateds are accepted."
     fn known(pools: &[Address]) -> HashSet<Address> {
         pools.iter().copied().collect()
     }
@@ -1249,9 +1212,8 @@ mod tests {
             amount0: U256::ZERO,
             amount1: U256::ZERO,
         };
-        // Pool is initialised at tick 0 with 0 liquidity. The Mint's
-        // position spans [-100, 100), which contains tick 0, so the active
-        // liquidity grows by `amount`.
+        // Pool starts at tick 0 / liq 0. The Mint at [-100, 100) is
+        // in-range, so active liquidity grows by `amount`.
         let base_states: BasePoolStates = HashMap::from([(POOL, (0i32, 0u128))]);
         let log = make_log(POOL, 100, event);
         let c = collect_log_changes(
@@ -1268,7 +1230,7 @@ mod tests {
         assert_eq!(lower.delta, amount.cast_signed());
         assert_eq!(upper.delta, -amount.cast_signed());
 
-        // No prior full state → goes into liq_only with event-derived liquidity.
+        // No prior full state → liq_only update from the event amount.
         assert_eq!(c.liquidity_updates.len(), 1);
         assert_eq!(c.liquidity_updates[0].liquidity, amount);
         assert!(c.pool_states.is_empty());
@@ -1297,9 +1259,7 @@ mod tests {
             amount0: U256::ZERO,
             amount1: U256::ZERO,
         };
-        // No base_states needed: the Swap establishes `full_states[POOL]`
-        // with liquidity=500_000, tick=0, so the Mint applies its delta
-        // against that in-memory state.
+        // Swap sets full_states[POOL]; the Mint applies against that.
         let logs = vec![make_log(POOL, 200, swap), make_log(POOL, 201, mint)];
         let c = collect_log_changes(
             FACTORY,
@@ -1310,8 +1270,7 @@ mod tests {
         );
 
         assert_eq!(c.pool_states.len(), 1);
-        // Swap established full_state; Mint added 100_000 to active liquidity
-        // (tick 0 falls in [-100, 100)).
+        // Mint adds 100_000 because tick 0 is in [-100, 100).
         assert_eq!(c.pool_states[0].liquidity, after_mint_liq);
         assert_eq!(c.pool_states[0].block_number, 201);
         assert!(c.liquidity_updates.is_empty());
@@ -1399,9 +1358,8 @@ mod tests {
             tick: t(0),
         };
         let logs = vec![make_log(FACTORY, 100, created), make_log(POOL, 100, init)];
-        // Empty `known_pools_db` — POOL becomes a known emitter via the
-        // chunk's own PoolCreated event, so the subsequent Initialize is
-        // accepted from the chunk-local set.
+        // POOL is admitted via the chunk-local set populated by this
+        // chunk's PoolCreated; the Initialize that follows is accepted.
         let c = collect_log_changes(
             FACTORY,
             &logs,
@@ -1416,11 +1374,10 @@ mod tests {
 
     #[test]
     fn event_from_unknown_emitter_is_dropped() {
-        // A foreign contract (not in `known_pools_db`, not created by our
-        // factory in this chunk) emitting a per-pool event must not affect
-        // indexed state. Without the dispatch-time gate, the resulting Swap
-        // would land in `pool_states` and bypass the DB-side `WHERE EXISTS`
-        // guard until write time.
+        // A foreign emitter (not in known_pools_db, not created in this
+        // chunk) must not affect indexed state. Without the dispatch gate
+        // its Swap would slip into `pool_states` and only get dropped at
+        // write time by the DB's `WHERE EXISTS` guard.
         let foreign = Address::repeat_byte(0xEE);
         let swap = Swap {
             sender: Address::ZERO,

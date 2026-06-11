@@ -534,11 +534,11 @@ Indexes:
 
 ### pool\_indexer\_checkpoints
 
-Highest finalized block processed per `contract_address` by the `pool-indexer` service. `contract_address` is the factory address. The pool-indexer runs one process per network, each with its own dedicated database, so there is no `chain_id` column.
+Highest finalized block processed per `contract_address` by `pool-indexer`. `contract_address` is the factory address. The indexer runs one process per network against its own DB, so there's no `chain_id` column.
 
  Column             | Type   | Nullable | Details
 --------------------|--------|----------|--------
- contract\_address  | bytea  | not null | Factory or pool address (20 bytes)
+ contract\_address  | bytea  | not null | Factory address (20 bytes)
  block\_number      | bigint | not null |
 
 Indexes:
@@ -546,7 +546,7 @@ Indexes:
 
 ### uniswap\_v3\_pools
 
-One row per Uniswap V3 pool discovered from `PoolCreated` events. `token{0,1}_{decimals,symbol}` are nullable and populated by the backfill task. `factory` partitions the table so each indexer writes only to its own rows when multiple V3-compatible factories are configured for this network.
+One row per pool discovered from a `PoolCreated` event. `token{0,1}_{decimals,symbol}` are nullable and filled in by the backfill task. `factory` partitions the table when multiple V3-compatible factories run on the same network so each indexer touches only its own rows.
 
  Column            | Type     | Nullable | Details
 -------------------|----------|----------|--------
@@ -567,20 +567,20 @@ Indexes:
 
 ### uniswap\_v3\_pool\_states
 
-Current pool state (price, liquidity, tick), updated on every `Swap` or `Initialize` event. FK → `uniswap_v3_pools`.
+Current state per pool: `sqrt_price_x96` and `tick` come from the latest `Swap`/`Initialize`; `liquidity` and `block_number` also update on in-range `Mint`/`Burn`. FK → `uniswap_v3_pools`.
 
-**Uniswap V3 pool-state primer.** A V3 pool's instantaneous state is captured by three values that together determine the swap math:
+**Uniswap V3 pool-state primer.** Three values capture a pool's instantaneous state:
 
-- `sqrt_price_x96` — the square root of the price ratio (`token1/token0`) in Q64.96 fixed-point (`sqrt(price) * 2^96`). Storing the *square root* keeps the swap formula additive and bounds precision loss across the full uint160 range. Matches the on-chain `slot0.sqrtPriceX96` value.
-- `tick` — the discrete log-price coordinate, equal to `floor(log_{1.0001}(price))`. Each tick represents ~0.01% price step; the current tick is the bucket the live price falls into. Routers use it to determine which liquidity positions are currently in-range.
-- `liquidity` — the sum of every position's `liquidity` whose `tickLower <= current_tick < tickUpper`. This is the `L` in the V3 constant-product invariant (`Δsqrt_price = Δamount / L`). Updates on every `Swap` (the event payload supplies the new value directly) and on `Mint` / `Burn` events whose position spans the current tick.
+- `sqrt_price_x96` — `sqrt(price) * 2^96` where `price = token1/token0`, stored in Q64.96 fixed-point. The square-root form keeps swap math additive and bounds precision loss over the uint160 range. Mirrors on-chain `slot0.sqrtPriceX96`.
+- `tick` — `floor(log_{1.0001}(price))`. Each tick is a ~0.01% price step; the current tick is the bucket the live price falls into. Routers use it to decide which positions are in-range.
+- `liquidity` — sum of every position's liquidity whose `tickLower <= current_tick < tickUpper`. This is the `L` in V3's invariant `Δsqrt_price = Δamount / L`. Updates on `Swap` (the event carries the new value) and on `Mint`/`Burn` whose range spans the current tick.
 
-For the per-tick liquidity deltas that mutate `liquidity` when the price crosses a tick boundary, see [`uniswap_v3_ticks`](#uniswap_v3_ticks) below.
+The per-tick deltas that move `liquidity` when the price crosses a tick boundary live in [`uniswap_v3_ticks`](#uniswap_v3_ticks).
 
  Column            | Type    | Nullable | Details
 -------------------|---------|----------|--------
  pool\_address     | bytea   | not null | FK → `uniswap_v3_pools(address)`
- block\_number     | bigint  | not null | Block at which this state was captured (last `Swap`/`Initialize`)
+ block\_number     | bigint  | not null | Block of the most recent state-changing event (`Swap`, `Initialize`, or in-range `Mint`/`Burn`).
  sqrt\_price\_x96  | numeric | not null | uint160 — see primer above
  liquidity         | numeric | not null | uint128 — see primer above
  tick              | int     | not null | signed int24 — see primer above
@@ -590,16 +590,16 @@ Indexes:
 
 ### uniswap\_v3\_ticks
 
-Per-tick liquidity deltas for each pool. Rows with `liquidity_net = 0` are pruned. FK → `uniswap_v3_pools`.
+Per-tick liquidity deltas. Rows with `liquidity_net = 0` are pruned. FK → `uniswap_v3_pools`.
 
-**Why per-tick deltas, not per-tick totals.** A V3 position covers a range `[tickLower, tickUpper)` and contributes its `liquidity` to the pool's in-range total only when the current tick falls within that range. The delta encoding is:
+**Why deltas instead of per-tick totals.** A V3 position covers `[tickLower, tickUpper)` and contributes to pool liquidity only when the current tick is in that range. We store the entering / exiting deltas at the bounds:
 
-- At `tickLower`: `liquidity_net += position.liquidity` (entering range)
-- At `tickUpper`: `liquidity_net -= position.liquidity` (exiting range)
+- At `tickLower`: `liquidity_net += position.liquidity` (entering)
+- At `tickUpper`: `liquidity_net -= position.liquidity` (exiting)
 
-When a swap moves the price across a tick boundary, the pool's `liquidity` value is updated by `± tick.liquidity_net` (direction depends on the swap direction). This encoding lets the contract sum all positions' contributions to a tick in O(1) at swap time without iterating per-position state.
+When a swap crosses a tick boundary, the pool's `liquidity` shifts by `± tick.liquidity_net`. This encoding makes the per-tick aggregate O(1) at swap time — no per-position iteration.
 
-Routers and quoters consult these rows to predict liquidity changes at tick crossings during swap simulation — without them, large swaps would be priced as if all liquidity stayed at its current level, producing wildly wrong quotes.
+Quoters consult these to predict liquidity changes at tick crossings during swap simulation. Without them, large swaps would be priced as if the liquidity stayed flat, producing wildy wrong quotes
 
  Column         | Type    | Nullable | Details
 ----------------|---------|----------|--------

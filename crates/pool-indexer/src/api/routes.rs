@@ -1,6 +1,4 @@
-//! HTTP routing for the pool-indexer API. Keeps the wiring — route table,
-//! middleware, span extraction — separate from the type definitions in
-//! `super` so either side can change without churn in the other.
+//! HTTP routing for the pool-indexer API.
 
 use {
     super::{ApiError, AppState, uniswap_v3},
@@ -44,10 +42,7 @@ async fn health() -> impl IntoResponse {
     StatusCode::OK
 }
 
-/// Rejects requests whose `{network}` path segment doesn't match the
-/// network this process is configured for. Centralised here so every
-/// network-scoped handler is gated by one check instead of each one
-/// re-running the same guard.
+/// 404s requests whose `{network}` segment doesn't match this process.
 async fn network_guard(
     State(state): State<Arc<AppState>>,
     Path(params): Path<HashMap<String, String>>,
@@ -61,11 +56,9 @@ async fn network_guard(
     Ok(next.run(req).await)
 }
 
-/// Emits per-request `api_requests` (count) and `api_request_seconds`
-/// (latency) metrics labelled by the matched route template (e.g.
-/// `/api/v1/{network}/uniswap/v3/pools`) rather than the concrete URL — so
-/// the cardinality stays bounded regardless of how many pool addresses
-/// flow through the address-parameterised routes.
+/// Per-request count + latency metrics, labelled by the route template
+/// (`/api/v1/{network}/.../{pool_address}/ticks`) so cardinality stays
+/// bounded under address-parameterised routes.
 async fn record_request_metrics(req: Request, next: Next) -> Response {
     use crate::metrics::HistogramVecExt;
 

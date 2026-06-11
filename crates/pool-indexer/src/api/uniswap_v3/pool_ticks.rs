@@ -1,5 +1,4 @@
-//! `GET /api/v1/{network}/uniswap/v3/pools/{pool}/ticks` — every non-zero
-//! tick for a single pool.
+//! `GET /api/v1/{network}/uniswap/v3/pools/{pool}/ticks`
 
 use {
     super::TickEntry,
@@ -23,7 +22,7 @@ pub struct TicksResponse {
     pub ticks: Vec<TickEntry>,
 }
 
-/// Returns all non-zero ticks for one pool, ordered by `tick_idx`.
+/// All non-zero ticks for one pool, sorted by `tick_idx`.
 pub async fn get_ticks(
     State(state): State<Arc<AppState>>,
     Path((_network, pool)): Path<(String, Address)>,

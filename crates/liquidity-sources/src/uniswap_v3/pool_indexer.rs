@@ -28,23 +28,20 @@ use {
     std::{collections::HashMap, time::Duration},
 };
 
-/// How often [`PoolIndexerClient::wait_until`] polls `/pools?limit=1` while
-/// waiting for the indexer's head to catch up.
+/// Poll interval for [`PoolIndexerClient::wait_until`].
 const WAIT_UNTIL_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Pool-indexer's server-side cap on `pool_ids=` query param size; keep our
-/// per-request chunk at or below this.
+/// Matches the server-side `MAX_POOL_IDS_PER_REQUEST`.
 const POOL_IDS_PER_REQUEST: usize = 500;
 
-/// Pool-indexer's server-side cap on `limit=` for listing pools.
+/// Matches the server-side `MAX_PAGE_LIMIT`.
 const LIST_PAGE_SIZE: u64 = 5000;
 
 pub struct PoolIndexerClient {
-    /// Service root (e.g. `http://pool-indexer/`).
     base_url: Url,
     http: Client,
-    /// Upper bound on a single [`Self::wait_until`] call. Sized per network
-    /// to comfortably exceed the worst-case first-deploy seed time.
+    /// Cap on a single `wait_until` call. Pick per network to exceed the
+    /// worst-case fresh-deploy seed time.
     wait_until_timeout: Duration,
 }
 
@@ -64,8 +61,11 @@ impl PoolIndexerClient {
     }
 }
 
-/// Joins path onto URL with exactly one slash. Inlined to avoid a
-/// `shared` → `liquidity-sources` dep cycle.
+/// Joins `path` onto `url` with exactly one slash between them. Reusing
+/// `Url::join` is unreliable here because a base URL without a trailing
+/// slash drops its last path segment (RFC 3986 path resolution), and the
+/// pool-indexer base URL comes from operator config which may or may not
+/// have one.
 fn url_join(url: &Url, mut path: &str) -> Url {
     let mut url = url.to_string();
     while url.ends_with('/') {
@@ -109,15 +109,13 @@ struct IndexerToken {
 
 #[derive(Deserialize)]
 struct BulkTicksResponse {
-    /// Indexer's response-envelope block. Used to detect cross-call drift
-    /// against the paired `/pools/by-ids` response in [`PoolIndexerClient::
-    /// fetch_batch_consistent`] so the caller never sees pool state + tick
-    /// state from different blocks.
+    /// Block of the envelope. Compared against the paired `/pools/by-ids`
+    /// block in `fetch_batch_consistent` so the caller never mixes pool
+    /// state and tick state from different blocks.
     block_number: u64,
-    /// Deserialised from the wire `pools: [{ pool, ticks }, …]` array into a
-    /// `HashMap` keyed by pool address. A duplicate `pool` key fails the
-    /// deserialisation rather than silently overwriting — the server-side
-    /// API contract is one entry per requested pool.
+    /// Wire shape is `pools: [{ pool, ticks }, …]`; we re-index by pool
+    /// address. Duplicate pool keys fail deserialisation rather than
+    /// silently overwriting — the API contract is one entry per pool.
     #[serde(deserialize_with = "deserialize_ticks_by_pool")]
     pools: HashMap<Address, Vec<IndexerTick>>,
 }
@@ -151,14 +149,13 @@ struct IndexerTick {
     liquidity_net: BigInt,
 }
 
-/// Drops pools where either token's `decimals` is missing. Treating missing
-/// as `0` would mis-scale prices by 10^18; fail closed until the indexer's
-/// decimals backfill catches up.
+/// Drops pools missing either token's `decimals`. Treating missing as `0`
+/// would mis-scale prices, so we fail closed and wait for the indexer's
+/// decimals backfill.
 ///
-/// On a fresh deploy the indexer's backfill can take a few minutes, during
-/// which every page can carry hundreds of decimals-missing pools — so we
-/// aggregate the drops into a single `debug!` per call rather than logging
-/// `warn!` per pool. Steady-state this should be a no-op.
+/// On a fresh deploy the backfill can take minutes and each page may
+/// carry hundreds of unfilled pools, so we log a single `debug!` summary
+/// per call. Steady-state this should be a no-op.
 fn drop_pools_missing_decimals(mut pools: Vec<IndexerPool>) -> Vec<IndexerPool> {
     let total = pools.len();
     pools.retain(|p| p.token0.decimals.is_some() && p.token1.decimals.is_some());
@@ -174,10 +171,9 @@ fn drop_pools_missing_decimals(mut pools: Vec<IndexerPool>) -> Vec<IndexerPool> 
 }
 
 impl IndexerPool {
-    /// Converts a wire-format pool into [`PoolData`], stamping the
-    /// `block_number` of the response envelope so the driver can anchor
-    /// per-pool event replay. Bails if `decimals` is missing on either
-    /// token — callers should run [`drop_pools_missing_decimals`] first.
+    /// Stamps the envelope's `block_number` onto the pool so the driver
+    /// can anchor per-pool event replay. Bails if `decimals` is missing —
+    /// run [`drop_pools_missing_decimals`] first.
     fn into_pool_data(self, block_number: u64) -> Result<PoolData> {
         let token0_decimals = self
             .token0
@@ -218,16 +214,12 @@ impl IndexerTick {
 }
 
 impl PoolIndexerClient {
-    /// Blocks until the indexer's `/pools` envelope reports `block_number >=
-    /// target_block`, capped at [`Self::wait_until_timeout`]. Polls every
-    /// [`WAIT_UNTIL_POLL_INTERVAL`]; returns immediately if the indexer is
-    /// already in range. The probe is a `?limit=1` listing so the round-trip
-    /// stays cheap.
+    /// Polls `/pools?limit=1` every [`WAIT_UNTIL_POLL_INTERVAL`] until the
+    /// envelope reports `block_number >= target_block`. Returns
+    /// immediately if already there; bails after [`Self::wait_until_timeout`].
     ///
-    /// `503 Service Unavailable` is treated as "indexer still bootstrapping"
-    /// (it returns 503 until the first checkpoint exists) and the loop
-    /// keeps polling. Every other non-2xx is propagated as an error — those
-    /// are genuine problems the caller should see.
+    /// `503` is treated as "still bootstrapping" and the loop keeps
+    /// polling. Other non-2xx statuses propagate as errors.
     async fn wait_until(&self, target_block: u64) -> Result<()> {
         let deadline = std::time::Instant::now() + self.wait_until_timeout;
         let mut last_observed: Option<u64> = None;
@@ -262,9 +254,8 @@ impl PoolIndexerClient {
         }
     }
 
-    /// Issues `GET /pools?limit=N[&after=cursor]` and parses the envelope.
-    /// `None` means the indexer responded 503 (still bootstrapping); the
-    /// caller decides whether to retry or fail.
+    /// `GET /pools?limit=N[&after=cursor]`. `None` means 503 (still
+    /// bootstrapping) — the caller decides whether to retry or fail.
     async fn fetch_pools_page(
         &self,
         limit: u64,
@@ -294,12 +285,11 @@ impl PoolIndexerClient {
 impl V3PoolDataSource for PoolIndexerClient {
     async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
         self.wait_until(target_block).await?;
-        // Each page reports its own `block_number`; the indexer may advance
-        // between pages. Per-pool `block_number` is stamped from the page
-        // the pool came in, so the driver can replay per-pool from there.
-        // The envelope `fetched_block_number` mirrors the first page's
-        // block — the conservative lower bound, kept for callers that only
-        // need a global "we got at least this fresh" guarantee.
+        // The indexer can advance between pages, so each pool carries the
+        // block of the page it arrived in. The envelope's
+        // `fetched_block_number` is the first page's block — a
+        // conservative lower bound for callers that only need a global
+        // "fresh as of" anchor.
         let mut cursor: Option<String> = None;
         let mut pools: Vec<PoolData> = Vec::new();
         let mut fetched_block_number: Option<u64> = None;
@@ -311,7 +301,8 @@ impl V3PoolDataSource for PoolIndexerClient {
 
             let page_block = page.block_number;
             fetched_block_number.get_or_insert(page_block);
-            // Skip zero-liquidity pools (fully-burned LP, never-minted, etc.)
+            // Drop zero-liquidity pools (matches the subgraph backend's
+            // filter, see `graph_api::get_pools`).
             let mut liq_filtered = page.pools;
             liq_filtered.retain(|p| !p.liquidity.is_zero());
             let filtered = drop_pools_missing_decimals(liq_filtered)
@@ -378,9 +369,8 @@ impl V3PoolDataSource for PoolIndexerClient {
 /// Capped at 3 — mismatches are rare and typically resolve on the next attempt.
 const BATCH_CONSISTENCY_MAX_RETRIES: usize = 3;
 
-/// Result of a `pools/by-ids` fetch in wire form. The caller stamps
-/// `block_number` onto each pool when converting to [`PoolData`] so the
-/// driver can anchor per-pool event replay.
+/// Wire-form `pools/by-ids` response. The caller stamps `block_number`
+/// onto each `PoolData` during conversion.
 struct PoolsByIdsPage {
     block_number: u64,
     pools: Vec<IndexerPool>,
@@ -391,13 +381,10 @@ fn ids_param(ids: &[Address]) -> String {
 }
 
 impl PoolIndexerClient {
-    /// Fetches a batch of pools and their ticks at a single indexer block.
-    /// The two HTTP endpoints can drift if a chunk commits between the
-    /// requests, so this retries on mismatch up to
-    /// [`BATCH_CONSISTENCY_MAX_RETRIES`]. After a successful return both
-    /// responses agree on `block_number`, eliminating the
-    /// pool-state-vs-tick-state cross-block window that previously surfaced
-    /// inconsistent snapshots to the driver.
+    /// Fetches pools + ticks for `ids` at a single indexer block. The two
+    /// HTTP endpoints can drift if a chunk commits between them; we retry
+    /// on mismatch up to [`BATCH_CONSISTENCY_MAX_RETRIES`]. On success
+    /// both responses share a `block_number`.
     async fn fetch_batch_consistent(
         &self,
         ids: &[Address],

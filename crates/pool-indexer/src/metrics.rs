@@ -3,39 +3,38 @@ use {prometheus::HistogramVec, prometheus_metric_storage::MetricStorage};
 #[derive(MetricStorage)]
 #[metric(subsystem = "pool_indexer")]
 pub struct Metrics {
-    /// Per-chunk commit duration in seconds. The histogram's `_count` series
-    /// doubles as the "chunks committed" rate.
+    /// Chunk commit duration. The `_count` series doubles as a chunks-
+    /// committed rate.
     #[metric(
         labels("network"),
         buckets(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
     )]
     pub chunk_commit_seconds: HistogramVec,
 
-    /// Events applied to the DB, labelled by type.
+    /// Events applied to the DB, labelled by event type.
     #[metric(labels("network", "kind"))]
     pub events_applied: prometheus::IntCounterVec,
 
-    /// Highest block committed by the live indexer for this chain.
+    /// Highest block committed by the live indexer.
     #[metric(labels("network"))]
     pub indexed_block: prometheus::IntGaugeVec,
 
-    /// Lag (in blocks) between the chain's finalized/latest tip and the
-    /// indexer's checkpoint. Sampled each polling tick.
+    /// Blocks between the chain head and the indexer's checkpoint.
+    /// Refreshed at the start of every `run_once` and after each chunk
+    /// commit so dashboards can watch the lag drain in real time.
     #[metric(labels("network"))]
     pub indexer_lag_blocks: prometheus::IntGaugeVec,
 
-    /// Unrecoverable `run_once` errors that forced a retry.
+    /// `run_once` failures that forced a retry.
     #[metric(labels("network"))]
     pub indexer_errors: prometheus::IntCounterVec,
 
-    /// Tokens still needing a value for the given `field` (`symbol` or
-    /// `decimals`), sampled each backfill pass.
+    /// Tokens still missing `symbol` / `decimals`. Sampled each backfill pass.
     #[metric(labels("network", "field"))]
     pub backfill_pending: prometheus::IntGaugeVec,
 
-    /// Rows written by the backfill, labelled by `field` (`symbol` or
-    /// `decimals`) and `result` (`ok` for a real value, `empty` for the
-    /// "tried and failed" sentinel).
+    /// Backfill writes. `result=ok` is a real value, `result=empty` is the
+    /// "tried and failed" sentinel (so we don't retry forever).
     #[metric(labels("network", "field", "result"))]
     pub backfilled: prometheus::IntCounterVec,
 
@@ -43,7 +42,7 @@ pub struct Metrics {
     #[metric(labels("route", "status"))]
     pub api_requests: prometheus::IntCounterVec,
 
-    /// API request duration.
+    /// API request latency by route.
     #[metric(
         labels("route"),
         buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5)
@@ -58,8 +57,8 @@ impl Metrics {
     }
 }
 
-/// Extension trait that adds a `timer(&[labels])` method to [`HistogramVec`].
-/// Returns a guard that records the elapsed time on drop.
+/// `timer(&[labels])` on a [`HistogramVec`] returns a guard that records
+/// elapsed wall time on drop.
 pub trait HistogramVecExt {
     #[must_use]
     fn timer<'a>(&'a self, labels: &'a [&'a str]) -> impl Drop + use<'a, Self>;

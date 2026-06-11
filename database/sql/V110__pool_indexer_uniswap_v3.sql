@@ -1,15 +1,15 @@
 -- Tracks the highest finalized block fully processed per factory contract.
 -- A DB instance hosts a single network, so no `chain_id` column is needed.
 CREATE TABLE pool_indexer_checkpoints (
-    contract_address  BYTEA  NOT NULL,   -- factory or pool address
+    contract_address  BYTEA  NOT NULL,   -- factory address
     block_number      BIGINT NOT NULL,
     PRIMARY KEY (contract_address)
 );
 
--- One row per discovered pool (from PoolCreated events on the factory).
--- `factory` partitions the table so each indexer writes only to its own
--- rows when multiple V3-compatible factories are configured for this
--- network (same chain's logs are fetched chain-wide).
+-- One row per pool, discovered from `PoolCreated` events. `factory`
+-- partitions the table so multiple V3-compatible factories on the same
+-- network can coexist (logs are fetched chain-wide, then partitioned at
+-- the write boundary).
 CREATE TABLE uniswap_v3_pools (
     address          BYTEA    NOT NULL,  -- pool address
     factory          BYTEA    NOT NULL,
@@ -24,24 +24,24 @@ CREATE TABLE uniswap_v3_pools (
     PRIMARY KEY (address)
 );
 
--- Current state of each pool (updated on every Swap or Initialize)
+-- Current state per pool. `sqrt_price_x96` + `tick` come from the latest
+-- Swap/Initialize; `liquidity` + `block_number` also update on in-range
+-- Mint/Burn events.
 CREATE TABLE uniswap_v3_pool_states (
     pool_address    BYTEA   NOT NULL,
     block_number    BIGINT  NOT NULL,
     sqrt_price_x96  NUMERIC NOT NULL,   -- uint160
     liquidity       NUMERIC NOT NULL,   -- uint128
-    -- `tick` is the Uniswap V3 *price tick index* (signed int24), not a
-    -- database index. It's the discrete log-price coordinate from the pool's
-    -- last Swap/Initialize event. See also `uniswap_v3_ticks.tick_idx` below.
+    -- `tick` here means the Uniswap V3 *price tick index* (signed
+    -- int24), not a database index. See `uniswap_v3_ticks.tick_idx`.
     tick            INT     NOT NULL,
     PRIMARY KEY (pool_address),
     FOREIGN KEY (pool_address) REFERENCES uniswap_v3_pools(address)
 );
 
--- Active ticks per pool (rows with liquidity_net = 0 are pruned).
--- `tick_idx` is the Uniswap V3 price tick coordinate (signed int24) — the
--- same domain as `uniswap_v3_pool_states.tick`, just one row per active
--- tick boundary instead of the pool's current tick.
+-- Active ticks per pool. Rows with `liquidity_net = 0` are pruned.
+-- `tick_idx` is the price tick coordinate (signed int24) — same domain
+-- as `uniswap_v3_pool_states.tick`, one row per active tick boundary.
 CREATE TABLE uniswap_v3_ticks (
     pool_address    BYTEA   NOT NULL,
     tick_idx        INT     NOT NULL,
@@ -50,11 +50,9 @@ CREATE TABLE uniswap_v3_ticks (
     FOREIGN KEY (pool_address) REFERENCES uniswap_v3_pools(address)
 );
 
--- Symbol- and decimals-backfill hot paths: both `get_tokens_missing_*`
--- (scan for NULL columns) and the batched `batch_set_token_*` updates hit
--- these. Partial on the IS NULL predicate so each index shrinks to near-empty
--- once most rows are populated (real value or `""` / `-1` "tried, failed"
--- sentinel).
+-- Symbol/decimals backfill hot paths. Partial on `IS NULL` so each
+-- index shrinks to near-empty once most rows are populated (real value
+-- or the `""` / `-1` "tried, failed" sentinel).
 CREATE INDEX ON uniswap_v3_pools (token0) WHERE token0_symbol IS NULL;
 CREATE INDEX ON uniswap_v3_pools (token1) WHERE token1_symbol IS NULL;
 CREATE INDEX ON uniswap_v3_pools (token0) WHERE token0_decimals IS NULL;

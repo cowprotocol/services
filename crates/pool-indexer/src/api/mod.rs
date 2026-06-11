@@ -14,9 +14,8 @@ use {
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
-    /// The single network this process indexes. A URL whose `{network}`
-    /// segment doesn't match yields a 404 — one process per network, one
-    /// DB per network.
+    /// The network this process indexes. Requests whose `{network}` path
+    /// segment doesn't match get a 404.
     pub network: NetworkName,
 }
 
@@ -26,22 +25,16 @@ impl AppState {
     }
 }
 
-/// Structured error type for API handlers. Each variant decides its own HTTP
-/// status via the `IntoResponse` impl so helpers can `?`-propagate failures
-/// instead of handing around prebuilt `Response` values. Input-shape errors
-/// (bad addresses, malformed cursors, too many ids) are rejected earlier by
-/// the serde-driven extractors and come back as axum's default 400s —
-/// [`crate::api::uniswap_v3::PoolIds`] is one such extractor.
+/// Errors a handler can return. Input-shape errors (bad addresses, cursors,
+/// too many ids) get rejected by the serde extractors and come back as
+/// axum's default 400s before any handler runs.
 #[derive(Debug)]
 pub enum ApiError {
-    /// `{network}` path segment doesn't match any configured network.
+    /// `{network}` path segment doesn't match this process's network.
     NetworkNotFound,
-    /// The indexer has no checkpoint yet for this chain — it's still in
-    /// bootstrap. Returned as 503 so clients retry rather than treat it
-    /// as a permanent empty set.
+    /// No checkpoint yet — indexer is still bootstrapping. 503 so clients
+    /// retry instead of caching an empty response.
     NotReady,
-    /// Unexpected failure inside the handler. Returns a generic error with a
-    /// 500 status code; the underlying error is logged server-side.
     Internal(anyhow::Error),
 }
 
