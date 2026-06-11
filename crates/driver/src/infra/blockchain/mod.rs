@@ -283,14 +283,15 @@ impl Ethereum {
         &self,
         tx_hash: eth::TxId,
         from_block: u64,
-        to_block: u64,
     ) -> Result<Option<eth::BlockNo>, Error> {
         let logs = self
             .contracts()
             .settlement()
             .event_filter::<::contracts::GPv2Settlement::GPv2Settlement::Settlement>()
             .from_block(alloy::eips::BlockNumberOrTag::Number(from_block))
-            .to_block(alloy::eips::BlockNumberOrTag::Number(to_block))
+            // `Latest` rather than the stream's head: the node may already be a block
+            // or two ahead, and querying up to its real tip narrows the race window.
+            .to_block(alloy::eips::BlockNumberOrTag::Latest)
             .query()
             .await?;
         Ok(logs

@@ -270,11 +270,8 @@ impl Mempools {
                         // tx while it sits in the mempool).
                         let (gas, mined, pending_nonce) = futures::join!(
                             self.ethereum.estimate_gas(tx.clone()),
-                            self.ethereum.successful_settlement_block(
-                                hash,
-                                submission_block.0,
-                                block.number,
-                            ),
+                            self.ethereum
+                                .successful_settlement_block(hash, submission_block.0),
                             self.ethereum.pending_transaction_count(signer),
                         );
 
@@ -301,7 +298,7 @@ impl Mempools {
                             tracing::info!(
                                 settle_tx_hash = ?hash,
                                 err = ?gas.as_ref().err(),
-                                "tx dropped from the mempool without mining, cancelling"
+                                "tx started failing in mempool, cancelling"
                             );
                             let _ = self.cancel(mempool, final_gas_price, signer, nonce).await;
                             return Err(Error::SimulationRevert {
@@ -317,7 +314,8 @@ impl Mempools {
                         } else if resimulation_reverted {
                             tracing::debug!(
                                 ?hash,
-                                "tx still queued in the mempool, waiting for inclusion"
+                                "detected false positive revert (already pending tx conflicted \
+                                 with our simulation), waiting for next block"
                             );
                         } else if let Err(err) = &gas {
                             tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
