@@ -262,40 +262,63 @@ impl Mempools {
                                 submission_deadline,
                             });
                         }
-                        // Check if transaction still simulates
-                        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
-                            /// Revert data encoding `GPv2: order filled`
-                            const ORDER_FILLED: &[u8] = &alloy::hex!("08c379a0\
-                                0000000000000000000000000000000000000000000000000000000000000020\
-                                0000000000000000000000000000000000000000000000000000000000000012\
-                                475076323a206f726465722066696c6c65640000000000000000000000000000");
+                        // A node can report a new block before its receipt index catches up,
+                        // so re-simulating reverts on our own already-applied tx. Tell that
+                        // apart from a real revert with two signals: our `Settlement` event in
+                        // any block since submission (which `eth_getLogs` sees even while the
+                        // receipt lags), and the signer's pending nonce (which still covers our
+                        // tx while it sits in the mempool).
+                        let (gas, mined, pending_nonce) = futures::join!(
+                            self.ethereum.estimate_gas(tx.clone()),
+                            self.ethereum
+                                .successful_settlement_block(hash, submission_block.0),
+                            self.ethereum.pending_transaction_count(signer),
+                        );
 
-                            // We want to simulate on the `pending` block to be able to react to an
-                            // incoming revert BEFORE it happens. However, the tx we submitted earlier
-                            // which is already sitting in the mempool can cause this simulation to
-                            // fail. If the simulation fails because our pending tx interfered with
-                            // us the revert will complain about the order already being filled.
-                            // Since the autopilot only distributes orders while no one else is
-                            // trying to submit txs for it this error is extremely likely a false
-                            // positive so we ignore it.
-                            if err.revert_bytes().is_some_and(|bytes| &bytes == ORDER_FILLED) {
-                                tracing::debug!(?err, "ignoring revert as it's likely a false positive");
-                            } else if err.is_revert() {
-                                tracing::info!(
-                                    settle_tx_hash = ?hash,
-                                    ?err,
-                                    "tx started failing in mempool, cancelling"
-                                );
-                                let _ = self
-                                    .cancel(mempool, final_gas_price, signer, nonce)
-                                    .await;
-                                return Err(Error::SimulationRevert {
-                                    submitted_at_block: submission_block,
-                                    reverted_at_block: block.number.into(),
-                                });
-                            } else {
-                                tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
-                            }
+                        if let Ok(Some(included_in_block)) = mined {
+                            // Found on-chain in [submission_block, head]. The receipt-by-hash
+                            // lookup is just lagging, and scanning the whole range catches it
+                            // even if the block stream coalesced past the block it mined in.
+                            // Report success now rather than wait on the receipt and risk the
+                            // deadline.
+                            tracing::info!(
+                                ?hash,
+                                ?included_in_block,
+                                "settlement found on-chain via getLogs, treating as success"
+                            );
+                            return Ok(SubmissionSuccess {
+                                tx_hash: hash,
+                                submitted_at_block: submission_block,
+                                included_in_block,
+                            });
+                        }
+
+                        let resimulation_reverted = matches!(&gas, Err(err) if err.is_revert());
+                        if requires_cancellation(resimulation_reverted, &pending_nonce, nonce) {
+                            tracing::info!(
+                                settle_tx_hash = ?hash,
+                                err = ?gas.as_ref().err(),
+                                "tx started failing in mempool, cancelling"
+                            );
+                            let _ = self.cancel(mempool, final_gas_price, signer, nonce).await;
+                            return Err(Error::SimulationRevert {
+                                submitted_at_block: submission_block,
+                                reverted_at_block: block.number.into(),
+                            });
+                        } else if let Err(err) = &pending_nonce {
+                            tracing::warn!(
+                                ?hash,
+                                ?err,
+                                "couldn't fetch the pending nonce, not cancelling"
+                            );
+                        } else if resimulation_reverted {
+                            tracing::debug!(
+                                ?hash,
+                                "detected false positive revert (already pending tx conflicted \
+                                 with our simulation), waiting for next block"
+                            );
+                        } else if let Err(err) = &gas {
+                            tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
                         }
                     }
                 }
@@ -307,8 +330,8 @@ impl Mempools {
         .await;
 
         if result.is_err() {
-            // Do one last attempt to see if the transaction was confirmed (in case of race
-            // conditions or misclassified errors like `OrderFilled` simulation failures).
+            // One last check in case the tx landed after the loop exited, e.g. the
+            // receipt finally caught up to a block we had already processed.
             if let Ok(TxStatus::Executed { block_number }) =
                 self.ethereum.transaction_status(&hash).await
             {
@@ -552,9 +575,9 @@ fn delegated_calldata(target: eth::Address, calldata: &Bytes) -> Bytes {
 
 pub struct SubmissionSuccess {
     pub tx_hash: eth::TxId,
-    /// At which block we started to submit the transaction.
-    pub included_in_block: eth::BlockNo,
     /// In which block the transaction actually appeared onchain.
+    pub included_in_block: eth::BlockNo,
+    /// At which block we started to submit the transaction.
     pub submitted_at_block: eth::BlockNo,
 }
 
@@ -638,6 +661,21 @@ impl Error {
     }
 }
 
+/// Whether a submitted settlement whose receipt is missing should be cancelled.
+/// We cancel only when the re-simulation reverts and the signer's pending nonce
+/// shows our tx is gone from the mempool (`pending_nonce <= submission_nonce`,
+/// so it was neither mined nor is it still queued). While the tx is still
+/// queued the revert is just our own pending tx re-applied, a false positive,
+/// so we keep waiting. A failed nonce lookup counts as "unknown" and never
+/// cancels.
+fn requires_cancellation<E>(
+    resimulation_reverted: bool,
+    pending_nonce: &Result<u64, E>,
+    submission_nonce: u64,
+) -> bool {
+    resimulation_reverted && matches!(pending_nonce, Ok(n) if *n <= submission_nonce)
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -675,5 +713,36 @@ mod tests {
         assert_eq!(prepared.from, SUBMITTER);
         assert_eq!(prepared.to, SOLVER);
         assert_eq!(prepared.input, Bytes::from(expected));
+    }
+
+    const SUBMISSION_NONCE: u64 = 7;
+    const STILL_QUEUED: Result<u64, ()> = Ok(8); // pending advanced past our nonce
+    const DROPPED: Result<u64, ()> = Ok(7); // pending still at our nonce, tx is gone
+    const NONCE_LOOKUP_FAILED: Result<u64, ()> = Err(());
+
+    #[test]
+    fn cancels_only_when_reverted_and_tx_left_the_mempool() {
+        // Reverted and the tx is no longer queued: a real revert, cancel.
+        assert!(requires_cancellation(true, &DROPPED, SUBMISSION_NONCE));
+        // Reverted but still queued: the revert is our own pending tx, so wait.
+        assert!(!requires_cancellation(
+            true,
+            &STILL_QUEUED,
+            SUBMISSION_NONCE
+        ));
+        // Re-simulation still succeeds: wait regardless of the nonce.
+        assert!(!requires_cancellation(false, &DROPPED, SUBMISSION_NONCE));
+    }
+
+    #[test]
+    fn failed_nonce_lookup_never_cancels() {
+        // An unknown pending nonce must never trigger a cancel, even on a revert.
+        // Otherwise a flaky nonce lookup reverts to the original bug: cancelling a
+        // tx that may have mined or is still queued.
+        assert!(!requires_cancellation(
+            true,
+            &NONCE_LOOKUP_FAILED,
+            SUBMISSION_NONCE
+        ));
     }
 }
