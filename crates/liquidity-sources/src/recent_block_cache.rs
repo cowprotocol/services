@@ -246,20 +246,21 @@ where
         if keys.is_empty() {
             return Ok(Vec::new());
         }
-        let mut last_err = None;
-        for attempt in 0..=self.maximum_retries {
+        let mut retries = 0;
+        loop {
             match self.fetcher.fetch_values(keys.clone(), block).await {
                 Ok(values) => return Ok(values),
                 Err(err) => {
                     tracing::warn!("retrying fetch because error: {:?}", err);
-                    last_err = Some(err);
+                    if retries >= self.maximum_retries {
+                        return Err(err);
+                    } else {
+                        tokio::time::sleep(self.delay_between_retries).await;
+                        retries += 1;
+                    }
                 }
             }
-            if attempt < self.maximum_retries {
-                tokio::time::sleep(self.delay_between_retries).await;
-            }
         }
-        Err(last_err.unwrap().context("could not fetch liquidity"))
     }
 
     async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
