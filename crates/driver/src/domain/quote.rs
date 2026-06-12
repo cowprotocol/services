@@ -4,7 +4,10 @@ use {
         boundary,
         domain::{
             self,
-            competition::{self, order},
+            competition::{
+                self,
+                order::{self, app_data::AppData},
+            },
             liquidity,
             time,
         },
@@ -118,6 +121,7 @@ pub struct Order {
     pub amount: order::TargetAmount,
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
+    pub app_data: AppData,
 }
 
 impl Order {
@@ -141,12 +145,11 @@ impl Order {
             }
             solver::Liquidity::Skip => Default::default(),
         };
-
-        let auction = self
+        let mut auction = self
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
-        let auction = risk_detector
-            .filter_unsupported_orders_in_auction(auction)
+        risk_detector
+            .without_unsupported_orders(&mut auction.orders, solver.config().flashloans_enabled)
             .await;
         if auction.orders.is_empty() {
             return Err(QuotingFailed::UnsupportedToken.into());
@@ -191,7 +194,7 @@ impl Order {
                 } else {
                     competition::order::Kind::Market
                 },
-                app_data: Default::default(),
+                app_data: self.app_data.clone(),
                 partial: competition::order::Partial::No,
                 pre_interactions: Default::default(),
                 post_interactions: Default::default(),

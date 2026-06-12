@@ -128,6 +128,7 @@ impl Api {
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
+                app_data_retriever: app_data_retriever.clone(),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -207,6 +208,10 @@ impl State {
     fn tokens(&self) -> &tokens::Fetcher {
         &self.0.tokens
     }
+
+    fn app_data_retriever(&self) -> Option<&AppDataRetriever> {
+        self.0.app_data_retriever.as_ref()
+    }
 }
 
 struct Inner {
@@ -215,4 +220,5 @@ struct Inner {
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
+    app_data_retriever: Option<AppDataRetriever>,
 }

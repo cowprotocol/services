@@ -3,7 +3,7 @@ use {
     crate::{
         domain::competition::order,
         infra::config::file::OrderPriorityStrategy,
-        tests::setup::{blockchain::Trade, orderbook::Orderbook},
+        tests::setup::{AppData, blockchain::Trade, orderbook::Orderbook},
     },
     const_hex::ToHexExt,
     rand::seq::SliceRandom,
@@ -183,7 +183,7 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
     }
 
     let quote = test.quoted_orders.first().unwrap();
-    json!({
+    let mut request = json!({
         "sellToken": test.blockchain.get_token(quote.order.sell_token).encode_hex_with_prefix(),
         "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
         "amount": match quote.order.side {
@@ -195,7 +195,16 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
             order::Side::Buy => "buy",
         },
         "deadline": test.deadline,
-    })
+    });
+    match &quote.order.app_data {
+        AppData::Hash(hash) => {
+            request["appData"] = json!(hash.0.0.encode_hex_with_prefix());
+        }
+        AppData::Full(app_data) => {
+            request["appData"] = json!(app_data.hash.0.encode_hex_with_prefix());
+        }
+    }
+    request
 }
 
 /// Create the config file for the driver to use.
