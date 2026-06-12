@@ -80,7 +80,7 @@ pub struct Interaction {
 }
 
 /// Source from which the sellAmount should be drawn upon order fulfillment
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
     Erc20,
@@ -90,7 +90,7 @@ pub enum SellTokenSource {
     Internal,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BuyTokenDestination {
     /// Pay trade proceeds as an ERC20 token transfer
     Erc20,

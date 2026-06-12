@@ -9,23 +9,20 @@ use {
     std::collections::BTreeMap,
 };
 
-pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
+pub fn from_domain(auction: &domain::RawAuctionData) -> RawAuctionData {
     RawAuctionData {
         block: auction.block,
         orders: auction
             .orders
-            .into_iter()
+            .iter()
             .map(super::order::from_domain)
             .collect(),
         prices: auction
             .prices
-            .into_iter()
-            .map(|(key, value)| (*key, value.get().0))
+            .iter()
+            .map(|(key, value)| (**key, value.get().0))
             .collect(),
-        surplus_capturing_jit_order_owners: auction
-            .surplus_capturing_jit_order_owners
-            .into_iter()
-            .collect(),
+        surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
     }
 }
 
