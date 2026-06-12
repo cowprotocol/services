@@ -6,7 +6,7 @@ use {
     crate::trade_finding::QuoteExecution,
     alloy::primitives::{Address, U256},
     anyhow::Result,
-    futures::future::BoxFuture,
+    futures::{future::BoxFuture, stream::BoxStream},
     model::order::OrderKind,
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
@@ -221,6 +221,13 @@ pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 pub trait PriceEstimating: Send + Sync + 'static {
     fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult>;
+}
+
+/// Like `PriceEstimating`, but yields every estimator's result as it
+/// completes instead of collapsing to the single best one.
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
+pub trait StreamingPriceEstimating: Send + Sync + 'static {
+    fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult>;
 }
 
 pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);
