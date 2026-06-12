@@ -83,6 +83,10 @@ paths:
           description: No route was found quoting the order.
         "422":
           description: Unable to parse request body as valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: Too many order placements.
         "500":
@@ -239,6 +243,10 @@ paths:
           description: Order was not found.
         "422":
           description: Unable to parse request body as valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/api/v1/orders/{UID}/status":
     get:
       operationId: getOrderStatus
@@ -519,6 +527,10 @@ paths:
                 $ref: "#/components/schemas/PriceEstimationError"
         "422":
           description: Unable to parse request body as valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: Too many order quotes.
         "500":
@@ -660,6 +672,10 @@ paths:
           description: Error validating full `appData`
         "422":
           description: Unable to parse request body as valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           description: Error storing the full `appData`
   /api/v1/app_data:
@@ -693,6 +709,10 @@ paths:
           description: Error validating full `appData`
         "422":
           description: Unable to parse request body as valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           description: Error storing the full `appData`
   "/api/v1/users/{address}/total_surplus":
@@ -749,6 +769,10 @@ paths:
           description: >
             Request body failed schema validation: missing required field,
             wrong field type, zero `sellAmount`, or unrecognised `kind` value.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           description: Internal error.
   "/restricted/api/v1/debug/simulation/{uid}":
@@ -1755,6 +1779,22 @@ components:
       description: Empty signature bytes. Used for "presign" signatures.
       type: string
       example: 0x
+    Error:
+      description: >
+        Error response returned when a request body cannot be deserialized into
+        the expected type, for example malformed JSON or a missing required
+        field.
+      type: object
+      properties:
+        errorType:
+          type: string
+          description: An identifier for the kind of error.
+        description:
+          type: string
+          description: A human-readable description of the error.
+      required:
+        - errorType
+        - description
     OrderPostError:
       type: object
       properties:

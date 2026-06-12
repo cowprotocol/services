@@ -1,10 +1,10 @@
 use {
-    crate::api::{AppState, internal_error_reply},
+    crate::api::{AppState, extract::Json, internal_error_reply},
     app_data::{AppDataDocument, AppDataHash},
     axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Json, Response},
+        response::{IntoResponse, Response},
     },
     std::sync::Arc,
 };

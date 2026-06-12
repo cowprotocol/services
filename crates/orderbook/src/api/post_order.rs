@@ -1,10 +1,9 @@
 use {
     crate::{
-        api::{AppState, error},
+        api::{AppState, error, extract::Json},
         orderbook::{AddOrderError, OrderReplacementError},
     },
     axum::{
-        Json,
         extract::State,
         http::StatusCode,
         response::{IntoResponse, Response},
