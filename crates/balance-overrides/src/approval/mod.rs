@@ -14,7 +14,7 @@ use {
     contracts::ERC20,
     ethrpc::Web3,
     moka::sync::Cache,
-    std::{iter, time::Duration},
+    std::{iter, sync::Arc, time::Duration},
 };
 
 /// These are the solady magic bytes for user allowances
@@ -202,6 +202,7 @@ pub(crate) struct Detector {
     web3: Web3,
     probing_depth: u8,
     verification_timeout: Duration,
+    concurrency_limit: usize,
     pub(crate) cache: Cache<OverrideDetectorCacheKey, Option<ApprovalStrategy>>,
 }
 
@@ -210,12 +211,14 @@ impl Detector {
         web3: Web3,
         probing_depth: u8,
         verification_timeout: Duration,
+        concurrency_limit: usize,
         cache_size: u64,
     ) -> Self {
         Self {
             web3,
             probing_depth,
             verification_timeout,
+            concurrency_limit,
             cache: Cache::builder().max_capacity(cache_size).build(),
         }
     }
@@ -307,42 +310,75 @@ impl Detector {
             return Err(DetectionError::NotFound);
         }
 
-        let strategies = find_plausible_strategies_for_slots(
+        // Limit to probing_depth since find_plausible_strategies_for_slots returns one
+        // candidate per observed slot
+        let mut candidates = find_plausible_strategies_for_slots(
             &storage_slots,
             &owner,
             &spender,
             self.probing_depth.into(),
         );
+        candidates.truncate(self.probing_depth.into());
 
-        for (i, strategy) in strategies
-            .iter()
-            .take(self.probing_depth.into())
-            .enumerate()
+        if candidates.is_empty() {
+            tracing::debug!(?token, "no approval slot found for token");
+            return Err(DetectionError::NotFound);
+        }
+
+        let concurrency = std::cmp::min(candidates.len(), self.concurrency_limit);
+        let n = candidates.len();
+        let candidates = Arc::new(candidates);
+
+        let make_fut = move |idx: usize| -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = (usize, Option<ApprovalStrategy>)> + Send>,
+        > {
+            let strategy = candidates[idx].clone();
+            let timeout = self.verification_timeout;
+            Box::pin(async move {
+                match tokio::time::timeout(
+                    timeout,
+                    self.verify_approval_strategy(token, owner, spender, &strategy),
+                )
+                .await
+                {
+                    Ok(Ok(())) => (idx, Some(strategy)),
+                    Ok(Err(err)) => {
+                        tracing::trace!(
+                            ?token,
+                            ?owner,
+                            ?spender,
+                            ?strategy,
+                            ?err,
+                            "approval strategy was not correct"
+                        );
+                        (idx, None)
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            ?token,
+                            ?owner,
+                            ?spender,
+                            ?strategy,
+                            "approval strategy verification timed out, skipping"
+                        );
+                        (idx, None)
+                    }
+                }
+            })
+        };
+
+        if let Some((idx, strategy)) =
+            crate::detector::find_first_ordered_concurrent(n, concurrency, make_fut).await
         {
-            let fut = self.verify_approval_strategy(token, owner, spender, strategy);
-            let result = tokio::time::timeout(self.verification_timeout, fut).await;
-
-            match result {
-                Ok(Ok(())) => {
-                    tracing::debug!(
-                        ?token,
-                        ?owner,
-                        ?spender,
-                        ?strategy,
-                        iterations = i + 1,
-                        "verified approval strategy",
-                    );
-                    return Ok(strategy.clone());
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        ?token,
-                        ?strategy,
-                        "approval strategy verification timed out, skipping",
-                    );
-                }
-                Ok(Err(_)) => {}
-            }
+            tracing::debug!(
+                ?token,
+                ?owner,
+                ?spender,
+                ?strategy,
+                candidate_rank = idx + 1,
+                "verified approval strategy",
+            );
+            return Ok(strategy);
         }
 
         tracing::debug!(?token, "no approval slot found for token");
