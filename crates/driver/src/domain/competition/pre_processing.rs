@@ -530,9 +530,9 @@ impl Utilities {
             .collect();
 
         if !orders.is_empty() {
-            tracing::trace!(?orders, "generated cow amm template orders");
-            let only_uids = Lazy(|| orders.iter().map(|o| format!("{:?}", o.uid)).collect_vec());
-            tracing::debug!(orders = ?only_uids, "generated cow amm template orders");
+            tracing::trace!(?orders, "generated cow amm template orders (details)");
+            let orders = Lazy(|| orders.iter().map(|o| o.uid).collect_vec());
+            tracing::debug!(?orders, "generated cow amm template orders");
         }
 
         Arc::new(orders)
