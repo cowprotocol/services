@@ -464,28 +464,8 @@ impl Utilities {
         let orders: Vec<_> = results
             .into_iter()
             .filter_map(|(amm, result)| match result {
-                Ok(template) => Some(Order {
-                    uid: template.order.uid(&domain_separator, amm).0.into(),
-                    receiver: template.order.receiver,
-                    created: u32::try_from(Utc::now().timestamp())
-                        .unwrap_or(u32::MIN)
-                        .into(),
-                    valid_to: template.order.valid_to.into(),
-                    buy: eth::Asset {
-                        amount: template.order.buy_amount.into(),
-                        token: template.order.buy_token.into(),
-                    },
-                    sell: eth::Asset {
-                        amount: template.order.sell_amount.into(),
-                        token: template.order.sell_token.into(),
-                    },
-                    kind: order::Kind::Limit,
-                    side: template.order.kind.into(),
-                    app_data: order::app_data::AppDataHash(FixedBytes(template.order.app_data.0))
-                        .into(),
-                    buy_token_balance: template.order.buy_token_balance.into(),
-                    sell_token_balance: template.order.sell_token_balance.into(),
-                    partial: match template.order.partially_fillable {
+                Ok(template) => {
+                    let partial = match template.order.partially_fillable {
                         true => order::Partial::Yes {
                             available: match template.order.kind {
                                 OrderKind::Sell => order::TargetAmount(template.order.sell_amount),
@@ -493,18 +473,8 @@ impl Utilities {
                             },
                         },
                         false => order::Partial::No,
-                    },
-                    pre_interactions: template
-                        .pre_interactions
-                        .into_iter()
-                        .map(Into::into)
-                        .collect(),
-                    post_interactions: template
-                        .post_interactions
-                        .into_iter()
-                        .map(Into::into)
-                        .collect(),
-                    signature: match template.signature {
+                    };
+                    let signature = match template.signature {
                         Signature::Eip1271(bytes) => order::Signature {
                             scheme: order::signature::Scheme::Eip1271,
                             data: Bytes::from(bytes),
@@ -518,10 +488,48 @@ impl Utilities {
                             );
                             return None;
                         }
-                    },
-                    protocol_fees: vec![],
-                    quote: None,
-                }),
+                    };
+                    Some(Order {
+                        data: Arc::new(order::OrderData {
+                            uid: template.order.uid(&domain_separator, amm).0.into(),
+                            receiver: template.order.receiver,
+                            created: u32::try_from(Utc::now().timestamp())
+                                .unwrap_or(u32::MIN)
+                                .into(),
+                            valid_to: template.order.valid_to.into(),
+                            buy: eth::Asset {
+                                amount: template.order.buy_amount.into(),
+                                token: template.order.buy_token.into(),
+                            },
+                            sell: eth::Asset {
+                                amount: template.order.sell_amount.into(),
+                                token: template.order.sell_token.into(),
+                            },
+                            kind: order::Kind::Limit,
+                            side: template.order.kind.into(),
+                            buy_token_balance: template.order.buy_token_balance.into(),
+                            sell_token_balance: template.order.sell_token_balance.into(),
+                            pre_interactions: template
+                                .pre_interactions
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                            post_interactions: template
+                                .post_interactions
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                            signature,
+                            protocol_fees: vec![],
+                            quote: None,
+                        }),
+                        app_data: order::app_data::AppDataHash(FixedBytes(
+                            template.order.app_data.0,
+                        ))
+                        .into(),
+                        partial,
+                    })
+                }
                 Err(err) => {
                     tracing::warn!(?err, ?amm, "failed to generate template order for cow amm");
                     None
