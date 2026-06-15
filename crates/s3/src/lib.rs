@@ -6,6 +6,7 @@ use {
         Client,
         primitives::{ByteStream, SdkBody},
     },
+    bytes::Bytes,
     flate2::{Compression, bufread::GzEncoder},
     serde::Serialize,
     std::io::Read,
@@ -43,21 +44,20 @@ impl Uploader {
         id: String,
         content: impl Serialize + Send + Sync + 'static,
     ) -> Result<String> {
-        let encoded = tokio::task::spawn_blocking(move || {
-            let bytes = serde_json::to_vec(&content)?;
-            Self::gzip(&bytes)
-        })
-        .await
-        .context("compression task panicked")??;
-        self.upload_json_bytes(id, encoded).await
+        let bytes =
+            tokio::task::spawn_blocking(move || serde_json::to_vec(&content).map(Bytes::from))
+                .await
+                .context("serialization task panicked")??;
+        self.upload_json_bytes(id, bytes).await
     }
 
     /// Uploads bytes which are expected to be valid JSON to the configured S3
-    /// bucket. Returns the key under which the file can be queried
-    pub async fn upload_json_bytes<T>(&self, id: String, content: T) -> Result<String>
-    where
-        SdkBody: From<T>,
-    {
+    /// bucket. Compresses the bytes before uploading. Returns the key under
+    /// which the file can be queried.
+    pub async fn upload_json_bytes(&self, id: String, content: Bytes) -> Result<String> {
+        let compressed = tokio::task::spawn_blocking(move || Self::gzip(content))
+            .await
+            .context("compression task panicked")??;
         let key = std::path::Path::new(&self.filename_prefix)
             .join(format!("{id}.json"))
             .to_str()
@@ -67,7 +67,7 @@ impl Uploader {
             .put_object()
             .bucket(self.bucket.clone())
             .key(key.clone())
-            .body(ByteStream::new(content.into()))
+            .body(ByteStream::new(SdkBody::from(compressed)))
             .content_encoding("gzip")
             .content_type("application/json")
             .send()
@@ -95,8 +95,8 @@ impl Uploader {
     }
 
     /// Compresses the input bytes using Gzip.
-    fn gzip(bytes: &[u8]) -> Result<Vec<u8>> {
-        let mut encoder = GzEncoder::new(bytes, Compression::new(3));
+    fn gzip(bytes: Bytes) -> Result<Vec<u8>> {
+        let mut encoder = GzEncoder::new(bytes.as_ref(), Compression::new(3));
         let mut encoded: Vec<u8> = Vec::with_capacity(bytes.len());
         encoder.read_to_end(&mut encoded).context("gzip encoding")?;
         Ok(encoded)

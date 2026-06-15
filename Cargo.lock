@@ -7397,6 +7397,7 @@ dependencies = [
  "anyhow",
  "aws-config",
  "aws-sdk-s3",
+ "bytes",
  "chrono",
  "flate2",
  "serde",
