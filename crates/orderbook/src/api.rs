@@ -39,7 +39,6 @@ mod get_order_by_uid;
 mod get_order_status;
 mod get_orders_by_tx;
 mod get_orders_by_uid;
-mod get_solver_competition;
 mod get_solver_competition_v2;
 mod get_token_metadata;
 mod get_total_surplus;
@@ -49,6 +48,7 @@ mod get_user_orders;
 mod post_order;
 mod post_quote;
 mod put_app_data;
+mod ready;
 mod version;
 
 const ALLOWED_METHODS: &[axum::http::Method] = &[
@@ -241,22 +241,6 @@ pub fn handle_all_routes(
             "/api/v1/quote",
             post(post_quote::post_quote_handler),
         ),
-        // /solver_competition routes (specific before parameterized)
-        (
-            "GET",
-            "/api/v1/solver_competition/latest",
-            get(get_solver_competition::get_solver_competition_latest_handler),
-        ),
-        (
-            "GET",
-            "/api/v1/solver_competition/by_tx_hash/{tx_hash}",
-            get(get_solver_competition::get_solver_competition_by_hash_handler),
-        ),
-        (
-            "GET",
-            "/api/v1/solver_competition/{auction_id}",
-            get(get_solver_competition::get_solver_competition_by_id_handler),
-        ),
         (
             "GET",
             "/api/v1/token/{token}/metadata",
@@ -279,6 +263,7 @@ pub fn handle_all_routes(
             get(get_total_surplus::get_total_surplus_handler),
         ),
         ("GET", "/api/v1/version", get(version::version_handler)),
+        ("GET", "/api/v1/ready", get(ready::get_ready_handler)),
         // Routes under `/restricted/api/` are not exposed publicly. WAF and
         // infra rules restrict access to authenticated partners.
         // New internal-only endpoints MUST use this prefix.

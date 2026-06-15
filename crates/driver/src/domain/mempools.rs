@@ -4,12 +4,12 @@ use {
         domain::{blockchain::TxStatus, competition::solution::Settlement},
         infra::{self, Ethereum, observe},
     },
-    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
-    anyhow::Context,
-    contracts::CowSettlementForwarder::CowSettlementForwarder,
+    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
+    anyhow::{Context, anyhow},
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
+    itertools::Itertools,
     num::Saturating,
     thiserror::Error,
     tracing::Instrument,
@@ -30,12 +30,12 @@ pub enum SubmissionMode {
     /// Solver EOA signs and submits directly to the settlement contract.
     Direct(eth::Address),
     /// A dedicated submission EOA signs and pays for the tx while routing it
-    /// through the solver's EIP-7702 delegated forwarder contract.
+    /// through the solver's EIP-7702 delegate.
     Delegated {
         /// The address that signs the transaction and whose nonce is used.
         submitter_eoa: eth::Address,
         /// The solver EOA address. In EIP-7702 mode tx.to is set to this
-        /// address (which delegates to a forwarder contract), instead of the
+        /// address (which delegates to Solver7702Delegate), instead of the
         /// settlement contract.
         solver_eoa: eth::Address,
     },
@@ -57,26 +57,53 @@ impl Mempools {
         }
     }
 
+    /// Race the enabled mempools concurrently; first success wins. Pending
+    /// submission futures are dropped at that point and every other mempool is
+    /// recorded as `Superseded`. If every mempool fails, return one of the
+    /// failure errors.
     pub async fn execute(
         &self,
         settlement: &Settlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        let (submission, _remaining_futures) = select_ok(self.mempools.iter().map(|mempool| {
-            async move {
-                let result = self
-                    .submit(mempool, settlement, submission_deadline, mode)
-                    .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
-                    .await;
-                observe::mempool_executed(mempool, settlement, &result);
-                result
-            }
-            .boxed()
-        }))
-        .await?;
+        let mut stats = vec![Outcome::Superseded; self.mempools.len()];
 
-        Ok(submission.tx_hash)
+        let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
+            |(mempool, stat)| {
+                async move {
+                    let result = self
+                        .submit(mempool, settlement, submission_deadline, mode)
+                        .instrument(tracing::info_span!("mempool", kind = %mempool))
+                        .await;
+                    // Log inline so errors from mempools that later get superseded still surface;
+                    // metrics are emitted from `update_metrics` once the race outcome is known.
+                    observe::mempool_log(mempool, settlement, &result);
+                    *stat = Outcome::from(&result);
+                    result
+                }
+                .boxed()
+            },
+        ))
+        .await
+        // Drop the remaining futures (and the mutable borrow on `stats` they
+        // carry) so `update_metrics` can read `stats` below.
+        .map(|(success, _remaining)| success);
+
+        self.update_metrics(&stats);
+
+        Ok(res?.tx_hash)
+    }
+
+    /// A mempool is disabled if all of the following are true:
+    /// * the settlement may revert (see [`Settlement::may_revert`])
+    /// * the pool has revert protection enabled (see
+    ///   [`Self::revert_protection`])
+    /// * reverts can get mined (see [`infra::Mempool::reverts_can_get_mined`])
+    fn is_disabled(&self, mempool: &infra::Mempool, settlement: &Settlement) -> bool {
+        settlement.may_revert()
+            && matches!(self.revert_protection(), RevertProtection::Enabled)
+            && mempool.reverts_can_get_mined()
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
@@ -99,12 +126,7 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
-        // Don't submit risky transactions if revert protection is
-        // enabled and the settlement may revert in this mempool.
-        if settlement.may_revert()
-            && matches!(self.revert_protection(), RevertProtection::Enabled)
-            && mempool.reverts_can_get_mined()
-        {
+        if self.is_disabled(mempool, settlement) {
             return Err(Error::Disabled);
         }
 
@@ -240,37 +262,76 @@ impl Mempools {
                                 submission_deadline,
                             });
                         }
-                        // Check if transaction still simulates
-                        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
-                            if err.is_revert() {
-                                tracing::info!(
-                                    settle_tx_hash = ?hash,
-                                    ?err,
-                                    "tx started failing in mempool, cancelling"
-                                );
-                                let _ = self
-                                    .cancel(mempool, final_gas_price, signer, nonce)
-                                    .await;
-                                return Err(Error::SimulationRevert {
-                                    submitted_at_block: submission_block,
-                                    reverted_at_block: block.number.into(),
-                                });
-                            } else {
-                                tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
-                            }
+                        // A node can report a new block before its receipt index catches up,
+                        // so re-simulating reverts on our own already-applied tx. Tell that
+                        // apart from a real revert with two signals: our `Settlement` event in
+                        // any block since submission (which `eth_getLogs` sees even while the
+                        // receipt lags), and the signer's pending nonce (which still covers our
+                        // tx while it sits in the mempool).
+                        let (gas, mined, pending_nonce) = futures::join!(
+                            self.ethereum.estimate_gas(tx.clone()),
+                            self.ethereum
+                                .successful_settlement_block(hash, submission_block.0),
+                            self.ethereum.pending_transaction_count(signer),
+                        );
+
+                        if let Ok(Some(included_in_block)) = mined {
+                            // Found on-chain in [submission_block, head]. The receipt-by-hash
+                            // lookup is just lagging, and scanning the whole range catches it
+                            // even if the block stream coalesced past the block it mined in.
+                            // Report success now rather than wait on the receipt and risk the
+                            // deadline.
+                            tracing::info!(
+                                ?hash,
+                                ?included_in_block,
+                                "settlement found on-chain via getLogs, treating as success"
+                            );
+                            return Ok(SubmissionSuccess {
+                                tx_hash: hash,
+                                submitted_at_block: submission_block,
+                                included_in_block,
+                            });
+                        }
+
+                        let resimulation_reverted = matches!(&gas, Err(err) if err.is_revert());
+                        if requires_cancellation(resimulation_reverted, &pending_nonce, nonce) {
+                            tracing::info!(
+                                settle_tx_hash = ?hash,
+                                err = ?gas.as_ref().err(),
+                                "tx started failing in mempool, cancelling"
+                            );
+                            let _ = self.cancel(mempool, final_gas_price, signer, nonce).await;
+                            return Err(Error::SimulationRevert {
+                                submitted_at_block: submission_block,
+                                reverted_at_block: block.number.into(),
+                            });
+                        } else if let Err(err) = &pending_nonce {
+                            tracing::warn!(
+                                ?hash,
+                                ?err,
+                                "couldn't fetch the pending nonce, not cancelling"
+                            );
+                        } else if resimulation_reverted {
+                            tracing::debug!(
+                                ?hash,
+                                "detected false positive revert (already pending tx conflicted \
+                                 with our simulation), waiting for next block"
+                            );
+                        } else if let Err(err) = &gas {
+                            tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
                         }
                     }
                 }
             }
-            Err(Error::Other(anyhow::anyhow!(
+            Err(Error::Other(anyhow!(
                 "Block stream finished unexpectedly"
             )))
         }
         .await;
 
         if result.is_err() {
-            // Do one last attempt to see if the transaction was confirmed (in case of race
-            // conditions or misclassified errors like `OrderFilled` simulation failures).
+            // One last check in case the tx landed after the loop exited, e.g. the
+            // receipt finally caught up to a block we had already processed.
             if let Ok(TxStatus::Executed { block_number }) =
                 self.ethereum.transaction_status(&hash).await
             {
@@ -375,6 +436,79 @@ impl Mempools {
             Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
         }
     }
+
+    /// Update per-mempool metrics based on submission outcomes.
+    ///
+    /// When a winner exists, `Failed` outcomes are reclassified as `Superseded`
+    /// since errors are typically race-condition false-positives.
+    fn update_metrics(&self, stats: &[Outcome]) {
+        let winner_exists = stats.iter().any(|s| matches!(s, Outcome::Success { .. }));
+        // Using `zip_eq` to catch regressions in tests (sizes always match in
+        // practice).
+        for (mempool, &outcome) in self.mempools.iter().zip_eq(stats.iter()) {
+            let label = match outcome {
+                Outcome::Failed { .. } if winner_exists => Outcome::Superseded.metric_label(),
+                other => other.metric_label(),
+            };
+            observe::mempool_submission_result(mempool, label, outcome.blocks_passed());
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Outcome {
+    /// Submission future was dropped because another mempool won the race.
+    Superseded,
+    Success {
+        blocks_passed: u64,
+    },
+    Failed {
+        reason: &'static str,
+        blocks_passed: Option<u64>,
+    },
+    Disabled,
+}
+
+impl Outcome {
+    fn metric_label(self) -> &'static str {
+        match self {
+            Outcome::Superseded => "Superseded",
+            Outcome::Success { .. } => "Success",
+            Outcome::Failed { reason, .. } => reason,
+            Outcome::Disabled => "Disabled",
+        }
+    }
+
+    fn blocks_passed(self) -> Option<u64> {
+        match self {
+            Outcome::Superseded | Outcome::Disabled => None,
+            Outcome::Success { blocks_passed } => Some(blocks_passed),
+            Outcome::Failed { blocks_passed, .. } => blocks_passed,
+        }
+    }
+}
+
+impl From<&Result<SubmissionSuccess, Error>> for Outcome {
+    fn from(result: &Result<SubmissionSuccess, Error>) -> Self {
+        match result {
+            Ok(s) => Outcome::Success {
+                blocks_passed: s.blocks_passed(),
+            },
+            Err(Error::Disabled) => Outcome::Disabled,
+            Err(err @ (Error::Revert { .. } | Error::SimulationRevert { .. })) => Outcome::Failed {
+                reason: "Revert",
+                blocks_passed: err.blocks_passed(),
+            },
+            Err(err @ Error::Expired { .. }) => Outcome::Failed {
+                reason: "Expired",
+                blocks_passed: err.blocks_passed(),
+            },
+            Err(Error::Other(_)) => Outcome::Failed {
+                reason: "Other",
+                blocks_passed: None,
+            },
+        }
+    }
 }
 
 /// Applies the solver's gas fee override if present. When a replacement
@@ -407,10 +541,11 @@ fn apply_gas_fee_override(
     }
 }
 
-/// In EIP-7702 mode, reroute the tx through the solver EOA's delegated
-/// forwarder contract. The original target and calldata are wrapped in a
-/// `forward()` call. `from` is set to the submission EOA so that simulations
-/// see the correct `msg.sender` for the forwarder's caller whitelist.
+/// In EIP-7702 mode, reroute the tx through the solver EOA's delegate. Its
+/// fallback expects the 20-byte target address followed by target calldata.
+/// `from` is the submitter EOA so simulations see the correct `msg.sender`
+/// for the delegate's caller whitelist. The solver EOA is in `tx.to` and
+/// becomes `address(this)` when the delegate runs.
 fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
     let mut tx = tx.clone();
     match mode {
@@ -425,23 +560,34 @@ fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
             let original_target = tx.to;
             tx.from = *submitter_eoa;
             tx.to = *solver_eoa;
-            tx.input = CowSettlementForwarder::forwardCall {
-                target: original_target,
-                data: tx.input.clone(),
-            }
-            .abi_encode()
-            .into();
+            tx.input = delegated_calldata(original_target, &tx.input);
             tx
         }
     }
 }
 
+fn delegated_calldata(target: eth::Address, calldata: &Bytes) -> Bytes {
+    let mut input = Vec::with_capacity(target.len() + calldata.len());
+    input.extend_from_slice(target.as_slice());
+    input.extend_from_slice(calldata);
+    input.into()
+}
+
 pub struct SubmissionSuccess {
     pub tx_hash: eth::TxId,
-    /// At which block we started to submit the transaction.
-    pub included_in_block: eth::BlockNo,
     /// In which block the transaction actually appeared onchain.
+    pub included_in_block: eth::BlockNo,
+    /// At which block we started to submit the transaction.
     pub submitted_at_block: eth::BlockNo,
+}
+
+impl SubmissionSuccess {
+    /// Number of blocks between submission start and on-chain inclusion.
+    pub fn blocks_passed(&self) -> u64 {
+        self.included_in_block
+            .saturating_sub(self.submitted_at_block)
+            .0
+    }
 }
 
 #[derive(Debug, Error)]
@@ -488,4 +634,115 @@ pub enum Error {
     Disabled,
     #[error("Failed to submit: {0:?}")]
     Other(#[from] anyhow::Error),
+}
+
+impl Error {
+    /// Number of blocks between the first submission and when the error was
+    /// returned, if the error carries that timing.
+    pub fn blocks_passed(&self) -> Option<u64> {
+        let (start, end) = match self {
+            Self::Revert {
+                submitted_at_block,
+                reverted_at_block,
+                ..
+            }
+            | Self::SimulationRevert {
+                submitted_at_block,
+                reverted_at_block,
+            } => (*submitted_at_block, *reverted_at_block),
+            Self::Expired {
+                submitted_at_block,
+                submission_deadline,
+                ..
+            } => (*submitted_at_block, *submission_deadline),
+            Self::Disabled | Self::Other(_) => return None,
+        };
+        Some(end.saturating_sub(start).0)
+    }
+}
+
+/// Whether a submitted settlement whose receipt is missing should be cancelled.
+/// We cancel only when the re-simulation reverts and the signer's pending nonce
+/// shows our tx is gone from the mempool (`pending_nonce <= submission_nonce`,
+/// so it was neither mined nor is it still queued). While the tx is still
+/// queued the revert is just our own pending tx re-applied, a false positive,
+/// so we keep waiting. A failed nonce lookup counts as "unknown" and never
+/// cancels.
+fn requires_cancellation<E>(
+    resimulation_reverted: bool,
+    pending_nonce: &Result<u64, E>,
+    submission_nonce: u64,
+) -> bool {
+    resimulation_reverted && matches!(pending_nonce, Ok(n) if *n <= submission_nonce)
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        alloy::primitives::{Bytes, address},
+    };
+
+    const ORIGINAL_FROM: eth::Address = address!("0000000000000000000000000000000000000001");
+    const SETTLEMENT: eth::Address = address!("0000000000000000000000000000000000000002");
+    const SOLVER: eth::Address = address!("0000000000000000000000000000000000000003");
+    const SUBMITTER: eth::Address = address!("0000000000000000000000000000000000000004");
+
+    fn tx(input: Bytes) -> eth::Tx {
+        eth::Tx {
+            from: ORIGINAL_FROM,
+            to: SETTLEMENT,
+            value: 0.into(),
+            input,
+            access_list: Default::default(),
+        }
+    }
+
+    #[test]
+    fn delegated_submission_rewrites_transaction() {
+        let prepared = prepare_submission(
+            &tx(Bytes::from_static(&[0xaa, 0xbb])),
+            &SubmissionMode::Delegated {
+                submitter_eoa: SUBMITTER,
+                solver_eoa: SOLVER,
+            },
+        );
+        let mut expected = SETTLEMENT.as_slice().to_vec();
+        expected.extend_from_slice(&[0xaa, 0xbb]);
+
+        assert_eq!(prepared.from, SUBMITTER);
+        assert_eq!(prepared.to, SOLVER);
+        assert_eq!(prepared.input, Bytes::from(expected));
+    }
+
+    const SUBMISSION_NONCE: u64 = 7;
+    const STILL_QUEUED: Result<u64, ()> = Ok(8); // pending advanced past our nonce
+    const DROPPED: Result<u64, ()> = Ok(7); // pending still at our nonce, tx is gone
+    const NONCE_LOOKUP_FAILED: Result<u64, ()> = Err(());
+
+    #[test]
+    fn cancels_only_when_reverted_and_tx_left_the_mempool() {
+        // Reverted and the tx is no longer queued: a real revert, cancel.
+        assert!(requires_cancellation(true, &DROPPED, SUBMISSION_NONCE));
+        // Reverted but still queued: the revert is our own pending tx, so wait.
+        assert!(!requires_cancellation(
+            true,
+            &STILL_QUEUED,
+            SUBMISSION_NONCE
+        ));
+        // Re-simulation still succeeds: wait regardless of the nonce.
+        assert!(!requires_cancellation(false, &DROPPED, SUBMISSION_NONCE));
+    }
+
+    #[test]
+    fn failed_nonce_lookup_never_cancels() {
+        // An unknown pending nonce must never trigger a cancel, even on a revert.
+        // Otherwise a flaky nonce lookup reverts to the original bug: cancelling a
+        // tx that may have mined or is still queued.
+        assert!(!requires_cancellation(
+            true,
+            &NONCE_LOOKUP_FAILED,
+            SUBMISSION_NONCE
+        ));
+    }
 }

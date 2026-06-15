@@ -139,12 +139,13 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 submission_accounts: join_all(
                     solver_config
                         .submission_accounts
+                        .into_inner()
                         .into_iter()
                         .map(|acc| load_account(acc, config.chain_id)),
                 )
                 .await,
-                forwarder_contract: solver_config.forwarder_contract,
                 max_solutions_to_propose: solver_config.max_solutions_to_propose,
+                post_processing_concurrency_limit: solver_config.post_processing_concurrency_limit,
             }
         }))
         .await,

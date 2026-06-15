@@ -34,13 +34,14 @@ pub struct Request {
     auction_id: i64,
     body: bytes::Bytes,
     content_encoding: Option<HeaderValue>,
+    deadline: chrono::DateTime<chrono::Utc>,
 }
 
 impl Request {
     pub async fn new(
         auction: &domain::Auction,
         trusted_tokens: &HashSet<Address>,
-        time_limit: Duration,
+        deadline: chrono::DateTime<chrono::Utc>,
         compress: bool,
     ) -> Self {
         let _timer =
@@ -68,7 +69,7 @@ impl Request {
                 }))
                 .unique_by(|token| token.address)
                 .collect(),
-            deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
+            deadline,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
         };
         let auction_id = auction.id;
@@ -113,11 +114,19 @@ impl Request {
             body,
             auction_id,
             content_encoding,
+            deadline,
         }
     }
 
     pub fn body_size(&self) -> usize {
         self.body.len()
+    }
+
+    pub fn time_until_deadline(&self) -> Duration {
+        self.deadline
+            .signed_duration_since(Utc::now())
+            .to_std()
+            .unwrap_or(Duration::ZERO)
     }
 }
 
@@ -313,6 +322,7 @@ mod tests {
             auction_id: 1,
             body: Bytes::from(json),
             content_encoding: None,
+            deadline: Utc::now(),
         }
     }
 
@@ -327,6 +337,7 @@ mod tests {
             auction_id: 1,
             body: Bytes::from(compressed),
             content_encoding: Some(HeaderValue::from_static("br")),
+            deadline: Utc::now(),
         }
     }
 

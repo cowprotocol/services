@@ -214,7 +214,7 @@ const fn default_probing_depth() -> u8 {
     60
 }
 
-const fn default_cache_size() -> usize {
+const fn default_cache_size() -> u64 {
     1000
 }
 
@@ -234,7 +234,7 @@ pub struct BalanceOverridesConfig {
     /// Controls for how many tokens we store the result of the automatic
     /// balance override detection before evicting less used entries.
     #[serde(default = "default_cache_size")]
-    pub cache_size: usize,
+    pub cache_size: u64,
 
     /// Maximum time to wait for each balance override strategy verification
     /// before giving up. Some tokens (e.g. reflection tokens) can cause the

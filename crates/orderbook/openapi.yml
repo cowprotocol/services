@@ -501,79 +501,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PriceEstimationError"
+        "403":
+          description: >-
+            Forbidden, the order owner is deny-listed (`errorType`:
+            `Forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceEstimationError"
         "404":
-          description: No route was found for the specified order.
+          description: >-
+            No route was found for the specified order (`errorType`:
+            `NoLiquidity`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceEstimationError"
         "422":
           description: Unable to parse request body as valid JSON.
         "429":
           description: Too many order quotes.
         "500":
-          description: Unexpected error quoting an order.
-  "/api/v1/solver_competition/{auction_id}":
-    get:
-      operationId: getSolverCompetitionByAuctionId
-      deprecated: true
-      summary: Get information about a solver competition.
-      description: |
-        Returns the competition information by `auction_id`.
-      parameters:
-        - name: auction_id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Competition
+          description: >-
+            Unexpected error (`errorType`: `InternalServerError`).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SolverCompetitionResponse"
-        "400":
-          description: Invalid auction ID.
-        "404":
-          description: No competition information available for this auction id.
-  "/api/v1/solver_competition/by_tx_hash/{tx_hash}":
-    get:
-      operationId: getSolverCompetitionByTxHash
-      deprecated: true
-      summary: Get information about solver competition.
-      description: |
-        Returns the competition information by `tx_hash`.
-      parameters:
-        - name: tx_hash
-          description: Transaction hash in which the competition was settled.
-          in: path
-          required: true
-          schema:
-            $ref: "#/components/schemas/TransactionHash"
-      responses:
-        "200":
-          description: Competition
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SolverCompetitionResponse"
-        "400":
-          description: Invalid transaction hash.
-        "404":
-          description: No competition information available for this `tx_hash`.
-  /api/v1/solver_competition/latest:
-    get:
-      operationId: getSolverCompetitionLatest
-      deprecated: true
-      summary: Get information about the most recent solver competition.
-      description: |
-        Returns the competition information for the last seen auction_id.
-      responses:
-        "200":
-          description: Competition
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SolverCompetitionResponse"
-        "404":
-          description: No competition information available.
+                $ref: "#/components/schemas/PriceEstimationError"
   "/api/v2/solver_competition/{auction_id}":
     get:
       operationId: getSolverCompetitionByAuctionIdV2
@@ -1861,17 +1815,51 @@ components:
         - errorType
         - description
     PriceEstimationError:
+      description: |
+        Error quoting an order.
+
+        Possible `errorType` values per HTTP status:
+        * 400: `AppDataHashMismatch`, `CustomSolverError`, `ExcessiveValidTo`,
+          `InsufficientLiquidity`, `InsufficientValidTo`, `InvalidAppData`,
+          `InvalidNativeSellToken`, `QuoteNotVerified`, `SameBuyAndSellToken`,
+          `SellAmountDoesNotCoverFee`, `TokenTemporarilySuspended`,
+          `TradingOutsideAllowedWindow`, `UnsupportedBuyTokenDestination`,
+          `UnsupportedOrderType`, `UnsupportedSellTokenSource`,
+          `UnsupportedToken`
+        * 403: `Forbidden`
+        * 404: `NoLiquidity`
+        * 500: `InternalServerError`
       type: object
       properties:
         errorType:
           type: string
           enum:
-            - QuoteNotVerified
-            - UnsupportedToken
+            - AppDataHashMismatch
+            - CustomSolverError
+            - ExcessiveValidTo
+            - Forbidden
+            - InsufficientLiquidity
+            - InsufficientValidTo
+            - InternalServerError
+            - InvalidAppData
+            - InvalidNativeSellToken
             - NoLiquidity
+            - QuoteNotVerified
+            - SameBuyAndSellToken
+            - SellAmountDoesNotCoverFee
+            - TokenTemporarilySuspended
+            - TradingOutsideAllowedWindow
+            - UnsupportedBuyTokenDestination
             - UnsupportedOrderType
+            - UnsupportedSellTokenSource
+            - UnsupportedToken
         description:
           type: string
+        data:
+          type: object
+          description: >-
+            Optional error-specific payload: `SellAmountDoesNotCoverFee`
+            returns an object with `fee_amount`.
       required:
         - errorType
         - description
@@ -2362,11 +2350,27 @@ components:
         - maxVolumeFactor
         - quote
     FeePolicy:
-      description: Defines the ways to calculate the protocol fee.
+      description: >
+        Defines the ways to calculate the protocol fee.
       oneOf:
-        - $ref: "#/components/schemas/Surplus"
-        - $ref: "#/components/schemas/Volume"
-        - $ref: "#/components/schemas/PriceImprovement"
+        - type: object
+          properties:
+            surplus:
+              $ref: "#/components/schemas/Surplus"
+          required:
+            - surplus
+        - type: object
+          properties:
+            volume:
+              $ref: "#/components/schemas/Volume"
+          required:
+            - volume
+        - type: object
+          properties:
+            priceImprovement:
+              $ref: "#/components/schemas/PriceImprovement"
+          required:
+            - priceImprovement
     ExecutedProtocolFee:
       type: object
       properties:

@@ -23,6 +23,7 @@ use {
     ::observe::metrics,
     ::winner_selection::state::RankedItem,
     anyhow::Context,
+    chrono::Utc,
     eth_domain_types::WrappedNativeToken,
     ethrpc::block_stream::CurrentBlockWatcher,
     num::{CheckedSub, Saturating},
@@ -184,7 +185,7 @@ impl RunLoop {
         let request = solve::Request::new(
             auction,
             &self.trusted_tokens.all(),
-            self.solve_deadline,
+            Utc::now() + self.solve_deadline,
             self.compress_solve_request,
         )
         .await;

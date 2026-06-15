@@ -23,7 +23,7 @@ use {
     anyhow::Context as _,
     axum::{body::Body, http::Request},
     eth_domain_types as eth,
-    futures::{FutureExt, StreamExt, stream::FuturesUnordered},
+    futures::{FutureExt, StreamExt},
     itertools::Itertools,
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
@@ -421,9 +421,7 @@ impl Competition {
             SolutionMerging::Forbidden => solutions.collect(),
         };
 
-        // Encode solutions into settlements (streamed).
-        let encoded = all_solutions
-            .into_iter()
+        let encoded = futures::stream::iter(all_solutions)
             .map(|solution| async move {
                 observe::encoding(solution.id());
                 let settlement = solution
@@ -437,7 +435,7 @@ impl Competition {
                     .await;
                 (solution, settlement)
             })
-            .collect::<FuturesUnordered<_>>()
+            .buffer_unordered(self.solver.config().post_processing_concurrency_limit.get())
             .filter_map(|(solution, result)| async move {
                 let id = solution.id().clone();
                 let orders: Vec<_> = solution
@@ -488,47 +486,31 @@ impl Competition {
         }
 
         // Score the settlements.
-        let scores = settlements
+        let scored: Vec<(Solved, Settlement)> = settlements
             .into_iter()
-            .map(|settlement| {
+            .filter_map(|settlement| {
                 observe::scoring(&settlement);
-                (
-                    settlement.score(
-                        &auction.native_prices(),
-                        auction.surplus_capturing_jit_order_owners(),
-                    ),
-                    settlement,
-                )
-            })
-            .collect_vec();
-
-        // Filter out settlements which failed scoring.
-        let scores = scores
-            .into_iter()
-            .filter_map(|(result, settlement)| {
-                result
-                    .inspect_err(|err| {
-                        observe::scoring_failed(self.solver.name(), err);
+                let score = settlement.score(
+                    &auction.native_prices(),
+                    auction.surplus_capturing_jit_order_owners(),
+                );
+                match score {
+                    Ok(score) => {
+                        observe::score(&settlement, &score);
+                        Some((score, settlement))
+                    }
+                    Err(err) => {
+                        observe::scoring_failed(self.solver.name(), &err);
                         notify::scoring_failed(
                             &self.solver,
                             auction.id(),
                             settlement.solution(),
-                            err,
+                            &err,
                         );
-                    })
-                    .ok()
-                    .map(|score| (score, settlement))
+                        None
+                    }
+                }
             })
-            .collect_vec();
-
-        // Observe the scores.
-        for (score, settlement) in scores.iter() {
-            observe::score(settlement, score);
-        }
-
-        // Build scored settlements sorted best-first.
-        let scored: Vec<(Solved, Settlement)> = scores
-            .into_iter()
             .sorted_by_key(|(score, _)| Reverse(*score))
             .map(|(score, settlement)| {
                 let solved = Solved {
@@ -941,7 +923,7 @@ impl Competition {
     /// Returns whether the settlement can be executed or would revert.
     async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), simulator::Error> {
         let tx = settlement.transaction(settlement::Internalization::Enable);
-        let gas_needed_for_tx = self.simulator.gas(tx).await?;
+        let gas_needed_for_tx = self.simulator.gas(tx.clone()).await?;
         if gas_needed_for_tx > settlement.gas.limit {
             return Err(simulator::Error::Revert(RevertError {
                 err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
