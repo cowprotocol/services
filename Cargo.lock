@@ -3918,6 +3918,7 @@ dependencies = [
  "bad-tokens",
  "balance-overrides",
  "bigdecimal",
+ "bytes",
  "bytes-hex",
  "chain",
  "chrono",
