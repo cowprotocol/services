@@ -15,6 +15,8 @@ use {
 mod cached;
 mod simulation;
 
+pub type BlockNumber = u64;
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Query {
     pub owner: Address,
@@ -55,16 +57,12 @@ impl From<anyhow::Error> for TransferSimulationError {
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
-    // Returns the balance available to the allowance manager for the given owner
-    // and token taking both balance as well as "allowance" into account.
-    async fn get_balances(&self, queries: &[Query]) -> Vec<anyhow::Result<U256>>;
+    async fn get_balances(
+        &self,
+        queries: &[Query],
+        block_number: Option<BlockNumber>,
+    ) -> Vec<anyhow::Result<U256>>;
 
-    // Check that the settlement contract can make use of this user's token balance.
-    // This check could fail if the user does not have enough balance, has not
-    // given the allowance to the allowance manager or if the token does not
-    // allow freely transferring amounts around for example if it is paused
-    // or takes a fee on transfer. If the node supports the trace_callMany we
-    // can perform more extensive tests.
     async fn can_transfer(
         &self,
         query: &Query,
@@ -86,6 +84,27 @@ pub fn cached(
     let cached = Arc::new(cached::Balances::new(fetcher(web3, balance_simulator)));
     cached.spawn_background_task(blocks);
     cached
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SimulateParams {
+    amount: Option<U256>,
+    balance_override: Option<BalanceOverrideRequest>,
+    block_number: Option<BlockNumber>,
+}
+
+impl SimulateParams {
+    pub(crate) fn new(
+        amount: Option<U256>,
+        balance_override: Option<BalanceOverrideRequest>,
+        block_number: Option<BlockNumber>,
+    ) -> Self {
+        Self {
+            amount,
+            balance_override,
+            block_number,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -122,15 +141,24 @@ impl BalanceSimulator {
         self.vault
     }
 
-    pub async fn simulate(
+    fn block_id_from_number(block_number: Option<BlockNumber>) -> alloy_rpc_types::BlockId {
+        block_number
+            .map(alloy_rpc_types::BlockId::number)
+            .unwrap_or_else(alloy_rpc_types::BlockId::latest)
+    }
+
+    pub(crate) async fn simulate(
         &self,
         owner: Address,
         token: Address,
         source: SellTokenSource,
         interactions: &[InteractionData],
-        amount: Option<U256>,
-        balance_override: Option<BalanceOverrideRequest>,
+        params: SimulateParams,
     ) -> Result<Simulation, SimulationError> {
+        let amount = params.amount;
+        let balance_override = params.balance_override;
+        let block_number = params.block_number;
+
         let overrides: StateOverride = match balance_override {
             Some(overrides) => self
                 .balance_overrider
@@ -140,13 +168,6 @@ impl BalanceSimulator {
                 .collect(),
             None => Default::default(),
         };
-        // We simulate the balances from the Settlement contract's context. This
-        // allows us to check:
-        // 1. How the pre-interactions would behave as part of the settlement
-        // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
-        //    settlement
-        //
-        // This allows us to end up with very accurate balance simulations.
         let balance_call = Balances::Balances::balanceCall {
             contracts: Balances::Balances::Contracts {
                 settlement: *self.settlement.address(),
@@ -167,14 +188,17 @@ impl BalanceSimulator {
                 .collect(),
         };
 
-        let response = self
+        let block_id = Self::block_id_from_number(block_number);
+
+        let call_builder = self
             .settlement
             .simulateDelegatecall(*self.balances.address(), balance_call.abi_encode().into())
             .with_cloned_provider()
             .state(overrides)
             .from(*SIMULATION_ACCOUNT)
-            .call()
-            .await?;
+            .block(block_id);
+
+        let response = call_builder.call().await?;
 
         let (token_balance, allowance, effective_balance, can_transfer, transfer_revert_reason) =
             <(

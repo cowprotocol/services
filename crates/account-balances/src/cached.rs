@@ -1,5 +1,5 @@
 use {
-    crate::{BalanceFetching, Query, TransferSimulationError},
+    crate::{BalanceFetching, BlockNumber, Query, TransferSimulationError},
     alloy_primitives::U256,
     anyhow::Result,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
@@ -12,63 +12,261 @@ use {
     tracing::{Instrument, instrument},
 };
 
-type BlockNumber = u64;
-
-/// Balances get removed from the cache after this many blocks without being
-/// requested.
-const EVICTION_TIME: BlockNumber = 5;
-
-#[derive(Default)]
-struct BalanceCache {
-    last_seen_block: BlockNumber,
-    data: HashMap<Query, BalanceEntry>,
+#[derive(Debug, Clone, Copy)]
+pub struct CachePolicy {
+    staleness_tolerance: BlockNumber,
+    eviction_time: BlockNumber,
 }
 
-impl BalanceCache {
-    /// Retrieves cached balance and updates the `requested_at` field.
-    fn get_cached_balance(&mut self, query: &Query) -> Option<U256> {
-        match self.data.get_mut(query) {
-            Some(entry) => {
-                entry.requested_at = self.last_seen_block;
-                Some(entry.balance)
-            }
-            None => None,
+impl Default for CachePolicy {
+    fn default() -> Self {
+        Self {
+            staleness_tolerance: Self::DEFAULT_STALENESS_TOLERANCE,
+            eviction_time: 5,
         }
     }
+}
 
-    /// Only updates existing balances. This should always be used in the
-    /// background task.
-    fn update_balance(&mut self, query: &Query, balance: U256, update_block: BlockNumber) {
-        if update_block < self.last_seen_block {
-            // This should never realistically happen.
-            return;
-        }
+impl CachePolicy {
+    const DEFAULT_STALENESS_TOLERANCE: BlockNumber = 1;
 
-        if let Some(entry) = self.data.get_mut(query) {
-            entry.updated_at = update_block;
-            entry.balance = balance;
-        }
+    fn is_within_staleness_tolerance(
+        &self,
+        updated_block: BlockNumber,
+        current_block: BlockNumber,
+    ) -> bool {
+        let oldest_acceptable = current_block.saturating_sub(self.staleness_tolerance);
+        updated_block >= oldest_acceptable && updated_block <= current_block
     }
 
-    /// Only inserts new balances. This should always be used when we needed to
-    /// fetch a balance because it was requested by a backend component.
-    fn insert_balance(&mut self, query: Query, balance: U256, requested_at: BlockNumber) {
-        self.data.insert(
-            query,
-            BalanceEntry {
-                requested_at,
-                updated_at: requested_at,
-                balance,
-            },
-        );
+    fn should_retain(&self, block: BlockNumber, current_block: BlockNumber) -> bool {
+        block >= current_block.saturating_sub(self.eviction_time)
+    }
+
+    fn is_block_too_old_to_cache(&self, block: BlockNumber, current_block: BlockNumber) -> bool {
+        !self.should_retain(block, current_block)
+    }
+
+    fn is_valid_block_stamp(&self, block: BlockNumber, current_block: BlockNumber) -> bool {
+        if block > current_block {
+            return false;
+        }
+        self.should_retain(block, current_block)
     }
 }
 
 #[derive(Debug, Clone)]
 struct BalanceEntry {
-    requested_at: BlockNumber,
-    updated_at: BlockNumber,
+    last_accessed_block: BlockNumber,
+    updated_block: BlockNumber,
     balance: U256,
+}
+
+impl BalanceEntry {
+    fn new(balance: U256, stamp: BlockNumber) -> Self {
+        Self {
+            last_accessed_block: stamp,
+            updated_block: stamp,
+            balance,
+        }
+    }
+
+    fn update_last_accessed(&mut self, stamp: BlockNumber) {
+        self.last_accessed_block = self.last_accessed_block.max(stamp);
+    }
+
+    fn is_within_staleness_tolerance(
+        &self,
+        current_block: BlockNumber,
+        policy: &CachePolicy,
+    ) -> bool {
+        policy.is_within_staleness_tolerance(self.updated_block, current_block)
+    }
+
+    fn should_retain(&self, current_block: BlockNumber, policy: &CachePolicy) -> bool {
+        policy.should_retain(self.last_accessed_block, current_block)
+    }
+
+    fn merge_update(&mut self, balance: U256, stamp: BlockNumber) {
+        if stamp > self.updated_block {
+            self.updated_block = stamp;
+            self.balance = balance;
+            self.update_last_accessed(stamp);
+        }
+    }
+}
+
+type SharedResult = Result<U256, Arc<str>>;
+
+struct InFlightEntry {
+    sender: tokio::sync::watch::Sender<Option<SharedResult>>,
+}
+
+impl InFlightEntry {
+    fn new() -> Self {
+        let (sender, _receiver) = tokio::sync::watch::channel(None);
+        Self { sender }
+    }
+
+    fn subscribe(&self) -> tokio::sync::watch::Receiver<Option<SharedResult>> {
+        self.sender.subscribe()
+    }
+
+    fn publish(&self, result: SharedResult) {
+        let _ = self.sender.send(Some(result));
+    }
+}
+
+type InFlightResult = tokio::sync::watch::Receiver<Option<SharedResult>>;
+type InFlightFetchList = Vec<(usize, Query)>;
+type InFlightWaitList = Vec<(usize, Query, InFlightResult)>;
+type InFlightPartition = (InFlightFetchList, InFlightWaitList);
+
+struct InFlightGuard {
+    cache: Arc<Mutex<BalanceCache>>,
+    queries: Vec<Query>,
+}
+
+impl InFlightGuard {
+    fn new(cache: Arc<Mutex<BalanceCache>>, queries: Vec<Query>) -> Self {
+        Self { cache, queries }
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.complete_in_flight(&self.queries);
+        }
+    }
+}
+
+struct BalanceCache {
+    current_block: BlockNumber,
+    data: HashMap<Query, BalanceEntry>,
+    policy: CachePolicy,
+    in_flight: HashMap<Query, InFlightEntry>,
+}
+
+impl BalanceCache {
+    fn new(policy: CachePolicy) -> Self {
+        Self {
+            current_block: 0,
+            data: HashMap::new(),
+            policy,
+            in_flight: HashMap::new(),
+        }
+    }
+
+    fn log_stale_block_warning(&self, incoming_block: BlockNumber, context: &str) {
+        tracing::debug!(
+            incoming_block = incoming_block,
+            current_cached_block = self.current_block,
+            "{}",
+            context
+        );
+    }
+
+    fn read_and_touch(&mut self, query: &Query) -> Option<U256> {
+        match self.data.get_mut(query) {
+            Some(entry) => {
+                if entry.is_within_staleness_tolerance(self.current_block, &self.policy) {
+                    entry.update_last_accessed(self.current_block);
+                    Some(entry.balance)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    }
+
+    fn update_balance(&mut self, query: &Query, balance: U256, update_block: BlockNumber) {
+        if update_block < self.current_block {
+            self.log_stale_block_warning(
+                update_block,
+                "update_balance: discarding stale block result",
+            );
+            return;
+        }
+
+        if let Some(entry) = self.data.get_mut(query)
+            && update_block > entry.updated_block
+        {
+            entry.updated_block = update_block;
+            entry.balance = balance;
+        }
+    }
+
+    fn is_block_too_old_to_cache(&self, block: BlockNumber) -> bool {
+        self.policy
+            .is_block_too_old_to_cache(block, self.current_block)
+    }
+
+    fn is_valid_block_stamp(&self, block: BlockNumber) -> bool {
+        self.policy.is_valid_block_stamp(block, self.current_block)
+    }
+
+    fn merge_results(&mut self, results: &[Result<U256>], queries: &[Query], stamp: BlockNumber) {
+        for (query, result) in queries.iter().zip(results.iter()) {
+            if let Ok(balance) = result {
+                self.upsert_balance(query, *balance, stamp);
+            }
+        }
+    }
+
+    fn upsert_balance(&mut self, query: &Query, balance: U256, stamp: BlockNumber) {
+        if !self.is_valid_block_stamp(stamp) {
+            if stamp > self.current_block {
+                tracing::warn!(
+                    stamp = stamp,
+                    current_block = self.current_block,
+                    "upsert_balance: rejecting future block stamp (potential cache poisoning)"
+                );
+            } else {
+                self.log_stale_block_warning(
+                    stamp,
+                    "upsert_balance: discarding too-old block result",
+                );
+            }
+            return;
+        }
+
+        self.data
+            .entry(query.clone())
+            .and_modify(|entry| entry.merge_update(balance, stamp))
+            .or_insert_with(|| BalanceEntry::new(balance, stamp));
+    }
+
+    fn cleanup_stale_entries(&mut self) {
+        self.data
+            .retain(|_, entry| entry.should_retain(self.current_block, &self.policy));
+    }
+
+    fn mark_in_flight(&mut self, query: &Query) -> Option<InFlightResult> {
+        if let Some(entry) = self.in_flight.get(query) {
+            Some(entry.subscribe())
+        } else {
+            self.in_flight.insert(query.clone(), InFlightEntry::new());
+            None
+        }
+    }
+
+    fn complete_in_flight(&mut self, queries: &[Query]) {
+        for query in queries {
+            self.in_flight.remove(query);
+        }
+    }
+
+    fn store_in_flight_result(&mut self, query: &Query, result: &Result<U256>) {
+        if let Some(entry) = self.in_flight.get(query) {
+            let shared_result = match result {
+                Ok(balance) => Ok(*balance),
+                Err(err) => Err(Arc::from(err.to_string())),
+            };
+            entry.publish(shared_result);
+        }
+    }
 }
 
 pub struct Balances {
@@ -78,39 +276,290 @@ pub struct Balances {
 
 impl Balances {
     pub fn new(inner: Arc<dyn BalanceFetching>) -> Self {
+        Self::with_policy(inner, CachePolicy::default())
+    }
+
+    pub fn with_policy(inner: Arc<dyn BalanceFetching>, policy: CachePolicy) -> Self {
         Self {
             inner,
-            balance_cache: Default::default(),
+            balance_cache: Arc::new(Mutex::new(BalanceCache::new(policy))),
         }
+    }
+
+    fn with_cache_mut<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut BalanceCache) -> R,
+    {
+        self.balance_cache
+            .lock()
+            .map(|mut cache| f(&mut cache))
+            .map_err(|err| {
+                tracing::error!("cache mutex poisoned: {}", err);
+            })
+            .ok()
+    }
+
+    fn with_cache<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&BalanceCache) -> R,
+    {
+        self.balance_cache
+            .lock()
+            .map(|cache| f(&cache))
+            .map_err(|err| {
+                tracing::error!("cache mutex poisoned: {}", err);
+            })
+            .ok()
     }
 }
 
 struct CacheResponse {
-    // The indices and results of queries that were in the cache.
     cached: Vec<(usize, Result<U256>)>,
-    // Indices of queries that were not in the cache.
     missing: Vec<usize>,
-    requested_at: BlockNumber,
 }
 
 impl Balances {
     fn get_cached_balances(&self, queries: &[Query]) -> CacheResponse {
-        let mut cache = self.balance_cache.lock().unwrap();
-        let (cached, missing) = queries
-            .iter()
-            .enumerate()
-            .partition_map(|(i, query)| match cache.get_cached_balance(query) {
-                Some(balance) => itertools::Either::Left((i, Ok(balance))),
-                None => itertools::Either::Right(i),
+        self.with_cache_mut(|cache| {
+            let (cached, missing) = queries.iter().enumerate().partition_map(|(i, query)| {
+                match cache.read_and_touch(query) {
+                    Some(balance) => itertools::Either::Left((i, Ok(balance))),
+                    None => itertools::Either::Right(i),
+                }
             });
-        CacheResponse {
+            CacheResponse { cached, missing }
+        })
+        .unwrap_or_else(|| CacheResponse {
+            cached: vec![],
+            missing: queries.iter().enumerate().map(|(i, _)| i).collect(),
+        })
+    }
+
+    fn apply_fetch_results(&self, results: &[Result<U256>], queries: &[Query], stamp: BlockNumber) {
+        let has_any_ok = results.iter().any(|r| r.is_ok());
+        if !has_any_ok {
+            tracing::trace!("skipping cache update: all fetch results failed");
+            return;
+        }
+
+        self.with_cache_mut(|cache| {
+            if cache.is_block_too_old_to_cache(stamp) {
+                tracing::debug!(
+                    requested_block = stamp,
+                    current_block = cache.current_block,
+                    "discarding stale results"
+                );
+                return;
+            }
+
+            cache.merge_results(results, queries, stamp);
+        });
+    }
+
+    async fn handle_block_pinned_request(
+        &self,
+        queries: &[Query],
+        bn: BlockNumber,
+    ) -> Vec<Result<U256>> {
+        if queries.is_empty() {
+            return vec![];
+        }
+
+        tracing::debug!(
+            block = bn,
+            query_count = queries.len(),
+            "block-pinned fetch starting, cache read and write will be skipped"
+        );
+        self.inner.get_balances(queries, Some(bn)).await
+    }
+
+    async fn handle_none_request(&self, queries: &[Query]) -> Vec<Result<U256>> {
+        let CacheResponse { cached, missing } = self.get_cached_balances(queries);
+
+        if missing.is_empty() {
+            return cached.into_iter().map(|(_, result)| result).collect();
+        }
+
+        let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
+
+        let partition_result = self.partition_in_flight(&missing_queries);
+        let (needs_fetch, needs_wait) = match partition_result {
+            Ok(partition) => partition,
+            Err(_) => {
+                return self
+                    .fetch_and_merge(&missing_queries, &missing, cached, queries.len())
+                    .await;
+            }
+        };
+
+        let (fetched_results, waited_results) = tokio::join!(
+            self.fetch_in_flight(needs_fetch),
+            self.wait_for_in_flight(needs_wait)
+        );
+
+        self.merge_in_flight_results(
+            queries.len(),
             cached,
-            missing,
-            requested_at: cache.last_seen_block,
+            &missing,
+            fetched_results,
+            waited_results,
+        )
+    }
+
+    fn partition_in_flight(&self, missing_queries: &[Query]) -> Result<InFlightPartition, ()> {
+        match self.balance_cache.lock() {
+            Ok(mut cache) => Ok(missing_queries
+                .iter()
+                .enumerate()
+                .partition_map(|(i, query)| {
+                    if let Some(cell) = cache.mark_in_flight(query) {
+                        itertools::Either::Right((i, query.clone(), cell))
+                    } else {
+                        itertools::Either::Left((i, query.clone()))
+                    }
+                })),
+            Err(_) => Err(()),
         }
     }
 
-    /// Spawns task that refreshes the cached balances on every new block.
+    async fn fetch_in_flight(
+        &self,
+        needs_fetch: InFlightFetchList,
+    ) -> Vec<((usize, Query), Result<U256>)> {
+        if needs_fetch.is_empty() {
+            return vec![];
+        }
+
+        let fetch_queries: Vec<Query> = needs_fetch.iter().map(|(_, q)| q.clone()).collect();
+        let fetch_block = self.with_cache(|cache| cache.current_block).unwrap_or(0);
+
+        let _guard = InFlightGuard::new(self.balance_cache.clone(), fetch_queries.clone());
+
+        let results = self
+            .inner
+            .get_balances(&fetch_queries, Some(fetch_block))
+            .await;
+
+        debug_assert_eq!(
+            results.len(),
+            fetch_queries.len(),
+            "get_balances contract violation"
+        );
+
+        self.publish_in_flight_results(&fetch_queries, &results);
+        self.apply_fetch_results(&results, &fetch_queries, fetch_block);
+
+        needs_fetch.into_iter().zip(results).collect()
+    }
+
+    fn publish_in_flight_results(&self, queries: &[Query], results: &[Result<U256>]) {
+        self.with_cache_mut(|cache| {
+            for (query, result) in queries.iter().zip(results.iter()) {
+                cache.store_in_flight_result(query, result);
+            }
+        });
+    }
+
+    async fn wait_for_in_flight(&self, needs_wait: InFlightWaitList) -> Vec<(usize, Result<U256>)> {
+        if needs_wait.is_empty() {
+            return vec![];
+        }
+
+        let mut results = vec![];
+        for (i, _query, mut receiver) in needs_wait {
+            let result = self.await_in_flight_result(&mut receiver).await;
+            results.push((i, result));
+        }
+        results
+    }
+
+    async fn await_in_flight_result(&self, receiver: &mut InFlightResult) -> Result<U256> {
+        let wait_result = receiver.wait_for(|opt| opt.is_some()).await;
+
+        if wait_result.is_err() {
+            return Err(anyhow::anyhow!("in-flight request cancelled"));
+        }
+
+        drop(wait_result);
+
+        let shared_result = receiver
+            .borrow_and_update()
+            .as_ref()
+            .expect("value must be Some after wait_for")
+            .clone();
+
+        match shared_result {
+            Ok(balance) => Ok(balance),
+            Err(err_str) => Err(anyhow::anyhow!("{}", err_str)),
+        }
+    }
+
+    fn merge_in_flight_results(
+        &self,
+        total_len: usize,
+        cached: Vec<(usize, Result<U256>)>,
+        missing: &[usize],
+        fetched_results: Vec<((usize, Query), Result<U256>)>,
+        waited_results: Vec<(usize, Result<U256>)>,
+    ) -> Vec<Result<U256>> {
+        let mut results: Vec<Option<Result<U256>>> = (0..total_len).map(|_| None).collect();
+
+        for (i, result) in cached {
+            results[i] = Some(result);
+        }
+
+        for ((i, _), result) in fetched_results {
+            results[missing[i]] = Some(result);
+        }
+
+        for (i, result) in waited_results {
+            results[missing[i]] = Some(result);
+        }
+
+        results
+            .into_iter()
+            .map(|r| r.expect("all indices must be filled"))
+            .collect()
+    }
+
+    async fn fetch_and_merge(
+        &self,
+        missing_queries: &[Query],
+        missing: &[usize],
+        cached: Vec<(usize, Result<U256>)>,
+        total_len: usize,
+    ) -> Vec<Result<U256>> {
+        let fetch_block = self.with_cache(|cache| cache.current_block).unwrap_or(0);
+
+        let new_balances = self
+            .inner
+            .get_balances(missing_queries, Some(fetch_block))
+            .await;
+
+        debug_assert_eq!(
+            new_balances.len(),
+            missing_queries.len(),
+            "get_balances contract violation"
+        );
+
+        self.apply_fetch_results(&new_balances, missing_queries, fetch_block);
+
+        let mut results: Vec<Option<Result<U256>>> = (0..total_len).map(|_| None).collect();
+
+        for (i, result) in cached {
+            results[i] = Some(result);
+        }
+
+        for (i, result) in missing.iter().zip(new_balances) {
+            results[*i] = Some(result);
+        }
+
+        results
+            .into_iter()
+            .map(|r| r.expect("all indices must be filled"))
+            .collect()
+    }
+
     pub fn spawn_background_task(&self, block_stream: CurrentBlockWatcher) {
         let inner = self.inner.clone();
         let cache = self.balance_cache.clone();
@@ -120,34 +569,48 @@ impl Balances {
             while let Some(block) = stream.next().await {
                 let balances_to_update = {
                     let mut cache = cache.lock().unwrap();
-                    cache.last_seen_block = block.number;
+                    cache.current_block = block.number;
+                    let policy = cache.policy;
                     cache
                         .data
                         .iter()
                         .filter_map(|(query, entry)| {
-                            // Only update balances that have been requested recently.
-                            let oldest_allowed_request =
-                                cache.last_seen_block.saturating_sub(EVICTION_TIME);
-                            (entry.requested_at >= oldest_allowed_request).then_some(query.clone())
+                            entry
+                                .should_retain(block.number, &policy)
+                                .then_some(query.clone())
                         })
                         .collect_vec()
                 };
 
-                let results = inner.get_balances(&balances_to_update).await;
+                let results = if !balances_to_update.is_empty() {
+                    Some(
+                        inner
+                            .get_balances(&balances_to_update, Some(block.number))
+                            .await,
+                    )
+                } else {
+                    None
+                };
 
                 let mut cache = cache.lock().unwrap();
-                balances_to_update
-                    .into_iter()
-                    .zip(results)
-                    .for_each(|(query, result)| {
-                        if let Ok(balance) = result {
-                            cache.update_balance(&query, balance, block.number);
+                if let Some(results) = results {
+                    for (query, result) in balances_to_update.into_iter().zip(results) {
+                        match result {
+                            Ok(balance) => {
+                                cache.update_balance(&query, balance, block.number);
+                            }
+                            Err(err) => {
+                                tracing::warn!(
+                                    ?query,
+                                    error = ?err,
+                                    block = block.number,
+                                    "background balance update failed"
+                                );
+                            }
                         }
-                    });
-                cache.data.retain(|_, value| {
-                    // Only keep balances where we know we have the most recent data.
-                    value.updated_at >= block.number
-                });
+                    }
+                }
+                cache.cleanup_stale_entries();
             }
             tracing::error!("block stream terminated unexpectedly");
         };
@@ -158,32 +621,15 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
-        let CacheResponse {
-            mut cached,
-            missing,
-            requested_at,
-        } = self.get_cached_balances(queries);
-
-        if missing.is_empty() {
-            return cached.into_iter().map(|(_, result)| result).collect();
+    async fn get_balances(
+        &self,
+        queries: &[Query],
+        block_number: Option<BlockNumber>,
+    ) -> Vec<Result<U256>> {
+        match block_number {
+            Some(bn) => self.handle_block_pinned_request(queries, bn).await,
+            None => self.handle_none_request(queries).await,
         }
-
-        let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
-        let new_balances = self.inner.get_balances(&missing_queries).await;
-
-        {
-            let mut cache = self.balance_cache.lock().unwrap();
-            for (query, result) in missing_queries.into_iter().zip(new_balances.iter()) {
-                if let Ok(balance) = result {
-                    cache.insert_balance(query, *balance, requested_at)
-                }
-            }
-        }
-
-        cached.extend(missing.into_iter().zip(new_balances));
-        cached.sort_by_key(|(i, _)| *i);
-        cached.into_iter().map(|(_, balance)| balance).collect()
     }
 
     async fn can_transfer(
@@ -217,21 +663,27 @@ mod tests {
         }
     }
 
+    impl CachePolicy {
+        fn eviction_time_for_test(&self) -> BlockNumber {
+            self.eviction_time
+        }
+    }
+
     #[tokio::test]
     async fn caches_ok_results() {
         let mut inner = MockBalanceFetching::new();
         inner
             .expect_get_balances()
             .times(1)
-            .withf(|arg| arg == [query(1)])
-            .returning(|_| vec![Ok(U256::ONE)]);
+            .withf(|queries, block| queries == [query(1)] && *block == Some(0))
+            .returning(|_, _| vec![Ok(U256::ONE)]);
 
         let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner`.
-        let result = fetcher.get_balances(&[query(1)]).await;
+        let result = fetcher.get_balances(&[query(1)], None).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
         // Fetches balance from cache and skips calling `inner`.
-        let result = fetcher.get_balances(&[query(1)]).await;
+        let result = fetcher.get_balances(&[query(1)], None).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
     }
 
@@ -241,14 +693,14 @@ mod tests {
         inner
             .expect_get_balances()
             .times(2)
-            .withf(|arg| arg == [query(1)])
-            .returning(|_| vec![Err(anyhow::anyhow!("some error"))]);
+            .withf(|queries, block| queries == [query(1)] && *block == Some(0))
+            .returning(|_, _| vec![Err(anyhow::anyhow!("some error"))]);
 
         let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner`.
-        assert!(fetcher.get_balances(&[query(1)]).await[0].is_err());
+        assert!(fetcher.get_balances(&[query(1)], None).await[0].is_err());
         // 2nd call to `inner`.
-        assert!(fetcher.get_balances(&[query(1)]).await[0].is_err());
+        assert!(fetcher.get_balances(&[query(1)], None).await[0].is_err());
     }
 
     #[tokio::test]
@@ -259,30 +711,37 @@ mod tests {
         let mut inner = MockBalanceFetching::new();
         inner
             .expect_get_balances()
-            .times(2)
-            .withf(|arg| arg == [query(1)])
-            .returning(|_| vec![Ok(U256::ONE)]);
+            .times(1)
+            .withf(|queries, block| queries == [query(1)] && *block == Some(0))
+            .returning(|_, _| vec![Ok(U256::ONE)]);
+        inner
+            .expect_get_balances()
+            .times(1)
+            .withf(|queries, block| queries == [query(1)] && *block == Some(1))
+            .returning(|_, _| vec![Ok(U256::ONE)]);
 
         let fetcher = Balances::new(Arc::new(inner));
         fetcher.spawn_background_task(receiver);
 
-        // 1st call to `inner`. Balance gets cached.
-        let result = fetcher.get_balances(&[query(1)]).await;
+        let result = fetcher.get_balances(&[query(1)], None).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
-        // New block gets detected.
         sender
             .send(BlockInfo {
                 number: 1,
                 ..Default::default()
             })
             .unwrap();
-        // Wait for block to be noticed and cache to be updated. (2nd call to inner)
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        // Balance was already updated so this will hit the cache and skip calling
-        // `inner`.
-        let result = fetcher.get_balances(&[query(1)]).await;
+        {
+            let cache = fetcher.balance_cache.lock().unwrap();
+            let entry = cache.data.get(&query(1)).unwrap();
+            assert_eq!(entry.balance, U256::ONE);
+            assert_eq!(entry.updated_block, 1);
+        }
+
+        let result = fetcher.get_balances(&[query(1)], None).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
     }
 
@@ -292,26 +751,26 @@ mod tests {
         inner
             .expect_get_balances()
             .times(1)
-            .withf(|arg| arg == [query(1)])
-            .returning(|_| vec![Ok(U256::ONE)]);
+            .withf(|queries, block| queries == [query(1)] && *block == Some(0))
+            .returning(|_, _| vec![Ok(U256::ONE)]);
         inner
             .expect_get_balances()
             .times(1)
-            .withf(|arg| arg == [query(2)])
-            .returning(|_| vec![Ok(U256::from(2))]);
+            .withf(|queries, block| queries == [query(2)] && *block == Some(0))
+            .returning(|_, _| vec![Ok(U256::from(2))]);
 
         let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner` putting balance 1 into the cache.
-        let result = fetcher.get_balances(&[query(1)]).await;
+        let result = fetcher.get_balances(&[query(1)], None).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
         // Fetches balance 1 from cache and balance 2 fresh. (2nd call to `inner`)
-        let result = fetcher.get_balances(&[query(1), query(2)]).await;
+        let result = fetcher.get_balances(&[query(1), query(2)], None).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
         assert_eq!(result[1].as_ref().unwrap(), &U256::from(2));
 
         // Now balance 2 is also in the cache. Skipping call to `inner`.
-        let result = fetcher.get_balances(&[query(2)]).await;
+        let result = fetcher.get_balances(&[query(2)], None).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::from(2));
     }
 
@@ -320,13 +779,14 @@ mod tests {
         let first_block = BlockInfo::default();
         let (sender, receiver) = tokio::sync::watch::channel(first_block);
 
+        let policy = CachePolicy::default();
         let mut inner = MockBalanceFetching::new();
         inner
             .expect_get_balances()
-            .times(7)
-            .returning(|_| vec![Ok(U256::ONE)]);
+            .times(6)
+            .returning(|_, _| vec![Ok(U256::ONE)]);
 
-        let fetcher = Balances::new(Arc::new(inner));
+        let fetcher = Balances::with_policy(Arc::new(inner), policy);
         fetcher.spawn_background_task(receiver);
 
         let cached_entry = || {
@@ -336,10 +796,10 @@ mod tests {
 
         assert!(cached_entry().is_none());
         // 1st call to `inner`. Balance gets cached.
-        let result = fetcher.get_balances(&[query(1)]).await;
+        let result = fetcher.get_balances(&[query(1)], None).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
-        for block in 1..=EVICTION_TIME + 1 {
+        for block in 1..=policy.eviction_time_for_test() + 1 {
             assert!(cached_entry().is_some());
             // New block gets detected.
             sender
@@ -348,7 +808,7 @@ mod tests {
                     ..Default::default()
                 })
                 .unwrap();
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
         assert!(cached_entry().is_none());
     }

@@ -329,7 +329,7 @@ impl Utilities {
             })
             .collect::<Vec<_>>();
 
-        let balances = self.balance_fetcher.get_balances(&queries).await;
+        let balances = self.balance_fetcher.get_balances(&queries, None).await;
 
         let result: HashMap<_, _> = queries
             .into_iter()

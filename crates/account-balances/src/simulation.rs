@@ -4,8 +4,9 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    crate::BalanceSimulator,
+    crate::{BalanceSimulator, BlockNumber, SimulateParams},
     alloy_primitives::{Address, U256},
+    alloy_rpc_types::BlockId,
     anyhow::Result,
     contracts::{BalancerV2Vault::BalancerV2Vault, ERC20},
     ethrpc::{Web3, alloy::ProviderLabelingExt},
@@ -21,13 +22,6 @@ pub struct Balances {
 
 impl Balances {
     pub fn new(web3: &Web3, balance_simulator: BalanceSimulator) -> Self {
-        // Note that the balances simulation **will fail** if the `vault`
-        // address is not a contract and the `source` is set to one of
-        // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
-        // needed). This is because Solidity generates code to verify that
-        // contracts exist at addresses that get called. This allows us to
-        // properly check if the `source` is not supported for the deployment
-        // work without additional code paths :tada:!
         let web3 = web3.labeled("balanceFetching");
 
         Self {
@@ -44,7 +38,17 @@ impl Balances {
         self.balance_simulator.vault
     }
 
-    async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
+    fn block_id_from_number(block_number: Option<BlockNumber>) -> BlockId {
+        block_number
+            .map(BlockId::number)
+            .unwrap_or_else(BlockId::latest)
+    }
+
+    async fn tradable_balance_simulated(
+        &self,
+        query: &Query,
+        block_number: Option<BlockNumber>,
+    ) -> Result<U256> {
         let simulation = self
             .balance_simulator
             .simulate(
@@ -52,8 +56,7 @@ impl Balances {
                 query.token,
                 query.source,
                 &query.interactions,
-                None,
-                query.balance_override.clone(),
+                SimulateParams::new(None, query.balance_override.clone(), block_number),
             )
             .await?;
         Ok(if simulation.can_transfer {
@@ -67,26 +70,33 @@ impl Balances {
         &self,
         query: &Query,
         token: &ERC20::Instance,
+        block_number: Option<BlockNumber>,
     ) -> Result<U256> {
+        let block_id = Self::block_id_from_number(block_number);
+
         let usable_balance = match query.source {
             SellTokenSource::Erc20 => {
-                let balance = token.balanceOf(query.owner);
-                let allowance = token.allowance(query.owner, self.vault_relayer());
+                let balance_call = token.balanceOf(query.owner).block(block_id);
+                let allowance_call = token
+                    .allowance(query.owner, self.vault_relayer())
+                    .block(block_id);
                 let (balance, allowance) = futures::try_join!(
-                    balance.call().into_future(),
-                    allowance.call().into_future()
+                    balance_call.call().into_future(),
+                    allowance_call.call().into_future()
                 )?;
                 std::cmp::min(balance, allowance)
             }
             SellTokenSource::External => {
                 let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
-                let balance = token.balanceOf(query.owner);
-                let approved = vault.hasApprovedRelayer(query.owner, self.vault_relayer());
-                let allowance = token.allowance(query.owner, self.vault());
+                let balance_call = token.balanceOf(query.owner).block(block_id);
+                let approved_call = vault
+                    .hasApprovedRelayer(query.owner, self.vault_relayer())
+                    .block(block_id);
+                let allowance_call = token.allowance(query.owner, self.vault()).block(block_id);
                 let (balance, approved, allowance) = futures::try_join!(
-                    balance.call().into_future(),
-                    approved.call().into_future(),
-                    allowance.call().into_future()
+                    balance_call.call().into_future(),
+                    approved_call.call().into_future(),
+                    allowance_call.call().into_future()
                 )?;
                 match approved {
                     true => std::cmp::min(balance, allowance),
@@ -95,14 +105,19 @@ impl Balances {
             }
             SellTokenSource::Internal => {
                 let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
-                let balance = vault.getInternalBalance(query.owner, vec![query.token]);
-                let approved = vault.hasApprovedRelayer(query.owner, self.vault_relayer());
+                let tokens = vec![query.token];
+                let balance_call = vault
+                    .getInternalBalance(query.owner, tokens)
+                    .block(block_id);
+                let approved_call = vault
+                    .hasApprovedRelayer(query.owner, self.vault_relayer())
+                    .block(block_id);
                 let (balance, approved) = futures::try_join!(
-                    balance.call().into_future(),
-                    approved.call().into_future()
+                    balance_call.call().into_future(),
+                    approved_call.call().into_future()
                 )?;
                 match approved {
-                    true => balance[0], // internal approvals are always U256::MAX
+                    true => balance[0],
                     false => U256::ZERO,
                 }
             }
@@ -114,16 +129,20 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
-        // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
+    async fn get_balances(
+        &self,
+        queries: &[Query],
+        block_number: Option<BlockNumber>,
+    ) -> Vec<Result<U256>> {
         let futures = queries
             .iter()
             .map(|query| async {
                 if query.interactions.is_empty() {
                     let token = ERC20::Instance::new(query.token, self.web3.provider.clone());
-                    self.tradable_balance_simple(query, &token).await
+                    self.tradable_balance_simple(query, &token, block_number)
+                        .await
                 } else {
-                    self.tradable_balance_simulated(query).await
+                    self.tradable_balance_simulated(query, block_number).await
                 }
             })
             .collect::<Vec<_>>();
@@ -143,8 +162,7 @@ impl BalanceFetching for Balances {
                 query.token,
                 query.source,
                 &query.interactions,
-                Some(amount),
-                query.balance_override.clone(),
+                SimulateParams::new(Some(amount), query.balance_override.clone(), None),
             )
             .await
             .map_err(|err| TransferSimulationError::Other(err.into()))?;
