@@ -9,7 +9,10 @@ use {
     },
     alloy::primitives::U256,
     eth_domain_types::{self as eth, GasPrice},
-    std::{collections::{HashMap, HashSet}, sync::Arc},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     thiserror::Error,
 };
 
