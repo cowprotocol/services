@@ -55,7 +55,7 @@ impl Uploader {
     /// bucket. Compresses the bytes before uploading. Returns the key under
     /// which the file can be queried.
     pub async fn upload_json_bytes(&self, id: String, content: Bytes) -> Result<String> {
-        let compressed = tokio::task::spawn_blocking(move || Self::gzip(content))
+        let compressed = tokio::task::spawn_blocking(move || Self::gzip(&content))
             .await
             .context("compression task panicked")??;
         let key = std::path::Path::new(&self.filename_prefix)
@@ -95,8 +95,8 @@ impl Uploader {
     }
 
     /// Compresses the input bytes using Gzip.
-    fn gzip(bytes: Bytes) -> Result<Vec<u8>> {
-        let mut encoder = GzEncoder::new(bytes.as_ref(), Compression::new(3));
+    fn gzip(bytes: &[u8]) -> Result<Vec<u8>> {
+        let mut encoder = GzEncoder::new(bytes, Compression::new(3));
         let mut encoded: Vec<u8> = Vec::with_capacity(bytes.len());
         encoder.read_to_end(&mut encoded).context("gzip encoding")?;
         Ok(encoded)
