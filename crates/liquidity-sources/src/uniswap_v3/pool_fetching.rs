@@ -155,7 +155,7 @@ impl PoolsCheckpointHandler {
             for pool in &registered_pools.pools {
                 let pair =
                     TokenPair::new(pool.token0.id, pool.token1.id).context("cant create pair")?;
-                // we store addresses in a `Vec` instead of a `HashSet` to safe on memory but
+                // we store addresses in a `Vec` instead of a `HashSet` to save on memory but
                 // we still want to ensure there are no duplicated pools.
                 let pools = pools_by_token_pair.entry(pair).or_default();
                 if !pools.contains(&pool.id) {
