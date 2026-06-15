@@ -488,23 +488,13 @@ impl Competition {
         // Score the settlements.
         let scores = settlements
             .into_iter()
-            .map(|settlement| {
+            .filter_map(|settlement| {
                 observe::scoring(&settlement);
-                (
-                    settlement.score(
+                settlement
+                    .score(
                         &auction.native_prices(),
                         auction.surplus_capturing_jit_order_owners(),
-                    ),
-                    settlement,
-                )
-            })
-            .collect_vec();
-
-        // Filter out settlements which failed scoring.
-        let scores = scores
-            .into_iter()
-            .filter_map(|(result, settlement)| {
-                result
+                    )
                     .inspect_err(|err| {
                         observe::scoring_failed(self.solver.name(), err);
                         notify::scoring_failed(
