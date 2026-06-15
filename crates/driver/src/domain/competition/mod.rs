@@ -486,37 +486,31 @@ impl Competition {
         }
 
         // Score the settlements.
-        let scores = settlements
+        let scored: Vec<(Solved, Settlement)> = settlements
             .into_iter()
             .filter_map(|settlement| {
                 observe::scoring(&settlement);
-                settlement
-                    .score(
-                        &auction.native_prices(),
-                        auction.surplus_capturing_jit_order_owners(),
-                    )
-                    .inspect_err(|err| {
-                        observe::scoring_failed(self.solver.name(), err);
+                let score = settlement.score(
+                    &auction.native_prices(),
+                    auction.surplus_capturing_jit_order_owners(),
+                );
+                match score {
+                    Ok(score) => {
+                        observe::score(&settlement, &score);
+                        Some((score, settlement))
+                    }
+                    Err(err) => {
+                        observe::scoring_failed(self.solver.name(), &err);
                         notify::scoring_failed(
                             &self.solver,
                             auction.id(),
                             settlement.solution(),
-                            err,
+                            &err,
                         );
-                    })
-                    .ok()
-                    .map(|score| (score, settlement))
+                        None
+                    }
+                }
             })
-            .collect_vec();
-
-        // Observe the scores.
-        for (score, settlement) in scores.iter() {
-            observe::score(settlement, score);
-        }
-
-        // Build scored settlements sorted best-first.
-        let scored: Vec<(Solved, Settlement)> = scores
-            .into_iter()
             .sorted_by_key(|(score, _)| Reverse(*score))
             .map(|(score, settlement)| {
                 let solved = Solved {
