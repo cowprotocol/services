@@ -23,7 +23,10 @@ impl ServiceMaintenance {
         }
     }
 
-    async fn run_maintenance_for_blocks(mut self, blocks: impl Stream<Item = BlockInfo>) -> Result<()> {
+    async fn run_maintenance_for_blocks(
+        mut self,
+        blocks: impl Stream<Item = BlockInfo>,
+    ) -> Result<()> {
         for maintainer in self.maintainers.iter().filter_map(Weak::upgrade) {
             self.metrics
                 .runs
