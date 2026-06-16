@@ -151,18 +151,17 @@ impl PoolsCheckpointHandler {
         );
 
         let pools_by_token_pair = {
+            // we store addresses in a `Vec` instead of a `HashSet` to save on memory but
+            // we still ensure there are no duplicated pools.
             let mut pools_by_token_pair: HashMap<TokenPair, Vec<Address>> = HashMap::new();
             for pool in &registered_pools.pools {
                 let pair =
                     TokenPair::new(pool.token0.id, pool.token1.id).context("cant create pair")?;
-                // we store addresses in a `Vec` instead of a `HashSet` to save on memory but
-                // we still want to ensure there are no duplicated pools.
                 let pools = pools_by_token_pair.entry(pair).or_default();
                 if !pools.contains(&pool.id) {
                     pools.push(pool.id);
                 }
             }
-            // shrink used memory as much as possible
             pools_by_token_pair
                 .values_mut()
                 .for_each(|bucket| bucket.shrink_to_fit());
