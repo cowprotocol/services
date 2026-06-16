@@ -12,7 +12,10 @@ use {
     },
     anyhow::Context,
     eth_domain_types as eth,
-    event_indexing::{block_retriever::BlockRetrieving, maintenance::ServiceMaintenance},
+    event_indexing::{
+        block_retriever::BlockRetrieving,
+        maintenance::{Maintaining, ServiceMaintenance},
+    },
     liquidity_sources::uniswap_v3::{
         V3PoolDataSource,
         graph_api::UniV3SubgraphClient,
@@ -132,7 +135,9 @@ async fn init_liquidity(
         .context("failed to initialise UniswapV3 liquidity")?,
     );
 
-    let update_task = ServiceMaintenance::new(vec![pool_fetcher.clone()])
+    // only run maintenance as long as someone is using the original pool_fetcher
+    let maintenance = Arc::downgrade(&(pool_fetcher.clone() as Arc<dyn Maintaining>));
+    let update_task = ServiceMaintenance::new(vec![maintenance])
         .run_maintenance_on_new_block(eth.current_block().clone());
     tokio::task::spawn(update_task);
 
