@@ -230,15 +230,18 @@ impl SolvableOrdersCache {
             .map(|order| order.metadata.uid)
             .collect();
 
-        let (balances, orders, cow_amms, in_flight) = {
-            let queries = if self.disable_order_balance_filter {
-                vec![]
-            } else {
-                orders
-                    .iter()
-                    .map(|o| Query::from_order(o))
-                    .collect::<Vec<_>>()
-            };
+        let (balances, orders, cow_amms, in_flight) = if self.disable_order_balance_filter {
+            let (orders, cow_amms, in_flight) = tokio::join!(
+                self.filter_invalid_orders(orders, &mut invalid_order_uids),
+                self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
+                self.fetch_in_flight_orders(block),
+            );
+            (HashMap::new(), orders, cow_amms, in_flight)
+        } else {
+            let queries = orders
+                .iter()
+                .map(|o| Query::from_order(o))
+                .collect::<Vec<_>>();
             tokio::join!(
                 self.fetch_balances(queries, block),
                 self.filter_invalid_orders(orders, &mut invalid_order_uids),
