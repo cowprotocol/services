@@ -90,16 +90,17 @@ impl ServiceMaintenance {
 
     async fn run_maintenance(&self) -> Result<()> {
         let mut no_error = true;
-        for (maintainer, result) in join_all(
+        for (result, maintainer) in join_all(
             self.maintainers
                 .iter()
                 .filter_map(Weak::upgrade)
-                .map(|m| async move { (m.name().to_string(), m.run_maintenance().await) }),
+                .map(|m| async move { (m.run_maintenance().await, m) }),
         )
         .await
         .into_iter()
         {
             if let Err(err) = result {
+                let maintainer = maintainer.name();
                 tracing::warn!(
                     "Service Maintenance Error for maintainer {}: {:?}",
                     maintainer,
@@ -107,7 +108,7 @@ impl ServiceMaintenance {
                 );
                 self.metrics
                     .runs
-                    .with_label_values(&["failure", &maintainer])
+                    .with_label_values(&["failure", maintainer])
                     .inc();
 
                 no_error = false;
