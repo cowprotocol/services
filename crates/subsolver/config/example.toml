@@ -1,0 +1,18 @@
+chain-id = 1
+orderbook-url = "https://api.cow.fi/mainnet"
+byos-url = "http://127.0.0.1:7872"
+node-url = "https://eth-mainnet.example.com"
+poll-interval = "5s"
+# Private key for signing proposals (hex with 0x prefix)
+private-key = "0x0000000000000000000000000000000000000000000000000000000000000001"
+
+[solver]
+base-tokens = [
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",  # WETH
+]
+max-hops = 1
+max-partial-attempts = 1
+native-token-price-estimation-amount = "100000000000000000"
+
+[uniswap-v2]
+router = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"

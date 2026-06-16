@@ -1,0 +1,48 @@
+[package]
+name = "byos"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+doctest = false
+name = "byos"
+path = "src/lib.rs"
+
+[[bin]]
+name = "byos"
+path = "src/main.rs"
+
+[dependencies]
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true, default-features = false, features = ["serde"] }
+clap = { workspace = true, features = ["derive", "env"] }
+const-hex = { workspace = true }
+number = { workspace = true }
+observe = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
+serde-ext = { workspace = true }
+solvers-dto = { workspace = true }
+tikv-jemallocator = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync"] }
+toml = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["limit", "trace"] }
+tracing = { workspace = true }
+
+# TODO: re-evaluate these dependencies as the crate stabilizes
+shared = { workspace = true }
+
+[dev-dependencies]
+alloy-signer = { workspace = true }
+alloy-signer-local = { workspace = true }
+
+[build-dependencies]
+anyhow = { workspace = true }
+vergen = { workspace = true, features = ["git", "gitcl"] }
+
+[lints]
+workspace = true

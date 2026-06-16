@@ -2125,6 +2125,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5dd9dc738b7a8311c7ade152424974d8115f2cdad61e8dab8dac9f2362298510"
 
 [[package]]
+name = "byos"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-signer",
+ "alloy-signer-local",
+ "alloy-sol-types",
+ "anyhow",
+ "axum 0.8.8",
+ "chrono",
+ "clap",
+ "const-hex",
+ "number",
+ "observe",
+ "serde",
+ "serde-ext",
+ "serde_json",
+ "serde_with",
+ "shared",
+ "solvers-dto",
+ "tikv-jemallocator",
+ "tokio",
+ "toml",
+ "tower 0.5.3",
+ "tower-http",
+ "tracing",
+ "vergen",
+]
+
+[[package]]
 name = "byte-slice-cast"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8388,6 +8418,42 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "subsolver"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-signer",
+ "alloy-signer-local",
+ "alloy-sol-types",
+ "anyhow",
+ "byos",
+ "chain",
+ "chrono",
+ "clap",
+ "const-hex",
+ "contracts",
+ "ethrpc",
+ "humantime",
+ "model",
+ "number",
+ "observe",
+ "reqwest 0.13.2",
+ "serde",
+ "serde-ext",
+ "serde_json",
+ "serde_with",
+ "shared",
+ "solvers",
+ "solvers-dto",
+ "tikv-jemallocator",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
+ "vergen",
 ]
 
 [[package]]

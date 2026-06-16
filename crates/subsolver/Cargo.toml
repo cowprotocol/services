@@ -1,0 +1,46 @@
+[package]
+name = "subsolver"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "subsolver"
+path = "src/main.rs"
+
+[dependencies]
+alloy-primitives = { workspace = true }
+alloy-signer = { workspace = true }
+alloy-signer-local = { workspace = true }
+alloy-sol-types = { workspace = true }
+anyhow = { workspace = true }
+byos = { workspace = true }
+chain = { workspace = true }
+chrono = { workspace = true, default-features = false }
+clap = { workspace = true, features = ["derive", "env"] }
+const-hex = { workspace = true }
+contracts = { workspace = true }
+ethrpc = { workspace = true }
+humantime = { workspace = true }
+model = { workspace = true }
+number = { workspace = true }
+observe = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-ext = { workspace = true }
+serde_with = { workspace = true }
+shared = { workspace = true }
+solvers = { workspace = true }
+solvers-dto = { workspace = true }
+tikv-jemallocator = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
+toml = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[build-dependencies]
+anyhow = { workspace = true }
+vergen = { workspace = true, features = ["git", "gitcl"] }
+
+[lints]
+workspace = true

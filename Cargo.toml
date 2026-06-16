@@ -122,6 +122,7 @@ solana-indexer = { path = "crates/solana-indexer" }
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
+byos = { path = "crates/byos" }
 sqlx = {
   version = "0.8",
   default-features = false,
