@@ -186,13 +186,8 @@ async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
 }
 
 /// Spawns the pool-indexer task and waits for its `/health` endpoint to come
-/// up. Used by `with_pool_indexer` and `with_pool_indexer_at`. A `None`
-/// `metrics_port` binds the metrics server to OS-chosen port 0; pass `Some`
-/// when a test needs to scrape it.
-async fn spawn_pool_indexer(
-    factory: Address,
-    metrics_port: Option<u16>,
-) -> tokio::task::JoinHandle<()> {
+/// up.
+async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task::JoinHandle<()> {
     let config = Configuration {
         database: DatabaseConfig {
             url: LOCAL_DB_URL.parse().unwrap(),
@@ -215,10 +210,7 @@ async fn spawn_pool_indexer(
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, POOL_INDEXER_PORT)),
         },
         metrics: MetricsConfig {
-            bind_address: SocketAddr::V4(SocketAddrV4::new(
-                Ipv4Addr::LOCALHOST,
-                metrics_port.unwrap_or(0),
-            )),
+            bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, metrics_port)),
         },
     };
     let handle = tokio::task::spawn(pool_indexer::run(config));
@@ -235,17 +227,7 @@ async fn spawn_pool_indexer(
 /// Runs `body` with a freshly-started pool-indexer. The indexer is spawned
 /// before the closure runs, then `abort`ed and `await`ed after — so the port
 /// is fully released before this returns, and a follow-up call can re-bind it.
-async fn with_pool_indexer<F, Fut, T>(factory: Address, body: F) -> T
-where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = T>,
-{
-    with_pool_indexer_at(factory, None, body).await
-}
-
-/// `with_pool_indexer` variant that lets the caller pin the metrics port —
-/// only `driver_integration` needs this (it asserts on the metrics output).
-async fn with_pool_indexer_at<F, Fut, T>(factory: Address, metrics_port: Option<u16>, body: F) -> T
+async fn with_pool_indexer_at<F, Fut, T>(factory: Address, metrics_port: u16, body: F) -> T
 where
     F: FnOnce() -> Fut,
     Fut: Future<Output = T>,
@@ -419,7 +401,7 @@ async fn driver_integration(web3: Web3) {
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
 
-    with_pool_indexer_at(factory_addr, Some(POOL_INDEXER_METRICS_PORT), || async {
+    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
         // Without the min_pools=1 gate the driver could race against an empty
         // set and skip the ticks fetch this test asserts on.
         wait_for_indexer(head, 1).await;
@@ -534,7 +516,7 @@ async fn indexer_pass_snapshot(
     db: &PgPool,
     pool_addr: Address,
 ) -> (i64, String, i32, String) {
-    with_pool_indexer(factory_addr, || async {
+    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
         wait_for_indexer(head, 0).await;
         snapshot_pool_state(db, pool_addr).await
     })
@@ -559,7 +541,7 @@ async fn api_errors(web3: Web3) {
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
 
-    with_pool_indexer(factory_addr, || async {
+    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
         wait_for_indexer(head, 0).await;
         invalid_address_returns_400().await;
         unknown_address_returns_empty_ticks().await;
@@ -613,7 +595,7 @@ async fn pagination(web3: Web3) {
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
 
-    with_pool_indexer(factory_addr, || async {
+    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
         wait_for_indexer(head, 3).await;
 
         let mut all_ids: Vec<String> = Vec::new();

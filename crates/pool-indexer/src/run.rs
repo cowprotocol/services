@@ -36,12 +36,13 @@ pub async fn run(config: Configuration) {
         config.network.factories.len(),
     ));
 
-    observe::metrics::serve_metrics(
+    // Abort the metrics task when `run` exits, so tests can rebind the port.
+    let _metrics = AbortOnDrop(observe::metrics::serve_metrics(
         Arc::new(AlwaysAlive),
         config.metrics.bind_address,
         Default::default(),
         startup,
-    );
+    ));
 
     let mut set = JoinSet::new();
     let api_router = crate::api::router(api_state);
@@ -78,6 +79,13 @@ impl StartupBarrier {
             flag.store(true, Ordering::Release);
             tracing::info!("all factories bootstrapped, marking startup ready");
         }
+    }
+}
+
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }
 
