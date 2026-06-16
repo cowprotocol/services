@@ -568,7 +568,17 @@ impl Balances {
         let task = async move {
             while let Some(block) = stream.next().await {
                 let balances_to_update = {
-                    let mut cache = cache.lock().unwrap();
+                    let mut cache = match cache.lock() {
+                        Ok(guard) => guard,
+                        Err(err) => {
+                            tracing::error!(
+                                block = block.number,
+                                error = %err,
+                                "cache mutex poisoned in background task, skipping block update"
+                            );
+                            continue;
+                        }
+                    };
                     cache.current_block = block.number;
                     let policy = cache.policy;
                     cache
@@ -592,7 +602,17 @@ impl Balances {
                     None
                 };
 
-                let mut cache = cache.lock().unwrap();
+                let mut cache = match cache.lock() {
+                    Ok(guard) => guard,
+                    Err(err) => {
+                        tracing::error!(
+                            block = block.number,
+                            error = %err,
+                            "cache mutex poisoned in background task, skipping balance updates"
+                        );
+                        continue;
+                    }
+                };
                 if let Some(results) = results {
                     for (query, result) in balances_to_update.into_iter().zip(results) {
                         match result {
