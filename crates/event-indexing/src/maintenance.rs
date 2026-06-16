@@ -23,7 +23,7 @@ impl ServiceMaintenance {
         }
     }
 
-    async fn run_maintenance_for_blocks(self, blocks: impl Stream<Item = BlockInfo>) -> Result<()> {
+    async fn run_maintenance_for_blocks(mut self, blocks: impl Stream<Item = BlockInfo>) -> Result<()> {
         for maintainer in self.maintainers.iter().filter_map(Weak::upgrade) {
             self.metrics
                 .runs
@@ -45,7 +45,8 @@ impl ServiceMaintenance {
                 .unwrap_or(Some(block)),
             None => blocks.next().await,
         } {
-            if self.maintainers.iter().all(|m| m.strong_count() == 0) {
+            self.maintainers.retain(|m| m.strong_count() > 0);
+            if !self.maintainers.is_empty() {
                 tracing::debug!("no component needs maintenance anymore, terminating loop");
                 return Ok(());
             }
