@@ -164,15 +164,12 @@ impl InjectIntoHttpRequest for Request {
 
 impl Response {
     pub fn into_domain(self) -> Vec<domain::competition::Solution> {
-        for solution in &self.solutions {
-            if !solution.clearing_prices.is_empty() {
-                tracing::debug!(
-                    solution_id = solution.solution_id,
-                    submission_address = %solution.submission_address,
-                    num_prices = solution.clearing_prices.len(),
-                    "driver sent deprecated clearingPrices field"
-                );
-            }
+        if self
+            .solutions
+            .iter()
+            .any(|solution| !solution.clearing_prices.is_empty())
+        {
+            tracing::debug!("driver sent deprecated clearingPrices field");
         }
         self.solutions
             .into_iter()
