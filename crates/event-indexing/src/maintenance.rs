@@ -49,7 +49,7 @@ impl ServiceMaintenance {
             None => blocks.next().await,
         } {
             self.maintainers.retain(|m| m.strong_count() > 0);
-            if !self.maintainers.is_empty() {
+            if self.maintainers.is_empty() {
                 tracing::debug!("no component needs maintenance anymore, terminating loop");
                 return Ok(());
             }
