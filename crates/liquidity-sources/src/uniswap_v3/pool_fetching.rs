@@ -126,7 +126,7 @@ struct PoolsCheckpoint {
 struct PoolsCheckpointHandler {
     source: Arc<dyn V3PoolDataSource>,
     /// Address is pool id while TokenPair is a pair or tokens for each pool.
-    pools_by_token_pair: HashMap<TokenPair, HashSet<Address>>,
+    pools_by_token_pair: HashMap<TokenPair, Vec<Address>>,
     /// Pools state on a specific block number in history considered reorg safe
     pools_checkpoint: Mutex<PoolsCheckpoint>,
 }
@@ -161,12 +161,24 @@ impl PoolsCheckpointHandler {
             "initialized registered pools",
         );
 
-        let mut pools_by_token_pair: HashMap<TokenPair, HashSet<Address>> = HashMap::new();
-        for pool in &registered_pools.pools {
-            let pair =
-                TokenPair::new(pool.token0.id, pool.token1.id).context("cant create pair")?;
-            pools_by_token_pair.entry(pair).or_default().insert(pool.id);
-        }
+        let pools_by_token_pair = {
+            // we store addresses in a `Vec` instead of a `HashSet` to save on memory but
+            // we still ensure there are no duplicated pools.
+            let mut pools_by_token_pair: HashMap<TokenPair, Vec<Address>> = HashMap::new();
+            for pool in &registered_pools.pools {
+                let pair =
+                    TokenPair::new(pool.token0.id, pool.token1.id).context("cant create pair")?;
+                let pools = pools_by_token_pair.entry(pair).or_default();
+                if !pools.contains(&pool.id) {
+                    pools.push(pool.id);
+                }
+            }
+            pools_by_token_pair
+                .values_mut()
+                .for_each(|bucket| bucket.shrink_to_fit());
+            pools_by_token_pair.shrink_to_fit();
+            pools_by_token_pair
+        };
 
         // can't fetch the state of all pools in constructor for performance reasons,
         // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest
