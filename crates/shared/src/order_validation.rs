@@ -159,7 +159,18 @@ fn log_simulation_outcome(
             ?err,
             "order simulation infra error",
         ),
-        _ => {}
+        (err_a, err_b) => {
+            tracing::warn!(
+                ?order_uid,
+                ?owner,
+                ?order_data,
+                full_app_data,
+                ?order_signature,
+                ?err_a,
+                ?err_b,
+                "order simulation errors mismatch"
+            )
+        }
     }
 }
 
