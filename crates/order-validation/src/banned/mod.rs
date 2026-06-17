@@ -66,6 +66,10 @@ impl Users {
         let need_lookup = addresses
             .into_iter()
             .filter(|address| {
+                if address.is_zero() {
+                    // We use the zero/burn address for some quotes, there's no point in checking if its banned
+                    return false
+                }
                 if self.list.contains(address) {
                     banned.insert(*address);
                     false
