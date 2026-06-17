@@ -543,7 +543,7 @@ impl Solver {
     }
 }
 
-/// Serializes the request body in a way that avoid re-allocations while not
+/// Serializes the request body in a way that avoid re-allocating while not
 /// overallocating a lot of memory. It does that by keeping track of the biggest
 /// request seen for each kind of request (quote with/without liquidity, full
 /// auction with/without liquidity) and allocating the correct amount of memory
@@ -557,9 +557,9 @@ fn serialize_body(auction_dto: solvers_dto::auction::Auction) -> Bytes {
     static AUCTION_WITHOUT_LIQUIDITY: AtomicUsize = AtomicUsize::new(1_000);
 
     // based on the "shape" of the auction we pick the allocation size
-    let multiple_orders = auction_dto.orders.len() > 1;
+    let is_auction = auction_dto.id.is_some();
     let with_liquidity = !auction_dto.liquidity.is_empty();
-    let memory_target = match (multiple_orders, with_liquidity) {
+    let memory_target = match (is_auction, with_liquidity) {
         (false, false) => &QUOTE_WITHOUT_LIQUIDITY,
         (false, true) => &QUOTE_WITH_LIQUIDITY,
         (true, false) => &AUCTION_WITHOUT_LIQUIDITY,
@@ -574,7 +574,7 @@ fn serialize_body(auction_dto: solvers_dto::auction::Auction) -> Bytes {
 
     serde_json::to_writer(&mut buffer, &auction_dto).unwrap();
 
-    // now that we now how much memory was actually needed we update the memory
+    // now that we know how much memory was actually needed we update the memory
     // targets
     memory_target.fetch_max(buffer.len(), Ordering::Relaxed);
     tracing::trace!(pre_alloc_size, final_size = buffer.len(), "body allocation");
