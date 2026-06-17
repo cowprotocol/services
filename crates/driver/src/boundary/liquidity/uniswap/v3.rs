@@ -8,12 +8,20 @@ use {
                 uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
             },
         },
-        infra::{self, blockchain::Ethereum},
+        infra::{self, blockchain::Ethereum, liquidity::config::UniswapV3PoolSource},
     },
     anyhow::Context,
     eth_domain_types as eth,
-    event_indexing::{block_retriever::BlockRetrieving, maintenance::ServiceMaintenance},
-    liquidity_sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+    event_indexing::{
+        block_retriever::BlockRetrieving,
+        maintenance::{Maintaining, ServiceMaintenance},
+    },
+    liquidity_sources::uniswap_v3::{
+        V3PoolDataSource,
+        graph_api::UniV3SubgraphClient,
+        pool_fetching::UniswapV3PoolFetcher,
+        pool_indexer::PoolIndexerClient,
+    },
     shared::{http_solver::model::TokenAmount, interaction::Interaction},
     solver::{
         liquidity::{
@@ -114,21 +122,22 @@ async fn init_liquidity(
     config: &infra::liquidity::config::UniswapV3,
 ) -> anyhow::Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
+    let source = build_pool_data_source(eth, config).await?;
 
     let pool_fetcher = Arc::new(
         UniswapV3PoolFetcher::new(
-            &config.graph_url,
+            source,
             web3.clone(),
-            boundary::liquidity::http_client(),
             block_retriever,
             config.max_pools_to_initialize,
-            config.max_pools_per_tick_query,
         )
         .await
         .context("failed to initialise UniswapV3 liquidity")?,
     );
 
-    let update_task = ServiceMaintenance::new(vec![pool_fetcher.clone()])
+    // only run maintenance as long as someone is using the original pool_fetcher
+    let maintenance = Arc::downgrade(&(pool_fetcher.clone() as Arc<dyn Maintaining>));
+    let update_task = ServiceMaintenance::new(vec![maintenance])
         .run_maintenance_on_new_block(eth.current_block().clone());
     tokio::task::spawn(update_task);
 
@@ -137,4 +146,40 @@ async fn init_liquidity(
         *eth.contracts().settlement().address(),
         pool_fetcher,
     ))
+}
+
+/// Picks the V3 pool data source based on the configured pool source variant.
+async fn build_pool_data_source(
+    eth: &Ethereum,
+    config: &infra::liquidity::config::UniswapV3,
+) -> anyhow::Result<Arc<dyn V3PoolDataSource>> {
+    let http = boundary::liquidity::http_client();
+
+    match &config.pool_source {
+        UniswapV3PoolSource::PoolIndexer(indexer) => {
+            tracing::info!(
+                url = %indexer.url,
+                wait_until_timeout = ?indexer.wait_until_timeout,
+                "uniswap v3: using pool-indexer as data source",
+            );
+            Ok(Arc::new(PoolIndexerClient::new(
+                indexer.url.clone(),
+                eth.chain(),
+                http,
+                indexer.wait_until_timeout,
+            )))
+        }
+        UniswapV3PoolSource::Subgraph(subgraph) => {
+            tracing::info!(url = %subgraph.url, "uniswap v3: using subgraph as data source");
+            Ok(Arc::new(
+                UniV3SubgraphClient::from_subgraph_url(
+                    &subgraph.url,
+                    http,
+                    subgraph.max_pools_per_tick_query,
+                )
+                .await
+                .context("failed to construct UniV3 subgraph client")?,
+            ))
+        }
+    }
 }
