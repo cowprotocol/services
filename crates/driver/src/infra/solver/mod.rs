@@ -577,7 +577,7 @@ fn serialize_body(auction_dto: solvers_dto::auction::Auction) -> Bytes {
     // now that we now how much memory was actually needed we update the memory
     // targets
     memory_target.fetch_max(buffer.len(), Ordering::Relaxed);
-    tracing::debug!(pre_alloc_size, final_size = buffer.len(), "body allocation");
+    tracing::trace!(pre_alloc_size, final_size = buffer.len(), "body allocation");
 
     Bytes::from(buffer)
 }
