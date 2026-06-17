@@ -982,20 +982,33 @@ mod tests {
         let later_block_with_settlement = fetch_in_flight_orders(&mut db, 5).await.unwrap();
         assert_eq!(later_block_with_settlement, vec![order_uid(2)]);
 
-        // A failed submission attempt (before deadline block 10) releases order 2
-        // from in-flight.
+        // A solver can abort its submission before the deadline block is reached.
+        // Record a started-then-failed attempt for order 2's winning solution and
+        // assert the order is no longer in-flight, even though its deadline is still
+        // ahead of the queried block.
+        let auction_id = 1; // the auction order 2 won (see solutions above)
+        let solution_uid = 2; // winning solution holding order 2
+        let deadline_block = 10; // still ahead of the queried block (5) below
         let solver: Address = Default::default();
-        settlement_executions::insert(&mut db, 1, solver, 2, chrono::Utc::now(), 5, 10)
-            .await
-            .unwrap();
+        settlement_executions::insert(
+            &mut db,
+            auction_id,
+            solver,
+            solution_uid,
+            chrono::Utc::now(), // start_timestamp
+            5,                  // start_block
+            deadline_block,
+        )
+        .await
+        .unwrap();
         settlement_executions::update(
             &mut db,
-            1,
+            auction_id,
             solver,
-            2,
-            chrono::Utc::now(),
-            6,
-            "driver failed: FailedToSubmit".to_string(),
+            solution_uid,
+            chrono::Utc::now(),                          // end_timestamp
+            6,                                           // end_block
+            "driver failed: FailedToSubmit".to_string(), // non-success outcome
         )
         .await
         .unwrap();
