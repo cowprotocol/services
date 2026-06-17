@@ -24,6 +24,7 @@ use {
     },
     eth_domain_types as eth,
     ethrpc::block_stream::BlockInfo,
+    observe::tracing::lazy::Lazy,
     std::{
         collections::{BTreeMap, HashSet},
         time::Duration,
@@ -332,7 +333,8 @@ pub fn mounting_solver(solver: &solver::Name, path: &str) {
 }
 
 /// Observe that a request is about to be sent to the solver.
-pub fn solver_request(endpoint: &Url, req: &str) {
+pub fn solver_request(endpoint: &Url, req: impl AsRef<[u8]>) {
+    let req = Lazy(|| String::from_utf8_lossy(req.as_ref()));
     tracing::trace!(%endpoint, %req, "sending request to solver");
 }
 

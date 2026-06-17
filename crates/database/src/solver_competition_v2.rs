@@ -480,6 +480,15 @@ pub async fn fetch_in_flight_orders(
         AND NOT EXISTS (
             SELECT 1 FROM settlements s
             WHERE s.auction_id = ca.id AND s.solution_uid = ps.uid
+        )
+        -- Also release the order if its settlement attempt already ended without
+        -- success, instead of waiting for the deadline (the solver may abort early).
+        AND NOT EXISTS (
+            SELECT 1 FROM settlement_executions se
+            WHERE se.auction_id = ca.id
+                AND se.solution_uid = ps.uid
+                AND se.outcome IS NOT NULL
+                AND se.outcome <> 'success'
         );
     "#;
 
@@ -529,6 +538,7 @@ mod tests {
             events::{self, EventIndex, Settlement},
             orders::insert_order_and_ignore_conflicts,
             reference_scores,
+            settlement_executions,
             settlements,
         },
         sqlx::{Connection, Row},
@@ -971,5 +981,43 @@ mod tests {
         // when an order gets marked as settled we dont consider it inflight anymore
         let later_block_with_settlement = fetch_in_flight_orders(&mut db, 5).await.unwrap();
         assert_eq!(later_block_with_settlement, vec![order_uid(2)]);
+
+        // A solver can abort its submission before the deadline block is reached.
+        // Record a started-then-failed attempt for order 2's winning solution and
+        // assert the order is no longer in-flight, even though its deadline is still
+        // ahead of the queried block.
+        let auction_id = 1; // the auction order 2 won (see solutions above)
+        let solution_uid = 2; // winning solution holding order 2
+        let deadline_block = 10; // still ahead of the queried block (5) below
+        let solver: Address = Default::default();
+        settlement_executions::insert(
+            &mut db,
+            auction_id,
+            solver,
+            solution_uid,
+            chrono::Utc::now(), // start_timestamp
+            5,                  // start_block
+            deadline_block,
+        )
+        .await
+        .unwrap();
+        settlement_executions::update(
+            &mut db,
+            auction_id,
+            solver,
+            solution_uid,
+            chrono::Utc::now(),                          // end_timestamp
+            6,                                           // end_block
+            "driver failed: FailedToSubmit".to_string(), // non-success outcome
+        )
+        .await
+        .unwrap();
+
+        let after_failed_submission = fetch_in_flight_orders(&mut db, 5).await.unwrap();
+        assert!(
+            after_failed_submission.is_empty(),
+            "order should be released from in-flight after a failed submission, got \
+             {after_failed_submission:?}"
+        );
     }
 }

@@ -80,14 +80,6 @@ pub struct TradedOrder {
 pub struct Score(eth::Ether);
 
 impl Score {
-    pub fn try_new(score: eth::Ether) -> Result<Self, ZeroScore> {
-        if score.0.is_zero() {
-            Err(ZeroScore)
-        } else {
-            Ok(Self(score))
-        }
-    }
-
     pub fn get(&self) -> &eth::Ether {
         &self.0
     }
@@ -111,16 +103,4 @@ impl num::CheckedSub for Score {
     fn checked_sub(&self, v: &Self) -> Option<Self> {
         self.0.checked_sub(&v.0).map(Score)
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("the solver proposed a 0-score solution")]
-pub struct ZeroScore;
-
-#[derive(Debug, thiserror::Error)]
-pub enum SolutionError {
-    #[error(transparent)]
-    ZeroScore(#[from] ZeroScore),
-    #[error("the solver got deny listed")]
-    SolverDenyListed,
 }

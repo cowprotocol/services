@@ -177,33 +177,35 @@ impl Order {
         competition::Auction::new(
             None,
             vec![competition::Order {
-                uid: Default::default(),
-                receiver: None,
-                created: u32::try_from(Utc::now().timestamp())
-                    .unwrap_or(u32::MIN)
-                    .into(),
-                valid_to: util::Timestamp::MAX,
-                buy: self.buy(),
-                sell: self.sell(),
-                side: self.side,
-                kind: if quote_using_limit_orders {
-                    competition::order::Kind::Limit
-                } else {
-                    competition::order::Kind::Market
-                },
+                data: std::sync::Arc::new(competition::order::OrderData {
+                    uid: Default::default(),
+                    receiver: None,
+                    created: u32::try_from(Utc::now().timestamp())
+                        .unwrap_or(u32::MIN)
+                        .into(),
+                    valid_to: util::Timestamp::MAX,
+                    buy: self.buy(),
+                    sell: self.sell(),
+                    side: self.side,
+                    kind: if quote_using_limit_orders {
+                        competition::order::Kind::Limit
+                    } else {
+                        competition::order::Kind::Market
+                    },
+                    pre_interactions: Default::default(),
+                    post_interactions: Default::default(),
+                    sell_token_balance: competition::order::SellTokenBalance::Erc20,
+                    buy_token_balance: competition::order::BuyTokenBalance::Erc20,
+                    signature: competition::order::Signature {
+                        scheme: competition::order::signature::Scheme::Eip1271,
+                        data: Default::default(),
+                        signer: Default::default(),
+                    },
+                    protocol_fees: Default::default(),
+                    quote: Default::default(),
+                }),
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
-                pre_interactions: Default::default(),
-                post_interactions: Default::default(),
-                sell_token_balance: competition::order::SellTokenBalance::Erc20,
-                buy_token_balance: competition::order::BuyTokenBalance::Erc20,
-                signature: competition::order::Signature {
-                    scheme: competition::order::signature::Scheme::Eip1271,
-                    data: Default::default(),
-                    signer: Default::default(),
-                },
-                protocol_fees: Default::default(),
-                quote: Default::default(),
             }],
             [
                 auction::Token {
