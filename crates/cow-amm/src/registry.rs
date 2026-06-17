@@ -2,11 +2,11 @@ use {
     crate::{Amm, cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval},
     alloy_primitives::Address,
     contracts::cow_amm::CowAmmLegacyHelper,
-    ethrpc::{AlloyProvider, block_stream::CurrentBlockWatcher},
+    ethrpc::AlloyProvider,
     event_indexing::{
         block_retriever::BlockRetriever,
         event_handler::EventHandler,
-        maintenance::{Maintaining, ServiceMaintenance},
+        maintenance::Maintaining,
     },
     sqlx::PgPool,
     std::sync::Arc,
@@ -80,11 +80,6 @@ impl Registry {
             result.extend(cache.cow_amms().await);
         }
         result
-    }
-
-    pub fn spawn_maintenance_task(&self, block_stream: CurrentBlockWatcher) {
-        let maintenance = ServiceMaintenance::new(self.maintenance_tasks.clone());
-        tokio::task::spawn(maintenance.run_maintenance_on_new_block(block_stream));
     }
 
     pub fn maintenance_tasks(&self) -> &Vec<Arc<dyn Maintaining>> {

@@ -27,6 +27,7 @@ use {
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
     anyhow::Result,
+    bytes::Bytes,
     derive_more::{From, Into},
     eth_domain_types as eth,
     num::BigRational,
@@ -374,31 +375,32 @@ impl Solver {
 
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let auction_dto = dto::auction::new(
-            auction,
-            liquidity,
-            weth,
-            self.config.fee_handler,
-            self.config.solver_native_token,
-            &flashloan_hints,
-            &wrappers,
-            auction.deadline(self.timeouts()).solvers(),
-            self.config.haircut_bps,
-        );
 
         let body = {
+            let auction_dto = dto::auction::new(
+                auction,
+                liquidity,
+                weth,
+                self.config.fee_handler,
+                self.config.solver_native_token,
+                &flashloan_hints,
+                &wrappers,
+                auction.deadline(self.timeouts()).solvers(),
+                self.config.haircut_bps,
+            );
+
             // pre-allocate a big enough buffer to avoid re-allocating memory
             // as the request gets serialized
             const BYTES_PER_ORDER: usize = 1_300;
             let mut buffer = Vec::with_capacity(auction.orders().len() * BYTES_PER_ORDER);
             serde_json::to_writer(&mut buffer, &auction_dto).unwrap();
-            String::from_utf8(buffer).expect("serde_json only writes valid utf8")
+            Bytes::from(buffer)
         };
 
         if let Some(id) = auction.id() {
             // Only auctions with IDs are real auctions (/quote requests don't have an ID).
             // Only for those it makes sense to archive them and measure the execution time.
-            self.persistence.archive_auction(id, &auction_dto);
+            self.persistence.archive_auction(id, body.clone());
             ::observe::metrics::metrics().measure_auction_overhead(
                 start,
                 "driver",

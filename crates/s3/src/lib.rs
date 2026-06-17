@@ -2,7 +2,11 @@
 
 use {
     anyhow::{Context, Result, anyhow},
-    aws_sdk_s3::{Client, primitives::ByteStream},
+    aws_sdk_s3::{
+        Client,
+        primitives::{ByteStream, SdkBody},
+    },
+    bytes::Bytes,
     flate2::{Compression, bufread::GzEncoder},
     serde::Serialize,
     std::io::Read,
@@ -40,13 +44,20 @@ impl Uploader {
         id: String,
         content: impl Serialize + Send + Sync + 'static,
     ) -> Result<String> {
-        let encoded = tokio::task::spawn_blocking(move || {
-            let bytes = serde_json::to_vec(&content)?;
-            Self::gzip(&bytes)
-        })
-        .await
-        .context("compression task panicked")??;
+        let bytes =
+            tokio::task::spawn_blocking(move || serde_json::to_vec(&content).map(Bytes::from))
+                .await
+                .context("serialization task panicked")??;
+        self.upload_json_bytes(id, bytes).await
+    }
 
+    /// Uploads bytes which are expected to be valid JSON to the configured S3
+    /// bucket. Compresses the bytes before uploading. Returns the key under
+    /// which the file can be queried.
+    pub async fn upload_json_bytes(&self, id: String, content: Bytes) -> Result<String> {
+        let compressed = tokio::task::spawn_blocking(move || Self::gzip(&content))
+            .await
+            .context("compression task panicked")??;
         let key = std::path::Path::new(&self.filename_prefix)
             .join(format!("{id}.json"))
             .to_str()
@@ -56,7 +67,7 @@ impl Uploader {
             .put_object()
             .bucket(self.bucket.clone())
             .key(key.clone())
-            .body(ByteStream::new(encoded.into()))
+            .body(ByteStream::new(SdkBody::from(compressed)))
             .content_encoding("gzip")
             .content_type("application/json")
             .send()

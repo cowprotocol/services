@@ -19,6 +19,7 @@ use {
 #[async_trait::async_trait]
 pub trait BlockRetrieving: Debug + Send + Sync + 'static {
     async fn current_block(&self) -> Result<BlockInfo>;
+    async fn finalized_block(&self) -> Result<BlockInfo>;
     async fn block(&self, number: u64) -> Result<BlockNumberHash>;
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>>;
 }
@@ -28,6 +29,11 @@ impl BlockRetrieving for AlloyProvider {
     #[instrument(skip_all)]
     async fn current_block(&self) -> Result<BlockInfo> {
         get_block_at_id(&self, BlockId::latest()).await
+    }
+
+    #[instrument(skip_all)]
+    async fn finalized_block(&self) -> Result<BlockInfo> {
+        get_block_at_id(&self, BlockId::finalized()).await
     }
 
     #[instrument(skip_all)]
@@ -102,6 +108,11 @@ impl BlockRetrieving for BlockRetriever {
     #[instrument(skip_all)]
     async fn current_block(&self) -> Result<BlockInfo> {
         Ok(*self.block_stream.borrow())
+    }
+
+    #[instrument(skip_all)]
+    async fn finalized_block(&self) -> Result<BlockInfo> {
+        self.provider.finalized_block().await
     }
 
     #[instrument(skip_all)]
