@@ -55,10 +55,12 @@ pub struct QuoteHandler {
     app_data: Arc<app_data::Registry>,
     volume_fee: Option<VolumeFeeConfig>,
     volume_fee_policy: VolumeFeePolicy,
+    native_token: alloy::primitives::Address,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
 }
 
 impl QuoteHandler {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         order_validator: Arc<dyn OrderValidating>,
         quoter: Arc<dyn OrderQuoting>,
@@ -66,6 +68,7 @@ impl QuoteHandler {
         volume_fee: Option<VolumeFeeConfig>,
         volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
         enable_sell_equals_buy_volume_fee: bool,
+        native_token: alloy::primitives::Address,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
     ) -> Self {
         let volume_fee_policy = VolumeFeePolicy::new(
@@ -80,6 +83,7 @@ impl QuoteHandler {
             app_data,
             volume_fee,
             volume_fee_policy,
+            native_token,
             token_info_fetcher,
         }
     }
@@ -159,6 +163,7 @@ impl QuoteHandler {
             &request.side,
             self.volume_fee.as_ref(),
             &self.volume_fee_policy,
+            self.native_token,
             request.buy_token,
             request.sell_token,
         )
@@ -218,6 +223,7 @@ fn get_vol_fee_adjusted_quote_data(
     side: &OrderQuoteSide,
     volume_fee: Option<&VolumeFeeConfig>,
     volume_fee_policy: &VolumeFeePolicy,
+    native_token: alloy::primitives::Address,
     buy_token: alloy::primitives::Address,
     sell_token: alloy::primitives::Address,
 ) -> anyhow::Result<AdjustedQuoteData> {
@@ -229,7 +235,12 @@ fn get_vol_fee_adjusted_quote_data(
     };
 
     // Determine applicable fee factor considering same-token config and overrides
-    let factor = volume_fee_policy.get_applicable_volume_fee_factor(buy_token, sell_token, None);
+    let factor = volume_fee_policy.get_applicable_volume_fee_factor(
+        buy_token,
+        sell_token,
+        native_token,
+        None,
+    );
 
     let Some(factor) = factor else {
         return Ok(AdjustedQuoteData {
@@ -376,6 +387,7 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
+            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
@@ -416,6 +428,7 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
+            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
@@ -455,6 +468,7 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
+            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
@@ -499,6 +513,7 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
+            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
@@ -542,6 +557,7 @@ mod tests {
                 &side,
                 Some(&volume_fee_config),
                 &volume_fee_policy,
+                Default::default(),
                 TEST_BUY_TOKEN,
                 TEST_SELL_TOKEN,
             )
@@ -574,6 +590,7 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
+            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
@@ -610,6 +627,7 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
+            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )

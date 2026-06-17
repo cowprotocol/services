@@ -3,6 +3,7 @@ use {
         boundary,
         domain::{self, fee::Quote},
     },
+    alloy::primitives::Address,
     configs::{autopilot::fee_policy::FeePolicyKind, fee_factor::FeeFactor},
     shared::fee::VolumeFeePolicy,
 };
@@ -88,6 +89,7 @@ impl Volume {
         &self,
         order: &boundary::Order,
         volume_fee_policy: &VolumeFeePolicy,
+        native_token: Address,
     ) -> Option<domain::fee::Policy> {
         match order.metadata.class {
             boundary::OrderClass::Market => None,
@@ -97,6 +99,7 @@ impl Volume {
                 let factor = volume_fee_policy.get_applicable_volume_fee_factor(
                     order.data.buy_token,
                     order.data.sell_token,
+                    native_token,
                     Some(self.factor),
                 )?;
 

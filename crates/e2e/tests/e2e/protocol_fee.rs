@@ -1,5 +1,8 @@
 use {
-    ::alloy::primitives::{Address, U256},
+    ::alloy::{
+        primitives::{Address, U256},
+        providers::Provider,
+    },
     configs::{
         autopilot::{
             Configuration,
@@ -13,6 +16,7 @@ use {
             solver::Solver,
         },
         fee_factor::FeeFactor,
+        orderbook::order_validation::OrderValidationConfig,
         test_util::TestDefault,
     },
     e2e::{assert_approximately_eq, setup::*},
@@ -20,7 +24,7 @@ use {
     ethrpc::alloy::CallBuilderExt,
     model::{
         fee_policy::FeePolicy,
-        order::{Order, OrderCreation, OrderCreationAppData, OrderKind},
+        order::{BUY_ETH_ADDRESS, Order, OrderCreation, OrderCreationAppData, OrderKind},
         quote::{
             OrderQuote,
             OrderQuoteRequest,
@@ -65,6 +69,24 @@ async fn local_node_surplus_partner_fee() {
 #[ignore]
 async fn local_node_volume_fee_overrides() {
     run_test(volume_fee_overrides).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_volume_fee_dropped_on_same_token() {
+    run_test(volume_fee_dropped_on_same_token).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_volume_fee_charged_on_same_token_when_enabled() {
+    run_test(volume_fee_charged_on_same_token_when_enabled).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_volume_fee_dropped_on_wrapped_to_native_token() {
+    run_test(volume_fee_dropped_on_wrapped_to_native_token).await;
 }
 
 async fn combined_protocol_fees(web3: Web3) {
@@ -1230,6 +1252,364 @@ async fn volume_fee_overrides(web3: Web3) {
     assert_volume_fee(usdc_dai_trade, *token_dai.address(), 0.0005, sell_amount);
     assert_volume_fee(dai_usdt_trade, *token_usdt.address(), 0.0, sell_amount);
     assert_volume_fee(usdc_weth_trade, *token_weth.address(), 0.01, sell_amount);
+}
+
+/// Deploys onchain components with a solver and a trader, each funded with 100
+/// ETH.
+async fn deploy_with_solver_and_trader(
+    web3: Web3,
+) -> (OnchainComponents, TestAccount, TestAccount) {
+    let mut onchain = OnchainComponents::deploy(web3).await;
+    let [solver] = onchain.make_solvers(100u64.eth()).await;
+    let [trader] = onchain.make_accounts(100u64.eth()).await;
+    (onchain, solver, trader)
+}
+
+/// Wraps 50 ETH for `trader` (approved to the vault relayer) and starts the
+/// protocol with a 1% volume fee (effective immediately) and
+/// `SameTokensPolicy::Allow`. `enable_sell_equals_buy` toggles charging the
+/// volume fee on same-token trades on both services (which read the flag
+/// independently).
+async fn start_volume_fee_protocol<'a>(
+    onchain: &'a OnchainComponents,
+    solver: TestAccount,
+    trader: &TestAccount,
+    enable_sell_equals_buy: bool,
+) -> Services<'a> {
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(50u64.eth())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, 50u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // 1% volume fee (100 bps).
+    let volume_fee_policy = ConfigFeePolicy {
+        kind: ConfigFeePolicyKind::Volume {
+            factor: 0.01.try_into().unwrap(),
+        },
+        order_class: ConfigFeePolicyOrderClass::Any,
+    };
+
+    let mut autopilot = Configuration {
+        drivers: vec![Solver::test("test_solver", solver.address())],
+        fee_policies: FeePoliciesConfig {
+            policies: vec![volume_fee_policy],
+            ..Default::default()
+        },
+        ..Configuration::test_no_drivers()
+    };
+    autopilot.shared.enable_sell_equals_buy_volume_fee = enable_sell_equals_buy;
+
+    let mut orderbook = configs::orderbook::Configuration {
+        order_validation: OrderValidationConfig {
+            same_tokens_policy: shared::order_validation::SameTokensPolicy::Allow,
+            ..Default::default()
+        },
+        volume_fee: Some(configs::orderbook::VolumeFeeConfig {
+            factor: Some(FeeFactor::new(0.01)),
+            // Effective immediately.
+            effective_from_timestamp: Some("2000-01-01T10:00:00Z".parse().unwrap()),
+        }),
+        ..configs::orderbook::Configuration::test_default()
+    };
+    orderbook.shared.enable_sell_equals_buy_volume_fee = enable_sell_equals_buy;
+
+    let services = Services::new(onchain).await;
+    services
+        .start_protocol_with_args(autopilot, orderbook, solver)
+        .await;
+    services
+}
+
+/// Same-token trades (`sell_token == buy_token`) must not be charged the volume
+/// fee under the default config (`enable_sell_equals_buy_volume_fee = false`),
+/// on both the quote (`protocol_fee_bps`) and the settled trade
+/// (`executedProtocolFees`). A different-token order is the contrast proving
+/// the fee is actually configured.
+async fn volume_fee_dropped_on_same_token(web3: Web3) {
+    let (onchain, solver, trader) = deploy_with_solver_and_trader(web3).await;
+    // `token` (with a 1:1 WETH pool) is the different-token contrast.
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+    let services = start_volume_fee_protocol(&onchain, solver, &trader, false).await;
+
+    let weth = *onchain.contracts().weth.address();
+    let valid_to = model::time::now_in_epoch_seconds() + 300;
+
+    // Quote surface.
+    tracing::info!("Quoting same-token (WETH->WETH) and different-token (WETH->token) orders");
+    let same_token_quote = get_quote(&services, weth, weth, OrderKind::Sell, 1u64.eth(), valid_to)
+        .await
+        .unwrap();
+    assert!(
+        same_token_quote.protocol_fee_bps.is_none(),
+        "same-token quote must not carry a volume fee, got {:?}",
+        same_token_quote.protocol_fee_bps
+    );
+
+    let sell_amount = 10u64.eth();
+    let different_token_quote = get_quote(
+        &services,
+        weth,
+        *token.address(),
+        OrderKind::Sell,
+        sell_amount,
+        valid_to,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        different_token_quote.protocol_fee_bps.as_deref(),
+        Some("100"),
+        "different-token quote must carry the configured 1% (100 bps) volume fee"
+    );
+
+    // Trade surface. Same-token buy order; the 10% spread covers the solver's gas.
+    let buy_amount = 1u64.eth();
+    let same_token_order = OrderCreation {
+        kind: OrderKind::Buy,
+        sell_token: weth,
+        sell_amount: buy_amount + buy_amount / U256::from(10),
+        buy_token: weth,
+        buy_amount,
+        valid_to,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let same_token_uid = services.create_order(&same_token_order).await.unwrap();
+
+    // Different-token sell order (charged the fee).
+    let different_token_order = OrderCreation {
+        sell_amount,
+        buy_amount: different_token_quote.quote.buy_amount * U256::from(9) / U256::from(10),
+        ..sell_order_from_quote(&different_token_quote)
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let different_token_uid = services.create_order(&different_token_order).await.unwrap();
+
+    // Gate both orders on `executed_fee` (not just `Fulfilled`): the
+    // `executedProtocolFees` we assert on are persisted in the same step, so this
+    // avoids asserting against an order_execution row that isn't written yet.
+    tracing::info!("Waiting for both orders to settle.");
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        let same_token_settled = services
+            .get_order(&same_token_uid)
+            .await
+            .is_ok_and(|order| !order.metadata.executed_fee.is_zero());
+        let different_token_settled = services
+            .get_order(&different_token_uid)
+            .await
+            .is_ok_and(|order| !order.metadata.executed_fee.is_zero());
+        same_token_settled && different_token_settled
+    })
+    .await
+    .expect("Timeout waiting for the orders to settle");
+
+    let same_token_trade = &services.get_trades(&same_token_uid).await.unwrap()[0];
+    assert!(
+        same_token_trade.executed_protocol_fees.is_empty(),
+        "same-token trade must not be charged a volume fee, got {:?}",
+        same_token_trade.executed_protocol_fees
+    );
+
+    let different_token_trade = &services.get_trades(&different_token_uid).await.unwrap()[0];
+    assert_volume_fee(different_token_trade, *token.address(), 0.01, sell_amount);
+}
+
+/// Counterpart to [`volume_fee_dropped_on_same_token`]: with
+/// `enable_sell_equals_buy_volume_fee = true` (set on both the orderbook and
+/// the autopilot, which read it independently) the volume fee *is* charged on a
+/// same-token trade, proving the drop is flag-controlled.
+async fn volume_fee_charged_on_same_token_when_enabled(web3: Web3) {
+    let (onchain, solver, trader) = deploy_with_solver_and_trader(web3).await;
+    let services = start_volume_fee_protocol(&onchain, solver, &trader, true).await;
+
+    let weth = *onchain.contracts().weth.address();
+    let valid_to = model::time::now_in_epoch_seconds() + 300;
+
+    // Quote: same-token now carries the 100 bps fee.
+    let same_token_quote = get_quote(&services, weth, weth, OrderKind::Sell, 1u64.eth(), valid_to)
+        .await
+        .unwrap();
+    assert_eq!(
+        same_token_quote.protocol_fee_bps.as_deref(),
+        Some("100"),
+        "with the flag enabled, the same-token quote must carry the 1% (100 bps) volume fee"
+    );
+
+    // Trade: settled same-token order is charged the fee (10% spread covers gas).
+    let buy_amount = 1u64.eth();
+    let order = OrderCreation {
+        kind: OrderKind::Buy,
+        sell_token: weth,
+        sell_amount: buy_amount + buy_amount / U256::from(10),
+        buy_token: weth,
+        buy_amount,
+        valid_to,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for the same-token order to settle.");
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| !order.metadata.executed_fee.is_zero())
+    })
+    .await
+    .expect("Timeout waiting for the order to settle");
+
+    let trade = &services.get_trades(&uid).await.unwrap()[0];
+    assert_eq!(
+        trade.executed_protocol_fees.len(),
+        1,
+        "same-token order must be charged exactly one (volume) protocol fee, got {:?}",
+        trade.executed_protocol_fees
+    );
+    let fee = &trade.executed_protocol_fees[0];
+    assert_eq!(
+        fee.token, weth,
+        "same-token volume fee must be denominated in WETH"
+    );
+    assert!(
+        matches!(fee.policy, FeePolicy::Volume { factor } if factor == 0.01),
+        "expected a 1% volume fee policy, got {:?}",
+        fee.policy
+    );
+    assert!(
+        !U256::from(fee.amount).is_zero(),
+        "the charged volume fee amount must be non-zero"
+    );
+}
+
+/// WETH -> native ETH (`BUY_ETH_ADDRESS`) is an unwrap no-op, so the volume fee
+/// must be dropped like any same-token trade. This is the flow the frontend
+/// produces (native is quoted as `wrapped -> BUY_ETH_ADDRESS`, never
+/// `WETH -> WETH`). Asserts no fee on the quote and the settlement, and that
+/// the trader actually receives native ETH.
+async fn volume_fee_dropped_on_wrapped_to_native_token(web3: Web3) {
+    let (onchain, solver, trader) = deploy_with_solver_and_trader(web3.clone()).await;
+    let services = start_volume_fee_protocol(&onchain, solver, &trader, false).await;
+
+    let weth = *onchain.contracts().weth.address();
+    let sell_amount = 1u64.eth();
+    let valid_to = model::time::now_in_epoch_seconds() + 300;
+
+    // Quote: the WETH -> ETH quote must not carry a fee.
+    let quote = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: weth,
+            buy_token: BUY_ETH_ADDRESS,
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(sell_amount).unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(
+        quote.protocol_fee_bps.is_none(),
+        "WETH->ETH quote must not carry a volume fee, got {:?}",
+        quote.protocol_fee_bps
+    );
+
+    // Trade: no fee, and the trader actually receives native ETH.
+    let weth_before = onchain
+        .contracts()
+        .weth
+        .balanceOf(trader.address())
+        .call()
+        .await
+        .unwrap();
+    let eth_before = web3.provider.get_balance(trader.address()).await.unwrap();
+
+    let order = OrderCreation {
+        kind: OrderKind::Sell,
+        sell_token: weth,
+        sell_amount,
+        buy_token: BUY_ETH_ADDRESS,
+        buy_amount: quote.quote.buy_amount * U256::from(9) / U256::from(10),
+        valid_to,
+        quote_id: quote.id,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for the WETH->ETH order to settle.");
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| !order.metadata.executed_fee.is_zero())
+    })
+    .await
+    .expect("Timeout waiting for the order to settle");
+
+    let trade = &services.get_trades(&uid).await.unwrap()[0];
+    assert!(
+        trade.executed_protocol_fees.is_empty(),
+        "WETH->ETH trade must not be charged a volume fee, got {:?}",
+        trade.executed_protocol_fees
+    );
+
+    // Trader sold exactly the WETH and received native ETH. It pays no settlement
+    // gas (signs off-chain), so its native balance only grows.
+    let weth_after = onchain
+        .contracts()
+        .weth
+        .balanceOf(trader.address())
+        .call()
+        .await
+        .unwrap();
+    let eth_after = web3.provider.get_balance(trader.address()).await.unwrap();
+    assert_eq!(
+        weth_before - weth_after,
+        sell_amount,
+        "trader should have sold exactly the WETH sell amount"
+    );
+    assert!(
+        eth_after > eth_before,
+        "trader should have received native ETH from the unwrap (before: {eth_before}, after: \
+         {eth_after})"
+    );
 }
 
 fn assert_volume_fee(

@@ -89,6 +89,7 @@ pub struct ProtocolFees {
     max_partner_fee: FeeFactor,
     upcoming_fee_policies: Option<UpcomingProtocolFees>,
     volume_fee_policy: VolumeFeePolicy,
+    native_token: Address,
 }
 
 impl ProtocolFees {
@@ -96,6 +97,7 @@ impl ProtocolFees {
         config: &FeePoliciesConfig,
         volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
         enable_sell_equals_buy_volume_fee: bool,
+        native_token: Address,
     ) -> Self {
         let volume_fee_policy = VolumeFeePolicy::new(
             volume_fee_bucket_overrides,
@@ -114,6 +116,7 @@ impl ProtocolFees {
                 config.upcoming_policies.clone(),
             ),
             volume_fee_policy,
+            native_token,
         }
     }
 
@@ -298,7 +301,9 @@ impl ProtocolFees {
         match policy {
             policy::Policy::Surplus(variant) => variant.apply(order),
             policy::Policy::PriceImprovement(variant) => variant.apply(order, quote),
-            policy::Policy::Volume(variant) => variant.apply(order, &self.volume_fee_policy),
+            policy::Policy::Volume(variant) => {
+                variant.apply(order, &self.volume_fee_policy, self.native_token)
+            }
         }
     }
 

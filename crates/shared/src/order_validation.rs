@@ -35,6 +35,7 @@ use {
             OrderMetadata,
             SellTokenSource,
             VerificationError,
+            is_same_buy_and_sell_token,
         },
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
@@ -333,8 +334,7 @@ fn validate_same_sell_and_buy_token(
     order: &PreOrderData,
     native_token: &Address,
 ) -> Result<(), PartialValidationError> {
-    let same_token = order.sell_token == order.buy_token
-        || (&order.sell_token == native_token && order.buy_token == BUY_ETH_ADDRESS);
+    let same_token = is_same_buy_and_sell_token(order.sell_token, order.buy_token, *native_token);
 
     if !same_token {
         return Ok(());
