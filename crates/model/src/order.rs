@@ -41,7 +41,9 @@ pub fn is_same_buy_and_sell_token(
     buy_token: Address,
     native_token: Address,
 ) -> bool {
-    sell_token == buy_token || (sell_token == native_token && buy_token == BUY_ETH_ADDRESS)
+    let same_token = sell_token == buy_token;
+    let wrapped_for_native = sell_token == native_token && buy_token == BUY_ETH_ADDRESS;
+    same_token || wrapped_for_native
 }
 
 #[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
