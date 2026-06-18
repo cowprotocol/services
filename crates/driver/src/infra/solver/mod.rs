@@ -566,10 +566,10 @@ fn serialize_body(auction_dto: solvers_dto::auction::Auction) -> Bytes {
         (true, true) => &AUCTION_WITH_LIQUIDITY,
     };
 
-    // pre-allocate biggest request size + 0.1% (to avoid re-allocations when
+    // pre-allocate biggest request size + 0.5% (to avoid re-allocations when
     // the request grows only slightly)
     let pre_alloc_size = memory_target.load(Ordering::Relaxed);
-    let pre_alloc_size = pre_alloc_size + pre_alloc_size / 1_000;
+    let pre_alloc_size = pre_alloc_size + pre_alloc_size * 5 / 1_000;
     let mut buffer = Vec::with_capacity(pre_alloc_size);
 
     serde_json::to_writer(&mut buffer, &auction_dto).unwrap();
