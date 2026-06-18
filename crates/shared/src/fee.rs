@@ -86,8 +86,8 @@ impl VolumeFeePolicy {
     ) -> Option<FeeFactor> {
         // Skip the volume fee for same-token trades (treating a native-ETH buy as
         // the wrapped token, so e.g. WETH->ETH is a no-op) unless the flag is set.
-        if is_same_buy_and_sell_token(sell_token, buy_token, self.native_token)
-            && !self.enable_sell_equals_buy_volume_fee
+        if !self.enable_sell_equals_buy_volume_fee
+            && is_same_buy_and_sell_token(sell_token, buy_token, self.native_token)
         {
             return None;
         }
