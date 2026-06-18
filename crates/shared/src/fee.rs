@@ -108,14 +108,14 @@ impl VolumeFeePolicy {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::address, model::order::BUY_ETH_ADDRESS};
+    use {super::*, model::order::BUY_ETH_ADDRESS};
 
     #[test]
     fn test_volume_fee_bucket_override() {
-        let usdc = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
-        let dai = address!("6B175474E89094C44Da98b954EedeAC495271d0F");
-        let usdt = address!("dAC17F958D2ee523a2206206994597C13D831ec7");
-        let weth = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+        let usdc = testlib::tokens::USDC;
+        let dai = testlib::tokens::DAI;
+        let usdt = testlib::tokens::USDT;
+        let weth = testlib::tokens::WETH;
 
         let bucket_pair_override = TokenBucketFeeOverride {
             tokens: [usdc, dai].into_iter().collect(),
@@ -149,8 +149,8 @@ mod tests {
 
     #[test]
     fn test_same_token_volume_fee_skipped() {
-        let weth = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
-        let dai = address!("6B175474E89094C44Da98b954EedeAC495271d0F");
+        let weth = testlib::tokens::WETH;
+        let dai = testlib::tokens::DAI;
         let default_fee = FeeFactor::try_from(0.001).unwrap();
 
         let policy = VolumeFeePolicy::new(vec![], Some(default_fee), false, weth);
