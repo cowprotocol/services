@@ -1348,7 +1348,6 @@ async fn volume_fee_dropped_on_same_token(web3: Web3) {
     let weth = *onchain.contracts().weth.address();
     let valid_to = model::time::now_in_epoch_seconds() + 300;
 
-    // Quote surface.
     tracing::info!("Quoting same-token (WETH->WETH) and different-token (WETH->token) orders");
     let same_token_quote = get_quote(&services, weth, weth, OrderKind::Sell, 1u64.eth(), valid_to)
         .await
