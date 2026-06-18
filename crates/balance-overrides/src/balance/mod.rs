@@ -289,6 +289,7 @@ impl PartialEq for Strategy {
                     ..
                 },
             ) => tc1 == tc2 && p1 == p2 && u1 == u2,
+            (Self::NativeEth, Self::NativeEth) => true,
             _ => false,
         }
     }
