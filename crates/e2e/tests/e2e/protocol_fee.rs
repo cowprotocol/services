@@ -1406,9 +1406,9 @@ async fn volume_fee_dropped_on_same_token(web3: Web3) {
     );
     let different_token_uid = services.create_order(&different_token_order).await.unwrap();
 
-    // Gate both orders on `executed_fee` (not just `Fulfilled`): the
-    // `executedProtocolFees` we assert on are persisted in the same step, so this
-    // avoids asserting against an order_execution row that isn't written yet.
+    // `executed_fee` is the network fee (non-zero), not the volume fee; waiting on
+    // it ensures the order_execution row with the protocol fees we assert on is
+    // written.
     tracing::info!("Waiting for both orders to settle.");
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
