@@ -33,19 +33,6 @@ use {
 /// It is used in place of an actual buy token address in an order.
 pub const BUY_ETH_ADDRESS: Address = Address::repeat_byte(0xee);
 
-/// Whether an order's sell and buy tokens are effectively the same asset. A
-/// native-token buy (`BUY_ETH_ADDRESS`) counts as the wrapped `native_token`,
-/// so e.g. selling WETH to buy native ETH is a same-token trade.
-pub fn is_same_buy_and_sell_token(
-    sell_token: Address,
-    buy_token: Address,
-    native_token: Address,
-) -> bool {
-    let same_token = sell_token == buy_token;
-    let wrapped_for_native = sell_token == native_token && buy_token == BUY_ETH_ADDRESS;
-    same_token || wrapped_for_native
-}
-
 #[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Interactions {
     pub pre: Vec<InteractionData>,

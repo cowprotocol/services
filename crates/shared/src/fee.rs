@@ -1,8 +1,7 @@
 use {
-    crate::arguments::TokenBucketFeeOverride,
+    crate::{arguments::TokenBucketFeeOverride, order_validation::is_same_buy_and_sell_token},
     alloy::primitives::{Address, U256},
     configs::fee_factor::FeeFactor,
-    model::order::is_same_buy_and_sell_token,
 };
 
 /// Everything required to compute the fee amount in sell token

@@ -35,7 +35,6 @@ use {
             OrderMetadata,
             SellTokenSource,
             VerificationError,
-            is_same_buy_and_sell_token,
         },
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
@@ -328,6 +327,19 @@ pub trait LimitOrderCounting: Send + Sync {
 }
 
 pub use configs::orderbook::order_validation::SameTokensPolicy;
+
+/// Whether an order's sell and buy tokens are effectively the same asset. A
+/// native-token buy (`BUY_ETH_ADDRESS`) counts as the wrapped `native_token`,
+/// so e.g. selling WETH to buy native ETH is a same-token trade.
+pub fn is_same_buy_and_sell_token(
+    sell_token: Address,
+    buy_token: Address,
+    native_token: Address,
+) -> bool {
+    let same_token = sell_token == buy_token;
+    let wrapped_for_native = sell_token == native_token && buy_token == BUY_ETH_ADDRESS;
+    same_token || wrapped_for_native
+}
 
 fn validate_same_sell_and_buy_token(
     policy: &SameTokensPolicy,
