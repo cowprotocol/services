@@ -53,7 +53,7 @@ pub async fn solve(
                 trades: vec![Trade::Fulfillment(Fulfillment {
                     order: OrderUid(order.uid),
                     executed_amount,
-                    fee: None,
+                    fee: Some(alloy_primitives::U256::ZERO),
                 })],
                 interactions: proposal
                     .interactions
