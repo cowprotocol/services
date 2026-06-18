@@ -1319,8 +1319,7 @@ async fn start_volume_fee_protocol<'a>(
         },
         volume_fee: Some(configs::orderbook::VolumeFeeConfig {
             factor: Some(FeeFactor::new(0.01)),
-            // Effective immediately.
-            effective_from_timestamp: Some("2000-01-01T10:00:00Z".parse().unwrap()),
+            effective_from_timestamp: None,
         }),
         ..configs::orderbook::Configuration::test_default()
     };
