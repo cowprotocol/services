@@ -7,7 +7,11 @@ use {
     },
     crate::{
         domain::{
-            competition::{solution::Settlement, sorting::SortingStrategy},
+            competition::{
+                pre_processing::DataFetchingTasks,
+                solution::Settlement,
+                sorting::SortingStrategy,
+            },
             time::DeadlineExceeded,
         },
         infra::{
@@ -324,43 +328,16 @@ impl Competition {
                 tracing::error!(?err, "pre-processing auction failed");
                 Error::MalformedRequest
             })?;
-        let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
-        let solver_address = self.solver.address();
-        let order_sorting_strategies = self.order_sorting_strategies.clone();
+        let auction = self.assemble_auction(&tasks).await;
 
-        // Add the CoW AMM orders to the auction
-        let cow_amm_orders = tasks.cow_amm_orders.await;
-        auction.orders.extend(cow_amm_orders.iter().cloned());
-
-        let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
-            // Use spawn_blocking() because a lot of CPU bound computations are happening
-            // and we don't want to block the runtime for too long.
-            Self::sort_orders(auction, solver_address, order_sorting_strategies)
-        });
-
-        // We can sort the orders and fetch auction data in parallel
-        let (auction, balances, app_data) =
-            tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
-
-        let auction = Self::run_blocking_with_timer("update_orders", move || {
-            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
-            // bound computations are happening and we want to avoid blocking
-            // the runtime.
-            Self::update_orders(auction, balances, app_data, cow_amm_orders)
-        })
+        let liquidity = async {
+            match self.solver.liquidity() {
+                solver::Liquidity::Fetch => tasks.liquidity.await,
+                solver::Liquidity::Skip => Arc::new(Vec::new()),
+            }
+        }
         .await;
-
-        // We can run bad token filtering and liquidity fetching in parallel
-        let (liquidity, auction) = tokio::join!(
-            async {
-                match self.solver.liquidity() {
-                    solver::Liquidity::Fetch => tasks.liquidity.await,
-                    solver::Liquidity::Skip => Arc::new(Vec::new()),
-                }
-            },
-            self.without_unsupported_orders(auction)
-        );
 
         let elapsed = start.elapsed();
         metrics::get()
@@ -486,47 +463,31 @@ impl Competition {
         }
 
         // Score the settlements.
-        let scores = settlements
+        let scored: Vec<(Solved, Settlement)> = settlements
             .into_iter()
-            .map(|settlement| {
+            .filter_map(|settlement| {
                 observe::scoring(&settlement);
-                (
-                    settlement.score(
-                        &auction.native_prices(),
-                        auction.surplus_capturing_jit_order_owners(),
-                    ),
-                    settlement,
-                )
-            })
-            .collect_vec();
-
-        // Filter out settlements which failed scoring.
-        let scores = scores
-            .into_iter()
-            .filter_map(|(result, settlement)| {
-                result
-                    .inspect_err(|err| {
-                        observe::scoring_failed(self.solver.name(), err);
+                let score = settlement.score(
+                    &auction.native_prices(),
+                    auction.surplus_capturing_jit_order_owners(),
+                );
+                match score {
+                    Ok(score) => {
+                        observe::score(&settlement, &score);
+                        Some((score, settlement))
+                    }
+                    Err(err) => {
+                        observe::scoring_failed(self.solver.name(), &err);
                         notify::scoring_failed(
                             &self.solver,
                             auction.id(),
                             settlement.solution(),
-                            err,
+                            &err,
                         );
-                    })
-                    .ok()
-                    .map(|score| (score, settlement))
+                        None
+                    }
+                }
             })
-            .collect_vec();
-
-        // Observe the scores.
-        for (score, settlement) in scores.iter() {
-            observe::score(settlement, score);
-        }
-
-        // Build scored settlements sorted best-first.
-        let scored: Vec<(Solved, Settlement)> = scores
-            .into_iter()
             .sorted_by_key(|(score, _)| Reverse(*score))
             .map(|(score, settlement)| {
                 let solved = Solved {
@@ -634,6 +595,52 @@ impl Competition {
             );
         }
         Some(solved.id.get())
+    }
+
+    async fn assemble_auction(&self, tasks: &DataFetchingTasks) -> Auction {
+        let (base_auction, cow_amm_orders) =
+            tokio::join!(tasks.auction.clone(), tasks.cow_amm_orders.clone());
+
+        let auction = Auction {
+            id: base_auction.id,
+            orders: base_auction
+                .orders
+                .iter()
+                .cloned()
+                .chain(cow_amm_orders.iter().cloned())
+                .collect(),
+            tokens: base_auction.tokens.clone(),
+            gas_price: base_auction.gas_price,
+            deadline: base_auction.deadline,
+            surplus_capturing_jit_order_owners: base_auction
+                .surplus_capturing_jit_order_owners
+                .clone(),
+        };
+
+        let solver_address = self.solver.address();
+        let order_sorting_strategies = self.order_sorting_strategies.clone();
+
+        let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
+            // Use spawn_blocking() because a lot of CPU bound computations are happening
+            // and we don't want to block the runtime for too long.
+            Self::sort_orders(auction, solver_address, order_sorting_strategies)
+        });
+
+        // We can sort the orders and fetch auction data in parallel
+        let (auction, balances, app_data) = tokio::join!(
+            sort_orders_future,
+            tasks.balances.clone(),
+            tasks.app_data.clone()
+        );
+
+        let auction = Self::run_blocking_with_timer("update_orders", move || {
+            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
+            // bound computations are happening and we want to avoid blocking
+            // the runtime.
+            Self::update_orders(auction, balances, app_data, cow_amm_orders)
+        })
+        .await;
+        self.without_unsupported_orders(auction).await
     }
 
     // Oders already need to be sorted from most relevant to least relevant so that

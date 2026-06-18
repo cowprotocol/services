@@ -27,6 +27,7 @@ use {
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
     anyhow::Result,
+    bytes::Bytes,
     derive_more::{From, Into},
     eth_domain_types as eth,
     num::BigRational,
@@ -34,6 +35,7 @@ use {
     reqwest::header::HeaderName,
     std::{
         collections::HashMap,
+        sync::atomic::{AtomicUsize, Ordering},
         time::{Duration, Instant},
     },
     thiserror::Error,
@@ -374,6 +376,7 @@ impl Solver {
 
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
+
         let auction_dto = dto::auction::new(
             auction,
             liquidity,
@@ -386,19 +389,12 @@ impl Solver {
             self.config.haircut_bps,
         );
 
-        let body = {
-            // pre-allocate a big enough buffer to avoid re-allocating memory
-            // as the request gets serialized
-            const BYTES_PER_ORDER: usize = 1_300;
-            let mut buffer = Vec::with_capacity(auction.orders().len() * BYTES_PER_ORDER);
-            serde_json::to_writer(&mut buffer, &auction_dto).unwrap();
-            String::from_utf8(buffer).expect("serde_json only writes valid utf8")
-        };
+        let body = serialize_body(auction_dto);
 
         if let Some(id) = auction.id() {
             // Only auctions with IDs are real auctions (/quote requests don't have an ID).
             // Only for those it makes sense to archive them and measure the execution time.
-            self.persistence.archive_auction(id, &auction_dto);
+            self.persistence.archive_auction(id, body.clone());
             ::observe::metrics::metrics().measure_auction_overhead(
                 start,
                 "driver",
@@ -545,6 +541,45 @@ impl Solver {
     pub fn config(&self) -> &Config {
         &self.config
     }
+}
+
+/// Serializes the request body in a way that avoid re-allocating while not
+/// overallocating a lot of memory. It does that by keeping track of the biggest
+/// request seen for each kind of request (quote with/without liquidity, full
+/// auction with/without liquidity) and allocating the correct amount of memory
+/// based on the data in the auction.
+fn serialize_body(auction_dto: solvers_dto::auction::Auction) -> Bytes {
+    // these values store the biggest allocation we needed for each
+    // category of requests
+    static QUOTE_WITH_LIQUIDITY: AtomicUsize = AtomicUsize::new(1_000);
+    static QUOTE_WITHOUT_LIQUIDITY: AtomicUsize = AtomicUsize::new(1_000);
+    static AUCTION_WITH_LIQUIDITY: AtomicUsize = AtomicUsize::new(1_000);
+    static AUCTION_WITHOUT_LIQUIDITY: AtomicUsize = AtomicUsize::new(1_000);
+
+    // based on the "shape" of the auction we pick the allocation size
+    let is_auction = auction_dto.id.is_some();
+    let with_liquidity = !auction_dto.liquidity.is_empty();
+    let memory_target = match (is_auction, with_liquidity) {
+        (false, false) => &QUOTE_WITHOUT_LIQUIDITY,
+        (false, true) => &QUOTE_WITH_LIQUIDITY,
+        (true, false) => &AUCTION_WITHOUT_LIQUIDITY,
+        (true, true) => &AUCTION_WITH_LIQUIDITY,
+    };
+
+    // pre-allocate biggest request size + 0.5% (to avoid re-allocations when
+    // the request grows only slightly)
+    let pre_alloc_size = memory_target.load(Ordering::Relaxed);
+    let pre_alloc_size = pre_alloc_size + pre_alloc_size * 5 / 1_000;
+    let mut buffer = Vec::with_capacity(pre_alloc_size);
+
+    serde_json::to_writer(&mut buffer, &auction_dto).unwrap();
+
+    // now that we know how much memory was actually needed we update the memory
+    // targets
+    memory_target.fetch_max(buffer.len(), Ordering::Relaxed);
+    tracing::trace!(pre_alloc_size, final_size = buffer.len(), "body allocation");
+
+    Bytes::from(buffer)
 }
 
 #[cfg(test)]

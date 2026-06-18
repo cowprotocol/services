@@ -112,25 +112,27 @@ impl Solution {
             *trade = Trade::Fulfillment(
                 Fulfillment::new(
                     competition::Order {
-                        uid: jit.order().uid,
-                        kind: order::Kind::Limit,
-                        side: jit.order().side,
-                        sell: jit.order().sell,
-                        buy: jit.order().buy,
-                        signature: jit.order().signature.clone(),
-                        receiver: Some(jit.order().receiver),
-                        created: u32::try_from(Utc::now().timestamp())
-                            .unwrap_or(u32::MIN)
-                            .into(),
-                        valid_to: jit.order().valid_to,
+                        data: std::sync::Arc::new(order::OrderData {
+                            uid: jit.order().uid,
+                            kind: order::Kind::Limit,
+                            side: jit.order().side,
+                            sell: jit.order().sell,
+                            buy: jit.order().buy,
+                            signature: jit.order().signature.clone(),
+                            receiver: Some(jit.order().receiver),
+                            created: u32::try_from(Utc::now().timestamp())
+                                .unwrap_or(u32::MIN)
+                                .into(),
+                            valid_to: jit.order().valid_to,
+                            pre_interactions: vec![],
+                            post_interactions: vec![],
+                            sell_token_balance: jit.order().sell_token_balance,
+                            buy_token_balance: jit.order().buy_token_balance,
+                            protocol_fees: vec![],
+                            quote: None,
+                        }),
                         app_data: jit.order().app_data.into(),
                         partial: jit.order().partially_fillable(),
-                        pre_interactions: vec![],
-                        post_interactions: vec![],
-                        sell_token_balance: jit.order().sell_token_balance,
-                        buy_token_balance: jit.order().buy_token_balance,
-                        protocol_fees: vec![],
-                        quote: None,
                     },
                     jit.executed(),
                     Fee::Dynamic(jit.fee()),
