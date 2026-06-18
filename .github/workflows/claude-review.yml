@@ -64,5 +64,4 @@ jobs:
             --allowedTools "mcp__github_inline_comment__create_inline_comment"
           prompt: |
             Review this PR. Post each issue as an INLINE comment on the exact file and
-            line using the create_inline_comment tool (inline comments only attach to
-            lines changed in this PR's diff). Follow the pr-review skill if available.
+            line using the create_inline_comment tool. Follow the pr-review skill if available.
