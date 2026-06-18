@@ -1706,6 +1706,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ExecutedProtocolFee"
+        gasCost:
+          description: >
+            Actual on-chain gas cost attributed to this trade, in native token
+            wei. Computed as this trade's share of the settlement transaction's
+            gas cost (`gas_used * effective_gas_price`), split equally across all
+            trades settled in the same transaction. `null` for trades settled
+            before this data started being recorded.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+          nullable: true
       required:
         - blockNumber
         - logIndex
