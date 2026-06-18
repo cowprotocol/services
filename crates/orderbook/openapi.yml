@@ -1336,6 +1336,17 @@ components:
           allOf:
             - $ref: "#/components/schemas/Address"
           nullable: false
+        gasCost:
+          description: >
+            Actual on-chain gas cost attributed to this order, in native token
+            wei. Computed as the order's share of the gas cost
+            (`gas_used * effective_gas_price`) of the settlement transaction(s)
+            that executed it, split equally across all trades settled in the same
+            transaction, and summed across the order's fills. `null` for orders
+            settled before this data started being recorded, or not yet settled.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+          nullable: true
         fullAppData:
           description: >
             Full `appData`, which the contract-level `appData` is a hash of. See

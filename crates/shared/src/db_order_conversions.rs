@@ -86,6 +86,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         executed_fee: big_decimal_to_u256(&order.executed_fee)
             .context("executed fee is not a valid u256")?,
         executed_fee_token: Address::new(order.executed_fee_token.0),
+        gas_cost: None,
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,

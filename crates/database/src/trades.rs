@@ -174,6 +174,41 @@ FROM page"#,
         .instrument(info_span!("trades"))
 }
 
+/// Returns, per order, the total on-chain gas cost (native token wei)
+/// attributed to the order across all of its trades. Each trade contributes its
+/// share of its settlement's gas cost (see [`GAS_COST_EXPR`]). Orders whose
+/// settlements have no persisted gas (see V111) are absent from the result.
+#[instrument(skip_all)]
+pub async fn order_gas_costs(
+    ex: &mut PgConnection,
+    order_uids: &[OrderUid],
+) -> Result<Vec<(OrderUid, BigDecimal)>, sqlx::Error> {
+    if order_uids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    const QUERY: &str = const_format::concatcp!(
+        r#"
+SELECT t.order_uid, FLOOR(SUM(settlement.gas_cost)) AS gas_cost
+FROM trades t
+JOIN LATERAL (
+    SELECT "#,
+        GAS_COST_EXPR,
+        r#"
+    FROM settlements s
+    WHERE s.block_number = t.block_number
+    AND   s.log_index > t.log_index
+    ORDER BY s.log_index ASC
+    LIMIT 1
+) AS settlement ON true
+WHERE settlement.gas_cost IS NOT NULL
+AND t.order_uid = ANY($1)
+GROUP BY t.order_uid"#,
+    );
+
+    sqlx::query_as(QUERY).bind(order_uids).fetch_all(ex).await
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct TradeEvent {
     pub block_number: i64,
