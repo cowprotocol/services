@@ -22,13 +22,39 @@ impl Default for CachePolicy {
     fn default() -> Self {
         Self {
             staleness_tolerance: Self::DEFAULT_STALENESS_TOLERANCE,
-            eviction_time: 5,
+            eviction_time: Self::DEFAULT_EVICTION_TIME,
         }
     }
 }
 
 impl CachePolicy {
+    const DEFAULT_EVICTION_TIME: BlockNumber = 5;
     const DEFAULT_STALENESS_TOLERANCE: BlockNumber = 1;
+
+    pub fn new(staleness_tolerance: BlockNumber, eviction_time: BlockNumber) -> Self {
+        Self {
+            staleness_tolerance,
+            eviction_time,
+        }
+    }
+
+    pub fn with_staleness_tolerance(mut self, tolerance: BlockNumber) -> Self {
+        self.staleness_tolerance = tolerance;
+        self
+    }
+
+    pub fn with_eviction_time(mut self, time: BlockNumber) -> Self {
+        self.eviction_time = time;
+        self
+    }
+
+    pub fn staleness_tolerance(&self) -> BlockNumber {
+        self.staleness_tolerance
+    }
+
+    pub fn eviction_time(&self) -> BlockNumber {
+        self.eviction_time
+    }
 
     fn is_within_staleness_tolerance(
         &self,
@@ -96,7 +122,9 @@ impl BalanceEntry {
     }
 }
 
-type SharedResult = Result<U256, Arc<str>>;
+type SharedResult = Result<U256, Arc<anyhow::Error>>;
+
+type InFlightKey = (Query, Option<BlockNumber>);
 
 struct InFlightEntry {
     sender: tokio::sync::watch::Sender<Option<SharedResult>>,
@@ -124,19 +152,19 @@ type InFlightPartition = (InFlightFetchList, InFlightWaitList);
 
 struct InFlightGuard {
     cache: Arc<Mutex<BalanceCache>>,
-    queries: Vec<Query>,
+    keys: Vec<InFlightKey>,
 }
 
 impl InFlightGuard {
-    fn new(cache: Arc<Mutex<BalanceCache>>, queries: Vec<Query>) -> Self {
-        Self { cache, queries }
+    fn new(cache: Arc<Mutex<BalanceCache>>, keys: Vec<InFlightKey>) -> Self {
+        Self { cache, keys }
     }
 }
 
 impl Drop for InFlightGuard {
     fn drop(&mut self) {
         if let Ok(mut cache) = self.cache.lock() {
-            cache.complete_in_flight(&self.queries);
+            cache.complete_in_flight(&self.keys);
         }
     }
 }
@@ -145,7 +173,7 @@ struct BalanceCache {
     current_block: BlockNumber,
     data: HashMap<Query, BalanceEntry>,
     policy: CachePolicy,
-    in_flight: HashMap<Query, InFlightEntry>,
+    in_flight: HashMap<InFlightKey, InFlightEntry>,
 }
 
 impl BalanceCache {
@@ -243,26 +271,37 @@ impl BalanceCache {
             .retain(|_, entry| entry.should_retain(self.current_block, &self.policy));
     }
 
-    fn mark_in_flight(&mut self, query: &Query) -> Option<InFlightResult> {
-        if let Some(entry) = self.in_flight.get(query) {
+    fn mark_in_flight(
+        &mut self,
+        query: &Query,
+        block: Option<BlockNumber>,
+    ) -> Option<InFlightResult> {
+        let key = (query.clone(), block);
+        if let Some(entry) = self.in_flight.get(&key) {
             Some(entry.subscribe())
         } else {
-            self.in_flight.insert(query.clone(), InFlightEntry::new());
+            self.in_flight.insert(key, InFlightEntry::new());
             None
         }
     }
 
-    fn complete_in_flight(&mut self, queries: &[Query]) {
-        for query in queries {
-            self.in_flight.remove(query);
+    fn complete_in_flight(&mut self, keys: &[InFlightKey]) {
+        for key in keys {
+            self.in_flight.remove(key);
         }
     }
 
-    fn store_in_flight_result(&mut self, query: &Query, result: &Result<U256>) {
-        if let Some(entry) = self.in_flight.get(query) {
+    fn store_in_flight_result(
+        &mut self,
+        query: &Query,
+        block: Option<BlockNumber>,
+        result: &Result<U256>,
+    ) {
+        let key = (query.clone(), block);
+        if let Some(entry) = self.in_flight.get(&key) {
             let shared_result = match result {
                 Ok(balance) => Ok(*balance),
-                Err(err) => Err(Arc::from(err.to_string())),
+                Err(err) => Err(Arc::new(anyhow::anyhow!("{:#}", err))),
             };
             entry.publish(shared_result);
         }
@@ -365,12 +404,75 @@ impl Balances {
             return vec![];
         }
 
+        let (needs_fetch_queries, needs_wait_list) = self
+            .with_cache_mut(|cache| {
+                let (needs_fetch, needs_wait): (Vec<_>, Vec<_>) =
+                    queries.iter().enumerate().partition_map(|(i, query)| {
+                        if let Some(receiver) = cache.mark_in_flight(query, Some(bn)) {
+                            itertools::Either::Right((i, query.clone(), receiver))
+                        } else {
+                            itertools::Either::Left((i, query.clone()))
+                        }
+                    });
+                (needs_fetch, needs_wait)
+            })
+            .unwrap_or_else(|| {
+                (
+                    queries
+                        .iter()
+                        .enumerate()
+                        .map(|(i, q)| (i, q.clone()))
+                        .collect(),
+                    vec![],
+                )
+            });
+
+        if needs_fetch_queries.is_empty() {
+            tracing::trace!(
+                block = bn,
+                query_count = queries.len(),
+                "block-pinned request: all queries in-flight, waiting"
+            );
+            let waited_results = self.wait_for_in_flight(needs_wait_list).await;
+            return self.reconstruct_results(queries.len(), vec![], waited_results);
+        }
+
         tracing::debug!(
             block = bn,
             query_count = queries.len(),
-            "block-pinned fetch starting, cache read and write will be skipped"
+            fetch_count = needs_fetch_queries.len(),
+            wait_count = needs_wait_list.len(),
+            "block-pinned request: fetching and waiting (no caching)"
         );
-        self.inner.get_balances(queries, Some(bn)).await
+
+        let (fetched_results, waited_results) = tokio::join!(
+            self.fetch_in_flight_for_block(needs_fetch_queries, bn),
+            self.wait_for_in_flight(needs_wait_list)
+        );
+
+        self.reconstruct_results(queries.len(), fetched_results, waited_results)
+    }
+
+    fn reconstruct_results(
+        &self,
+        total_len: usize,
+        fetched_results: Vec<((usize, Query), Result<U256>)>,
+        waited_results: Vec<(usize, Result<U256>)>,
+    ) -> Vec<Result<U256>> {
+        let mut results: Vec<Option<Result<U256>>> = (0..total_len).map(|_| None).collect();
+
+        for ((i, _), result) in fetched_results {
+            results[i] = Some(result);
+        }
+
+        for (i, result) in waited_results {
+            results[i] = Some(result);
+        }
+
+        results
+            .into_iter()
+            .map(|r| r.expect("all indices must be filled"))
+            .collect()
     }
 
     async fn handle_none_request(&self, queries: &[Query]) -> Vec<Result<U256>> {
@@ -382,7 +484,7 @@ impl Balances {
 
         let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
 
-        let partition_result = self.partition_in_flight(&missing_queries);
+        let partition_result = self.partition_in_flight(&missing_queries, None);
         let (needs_fetch, needs_wait) = match partition_result {
             Ok(partition) => partition,
             Err(_) => {
@@ -406,13 +508,17 @@ impl Balances {
         )
     }
 
-    fn partition_in_flight(&self, missing_queries: &[Query]) -> Result<InFlightPartition, ()> {
+    fn partition_in_flight(
+        &self,
+        missing_queries: &[Query],
+        block: Option<BlockNumber>,
+    ) -> Result<InFlightPartition, ()> {
         match self.balance_cache.lock() {
             Ok(mut cache) => Ok(missing_queries
                 .iter()
                 .enumerate()
                 .partition_map(|(i, query)| {
-                    if let Some(cell) = cache.mark_in_flight(query) {
+                    if let Some(cell) = cache.mark_in_flight(query, block) {
                         itertools::Either::Right((i, query.clone(), cell))
                     } else {
                         itertools::Either::Left((i, query.clone()))
@@ -433,7 +539,8 @@ impl Balances {
         let fetch_queries: Vec<Query> = needs_fetch.iter().map(|(_, q)| q.clone()).collect();
         let fetch_block = self.with_cache(|cache| cache.current_block).unwrap_or(0);
 
-        let _guard = InFlightGuard::new(self.balance_cache.clone(), fetch_queries.clone());
+        let keys: Vec<InFlightKey> = fetch_queries.iter().map(|q| (q.clone(), None)).collect();
+        let _guard = InFlightGuard::new(self.balance_cache.clone(), keys);
 
         let results = self
             .inner
@@ -446,16 +553,51 @@ impl Balances {
             "get_balances contract violation"
         );
 
-        self.publish_in_flight_results(&fetch_queries, &results);
+        self.publish_in_flight_results(&fetch_queries, &results, None);
         self.apply_fetch_results(&results, &fetch_queries, fetch_block);
 
         needs_fetch.into_iter().zip(results).collect()
     }
 
-    fn publish_in_flight_results(&self, queries: &[Query], results: &[Result<U256>]) {
+    async fn fetch_in_flight_for_block(
+        &self,
+        needs_fetch: InFlightFetchList,
+        block: BlockNumber,
+    ) -> Vec<((usize, Query), Result<U256>)> {
+        if needs_fetch.is_empty() {
+            return vec![];
+        }
+
+        let fetch_queries: Vec<Query> = needs_fetch.iter().map(|(_, q)| q.clone()).collect();
+
+        let keys: Vec<InFlightKey> = fetch_queries
+            .iter()
+            .map(|q| (q.clone(), Some(block)))
+            .collect();
+        let _guard = InFlightGuard::new(self.balance_cache.clone(), keys);
+
+        let results = self.inner.get_balances(&fetch_queries, Some(block)).await;
+
+        debug_assert_eq!(
+            results.len(),
+            fetch_queries.len(),
+            "get_balances contract violation"
+        );
+
+        self.publish_in_flight_results(&fetch_queries, &results, Some(block));
+
+        needs_fetch.into_iter().zip(results).collect()
+    }
+
+    fn publish_in_flight_results(
+        &self,
+        queries: &[Query],
+        results: &[Result<U256>],
+        block: Option<BlockNumber>,
+    ) {
         self.with_cache_mut(|cache| {
             for (query, result) in queries.iter().zip(results.iter()) {
-                cache.store_in_flight_result(query, result);
+                cache.store_in_flight_result(query, block, result);
             }
         });
     }
@@ -465,12 +607,14 @@ impl Balances {
             return vec![];
         }
 
-        let mut results = vec![];
-        for (i, _query, mut receiver) in needs_wait {
-            let result = self.await_in_flight_result(&mut receiver).await;
-            results.push((i, result));
-        }
-        results
+        let futures = needs_wait
+            .into_iter()
+            .map(|(i, _query, mut receiver)| async move {
+                let result = self.await_in_flight_result(&mut receiver).await;
+                (i, result)
+            });
+
+        futures::future::join_all(futures).await
     }
 
     async fn await_in_flight_result(&self, receiver: &mut InFlightResult) -> Result<U256> {
@@ -490,7 +634,7 @@ impl Balances {
 
         match shared_result {
             Ok(balance) => Ok(balance),
-            Err(err_str) => Err(anyhow::anyhow!("{}", err_str)),
+            Err(err) => Err(anyhow::anyhow!("{:#}", err)),
         }
     }
 
@@ -685,7 +829,7 @@ mod tests {
 
     impl CachePolicy {
         fn eviction_time_for_test(&self) -> BlockNumber {
-            self.eviction_time
+            self.eviction_time()
         }
     }
 
