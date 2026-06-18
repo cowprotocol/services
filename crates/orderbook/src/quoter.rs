@@ -55,7 +55,6 @@ pub struct QuoteHandler {
     app_data: Arc<app_data::Registry>,
     volume_fee: Option<VolumeFeeConfig>,
     volume_fee_policy: VolumeFeePolicy,
-    native_token: alloy::primitives::Address,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
 }
 
@@ -75,6 +74,7 @@ impl QuoteHandler {
             volume_fee_bucket_overrides,
             volume_fee.as_ref().and_then(|config| config.factor),
             enable_sell_equals_buy_volume_fee,
+            native_token,
         );
         Self {
             order_validator,
@@ -83,7 +83,6 @@ impl QuoteHandler {
             app_data,
             volume_fee,
             volume_fee_policy,
-            native_token,
             token_info_fetcher,
         }
     }
@@ -163,7 +162,6 @@ impl QuoteHandler {
             &request.side,
             self.volume_fee.as_ref(),
             &self.volume_fee_policy,
-            self.native_token,
             request.buy_token,
             request.sell_token,
         )
@@ -223,7 +221,6 @@ fn get_vol_fee_adjusted_quote_data(
     side: &OrderQuoteSide,
     volume_fee: Option<&VolumeFeeConfig>,
     volume_fee_policy: &VolumeFeePolicy,
-    native_token: alloy::primitives::Address,
     buy_token: alloy::primitives::Address,
     sell_token: alloy::primitives::Address,
 ) -> anyhow::Result<AdjustedQuoteData> {
@@ -235,12 +232,7 @@ fn get_vol_fee_adjusted_quote_data(
     };
 
     // Determine applicable fee factor considering same-token config and overrides
-    let factor = volume_fee_policy.get_applicable_volume_fee_factor(
-        buy_token,
-        sell_token,
-        native_token,
-        None,
-    );
+    let factor = volume_fee_policy.get_applicable_volume_fee_factor(buy_token, sell_token, None);
 
     let Some(factor) = factor else {
         return Ok(AdjustedQuoteData {
@@ -372,7 +364,8 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Selling 100 tokens, expecting to buy 100 tokens
         let quote = create_test_quote(100u64.eth(), 100u64.eth());
@@ -387,7 +380,6 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
-            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
@@ -415,7 +407,8 @@ mod tests {
             // Effective date in the past to ensure fee is applied
             effective_from_timestamp: Some(past_timestamp),
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Buying 100 tokens, expecting to sell 100 tokens, with no network fee
         let quote = create_test_quote(100u64.eth(), 100u64.eth());
@@ -428,7 +421,6 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
-            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
@@ -454,7 +446,8 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Buying 100 tokens, expecting to sell 100 tokens, with 5 token network fee
         let mut quote = create_test_quote(100u64.eth(), 100u64.eth());
@@ -468,7 +461,6 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
-            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
@@ -498,7 +490,8 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Selling 100 tokens, expecting to buy 200 tokens (2:1 price ratio)
         let quote = create_test_quote(100u64.eth(), 200u64.eth());
@@ -513,7 +506,6 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
-            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
@@ -543,7 +535,8 @@ mod tests {
                 factor: Some(volume_fee),
                 effective_from_timestamp: None,
             };
-            let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+            let volume_fee_policy =
+                VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
             let quote = create_test_quote(100u64.eth(), 100u64.eth());
             let side = OrderQuoteSide::Sell {
@@ -557,7 +550,6 @@ mod tests {
                 &side,
                 Some(&volume_fee_config),
                 &volume_fee_policy,
-                Default::default(),
                 TEST_BUY_TOKEN,
                 TEST_SELL_TOKEN,
             )
@@ -575,7 +567,8 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: Some(future_timestamp),
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Selling 100 tokens, expecting to buy 100 tokens
         let quote = create_test_quote(100u64.eth(), 100u64.eth());
@@ -590,7 +583,6 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
-            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
@@ -610,7 +602,8 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Large amount to make the sub-BPS fee visible
         let sell_amount = 1_000_000u64.eth();
@@ -627,7 +620,6 @@ mod tests {
             &side,
             Some(&volume_fee_config),
             &volume_fee_policy,
-            Default::default(),
             TEST_BUY_TOKEN,
             TEST_SELL_TOKEN,
         )
