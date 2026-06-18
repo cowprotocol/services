@@ -887,7 +887,7 @@ mod tests {
         let detector = Detector::new(web3.clone(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
 
         let user = Address::random();
-        let amount = U256::MAX / U256::from(1);
+        let amount = U256::MAX / U256::from(2);
 
         let strategy = detector.detect(NATIVE_ETH, user).await.unwrap();
 
