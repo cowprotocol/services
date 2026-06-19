@@ -624,7 +624,7 @@ impl OrderValidator {
             // the last error.
             match simulate_transfers([1, 10, 100].map(U256::from).as_slice()).await {
                 // A zero/low balance is acceptable as long as the owner has already set a
-                // real on-chain approval that covers the order (spam-protectiion).
+                // real on-chain approval that covers the order (spam protection).
                 Err(ValidationError::InsufficientBalance) => {
                     let data = order.data();
                     let approval = self
