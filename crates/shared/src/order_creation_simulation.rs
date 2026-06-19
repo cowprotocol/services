@@ -100,12 +100,17 @@ impl OrderCreationSimulator {
                     .call()
                     .await
                     .unwrap_or_default();
-                let executable_amount = match order.data.kind {
-                    OrderKind::Sell => order.data.sell_amount,
-                    OrderKind::Buy => order.data.buy_amount,
+                let clamped_sell_amount =
+                    sell_token_balance.clamp(U256::ONE, order.data.sell_amount);
+                let final_amount = match order.data.kind {
+                    OrderKind::Sell => clamped_sell_amount,
+                    // convert maxium sell amount to buy tokens
+                    OrderKind::Buy => clamped_sell_amount
+                        .checked_mul(order.data.buy_amount)
+                        .and_then(|val| val.checked_div(order.data.sell_amount))
+                        .unwrap_or(U256::ONE),
                 };
-                let clamped_sell_amount = sell_token_balance.clamp(U256::ONE, executable_amount);
-                ExecutionAmount::Explicit(clamped_sell_amount)
+                ExecutionAmount::Explicit(final_amount)
             }
         };
         let sim_order = simulation_builder::Order::new(order.data)
