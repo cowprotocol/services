@@ -59,8 +59,6 @@ async fn test(web3: Web3) {
     );
 
     tracing::info!("Placing zero-balance order without a pre-existing approval");
-    // With neither balance nor allowance the order is rejected: we require some
-    // on-chain proof of intent before accepting an order that cannot be filled.
     assert!(
         services
             .create_order(&order)
@@ -78,8 +76,6 @@ async fn test(web3: Web3) {
         .unwrap();
 
     tracing::info!("Placing zero-balance order backed by the existing approval");
-    // The account still holds no sell tokens, but the pre-existing approval now
-    // covers the order, so it is accepted (it stays unfillable until funded).
     services.create_order(&order).await.unwrap();
 
     tracing::info!("Deposit ETH to make order executable");

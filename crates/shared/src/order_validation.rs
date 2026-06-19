@@ -2281,7 +2281,6 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
-        // No pre-existing approval, so a zero balance is still rejected.
         balance_fetcher
             .expect_allowance()
             .returning(|_, _, _| Ok(alloy::primitives::U256::ZERO));
@@ -2338,6 +2337,7 @@ mod tests {
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
+
         // The account holds no balance ...
         balance_fetcher
             .expect_can_transfer()
@@ -2347,6 +2347,7 @@ mod tests {
         balance_fetcher
             .expect_allowance()
             .returning(|_, _, _| Ok(alloy::primitives::U256::from(1)));
+
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
@@ -2472,8 +2473,6 @@ mod tests {
             balance_fetcher
                 .expect_can_transfer()
                 .returning(move |_, _| Err(create_error()));
-            // No pre-existing approval, so the insufficient-balance case is not
-            // relaxed (only relevant for the InsufficientBalance variant).
             balance_fetcher
                 .expect_allowance()
                 .returning(|_, _, _| Ok(alloy::primitives::U256::ZERO));
@@ -2569,8 +2568,6 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
-        // No pre-existing approval, so balance is not waived for the non-flashloan,
-        // non-presign orders below.
         balance_fetcher
             .expect_allowance()
             .returning(|_, _, _| Ok(alloy::primitives::U256::ZERO));
