@@ -82,7 +82,7 @@ fn process_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event>) {
     if ICowWrapper::wrappedSettleCall::abi_decode(&frame.input).is_ok()
         // since flashloans are just a specific variant of a wrapper we just consider
         // them the same thing
-        || FlashLoanRouter::settlementContractCall::abi_decode(&frame.input).is_ok()
+        || FlashLoanRouter::flashLoanAndSettleCall::abi_decode(&frame.input).is_ok()
     {
         events.push(Event::WrapperEntered { wrapper: to });
         for sub in &frame.calls {
