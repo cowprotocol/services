@@ -4,6 +4,7 @@ use {
     alloy_sol_types::SolCall,
     contracts::{
         ERC20::ERC20,
+        ERC1271SignatureValidator::ERC1271SignatureValidator,
         FlashLoanRouter::FlashLoanRouter,
         GPv2Settlement::GPv2Settlement,
         ICowWrapper::ICowWrapper,
@@ -33,8 +34,13 @@ pub enum Event {
         target: Address,
         caught_error: Option<String>,
     },
+    Eip1271SignatureCheck {
+        revert: Option<String>,
+        gas: U256,
+        owner: Address,
+    },
     /// All orders had valid signatures.
-    SignatureCheck,
+    AllSignatureChecksSuccessful,
     /// ERC20 token transfer into or from the settlement contract.
     Transfer {
         token: Address,
@@ -143,7 +149,7 @@ fn process_settle_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event
         // the settlement contract. Since this happens AFTER the signature check
         // and signature checks don't always require `CALL`s we use this checkpoint
         // to also signal that the `SignatureCheck` was successful.
-        events.push(Event::SignatureCheck);
+        events.push(Event::AllSignatureChecksSuccessful);
 
         for child_call in &frame.calls {
             if let Ok(call) = ERC20::transferFromCall::abi_decode(&child_call.input) {
@@ -163,6 +169,12 @@ fn process_settle_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event
             to: call.recipient,
             amount: call.amount,
             revert: revert_message(frame),
+        });
+    } else if ERC1271SignatureValidator::isValidSignatureCall::abi_decode(&frame.input).is_ok() {
+        events.push(Event::Eip1271SignatureCheck {
+            gas: frame.gas_used,
+            revert: frame.revert_reason.clone(),
+            owner: to,
         });
     }
 }
@@ -215,7 +227,12 @@ mod tests {
                         wrapper: address!("0x531636e6e18f3a52c283accda39d7185e4597a37"),
                     },
                     Event::SettlementEntered,
-                    Event::SignatureCheck,
+                    Event::Eip1271SignatureCheck {
+                        revert: None,
+                        gas: uint!(7703_U256),
+                        owner: address!("0xcbf50aa2d442548aed93915da99d827e71473dd1"),
+                    },
+                    Event::AllSignatureChecksSuccessful,
                     Event::Transfer {
                         token: address!("0xe91d153e0b41518a2ce8dd3d7944fa863463a97d"),
                         from: address!("0xcbf50aa2d442548aed93915da99d827e71473dd1"),
@@ -281,7 +298,7 @@ mod tests {
                         target: address!("0xc139190f447e929f090edeb554d95abb8b18ac1c"),
                         caught_error: Some("ERC20Permit: invalid signature".to_string()),
                     },
-                    Event::SignatureCheck,
+                    Event::AllSignatureChecksSuccessful,
                     Event::Transfer {
                         token: address!("0xc139190f447e929f090edeb554d95abb8b18ac1c"),
                         from: address!("0x255a1804125356422354f0252b182b8efad1b329"),

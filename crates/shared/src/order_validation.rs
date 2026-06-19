@@ -80,6 +80,9 @@ impl OrderSimulator {
         order: &Order,
         full_app_data: &str,
         full_balance_check: bool,
+        // todo this should really return a Result<Report, InfraError>
+        // the caller can then try to read as much as possible from the
+        // report and react accordingly
     ) -> Result<(), OrderSimulationError> {
         let start = Instant::now();
         let (outcome, result) = match tokio::time::timeout(
