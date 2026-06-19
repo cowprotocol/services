@@ -73,7 +73,7 @@ pub trait BalanceFetching: Send + Sync {
 
     /// Returns the owner's current on-chain allowance available to the protocol
     /// for the given sell token and source. This does **not** apply any order
-    /// pre-interactions or other actions that might affect allowance happen at
+    /// pre-interactions or other actions that might affect the allowance at
     /// settlement time.
     async fn allowance(
         &self,
