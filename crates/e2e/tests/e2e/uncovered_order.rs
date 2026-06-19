@@ -21,9 +21,11 @@ async fn local_node_full_balance_check() {
     run_test(test_full_balance_check).await;
 }
 
-/// Tests that a user can already create an order if they only have
-/// 1 wei of the sell token and later fund their account to get the
-/// order executed.
+/// Tests that a user can create an order without holding any sell-token balance
+/// as long as they have already set a sufficient on-chain approval to the vault
+/// relayer, and that the order executes once the account is funded.
+///
+/// Without such a pre-existing approval a zero-balance order is still rejected.
 async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
@@ -35,17 +37,10 @@ async fn test(web3: Web3) {
         .await;
     let weth = &onchain.contracts().weth;
 
-    weth.approve(onchain.contracts().allowance, 3u64.eth())
-        .from(trader.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    tracing::info!("Placing order with 0 sell tokens");
     let order = OrderCreation {
         sell_token: *weth.address(),
         sell_amount: 2u64.eth(),
@@ -62,19 +57,29 @@ async fn test(web3: Web3) {
         &onchain.contracts().domain_separator,
         &trader.signer,
     );
-    // This order can't be created because we require the trader
-    // to have at least 1 wei of sell tokens.
-    services.create_order(&order).await.unwrap_err();
 
-    tracing::info!("Placing order with 1 wei of sell_tokens");
-    weth.deposit()
+    tracing::info!("Placing zero-balance order without a pre-existing approval");
+    // With neither balance nor allowance the order is rejected: we require some
+    // on-chain proof of intent before accepting an order that cannot be filled.
+    assert!(
+        services
+            .create_order(&order)
+            .await
+            .unwrap_err()
+            .1
+            .contains("InsufficientBalance")
+    );
+
+    tracing::info!("Approving the vault relayer for the full sell amount");
+    weth.approve(onchain.contracts().allowance, 2u64.eth())
         .from(trader.address())
-        .value(::alloy::primitives::U256::ONE)
         .send_and_watch()
         .await
         .unwrap();
-    // Now that the trader has some funds they are able to create
-    // an order (even if it exceeds their current balance).
+
+    tracing::info!("Placing zero-balance order backed by the existing approval");
+    // The account still holds no sell tokens, but the pre-existing approval now
+    // covers the order, so it is accepted (it stays unfillable until funded).
     services.create_order(&order).await.unwrap();
 
     tracing::info!("Deposit ETH to make order executable");
@@ -87,8 +92,8 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance_after = weth.balanceOf(trader.address()).call().await.unwrap();
-        !balance_after.is_zero()
+        let buy_balance = token.balanceOf(trader.address()).call().await.unwrap();
+        !buy_balance.is_zero()
     })
     .await
     .unwrap();
