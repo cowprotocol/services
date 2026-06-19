@@ -631,7 +631,7 @@ impl OrderValidator {
                         .balance_fetcher
                         .allowance(owner, data.sell_token, data.sell_token_balance)
                         .await
-                        .unwrap_or(U256::ZERO);
+                        .map_err(ValidationError::Other)?;
                     if approval >= data.sell_amount {
                         Ok(())
                     } else {
