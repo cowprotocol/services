@@ -230,13 +230,19 @@ fn allow_failed_buy_token_transfer(
     failed_state_overrides: &[AccountOverrideRequest],
     report: &SimulationReport,
 ) -> bool {
+    let receiver = match &order.data.receiver {
+        None => &order.metadata.owner,
+        Some(r) if r.is_zero() => &order.metadata.owner,
+        Some(receiver) => receiver,
+    };
     let buy_token_transfer_failed = report.events.iter().any(|e| {
         matches!(e,
             Event::Transfer { from, token, to, revert, .. }
                 if revert.is_some()
                 && from == &settlement
                 && token == &order.data.buy_token
-                && to == &order.data.receiver.unwrap_or(order.metadata.owner))
+                && to == receiver
+        )
     });
     let buy_token_override_failed = failed_state_overrides.iter().any(|o| {
         matches!(o,
