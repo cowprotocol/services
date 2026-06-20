@@ -512,6 +512,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 .map(Into::into)
                 .collect(),
             config.shared.enable_sell_equals_buy_volume_fee,
+            *eth.contracts().weth().address(),
         ),
         cow_amm_registry.clone(),
         config.native_price_timeout,

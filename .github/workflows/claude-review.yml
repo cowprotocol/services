@@ -59,6 +59,9 @@ jobs:
           trigger_phrase: "@claude"
           track_progress: true
           claude_args: |
-            --model claude-opus-4-7
+            --model claude-opus-4-8
             --max-turns 30
-          prompt: "Review this PR. Use the pr-review skill if available."
+            --allowedTools "mcp__github_inline_comment__create_inline_comment"
+          prompt: |
+            Review this PR. Post each issue as an INLINE comment on the exact file and
+            line using the create_inline_comment tool. Follow the pr-review skill if available.
