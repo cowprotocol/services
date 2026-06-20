@@ -891,7 +891,7 @@ mod tests {
 
         let strategy = detector.detect(NATIVE_ETH, user).await.unwrap();
 
-        std::assert_matches!(strategy, Strategy::NativeEth);
+        std::assert_eq!(strategy, Strategy::NativeEth);
 
         // ETH is not an ERC20 token so we can't do an `eth_call` on `balanceOf()`.
         // Additionally `eth_getBalance` does not support state overrides.

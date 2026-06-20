@@ -258,6 +258,15 @@ impl Drop for SettleTaskHandle {
     }
 }
 
+struct AbortGuard(Vec<task::AbortHandle>);
+impl Drop for AbortGuard {
+    fn drop(&mut self) {
+        for handle in &self.0 {
+            handle.abort();
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Competition {
     pub solver: Solver,
@@ -335,26 +344,30 @@ impl Competition {
         let risk_detector = self.risk_detector.clone();
         let flashloans_enabled = self.solver.config().flashloans_enabled;
         let liquidity_mode = self.solver.liquidity();
-        let (auction, liquidity) = tokio::join!(
-            tokio::spawn(
-                async move {
-                    risk_detector
-                        .without_unsupported_orders(&mut auction.orders, flashloans_enabled)
-                        .await;
-                    auction
-                }
-                .in_current_span(),
-            ),
-            tokio::spawn(
-                async move {
-                    match liquidity_mode {
-                        solver::Liquidity::Fetch => tasks.liquidity.await,
-                        solver::Liquidity::Skip => Arc::new(Vec::new()),
-                    }
-                }
-                .in_current_span(),
-            ),
+        let auction_handle = tokio::spawn(
+            async move {
+                risk_detector
+                    .without_unsupported_orders(&mut auction.orders, flashloans_enabled)
+                    .await;
+                auction
+            }
+            .in_current_span(),
         );
+        let liquidity_handle = tokio::spawn(
+            async move {
+                match liquidity_mode {
+                    solver::Liquidity::Fetch => tasks.liquidity.await,
+                    solver::Liquidity::Skip => Arc::new(Vec::new()),
+                }
+            }
+            .in_current_span(),
+        );
+        let drop_guard = AbortGuard(vec![
+            auction_handle.abort_handle(),
+            liquidity_handle.abort_handle(),
+        ]);
+        let (auction, liquidity) = tokio::join!(auction_handle, liquidity_handle);
+        drop(drop_guard);
         let auction = auction.map_err(|err| {
             tracing::error!(?err, "order filtering task failed");
             Error::InternalError(err.to_string())
