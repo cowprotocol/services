@@ -7,7 +7,11 @@ use {
     },
     crate::{
         domain::{
-            competition::{solution::Settlement, sorting::SortingStrategy},
+            competition::{
+                pre_processing::DataFetchingTasks,
+                solution::Settlement,
+                sorting::SortingStrategy,
+            },
             time::DeadlineExceeded,
         },
         infra::{
@@ -140,7 +144,7 @@ impl SubmitterPool {
             tracing::debug!("submitting directly from solver EOA");
             Ok(GuardInner::Direct(permit))
         }
-        .boxed();
+            .boxed();
 
         let fetch_eip7702_slot = async {
             let Some(ref delegated) = self.delegated else {
@@ -154,7 +158,7 @@ impl SubmitterPool {
                 release: delegated.release.clone(),
             })
         }
-        .boxed();
+            .boxed();
 
         let (inner, _remaining) =
             futures::future::select_ok([fetch_direct_slot, fetch_eip7702_slot])
@@ -324,38 +328,13 @@ impl Competition {
                 tracing::error!(?err, "pre-processing auction failed");
                 Error::MalformedRequest
             })?;
-        let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
-        let solver_address = self.solver.address();
-        let order_sorting_strategies = self.order_sorting_strategies.clone();
+        let mut auction = self.assemble_auction(&tasks).await;
 
-        // Add the CoW AMM orders to the auction
-        let cow_amm_orders = tasks.cow_amm_orders.await;
-        auction.orders.extend(cow_amm_orders.iter().cloned());
-
-        let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
-            // Use spawn_blocking() because a lot of CPU bound computations are happening
-            // and we don't want to block the runtime for too long.
-            Self::sort_orders(auction, solver_address, order_sorting_strategies)
-        });
-
-        // We can sort the orders and fetch auction data in parallel.
-        let (auction, balances, app_data) =
-            tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
-
-        let mut auction = Self::run_blocking_with_timer("update_orders", move || {
-            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
-            // bound computations are happening and we want to avoid blocking
-            // the runtime.
-            Self::update_orders(auction, balances, app_data, cow_amm_orders)
-        })
-        .await;
-
+        // We can run bad token filtering and liquidity fetching in parallel
         let risk_detector = self.risk_detector.clone();
         let flashloans_enabled = self.solver.config().flashloans_enabled;
         let liquidity_mode = self.solver.liquidity();
-
-        // We can run bad token filtering and liquidity fetching in parallel
         let (auction, liquidity) = tokio::join!(
             tokio::spawn(
                 async move {
@@ -509,47 +488,31 @@ impl Competition {
         }
 
         // Score the settlements.
-        let scores = settlements
+        let scored: Vec<(Solved, Settlement)> = settlements
             .into_iter()
-            .map(|settlement| {
+            .filter_map(|settlement| {
                 observe::scoring(&settlement);
-                (
-                    settlement.score(
-                        &auction.native_prices(),
-                        auction.surplus_capturing_jit_order_owners(),
-                    ),
-                    settlement,
-                )
-            })
-            .collect_vec();
-
-        // Filter out settlements which failed scoring.
-        let scores = scores
-            .into_iter()
-            .filter_map(|(result, settlement)| {
-                result
-                    .inspect_err(|err| {
-                        observe::scoring_failed(self.solver.name(), err);
+                let score = settlement.score(
+                    &auction.native_prices(),
+                    auction.surplus_capturing_jit_order_owners(),
+                );
+                match score {
+                    Ok(score) => {
+                        observe::score(&settlement, &score);
+                        Some((score, settlement))
+                    }
+                    Err(err) => {
+                        observe::scoring_failed(self.solver.name(), &err);
                         notify::scoring_failed(
                             &self.solver,
                             auction.id(),
                             settlement.solution(),
-                            err,
+                            &err,
                         );
-                    })
-                    .ok()
-                    .map(|score| (score, settlement))
+                        None
+                    }
+                }
             })
-            .collect_vec();
-
-        // Observe the scores.
-        for (score, settlement) in scores.iter() {
-            observe::score(settlement, score);
-        }
-
-        // Build scored settlements sorted best-first.
-        let scored: Vec<(Solved, Settlement)> = scores
-            .into_iter()
             .sorted_by_key(|(score, _)| Reverse(*score))
             .map(|(score, settlement)| {
                 let solved = Solved {
@@ -587,7 +550,7 @@ impl Competition {
                 remaining,
                 self.resimulate_until_revert(&mut scored, auction),
             )
-            .await;
+                .await;
         }
 
         Ok(scored.into_iter().map(|(solved, _)| solved).collect())
@@ -608,10 +571,10 @@ impl Competition {
                 futures::future::join_all(scored.iter().map(|(solved, settlement)| {
                     self.reverts_on_block(block, solved, settlement, auction)
                 }))
-                .await
-                .into_iter()
-                .flatten()
-                .collect();
+                    .await
+                    .into_iter()
+                    .flatten()
+                    .collect();
 
             if voided_ids.is_empty() {
                 continue;
@@ -657,6 +620,51 @@ impl Competition {
             );
         }
         Some(solved.id.get())
+    }
+
+    async fn assemble_auction(&self, tasks: &DataFetchingTasks) -> Auction {
+        let (base_auction, cow_amm_orders) =
+            tokio::join!(tasks.auction.clone(), tasks.cow_amm_orders.clone());
+
+        let auction = Auction {
+            id: base_auction.id,
+            orders: base_auction
+                .orders
+                .iter()
+                .cloned()
+                .chain(cow_amm_orders.iter().cloned())
+                .collect(),
+            tokens: base_auction.tokens.clone(),
+            gas_price: base_auction.gas_price,
+            deadline: base_auction.deadline,
+            surplus_capturing_jit_order_owners: base_auction
+                .surplus_capturing_jit_order_owners
+                .clone(),
+        };
+
+        let solver_address = self.solver.address();
+        let order_sorting_strategies = self.order_sorting_strategies.clone();
+
+        let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
+            // Use spawn_blocking() because a lot of CPU bound computations are happening
+            // and we don't want to block the runtime for too long.
+            Self::sort_orders(auction, solver_address, order_sorting_strategies)
+        });
+
+        // We can sort the orders and fetch auction data in parallel
+        let (auction, balances, app_data) = tokio::join!(
+            sort_orders_future,
+            tasks.balances.clone(),
+            tasks.app_data.clone()
+        );
+
+        Self::run_blocking_with_timer("update_orders", move || {
+            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
+            // bound computations are happening and we want to avoid blocking
+            // the runtime.
+            Self::update_orders(auction, balances, app_data, cow_amm_orders)
+        })
+            .await
     }
 
     // Oders already need to be sorted from most relevant to least relevant so that
@@ -798,11 +806,11 @@ impl Competition {
             let _timer2 = ::observe::metrics::metrics().on_auction_overhead_start("driver", stage);
             f()
         })
-        .await
-        .expect(
-            "Either runtime was shut down before spawning the task or no OS threads are \
+            .await
+            .expect(
+                "Either runtime was shut down before spawning the task or no OS threads are \
              available; no sense in handling those errors",
-        )
+            )
     }
 
     pub async fn reveal(
@@ -861,7 +869,7 @@ impl Competition {
                 drop(admission_permit);
                 result
             }
-            .instrument(tracing_span),
+                .instrument(tracing_span),
         );
         SettleTaskHandle(handle).await
     }

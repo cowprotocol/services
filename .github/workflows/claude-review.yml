@@ -53,12 +53,15 @@ jobs:
           # branch instead of just the latest commit.
           fetch-depth: 0
 
-      - uses: anthropics/claude-code-action@593d7a5c4e0073569f74772c2b7b64c30ec14707 # v1
+      - uses: anthropics/claude-code-action@4d7e1f0cd85743fdc93b1c8040ab54395da024e2 # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"
           track_progress: true
           claude_args: |
-            --model claude-opus-4-7
+            --model claude-opus-4-8
             --max-turns 30
-          prompt: "Review this PR. Use the pr-review skill if available."
+            --allowedTools "mcp__github_inline_comment__create_inline_comment"
+          prompt: |
+            Review this PR. Post each issue as an INLINE comment on the exact file and
+            line using the create_inline_comment tool. Follow the pr-review skill if available.

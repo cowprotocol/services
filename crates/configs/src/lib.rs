@@ -1,7 +1,7 @@
 pub mod autopilot;
 pub mod banned_users;
 pub mod database;
-pub(crate) mod deserialize_env;
+pub mod deserialize_env;
 pub mod fee_factor;
 pub mod gas_price_estimation;
 pub mod http_client;
