@@ -259,6 +259,13 @@ impl Drop for SettleTaskHandle {
 }
 
 struct AbortGuard(Vec<task::AbortHandle>);
+
+impl AbortGuard {
+    fn disarm(&mut self) {
+        self.0.clear();
+    }
+}
+
 impl Drop for AbortGuard {
     fn drop(&mut self) {
         for handle in &self.0 {
@@ -362,12 +369,12 @@ impl Competition {
             }
             .in_current_span(),
         );
-        let drop_guard = AbortGuard(vec![
+        let mut drop_guard = AbortGuard(vec![
             auction_handle.abort_handle(),
             liquidity_handle.abort_handle(),
         ]);
         let (auction, liquidity) = tokio::join!(auction_handle, liquidity_handle);
-        drop(drop_guard);
+        drop_guard.disarm();
         let auction = auction.map_err(|err| {
             tracing::error!(?err, "order filtering task failed");
             Error::InternalError(err.to_string())
