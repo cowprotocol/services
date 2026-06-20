@@ -228,15 +228,15 @@ impl Order {
                     trusted: false,
                 },
             ]
-                .into_iter(),
+            .into_iter(),
             self.deadline,
             eth,
             HashSet::default(),
         )
-            .await
-            .map_err(|err| match err {
-                auction::Error::Blockchain(e) => e.into(),
-            })
+        .await
+        .map_err(|err| match err {
+            auction::Error::Blockchain(e) => e.into(),
+        })
     }
 
     /// The asset being bought, or [`eth::U256::one`] if this is a sell, to

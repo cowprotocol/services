@@ -144,7 +144,7 @@ impl SubmitterPool {
             tracing::debug!("submitting directly from solver EOA");
             Ok(GuardInner::Direct(permit))
         }
-            .boxed();
+        .boxed();
 
         let fetch_eip7702_slot = async {
             let Some(ref delegated) = self.delegated else {
@@ -158,7 +158,7 @@ impl SubmitterPool {
                 release: delegated.release.clone(),
             })
         }
-            .boxed();
+        .boxed();
 
         let (inner, _remaining) =
             futures::future::select_ok([fetch_direct_slot, fetch_eip7702_slot])
@@ -550,7 +550,7 @@ impl Competition {
                 remaining,
                 self.resimulate_until_revert(&mut scored, auction),
             )
-                .await;
+            .await;
         }
 
         Ok(scored.into_iter().map(|(solved, _)| solved).collect())
@@ -571,10 +571,10 @@ impl Competition {
                 futures::future::join_all(scored.iter().map(|(solved, settlement)| {
                     self.reverts_on_block(block, solved, settlement, auction)
                 }))
-                    .await
-                    .into_iter()
-                    .flatten()
-                    .collect();
+                .await
+                .into_iter()
+                .flatten()
+                .collect();
 
             if voided_ids.is_empty() {
                 continue;
@@ -664,7 +664,7 @@ impl Competition {
             // the runtime.
             Self::update_orders(auction, balances, app_data, cow_amm_orders)
         })
-            .await
+        .await
     }
 
     // Oders already need to be sorted from most relevant to least relevant so that
@@ -806,11 +806,11 @@ impl Competition {
             let _timer2 = ::observe::metrics::metrics().on_auction_overhead_start("driver", stage);
             f()
         })
-            .await
-            .expect(
-                "Either runtime was shut down before spawning the task or no OS threads are \
+        .await
+        .expect(
+            "Either runtime was shut down before spawning the task or no OS threads are \
              available; no sense in handling those errors",
-            )
+        )
     }
 
     pub async fn reveal(
@@ -869,7 +869,7 @@ impl Competition {
                 drop(admission_permit);
                 result
             }
-                .instrument(tracing_span),
+            .instrument(tracing_span),
         );
         SettleTaskHandle(handle).await
     }
