@@ -292,6 +292,7 @@ mod tests {
                 order::{
                     BuyTokenBalance,
                     Kind,
+                    OrderData,
                     Partial,
                     SellTokenBalance,
                     Side,
@@ -365,33 +366,35 @@ mod tests {
         };
 
         Order {
-            uid,
-            receiver: Some(signer),
-            created: util::Timestamp(0),
-            valid_to: util::Timestamp(valid_to),
-            buy: Asset {
-                token: buy_token,
-                amount: TokenAmount::from(1),
-            },
-            sell: Asset {
-                token: sell_token,
-                amount: TokenAmount::from(1),
-            },
-            side: Side::Sell,
-            kind: Kind::Limit,
+            data: Arc::new(OrderData {
+                uid,
+                receiver: Some(signer),
+                created: util::Timestamp(0),
+                valid_to: util::Timestamp(valid_to),
+                buy: Asset {
+                    token: buy_token,
+                    amount: TokenAmount::from(1),
+                },
+                sell: Asset {
+                    token: sell_token,
+                    amount: TokenAmount::from(1),
+                },
+                side: Side::Sell,
+                kind: Kind::Limit,
+                pre_interactions: vec![],
+                post_interactions: vec![],
+                sell_token_balance: SellTokenBalance::Erc20,
+                buy_token_balance: BuyTokenBalance::Erc20,
+                signature: Signature {
+                    scheme: signature::Scheme::PreSign,
+                    data: Default::default(),
+                    signer,
+                },
+                protocol_fees: Default::default(),
+                quote: Default::default(),
+            }),
             app_data,
             partial: Partial::No,
-            pre_interactions: vec![],
-            post_interactions: vec![],
-            sell_token_balance: SellTokenBalance::Erc20,
-            buy_token_balance: BuyTokenBalance::Erc20,
-            signature: Signature {
-                scheme: signature::Scheme::PreSign,
-                data: Default::default(),
-                signer,
-            },
-            protocol_fees: Default::default(),
-            quote: Default::default(),
         }
     }
 
