@@ -2,7 +2,7 @@ use {
     crate::ipfs::Ipfs,
     anyhow::Result,
     app_data::{AppDataHash, create_ipfs_cid},
-    moka::sync::Cache,
+    moka::future::Cache,
 };
 
 pub struct IpfsAppData {
@@ -79,33 +79,37 @@ impl IpfsAppData {
                 }
             }
         };
-        futures::future::select_ok([std::pin::pin!(fetch(old)), std::pin::pin!(fetch(new))])
-            .await
-            .map(|(ok, _rest)| ok)
+        let result =
+            futures::future::select_ok([std::pin::pin!(fetch(old)), std::pin::pin!(fetch(new))])
+                .await
+                .map(|(ok, _rest)| ok);
+        if result.is_err() {
+            self.metrics
+                .app_data
+                .with_label_values(&["error", "node"])
+                .inc();
+        }
+        result
     }
 
     pub async fn fetch(&self, contract_app_data: &AppDataHash) -> Result<Option<String>> {
         let outcome = |data: &Option<String>| if data.is_some() { "found" } else { "missing" };
 
         let metric = &self.metrics.app_data;
-        if let Some(cached) = self.cache.get(contract_app_data) {
+        if let Some(cached) = self.cache.get(contract_app_data).await {
             metric.with_label_values(&[outcome(&cached), "cache"]).inc();
             return Ok(cached);
         }
 
-        let fetched = {
-            let _timer = self.metrics.fetches.start_timer();
-            self.fetch_raw(contract_app_data).await
-        };
-        let result = match fetched {
-            Ok(result) => result,
-            Err(err) => {
-                metric.with_label_values(&["error", "node"]).inc();
-                return Err(err);
-            }
-        };
+        let result = self
+            .cache
+            .try_get_with(*contract_app_data, async {
+                let _timer = self.metrics.fetches.start_timer();
+                self.fetch_raw(contract_app_data).await
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        self.cache.insert(*contract_app_data, result.clone());
         metric.with_label_values(&[outcome(&result), "node"]).inc();
         Ok(result)
     }
