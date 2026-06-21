@@ -2,13 +2,12 @@ use {
     crate::ipfs::Ipfs,
     anyhow::Result,
     app_data::{AppDataHash, create_ipfs_cid},
-    cached::{Cached, TimedSizedCache},
-    std::sync::Mutex,
+    moka::sync::Cache,
 };
 
 pub struct IpfsAppData {
     ipfs: Ipfs,
-    cache: Mutex<TimedSizedCache<AppDataHash, Option<String>>>,
+    cache: Cache<AppDataHash, Option<String>>,
     metrics: &'static Metrics,
 }
 
@@ -34,9 +33,10 @@ impl IpfsAppData {
         }
         Self {
             ipfs,
-            cache: Mutex::new(TimedSizedCache::with_size_and_lifespan_and_refresh(
-                1000, 600, false,
-            )),
+            cache: Cache::builder()
+                .max_capacity(1000)
+                .time_to_live(std::time::Duration::from_secs(600))
+                .build(),
             metrics,
         }
     }
@@ -63,7 +63,7 @@ impl IpfsAppData {
                     result
                 }
                 Ok(None) => {
-                    tracing::debug!(?contract_app_data, %cid,"no full app data");
+                    tracing::debug!(?contract_app_data, %cid, "no full app data");
                     return Ok(None);
                 }
                 Err(err) => {
@@ -88,13 +88,7 @@ impl IpfsAppData {
         let outcome = |data: &Option<String>| if data.is_some() { "found" } else { "missing" };
 
         let metric = &self.metrics.app_data;
-        if let Some(cached) = self
-            .cache
-            .lock()
-            .unwrap()
-            .cache_get(contract_app_data)
-            .cloned()
-        {
+        if let Some(cached) = self.cache.get(contract_app_data) {
             metric.with_label_values(&[outcome(&cached), "cache"]).inc();
             return Ok(cached);
         }
@@ -111,10 +105,7 @@ impl IpfsAppData {
             }
         };
 
-        self.cache
-            .lock()
-            .unwrap()
-            .cache_set(*contract_app_data, result.clone());
+        self.cache.insert(*contract_app_data, result.clone());
         metric.with_label_values(&[outcome(&result), "node"]).inc();
         Ok(result)
     }
