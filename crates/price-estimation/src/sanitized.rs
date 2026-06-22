@@ -21,6 +21,7 @@ use {
 /// trivial token substitution (e.g. ETH -> WETH) was performed on the query.
 enum Modification {
     AddGas(u64),
+    NoOp,
 }
 
 /// Verifies that buy and sell tokens are supported and handles
@@ -78,19 +79,19 @@ impl SanitizedPriceEstimator {
     /// Builds the query forwarded to the inner estimator, substituting the
     /// native token for an ETH side and reporting the gas adjustment that has
     /// to be applied to the resulting estimate.
-    fn adjust_query(&self, query: &Query) -> (Query, Option<Modification>) {
+    fn adjust_query(&self, query: &Query) -> (Query, Modification) {
         let mut adjusted_query = Query::clone(query);
         let modification =
             if query.sell_token != self.native_token && query.buy_token == BUY_ETH_ADDRESS {
                 tracing::debug!(?query, "estimate price for buying native asset");
                 adjusted_query.buy_token = self.native_token;
-                Some(Modification::AddGas(GAS_PER_WETH_UNWRAP))
+                Modification::AddGas(GAS_PER_WETH_UNWRAP)
             } else if query.sell_token == BUY_ETH_ADDRESS && query.buy_token != self.native_token {
                 tracing::debug!(?query, "estimate price for selling native asset");
                 adjusted_query.sell_token = self.native_token;
-                Some(Modification::AddGas(GAS_PER_WETH_WRAP))
+                Modification::AddGas(GAS_PER_WETH_WRAP)
             } else {
-                None
+                Modification::NoOp
             };
         (adjusted_query, modification)
     }
@@ -98,12 +99,12 @@ impl SanitizedPriceEstimator {
     /// Applies the gas adjustment computed by [`Self::adjust_query`] to a
     /// single estimate returned by the inner estimator.
     fn apply_modification(
-        modification: &Option<Modification>,
+        modification: Modification,
         mut estimate: Estimate,
     ) -> PriceEstimateResult {
         match modification {
-            Some(Modification::AddGas(gas)) => {
-                estimate.gas = estimate.gas.checked_add(*gas).ok_or_else(|| {
+            Modification::AddGas(gas) => {
+                estimate.gas = estimate.gas.checked_add(gas).ok_or_else(|| {
                     PriceEstimationError::ProtocolInternal(anyhow!(
                         "cost of converting native asset would overflow gas price"
                     ))
@@ -114,7 +115,7 @@ impl SanitizedPriceEstimator {
                 );
                 Ok(estimate)
             }
-            None => Ok(estimate),
+            Modification::NoOp => Ok(estimate),
         }
     }
 }
@@ -200,7 +201,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
 
             let (adjusted_query, modification) = self.adjust_query(&query);
             let estimate = self.inner.estimate(Arc::new(adjusted_query)).await?;
-            Self::apply_modification(&modification, estimate)
+            Self::apply_modification(modification, estimate)
         }
         .boxed()
     }
@@ -217,7 +218,7 @@ impl StreamingPriceEstimating for SanitizedPriceEstimator {
         self.inner_stream
             .estimate_stream(Arc::new(adjusted_query))
             .map(move |result| match result {
-                Ok(estimate) => Self::apply_modification(&modification, estimate),
+                Ok(estimate) => Self::apply_modification(modification, estimate),
                 Err(err) => Err(err),
             })
             .boxed()
