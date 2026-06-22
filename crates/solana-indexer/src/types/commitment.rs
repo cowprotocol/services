@@ -48,7 +48,8 @@ pub struct AccountInfo {
 
 /// A `solana.*` row that has not yet reached `finalized` commitment — the kind
 /// picked up by the aged-row sweep, where `commitment = 'confirmed'` and the
-/// row's slot is at least one finalization window behind `LATEST_CHAIN_SLOT`.
+/// row's slot is at least one finalization window behind the latest chain
+/// slot.
 #[derive(Debug, Clone)]
 pub struct UnfinalizedRow {
     /// Table the row lives in.

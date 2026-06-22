@@ -8,66 +8,83 @@ use {
         events::DecodedEvent,
         recovery::PdaSnapshot,
     },
-    std::ops::Range,
+    std::{future::Future, ops::Range},
 };
 
 /// PostgreSQL persistence. Used by Decoder, Watchdog, and FinalizationWorker.
-pub trait Store {
+///
+/// `Send + Sync` so store instances can be shared across async tasks, and each
+/// method returns a `Send` future so callers like `Ingester::serve` can be
+/// `tokio::spawn`ed. Implementors may still write the bodies as `async fn`; the
+/// compiler enforces that the resulting future is `Send`.
+pub trait Store: Send + Sync {
     /// Save decoded events and advance the slot watermark atomically.
-    async fn persist_events(
+    fn persist_events(
         &self,
         events: Vec<DecodedEvent>,
         new_watermark: u64,
-    ) -> Result<(), StoreError>;
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
 
     /// Record a slot checkpoint. Rejects downward writes.
-    async fn write_watermark(&self, slot: u64) -> Result<(), StoreError>;
+    fn write_watermark(&self, slot: u64) -> impl Future<Output = Result<(), StoreError>> + Send;
 
     /// Read persisted watermark for resuming after reconnect.
-    async fn read_watermark(&self) -> Result<Option<u64>, StoreError>;
+    fn read_watermark(&self) -> impl Future<Output = Result<Option<u64>, StoreError>> + Send;
 
     /// Move stale partials (>32 slots behind) to dead letter table.
-    async fn write_dead_letter(&self, entry: DeadLetterEntry) -> Result<(), StoreError>;
+    fn write_dead_letter(
+        &self,
+        entry: DeadLetterEntry,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
 
     /// Record gaps that fell outside the replay window (write-only in v0.1).
-    async fn record_lost_slot_range(&self, range: Range<u64>) -> Result<(), StoreError>;
+    fn record_lost_slot_range(
+        &self,
+        range: Range<u64>,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
 
     /// Primary promotion pass: fetch `confirmed` rows whose `slot` is at or
     /// above the finalization-window threshold (`slot >= newer_than_slot`).
     /// `limit` caps the batch at 256 (RPC batch size). Returns `Err` on
     /// backend failure so the caller can back off rather than
     /// silently stall on a dead store.
-    async fn get_confirmed_rows(
+    fn get_confirmed_rows(
         &self,
         newer_than_slot: u64,
         limit: usize,
-    ) -> Result<Vec<UnfinalizedRow>, StoreError>;
+    ) -> impl Future<Output = Result<Vec<UnfinalizedRow>, StoreError>> + Send;
 
     /// Safety-net sweep for `confirmed` rows the primary promotion pass missed
     /// (i.e. rows that aged past the signature-status retention horizon,
     /// ~150 slots behind the chain tip).  Returns `Err` on backend failure
     /// (see `get_confirmed_rows`).
-    async fn get_aged_rows(
+    fn get_aged_rows(
         &self,
         retention_horizon_slot: u64,
-    ) -> Result<Vec<UnfinalizedRow>, StoreError>;
+    ) -> impl Future<Output = Result<Vec<UnfinalizedRow>, StoreError>> + Send;
 
     /// Flip the `commitment` label on a specific row.
     ///
     /// The row's `table` field tells the implementer which `solana.*` table to
     /// UPDATE.
-    async fn update_commitment(
+    fn update_commitment(
         &self,
         row: &UnfinalizedRow,
         new_commitment: Commitment,
-    ) -> Result<(), StoreError>;
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
 
     /// Persist a single event during recovery/backfills, not the live ingestion
     /// path.
     ///
     /// Unlike `persist_events`, this does not advance the watermark.
-    async fn backfill_event(&self, event: DecodedEvent) -> Result<(), StoreError>;
+    fn backfill_event(
+        &self,
+        event: DecodedEvent,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
 
     /// Upsert on-chain PDA state for reconciliation.
-    async fn upsert_pda_snapshot(&self, snapshot: PdaSnapshot) -> Result<(), StoreError>;
+    fn upsert_pda_snapshot(
+        &self,
+        snapshot: PdaSnapshot,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
 }

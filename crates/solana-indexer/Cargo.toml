@@ -17,6 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 dashmap = { workspace = true }
+futures = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
