@@ -4,7 +4,7 @@ use {
         domain::{self, auction::Price},
         infra::{self, banned},
     },
-    account_balances::{BalanceFetching, Query},
+    account_balances::{BalanceFetching, BlockNumber, Query},
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     bad_tokens::list_based::DenyListedTokens,
@@ -230,13 +230,20 @@ impl SolvableOrdersCache {
             .map(|order| order.metadata.uid)
             .collect();
 
-        let (balances, orders, cow_amms, in_flight) = {
+        let (balances, orders, cow_amms, in_flight) = if self.disable_order_balance_filter {
+            let (orders, cow_amms, in_flight) = tokio::join!(
+                self.filter_invalid_orders(orders, &mut invalid_order_uids),
+                self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
+                self.fetch_in_flight_orders(block),
+            );
+            (HashMap::new(), orders, cow_amms, in_flight)
+        } else {
             let queries = orders
                 .iter()
                 .map(|o| Query::from_order(o))
                 .collect::<Vec<_>>();
             tokio::join!(
-                self.fetch_balances(queries),
+                self.fetch_balances(queries, block),
                 self.filter_invalid_orders(orders, &mut invalid_order_uids),
                 self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
                 self.fetch_in_flight_orders(block),
@@ -380,18 +387,24 @@ impl SolvableOrdersCache {
             .collect()
     }
 
-    async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
+    async fn fetch_balances(
+        &self,
+        queries: Vec<Query>,
+        block: BlockNumber,
+    ) -> HashMap<Query, U256> {
         let fetched_balances = self
             .timed_future(
                 "balance_filtering",
-                self.balance_fetcher.get_balances(&queries),
+                self.balance_fetcher.get_balances(&queries, Some(block)),
             )
             .await;
-        if self.disable_order_balance_filter {
+
+        if queries.is_empty() {
+            tracing::trace!(block = %block, "no balance queries for solvable orders at block");
             return Default::default();
         }
 
-        tracing::trace!("fetched balances for solvable orders");
+        tracing::trace!(block = %block, query_count = queries.len(), "fetched balances for solvable orders at specific block");
         queries
             .into_iter()
             .zip(fetched_balances)
@@ -403,7 +416,8 @@ impl SolvableOrdersCache {
                         token = ?query.token,
                         source = ?query.source,
                         error = ?err,
-                        "failed to get balance"
+                        block = %block,
+                        "failed to get balance at block"
                     );
                     None
                 }
