@@ -2475,7 +2475,7 @@ mod tests {
                 .returning(move |_, _| Err(create_error()));
             balance_fetcher
                 .expect_allowance()
-                .returning(|_, _, _| Ok(alloy::primitives::U256::ZERO));
+                .returning(|_, _, _| Ok(U256::ZERO));
             let mut limit_order_counter = MockLimitOrderCounting::new();
             limit_order_counter.expect_count().returning(|_| Ok(0u64));
             let native_token =
