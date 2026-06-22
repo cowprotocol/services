@@ -79,17 +79,9 @@ impl IpfsAppData {
                 }
             }
         };
-        let result =
-            futures::future::select_ok([std::pin::pin!(fetch(old)), std::pin::pin!(fetch(new))])
-                .await
-                .map(|(ok, _rest)| ok);
-        if result.is_err() {
-            self.metrics
-                .app_data
-                .with_label_values(&["error", "node"])
-                .inc();
-        }
-        result
+        futures::future::select_ok([std::pin::pin!(fetch(old)), std::pin::pin!(fetch(new))])
+            .await
+            .map(|(ok, _rest)| ok)
     }
 
     pub async fn fetch(&self, contract_app_data: &AppDataHash) -> Result<Option<String>> {
@@ -108,10 +100,13 @@ impl IpfsAppData {
                 self.fetch_raw(contract_app_data).await
             })
             .await
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            .map_err(|e| anyhow::anyhow!("{e}"));
 
-        metric.with_label_values(&[outcome(&result), "node"]).inc();
-        Ok(result)
+        match &result {
+            Ok(result) => metric.with_label_values(&[outcome(result), "node"]).inc(),
+            Err(_) => metric.with_label_values(&["error", "node"]).inc(),
+        }
+        result
     }
 }
 
