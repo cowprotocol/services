@@ -80,6 +80,14 @@ impl OrderSimulating for OrderCreationSimulator {
         let inputs = self
             .prepare_simulation(order, full_app_data, full_balance_check)
             .await?;
+
+        // Fast path for "well behaved" orders which make up the majority.
+        // We only run the more involved analysis logic when something is
+        // actually wrong with the order.
+        if inputs.simulate().await.is_ok() {
+            return Ok(());
+        }
+
         analyze_simulation(order, inputs).await
     }
 }
