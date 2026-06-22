@@ -497,7 +497,7 @@ impl OrderQuoter {
 
         let quote = assemble_quote_data(
             parameters,
-            &trade_estimate,
+            trade_estimate,
             effective_gas_price,
             sell_token_price,
             expiration,
@@ -682,7 +682,7 @@ impl StreamingQuoting for OrderQuoter {
                 }
                 let data = assemble_quote_data(
                     &parameters,
-                    &estimate,
+                    estimate,
                     effective_gas_price,
                     sell_token_price,
                     expiration,
@@ -751,7 +751,7 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
 /// `OrderQuoter`).
 fn assemble_quote_data(
     parameters: &QuoteParameters,
-    estimate: &price_estimation::Estimate,
+    estimate: price_estimation::Estimate,
     effective_gas_price: u128,
     sell_token_price: f64,
     expiration: DateTime<Utc>,
@@ -786,9 +786,9 @@ fn assemble_quote_data(
         solver: estimate.solver,
         verified: estimate.verified,
         metadata: QuoteMetadataV1 {
-            interactions: estimate.execution.interactions.clone(),
-            pre_interactions: estimate.execution.pre_interactions.clone(),
-            jit_orders: estimate.execution.jit_orders.clone(),
+            interactions: estimate.execution.interactions,
+            pre_interactions: estimate.execution.pre_interactions,
+            jit_orders: estimate.execution.jit_orders,
         }
         .into(),
     }
@@ -1938,7 +1938,7 @@ mod tests {
             execution: Default::default(),
         };
 
-        let data = assemble_quote_data(&parameters, &estimate, 2, 0.5, expiration);
+        let data = assemble_quote_data(&parameters, estimate, 2, 0.5, expiration);
 
         assert_eq!(data.sell_token, Address::repeat_byte(1));
         assert_eq!(data.buy_token, Address::repeat_byte(2));
@@ -1984,7 +1984,7 @@ mod tests {
             execution: Default::default(),
         };
 
-        let data = assemble_quote_data(&parameters, &estimate, 2, 0.5, expiration);
+        let data = assemble_quote_data(&parameters, estimate, 2, 0.5, expiration);
 
         assert_eq!(data.quoted_sell_amount, AlloyU256::from(42));
         assert_eq!(data.quoted_buy_amount, AlloyU256::from(100));
