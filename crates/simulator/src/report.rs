@@ -79,34 +79,47 @@ pub fn generate_settlement_report(context: Context, trace: CallFrame) -> Simulat
 /// Traverses the call stack and pushes relevant calls to `events`.
 /// Introspection of the `settle()` call gets forwarded to
 /// [`process_settle_frame`].
-fn process_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event>) {
-    let to = frame.to.unwrap_or_default();
+fn process_frame(root: &CallFrame, ctx: &Context, events: &mut Vec<Event>) {
+    // Each stack entry is (frame, emit_exit): when emit_exit is true the frame
+    // has already been entered and we only need to push the WrapperExited event.
+    let mut stack: Vec<(&CallFrame, bool)> = vec![(root, false)];
 
-    if ICowWrapper::wrappedSettleCall::abi_decode(&frame.input).is_ok()
-        // since flashloans are just a specific variant of a wrapper we just consider
-        // them the same thing
-        || FlashLoanRouter::flashLoanAndSettleCall::abi_decode(&frame.input).is_ok()
-    {
-        events.push(Event::WrapperEntered { wrapper: to });
-        for child_call in &frame.calls {
-            process_frame(child_call, ctx, events);
+    while let Some((frame, emit_wrapper_exit)) = stack.pop() {
+        let to = frame.to.unwrap_or_default();
+
+        if emit_wrapper_exit {
+            events.push(Event::WrapperExited {
+                wrapper: to,
+                revert: revert_message(frame),
+            });
+            continue;
         }
-        events.push(Event::WrapperExited {
-            wrapper: to,
-            revert: revert_message(frame),
-        });
-    } else if to == *ctx.settlement && GPv2Settlement::settleCall::abi_decode(&frame.input).is_ok()
-    {
-        events.push(Event::SettlementEntered);
-        for child_call in &frame.calls {
-            process_settle_frame(child_call, ctx, events);
-        }
-        events.push(Event::SettlementExited {
-            revert: revert_message(frame),
-        });
-    } else {
-        for child_call in &frame.calls {
-            process_frame(child_call, ctx, events);
+
+        if ICowWrapper::wrappedSettleCall::abi_decode(&frame.input).is_ok()
+            // since flashloans are just a specific variant of a wrapper we just consider
+            // them the same thing
+            || FlashLoanRouter::flashLoanAndSettleCall::abi_decode(&frame.input).is_ok()
+        {
+            events.push(Event::WrapperEntered { wrapper: to });
+            stack.push((frame, true)); // deferred WrapperExited, fires after children
+            for child_call in frame.calls.iter().rev() {
+                stack.push((child_call, false));
+            }
+        } else if to == *ctx.settlement
+            && GPv2Settlement::settleCall::abi_decode(&frame.input).is_ok()
+        {
+            // process_settle_frame is non-recursive so handle children inline.
+            events.push(Event::SettlementEntered);
+            for child_call in &frame.calls {
+                process_settle_frame(child_call, ctx, events);
+            }
+            events.push(Event::SettlementExited {
+                revert: revert_message(frame),
+            });
+        } else {
+            for child_call in frame.calls.iter().rev() {
+                stack.push((child_call, false));
+            }
         }
     }
 }
