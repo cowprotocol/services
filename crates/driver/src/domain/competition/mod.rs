@@ -2,7 +2,7 @@ use {
     self::solution::settlement,
     super::{
         Mempools,
-        mempools::SubmissionMode,
+        mempools::{self, SubmissionMode},
         time::{self, Remaining},
     },
     crate::{
@@ -167,6 +167,28 @@ impl SubmitterPool {
                 .inspect_err(|err| tracing::error!(?err, "could not acquire submission account"))
                 .ok()?;
 
+        Some(SubmitterGuard {
+            inner,
+            solver_address: self.solver_address,
+        })
+    }
+
+    /// Non-blocking variant of [`acquire`]. Returns `None` when no slot is
+    /// immediately free. Used to fall back to another submission account on
+    /// retry: acquiring without blocking (while the failed account's slot is
+    /// still held) avoids deadlocking against other concurrent settlements.
+    fn try_acquire(&self) -> Option<SubmitterGuard> {
+        let inner = if let Ok(permit) = Arc::clone(&self.direct_slot).try_acquire_owned() {
+            GuardInner::Direct(permit)
+        } else {
+            let delegated = self.delegated.as_ref()?;
+            let mut channel = delegated.acquire.try_lock().ok()?;
+            let account = channel.try_recv().ok()?;
+            GuardInner::Delegated {
+                account,
+                release: delegated.release.clone(),
+            }
+        };
         Some(SubmitterGuard {
             inner,
             solver_address: self.solver_address,
@@ -912,17 +934,44 @@ impl Competition {
         // Acquire a submission slot. The pool prefers the direct solver EOA
         // (no forwarding overhead); falls back to a delegated EIP-7702
         // submission account when the solver EOA is busy.
-        let guard = self
+        //
+        // If submission fails because the chosen account is unusable (no gas,
+        // stale nonce, a pending tx that can't be replaced), retry the
+        // settlement from another account while the deadline still holds. Spent
+        // accounts are held until this request finishes so each retry picks a
+        // different one. This is safe against double-submission: a settlement
+        // that actually lands always returns `Ok`, so only failures (where
+        // nothing was broadcast) are ever retried.
+        let mut guard = self
             .submitter_pool
             .acquire()
             .await
             .ok_or(Error::SubmissionError)?;
-        let mode = guard.submission_mode();
+        let mut spent = Vec::new();
+        let executed = loop {
+            let mode = guard.submission_mode();
+            let executed = self
+                .mempools
+                .execute(&settlement, submission_deadline, &mode)
+                .await;
 
-        let executed = self
-            .mempools
-            .execute(&settlement, submission_deadline, &mode)
-            .await;
+            let account_unusable = matches!(executed, Err(mempools::Error::SubmitterUnusable(_)));
+            let deadline_reached =
+                self.eth.current_block().borrow().number >= submission_deadline.0;
+            if !account_unusable || deadline_reached {
+                break executed;
+            }
+
+            let Some(next) = self.submitter_pool.try_acquire() else {
+                // No other account currently free; give up and report the error.
+                break executed;
+            };
+            tracing::warn!(
+                ?mode,
+                "submission account unusable, retrying from another account"
+            );
+            spent.push(std::mem::replace(&mut guard, next));
+        };
 
         notify::executed(
             &self.solver,

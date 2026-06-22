@@ -503,6 +503,10 @@ impl From<&Result<SubmissionSuccess, Error>> for Outcome {
                 reason: "Expired",
                 blocks_passed: err.blocks_passed(),
             },
+            Err(Error::SubmitterUnusable(_)) => Outcome::Failed {
+                reason: "SubmitterUnusable",
+                blocks_passed: None,
+            },
             Err(Error::Other(_)) => Outcome::Failed {
                 reason: "Other",
                 blocks_passed: None,
@@ -632,8 +636,60 @@ pub enum Error {
     },
     #[error("Strategy disabled for this tx")]
     Disabled,
+    /// The submission account could not broadcast the transaction for a reason
+    /// specific to that account (e.g. insufficient gas funds, stale nonce, a
+    /// pending tx that can't be replaced). Nothing was broadcast, so the same
+    /// settlement can safely be retried from a different account.
+    #[error("submission account unusable: {0}")]
+    SubmitterUnusable(AccountFailure),
     #[error("Failed to submit: {0:?}")]
     Other(#[from] anyhow::Error),
+}
+
+/// Account-specific reasons a node rejects a transaction at submission time,
+/// before it is broadcast.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AccountFailure {
+    InsufficientFunds,
+    Nonce,
+    Underpriced,
+}
+
+impl AccountFailure {
+    /// Stable label for metrics/logging.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AccountFailure::InsufficientFunds => "insufficient_funds",
+            AccountFailure::Nonce => "nonce",
+            AccountFailure::Underpriced => "underpriced",
+        }
+    }
+}
+
+impl std::fmt::Display for AccountFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Classify a failed `eth_sendRawTransaction` by its error message. Returns
+/// `Some` only for failures specific to the *sending account*; transaction-
+/// and node-level failures return `None` so they keep their existing handling.
+///
+/// `already known` is intentionally excluded: it means our exact transaction is
+/// already in the mempool and may still be mined, so it is not safe to retry
+/// from another account.
+pub fn classify_submission_failure(message: &str) -> Option<AccountFailure> {
+    let message = message.to_lowercase();
+    if message.contains("insufficient funds") {
+        Some(AccountFailure::InsufficientFunds)
+    } else if message.contains("nonce too low") {
+        Some(AccountFailure::Nonce)
+    } else if message.contains("underpriced") {
+        Some(AccountFailure::Underpriced)
+    } else {
+        None
+    }
 }
 
 impl Error {
@@ -655,7 +711,7 @@ impl Error {
                 submission_deadline,
                 ..
             } => (*submitted_at_block, *submission_deadline),
-            Self::Disabled | Self::Other(_) => return None,
+            Self::Disabled | Self::SubmitterUnusable(_) | Self::Other(_) => return None,
         };
         Some(end.saturating_sub(start).0)
     }
@@ -744,5 +800,46 @@ mod tests {
             &NONCE_LOOKUP_FAILED,
             SUBMISSION_NONCE
         ));
+    }
+
+    #[test]
+    fn classifies_account_specific_submission_failures() {
+        use AccountFailure::*;
+        // Geth-family messages, with the surrounding wrapper text nodes add.
+        assert_eq!(
+            classify_submission_failure(
+                "server returned an error response: error code -32000: insufficient funds for gas \
+                 * price + value"
+            ),
+            Some(InsufficientFunds)
+        );
+        assert_eq!(
+            classify_submission_failure("error code -32000: nonce too low"),
+            Some(Nonce)
+        );
+        assert_eq!(
+            classify_submission_failure("replacement transaction underpriced"),
+            Some(Underpriced)
+        );
+        // Case-insensitive.
+        assert_eq!(
+            classify_submission_failure("Insufficient Funds For Transfer"),
+            Some(InsufficientFunds)
+        );
+    }
+
+    #[test]
+    fn does_not_classify_non_account_failures_as_account_specific() {
+        // Settlement-level and node-level failures must NOT be retried from a
+        // different account.
+        assert_eq!(classify_submission_failure("execution reverted"), None);
+        // `already known` means our exact tx is already pending and may mine;
+        // retrying elsewhere could double-submit, so it must not be classified.
+        assert_eq!(classify_submission_failure("already known"), None);
+        assert_eq!(classify_submission_failure("too many requests"), None);
+        assert_eq!(
+            classify_submission_failure("connection reset by peer"),
+            None
+        );
     }
 }

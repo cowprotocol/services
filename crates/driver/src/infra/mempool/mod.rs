@@ -175,7 +175,13 @@ impl Mempool {
                     ?signer,
                     "failed to submit tx to mempool"
                 );
-                Err(mempools::Error::Other(err))
+                // A rejection at broadcast time means nothing was sent, so an
+                // account-specific failure (no gas, stale nonce, ...) can be
+                // retried from a different submission account.
+                match mempools::classify_submission_failure(&err.to_string()) {
+                    Some(reason) => Err(mempools::Error::SubmitterUnusable(reason)),
+                    None => Err(mempools::Error::Other(err)),
+                }
             }
         }
     }
