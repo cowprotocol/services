@@ -105,8 +105,8 @@ fn process_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event>) {
             revert: frame.revert_reason.clone(),
         });
     } else {
-        for sub in &frame.calls {
-            process_frame(sub, ctx, events);
+        for child_call in &frame.calls {
+            process_frame(child_call, ctx, events);
         }
     }
 }
