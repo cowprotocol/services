@@ -636,30 +636,24 @@ async fn build_final_state_overrides(
             AccountOverrideRequest::Custom { account, state } => Some((*account, state.clone())),
         };
 
-        match state_override {
-            Some(value) => Either::Left(value),
-            None => {
-                tracing::debug!(?request, "failed to compute state override");
-                Either::Right(request)
-            }
+        if state_override.is_none() {
+            tracing::debug!(?request, "failed to compute state override");
         }
+        (request, state_override)
     });
 
     let mut state_overrides = StateOverride::default();
     let mut errors = vec![];
 
-    for res in futures::future::join_all(futures).await.into_iter() {
-        match res {
-            Either::Left((address, account_override)) => {
-                if let Err(err) =
-                    apply_account_override(&mut state_overrides, address, account_override)
-                {
-                    tracing::warn!(?err, %address, "conflicting state overrides for address, skipping");
-                }
-            }
-            Either::Right(error) => {
-                errors.push(error);
-            }
+    for (request, state_override) in futures::future::join_all(futures).await.into_iter() {
+        let Some((address, account_override)) = state_override else {
+            errors.push(request);
+            continue;
+        };
+
+        if let Err(err) = apply_account_override(&mut state_overrides, address, account_override) {
+            tracing::warn!(?err, ?request, %address, "conflicting state overrides, skipping");
+            errors.push(request);
         }
     }
     (state_overrides, errors)
