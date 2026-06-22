@@ -76,6 +76,9 @@ pub fn generate_settlement_report(context: Context, trace: CallFrame) -> Simulat
     }
 }
 
+/// Traverses the call stack and pushes relevant calls to `events`.
+/// Introspection of the `settle()` call gets forwarded to
+/// [`process_settle_frame`].
 fn process_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event>) {
     let to = frame.to.unwrap_or_default();
 
@@ -85,8 +88,8 @@ fn process_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event>) {
         || FlashLoanRouter::flashLoanAndSettleCall::abi_decode(&frame.input).is_ok()
     {
         events.push(Event::WrapperEntered { wrapper: to });
-        for sub in &frame.calls {
-            process_frame(sub, ctx, events);
+        for child_call in &frame.calls {
+            process_frame(child_call, ctx, events);
         }
         events.push(Event::WrapperExited {
             wrapper: to,
@@ -95,8 +98,8 @@ fn process_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event>) {
     } else if to == *ctx.settlement && GPv2Settlement::settleCall::abi_decode(&frame.input).is_ok()
     {
         events.push(Event::SettlementEntered);
-        for sub in &frame.calls {
-            process_settle_frame(sub, ctx, events);
+        for child_call in &frame.calls {
+            process_settle_frame(child_call, ctx, events);
         }
         events.push(Event::SettlementExited {
             revert: frame.revert_reason.clone(),
@@ -116,10 +119,10 @@ fn process_settle_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event
     let to = frame.to.unwrap_or_default();
 
     if to == *ctx.trampoline {
-        for sub in &frame.calls {
+        for child_call in &frame.calls {
             events.push(Event::Hook {
-                target: sub.to.unwrap_or_default(),
-                caught_error: sub.revert_reason.clone(),
+                target: child_call.to.unwrap_or_default(),
+                caught_error: child_call.revert_reason.clone(),
             });
         }
     } else if to == *ctx.vault_relayer {
@@ -129,14 +132,14 @@ fn process_settle_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event
         // to also signal that the `SignatureCheck` was successful.
         events.push(Event::SignatureCheck);
 
-        for sub in &frame.calls {
-            if let Ok(call) = ERC20::transferFromCall::abi_decode(&sub.input) {
+        for child_call in &frame.calls {
+            if let Ok(call) = ERC20::transferFromCall::abi_decode(&child_call.input) {
                 events.push(Event::Transfer {
-                    token: sub.to.unwrap_or_default(),
+                    token: child_call.to.unwrap_or_default(),
                     from: call.sender,
                     to: call.recipient,
                     amount: call.amount,
-                    revert: sub.revert_reason.clone(),
+                    revert: child_call.revert_reason.clone(),
                 });
             }
         }
