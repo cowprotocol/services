@@ -67,12 +67,12 @@ pub fn generate_settlement_report(context: Context, trace: CallFrame) -> Simulat
     let mut events = Vec::new();
     process_frame(&trace, &context, &mut events);
     events.push(Event::EndOfSimulation {
-        reason: trace.revert_reason.clone(),
+        reason: revert_message(&trace),
     });
     SimulationReport {
         events,
+        revert: revert_message(&trace),
         returned_bytes: trace.output,
-        revert: trace.revert_reason,
     }
 }
 
@@ -93,7 +93,7 @@ fn process_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event>) {
         }
         events.push(Event::WrapperExited {
             wrapper: to,
-            revert: frame.revert_reason.clone(),
+            revert: revert_message(frame),
         });
     } else if to == *ctx.settlement && GPv2Settlement::settleCall::abi_decode(&frame.input).is_ok()
     {
@@ -102,7 +102,7 @@ fn process_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event>) {
             process_settle_frame(child_call, ctx, events);
         }
         events.push(Event::SettlementExited {
-            revert: frame.revert_reason.clone(),
+            revert: revert_message(frame),
         });
     } else {
         for child_call in &frame.calls {
@@ -122,7 +122,7 @@ fn process_settle_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event
         for child_call in &frame.calls {
             events.push(Event::Hook {
                 target: child_call.to.unwrap_or_default(),
-                caught_error: child_call.revert_reason.clone(),
+                caught_error: revert_message(child_call),
             });
         }
     } else if to == *ctx.vault_relayer {
@@ -139,7 +139,7 @@ fn process_settle_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event
                     from: call.sender,
                     to: call.recipient,
                     amount: call.amount,
-                    revert: child_call.revert_reason.clone(),
+                    revert: revert_message(child_call),
                 });
             }
         }
@@ -149,8 +149,18 @@ fn process_settle_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event
             from: frame.from,
             to: call.recipient,
             amount: call.amount,
-            revert: frame.revert_reason.clone(),
+            revert: revert_message(frame),
         });
+    }
+}
+
+/// Extracts the most relevant revert message from the call by preferring
+/// `revert_reason` (failed SC assertion) over `error` (EVM error).
+fn revert_message(call: &CallFrame) -> Option<String> {
+    if call.revert_reason.as_ref().is_none_or(String::is_empty) {
+        call.error.clone()
+    } else {
+        call.revert_reason.clone()
     }
 }
 
