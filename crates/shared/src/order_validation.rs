@@ -2378,9 +2378,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: Address::with_last_byte(1),
             buy_token: Address::with_last_byte(2),
-            buy_amount: alloy::primitives::U256::from(1),
-            sell_amount: alloy::primitives::U256::from(1),
-            fee_amount: alloy::primitives::U256::from(0),
+            buy_amount: U256::ONE,
+            sell_amount: U256::ONE,
+            fee_amount: U256::ZERO,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
