@@ -79,22 +79,26 @@ impl OrderSimulator {
         &self,
         order: &Order,
         full_app_data: &str,
+        full_balance_check: bool,
     ) -> Result<(), OrderSimulationError> {
         let start = Instant::now();
-        let (outcome, result) =
-            match tokio::time::timeout(self.timeout, self.simulator.simulate(order, full_app_data))
-                .await
-            {
-                Ok(r @ Ok(())) => ("ok", r),
-                Ok(r @ Err(OrderSimulationError::Reverted { .. })) => ("reverted", r),
-                Ok(r @ Err(OrderSimulationError::Infra(_))) => ("infra", r),
-                Err(_) => (
-                    "timeout",
-                    Err(OrderSimulationError::Infra(anyhow!(
-                        "order simulation timeout"
-                    ))),
-                ),
-            };
+        let (outcome, result) = match tokio::time::timeout(
+            self.timeout,
+            self.simulator
+                .simulate(order, full_app_data, full_balance_check),
+        )
+        .await
+        {
+            Ok(r @ Ok(())) => ("ok", r),
+            Ok(r @ Err(OrderSimulationError::Reverted { .. })) => ("reverted", r),
+            Ok(r @ Err(OrderSimulationError::Infra(_))) => ("infra", r),
+            Err(_) => (
+                "timeout",
+                Err(OrderSimulationError::Infra(anyhow!(
+                    "order simulation timeout"
+                ))),
+            ),
+        };
 
         Metrics::get()
             .duration_seconds
@@ -124,6 +128,7 @@ fn log_simulation_outcome(
                 reason,
                 tenderly_url,
                 tenderly_request,
+                summary,
             }),
         ) => {
             let tenderly_request_json = tenderly_request
@@ -137,6 +142,7 @@ fn log_simulation_outcome(
                 full_app_data,
                 ?order_signature,
                 ?reason,
+                ?summary,
                 ?tenderly_url,
                 tenderly_request = %tenderly_request_json,
                 "order simulation disagreement: signature passed, simulation reverted",
@@ -819,11 +825,9 @@ impl OrderValidating for OrderValidator {
             None
         };
 
-        let simulation_fut = OptionFuture::from(
-            self.order_simulator
-                .as_ref()
-                .map(|c| c.simulate_with_timeout(&preview_order, &full_app_data)),
-        );
+        let simulation_fut = OptionFuture::from(self.order_simulator.as_ref().map(|c| {
+            c.simulate_with_timeout(&preview_order, &full_app_data, order.full_balance_check)
+        }));
         let transfer_fut = self.ensure_token_is_transferable(&order, owner, &app_data);
 
         let verification_gas_limit = match eip1271_check {
@@ -3056,12 +3060,13 @@ mod tests {
             let mut sim = MockOrderSimulating::new();
             sim.expect_simulate()
                 .times(1)
-                .returning(move |_, _| match simulation {
+                .returning(move |_, _, _| match simulation {
                     Sim::Pass => Ok(()),
                     Sim::Reverted => Err(OrderSimulationError::Reverted {
                         reason: "hook reverted".into(),
                         tenderly_url: None,
                         tenderly_request: None,
+                        summary: vec![],
                     }),
                 });
             let validator =
@@ -3092,7 +3097,7 @@ mod tests {
             .returning(|_| Ok(0u64));
         let mut sim = MockOrderSimulating::new();
         sim.expect_simulate()
-            .returning(|_, _| Err(OrderSimulationError::Infra(anyhow!("RPC down"))));
+            .returning(|_, _, _| Err(OrderSimulationError::Infra(anyhow!("RPC down"))));
         let validator =
             build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
         let result = validator
@@ -3115,11 +3120,12 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .times(0);
         let mut sim = MockOrderSimulating::new();
-        sim.expect_simulate().returning(|_, _| {
+        sim.expect_simulate().returning(|_, _, _| {
             Err(OrderSimulationError::Reverted {
                 reason: "x".into(),
                 tenderly_url: None,
                 tenderly_request: None,
+                summary: vec![],
             })
         });
         let validator = build_1271_validator(signature_validator, Some(order_simulator(sim)), true);
@@ -3143,7 +3149,7 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .times(0);
         let mut sim = MockOrderSimulating::new();
-        sim.expect_simulate().times(1).returning(|_, _| Ok(()));
+        sim.expect_simulate().times(1).returning(|_, _, _| Ok(()));
         let validator =
             build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
 
