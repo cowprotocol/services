@@ -19,7 +19,6 @@ use {
     balance_overrides::{ApprovalOverrideRequest, BalanceOverrideRequest, StateOverriding},
     contracts::GPv2Settlement,
     derive_more::Debug,
-    futures::future::Either,
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
