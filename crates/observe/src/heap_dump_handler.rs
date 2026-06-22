@@ -10,17 +10,23 @@ use {
 /// at "/tmp/heap_dump_<process_name>.sock".
 /// When "dump" command is sent, it generates a heap profile using
 /// jemalloc_pprof and streams the binary protobuf data back through the socket.
+/// When "stats" command is sent, it streams back a text report of jemalloc's
+/// own counters (allocated/active/resident/retained/...), which is the cheapest
+/// way to see the gap between live heap and process RSS.
 ///
 /// Profiling is enabled at runtime via the MALLOC_CONF environment variable.
 /// Set MALLOC_CONF=prof:true to enable heap profiling.
 ///
 /// Usage:
 /// ```bash
-/// # From your local machine (one-liner):
+/// # Heap profile (one-liner):
 /// kubectl exec <pod> -n <namespace> -- sh -c "echo dump | nc -U /tmp/heap_dump_<binary_name>.sock" > heap.pprof
 ///
 /// # Analyze with pprof:
 /// go tool pprof -http=:8080 heap.pprof
+///
+/// # Allocator stats (live heap vs RSS vs retained):
+/// kubectl exec <pod> -n <namespace> -- sh -c "echo stats | nc -U /tmp/heap_dump_<binary_name>.sock"
 /// ```
 pub fn spawn_heap_dump_handler() {
     // Check if jemalloc profiling is available at runtime
@@ -116,6 +122,9 @@ async fn handle_connection_with_socket(mut socket: UnixStream) {
         Some("dump") => {
             generate_and_stream_dump(&mut socket).await;
         }
+        Some("stats") => {
+            write_jemalloc_stats(&mut socket).await;
+        }
         Some("") => {
             tracing::debug!("client disconnected");
         }
@@ -159,6 +168,57 @@ async fn generate_and_stream_dump(socket: &mut UnixStream) {
             tracing::error!(?err, "failed to generate heap dump");
         }
     }
+}
+
+/// Streams a text report of jemalloc's internal counters. `allocated` tracks
+/// the live application bytes (what the heap profile samples), while `resident`
+/// approximates the allocator's contribution to RSS. A large `resident -
+/// allocated` gap points at retained/fragmented pages (decay/arena tuning)
+/// rather than at the application's live data.
+async fn write_jemalloc_stats(socket: &mut UnixStream) {
+    let report = match jemalloc_stats_report() {
+        Ok(report) => report,
+        Err(err) => {
+            tracing::warn!(?err, "failed to read jemalloc stats");
+            format!("failed to read jemalloc stats: {err}\n")
+        }
+    };
+    if let Err(err) = socket.write_all(report.as_bytes()).await {
+        tracing::warn!(?err, "failed to write jemalloc stats to socket");
+    }
+}
+
+fn jemalloc_stats_report() -> Result<String, tikv_jemalloc_ctl::Error> {
+    use tikv_jemalloc_ctl::{arenas, epoch, stats};
+
+    // jemalloc caches the stats; advancing the epoch refreshes the snapshot.
+    epoch::advance()?;
+
+    let allocated = stats::allocated::read()?;
+    let active = stats::active::read()?;
+    let resident = stats::resident::read()?;
+    let mapped = stats::mapped::read()?;
+    let retained = stats::retained::read()?;
+    let metadata = stats::metadata::read()?;
+    let narenas = arenas::narenas::read()?;
+
+    let line = |bytes: usize| format!("{bytes:>12} ({:>8.2} MiB)", bytes as f64 / 1024.0 / 1024.0);
+
+    Ok(format!(
+        "jemalloc stats\nnarenas:   {narenas}\nallocated: {}  live application bytes (≈ heap \
+         profile)\nactive:    {}  bytes in active pages\nresident:  {}  physically resident (≈ \
+         allocator RSS)\nmapped:    {}  total mapped from the OS\nretained:  {}  unmapped, held \
+         back from the OS (decay)\nmetadata:  {}  allocator bookkeeping\nfragmentation (active - \
+         allocated): {}\noverhead      (resident - allocated): {}\n",
+        line(allocated),
+        line(active),
+        line(resident),
+        line(mapped),
+        line(retained),
+        line(metadata),
+        line(active.saturating_sub(allocated)),
+        line(resident.saturating_sub(allocated)),
+    ))
 }
 
 async fn read_line(socket: &mut UnixStream) -> Option<String> {
