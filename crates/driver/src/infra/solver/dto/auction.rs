@@ -219,7 +219,7 @@ pub fn new(
                             liquidity_net: pool
                                 .liquidity_net
                                 .iter()
-                                .map(|(key, value)| (key.0, value.0))
+                                .map(|(key, value)| (*key, *value))
                                 .collect(),
                             fee: rational_to_big_decimal(&pool.fee.0),
                         },
