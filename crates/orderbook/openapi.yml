@@ -516,11 +516,12 @@ paths:
       description: >
         Accepts the same request body as `POST /api/v1/quote`. Instead of
         waiting for all solvers and returning the single best quote, this
-        endpoint opens a Server-Sent Events stream and emits one event per
-        solver as each result arrives. The stream closes when the quote timeout
-        elapses or all solvers have responded. Each event's `id` is always
-        `null`. Clients can use this to show progressive quote updates in real
-        time.
+        endpoint opens a Server-Sent Events stream and emits one event per quote
+        as solvers respond. Solvers without a usable quote emit no event, so you
+        may receive fewer events than there are solvers. The stream closes when
+        the quote timeout elapses or all solvers have responded. Each event's
+        `id` is always `null`. Clients can use this to show progressive quote
+        updates in real time.
 
 
         The `priceQuality` field of the request body is ignored: this endpoint
@@ -539,8 +540,8 @@ paths:
         "200":
           description: >
             A Server-Sent Events stream. Each event's `data` field is a JSON
-            object matching `OrderQuoteResponse`. Events arrive one per solver
-            as results become available.
+            object matching `OrderQuoteResponse`. Events arrive one per quote
+            as solvers respond.
           content:
             text/event-stream:
               schema:

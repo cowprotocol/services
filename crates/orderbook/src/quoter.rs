@@ -162,19 +162,16 @@ impl QuoteHandler {
         let request = request.clone();
         let volume_fee = self.volume_fee.clone();
         let volume_fee_policy = self.volume_fee_policy.clone();
-        let buy_token = request.buy_token;
-        let sell_token = request.sell_token;
-        let side = request.side;
 
         let stream = inner.map(move |item| {
             let quote = item.map_err(OrderQuoteError::CalculateQuote)?;
             let adjusted = get_vol_fee_adjusted_quote_data(
                 &quote,
-                &side,
+                &request.side,
                 volume_fee.as_ref(),
                 &volume_fee_policy,
-                buy_token,
-                sell_token,
+                request.buy_token,
+                request.sell_token,
             )
             .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
             build_order_quote_response(&request, &quote, &adjusted, None, valid_to)
