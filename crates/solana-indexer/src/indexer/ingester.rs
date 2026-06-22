@@ -234,6 +234,7 @@ where
         match tx.try_send(update) {
             Ok(()) => ControlFlow::Continue(()),
             Err(TrySendError::Full(update)) => {
+                // TODO: Rate-limit if sustained backpressure floods logs.
                 tracing::warn!("decoder channel full; ingester blocked on backpressure");
                 match tx.send(update).await {
                     Ok(()) => ControlFlow::Continue(()),
