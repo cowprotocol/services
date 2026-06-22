@@ -116,7 +116,8 @@ impl OrderCreationSimulator {
                     OrderKind::Buy => clamped_sell_amount
                         .checked_mul(order.data.buy_amount)
                         .and_then(|val| val.checked_div(order.data.sell_amount))
-                        .unwrap_or(U256::ONE),
+                        .unwrap_or(U256::ONE)
+                        .max(U256::ONE),
                 };
                 ExecutionAmount::Explicit(final_amount)
             }
