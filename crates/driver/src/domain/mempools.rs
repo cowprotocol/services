@@ -681,9 +681,12 @@ impl std::fmt::Display for AccountFailure {
 /// from another account.
 pub fn classify_submission_failure(message: &str) -> Option<AccountFailure> {
     let message = message.to_lowercase();
-    if message.contains("insufficient funds") {
+    // Match on keyword pairs rather than exact phrases so non-Geth clients are
+    // also covered (e.g. Nethermind's `SenderInsufficientFunds` / `NonceTooLow`,
+    // which omit the spaces Geth uses).
+    if message.contains("insufficient") && message.contains("funds") {
         Some(AccountFailure::InsufficientFunds)
-    } else if message.contains("nonce too low") {
+    } else if message.contains("nonce") && message.contains("low") {
         Some(AccountFailure::Nonce)
     } else if message.contains("underpriced") {
         Some(AccountFailure::Underpriced)
@@ -840,6 +843,25 @@ mod tests {
         assert_eq!(
             classify_submission_failure("connection reset by peer"),
             None
+        );
+        // `nonce too high` is a gap (the tx gets queued), not a clean
+        // rejection, so it must not be treated as retryable.
+        assert_eq!(classify_submission_failure("nonce too high"), None);
+    }
+
+    #[test]
+    fn classifies_non_geth_client_wording() {
+        use AccountFailure::*;
+        // Clients such as Nethermind use spaceless variants; keyword-pair
+        // matching still classifies them.
+        assert_eq!(
+            classify_submission_failure("SenderInsufficientFunds"),
+            Some(InsufficientFunds)
+        );
+        assert_eq!(classify_submission_failure("NonceTooLow"), Some(Nonce));
+        assert_eq!(
+            classify_submission_failure("ReplacementTransactionUnderpriced"),
+            Some(Underpriced)
         );
     }
 }

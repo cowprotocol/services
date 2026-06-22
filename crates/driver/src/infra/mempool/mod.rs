@@ -177,8 +177,10 @@ impl Mempool {
                 );
                 // A rejection at broadcast time means nothing was sent, so an
                 // account-specific failure (no gas, stale nonce, ...) can be
-                // retried from a different submission account.
-                match mempools::classify_submission_failure(&err.to_string()) {
+                // retried from a different submission account. Format the whole
+                // error chain (`{:#}`) so the node's message is matched even if
+                // context is wrapped around it.
+                match mempools::classify_submission_failure(&format!("{err:#}")) {
                     Some(reason) => Err(mempools::Error::SubmitterUnusable(reason)),
                     None => Err(mempools::Error::Other(err)),
                 }
