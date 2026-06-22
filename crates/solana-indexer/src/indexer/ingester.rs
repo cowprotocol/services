@@ -343,6 +343,9 @@ fn assert_serve_future_is_send<St: Store>(
 ///
 /// TODO: source the exact subscriptions from a config file once this crate's
 /// configuration module lands.
+#[cfg(test)]
+mod tests;
+
 fn subscribe_request(settlement_program: Pubkey, solflow_program: Pubkey) -> SubscribeRequest {
     // `failed: None` includes failed transactions: the failure itself is the
     // on-chain signal downstream consumers read.
