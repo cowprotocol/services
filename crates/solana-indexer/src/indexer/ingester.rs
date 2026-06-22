@@ -223,7 +223,7 @@ where
         latest_chain_slot: &AtomicU64,
         slot: SubscribeUpdateSlot,
     ) -> ControlFlow<()> {
-        latest_chain_slot.store(slot.slot, Ordering::Relaxed);
+        latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
         ControlFlow::Continue(())
     }
 
