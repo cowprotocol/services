@@ -5,13 +5,12 @@ use {
         PriceEstimating,
         PriceEstimationError,
         Query,
-        StreamingPriceEstimating,
         gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP, SETTLEMENT_OVERHEAD},
     },
     alloy::primitives::Address,
     anyhow::anyhow,
     bad_tokens::list_based::DenyListedTokens,
-    futures::{FutureExt, StreamExt, stream::BoxStream},
+    futures::FutureExt,
     model::order::BUY_ETH_ADDRESS,
     std::sync::Arc,
     tracing::instrument,
@@ -28,10 +27,6 @@ enum Modification {
 /// ETH as buy token appropriately.
 pub struct SanitizedPriceEstimator {
     inner: Arc<dyn PriceEstimating>,
-    /// Streaming view of the same inner estimator used by `estimate_stream`.
-    /// For estimators that don't have a native streaming source this is an
-    /// adapter that yields the single one-shot result.
-    inner_stream: Arc<dyn StreamingPriceEstimating>,
     deny_listed_tokens: DenyListedTokens,
     native_token: Address,
     /// Enables the short-circuiting logic in case the sell and buy tokens are
@@ -46,21 +41,12 @@ impl SanitizedPriceEstimator {
         deny_listed_tokens: DenyListedTokens,
         is_estimating_native_price: bool,
     ) -> Self {
-        let inner_stream = Arc::new(OneShotStream(inner.clone()));
         Self {
             inner,
-            inner_stream,
             native_token,
             deny_listed_tokens,
             is_estimating_native_price,
         }
-    }
-
-    /// Replaces the inner streaming source so `estimate_stream` yields every
-    /// underlying estimator's result instead of collapsing to a single one.
-    pub fn with_streaming(mut self, inner_stream: Arc<dyn StreamingPriceEstimating>) -> Self {
-        self.inner_stream = inner_stream;
-        self
     }
 
     /// Checks if the traded tokens are supported by the protocol.
@@ -117,17 +103,6 @@ impl SanitizedPriceEstimator {
             }
             Modification::NoOp => Ok(estimate),
         }
-    }
-}
-
-/// Adapts a one-shot [`PriceEstimating`] into a [`StreamingPriceEstimating`]
-/// that yields exactly its single result.
-struct OneShotStream(Arc<dyn PriceEstimating>);
-
-impl StreamingPriceEstimating for OneShotStream {
-    fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
-        let inner = self.0.clone();
-        futures::stream::once(async move { inner.estimate(query).await }).boxed()
     }
 }
 
@@ -207,29 +182,11 @@ impl PriceEstimating for SanitizedPriceEstimator {
     }
 }
 
-impl StreamingPriceEstimating for SanitizedPriceEstimator {
-    #[instrument(skip_all)]
-    fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
-        if let Some(result) = self.try_trivial_estimate(&query) {
-            return futures::stream::once(async move { result }).boxed();
-        }
-
-        let (adjusted_query, modification) = self.adjust_query(&query);
-        self.inner_stream
-            .estimate_stream(Arc::new(adjusted_query))
-            .map(move |result| match result {
-                Ok(estimate) => Self::apply_modification(modification, estimate),
-                Err(err) => Err(err),
-            })
-            .boxed()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        crate::{HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating, MockStreamingPriceEstimating},
+        crate::{HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         alloy::primitives::{Address, U256 as AlloyU256},
         model::order::OrderKind,
         number::nonzero::NonZeroU256,
@@ -645,106 +602,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[tokio::test]
-    async fn stream_handles_trivial_unwrap_on_its_own() {
-        let native_token = Address::with_last_byte(42);
-        // A WETH -> ETH unwrap is answered without consulting the inner
-        // estimator, so the streaming source is never used.
-        let sanitized_estimator = SanitizedPriceEstimator::new(
-            Arc::new(MockPriceEstimating::new()),
-            native_token,
-            DenyListedTokens::new(vec![]),
-            false,
-        )
-        .with_streaming(Arc::new(MockStreamingPriceEstimating::new()));
-
-        let query = Query {
-            verification: Default::default(),
-            sell_token: native_token,
-            buy_token: BUY_ETH_ADDRESS,
-            in_amount: NonZeroU256::try_from(1).unwrap(),
-            kind: OrderKind::Sell,
-            block_dependent: false,
-            timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-        };
-
-        let results: Vec<_> = sanitized_estimator
-            .estimate_stream(Arc::new(query))
-            .collect()
-            .await;
-
-        assert_eq!(results.len(), 1);
-        let estimate = results.into_iter().next().unwrap().unwrap();
-        assert_eq!(estimate.out_amount, AlloyU256::ONE);
-        assert_eq!(estimate.gas, GAS_PER_WETH_UNWRAP + SETTLEMENT_OVERHEAD);
-        assert!(estimate.verified);
-    }
-
-    #[tokio::test]
-    async fn stream_passes_through_all_results_and_applies_modification() {
-        let native_token = Address::with_last_byte(42);
-
-        // Selling ETH for a non-native token substitutes the sell token with the
-        // native token and adds the wrap cost to every yielded estimate.
-        let query = Query {
-            verification: Default::default(),
-            sell_token: BUY_ETH_ADDRESS,
-            buy_token: Address::with_last_byte(1),
-            in_amount: NonZeroU256::try_from(1).unwrap(),
-            kind: OrderKind::Buy,
-            block_dependent: false,
-            timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-        };
-        let forwarded_query = Query {
-            sell_token: native_token,
-            ..query.clone()
-        };
-
-        let mut streaming = MockStreamingPriceEstimating::new();
-        streaming
-            .expect_estimate_stream()
-            .times(1)
-            .withf(move |query| **query == forwarded_query)
-            .returning(|_| {
-                futures::stream::iter(vec![
-                    Ok(Estimate {
-                        out_amount: AlloyU256::ONE,
-                        gas: 100,
-                        solver: Default::default(),
-                        verified: false,
-                        execution: Default::default(),
-                    }),
-                    Ok(Estimate {
-                        out_amount: AlloyU256::from(2u64),
-                        gas: 200,
-                        solver: Default::default(),
-                        verified: false,
-                        execution: Default::default(),
-                    }),
-                ])
-                .boxed()
-            });
-
-        let sanitized_estimator = SanitizedPriceEstimator::new(
-            Arc::new(MockPriceEstimating::new()),
-            native_token,
-            DenyListedTokens::new(vec![]),
-            false,
-        )
-        .with_streaming(Arc::new(streaming));
-
-        let results: Vec<_> = sanitized_estimator
-            .estimate_stream(Arc::new(query))
-            .collect()
-            .await;
-
-        assert_eq!(results.len(), 2);
-        let gases: Vec<_> = results.into_iter().map(|r| r.unwrap().gas).collect();
-        assert_eq!(
-            gases,
-            vec![100 + GAS_PER_WETH_WRAP, 200 + GAS_PER_WETH_WRAP]
-        );
     }
 }

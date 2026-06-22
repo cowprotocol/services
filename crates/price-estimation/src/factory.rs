@@ -375,18 +375,25 @@ impl<'a> PriceEstimatorFactory<'a> {
         native: Arc<dyn NativePriceEstimating>,
         gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<dyn StreamingPriceEstimating>> {
+        // Sanitize each estimator individually so the competition can stream
+        // their results directly, instead of forwarding a stream through one
+        // outer sanitizer.
         let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
-        let competition_estimator = Arc::new(
-            CompetitionEstimator::new(
-                vec![estimators],
-                PriceRanking::BestBangForBuck { native, gas },
-            )
-            .with_verification(self.args.quote_verification),
-        );
-        let sanitized = self
-            .sanitized(competition_estimator.clone())
-            .with_streaming(competition_estimator);
-        Ok(Arc::new(sanitized))
+        let estimators = estimators
+            .into_iter()
+            .map(|(name, estimator)| {
+                (
+                    name,
+                    Arc::new(self.sanitized(estimator)) as Arc<dyn PriceEstimating>,
+                )
+            })
+            .collect();
+        let competition_estimator = CompetitionEstimator::new(
+            vec![estimators],
+            PriceRanking::BestBangForBuck { native, gas },
+        )
+        .with_verification(self.args.quote_verification);
+        Ok(Arc::new(competition_estimator))
     }
 
     pub fn fast_price_estimator(
