@@ -764,6 +764,7 @@ impl Competition {
 
         if !discarded_orders.is_empty() {
             tracing::debug!(
+                count = discarded_orders.len(),
                 ?discarded_orders,
                 "filtered orders during solver specific prioritization logic"
             );
