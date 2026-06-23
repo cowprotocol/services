@@ -26,7 +26,7 @@ use {
         NetworkName,
     },
     serde::Deserialize,
-    sqlx::PgPool,
+    sqlx::{Executor, PgPool},
     std::{
         future::Future,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
@@ -162,7 +162,13 @@ struct TicksResponse {
 #[derive(Deserialize)]
 struct TickEntry {}
 
+/// Ensures the indexer schema exists, then truncates its tables.
+///
+/// In prod the indexer runs against its own DB migrated from
+/// `database/sql-pool-indexer`. The shared test DB no longer carries these
+/// tables (the shared migration set drops them), so apply that migration here.
 async fn clear_pool_indexer_tables(db: &PgPool) {
+    ensure_pool_indexer_schema(db).await;
     sqlx::query(
         "TRUNCATE uniswap_v3_ticks, uniswap_v3_pool_states, uniswap_v3_pools, \
          pool_indexer_checkpoints",
@@ -170,6 +176,34 @@ async fn clear_pool_indexer_tables(db: &PgPool) {
     .execute(db)
     .await
     .unwrap();
+}
+
+/// Applies the `database/sql-pool-indexer` migrations to `db`. Idempotent:
+/// returns early once the schema is present, since the e2e suite shares one DB.
+async fn ensure_pool_indexer_schema(db: &PgPool) {
+    let present: bool =
+        sqlx::query_scalar("SELECT to_regclass('public.uniswap_v3_pools') IS NOT NULL")
+            .fetch_one(db)
+            .await
+            .unwrap();
+    if present {
+        return;
+    }
+
+    let dir = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../database/sql-pool-indexer"
+    );
+    let mut migrations: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.extension().is_some_and(|ext| ext == "sql"))
+        .collect();
+    migrations.sort();
+    for path in migrations {
+        let sql = std::fs::read_to_string(&path).unwrap();
+        db.execute(sql.as_str()).await.unwrap();
+    }
 }
 
 async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
