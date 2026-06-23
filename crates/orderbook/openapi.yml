@@ -921,14 +921,26 @@ components:
         - limit
         - liquidity
     SellTokenSource:
-      description: Where should the `sellToken` be drawn from?
+      description: |-
+        Where should the `sellToken` be drawn from?
+
+        **Only `erc20` is accepted for new orders.** The `internal` and `external`
+        (Balancer Vault) sources are deprecated: orders using them are rejected at
+        creation with `UnsupportedSellTokenSource`. The values remain in the enum
+        because they may still appear on historical orders returned by the API.
       type: string
       enum:
         - erc20
         - internal
         - external
     BuyTokenDestination:
-      description: Where should the `buyToken` be transferred to?
+      description: |-
+        Where should the `buyToken` be transferred to?
+
+        **Only `erc20` is accepted for new orders.** The `internal` (Balancer Vault)
+        destination is rejected at creation with `UnsupportedBuyTokenDestination`.
+        The value remains in the enum because it may still appear on historical
+        orders returned by the API.
       type: string
       enum:
         - erc20

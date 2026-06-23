@@ -130,35 +130,13 @@ impl BalanceFetching for Balances {
         token: Address,
         source: SellTokenSource,
     ) -> Result<U256> {
+        // Only ERC20 sell-token balances are supported; other sources are deprecated
+        // and rejected at order creation.
+        if source != SellTokenSource::Erc20 {
+            anyhow::bail!("unsupported sell token source: {:?}", source);
+        }
         let token = ERC20::Instance::new(token, self.web3.provider.clone());
-        let allowance = match source {
-            SellTokenSource::Erc20 => token.allowance(owner, self.vault_relayer()).call().await?,
-            SellTokenSource::External => {
-                let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
-                let approved = vault.hasApprovedRelayer(owner, self.vault_relayer());
-                let allowance = token.allowance(owner, self.vault());
-                let (approved, allowance) = futures::try_join!(
-                    approved.call().into_future(),
-                    allowance.call().into_future()
-                )?;
-                match approved {
-                    true => allowance,
-                    false => U256::ZERO,
-                }
-            }
-            SellTokenSource::Internal => {
-                let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
-                match vault
-                    .hasApprovedRelayer(owner, self.vault_relayer())
-                    .call()
-                    .await?
-                {
-                    true => U256::MAX, // internal approvals are always U256::MAX
-                    false => U256::ZERO,
-                }
-            }
-        };
-        Ok(allowance)
+        Ok(token.allowance(owner, self.vault_relayer()).call().await?)
     }
 }
 
