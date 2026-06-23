@@ -86,25 +86,21 @@ impl IpfsAppData {
 
     pub async fn fetch(&self, contract_app_data: &AppDataHash) -> Result<Option<String>> {
         let outcome = |data: &Option<String>| if data.is_some() { "found" } else { "missing" };
-
         let metric = &self.metrics.app_data;
         if let Some(cached) = self.cache.get(contract_app_data).await {
             metric.with_label_values(&[outcome(&cached), "cache"]).inc();
             return Ok(cached);
         }
-
-        let result = self
-            .cache
-            .try_get_with(*contract_app_data, async {
-                let _timer = self.metrics.fetches.start_timer();
-                self.fetch_raw(contract_app_data).await
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("{e}"));
-
+        let _timer = self.metrics.fetches.start_timer();
+        let result = self.fetch_raw(contract_app_data).await;
         match &result {
-            Ok(result) => metric.with_label_values(&[outcome(result), "node"]).inc(),
-            Err(_) => metric.with_label_values(&["error", "node"]).inc(),
+            Ok(result) => {
+                self.cache.insert(*contract_app_data, result.clone()).await;
+                metric.with_label_values(&[outcome(result), "node"]).inc();
+            }
+            Err(_) => {
+                metric.with_label_values(&["error", "node"]).inc();
+            }
         }
         result
     }
