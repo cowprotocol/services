@@ -17,7 +17,7 @@ pub enum Commitment {
 
 impl Commitment {
     /// String label used in `solana.*` `commitment` columns.
-    pub fn as_str(self) -> &'static str {
+    pub fn as_label(self) -> &'static str {
         match self {
             Self::Confirmed => "confirmed",
             Self::Finalized => "finalized",

@@ -32,7 +32,7 @@ pub enum DeadLetterReason {
 
 impl DeadLetterReason {
     /// String label used in `solana.dead_letter.reason`.
-    pub fn as_str(self) -> &'static str {
+    pub fn as_label(self) -> &'static str {
         match self {
             Self::DecoderError => "decoder_error",
             Self::AccountUpdateMissing => "account_update_missing",
