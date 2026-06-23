@@ -753,7 +753,7 @@ impl Competition {
                 );
             }
             if order.available().is_zero() {
-                discarded_orders.push((order.uid, "available balance is 0"));
+                discarded_orders.push((order.uid, "available balance scaled down to 0"));
                 return false;
             }
 
