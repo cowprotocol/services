@@ -1379,11 +1379,8 @@ mod tests {
                 ..Default::default()
             })
             .await;
-        assert!(
-            matches!(result, Err(PartialValidationError::UnsupportedOrderType)),
-            "{result:?}"
-        );
-        assert!(matches!(
+        std::assert_matches!(result, Err(PartialValidationError::UnsupportedOrderType));
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     owner: Address::with_last_byte(1),
@@ -1391,8 +1388,8 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::Forbidden)
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     receiver: Address::with_last_byte(1),
@@ -1400,8 +1397,8 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::Forbidden)
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     buy_token_balance: BuyTokenDestination::Internal,
@@ -1411,8 +1408,8 @@ mod tests {
             Err(PartialValidationError::UnsupportedBuyTokenDestination(
                 BuyTokenDestination::Internal
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     sell_token_balance: SellTokenSource::Internal,
@@ -1422,8 +1419,8 @@ mod tests {
             Err(PartialValidationError::UnsupportedSellTokenSource(
                 SellTokenSource::Internal
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     sell_token_balance: SellTokenSource::External,
@@ -1433,8 +1430,8 @@ mod tests {
             Err(PartialValidationError::UnsupportedSellTokenSource(
                 SellTokenSource::External
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: 0,
@@ -1444,8 +1441,8 @@ mod tests {
             Err(PartialValidationError::ValidTo(
                 OrderValidToError::Insufficient,
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to
@@ -1457,8 +1454,8 @@ mod tests {
             Err(PartialValidationError::ValidTo(
                 OrderValidToError::Excessive,
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to
@@ -1471,8 +1468,8 @@ mod tests {
             Err(PartialValidationError::ValidTo(
                 OrderValidToError::Excessive,
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
@@ -1482,8 +1479,8 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::SameBuyAndSellToken)
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
@@ -1493,8 +1490,8 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::SameBuyAndSellToken)
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
@@ -1503,7 +1500,7 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::InvalidNativeSellToken)
-        ));
+        );
     }
 
     #[tokio::test]

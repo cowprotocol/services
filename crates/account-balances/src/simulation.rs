@@ -34,6 +34,11 @@ impl Balances {
     }
 
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
+        // Only ERC20 sell-token balances are supported; other sources are deprecated
+        // and rejected at order creation.
+        if query.source != SellTokenSource::Erc20 {
+            anyhow::bail!("unsupported sell token source: {:?}", query.source);
+        }
         let simulation = self
             .balance_simulator
             .simulate(
