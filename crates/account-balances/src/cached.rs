@@ -1,10 +1,11 @@
 use {
     crate::{BalanceFetching, Query, TransferSimulationError},
-    alloy_primitives::U256,
+    alloy_primitives::{Address, U256},
     anyhow::Result,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::StreamExt,
     itertools::Itertools,
+    model::order::SellTokenSource,
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
@@ -194,6 +195,17 @@ impl BalanceFetching for Balances {
         // This only gets called when creating or replacing an order which doesn't
         // profit from caching.
         self.inner.can_transfer(query, amount).await
+    }
+
+    async fn allowance(
+        &self,
+        owner: Address,
+        token: Address,
+        source: SellTokenSource,
+    ) -> Result<U256> {
+        // This only gets called when creating or replacing an order which doesn't
+        // profit from caching.
+        self.inner.allowance(owner, token, source).await
     }
 }
 
