@@ -1,5 +1,16 @@
-//! Commitment-tracking types: confirmation state, signature status, and the row
-//! shapes consumed by the finalization worker.
+//! Commitment-tracking types.
+//!
+//! This module holds the types we use to track how far a transaction has
+//! progressed through Solana's commitment pipeline, plus the row shapes the
+//! finalization worker reads and writes.
+//!
+//! The indexer captures transactions at `confirmed` commitment. A later
+//! finalization pass polls `getSignatureStatuses` (whose result is modeled by
+//! [`SignatureStatus`]) and either promotes the row to `finalized` or marks it
+//! `rolled_back`. [`UnfinalizedRow`] is the shape the finalization worker
+//! queries for when sweeping aged confirmed rows, and [`AccountInfo`] holds
+//! account snapshots used for recovery when accounts aren't obtained normally
+//! through the ingestion stream.
 
 use {crate::types::Signature, solana_sdk::pubkey::Pubkey};
 
