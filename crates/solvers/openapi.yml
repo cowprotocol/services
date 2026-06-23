@@ -292,6 +292,11 @@ components:
     SellTokenBalance:
       description: |
         Where should the sell token be drawn from?
+
+        In practice only `erc20` occurs: the `internal` and `external` (Balancer
+        Vault) sources are deprecated and rejected at order creation, so they are
+        not present on orders in current auctions. The values remain for
+        backwards compatibility.
       type: string
       enum:
         - erc20
@@ -300,6 +305,10 @@ components:
     BuyTokenBalance:
       description: |
         Where should the buy token be transferred to?
+
+        In practice only `erc20` occurs: the `internal` (Balancer Vault)
+        destination is rejected at order creation, so it is not present on orders
+        in current auctions. The value remains for backwards compatibility.
       type: string
       enum:
         - erc20
