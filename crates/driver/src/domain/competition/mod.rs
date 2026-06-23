@@ -19,7 +19,7 @@ use {
             self,
             blockchain::Ethereum,
             notify,
-            observe::{self, metrics},
+            observe::{self, OrderExcludedFromAuctionReason, metrics},
             solver::{self, Account, SolutionMerging, Solver},
         },
         util::math,
@@ -675,7 +675,7 @@ impl Competition {
         let mut balances = balances.as_ref().clone();
         let cow_amms: HashSet<_> = cow_amm_orders.iter().map(|o| o.uid).collect();
 
-        let mut discarded_orders = BTreeMap::<&'static str, Vec<Uid>>::new();
+        let mut discarded_orders = BTreeMap::<OrderExcludedFromAuctionReason, Vec<Uid>>::new();
 
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
@@ -719,7 +719,7 @@ impl Competition {
                 Some(balance) => balance,
                 None => {
                     discarded_orders
-                        .entry("could not fetch balance")
+                        .entry(OrderExcludedFromAuctionReason::CouldNotFetchBalance)
                         .or_default()
                         .push(order.uid);
                     return false;
@@ -735,7 +735,7 @@ impl Competition {
             };
             if allocated_balance.0.is_zero() {
                 discarded_orders
-                    .entry("allocated balance is 0")
+                    .entry(OrderExcludedFromAuctionReason::InsufficientBalance)
                     .or_default()
                     .push(order.uid);
                 return false;
@@ -761,7 +761,7 @@ impl Competition {
             }
             if order.available().is_zero() {
                 discarded_orders
-                    .entry("available balance scaled down to 0")
+                    .entry(OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining)
                     .or_default()
                     .push(order.uid);
                 return false;
