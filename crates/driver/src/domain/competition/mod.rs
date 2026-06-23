@@ -8,6 +8,7 @@ use {
     crate::{
         domain::{
             competition::{
+                order::Uid,
                 pre_processing::DataFetchingTasks,
                 solution::Settlement,
                 sorting::SortingStrategy,
@@ -32,7 +33,7 @@ use {
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
         cmp::Reverse,
-        collections::{HashMap, HashSet, VecDeque},
+        collections::{BTreeMap, HashMap, HashSet, VecDeque},
         sync::{Arc, Mutex},
         time::Instant,
     },
@@ -674,7 +675,7 @@ impl Competition {
         let mut balances = balances.as_ref().clone();
         let cow_amms: HashSet<_> = cow_amm_orders.iter().map(|o| o.uid).collect();
 
-        let mut discarded_orders = vec![];
+        let mut discarded_orders = BTreeMap::<&'static str, Vec<Uid>>::new();
 
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
@@ -717,7 +718,10 @@ impl Competition {
             )) {
                 Some(balance) => balance,
                 None => {
-                    discarded_orders.push((order.uid, "could not fetch balance"));
+                    discarded_orders
+                        .entry("could not fetch balance")
+                        .or_default()
+                        .push(order.uid);
                     return false;
                 }
             };
@@ -730,7 +734,10 @@ impl Competition {
                 _ => order::SellAmount::default(),
             };
             if allocated_balance.0.is_zero() {
-                discarded_orders.push((order.uid, "allocated balance is 0"));
+                discarded_orders
+                    .entry("allocated balance is 0")
+                    .or_default()
+                    .push(order.uid);
                 return false;
             }
 
@@ -753,7 +760,10 @@ impl Competition {
                 );
             }
             if order.available().is_zero() {
-                discarded_orders.push((order.uid, "available balance scaled down to 0"));
+                discarded_orders
+                    .entry("available balance scaled down to 0")
+                    .or_default()
+                    .push(order.uid);
                 return false;
             }
 
@@ -764,7 +774,7 @@ impl Competition {
 
         if !discarded_orders.is_empty() {
             tracing::debug!(
-                count = discarded_orders.len(),
+                total = discarded_orders.values().map(Vec::len).sum::<usize>(),
                 ?discarded_orders,
                 "filtered orders during solver specific prioritization logic"
             );
