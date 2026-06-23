@@ -179,7 +179,13 @@ async fn clear_pool_indexer_tables(db: &PgPool) {
 }
 
 /// Applies the `database/sql-pool-indexer` migrations to `db`. Idempotent:
-/// returns early once the schema is present, since the e2e suite shares one DB.
+/// returns early once the schema is present, since the e2e suite shares one DB
+/// and runs serially (`--test-threads 1`).
+///
+/// Assumes the dir holds a single create-only migration, so presence of the
+/// sentinel table means "all applied". If it grows, key the guard off the
+/// applied versions instead, otherwise a new migration is silently skipped on a
+/// DB that already has the table.
 async fn ensure_pool_indexer_schema(db: &PgPool) {
     let present: bool =
         sqlx::query_scalar("SELECT to_regclass('public.uniswap_v3_pools') IS NOT NULL")
