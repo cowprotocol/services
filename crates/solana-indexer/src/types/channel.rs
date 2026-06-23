@@ -12,8 +12,7 @@ use crate::types::{
 /// From `Ingester` → `Decoder`.
 ///
 /// One multiplexed wire message, tagged with the slot the message was observed
-/// at. The org file names the channel payload "Event"; the spec defines that
-/// type as `StreamUpdate`, and that is what this crate uses.
+/// at.
 #[derive(Debug, Clone)]
 pub enum StreamUpdate {
     /// A transaction-update slot message.
