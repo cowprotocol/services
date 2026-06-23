@@ -4,7 +4,7 @@
 use {crate::types::Signature, solana_sdk::pubkey::Pubkey};
 
 /// On-chain commitment of a transaction or row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum Commitment {
     /// The row is at `confirmed` commitment; the finalization worker still has
     /// work to do.
