@@ -48,5 +48,4 @@ mod trades_v2;
 mod uncovered_order;
 mod univ2;
 mod user_surplus;
-mod vault_balances;
 mod wrapper;

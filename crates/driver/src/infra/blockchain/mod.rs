@@ -122,7 +122,6 @@ impl Ethereum {
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
             *contracts.vault_relayer(),
-            Some(*contracts.vault().address()),
             state_overrider.clone(),
         );
 

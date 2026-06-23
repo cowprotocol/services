@@ -672,10 +672,8 @@ impl OrderValidating for OrderValidator {
                 order.buy_token_balance,
             ));
         }
-        if !matches!(
-            order.sell_token_balance,
-            SellTokenSource::Erc20 | SellTokenSource::External
-        ) {
+
+        if order.sell_token_balance != SellTokenSource::Erc20 {
             return Err(PartialValidationError::UnsupportedSellTokenSource(
                 order.sell_token_balance,
             ));
@@ -1423,6 +1421,17 @@ mod tests {
                 .await,
             Err(PartialValidationError::UnsupportedSellTokenSource(
                 SellTokenSource::Internal
+            ))
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    sell_token_balance: SellTokenSource::External,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::UnsupportedSellTokenSource(
+                SellTokenSource::External
             ))
         ));
         assert!(matches!(
