@@ -44,7 +44,10 @@ pub enum StreamError {
     /// The resume slot is outside the provider's replay window. The caller
     /// should reset `from_slot` to `LATEST_CHAIN_SLOT − replay_window`,
     /// record the lost range, and retry the subscription.
-    #[error("replay window exceeded")]
+    #[error(
+        "replay window exceeded: attempted slot {attempted_slot}, earliest replayable \
+         {earliest_replayable_slot}"
+    )]
     ReplayWindowExceeded {
         /// The slot the subscriber attempted to resume from.
         attempted_slot: u64,
