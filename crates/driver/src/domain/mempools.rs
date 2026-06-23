@@ -69,8 +69,17 @@ impl Mempools {
     ) -> Result<eth::TxId, Error> {
         let mut stats = vec![Outcome::Superseded; self.mempools.len()];
 
+        // Capture an account-specific failure reported by any mempool so it is
+        // not masked by a different error that `select_ok` happens to return
+        // last (it yields the LAST error when all futures fail). The caller
+        // relies on `SubmitterUnusable` escaping here to bench the account and
+        // retry the settlement from another one.
+        let account_failure: std::sync::Arc<std::sync::Mutex<Option<AccountFailure>>> =
+            Default::default();
+
         let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
             |(mempool, stat)| {
+                let account_failure = std::sync::Arc::clone(&account_failure);
                 async move {
                     let result = self
                         .submit(mempool, settlement, submission_deadline, mode)
@@ -79,6 +88,9 @@ impl Mempools {
                     // Log inline so errors from mempools that later get superseded still surface;
                     // metrics are emitted from `update_metrics` once the race outcome is known.
                     observe::mempool_log(mempool, settlement, &result);
+                    if let Err(Error::SubmitterUnusable(reason)) = &result {
+                        *account_failure.lock().unwrap() = Some(*reason);
+                    }
                     *stat = Outcome::from(&result);
                     result
                 }
@@ -92,7 +104,10 @@ impl Mempools {
 
         self.update_metrics(&stats);
 
-        Ok(res?.tx_hash)
+        match res {
+            Ok(success) => Ok(success.tx_hash),
+            Err(err) => Err(race_error(err, *account_failure.lock().unwrap())),
+        }
     }
 
     /// A mempool is disabled if all of the following are true:
@@ -695,6 +710,29 @@ pub fn classify_submission_failure(message: &str) -> Option<AccountFailure> {
     }
 }
 
+/// Choose which error to surface when the mempool race produced no success.
+///
+/// `select_ok` yields whichever error finished last, so a `SubmitterUnusable`
+/// reported by one mempool can be masked by a generic error (e.g. a timeout)
+/// from another. The caller benches the account and retries on
+/// `SubmitterUnusable`, so surface it whenever a mempool reported one — unless
+/// `last_error` is a settlement-specific terminal failure (revert/expired),
+/// which is authoritative and must not be retried from a different account.
+fn race_error(last_error: Error, account_failure: Option<AccountFailure>) -> Error {
+    // A settlement-specific terminal failure is authoritative and must not be
+    // retried from another account, so it always wins over an account failure.
+    if matches!(
+        last_error,
+        Error::Revert { .. } | Error::SimulationRevert { .. } | Error::Expired { .. }
+    ) {
+        return last_error;
+    }
+    match account_failure {
+        Some(reason) => Error::SubmitterUnusable(reason),
+        None => last_error,
+    }
+}
+
 impl Error {
     /// Number of blocks between the first submission and when the error was
     /// returned, if the error carries that timing.
@@ -863,5 +901,31 @@ mod tests {
             classify_submission_failure("ReplacementTransactionUnderpriced"),
             Some(Underpriced)
         );
+    }
+
+    #[test]
+    fn account_failure_is_surfaced_over_a_masking_race_error() {
+        use AccountFailure::*;
+        // A generic error returned last by `select_ok` must not hide an
+        // account-specific failure another mempool reported, else the account is
+        // never benched/retried (issue #4541).
+        assert!(matches!(
+            race_error(Error::Other(anyhow!("connection reset")), Some(Nonce)),
+            Error::SubmitterUnusable(Nonce)
+        ));
+        // With no account-specific failure, the original error is preserved.
+        assert!(matches!(race_error(Error::Disabled, None), Error::Disabled));
+        // A settlement-specific terminal failure is authoritative and must never
+        // be turned into a retryable account failure.
+        assert!(matches!(
+            race_error(
+                Error::SimulationRevert {
+                    submitted_at_block: BlockNo(1),
+                    reverted_at_block: BlockNo(2),
+                },
+                Some(InsufficientFunds),
+            ),
+            Error::SimulationRevert { .. }
+        ));
     }
 }
