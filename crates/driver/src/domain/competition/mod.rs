@@ -674,6 +674,8 @@ impl Competition {
         let mut balances = balances.as_ref().clone();
         let cow_amms: HashSet<_> = cow_amm_orders.iter().map(|o| o.uid).collect();
 
+        let mut discarded_orders = vec![];
+
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
         // not the case** (as the protocol should not chose which limit orders
@@ -715,8 +717,7 @@ impl Competition {
             )) {
                 Some(balance) => balance,
                 None => {
-                    let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance;
-                    observe::order_excluded_from_auction(order, reason);
+                    discarded_orders.push((order.uid, "could not fetch balance"));
                     return false;
                 }
             };
@@ -729,10 +730,7 @@ impl Competition {
                 _ => order::SellAmount::default(),
             };
             if allocated_balance.0.is_zero() {
-                observe::order_excluded_from_auction(
-                    order,
-                    observe::OrderExcludedFromAuctionReason::InsufficientBalance,
-                );
+                discarded_orders.push((order.uid, "allocated balance is 0"));
                 return false;
             }
 
@@ -755,10 +753,7 @@ impl Competition {
                 );
             }
             if order.available().is_zero() {
-                observe::order_excluded_from_auction(
-                    order,
-                    observe::OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining,
-                );
+                discarded_orders.push((order.uid, "available balance is 0"));
                 return false;
             }
 
@@ -766,6 +761,13 @@ impl Competition {
 
             true
         });
+
+        if !discarded_orders.is_empty() {
+            tracing::debug!(
+                ?discarded_orders,
+                "filtered orders during solver specific prioritization logic"
+            );
+        }
 
         auction
     }
