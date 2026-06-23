@@ -3,15 +3,20 @@
 
 use {crate::types::Signature, solana_sdk::pubkey::Pubkey};
 
-/// On-chain commitment of a transaction or row.
+/// Commitment level persisted by the indexer.
+///
+/// Solana consensus defines `processed`, `confirmed`, and `finalized`
+/// commitment levels, but we only store the two durable states plus a terminal
+/// failure state for abandoned slots. `processed` is omitted because it
+/// reflects the node's latest view and is still rollback-prone.
 #[derive(Debug, Clone, Copy)]
 pub enum Commitment {
-    /// The row is at `confirmed` commitment; the finalization worker still has
-    /// work to do.
+    /// Voted on by a supermajority but can still be rolled back. Watched by the
+    /// finalization worker.
     Confirmed,
-    /// The row is at `finalized` commitment.
+    /// Rooted by the cluster and considered permanently settled.
     Finalized,
-    /// The row's transaction never landed (or was rolled back).
+    /// Never landed, or its slot was abandoned by the cluster.
     RolledBack,
 }
 
