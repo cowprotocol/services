@@ -628,7 +628,24 @@ impl OrderValidator {
             // To cover both cases we simulate multiple small transfers. As soon as one
             // passes we consider the token transferable. If all transfers fail we return
             // the last error.
-            simulate_transfers([1, 10, 100].map(U256::from).as_slice()).await
+            match simulate_transfers([1, 10, 100].map(U256::from).as_slice()).await {
+                // A zero/low balance is acceptable as long as the owner has already set a
+                // real on-chain approval that covers the order (spam protection).
+                Err(ValidationError::InsufficientBalance) => {
+                    let data = order.data();
+                    let approval = self
+                        .balance_fetcher
+                        .allowance(owner, data.sell_token, data.sell_token_balance)
+                        .await
+                        .map_err(ValidationError::Other)?;
+                    if approval >= data.sell_amount {
+                        Ok(())
+                    } else {
+                        Err(ValidationError::InsufficientBalance)
+                    }
+                }
+                other => other,
+            }
         }
     }
 }
@@ -2268,6 +2285,9 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
+        balance_fetcher
+            .expect_allowance()
+            .returning(|_, _, _| Ok(alloy::primitives::U256::ZERO));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
@@ -2312,6 +2332,69 @@ mod tests {
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::InsufficientBalance)));
+    }
+
+    #[tokio::test]
+    async fn accepts_zero_balance_order_with_sufficient_existing_approval() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+
+        // The account holds no balance ...
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
+        // ... but a pre-existing on-chain approval already covers the sell amount,
+        // so the order is accepted (it stays unfillable until the account is funded).
+        balance_fetcher
+            .expect_allowance()
+            .returning(|_, _, _| Ok(alloy::primitives::U256::from(1)));
+
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let validator = OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration::any(),
+            false,
+            Default::default(),
+            HooksTrampoline::Instance::new(
+                Address::repeat_byte(0xcf),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
+            None,
+            Arc::new(limit_order_counter),
+            1,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+        );
+
+        let order = OrderCreation {
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: U256::ONE,
+            sell_amount: U256::ONE,
+            fee_amount: U256::ZERO,
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
+            ..Default::default()
+        };
+        validator
+            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -2394,6 +2477,9 @@ mod tests {
             balance_fetcher
                 .expect_can_transfer()
                 .returning(move |_, _| Err(create_error()));
+            balance_fetcher
+                .expect_allowance()
+                .returning(|_, _, _| Ok(U256::ZERO));
             let mut limit_order_counter = MockLimitOrderCounting::new();
             limit_order_counter.expect_count().returning(|_| Ok(0u64));
             let native_token =
@@ -2486,6 +2572,9 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
+        balance_fetcher
+            .expect_allowance()
+            .returning(|_, _, _| Ok(U256::ZERO));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
