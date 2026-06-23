@@ -772,9 +772,10 @@ impl Competition {
             true
         });
 
-        if !discarded_orders.is_empty() {
+        let discarded_total = discarded_orders.values().map(Vec::len).sum::<usize>();
+        if discarded_total > 0 {
             tracing::debug!(
-                total = discarded_orders.values().map(Vec::len).sum::<usize>(),
+                total = discarded_total,
                 ?discarded_orders,
                 "filtered orders during solver specific prioritization logic"
             );
