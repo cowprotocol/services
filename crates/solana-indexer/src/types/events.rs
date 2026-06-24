@@ -20,9 +20,12 @@ pub struct TradeDelta {
     pub amount_withdrawn_delta: u64,
     /// Change in `amount_received` since the previous snapshot.
     pub amount_received_delta: u64,
-    /// `true` when post-trade `amount_withdrawn` equals the order's
-    /// full sell amount, or `amount_received` equals the full buy
-    /// amount.
+    /// Whether the order is fully filled after this trade.
+    ///
+    /// This is **not** a field emitted by the settlement program's event data;
+    /// it is inferred by the decoder from the order PDA's post-trade snapshot.
+    /// It is `true` when post-trade `amount_withdrawn` equals the order's full
+    /// sell amount, or `amount_received` equals the full buy amount.
     pub order_fulfilled: bool,
 }
 
