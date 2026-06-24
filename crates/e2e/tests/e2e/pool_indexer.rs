@@ -225,10 +225,8 @@ async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
     .unwrap();
 }
 
-/// Spawns the pool-indexer task and waits for its `/health` endpoint to come
-/// up.
-async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task::JoinHandle<()> {
-    let config = Configuration {
+fn pool_indexer_config(factory: Address, metrics_port: u16) -> Configuration {
+    Configuration {
         database: DatabaseConfig {
             url: LOCAL_DB_URL.parse().unwrap(),
             max_connections: NonZeroU32::new(5).unwrap(),
@@ -252,7 +250,13 @@ async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task:
         metrics: MetricsConfig {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, metrics_port)),
         },
-    };
+    }
+}
+
+/// Spawns the pool-indexer task and waits for its `/health` endpoint to come
+/// up.
+async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task::JoinHandle<()> {
+    let config = pool_indexer_config(factory, metrics_port);
     let handle = tokio::task::spawn(pool_indexer::run(config));
     wait_for_condition(TIMEOUT, || async {
         reqwest::get(format!("{POOL_INDEXER_HOST}/health"))
@@ -681,4 +685,46 @@ async fn pagination(web3: Web3) {
         );
     })
     .await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_pool_indexer_bootstrap_idempotent() {
+    run_test(bootstrap_idempotent).await;
+}
+
+/// `--bootstrap-only` on an already-seeded DB must be a fast no-op: detect the
+/// existing checkpoint, skip the (here unreachable) subgraph seeder, and return
+/// without binding any ports — mirroring a re-run of the bootstrap
+/// initContainer on a pod restart.
+async fn bootstrap_idempotent(web3: Web3) {
+    let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
+    clear_pool_indexer_tables(&db).await;
+
+    // A pre-seeded checkpoint marks the DB as already bootstrapped. No on-chain
+    // factory is needed: bootstrap reads the checkpoint and returns before any
+    // seeding or catch-up. The RPC is only used for the chain_id sanity check.
+    let factory = Address::repeat_byte(0x11);
+    let head = web3.provider.get_block_number().await.unwrap();
+    seed_checkpoint(&db, factory, head).await;
+
+    tokio::time::timeout(
+        TIMEOUT,
+        pool_indexer::bootstrap(pool_indexer_config(factory, POOL_INDEXER_METRICS_PORT)),
+    )
+    .await
+    .expect("bootstrap-only did not exit on an already-seeded DB");
+
+    let checkpoint: i64 = sqlx::query_scalar(
+        "SELECT block_number FROM pool_indexer_checkpoints WHERE contract_address = $1",
+    )
+    .bind(factory.as_slice())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        checkpoint,
+        head.cast_signed(),
+        "bootstrap mutated an already-seeded checkpoint"
+    );
 }

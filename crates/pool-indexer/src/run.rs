@@ -21,8 +21,38 @@ pub async fn start(args: impl Iterator<Item = String>) {
     initialize_observability(&args);
     observe::metrics::setup_registry(None, None);
     let config = Configuration::from_path(&args.config).expect("failed to load configuration");
-    tracing::info!("pool-indexer starting");
-    run(config).await;
+    if args.bootstrap_only {
+        tracing::info!("pool-indexer bootstrap-only starting");
+        bootstrap(config).await;
+        tracing::info!("pool-indexer bootstrap complete, exiting");
+    } else {
+        tracing::info!("pool-indexer starting");
+        run(config).await;
+    }
+}
+
+/// Runs the bootstrap phase (seed + catch-up to the finalized head) for every
+/// factory, then returns. Binds no HTTP ports — this is migration-style work
+/// meant to run as a K8s initContainer ahead of the serve container.
+///
+/// Idempotent: each factory with an existing checkpoint is skipped (see
+/// [`bootstrap_factory`]), so re-running on an already-seeded DB is a fast
+/// no-op that never touches the subgraph. On return, a subsequent `run` finds
+/// the checkpoints present and flips `/startup` ready almost immediately.
+pub async fn bootstrap(config: Configuration) {
+    let db = connect_db(&config).await;
+    let network = config.network;
+    let provider = build_provider_checked(&network).await;
+    let network = Arc::new(network);
+
+    for factory in network.factories.iter().copied() {
+        let indexer = UniswapV3Indexer::new(
+            provider.clone(),
+            db.clone(),
+            &network.indexer_config(factory.address),
+        );
+        bootstrap_factory(&db, &indexer, &network, &factory).await;
+    }
 }
 
 pub async fn run(config: Configuration) {
@@ -125,20 +155,7 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
         "starting network indexer",
     );
 
-    let provider = build_provider(&network);
-
-    // Catch misconfigured RPC-vs-network pairings (e.g. chain_id=1 pointed
-    // at an Arbitrum node) before we index the wrong chain into the DB.
-    let actual_chain_id = provider
-        .get_chain_id()
-        .await
-        .expect("failed to fetch chain_id from RPC");
-    assert_eq!(
-        actual_chain_id, network.chain_id,
-        "chain_id mismatch for network {}: config says {}, RPC reports {}",
-        network.name, network.chain_id, actual_chain_id,
-    );
-
+    let provider = build_provider_checked(&network).await;
     let network = Arc::new(network);
 
     // One task per factory. Provider + DB pool are shared; checkpoints are
@@ -253,6 +270,23 @@ fn build_provider(network: &NetworkConfig) -> AlloyProvider {
     )
     .provider
     .clone()
+}
+
+/// Builds the RPC provider and asserts the node's chain_id matches config.
+/// Catches misconfigured RPC-vs-network pairings (e.g. chain_id=1 pointed at
+/// an Arbitrum node) before we index the wrong chain into the DB.
+async fn build_provider_checked(network: &NetworkConfig) -> AlloyProvider {
+    let provider = build_provider(network);
+    let actual_chain_id = provider
+        .get_chain_id()
+        .await
+        .expect("failed to fetch chain_id from RPC");
+    assert_eq!(
+        actual_chain_id, network.chain_id,
+        "chain_id mismatch for network {}: config says {}, RPC reports {}",
+        network.name, network.chain_id, actual_chain_id,
+    );
+    provider
 }
 
 async fn connect_db(config: &Configuration) -> sqlx::PgPool {
