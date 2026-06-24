@@ -70,6 +70,17 @@ pub trait BalanceFetching: Send + Sync {
         query: &Query,
         amount: U256,
     ) -> Result<(), TransferSimulationError>;
+
+    /// Returns the owner's current on-chain allowance available to the protocol
+    /// for the given sell token and source. This does **not** apply any order
+    /// pre-interactions or other actions that might affect the allowance at
+    /// settlement time.
+    async fn allowance(
+        &self,
+        owner: Address,
+        token: Address,
+        source: SellTokenSource,
+    ) -> anyhow::Result<U256>;
 }
 
 /// Create the default [`BalanceFetching`] instance.

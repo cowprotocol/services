@@ -20,7 +20,6 @@ use {
     async_trait::async_trait,
     chain::Chain,
     itertools::Itertools,
-    num::BigInt,
     number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},
     serde::{Deserialize, Deserializer, de},
@@ -146,7 +145,7 @@ fn deserialize_ticks_by_pool<'de, D: Deserializer<'de>>(
 struct IndexerTick {
     tick_idx: i32,
     #[serde_as(as = "DisplayFromStr")]
-    liquidity_net: BigInt,
+    liquidity_net: i128,
 }
 
 /// Drops pools missing either token's `decimals`. Treating missing as `0`
@@ -196,7 +195,7 @@ impl IndexerPool {
             fee_tier: self.fee_tier,
             liquidity: self.liquidity,
             sqrt_price: self.sqrt_price,
-            tick: BigInt::from(self.tick),
+            tick: self.tick,
             ticks: None,
             block_number,
         })
@@ -206,7 +205,7 @@ impl IndexerPool {
 impl IndexerTick {
     fn into_tick_data(self, pool_address: Address) -> TickData {
         TickData {
-            tick_idx: BigInt::from(self.tick_idx),
+            tick_idx: self.tick_idx,
             liquidity_net: self.liquidity_net,
             pool_address,
         }
