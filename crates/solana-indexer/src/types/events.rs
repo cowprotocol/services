@@ -120,11 +120,21 @@ pub enum SolFlowEvent {
         /// From `meta.post_token_balances` on the custodial wSOL account.
         sol_amount: u64,
     },
-    /// An order was enabled (custody transferred to settlement program).
+    /// A `SetUpOrder` instruction on the SolFlow program was observed.
+    ///
+    /// The SolFlow order's custodial wSOL PDA has been linked to a
+    /// settlement-program order via CPI. At this point custody of the wrapped
+    /// SOL has effectively been transferred to the settlement program, so the
+    /// SolFlow order is now eligible to be included in auctions and solved.
+    ///
+    /// The `enabler` is the signer of the `SetUpOrder` instruction — an
+    /// unprivileged relayer or participant that pays to set up the SolFlow
+    /// order, not the SolFlow program account. The settlement program records
+    /// the on-chain order's `created_by` as this enabler address.
     OrderEnabled {
         /// Custodial PDA.
         custodial_pda: Pubkey,
-        /// Address that enabled the order.
+        /// Signer of the `SetUpOrder` instruction that enabled the order.
         enabler: Pubkey,
         /// Order UID.
         order_uid: OrderUid,
