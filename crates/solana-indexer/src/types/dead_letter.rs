@@ -1,14 +1,17 @@
 //! Dead-letter types: events that failed to persist and were diverted to
 //! `solana.dead_letter` for operator follow-up.
 
-use {crate::types::Signature, bytes::Bytes};
+use {
+    crate::types::{Signature, Slot},
+    bytes::Bytes,
+};
 
 /// A decoded event whose write to `solana.*` failed and was diverted to
 /// `solana.dead_letter`.
 #[derive(Debug, Clone)]
 pub struct DeadLetterEntry {
     /// Slot the event was observed at.
-    pub slot: u64,
+    pub slot: Slot,
     /// Transaction signature, if the failure was per-transaction.
     pub signature: Option<Signature>,
     /// Why the event landed in the dead-letter table.

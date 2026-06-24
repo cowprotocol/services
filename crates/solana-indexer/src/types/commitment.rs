@@ -12,7 +12,11 @@
 //! account snapshots used for recovery when accounts aren't obtained normally
 //! through the ingestion stream.
 
-use {crate::types::Signature, bytes::Bytes, solana_sdk::pubkey::Pubkey};
+use {
+    crate::types::{Signature, Slot},
+    bytes::Bytes,
+    solana_sdk::pubkey::Pubkey,
+};
 
 /// Commitment level persisted by the indexer.
 ///
@@ -46,7 +50,7 @@ impl Commitment {
 #[derive(Debug, Clone, Copy)]
 pub struct SignatureStatus {
     /// Slot the transaction landed at, if known.
-    pub slot: u64,
+    pub slot: Slot,
     /// Confirmation status reported by the RPC.
     pub confirmation_status: Commitment,
 }
@@ -55,7 +59,7 @@ pub struct SignatureStatus {
 #[derive(Debug, Clone)]
 pub struct AccountInfo {
     /// Slot the snapshot was read at.
-    pub slot: u64,
+    pub slot: Slot,
     /// Account data (serialized).
     pub data: Bytes,
     /// Account owner program.
@@ -72,5 +76,5 @@ pub struct UnfinalizedRow {
     /// Transaction signature.
     pub signature: Signature,
     /// Slot the row was inserted at.
-    pub slot: u64,
+    pub slot: Slot,
 }

@@ -1,6 +1,6 @@
 //! Error types used across the indexer's domain.
 
-use thiserror::Error;
+use {crate::types::Slot, thiserror::Error};
 
 /// Failures surfaced from the decoder.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -50,8 +50,8 @@ pub enum StreamError {
     )]
     ReplayWindowExceeded {
         /// The slot the subscriber attempted to resume from.
-        attempted_slot: u64,
+        attempted_slot: Slot,
         /// The earliest slot the provider can still serve.
-        earliest_replayable_slot: u64,
+        earliest_replayable_slot: Slot,
     },
 }

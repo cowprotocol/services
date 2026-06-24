@@ -6,6 +6,7 @@
 
 use crate::types::{
     Signature,
+    Slot,
     wire::{SubscribeUpdateAccountInfo, SubscribeUpdateTransactionInfo},
 };
 
@@ -18,7 +19,7 @@ pub enum StreamUpdate {
     /// A transaction-update slot message.
     Tx {
         /// Slot the message was observed at.
-        slot: u64,
+        slot: Slot,
         /// Transaction signature.
         signature: Signature,
         /// Wire message body.
@@ -27,7 +28,7 @@ pub enum StreamUpdate {
     /// An account-update slot message.
     Account {
         /// Slot the message was observed at.
-        slot: u64,
+        slot: Slot,
         /// Optional signature linking the write back to its originating
         /// transaction.
         txn_signature: Option<Signature>,
@@ -43,7 +44,7 @@ pub enum StreamUpdate {
 #[derive(Debug, Clone, Copy)]
 pub struct PartialEvent {
     /// Slot the partial was observed at.
-    pub slot: u64,
+    pub slot: Slot,
     /// Transaction signature the partial corresponds to.
     pub signature: Signature,
 }

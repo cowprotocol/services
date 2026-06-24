@@ -10,6 +10,7 @@
 use {
     crate::types::{
         Signature,
+        Slot,
         wire::{SubscribeUpdateAccountInfo, TokenBalance},
     },
     bytes::Bytes,
@@ -39,7 +40,7 @@ pub struct ResolvedInstruction {
 #[derive(Debug, Clone)]
 pub struct TxContext {
     /// Slot the transaction was observed at.
-    pub slot: u64,
+    pub slot: Slot,
     /// Transaction signature.
     pub signature: Signature,
     /// Reconstructed account list (`message.account_keys` ⊕

@@ -5,7 +5,10 @@
 //! persistence step is the sum [`DecodedEvent`]. Per-order accounting
 //! is reconstructed from [`TradeDelta`] snapshots.
 
-use {crate::types::Signature, solana_sdk::pubkey::Pubkey};
+use {
+    crate::types::{Signature, Slot},
+    solana_sdk::pubkey::Pubkey,
+};
 
 /// Change in a single order's `amount_withdrawn` and `amount_received`
 /// between two consecutive account snapshots.
@@ -54,7 +57,7 @@ pub enum SettlementEvent {
         /// Transaction signature.
         tx_signature: Signature,
         /// Slot the settlement was observed at.
-        slot: u64,
+        slot: Slot,
         /// Per-order accounting deltas.
         trades: Vec<TradeDelta>,
     },
@@ -129,7 +132,7 @@ pub enum SolFlowEvent {
         /// Custodial PDA.
         custodial_pda: Pubkey,
         /// Slot the recovery was observed at.
-        slot: u64,
+        slot: Slot,
     },
 }
 
