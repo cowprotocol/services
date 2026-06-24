@@ -221,11 +221,9 @@ impl PoolsCheckpointHandler {
         })
     }
 
-    /// Returns the cached pools for the given token pairs, plus the ids of
-    /// pools that exist for those pairs but aren't cached yet. Misses are
-    /// recorded so periodic maintenance back-fills them; callers needing
-    /// them immediately (quoting) fetch them on demand via
-    /// [`Self::fetch_pools`].
+    /// Returns cached pools for the pairs, plus the ids of any that exist but
+    /// aren't cached yet. Misses are recorded for the next maintenance run; the
+    /// quote path fetches them on demand.
     fn get(
         &self,
         token_pairs: &HashSet<TokenPair>,
@@ -265,15 +263,10 @@ impl PoolsCheckpointHandler {
         }
     }
 
-    /// Fetches state + ticks for `pool_ids` from `source` at `target_block` and
-    /// converts them to [`PoolInfo`], skipping (not failing) any pool whose
-    /// conversion fails (e.g. ticks not yet available). Does not touch the
-    /// cache; callers decide whether to insert the result.
-    ///
-    /// `target_block` is forwarded to the source's `wait_until`: pass the
-    /// checkpoint block when caching for replay consistency, or `0` to take the
-    /// indexer's current snapshot without blocking (see
-    /// [`Self::fetch_current`]).
+    /// Fetches and converts the given pools from the source at `target_block`,
+    /// skipping any that can't be converted yet (e.g. no ticks). Doesn't touch
+    /// the cache. Pass the checkpoint block to cache for replay, or 0 to take
+    /// the indexer's current snapshot without blocking.
     async fn fetch_pools(
         &self,
         pool_ids: &[Address],
@@ -302,12 +295,11 @@ impl PoolsCheckpointHandler {
             .collect())
     }
 
-    /// Fetches the given pools at the indexer's *current* block without waiting
-    /// for a target. Used on the quote critical path: the checkpoint block
-    /// tracks the driver's `latest - reorg`, but the indexer serves finalized
-    /// and can lag it persistently, so waiting for the checkpoint block would
-    /// hang. The returned pools are current, so callers must not event-replay
-    /// them. Returns empty on failure so a quote degrades to cached pools.
+    /// Fetches the given pools at the indexer's current block, without waiting.
+    /// The checkpoint block can sit ahead of the indexer (it tracks latest
+    /// minus the reorg buffer, the indexer serves finalized), so waiting
+    /// for it would hang the quote. Returns empty on failure so the quote
+    /// falls back to cached pools.
     async fn fetch_current(&self, pool_ids: &[Address]) -> Vec<(Address, Arc<PoolInfo>)> {
         match self.fetch_pools(pool_ids, 0).await {
             Ok(pools) => pools,
@@ -321,9 +313,8 @@ impl PoolsCheckpointHandler {
         }
     }
 
-    /// Fetches state/ticks for all pools flagged missing by [`Self::get`] at
-    /// the checkpoint block and caches them. Driven by periodic
-    /// maintenance.
+    /// Fetches the pools flagged missing by `get` at the checkpoint block and
+    /// caches them. Runs from periodic maintenance.
     async fn update_missing_pools(&self) -> Result<()> {
         let (missing, block_number) = {
             let checkpoint = self.pools_checkpoint.lock().unwrap();
@@ -475,13 +466,10 @@ impl PoolFetching for UniswapV3PoolFetcher {
             append_events(&mut checkpoint, events);
         }
 
-        // The warm-up cache is capped and ranked by raw `liquidity`, which is not
-        // comparable across pools, so legitimate low-raw-liquidity pairs are
-        // routinely absent. Fetch their pools on demand at the indexer's current
-        // block (no wait) instead of returning empty and waiting for the next
-        // maintenance tick, otherwise the first quote for such a pair finds no
-        // liquidity. These pools are already current, so they're merged after the
-        // replay above rather than replayed.
+        // The warm cache only holds the top pools by raw liquidity, so plenty of
+        // real pairs are absent. Fetch those on demand instead of waiting for the
+        // next maintenance tick. They come back current, so merge them after the
+        // replay rather than replaying them.
         if !missing.is_empty() {
             checkpoint.extend(self.checkpoint.fetch_current(&missing).await);
         }
