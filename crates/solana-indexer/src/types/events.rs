@@ -2,16 +2,16 @@
 //!
 //! The settlement program and SolFlow each have their own enum
 //! (`SettlementEvent`, `SolFlowEvent`); the decoder's handoff to the
-//! persistence step is the sum [`DecodedEvent`]. Per-order accounting
-//! is reconstructed from [`TradeDelta`] snapshots.
+//! persistence step is the sum [`DecodedEvent`]. Per-order accounting is
+//! reconstructed from [`TradeDelta`] snapshots.
 
 use {
     crate::types::{OrderUid, Signature, Slot},
     solana_sdk::pubkey::Pubkey,
 };
 
-/// Change in a single order's `amount_withdrawn` and `amount_received`
-/// between two consecutive account snapshots.
+/// Change in a single order's `amount_withdrawn` and `amount_received` between
+/// two consecutive account snapshots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TradeDelta {
     /// Order UID this delta applies to.
@@ -117,8 +117,7 @@ pub enum SolFlowEvent {
         real_owner: Pubkey,
         /// Order UID.
         order_uid: OrderUid,
-        /// From `meta.post_token_balances` on the custodial wSOL
-        /// account.
+        /// From `meta.post_token_balances` on the custodial wSOL account.
         sol_amount: u64,
     },
     /// An order was enabled (custody transferred to settlement program).
