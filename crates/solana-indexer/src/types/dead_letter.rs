@@ -3,7 +3,7 @@
 //! `solana.dead_letter` for operator follow-up.
 
 use {
-    crate::types::{Signature, Slot},
+    crate::types::{Signature, slot::Slot},
     bytes::Bytes,
 };
 

@@ -14,7 +14,7 @@
 //! through the ingestion stream.
 
 use {
-    crate::types::{Signature, Slot},
+    crate::types::{Signature, slot::Slot},
     bytes::Bytes,
     solana_sdk::pubkey::Pubkey,
 };

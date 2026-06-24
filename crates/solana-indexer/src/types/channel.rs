@@ -7,7 +7,7 @@
 
 use crate::types::{
     Signature,
-    Slot,
+    slot::Slot,
     wire::{SubscribeUpdateAccountInfo, SubscribeUpdateTransactionInfo},
 };
 

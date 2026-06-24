@@ -7,7 +7,7 @@
 //! reconstructed from [`TradeDelta`] snapshots.
 
 use {
-    crate::types::{OrderUid, Signature, Slot},
+    crate::types::{Signature, order::OrderUid, slot::Slot},
     solana_sdk::pubkey::Pubkey,
 };
 

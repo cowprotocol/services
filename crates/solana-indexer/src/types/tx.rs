@@ -11,7 +11,7 @@
 use {
     crate::types::{
         Signature,
-        Slot,
+        slot::Slot,
         wire::{SubscribeUpdateAccountInfo, TokenBalance},
     },
     bytes::Bytes,

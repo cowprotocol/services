@@ -1,7 +1,7 @@
 #![expect(dead_code)]
 //! Error types used across the indexer's domain.
 
-use {crate::types::Slot, thiserror::Error};
+use {crate::types::slot::Slot, thiserror::Error};
 
 /// Failures surfaced from the decoder.
 #[derive(Debug, Error, PartialEq, Eq)]
