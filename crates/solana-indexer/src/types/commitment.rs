@@ -12,7 +12,7 @@
 //! account snapshots used for recovery when accounts aren't obtained normally
 //! through the ingestion stream.
 
-use {crate::types::Signature, solana_sdk::pubkey::Pubkey};
+use {crate::types::Signature, bytes::Bytes, solana_sdk::pubkey::Pubkey};
 
 /// Commitment level persisted by the indexer.
 ///
@@ -57,7 +57,7 @@ pub struct AccountInfo {
     /// Slot the snapshot was read at.
     pub slot: u64,
     /// Account data (serialized).
-    pub data: Vec<u8>,
+    pub data: Bytes,
     /// Account owner program.
     pub owner: Pubkey,
 }

@@ -1,7 +1,7 @@
 //! Dead-letter types: events that failed to persist and were diverted to
 //! `solana.dead_letter` for operator follow-up.
 
-use crate::types::Signature;
+use {crate::types::Signature, bytes::Bytes};
 
 /// A decoded event whose write to `solana.*` failed and was diverted to
 /// `solana.dead_letter`.
@@ -14,7 +14,7 @@ pub struct DeadLetterEntry {
     /// Why the event landed in the dead-letter table.
     pub reason: DeadLetterReason,
     /// Original raw bytes for replay.
-    pub raw_bytes: Vec<u8>,
+    pub raw_bytes: Bytes,
 }
 
 /// Why a row landed in the dead-letter table.

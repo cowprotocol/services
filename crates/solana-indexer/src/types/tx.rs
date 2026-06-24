@@ -12,6 +12,7 @@ use {
         Signature,
         wire::{SubscribeUpdateAccountInfo, TokenBalance},
     },
+    bytes::Bytes,
     solana_sdk::pubkey::Pubkey,
 };
 
@@ -22,7 +23,7 @@ pub struct ResolvedInstruction {
     /// Resolved program id.
     pub program_id: Pubkey,
     /// Raw instruction data.
-    pub data: Vec<u8>,
+    pub data: Bytes,
     /// Account indices into the reconstructed account list.
     pub accounts: Vec<u8>,
     /// Index of this instruction within the transaction (outer or

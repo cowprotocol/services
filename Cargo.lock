@@ -8633,6 +8633,7 @@ dependencies = [
 name = "solana-indexer"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "observe",
  "prometheus",
  "prometheus-metric-storage",

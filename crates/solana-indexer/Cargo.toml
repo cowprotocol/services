@@ -19,6 +19,7 @@ path = "src/main.rs"
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+bytes = { workspace = true }
 solana-sdk = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
