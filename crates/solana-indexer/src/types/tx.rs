@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! Per-transaction helper types used by the decoder.
 //!
 //! These are decoder-side views produced by walking a
@@ -20,7 +21,7 @@ use {
 /// A single instruction after resolving `program_id_index` against the full
 /// account list.
 #[derive(Debug, Clone)]
-pub struct ResolvedInstruction {
+pub(crate) struct ResolvedInstruction {
     /// Resolved program id.
     pub program_id: Pubkey,
     /// Raw instruction data.
@@ -38,7 +39,7 @@ pub struct ResolvedInstruction {
 /// transaction signature, and (when both halves have arrived) the joined
 /// account-update snapshot.
 #[derive(Debug, Clone)]
-pub struct TxContext {
+pub(crate) struct TxContext {
     /// Slot the transaction was observed at.
     pub slot: Slot,
     /// Transaction signature.

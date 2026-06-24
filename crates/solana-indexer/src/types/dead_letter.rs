@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! Dead-letter types: events that failed to persist and were diverted to
 //! `solana.dead_letter` for operator follow-up.
 
@@ -9,7 +10,7 @@ use {
 /// A decoded event whose write to `solana.*` failed and was diverted to
 /// `solana.dead_letter`.
 #[derive(Debug, Clone)]
-pub struct DeadLetterEntry {
+pub(crate) struct DeadLetterEntry {
     /// Slot the event was observed at.
     pub slot: Slot,
     /// Transaction signature, if the failure was per-transaction.
@@ -22,7 +23,7 @@ pub struct DeadLetterEntry {
 
 /// Why a row landed in the dead-letter table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeadLetterReason {
+pub(crate) enum DeadLetterReason {
     /// Decoder received both halves but couldn't parse them.
     DecoderError,
     /// Watchdog gave up: account-update half never arrived.

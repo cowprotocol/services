@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! Message types passed over the internal channels.
 //!
 //! The ingester pushes [`StreamUpdate`] into the channel to the decoder; the
@@ -15,7 +16,7 @@ use crate::types::{
 /// One multiplexed wire message, tagged with the slot the message was observed
 /// at.
 #[derive(Debug, Clone)]
-pub enum StreamUpdate {
+pub(crate) enum StreamUpdate {
     /// A transaction-update slot message.
     Tx {
         /// Slot the message was observed at.
@@ -42,7 +43,7 @@ pub enum StreamUpdate {
 /// The watchdog holds incomplete `(slot, signature)` pairs until both halves
 /// arrive; each delivery carries the half that just landed.
 #[derive(Debug, Clone, Copy)]
-pub struct PartialEvent {
+pub(crate) struct PartialEvent {
     /// Slot the partial was observed at.
     pub slot: Slot,
     /// Transaction signature the partial corresponds to.
@@ -54,7 +55,7 @@ pub struct PartialEvent {
 /// The decoder pushes one `PartialEvent` per `StreamUpdate` it processes; the
 /// watchdog uses the `(slot, signature)` key to match pairs.
 #[derive(Debug, Clone)]
-pub enum PartialHalf {
+pub(crate) enum PartialHalf {
     /// Transaction-update half.
     Tx(Box<SubscribeUpdateTransactionInfo>),
     /// Account-update half.

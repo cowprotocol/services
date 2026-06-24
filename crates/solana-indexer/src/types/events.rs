@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! Domain event taxonomy.
 //!
 //! The settlement program and SolFlow each have their own enum
@@ -13,7 +14,7 @@ use {
 /// Change in a single order's `amount_withdrawn` and `amount_received` between
 /// two consecutive account snapshots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TradeDelta {
+pub(crate) struct TradeDelta {
     /// Order UID this delta applies to.
     pub order_uid: OrderUid,
     /// Change in `amount_withdrawn` since the previous snapshot.
@@ -31,7 +32,7 @@ pub struct TradeDelta {
 
 /// Settlement-program events decoded from on-chain instructions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SettlementEvent {
+pub(crate) enum SettlementEvent {
     /// A new order was created on-chain.
     OrderCreated {
         /// Order UID this order is identified by.
@@ -108,7 +109,8 @@ pub enum SettlementEvent {
 /// Note: the paired `solana.orders` row for `OrderEnabled` is written by the
 /// settlement-program decode path, not here.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SolFlowEvent {
+#[allow(clippy::enum_variant_names)]
+pub(crate) enum SolFlowEvent {
     /// A new order was created on SolFlow.
     OrderCreated {
         /// Custodial PDA that holds the wSOL for this order.
@@ -150,7 +152,7 @@ pub enum SolFlowEvent {
 
 /// Sum of the two program-side event enums for the persistence step.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DecodedEvent {
+pub(crate) enum DecodedEvent {
     /// A settlement-program event.
     Settlement(SettlementEvent),
     /// A SolFlow event.

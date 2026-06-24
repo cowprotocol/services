@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! Commitment-tracking types.
 //!
 //! This module holds the types we use to track how far a transaction has
@@ -25,7 +26,7 @@ use {
 /// failure state for abandoned slots. `processed` is omitted because it
 /// reflects the node's latest view and is still rollback-prone.
 #[derive(Debug, Clone, Copy)]
-pub enum Commitment {
+pub(crate) enum Commitment {
     /// Voted on by a supermajority but can still be rolled back. Watched by the
     /// finalization worker.
     Confirmed,
@@ -48,7 +49,7 @@ impl Commitment {
 
 /// Result of an RPC `getSignatureStatuses` poll.
 #[derive(Debug, Clone, Copy)]
-pub struct SignatureStatus {
+pub(crate) struct SignatureStatus {
     /// Slot the transaction landed at, if known.
     pub slot: Slot,
     /// Confirmation status reported by the RPC.
@@ -57,7 +58,7 @@ pub struct SignatureStatus {
 
 /// Snapshot of an account at a given slot (from `getAccountInfo`).
 #[derive(Debug, Clone)]
-pub struct AccountInfo {
+pub(crate) struct AccountInfo {
     /// Slot the snapshot was read at.
     pub slot: Slot,
     /// Account data (serialized).
@@ -70,7 +71,7 @@ pub struct AccountInfo {
 /// picked up by the aged-row sweep, where `commitment = 'confirmed'` and the
 /// row's slot is at least one finalization window behind `LATEST_CHAIN_SLOT`.
 #[derive(Debug, Clone)]
-pub struct UnfinalizedRow {
+pub(crate) struct UnfinalizedRow {
     /// Table the row lives in.
     pub table: &'static str,
     /// Transaction signature.

@@ -17,7 +17,7 @@ pub mod wire;
 /// slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From, Into)]
 #[display("Slot({})", _0)]
-pub struct Slot(pub u64);
+pub(crate) struct Slot(pub u64);
 
 pub use solana_sdk::signature::Signature;
 
@@ -31,4 +31,4 @@ pub use solana_sdk::signature::Signature;
 /// such identifier per order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, From, Into)]
 #[display("OrderUid({_0:?})")]
-pub struct OrderUid(pub [u8; 32]);
+pub(crate) struct OrderUid(pub [u8; 32]);
