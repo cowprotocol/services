@@ -1,6 +1,6 @@
 use {
     crate::{
-        order_creation_simulation::{OrderSimulating, OrderSimulationError},
+        order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
             CalculateQuoteError,
             OrderQuoting,
@@ -80,10 +80,7 @@ impl OrderSimulator {
         order: &Order,
         full_app_data: &str,
         full_balance_check: bool,
-        // todo this should really return a Result<Report, InfraError>
-        // the caller can then try to read as much as possible from the
-        // report and react accordingly
-    ) -> Result<(), OrderSimulationError> {
+    ) -> Result<SimulationSuccess, OrderSimulationError> {
         let start = Instant::now();
         let (outcome, result) = match tokio::time::timeout(
             self.timeout,
@@ -92,7 +89,7 @@ impl OrderSimulator {
         )
         .await
         {
-            Ok(r @ Ok(())) => ("ok", r),
+            Ok(Ok(r)) => ("ok", Ok(r)),
             Ok(r @ Err(OrderSimulationError::Reverted { .. })) => ("reverted", r),
             Ok(r @ Err(OrderSimulationError::Infra(_))) => ("infra", r),
             Err(_) => (
@@ -116,7 +113,7 @@ impl OrderSimulator {
 /// and infra errors as warnings. Agreement is silent.
 fn log_simulation_outcome(
     signature: &Result<u64, SignatureValidationError>,
-    simulation: &Result<(), OrderSimulationError>,
+    simulation: &Result<SimulationSuccess, OrderSimulationError>,
     preview_order: &Order,
     full_app_data: &str,
 ) {
@@ -151,7 +148,7 @@ fn log_simulation_outcome(
                 "order simulation disagreement: signature passed, simulation reverted",
             );
         }
-        (Err(SignatureValidationError::Invalid), Ok(())) => tracing::warn!(
+        (Err(SignatureValidationError::Invalid), Ok(_)) => tracing::warn!(
             ?order_uid,
             ?owner,
             ?order_data,
@@ -3153,7 +3150,9 @@ mod tests {
             sim.expect_simulate()
                 .times(1)
                 .returning(move |_, _, _| match simulation {
-                    Sim::Pass => Ok(()),
+                    Sim::Pass => Ok(SimulationSuccess {
+                        eip1271_signature_verification_gas: 0,
+                    }),
                     Sim::Reverted => Err(OrderSimulationError::Reverted {
                         reason: "hook reverted".into(),
                         tenderly_url: None,
@@ -3241,7 +3240,11 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .times(0);
         let mut sim = MockOrderSimulating::new();
-        sim.expect_simulate().times(1).returning(|_, _, _| Ok(()));
+        sim.expect_simulate().times(1).returning(|_, _, _| {
+            Ok(SimulationSuccess {
+                eip1271_signature_verification_gas: 0,
+            })
+        });
         let validator =
             build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
 

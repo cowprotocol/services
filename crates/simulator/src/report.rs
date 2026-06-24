@@ -2,6 +2,7 @@ use {
     alloy_primitives::{Address, Bytes, U256},
     alloy_rpc_types::trace::geth::CallFrame,
     alloy_sol_types::SolCall,
+    anyhow::Context as _,
     contracts::{
         ERC20::ERC20,
         ERC1271SignatureValidator::ERC1271SignatureValidator,
@@ -16,6 +17,24 @@ pub struct SimulationReport {
     pub events: Vec<Event>,
     pub returned_bytes: Option<Bytes>,
     pub revert: Option<String>,
+}
+
+impl SimulationReport {
+    pub fn eip1271_gas_cost(&self, target: &Address) -> Result<u64, anyhow::Error> {
+        for event in &self.events {
+            let Event::Eip1271SignatureCheck { owner, gas, .. } = event else {
+                continue;
+            };
+            if target != owner {
+                continue;
+            }
+            // in reality this overflow can't actually happen
+            return u64::try_from(gas).context("gas cost overflowed u64");
+        }
+        Err(anyhow::anyhow!(
+            "could not find eip1271 signature check for target"
+        ))
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -34,6 +53,8 @@ pub enum Event {
         target: Address,
         caught_error: Option<String>,
     },
+    /// Information about the `isValidSignature()` call required for EIP 1271
+    /// signatures.
     Eip1271SignatureCheck {
         revert: Option<String>,
         gas: U256,
@@ -216,6 +237,14 @@ mod tests {
             trampoline: &address!("0xd496f9fcfba14d7bd1e45e4840d38ad85ded14dd"),
         };
         let report = generate_settlement_report(context, trace);
+
+        assert_eq!(
+            report
+                .eip1271_gas_cost(&address!("0xcbf50aa2d442548aed93915da99d827e71473dd1"))
+                .unwrap(),
+            7703
+        );
+        assert!(report.eip1271_gas_cost(&Address::ZERO).is_err());
         assert_eq!(
             report,
             SimulationReport {
@@ -298,6 +327,9 @@ mod tests {
                         target: address!("0xc139190f447e929f090edeb554d95abb8b18ac1c"),
                         caught_error: Some("ERC20Permit: invalid signature".to_string()),
                     },
+                    // no additional information about the signature check is available
+                    // as we can only recover that for eip 1271 signatures and the
+                    // order used a different signing scheme
                     Event::AllSignatureChecksSuccessful,
                     Event::Transfer {
                         token: address!("0xc139190f447e929f090edeb554d95abb8b18ac1c"),
