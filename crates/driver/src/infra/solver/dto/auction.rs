@@ -216,11 +216,7 @@ pub fn new(
                             sqrt_price: pool.sqrt_price.0,
                             liquidity: pool.liquidity.0,
                             tick: pool.tick.0,
-                            liquidity_net: pool
-                                .liquidity_net
-                                .iter()
-                                .map(|(key, value)| (*key, *value))
-                                .collect(),
+                            liquidity_net: pool.liquidity_net.clone(),
                             fee: rational_to_big_decimal(&pool.fee.0),
                         },
                     )
