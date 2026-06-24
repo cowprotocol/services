@@ -8635,9 +8635,6 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "derive_more 1.0.0",
- "observe",
- "prometheus",
- "prometheus-metric-storage",
  "solana-sdk",
  "thiserror 1.0.69",
  "tracing",
