@@ -380,15 +380,11 @@ fn uniswap_v3_pool_source(
                 max_pools_per_tick_query,
             })
         }
-        file::IndexerConfig::PoolIndexer {
-            url,
-            wait_until_timeout,
-        } => liquidity::config::UniswapV3PoolSource::PoolIndexer(
-            liquidity::config::UniswapV3PoolIndexer {
-                url,
-                wait_until_timeout,
-            },
-        ),
+        file::IndexerConfig::PoolIndexer { url } => {
+            liquidity::config::UniswapV3PoolSource::PoolIndexer(
+                liquidity::config::UniswapV3PoolIndexer { url },
+            )
+        }
     }
 }
 

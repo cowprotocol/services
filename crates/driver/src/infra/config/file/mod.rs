@@ -637,16 +637,7 @@ enum IndexerConfig {
         max_pools_per_tick_query: usize,
     },
     #[serde(rename_all = "kebab-case")]
-    PoolIndexer {
-        url: Url,
-        /// Upper bound on a single `wait_until` call. Size per-network to
-        /// comfortably exceed the worst-case first-deploy seed time.
-        #[serde(
-            with = "humantime_serde",
-            default = "uniswap_v3::default_pool_indexer_wait_until_timeout"
-        )]
-        wait_until_timeout: Duration,
-    },
+    PoolIndexer { url: Url },
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -656,18 +647,12 @@ enum UniswapV3Preset {
 }
 
 mod uniswap_v3 {
-    use std::time::Duration;
-
     pub fn default_max_pools_to_initialize() -> usize {
         100
     }
 
     pub fn default_max_pools_per_tick_query() -> usize {
         usize::MAX
-    }
-
-    pub fn default_pool_indexer_wait_until_timeout() -> Duration {
-        Duration::from_secs(300)
     }
 }
 
@@ -1203,6 +1188,24 @@ mod tests {
         .unwrap_err();
 
         assert!(err.to_string().contains("must be signers"));
+    }
+
+    #[test]
+    fn pool_indexer_config_needs_only_a_url() {
+        let config: IndexerConfig =
+            toml::from_str(r#"pool-indexer = { url = "http://pool-indexer/" }"#).unwrap();
+        assert!(matches!(config, IndexerConfig::PoolIndexer { .. }));
+    }
+
+    #[test]
+    fn pool_indexer_config_rejects_wait_until_timeout() {
+        // The field was dropped (bootstrap is its own initContainer now); a
+        // stale config still carrying it should fail loudly, not be ignored.
+        let err = toml::from_str::<IndexerConfig>(
+            r#"pool-indexer = { url = "http://pool-indexer/", wait-until-timeout = "5m" }"#,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("wait-until-timeout"));
     }
 
     #[test]
