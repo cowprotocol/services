@@ -6,7 +6,7 @@
 //! is reconstructed from [`TradeDelta`] snapshots.
 
 use {
-    crate::types::{Signature, Slot},
+    crate::types::{OrderUid, Signature, Slot},
     solana_sdk::pubkey::Pubkey,
 };
 
@@ -15,7 +15,7 @@ use {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TradeDelta {
     /// Order UID this delta applies to.
-    pub order_uid: [u8; 32],
+    pub order_uid: OrderUid,
     /// Change in `amount_withdrawn` since the previous snapshot.
     pub amount_withdrawn_delta: u64,
     /// Change in `amount_received` since the previous snapshot.
@@ -31,8 +31,8 @@ pub struct TradeDelta {
 pub enum SettlementEvent {
     /// A new order was created on-chain.
     OrderCreated {
-        /// Intent hash of the order.
-        intent_hash: [u8; 32],
+        /// Order UID this order is identified by.
+        order_uid: OrderUid,
         /// Owner of the order.
         owner: Pubkey,
         /// Address that created the order (relayer / solver).
@@ -40,13 +40,13 @@ pub enum SettlementEvent {
     },
     /// An order was closed.
     OrderClosed {
-        /// Intent hash of the order.
-        intent_hash: [u8; 32],
+        /// Order UID this order is identified by.
+        order_uid: OrderUid,
     },
     /// An order was cancelled.
     OrderCancelled {
-        /// Intent hash of the order.
-        intent_hash: [u8; 32],
+        /// Order UID this order is identified by.
+        order_uid: OrderUid,
     },
     /// A settlement was finalized on-chain.
     SettlementFinalized {
@@ -113,7 +113,7 @@ pub enum SolFlowEvent {
         /// Real owner of the order.
         real_owner: Pubkey,
         /// Order UID.
-        order_uid: [u8; 32],
+        order_uid: OrderUid,
         /// From `meta.post_token_balances` on the custodial wSOL
         /// account.
         sol_amount: u64,
@@ -125,7 +125,7 @@ pub enum SolFlowEvent {
         /// Address that enabled the order.
         enabler: Pubkey,
         /// Order UID.
-        order_uid: [u8; 32],
+        order_uid: OrderUid,
     },
     /// An order was recovered (e.g. after a stuck-state cleanup).
     OrderRecovered {

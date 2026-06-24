@@ -1,14 +1,14 @@
 //! Recovery-flow types: PDA snapshots and the options struct for
 //! `getSignaturesForAddress` backfills.
 
-use solana_sdk::pubkey::Pubkey;
+use {crate::types::OrderUid, solana_sdk::pubkey::Pubkey};
 
 /// Current on-chain snapshot of an order PDA, read by `getAccountInfo` for
 /// reconciliation.
 #[derive(Debug, Clone)]
 pub struct PdaSnapshot {
     /// Order UID.
-    pub order_uid: [u8; 32],
+    pub order_uid: OrderUid,
     /// Cumulative `amount_withdrawn` for the order.
     pub amount_withdrawn: u64,
     /// Cumulative `amount_received` for the order.
