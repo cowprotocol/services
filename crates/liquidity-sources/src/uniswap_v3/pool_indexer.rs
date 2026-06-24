@@ -31,6 +31,11 @@ use {
 /// Poll interval for [`PoolIndexerClient::wait_until`].
 const WAIT_UNTIL_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
+/// Cap on a single `wait_until` call. Bootstrap now runs as a separate
+/// initContainer, so the serve container is up within seconds — this only
+/// covers the indexer coming up at startup, not the old cold-bootstrap time.
+const WAIT_UNTIL_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Matches the server-side `MAX_POOL_IDS_PER_REQUEST`.
 const POOL_IDS_PER_REQUEST: usize = 500;
 
@@ -40,20 +45,13 @@ const LIST_PAGE_SIZE: u64 = 5000;
 pub struct PoolIndexerClient {
     base_url: Url,
     http: Client,
-    /// Cap on a single `wait_until` call. Pick per network to exceed the
-    /// worst-case fresh-deploy seed time.
-    wait_until_timeout: Duration,
 }
 
 impl PoolIndexerClient {
-    pub fn new(base_url: Url, chain: Chain, http: Client, wait_until_timeout: Duration) -> Self {
+    pub fn new(base_url: Url, chain: Chain, http: Client) -> Self {
         let prefix = format!("api/v1/{}/uniswap/v3/", chain.as_str());
         let base_url = url_join(&base_url, &prefix);
-        Self {
-            base_url,
-            http,
-            wait_until_timeout,
-        }
+        Self { base_url, http }
     }
 
     fn path(&self, suffix: &str) -> Url {
@@ -216,7 +214,7 @@ impl IndexerTick {
 impl PoolIndexerClient {
     /// Polls `/pools?limit=1` every [`WAIT_UNTIL_POLL_INTERVAL`] until the
     /// envelope reports `block_number >= target_block`. Returns
-    /// immediately if already there; bails after [`Self::wait_until_timeout`].
+    /// immediately if already there; bails after [`WAIT_UNTIL_TIMEOUT`].
     /// [`BlockTarget::Latest`] serves at-head without waiting.
     ///
     /// `503` is treated as "still bootstrapping" and the loop keeps
@@ -226,7 +224,7 @@ impl PoolIndexerClient {
             BlockTarget::Latest => return Ok(()),
             BlockTarget::Number(n) => n,
         };
-        let deadline = std::time::Instant::now() + self.wait_until_timeout;
+        let deadline = std::time::Instant::now() + WAIT_UNTIL_TIMEOUT;
         let mut last_observed: Option<u64> = None;
         let mut interval = tokio::time::interval(WAIT_UNTIL_POLL_INTERVAL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -253,7 +251,7 @@ impl PoolIndexerClient {
                 anyhow::bail!(
                     "pool-indexer wait_until exceeded {:?} waiting for block {target_block}; last \
                      observed indexer block: {last_observed:?}",
-                    self.wait_until_timeout,
+                    WAIT_UNTIL_TIMEOUT,
                 );
             }
         }
