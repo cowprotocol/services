@@ -100,7 +100,7 @@ pub(crate) enum SettlementEvent {
         /// Transaction signature.
         tx_signature: Signature,
         /// Index of the instruction within the transaction.
-        ix_index: u8,
+        ix_index: u16,
     },
 }
 

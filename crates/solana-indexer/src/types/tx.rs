@@ -30,7 +30,7 @@ pub(crate) struct ResolvedInstruction {
     pub accounts: Vec<u8>,
     /// Index of this instruction within the transaction (outer or
     /// inner).
-    pub ix_index: u8,
+    pub ix_index: u16,
     /// `true` for CPIs (inner instructions).
     pub is_inner: bool,
 }
