@@ -746,7 +746,7 @@ mod tests {
         super::*,
         alloy::{
             eips::eip1559::Eip1559Estimation,
-            primitives::{Address, U256},
+            primitives::{Address, U256 as AlloyU256},
         },
         chrono::Utc,
         futures::FutureExt,
