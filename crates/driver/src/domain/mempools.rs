@@ -76,13 +76,19 @@ impl Mempools {
         // retry the settlement from another one.
         let account_failure: std::sync::Arc<std::sync::Mutex<Option<AccountFailure>>> =
             Default::default();
+        // Set once any mempool actually broadcasts a tx. After that, retrying from
+        // another account could double-submit the settlement, so `race_error` must
+        // not surface a retryable `SubmitterUnusable` even if a sibling mempool
+        // rejected pre-broadcast.
+        let any_broadcast = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
             |(mempool, stat)| {
                 let account_failure = std::sync::Arc::clone(&account_failure);
+                let any_broadcast = std::sync::Arc::clone(&any_broadcast);
                 async move {
                     let result = self
-                        .submit(mempool, settlement, submission_deadline, mode)
+                        .submit(mempool, settlement, submission_deadline, mode, &any_broadcast)
                         .instrument(tracing::info_span!("mempool", kind = %mempool))
                         .await;
                     // Log inline so errors from mempools that later get superseded still surface;
@@ -106,7 +112,11 @@ impl Mempools {
 
         match res {
             Ok(success) => Ok(success.tx_hash),
-            Err(err) => Err(race_error(err, *account_failure.lock().unwrap())),
+            Err(err) => Err(race_error(
+                err,
+                *account_failure.lock().unwrap(),
+                any_broadcast.load(std::sync::atomic::Ordering::SeqCst),
+            )),
         }
     }
 
@@ -140,6 +150,7 @@ impl Mempools {
         settlement: &Settlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
+        broadcasted: &std::sync::atomic::AtomicBool,
     ) -> Result<SubmissionSuccess, Error> {
         if self.is_disabled(mempool, settlement) {
             return Err(Error::Disabled);
@@ -233,6 +244,9 @@ impl Mempools {
                 nonce,
             )
             .await?;
+        // The tx is now on the wire. Record it so a sibling mempool's pre-broadcast
+        // account failure can't trigger a retry that double-submits this settlement.
+        broadcasted.store(true, std::sync::atomic::Ordering::SeqCst);
 
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
@@ -703,7 +717,11 @@ pub fn classify_submission_failure(message: &str) -> Option<AccountFailure> {
         Some(AccountFailure::InsufficientFunds)
     } else if message.contains("nonce") && message.contains("low") {
         Some(AccountFailure::Nonce)
-    } else if message.contains("underpriced") {
+    } else if message.contains("replacement") && message.contains("underpriced") {
+        // Only *replacement* underpricing is account-specific (a stuck nonce that
+        // another account avoids). A plain/global "underpriced" means the fee is
+        // below the node's minimum, which every account hits the same way, so it
+        // must not be benched or retried.
         Some(AccountFailure::Underpriced)
     } else {
         None
@@ -717,8 +735,13 @@ pub fn classify_submission_failure(message: &str) -> Option<AccountFailure> {
 /// from another. The caller benches the account and retries on
 /// `SubmitterUnusable`, so surface it whenever a mempool reported one — unless
 /// `last_error` is a settlement-specific terminal failure (revert/expired),
-/// which is authoritative and must not be retried from a different account.
-fn race_error(last_error: Error, account_failure: Option<AccountFailure>) -> Error {
+/// which is authoritative, or `broadcasted` is set, meaning some mempool
+/// already put a tx on the wire and retrying could double-submit.
+fn race_error(
+    last_error: Error,
+    account_failure: Option<AccountFailure>,
+    broadcasted: bool,
+) -> Error {
     // A settlement-specific terminal failure is authoritative and must not be
     // retried from another account, so it always wins over an account failure.
     if matches!(
@@ -726,6 +749,18 @@ fn race_error(last_error: Error, account_failure: Option<AccountFailure>) -> Err
         Error::Revert { .. } | Error::SimulationRevert { .. } | Error::Expired { .. }
     ) {
         return last_error;
+    }
+    // Once a tx is on the wire, never surface a retryable account failure:
+    // downgrade even a `SubmitterUnusable` that `select_ok` happened to return
+    // last, since a retry from another account could double-submit the
+    // settlement.
+    if broadcasted {
+        return match last_error {
+            Error::SubmitterUnusable(reason) => Error::Other(anyhow!(
+                "submission account unusable ({reason}) after a transaction was already broadcast"
+            )),
+            other => other,
+        };
     }
     match account_failure {
         Some(reason) => Error::SubmitterUnusable(reason),
@@ -885,6 +920,14 @@ mod tests {
         // `nonce too high` is a gap (the tx gets queued), not a clean
         // rejection, so it must not be treated as retryable.
         assert_eq!(classify_submission_failure("nonce too high"), None);
+        // Plain/global underpricing is a node/network fee-floor rejection, not
+        // account-specific: another account uses the same fee path, so retrying
+        // would just re-fail and bench every submitter.
+        assert_eq!(classify_submission_failure("transaction underpriced"), None);
+        assert_eq!(
+            classify_submission_failure("max fee per gas less than block base fee"),
+            None
+        );
     }
 
     #[test]
@@ -906,15 +949,22 @@ mod tests {
     #[test]
     fn account_failure_is_surfaced_over_a_masking_race_error() {
         use AccountFailure::*;
-        // A generic error returned last by `select_ok` must not hide an
-        // account-specific failure another mempool reported, else the account is
+        // Pre-broadcast: a generic error returned last by `select_ok` must not hide
+        // an account-specific failure another mempool reported, else the account is
         // never benched/retried (issue #4541).
         assert!(matches!(
-            race_error(Error::Other(anyhow!("connection reset")), Some(Nonce)),
+            race_error(
+                Error::Other(anyhow!("connection reset")),
+                Some(Nonce),
+                false
+            ),
             Error::SubmitterUnusable(Nonce)
         ));
         // With no account-specific failure, the original error is preserved.
-        assert!(matches!(race_error(Error::Disabled, None), Error::Disabled));
+        assert!(matches!(
+            race_error(Error::Disabled, None, false),
+            Error::Disabled
+        ));
         // A settlement-specific terminal failure is authoritative and must never
         // be turned into a retryable account failure.
         assert!(matches!(
@@ -924,8 +974,26 @@ mod tests {
                     reverted_at_block: BlockNo(2),
                 },
                 Some(InsufficientFunds),
+                false,
             ),
             Error::SimulationRevert { .. }
+        ));
+        // Post-broadcast: once a mempool put a tx on the wire, an account failure
+        // another mempool reported must NOT be surfaced, or the settlement could be
+        // retried from another EOA and double-submitted.
+        assert!(matches!(
+            race_error(
+                Error::Other(anyhow!("Block stream finished unexpectedly")),
+                Some(Nonce),
+                true,
+            ),
+            Error::Other(_)
+        ));
+        // Even when the last error is itself the pre-broadcast account failure, a
+        // broadcast elsewhere downgrades it so the caller does not retry.
+        assert!(matches!(
+            race_error(Error::SubmitterUnusable(Nonce), Some(Nonce), true),
+            Error::Other(_)
         ));
     }
 }
