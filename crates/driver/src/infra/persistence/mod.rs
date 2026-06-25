@@ -5,6 +5,7 @@ use {
     },
     bytes::Bytes,
     std::sync::Arc,
+    tokio::sync::oneshot,
     tracing::Instrument,
 };
 
@@ -52,16 +53,28 @@ impl Persistence {
         }
     }
 
-    /// Saves the given auction with liquidity with fire and forget mentality
-    /// (non-blocking operation)
-    pub fn archive_auction(&self, auction_id: Id, body: Bytes) {
+    /// Whether auction archival to S3 is configured. When it isn't, the solver
+    /// request body never needs to be fully materialized and can be streamed.
+    pub fn archives_enabled(&self) -> bool {
+        self.s3.is_some()
+    }
+
+    /// Archives the auction body to S3 (fire and forget). The body is
+    /// gzip-compressed while it is streamed to the solver, so the full
+    /// uncompressed JSON is never held in memory; the compressed bytes arrive
+    /// through `compressed` once serialization finishes. An error on the
+    /// receiver means the request was aborted, so there is nothing to archive.
+    pub fn archive_auction_gzipped(&self, auction_id: Id, compressed: oneshot::Receiver<Bytes>) {
         let Some(uploader) = self.s3.clone() else {
             return;
         };
         tokio::spawn(
             async move {
+                let Ok(compressed) = compressed.await else {
+                    return;
+                };
                 match uploader
-                    .upload_json_bytes(auction_id.to_string(), body)
+                    .upload_gzipped(auction_id.to_string(), compressed)
                     .await
                 {
                     Ok(key) => {
