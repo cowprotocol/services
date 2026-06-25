@@ -393,7 +393,7 @@ pub async fn insert_quote_and_update_on_conflict(
         " ON CONFLICT (order_uid) DO UPDATE
 SET gas_amount = $2, gas_price = $3,
 sell_token_price = $4, sell_amount = $5,
-buy_amount = $6, verified = $8, metadata = $9
+buy_amount = $6, solver = $7, verified = $8, metadata = $9
     "
     );
     sqlx::query(QUERY)
