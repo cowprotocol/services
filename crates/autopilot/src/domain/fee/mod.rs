@@ -96,11 +96,13 @@ impl ProtocolFees {
         config: &FeePoliciesConfig,
         volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
         enable_sell_equals_buy_volume_fee: bool,
+        native_token: Address,
     ) -> Self {
         let volume_fee_policy = VolumeFeePolicy::new(
             volume_fee_bucket_overrides,
             None, // contained within FeePoliciesConfig; vol fee is passed in at callsite
             enable_sell_equals_buy_volume_fee,
+            native_token,
         );
         Self {
             fee_policies: config

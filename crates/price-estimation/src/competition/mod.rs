@@ -179,13 +179,12 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
     /// result as it arrives. No ranking, no early return. The caller stops
     /// by dropping the stream.
     fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
-        let futures: FuturesUnordered<BoxFuture<'_, PriceEstimateResult>> = FuturesUnordered::new();
-        for stage in &self.stages {
-            for (_name, estimator) in stage {
-                futures.push(estimator.estimate(query.clone()));
-            }
-        }
-        futures.boxed()
+        self.stages
+            .iter()
+            .flatten()
+            .map(|(_name, estimator)| estimator.estimate(query.clone()))
+            .collect::<FuturesUnordered<_>>()
+            .boxed()
     }
 }
 
@@ -693,6 +692,9 @@ mod tests {
             let mut m = MockPriceEstimating::new();
             m.expect_estimate().times(1).returning(|_| {
                 async {
+                    // Resolve after the error so the error is yielded first. This
+                    // proves an error does not abort the remaining results.
+                    sleep(Duration::from_millis(10)).await;
                     Ok(Estimate {
                         out_amount: U256::from(1u64),
                         gas: 1,
@@ -722,8 +724,8 @@ mod tests {
         let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
 
         assert_eq!(results.len(), 2);
-        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
-        assert_eq!(results.iter().filter(|r| r.is_err()).count(), 1);
+        assert!(results[0].is_err());
+        assert!(results[1].is_ok());
     }
 
     #[test]

@@ -5,11 +5,12 @@ use {
     crate::{
         json_map,
         subgraph::{ContainsId, SubgraphClient},
+        uniswap_v3::V3PoolDataSource,
     },
     alloy::primitives::{Address, U256},
     anyhow::Result,
+    async_trait::async_trait,
     event_indexing::event_handler::MAX_REORG_BLOCK_COUNT,
-    num::BigInt,
     number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},
     serde::{Deserialize, Serialize},
@@ -111,20 +112,6 @@ impl UniV3SubgraphClient {
             .collect())
     }
 
-    /// Retrieves the pool data for all existing pools from the subgraph.
-    pub async fn get_registered_pools(&self) -> Result<RegisteredPools> {
-        let block_number = self.get_safe_block().await?;
-        let variables = json_map! {
-            "block" => block_number,
-        };
-        let query = Self::all_pools_query(self.use_liquidity_net_filter);
-        let pools = self.get_pools(query, variables).await?;
-        Ok(RegisteredPools {
-            fetched_block_number: block_number,
-            pools,
-        })
-    }
-
     async fn get_pools_by_pool_ids(
         &self,
         pool_ids: &[Address],
@@ -162,37 +149,6 @@ impl UniV3SubgraphClient {
         }
 
         Ok(all)
-    }
-
-    /// Retrieves the pool data and ticks data for pools with given pool ids
-    pub async fn get_pools_with_ticks_by_ids(
-        &self,
-        ids: &[Address],
-        block_number: u64,
-    ) -> Result<Vec<PoolData>> {
-        let (pools, ticks) = futures::try_join!(
-            self.get_pools_by_pool_ids(ids, block_number),
-            self.get_ticks_by_pools_ids(ids, block_number)
-        )?;
-
-        // group ticks by pool ids
-        let mut ticks_mapped = HashMap::new();
-        for tick in ticks {
-            ticks_mapped
-                .entry(tick.pool_address)
-                .or_insert_with(Vec::new)
-                .push(tick);
-        }
-
-        Ok(pools
-            .into_iter()
-            .filter_map(|mut pool| {
-                ticks_mapped.get(&pool.id).map(|ticks| {
-                    pool.ticks = Some(ticks.clone());
-                    pool
-                })
-            })
-            .collect())
     }
 
     /// Retrieves a recent block number for which it is safe to assume no
@@ -278,6 +234,62 @@ impl UniV3SubgraphClient {
     }
 }
 
+#[async_trait]
+impl V3PoolDataSource for UniV3SubgraphClient {
+    /// The subgraph supports historical queries, so every returned pool is
+    /// consistently anchored at `target_block`.
+    async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
+        let variables = json_map! {
+            "block" => target_block,
+        };
+        let query = Self::all_pools_query(self.use_liquidity_net_filter);
+        let mut pools = self.get_pools(query, variables).await?;
+        for pool in &mut pools {
+            pool.block_number = target_block;
+        }
+        Ok(RegisteredPools {
+            fetched_block_number: target_block,
+            pools,
+        })
+    }
+
+    /// The subgraph supports historical queries, so the returned snapshot is
+    /// at exactly `target_block`.
+    async fn get_pools_with_ticks_by_ids(
+        &self,
+        ids: &[Address],
+        target_block: u64,
+    ) -> Result<PoolsWithTicks> {
+        let (pools, ticks) = futures::try_join!(
+            self.get_pools_by_pool_ids(ids, target_block),
+            self.get_ticks_by_pools_ids(ids, target_block)
+        )?;
+
+        let mut ticks_by_pool: HashMap<Address, Vec<TickData>> = HashMap::new();
+        for tick in ticks {
+            ticks_by_pool
+                .entry(tick.pool_address)
+                .or_default()
+                .push(tick);
+        }
+
+        let pools = pools
+            .into_iter()
+            .filter_map(|mut pool| {
+                ticks_by_pool.get(&pool.id).map(|ticks| {
+                    pool.ticks = Some(ticks.clone());
+                    pool.block_number = target_block;
+                    pool
+                })
+            })
+            .collect();
+        Ok(PoolsWithTicks {
+            fetched_block_number: target_block,
+            pools,
+        })
+    }
+}
+
 /// Result of the registered stable pool query.
 #[derive(Debug, Default, PartialEq)]
 pub struct RegisteredPools {
@@ -287,7 +299,24 @@ pub struct RegisteredPools {
     pub pools: Vec<PoolData>,
 }
 
-/// Pool data from the Uniswap V3 subgraph.
+/// Result of fetching pool state + active ticks for a given set of pools. The
+/// returned `fetched_block_number` is the actual snapshot block (which may be
+/// later than the caller's `target_block` for indexer-backed sources).
+#[derive(Debug, Default, PartialEq)]
+pub struct PoolsWithTicks {
+    pub fetched_block_number: u64,
+    pub pools: Vec<PoolData>,
+}
+
+/// Pool data from the Uniswap V3 subgraph or the pool-indexer service.
+///
+/// `block_number` is the block at which the pool's authoritative state
+/// (`liquidity` / `sqrt_price` / `tick`) was sampled. Sources stamp it
+/// post-deserialization because the wire format doesn't carry a per-pool
+/// block (the subgraph anchors at a single `target_block` for all pools;
+/// the pool-indexer reports it per-response). Drivers can use this to
+/// drive per-pool event replay rather than relying on a single global
+/// anchor.
 #[serde_as]
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -302,8 +331,12 @@ pub struct PoolData {
     #[serde_as(as = "HexOrDecimalU256")]
     pub sqrt_price: U256,
     #[serde_as(as = "DisplayFromStr")]
-    pub tick: BigInt,
+    pub tick: i32,
     pub ticks: Option<Vec<TickData>>,
+    /// Not serialised — sources populate this after deserialisation. See
+    /// the struct doc for why.
+    #[serde(default, skip_deserializing)]
+    pub block_number: u64,
 }
 
 impl ContainsId for PoolData {
@@ -317,17 +350,19 @@ impl ContainsId for PoolData {
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TickData {
-    pub id: String,
     #[serde_as(as = "DisplayFromStr")]
-    pub tick_idx: BigInt,
+    pub tick_idx: i32,
     #[serde_as(as = "DisplayFromStr")]
-    pub liquidity_net: BigInt,
+    pub liquidity_net: i128,
     pub pool_address: Address,
 }
 
 impl ContainsId for TickData {
+    /// Recomputes the subgraph's `id` (`<poolAddress>#<tickIdx>`) on demand
+    /// rather than carrying it through the struct. Used by the subgraph
+    /// pagination cursor; the pool-indexer path doesn't paginate ticks.
     fn get_id(&self) -> String {
-        self.id.clone()
+        format!("{:#x}#{}", self.pool_address, self.tick_idx)
     }
 }
 
@@ -427,8 +462,9 @@ mod tests {
                         fee_tier: U256::from(10000),
                         liquidity: U256::from(303015134493562686441_u128),
                         sqrt_price: U256::from(792216481398733702759960397_u128),
-                        tick: BigInt::from(-92110),
+                        tick: -92110,
                         ticks: None,
+                        block_number: 0,
                     },
                     PoolData {
                         id: address!("0x0002e63328169d7feea121f1e32e4f620abf0352"),
@@ -443,8 +479,9 @@ mod tests {
                         fee_tier: U256::from(3000),
                         liquidity: U256::from(3125586395511534995_u128),
                         sqrt_price: U256::from(5986323062404391218190509_u128),
-                        tick: BigInt::from(-189822),
+                        tick: -189822,
                         ticks: None,
+                        block_number: 0,
                     },
                 ],
             }
@@ -474,15 +511,13 @@ mod tests {
             Data {
                 inner: vec![
                     TickData {
-                        id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#0".to_string(),
-                        tick_idx: BigInt::from(0),
-                        liquidity_net: BigInt::from(-303015134493562686441i128),
+                        tick_idx: 0,
+                        liquidity_net: -303015134493562686441i128,
                         pool_address: address!("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
                     },
                     TickData {
-                        id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#-92200".to_string(),
-                        tick_idx: BigInt::from(-92200),
-                        liquidity_net: BigInt::from(303015134493562686441i128),
+                        tick_idx: -92200,
+                        liquidity_net: 303015134493562686441i128,
                         pool_address: address!("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
                     },
                 ],

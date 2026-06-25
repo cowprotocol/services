@@ -1,14 +1,15 @@
 use {
-    crate::{encoding::WrapperCall, tenderly},
+    crate::{encoding::WrapperCall, report, tenderly},
     alloy_primitives::{Address, B256, Bytes, U256, address, b256, keccak256},
-    alloy_provider::{DynProvider, Provider},
+    alloy_provider::{DynProvider, Provider, ext::DebugApi},
     alloy_rpc_types::{
         TransactionRequest,
         state::{AccountOverride, StateOverride},
+        trace::geth::{CallConfig, GethDebugTracingCallOptions, GethDebugTracingOptions},
     },
     alloy_sol_types::SolCall,
     alloy_transport::RpcError,
-    anyhow::{Context, Result},
+    anyhow::{Context as AnyhowContext, Result},
     balance_overrides::StateOverriding,
     ethrpc::block_stream::CurrentBlockWatcher,
     model::{
@@ -437,6 +438,7 @@ pub struct EthCallInputs {
     pub state_overrides: StateOverride,
     pub simulator: SettlementSimulator,
     pub block: u64,
+    pub failed_state_overrides: Vec<AccountOverrideRequest>,
 }
 
 impl EthCallInputs {
@@ -452,15 +454,46 @@ impl EthCallInputs {
 
     /// Runs the generated simulation using an `eth_call` and returns the
     /// response bytes if there are any.
-    pub async fn simulate(self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
+    pub async fn simulate(&self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
         self.simulator
             .0
             .provider
             .clone()
             .call(self.as_transaction_request())
-            .overrides(self.state_overrides)
+            .overrides(self.state_overrides.clone())
             .block(self.block.into())
             .await
+    }
+
+    /// Runs the simulation together with a call tracer. Afterwards the call
+    /// trace gets analyzed to generate a high level report of the simulation
+    /// with information to help the caller understand what went wrong during
+    /// the simulation.
+    pub async fn simulation_report(
+        &self,
+    ) -> Result<report::SimulationReport, RpcError<alloy_transport::TransportErrorKind>> {
+        let trace = self
+            .simulator
+            .0
+            .provider
+            .clone()
+            .debug_trace_call_callframe(
+                self.as_transaction_request(),
+                self.block.into(),
+                GethDebugTracingCallOptions::default()
+                    .with_tracing_options(GethDebugTracingOptions::call_tracer(
+                        CallConfig::default(),
+                    ))
+                    .with_state_overrides(self.state_overrides.clone()),
+            )
+            .await?;
+
+        let context = report::Context {
+            settlement: self.simulator.0.settlement.address(),
+            vault_relayer: &self.simulator.0.vault_relayer,
+            trampoline: &self.simulator.0.hooks_trampoline,
+        };
+        Ok(report::generate_settlement_report(context, trace))
     }
 
     /// Same as [`EthCallInputs::simulate`] but also generates a tenderly
