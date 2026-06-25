@@ -11,7 +11,6 @@ use {
     },
     futures::StreamExt,
     model::quote::OrderQuoteRequest,
-    price_estimation::PriceEstimationError,
     std::{convert::Infallible, sync::Arc},
 };
 
@@ -26,34 +25,23 @@ pub async fn post_quote_stream_handler(
     };
 
     let events = async_stream::stream! {
-        let mut any_ok = false;
         futures::pin_mut!(stream);
         while let Some(item) = stream.next().await {
             match item {
                 Ok(response) => match Event::default().json_data(&response) {
-                    Ok(event) => {
-                        any_ok = true;
-                        yield Ok::<_, Infallible>(event);
-                    }
+                    Ok(event) => yield Ok::<_, Infallible>(event),
                     Err(err) => tracing::error!(?err, "failed to serialize streamed quote"),
                 },
-                Err(err) => tracing::debug!(%err, "dropping failed streamed quote"),
-            }
-        }
-        if !any_ok {
-            // No solver produced a usable quote. Emit the same NoLiquidity error
-            // the regular endpoint returns.
-            let response =
-                super::PriceEstimationErrorWrapper(PriceEstimationError::NoLiquidity).into_response();
-            match axum::body::to_bytes(response.into_body(), usize::MAX).await {
-                Ok(bytes) => {
-                    yield Ok::<_, Infallible>(
-                        Event::default()
-                            .event("error")
-                            .data(String::from_utf8_lossy(&bytes)),
-                    )
+                Err(err) => {
+                    // Terminal error from the domain: frame it as an SSE error event.
+                    let response = err.into_response();
+                    match axum::body::to_bytes(response.into_body(), usize::MAX).await {
+                        Ok(bytes) => yield Ok::<_, Infallible>(
+                            Event::default().event("error").data(String::from_utf8_lossy(&bytes)),
+                        ),
+                        Err(err) => tracing::error!(?err, "failed to read error event body"),
+                    }
                 }
-                Err(err) => tracing::error!(?err, "failed to read no-quote error event body"),
             }
         }
     };

@@ -9,12 +9,13 @@ use {
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
     },
-    price_estimation::Verification,
+    price_estimation::{PriceEstimationError, Verification},
     shared::{
         arguments::TokenBucketFeeOverride,
         fee::VolumeFeePolicy,
         order_quoting::{
             CalculateQuoteError,
+            EstimatorKind,
             OrderQuoting,
             Quote,
             QuoteParameters,
@@ -163,19 +164,47 @@ impl QuoteHandler {
         let volume_fee = self.volume_fee.clone();
         let volume_fee_policy = self.volume_fee_policy.clone();
 
-        let stream = inner.map(move |item| {
-            let quote = item.map_err(OrderQuoteError::CalculateQuote)?;
-            let adjusted = get_vol_fee_adjusted_quote_data(
-                &quote,
-                &request.side,
-                volume_fee.as_ref(),
-                &volume_fee_policy,
-                request.buy_token,
-                request.sell_token,
-            )
-            .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
-            build_order_quote_response(&request, &quote, &adjusted, None, valid_to)
-        });
+        let stream = async_stream::stream! {
+            futures::pin_mut!(inner);
+            let mut any_ok = false;
+            while let Some(item) = inner.next().await {
+                let quote = match item {
+                    Ok(quote) => quote,
+                    // Per-solver failure: skip it, a later solver may still succeed.
+                    Err(err) => {
+                        tracing::debug!(%err, "dropping failed streamed quote");
+                        continue;
+                    }
+                };
+                let response = get_vol_fee_adjusted_quote_data(
+                    &quote,
+                    &request.side,
+                    volume_fee.as_ref(),
+                    &volume_fee_policy,
+                    request.buy_token,
+                    request.sell_token,
+                )
+                .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))
+                .and_then(|adjusted| {
+                    build_order_quote_response(&request, &quote, &adjusted, None, valid_to)
+                });
+                match response {
+                    Ok(response) => {
+                        any_ok = true;
+                        yield Ok(response);
+                    }
+                    Err(err) => tracing::debug!(%err, "dropping unconvertible streamed quote"),
+                }
+            }
+            if !any_ok {
+                // No solver produced a usable quote. Route through the same
+                // NoLiquidity mapping the one-shot endpoint returns.
+                yield Err(OrderQuoteError::CalculateQuote(CalculateQuoteError::from((
+                    EstimatorKind::Regular,
+                    PriceEstimationError::NoLiquidity,
+                ))));
+            }
+        };
 
         Ok(stream.boxed())
     }
