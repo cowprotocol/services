@@ -131,7 +131,10 @@ sol! {
 const POOL_INDEXER_PORT: u16 = 7778;
 const POOL_INDEXER_HOST: &str = "http://127.0.0.1:7778";
 const POOL_INDEXER_METRICS_PORT: u16 = 7779;
-const LOCAL_DB_URL: &str = "postgresql://";
+// The indexer has its own database (mirrors the per-network prod DB), migrated
+// from `database/sql-pool-indexer` by the `migrations-pool-indexer` flyway step
+// (docker-compose / setup-e2e.sh), separate from the shared autopilot DB.
+const POOL_INDEXER_DB_URL: &str = "postgresql:///pool_indexer";
 
 // sqrt(1) * 2^96 — valid starting price
 const INITIAL_SQRT_PRICE: u128 = 1u128 << 96;
@@ -162,6 +165,8 @@ struct TicksResponse {
 #[derive(Deserialize)]
 struct TickEntry {}
 
+/// Truncates the indexer's tables between tests. The schema itself is
+/// provisioned by flyway (`migrations-pool-indexer`), so this just clears rows.
 async fn clear_pool_indexer_tables(db: &PgPool) {
     sqlx::query(
         "TRUNCATE uniswap_v3_ticks, uniswap_v3_pool_states, uniswap_v3_pools, \
@@ -190,7 +195,7 @@ async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
 async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task::JoinHandle<()> {
     let config = Configuration {
         database: DatabaseConfig {
-            url: LOCAL_DB_URL.parse().unwrap(),
+            url: POOL_INDEXER_DB_URL.parse().unwrap(),
             max_connections: NonZeroU32::new(5).unwrap(),
         },
         network: NetworkConfig {
@@ -390,7 +395,7 @@ async fn driver_integration(web3: Web3) {
     const POOLS_BY_IDS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools/by-ids";
     const TICKS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools/ticks";
 
-    let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
@@ -482,7 +487,7 @@ async fn local_node_pool_indexer_checkpoint_resume() {
 /// count, sqrt_price / tick / liquidity, and the checkpoint all survive a
 /// stop+start.
 async fn checkpoint_resume(web3: Web3) {
-    let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
     let (factory, pool_addr) = deploy_univ3(&web3).await;
@@ -533,7 +538,7 @@ async fn local_node_pool_indexer_api_errors() {
 /// 400, a valid-but-unknown address must come back as 200 with empty ticks.
 /// Lets callers distinguish "garbage input" from "no data yet".
 async fn api_errors(web3: Web3) {
-    let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
     let (factory, _pool) = deploy_univ3(&web3).await;
@@ -585,7 +590,7 @@ async fn local_node_pool_indexer_pagination() {
 /// every pool exactly once. Three pools is the smallest set that exercises
 /// a mid-stream cursor and the `next_cursor = null` terminator.
 async fn pagination(web3: Web3) {
-    let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
     let (factory, _pool1) = deploy_univ3(&web3).await;
