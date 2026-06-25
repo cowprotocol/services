@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! PostgreSQL persistence layer for decoded events and slot state.
 
 use {
@@ -12,7 +13,7 @@ use {
 };
 
 /// PostgreSQL persistence. Used by Decoder, Watchdog, and FinalizationWorker.
-pub trait Store {
+pub(crate) trait Store {
     /// Save decoded events and advance the slot watermark atomically.
     async fn persist_events(
         &self,

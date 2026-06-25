@@ -16,9 +16,8 @@ name = "solana-indexer"
 path = "src/main.rs"
 
 [dependencies]
-observe = { workspace = true }
-prometheus = { workspace = true }
-prometheus-metric-storage = { workspace = true }
+bytes = { workspace = true }
+derive_more = { workspace = true }
 solana-client = { workspace = true }
 solana-sdk = { workspace = true }
 thiserror = { workspace = true }

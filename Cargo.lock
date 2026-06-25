@@ -9395,9 +9395,8 @@ dependencies = [
 name = "solana-indexer"
 version = "0.1.0"
 dependencies = [
- "observe",
- "prometheus",
- "prometheus-metric-storage",
+ "bytes",
+ "derive_more 1.0.0",
  "solana-client",
  "solana-sdk",
  "thiserror 1.0.69",
