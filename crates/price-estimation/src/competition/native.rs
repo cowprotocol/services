@@ -90,7 +90,7 @@ mod tests {
         super::*,
         crate::{
             HEALTHY_PRICE_ESTIMATION_TIME,
-            competition::PriceRanking,
+            competition::QuoteContextMode,
             native::MockNativePriceEstimating,
         },
         std::pin::Pin,
@@ -102,7 +102,7 @@ mod tests {
     /// Returns the best native estimate with respect to the provided ranking
     /// and order kind.
     async fn best_response(
-        ranking: PriceRanking,
+        ranking: QuoteContextMode,
         estimates: Vec<NativePriceFuture>,
     ) -> Result<f64, PriceEstimationError> {
         fn estimator(estimate: NativePriceFuture) -> Arc<dyn NativePriceEstimating> {
@@ -133,9 +133,10 @@ mod tests {
 
     #[tokio::test]
     async fn returns_median_native_price() {
-        // With 3 estimates, the median (middle value) is returned, ignoring outliers.
+        // with 3 or more estimates, the median (middle value) is returned, protecting
+        // us against outliers
         let best = best_response(
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
             vec![
                 async { Ok(1.) }.boxed(),
                 async { Ok(100.) }.boxed(),
@@ -148,9 +149,10 @@ mod tests {
 
     #[tokio::test]
     async fn median_price_skews_towards_worse_price() {
-        // With 2 estimates, we chose the worse price
+        // with 2 estimates, we chose the worse price as unreasonably high prices
+        // cause more issues than low prices
         let best = best_response(
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
             vec![async { Ok(1.) }.boxed(), async { Ok(2.) }.boxed()],
         )
         .await;
@@ -163,7 +165,7 @@ mod tests {
     async fn returns_highest_priority_error_native() {
         // Returns errors with highest priority.
         let best = best_response(
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
             vec![
                 async { Err(PriceEstimationError::RateLimited) }.boxed(),
                 async { Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))) }.boxed(),
@@ -178,7 +180,7 @@ mod tests {
     #[tokio::test]
     async fn prefer_estimate_over_error_native() {
         let best = best_response(
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
             vec![
                 async { Ok(1.) }.boxed(),
                 async { Err(PriceEstimationError::RateLimited) }.boxed(),
@@ -196,7 +198,7 @@ mod tests {
 
         for price in [f64::NEG_INFINITY, -1., 0., f64::INFINITY, subnormal] {
             let best = best_response(
-                PriceRanking::MaxOutAmount,
+                QuoteContextMode::None,
                 vec![async move { Ok(price) }.boxed()],
             )
             .await;
@@ -270,7 +272,7 @@ mod tests {
                         ),
                     )],
                 ],
-                PriceRanking::MaxOutAmount,
+                QuoteContextMode::None,
             )
             // allow bailing out after 1 successful result to prevent both
             // stages to be kicked-off at the same time (if we have too few stages

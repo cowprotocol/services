@@ -13,7 +13,7 @@ use {
     crate::{
         ExternalSolver,
         buffered::{self, BufferedRequest, NativePriceBatchFetching},
-        competition::PriceRanking,
+        competition::QuoteContextMode,
         config::{native_price::NativePriceConfig, price_estimation::BalanceOverridesConfigExt},
     },
     alloy::primitives::Address,
@@ -360,7 +360,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
         let competition_estimator = CompetitionEstimator::new(
             vec![estimators],
-            PriceRanking::BestBangForBuck { native, gas },
+            QuoteContextMode::GasCost { native, gas },
         )
         .with_verification(self.args.quote_verification);
         Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
@@ -378,7 +378,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.sanitized(Arc::new(
                 CompetitionEstimator::new(
                     vec![estimators],
-                    PriceRanking::BestBangForBuck { native, gas },
+                    QuoteContextMode::GasCost { native, gas },
                 )
                 .with_early_return(fast_price_estimation_results_required),
             )),
@@ -404,7 +404,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         }
 
         let competition_estimator =
-            CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
+            CompetitionEstimator::new(estimators, QuoteContextMode::None)
                 .with_verification(self.args.quote_verification)
                 .with_early_return(results_required);
         Ok(Box::new(competition_estimator))
