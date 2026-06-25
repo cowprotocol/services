@@ -789,9 +789,15 @@ components:
         partiallyFillable:
           type: boolean
         sellTokenBalance:
-          $ref: "#/components/schemas/SellTokenBalance"
+          # Deprecated: only erc20 is used; internal/external no longer occur.
+          # Wrapped in allOf because OpenAPI 3.0 ignores keys siblings to a bare $ref.
+          deprecated: true
+          allOf:
+            - $ref: "#/components/schemas/SellTokenBalance"
         buyTokenBalance:
-          $ref: "#/components/schemas/BuyTokenBalance"
+          deprecated: true
+          allOf:
+            - $ref: "#/components/schemas/BuyTokenBalance"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
         signature:

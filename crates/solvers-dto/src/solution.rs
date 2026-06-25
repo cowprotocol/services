@@ -217,7 +217,15 @@ pub struct Allowance {
 pub enum SellTokenBalance {
     #[default]
     Erc20,
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     Internal,
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     External,
 }
 
@@ -226,6 +234,10 @@ pub enum SellTokenBalance {
 pub enum BuyTokenBalance {
     #[default]
     Erc20,
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     Internal,
 }
 
