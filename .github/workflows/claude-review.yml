@@ -53,7 +53,7 @@ jobs:
           # branch instead of just the latest commit.
           fetch-depth: 0
 
-      - uses: anthropics/claude-code-action@4d7e1f0cd85743fdc93b1c8040ab54395da024e2 # v1
+      - uses: anthropics/claude-code-action@74eedf1a1892082d619c3edb66b9402da6520e7f # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"

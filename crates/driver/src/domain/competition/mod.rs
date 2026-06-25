@@ -8,6 +8,7 @@ use {
     crate::{
         domain::{
             competition::{
+                order::Uid,
                 pre_processing::DataFetchingTasks,
                 solution::Settlement,
                 sorting::SortingStrategy,
@@ -18,7 +19,7 @@ use {
             self,
             blockchain::Ethereum,
             notify,
-            observe::{self, metrics},
+            observe::{self, OrderExcludedFromAuctionReason, metrics},
             solver::{self, Account, SolutionMerging, Solver},
         },
         util::math,
@@ -32,7 +33,7 @@ use {
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
         cmp::Reverse,
-        collections::{HashMap, HashSet, VecDeque},
+        collections::{BTreeMap, HashMap, HashSet, VecDeque},
         sync::{Arc, Mutex},
         time::Instant,
     },
@@ -718,6 +719,8 @@ impl Competition {
         let mut balances = balances.as_ref().clone();
         let cow_amms: HashSet<_> = cow_amm_orders.iter().map(|o| o.uid).collect();
 
+        let mut discarded_orders = BTreeMap::<OrderExcludedFromAuctionReason, Vec<Uid>>::new();
+
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
         // not the case** (as the protocol should not chose which limit orders
@@ -759,8 +762,10 @@ impl Competition {
             )) {
                 Some(balance) => balance,
                 None => {
-                    let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance;
-                    observe::order_excluded_from_auction(order, reason);
+                    discarded_orders
+                        .entry(OrderExcludedFromAuctionReason::CouldNotFetchBalance)
+                        .or_default()
+                        .push(order.uid);
                     return false;
                 }
             };
@@ -773,10 +778,10 @@ impl Competition {
                 _ => order::SellAmount::default(),
             };
             if allocated_balance.0.is_zero() {
-                observe::order_excluded_from_auction(
-                    order,
-                    observe::OrderExcludedFromAuctionReason::InsufficientBalance,
-                );
+                discarded_orders
+                    .entry(OrderExcludedFromAuctionReason::InsufficientBalance)
+                    .or_default()
+                    .push(order.uid);
                 return false;
             }
 
@@ -799,10 +804,10 @@ impl Competition {
                 );
             }
             if order.available().is_zero() {
-                observe::order_excluded_from_auction(
-                    order,
-                    observe::OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining,
-                );
+                discarded_orders
+                    .entry(OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining)
+                    .or_default()
+                    .push(order.uid);
                 return false;
             }
 
@@ -810,6 +815,15 @@ impl Competition {
 
             true
         });
+
+        let discarded_total = discarded_orders.values().map(Vec::len).sum::<usize>();
+        if discarded_total > 0 {
+            tracing::debug!(
+                total = discarded_total,
+                ?discarded_orders,
+                "filtered orders during solver specific prioritization logic"
+            );
+        }
 
         auction
     }

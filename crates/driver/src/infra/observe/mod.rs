@@ -446,16 +446,9 @@ pub fn sending_solve_request(solver: &str, remaining_time: Duration, is_quote_re
         .observe(remaining_time.as_secs_f64());
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum OrderExcludedFromAuctionReason {
     CouldNotFetchBalance,
     InsufficientBalance,
     OrderWithZeroAmountRemaining,
-}
-
-pub fn order_excluded_from_auction(
-    order: &competition::Order,
-    reason: OrderExcludedFromAuctionReason,
-) {
-    tracing::trace!(uid=?order.uid, ?reason, "order excluded from auction");
 }
