@@ -51,34 +51,34 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
                     .boxed()
                 })
                 .await;
-            let winner = pick_median_price(results)
-                .context("could not get any native price")?;
+            let winner = pick_median_price(results).context("could not get any native price")?;
             self.report_winner(&token, OrderKind::Buy, winner)
         }
         .boxed()
     }
 }
 
-/// There are no rewards or penalties for providing native prices which means there
-/// are very little incentives for solvers to provide accurate prices. This can lead
-/// to wildly inaccurate prices. Because native prices don't have to be super competitive
-/// we pick the median price instead of the very best one.
+/// There are no rewards or penalties for providing native prices which means
+/// there are very little incentives for solvers to provide accurate prices.
+/// This can lead to wildly inaccurate prices. Because native prices don't have
+/// to be super competitive we pick the median price instead of the very best
+/// one.
 fn pick_median_price(
     results: Vec<super::ResultWithIndex<f64>>,
 ) -> Option<super::ResultWithIndex<f64>> {
     let (mut prices, errs): (Vec<_>, Vec<_>) =
-        results
-            .into_iter()
-            .partition_map(|(idx, r)| match r {
-                Ok(price) => Either::Left((idx, price)),
-                Err(e) => Either::Right((idx, e)),
-            });
+        results.into_iter().partition_map(|(idx, r)| match r {
+            Ok(price) => Either::Left((idx, price)),
+            Err(e) => Either::Right((idx, e)),
+        });
     if prices.is_empty() {
         errs.into_iter()
             .max_by(|(_, a), (_, b)| compare_error(a, b))
             .map(|(idx, e)| (idx, Err(e)))
     } else {
-        prices.sort_by(|(_, a), (_, b)| a.total_cmp(b));
+        // we sort prices from best to worst so that `len / 2` skews
+        // in favour of worse prices as high prices have worse consequences
+        prices.sort_by(|(_, a), (_, b)| b.total_cmp(a));
         let (idx, price) = prices.remove(prices.len() / 2);
         Some((idx, Ok(price)))
     }
@@ -144,6 +144,17 @@ mod tests {
         )
         .await;
         assert_eq!(best, Ok(2.));
+    }
+
+    #[tokio::test]
+    async fn median_price_skews_towards_worse_price() {
+        // With 2 estimates, we chose the worse price
+        let best = best_response(
+            PriceRanking::MaxOutAmount,
+            vec![async { Ok(1.) }.boxed(), async { Ok(2.) }.boxed()],
+        )
+        .await;
+        assert_eq!(best, Ok(1.));
     }
 
     /// If all estimators returned an error we return the one with the highest
