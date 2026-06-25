@@ -187,7 +187,7 @@ mod tests {
     use {
         super::*,
         crate::{HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
-        alloy::primitives::{Address, U256 as AlloyU256},
+        alloy::primitives::{Address, U256},
         model::order::OrderKind,
         number::nonzero::NonZeroU256,
     };
@@ -214,7 +214,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: AlloyU256::ONE,
+                    out_amount: U256::ONE,
                     gas: 100,
                     solver: Default::default(),
                     verified: false,
@@ -235,7 +235,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: AlloyU256::ONE,
+                    out_amount: U256::ONE,
                     //sanitized_estimator will add ETH_UNWRAP_COST to the gas of any
                     //Query with ETH as the buy_token.
                     gas: GAS_PER_WETH_UNWRAP + 100,
@@ -273,7 +273,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: AlloyU256::ONE,
+                    out_amount: U256::ONE,
                     //sanitized_estimator will add ETH_WRAP_COST to the gas of any
                     //Query with ETH as the sell_token.
                     gas: GAS_PER_WETH_WRAP + 100,
@@ -295,7 +295,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: AlloyU256::ONE,
+                    out_amount: U256::ONE,
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
@@ -314,7 +314,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: AlloyU256::ONE,
+                    out_amount: U256::ONE,
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
@@ -333,7 +333,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: AlloyU256::ONE,
+                    out_amount: U256::ONE,
                     // Sanitized estimator will report a 1:1 estimate when unwrapping native token.
                     gas: GAS_PER_WETH_UNWRAP + SETTLEMENT_OVERHEAD,
                     solver: Default::default(),
@@ -353,7 +353,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: AlloyU256::ONE,
+                    out_amount: U256::ONE,
                     // Sanitized estimator will report a 1:1 estimate when wrapping native token.
                     gas: GAS_PER_WETH_WRAP + SETTLEMENT_OVERHEAD,
                     solver: Default::default(),
@@ -421,7 +421,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(Estimate {
-                        out_amount: AlloyU256::ONE,
+                        out_amount: U256::ONE,
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
@@ -437,7 +437,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(Estimate {
-                        out_amount: AlloyU256::ONE,
+                        out_amount: U256::ONE,
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
@@ -453,7 +453,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(Estimate {
-                        out_amount: AlloyU256::ONE,
+                        out_amount: U256::ONE,
                         gas: u64::MAX,
                         solver: Default::default(),
                         verified: false,
@@ -469,7 +469,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(Estimate {
-                        out_amount: AlloyU256::ONE,
+                        out_amount: U256::ONE,
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
@@ -512,7 +512,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: AlloyU256::ONE,
+                    out_amount: U256::ONE,
                     gas: 100,
                     solver: Default::default(),
                     verified: true,
@@ -530,7 +530,7 @@ mod tests {
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
-                    out_amount: AlloyU256::ONE,
+                    out_amount: U256::ONE,
                     gas: 100,
                     solver: Default::default(),
                     verified: true,
@@ -555,7 +555,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(Estimate {
-                        out_amount: AlloyU256::ONE,
+                        out_amount: U256::ONE,
                         gas: 100,
                         solver: Default::default(),
                         verified: true,
@@ -571,7 +571,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(Estimate {
-                        out_amount: AlloyU256::ONE,
+                        out_amount: U256::ONE,
                         gas: 100,
                         solver: Default::default(),
                         verified: true,

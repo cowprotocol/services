@@ -33,7 +33,7 @@ fn invalid_value_unable_to_parse_url<E: serde::de::Error>(err: ParseError) -> E 
 
 /// Deserializes an URL from *either* an environment variable — with the format
 /// `%<ENV_VAR_NAME>` — or interpreting a String as a URL.
-pub(crate) fn deserialize_url_from_env<'de, D>(deserializer: D) -> Result<Url, D::Error>
+pub fn deserialize_url_from_env<'de, D>(deserializer: D) -> Result<Url, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -51,9 +51,9 @@ where
     Url::from_str(&raw_url).map_err(invalid_value_unable_to_parse_url)
 }
 
-/// Deserializes an optional String from *either* an environment variable —
+/// Deserializes a String from *either* an environment variable —
 /// with the format `%<ENV_VAR_NAME>` — or directly from the field value.
-pub(crate) fn deserialize_string_from_env<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub fn deserialize_string_from_env<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -69,10 +69,9 @@ where
 }
 
 /// Deserializes an optional String from *either* an environment variable —
-/// with the format `%<ENV_VAR_NAME>` — or directly from the field value. A
-/// missing env var is treated as `None` rather than an error, matching
-/// [`deserialize_optional_url_from_env`].
-pub(crate) fn deserialize_optional_string_from_env<'de, D>(
+/// with the format `%<ENV_VAR_NAME>` — or directly from the field value.
+/// Missing field or missing env var (when referenced) → `None`.
+pub fn deserialize_optional_string_from_env<'de, D>(
     deserializer: D,
 ) -> Result<Option<String>, D::Error>
 where
@@ -82,7 +81,6 @@ where
         return Ok(None);
     };
     match value.strip_prefix(ENV_VAR_PREFIX) {
-        // In the case of optional variables, we assume a missing env var as empty
         Some(env_var_name) => Ok(std::env::var(env_var_name).ok()),
         None => Ok(Some(value)),
     }
@@ -90,9 +88,7 @@ where
 
 /// Deserializes an optional URL from *either* an environment variable — with
 /// the format `%<ENV_VAR_NAME>` — or interpreting a String as a URL.
-pub(crate) fn deserialize_optional_url_from_env<'de, D>(
-    deserializer: D,
-) -> Result<Option<Url>, D::Error>
+pub fn deserialize_optional_url_from_env<'de, D>(deserializer: D) -> Result<Option<Url>, D::Error>
 where
     D: Deserializer<'de>,
 {

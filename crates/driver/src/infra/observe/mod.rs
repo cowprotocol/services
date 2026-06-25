@@ -4,7 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::{Ethereum, Mempool, solver::Timeouts},
+    super::{Mempool, solver::Timeouts},
     crate::{
         boundary,
         domain::{
@@ -22,8 +22,9 @@ use {
         infra::solver,
         util::http,
     },
-    eth_domain_types::{self as eth, Gas},
+    eth_domain_types as eth,
     ethrpc::block_stream::BlockInfo,
+    observe::tracing::lazy::Lazy,
     std::{
         collections::{BTreeMap, HashSet},
         time::Duration,
@@ -332,7 +333,8 @@ pub fn mounting_solver(solver: &solver::Name, path: &str) {
 }
 
 /// Observe that a request is about to be sent to the solver.
-pub fn solver_request(endpoint: &Url, req: &str) {
+pub fn solver_request(endpoint: &Url, req: impl AsRef<[u8]>) {
+    let req = Lazy(|| String::from_utf8_lossy(req.as_ref()));
     tracing::trace!(%endpoint, %req, "sending request to solver");
 }
 
@@ -443,25 +445,9 @@ pub fn sending_solve_request(solver: &str, remaining_time: Duration, is_quote_re
         .observe(remaining_time.as_secs_f64());
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum OrderExcludedFromAuctionReason {
     CouldNotFetchBalance,
     InsufficientBalance,
     OrderWithZeroAmountRemaining,
-}
-
-pub fn order_excluded_from_auction(
-    order: &competition::Order,
-    reason: OrderExcludedFromAuctionReason,
-) {
-    tracing::trace!(uid=?order.uid, ?reason, "order excluded from auction");
-}
-
-/// Observe that a settlement was simulated
-pub fn simulated(eth: &Ethereum, tx: &eth::Tx, gas: &Result<Gas, simulator::Error>) {
-    let block: eth::BlockNo = eth.current_block().borrow().number.into();
-    match gas {
-        Ok(gas) => tracing::debug!(block = ?block, gas = ?gas.0, ?tx, "simulated settlement"),
-        Err(err) => tracing::debug!(block = ?block, ?err, "simulated settlement"),
-    }
 }

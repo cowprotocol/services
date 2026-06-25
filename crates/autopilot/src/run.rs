@@ -512,6 +512,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 .map(Into::into)
                 .collect(),
             config.shared.enable_sell_equals_buy_volume_fee,
+            *eth.contracts().weth().address(),
         ),
         cow_amm_registry.clone(),
         config.native_price_timeout,
@@ -753,7 +754,7 @@ async fn shadow_mode(config: Configuration) -> ! {
         orderbook,
         drivers,
         trusted_tokens,
-        config.run_loop.solve_deadline,
+        config.run_loop.min_solve_time,
         config.run_loop.compress_solve_request,
         liveness.clone(),
         current_block,

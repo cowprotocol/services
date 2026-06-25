@@ -34,13 +34,14 @@ pub struct Request {
     auction_id: i64,
     body: bytes::Bytes,
     content_encoding: Option<HeaderValue>,
+    deadline: chrono::DateTime<chrono::Utc>,
 }
 
 impl Request {
     pub async fn new(
         auction: &domain::Auction,
         trusted_tokens: &HashSet<Address>,
-        time_limit: Duration,
+        deadline: chrono::DateTime<chrono::Utc>,
         compress: bool,
     ) -> Self {
         let _timer =
@@ -68,7 +69,7 @@ impl Request {
                 }))
                 .unique_by(|token| token.address)
                 .collect(),
-            deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
+            deadline,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
         };
         let auction_id = auction.id;
@@ -113,11 +114,19 @@ impl Request {
             body,
             auction_id,
             content_encoding,
+            deadline,
         }
     }
 
     pub fn body_size(&self) -> usize {
         self.body.len()
+    }
+
+    pub fn time_until_deadline(&self) -> Duration {
+        self.deadline
+            .signed_duration_since(Utc::now())
+            .to_std()
+            .unwrap_or(Duration::ZERO)
     }
 }
 
@@ -154,9 +163,14 @@ impl InjectIntoHttpRequest for Request {
 }
 
 impl Response {
-    pub fn into_domain(
-        self,
-    ) -> Vec<Result<domain::competition::Solution, domain::competition::SolutionError>> {
+    pub fn into_domain(self) -> Vec<domain::competition::Solution> {
+        if self
+            .solutions
+            .iter()
+            .any(|solution| !solution.clearing_prices.is_empty())
+        {
+            tracing::debug!("driver sent deprecated clearingPrices field");
+        }
         self.solutions
             .into_iter()
             .map(Solution::into_domain)
@@ -187,23 +201,15 @@ pub struct Token {
 }
 
 impl Solution {
-    pub fn into_domain(
-        self,
-    ) -> Result<domain::competition::Solution, domain::competition::SolutionError> {
-        Ok(domain::competition::Solution::new(
+    pub fn into_domain(self) -> domain::competition::Solution {
+        domain::competition::Solution::new(
             self.solution_id,
             self.submission_address,
             self.orders
                 .into_iter()
                 .map(|(o, amounts)| (o.into(), amounts.into_domain()))
                 .collect(),
-            self.clearing_prices
-                .into_iter()
-                .map(|(token, price)| {
-                    domain::auction::Price::try_new(price.into()).map(|price| (token.into(), price))
-                })
-                .collect::<Result<_, _>>()?,
-        ))
+        )
     }
 }
 
@@ -271,6 +277,11 @@ pub struct Solution {
     /// Address used by the driver to submit the settlement onchain.
     pub submission_address: Address,
     pub orders: HashMap<boundary::OrderUid, TradedOrder>,
+    /// Deprecated: uniform clearing prices are no longer used by the
+    /// autopilot. Kept here purely so we can detect and log drivers that
+    /// still send them, in order to chase them down before the field is
+    /// removed entirely.
+    #[serde(default)]
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<Address, U256>,
     pub gas: Option<u64>,
@@ -308,6 +319,7 @@ mod tests {
             auction_id: 1,
             body: Bytes::from(json),
             content_encoding: None,
+            deadline: Utc::now(),
         }
     }
 
@@ -322,6 +334,7 @@ mod tests {
             auction_id: 1,
             body: Bytes::from(compressed),
             content_encoding: Some(HeaderValue::from_static("br")),
+            deadline: Utc::now(),
         }
     }
 

@@ -1,5 +1,6 @@
 pub mod encoding;
 pub mod ethereum;
+pub mod report;
 pub mod simulation_builder;
 pub mod tenderly;
 mod utils;
@@ -92,7 +93,7 @@ impl Simulator {
     }
 
     /// Simulate the gas needed by a transaction.
-    pub async fn gas(&self, tx: &eth::Tx) -> Result<eth::Gas, Error> {
+    pub async fn gas(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
         if let Some(gas) = self.disable_gas {
             return Ok(gas);
         }
@@ -103,14 +104,14 @@ impl Simulator {
                     .simulate(tx.clone(), block, tenderly::GenerateAccessList::No)
                     .measure("tenderly_simulate_gas")
                     .await
-                    .map_err(with(tx.clone(), block))?
+                    .map_err(with(tx, block))?
                     .gas
             }
             Inner::Ethereum => self
                 .eth
                 .estimate_gas(tx.clone())
                 .await
-                .map_err(with(tx.clone(), block))?,
+                .map_err(with(tx, block))?,
         })
     }
 }

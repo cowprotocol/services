@@ -163,6 +163,44 @@ impl BalanceFetching for Balances {
 
         Ok(())
     }
+
+    #[instrument(skip(self))]
+    async fn allowance(
+        &self,
+        owner: Address,
+        token: Address,
+        source: SellTokenSource,
+    ) -> Result<U256> {
+        let token = ERC20::Instance::new(token, self.web3.provider.clone());
+        let allowance = match source {
+            SellTokenSource::Erc20 => token.allowance(owner, self.vault_relayer()).call().await?,
+            SellTokenSource::External => {
+                let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
+                let approved = vault.hasApprovedRelayer(owner, self.vault_relayer());
+                let allowance = token.allowance(owner, self.vault());
+                let (approved, allowance) = futures::try_join!(
+                    approved.call().into_future(),
+                    allowance.call().into_future()
+                )?;
+                match approved {
+                    true => allowance,
+                    false => U256::ZERO,
+                }
+            }
+            SellTokenSource::Internal => {
+                let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
+                match vault
+                    .hasApprovedRelayer(owner, self.vault_relayer())
+                    .call()
+                    .await?
+                {
+                    true => U256::MAX, // internal approvals are always U256::MAX
+                    false => U256::ZERO,
+                }
+            }
+        };
+        Ok(allowance)
+    }
 }
 
 #[cfg(test)]

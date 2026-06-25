@@ -88,10 +88,19 @@ where
     }
 
     fn spawn_gc(cache: Cache<Request, Fut>, label: String) {
+        let weak = Arc::downgrade(&cache);
         tokio::task::spawn(async move {
             loop {
-                Self::collect_garbage(&cache, &label);
                 tokio::time::sleep(Duration::from_millis(500)).await;
+                if let Some(cache) = weak.upgrade() {
+                    Self::collect_garbage(&cache, &label);
+                } else {
+                    Metrics::get()
+                        .request_sharing_cached_items
+                        .with_label_values(&[label])
+                        .set(0);
+                    return;
+                }
             }
         });
     }
@@ -103,16 +112,6 @@ impl<A, B: Future> Drop for RequestSharing<A, B> {
             .request_sharing_cached_items
             .with_label_values(&[&self.request_label])
             .set(0);
-    }
-}
-
-/// Returns a shallow copy (without any pending requests)
-impl<Request, Fut: Future> Clone for RequestSharing<Request, Fut> {
-    fn clone(&self) -> Self {
-        Self {
-            in_flight: Default::default(),
-            request_label: self.request_label.clone(),
-        }
     }
 }
 
@@ -186,7 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn shares_request() {
-        // Manually create [`RequestSharing`] so we can have fine grained control
+        // Manually create [`RequestSharing`] so we can have fine-grain control
         // over the garbage collection.
         let cache: Cache<u64, BoxFuture<u64>> = Default::default();
         let label = "test".to_string();

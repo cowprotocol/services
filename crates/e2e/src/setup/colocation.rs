@@ -125,7 +125,7 @@ http-timeout = "10s"
                 r#"
 [[liquidity.uniswap-v3]]
 preset = "uniswap-v3"
-graph-url = "{subgraph}"
+indexer-config = {{ subgraph = {{ url = "{subgraph}" }} }}
 "#
             ),
         }

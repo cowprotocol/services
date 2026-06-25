@@ -2,22 +2,20 @@ use {
     anyhow::{Result, ensure},
     ethrpc::block_stream::{self, BlockInfo, CurrentBlockWatcher},
     futures::{Stream, StreamExt as _, future::join_all},
-    std::{sync::Arc, time::Duration},
+    std::{sync::Weak, time::Duration},
     tokio::time,
     tracing::Instrument as _,
 };
 
-/// Collects all service components requiring maintenance on each new block
+/// Collects all service components requiring maintenance on each new block.
 pub struct ServiceMaintenance {
-    maintainers: Vec<Arc<dyn Maintaining>>,
+    maintainers: Vec<Weak<dyn Maintaining>>,
     retry_delay: Duration,
     metrics: &'static Metrics,
 }
 
-const SERVICE_MAINTENANCE_NAME: &str = "ServiceMaintenance";
-
 impl ServiceMaintenance {
-    pub fn new(maintainers: Vec<Arc<dyn Maintaining>>) -> Self {
+    pub fn new(maintainers: Vec<Weak<dyn Maintaining>>) -> Self {
         Self {
             maintainers,
             retry_delay: Duration::from_secs(1),
@@ -25,15 +23,14 @@ impl ServiceMaintenance {
         }
     }
 
-    async fn run_maintenance_for_blocks(self, blocks: impl Stream<Item = BlockInfo>) {
-        self.metrics
-            .runs
-            .with_label_values(&["success", SERVICE_MAINTENANCE_NAME])
-            .reset();
-        for maintainer in self.maintainers.iter().map(|maintainer| maintainer.name()) {
+    async fn run_maintenance_for_blocks(
+        mut self,
+        blocks: impl Stream<Item = BlockInfo>,
+    ) -> Result<()> {
+        for maintainer in self.maintainers.iter().filter_map(Weak::upgrade) {
             self.metrics
                 .runs
-                .with_label_values(&["failure", maintainer])
+                .with_label_values(&["failure", maintainer.name()])
                 .reset();
         }
 
@@ -51,6 +48,12 @@ impl ServiceMaintenance {
                 .unwrap_or(Some(block)),
             None => blocks.next().await,
         } {
+            self.maintainers.retain(|m| m.strong_count() > 0);
+            if self.maintainers.is_empty() {
+                tracing::debug!("no component needs maintenance anymore, terminating loop");
+                return Ok(());
+            }
+
             tracing::debug!(
                 ?block.number, ?block.hash,
                 "running maintenance",
@@ -77,42 +80,31 @@ impl ServiceMaintenance {
             self.metrics
                 .last_updated_block
                 .set(i64::try_from(block.number).unwrap_or(i64::MAX));
-            self.metrics
-                .runs
-                .with_label_values(&["success", self.name()])
-                .inc();
         }
+
+        Err(anyhow::anyhow!("block stream terminated unexpectedly"))
     }
 
-    pub async fn run_maintenance_on_new_block(
-        self,
-        current_block_stream: CurrentBlockWatcher,
-    ) -> ! {
+    pub async fn run_maintenance_on_new_block(self, current_block_stream: CurrentBlockWatcher) {
         self.run_maintenance_for_blocks(block_stream::into_stream(current_block_stream))
             .instrument(tracing::info_span!("service_maintenance"))
-            .await;
-        panic!("block stream unexpectedly dropped");
+            .await
+            .expect("maintenance task terminated with error");
     }
-}
 
-#[cfg_attr(test, mockall::automock)]
-#[async_trait::async_trait]
-pub trait Maintaining: Send + Sync {
-    async fn run_maintenance(&self) -> Result<()>;
-    fn name(&self) -> &str;
-}
-
-#[async_trait::async_trait]
-impl Maintaining for ServiceMaintenance {
     async fn run_maintenance(&self) -> Result<()> {
         let mut no_error = true;
-        for (i, result) in join_all(self.maintainers.iter().map(|m| m.run_maintenance()))
-            .await
-            .into_iter()
-            .enumerate()
+        for (result, maintainer) in join_all(
+            self.maintainers
+                .iter()
+                .filter_map(Weak::upgrade)
+                .map(|m| async move { (m.run_maintenance().await, m) }),
+        )
+        .await
+        .into_iter()
         {
             if let Err(err) = result {
-                let maintainer = self.maintainers[i].name();
+                let maintainer = maintainer.name();
                 tracing::warn!(
                     "Service Maintenance Error for maintainer {}: {:?}",
                     maintainer,
@@ -130,10 +122,13 @@ impl Maintaining for ServiceMaintenance {
         ensure!(no_error, "maintenance encounted one or more errors");
         Ok(())
     }
+}
 
-    fn name(&self) -> &str {
-        SERVICE_MAINTENANCE_NAME
-    }
+#[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
+pub trait Maintaining: Send + Sync {
+    async fn run_maintenance(&self) -> Result<()>;
+    fn name(&self) -> &str;
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -152,7 +147,7 @@ struct Metrics {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, anyhow::bail, futures::stream, mockall::Sequence};
+    use {super::*, anyhow::bail, futures::stream, mockall::Sequence, std::sync::Arc};
 
     #[tokio::test]
     async fn run_maintenance_no_early_exit_on_error() {
@@ -176,11 +171,15 @@ mod tests {
             .times(1)
             .returning(|| Ok(()));
 
+        let m1 = Arc::new(ok1_mock_maintenance) as Arc<dyn Maintaining>;
+        let m2 = Arc::new(err_mock_maintenance) as Arc<dyn Maintaining>;
+        let m3 = Arc::new(ok2_mock_maintenance) as Arc<dyn Maintaining>;
+
         let service_maintenance = ServiceMaintenance {
             maintainers: vec![
-                Arc::new(ok1_mock_maintenance),
-                Arc::new(err_mock_maintenance),
-                Arc::new(ok2_mock_maintenance),
+                Arc::downgrade(&m1),
+                Arc::downgrade(&m2),
+                Arc::downgrade(&m3),
             ],
             retry_delay: Duration::default(),
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
@@ -205,8 +204,9 @@ mod tests {
             .times(block_count)
             .returning(|| Ok(()));
 
+        let m1 = Arc::new(mock_maintenance) as Arc<dyn Maintaining>;
         let service_maintenance = ServiceMaintenance {
-            maintainers: vec![Arc::new(mock_maintenance)],
+            maintainers: vec![Arc::downgrade(&m1)],
             retry_delay: Duration::default(),
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
         };
@@ -214,7 +214,8 @@ mod tests {
         let block_stream = stream::repeat(BlockInfo::default()).take(block_count);
         service_maintenance
             .run_maintenance_for_blocks(block_stream)
-            .await;
+            .await
+            .unwrap_err();
     }
 
     #[tokio::test]
@@ -250,8 +251,9 @@ mod tests {
             .times(1)
             .in_sequence(&mut sequence);
 
+        let m1 = Arc::new(mock_maintenance) as Arc<dyn Maintaining>;
         let service_maintenance = ServiceMaintenance {
-            maintainers: vec![Arc::new(mock_maintenance)],
+            maintainers: vec![Arc::downgrade(&m1)],
             retry_delay: Duration::default(),
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
         };
@@ -265,6 +267,58 @@ mod tests {
         };
         service_maintenance
             .run_maintenance_for_blocks(block_stream)
-            .await;
+            .await
+            .unwrap_err();
+    }
+
+    /// Tests that the maintenance task terminates gracefully (`Ok(())`) when
+    /// all managed sub-tasks indicate they no longer need to run.
+    #[tokio::test]
+    async fn task_terminates_gracefully() {
+        let obs_config = observe::Config::default().with_env_filter("debug");
+        observe::tracing::init::initialize(&obs_config);
+
+        let mut m1 = MockMaintaining::new();
+        m1.expect_name().return_const("test".to_string());
+        m1.expect_run_maintenance().times(3).returning(|| Ok(()));
+
+        let mut m2 = MockMaintaining::new();
+        m2.expect_name().return_const("test".to_string());
+        m2.expect_run_maintenance().times(7).returning(|| Ok(()));
+
+        let m1 = Arc::new(m1) as Arc<dyn Maintaining>;
+        let m2 = Arc::new(m2) as Arc<dyn Maintaining>;
+        let service_maintenance = ServiceMaintenance {
+            maintainers: vec![Arc::downgrade(&m1), Arc::downgrade(&m2)],
+            retry_delay: Duration::default(),
+            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
+        };
+
+        let block_stream = async_stream::stream! {
+            let mut i = 0;
+            let mut m1 = Some(m1);
+            let mut m2 = Some(m2);
+            loop {
+                if i == 3 {
+                    // first drop m1 to verify that m2 keeps getting maintained while
+                    // m1 no longer runs
+                    m1.take();
+                }
+                if i == 7 {
+                    // after m2 also gets dropped the whole service_maintenance terminates
+                    // gracefully
+                    m2.take();
+                }
+
+                yield BlockInfo::default();
+
+                time::sleep(Duration::from_millis(10)).await;
+                i += 1;
+            }
+        };
+        service_maintenance
+            .run_maintenance_for_blocks(block_stream)
+            .await
+            .expect("task terminated with error despite all maintainers getting dropped");
     }
 }

@@ -68,6 +68,7 @@ pub struct QuoteHandler {
 }
 
 impl QuoteHandler {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         order_validator: Arc<dyn OrderValidating>,
         quoter: Arc<dyn OrderQuoting>,
@@ -75,12 +76,14 @@ impl QuoteHandler {
         volume_fee: Option<VolumeFeeConfig>,
         volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
         enable_sell_equals_buy_volume_fee: bool,
+        native_token: alloy::primitives::Address,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
     ) -> Self {
         let volume_fee_policy = VolumeFeePolicy::new(
             volume_fee_bucket_overrides,
             volume_fee.as_ref().and_then(|config| config.factor),
             enable_sell_equals_buy_volume_fee,
+            native_token,
         );
         Self {
             order_validator,
@@ -461,7 +464,8 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Selling 100 tokens, expecting to buy 100 tokens
         let quote = create_test_quote(100u64.eth(), 100u64.eth());
@@ -503,7 +507,8 @@ mod tests {
             // Effective date in the past to ensure fee is applied
             effective_from_timestamp: Some(past_timestamp),
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Buying 100 tokens, expecting to sell 100 tokens, with no network fee
         let quote = create_test_quote(100u64.eth(), 100u64.eth());
@@ -541,7 +546,8 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Buying 100 tokens, expecting to sell 100 tokens, with 5 token network fee
         let mut quote = create_test_quote(100u64.eth(), 100u64.eth());
@@ -584,7 +590,8 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Selling 100 tokens, expecting to buy 200 tokens (2:1 price ratio)
         let quote = create_test_quote(100u64.eth(), 200u64.eth());
@@ -628,7 +635,8 @@ mod tests {
                 factor: Some(volume_fee),
                 effective_from_timestamp: None,
             };
-            let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+            let volume_fee_policy =
+                VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
             let quote = create_test_quote(100u64.eth(), 100u64.eth());
             let side = OrderQuoteSide::Sell {
@@ -659,7 +667,8 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: Some(future_timestamp),
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Selling 100 tokens, expecting to buy 100 tokens
         let quote = create_test_quote(100u64.eth(), 100u64.eth());
@@ -693,7 +702,8 @@ mod tests {
             factor: Some(volume_fee),
             effective_from_timestamp: None,
         };
-        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
         // Large amount to make the sub-BPS fee visible
         let sell_amount = 1_000_000u64.eth();

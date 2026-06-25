@@ -860,9 +860,10 @@ pub struct QuoteMetadataV1 {
 mod tests {
     use {
         super::*,
-        Address,
-        U256 as AlloyU256,
-        alloy::eips::eip1559::Eip1559Estimation,
+        alloy::{
+            eips::eip1559::Eip1559Estimation,
+            primitives::{Address, U256 as AlloyU256},
+        },
         async_stream::stream,
         chrono::Utc,
         futures::{FutureExt, StreamExt},
@@ -946,7 +947,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::from(42),
+                        out_amount: U256::from(42),
                         gas: 3,
                         solver: Address::repeat_byte(1),
                         verified: false,
@@ -1086,7 +1087,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::from(42),
+                        out_amount: U256::from(42),
                         gas: 3,
                         solver: Address::repeat_byte(1),
                         verified: false,
@@ -1221,7 +1222,7 @@ mod tests {
             .returning(|_| {
                 async {
                     Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::from(100),
+                        out_amount: U256::from(100),
                         gas: 3,
                         solver: Address::repeat_byte(1),
                         verified: false,
@@ -1341,7 +1342,7 @@ mod tests {
         price_estimator.expect_estimate().returning(|_| {
             async {
                 Ok(price_estimation::Estimate {
-                    out_amount: AlloyU256::from(100),
+                    out_amount: U256::from(100),
                     gas: 200,
                     solver: Address::repeat_byte(1),
                     verified: false,
@@ -1414,7 +1415,7 @@ mod tests {
         price_estimator.expect_estimate().returning(|_| {
             async {
                 Ok(price_estimation::Estimate {
-                    out_amount: AlloyU256::from(100),
+                    out_amount: U256::from(100),
                     gas: 200,
                     solver: Address::repeat_byte(1),
                     verified: false,

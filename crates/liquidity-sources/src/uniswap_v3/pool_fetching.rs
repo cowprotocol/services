@@ -1,7 +1,8 @@
 use {
     super::{
+        V3PoolDataSource,
         event_fetching::{RecentEventsCache, UniswapV3PoolEventFetcher},
-        graph_api::{PoolData, Token, UniV3SubgraphClient},
+        graph_api::{PoolData, Token},
     },
     crate::{recent_block_cache::Block, uniswap_v3::event_fetching::WithAddress},
     alloy::{
@@ -20,14 +21,12 @@ use {
         maintenance::Maintaining,
     },
     model::TokenPair,
-    num::{BigInt, Zero, rational::Ratio},
+    num::rational::Ratio,
     number::serialization::HexOrDecimalU256,
-    reqwest::{Client, Url},
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
     std::{
         collections::{BTreeMap, HashMap, HashSet},
-        ops::Neg,
         sync::{Arc, Mutex},
     },
     tracing::instrument,
@@ -63,10 +62,10 @@ pub struct PoolState {
     #[serde_as(as = "HexOrDecimalU256")]
     pub liquidity: U256,
     #[serde_as(as = "DisplayFromStr")]
-    pub tick: BigInt,
+    pub tick: i32,
     // (tick_idx, liquidity_net)
     #[serde_as(as = "BTreeMap<DisplayFromStr, DisplayFromStr>")]
-    pub liquidity_net: BTreeMap<BigInt, BigInt>,
+    pub liquidity_net: BTreeMap<i32, i128>,
     #[serde(skip_serializing)]
     pub fee: Ratio<u32>,
 }
@@ -96,7 +95,7 @@ impl TryFrom<PoolData> for PoolInfo {
                     .context("no ticks")?
                     .into_iter()
                     .filter_map(|tick| {
-                        if tick.liquidity_net.is_zero() {
+                        if tick.liquidity_net == 0 {
                             None
                         } else {
                             Some((tick.tick_idx, tick.liquidity_net))
@@ -124,38 +123,61 @@ struct PoolsCheckpoint {
 }
 
 struct PoolsCheckpointHandler {
-    graph_api: UniV3SubgraphClient,
+    source: Arc<dyn V3PoolDataSource>,
     /// Address is pool id while TokenPair is a pair or tokens for each pool.
-    pools_by_token_pair: HashMap<TokenPair, HashSet<Address>>,
+    pools_by_token_pair: HashMap<TokenPair, Vec<Address>>,
     /// Pools state on a specific block number in history considered reorg safe
     pools_checkpoint: Mutex<PoolsCheckpoint>,
 }
 
 impl PoolsCheckpointHandler {
     /// Fetches the list of existing UniswapV3 pools and their metadata (without
-    /// state/ticks). Then fetches state/ticks for the most deepest pools
-    /// (subset of all existing pools)
+    /// state/ticks). Then fetches state/ticks for the deepest pools
+    /// (subset of all existing pools).
+    ///
+    /// `target_block` is the chain's finalized block so it matches the
+    /// pool-indexer source's anchor; both calls then return data at or
+    /// after that block. The event-replay anchor is taken from the *tick*
+    /// call's response (the later of the two). Otherwise there's a race
+    /// between the pool-list fetch and the tick fetch: an event landing
+    /// between them would show up in `ticks` but not `pools`, and replaying
+    /// it would apply that event twice.
     pub async fn new(
-        subgraph_url: &Url,
-        client: Client,
+        source: Arc<dyn V3PoolDataSource>,
+        block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize_cache: usize,
-        max_pools_per_tick_query: usize,
     ) -> Result<Self> {
-        let graph_api =
-            UniV3SubgraphClient::from_subgraph_url(subgraph_url, client, max_pools_per_tick_query)
-                .await?;
-        let mut registered_pools = graph_api.get_registered_pools().await?;
+        let target_block = block_retriever
+            .finalized_block()
+            .await
+            .context("read finalized block for snapshot target_block")?
+            .number;
+        let mut registered_pools = source.get_registered_pools(target_block).await?;
         tracing::debug!(
-            block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),
+            target_block,
+            block = %registered_pools.fetched_block_number,
+            pools = %registered_pools.pools.len(),
             "initialized registered pools",
         );
 
-        let mut pools_by_token_pair: HashMap<TokenPair, HashSet<Address>> = HashMap::new();
-        for pool in &registered_pools.pools {
-            let pair =
-                TokenPair::new(pool.token0.id, pool.token1.id).context("cant create pair")?;
-            pools_by_token_pair.entry(pair).or_default().insert(pool.id);
-        }
+        let pools_by_token_pair = {
+            // we store addresses in a `Vec` instead of a `HashSet` to save on memory but
+            // we still ensure there are no duplicated pools.
+            let mut pools_by_token_pair: HashMap<TokenPair, Vec<Address>> = HashMap::new();
+            for pool in &registered_pools.pools {
+                let pair =
+                    TokenPair::new(pool.token0.id, pool.token1.id).context("cant create pair")?;
+                let pools = pools_by_token_pair.entry(pair).or_default();
+                if !pools.contains(&pool.id) {
+                    pools.push(pool.id);
+                }
+            }
+            pools_by_token_pair
+                .values_mut()
+                .for_each(|bucket| bucket.shrink_to_fit());
+            pools_by_token_pair.shrink_to_fit();
+            pools_by_token_pair
+        };
 
         // can't fetch the state of all pools in constructor for performance reasons,
         // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest
@@ -171,20 +193,28 @@ impl PoolsCheckpointHandler {
             .rev()
             .take(max_pools_to_initialize_cache)
             .collect::<Vec<_>>();
-        let pools = graph_api
+        let pools_with_ticks = source
             .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)
-            .await?
+            .await?;
+        let pools = pools_with_ticks
+            .pools
             .into_iter()
             .filter_map(|pool| Some((pool.id, Arc::new(pool.try_into().ok()?))))
             .collect::<HashMap<_, _>>();
+        // Anchor the checkpoint at the *tick* call's snapshot block, which is
+        // `>= registered_pools.fetched_block_number`. For pool-indexer-backed
+        // sources this is later than the `get_registered_pools` call; using it
+        // (not the earlier block) prevents the driver's event replay from
+        // double-applying Mint/Burn events that the indexer already reflected
+        // by the time the tick fetch returned.
         let pools_checkpoint = Mutex::new(PoolsCheckpoint {
             pools,
-            block_number: registered_pools.fetched_block_number,
+            block_number: pools_with_ticks.fetched_block_number,
             ..Default::default()
         });
 
         Ok(Self {
-            graph_api,
+            source,
             pools_by_token_pair,
             pools_checkpoint,
         })
@@ -242,19 +272,20 @@ impl PoolsCheckpointHandler {
 
         let pool_ids = missing_pools.into_iter().collect::<Vec<_>>();
         let start = std::time::Instant::now();
-        let pools = self
-            .graph_api
+        let pools_with_ticks = self
+            .source
             .get_pools_with_ticks_by_ids(&pool_ids, block_number)
             .await;
         tracing::debug!(
             requested_pools = pool_ids.len(),
             time = ?start.elapsed(),
-            request_successful = pools.is_ok(),
+            request_successful = pools_with_ticks.is_ok(),
             "fetched pool ticks"
         );
+        let pools_with_ticks = pools_with_ticks?;
 
         let mut checkpoint = self.pools_checkpoint.lock().unwrap();
-        for pool in pools? {
+        for pool in pools_with_ticks.pools {
             checkpoint.missing_pools.remove(&pool.id);
             checkpoint.pools.insert(pool.id, Arc::new(pool.try_into()?));
         }
@@ -282,21 +313,15 @@ pub struct UniswapV3PoolFetcher {
 
 impl UniswapV3PoolFetcher {
     pub async fn new(
-        subgraph_url: &Url,
+        source: Arc<dyn V3PoolDataSource>,
         web3: Web3,
-        client: Client,
         block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize: usize,
-        max_pools_per_tick_query: usize,
     ) -> Result<Self> {
         let web3 = web3.labeled("uniswapV3");
-        let checkpoint = PoolsCheckpointHandler::new(
-            subgraph_url,
-            client,
-            max_pools_to_initialize,
-            max_pools_per_tick_query,
-        )
-        .await?;
+        let checkpoint =
+            PoolsCheckpointHandler::new(source, block_retriever.clone(), max_pools_to_initialize)
+                .await?;
 
         let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
         let init_block = block_retriever.block(init_block).await?;
@@ -421,8 +446,17 @@ fn append_events(
             let pool = &mut pool.state;
             match event.inner() {
                 UniswapV3PoolEvents::Burn(burn) => {
-                    let tick_lower = BigInt::from(burn.tickLower.as_i32());
-                    let tick_upper = BigInt::from(burn.tickUpper.as_i32());
+                    let tick_lower = burn.tickLower.as_i32();
+                    let tick_upper = burn.tickUpper.as_i32();
+                    // `amount` is the position's `uint128` liquidity and always fits
+                    // `i128`: it's capped on-chain by `maxLiquidityPerTick` (~1.9e32) which
+                    // is far below `i128::MAX` (~1.7e38), so this branch is unreachable for
+                    // any valid event. We skip the whole event (not just the tick deltas)
+                    // so `liquidity` and `liquidity_net` can't desync.
+                    let Ok(amount) = i128::try_from(burn.amount) else {
+                        tracing::warn!(amount = %burn.amount, "burn liquidity exceeds i128; skipping event");
+                        continue;
+                    };
 
                     // liquidity tracks the liquidity on recent tick,
                     // only need to update it if the new position includes the recent tick.
@@ -430,28 +464,19 @@ fn append_events(
                         pool.liquidity -= U256::from(burn.amount);
                     }
 
-                    pool.liquidity_net
-                        .entry(tick_lower.clone())
-                        .and_modify(|tick| *tick -= BigInt::from(burn.amount))
-                        .or_insert_with(|| BigInt::from(burn.amount).neg());
-
-                    pool.liquidity_net
-                        .entry(tick_upper.clone())
-                        .and_modify(|tick| *tick += BigInt::from(burn.amount))
-                        .or_insert_with(|| BigInt::from(burn.amount));
-
-                    // remove 0 entries to save bandwidth
-                    if pool.liquidity_net[&tick_lower].is_zero() {
-                        pool.liquidity_net.remove(&tick_lower);
-                    }
-
-                    if pool.liquidity_net[&tick_upper].is_zero() {
-                        pool.liquidity_net.remove(&tick_upper);
-                    }
+                    update_liquidity_net(&mut pool.liquidity_net, tick_lower, -amount);
+                    update_liquidity_net(&mut pool.liquidity_net, tick_upper, amount);
                 }
                 UniswapV3PoolEvents::Mint(mint) => {
-                    let tick_lower = BigInt::from(mint.tickLower.as_i32());
-                    let tick_upper = BigInt::from(mint.tickUpper.as_i32());
+                    let tick_lower = mint.tickLower.as_i32();
+                    let tick_upper = mint.tickUpper.as_i32();
+                    // Unreachable for the same reason as the `Burn` arm (per-position
+                    // liquidity is capped well below `i128::MAX`); skip the whole event to
+                    // avoid desyncing `liquidity` from `liquidity_net`.
+                    let Ok(amount) = i128::try_from(mint.amount) else {
+                        tracing::warn!(amount = %mint.amount, "mint liquidity exceeds i128; skipping event");
+                        continue;
+                    };
 
                     // liquidity tracks the liquidity on recent tick,
                     // only need to update it if the new position includes the recent tick.
@@ -459,33 +484,29 @@ fn append_events(
                         pool.liquidity += U256::from(mint.amount);
                     }
 
-                    pool.liquidity_net
-                        .entry(tick_lower.clone())
-                        .and_modify(|tick| *tick += BigInt::from(mint.amount))
-                        .or_insert_with(|| BigInt::from(mint.amount));
-
-                    pool.liquidity_net
-                        .entry(tick_upper.clone())
-                        .and_modify(|tick| *tick -= BigInt::from(mint.amount))
-                        .or_insert_with(|| BigInt::from(mint.amount).neg());
-
-                    // remove 0 entries to save bandwidth
-                    if pool.liquidity_net[&tick_lower].is_zero() {
-                        pool.liquidity_net.remove(&tick_lower);
-                    }
-
-                    if pool.liquidity_net[&tick_upper].is_zero() {
-                        pool.liquidity_net.remove(&tick_upper);
-                    }
+                    update_liquidity_net(&mut pool.liquidity_net, tick_lower, amount);
+                    update_liquidity_net(&mut pool.liquidity_net, tick_upper, -amount);
                 }
                 UniswapV3PoolEvents::Swap(swap) => {
-                    pool.tick = BigInt::from(swap.tick.as_i32());
+                    pool.tick = swap.tick.as_i32();
                     pool.liquidity = U256::from(swap.liquidity);
                     pool.sqrt_price = U256::from(swap.sqrtPriceX96);
                 }
                 _ => continue,
             }
         }
+    }
+}
+
+/// Applies a signed `delta` to a tick's net liquidity, dropping the entry when
+/// it cancels out to zero. The accumulated value mirrors the pool's on-chain
+/// `int128` `liquidityNet`, so a real overflow is impossible; `saturating_add`
+/// just keeps us panic-free against malformed event data.
+fn update_liquidity_net(liquidity_net: &mut BTreeMap<i32, i128>, tick: i32, delta: i128) {
+    let entry = liquidity_net.entry(tick).or_insert(0);
+    *entry = entry.saturating_add(delta);
+    if *entry == 0 {
+        liquidity_net.remove(&tick);
     }
 }
 
@@ -521,7 +542,6 @@ mod tests {
         alloy::primitives::{U160, address, aliases::I24},
         contracts::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
         serde_json::json,
-        std::str::FromStr,
         testlib::assert_json_matches,
     };
 
@@ -570,20 +590,11 @@ mod tests {
             state: PoolState {
                 sqrt_price: U256::from(792216481398733702759960397_u128),
                 liquidity: U256::from(303015134493562686441_u128),
-                tick: BigInt::from_str("-92110").unwrap(),
+                tick: -92110,
                 liquidity_net: BTreeMap::from([
-                    (
-                        BigInt::from_str("-122070").unwrap(),
-                        BigInt::from_str("104713649338178916454").unwrap(),
-                    ),
-                    (
-                        BigInt::from_str("-77030").unwrap(),
-                        BigInt::from_str("1182024318125220460617").unwrap(),
-                    ),
-                    (
-                        BigInt::from_str("67260").unwrap(),
-                        BigInt::from_str("5812623076452005012674").unwrap(),
-                    ),
+                    (-122070, 104713649338178916454i128),
+                    (-77030, 1182024318125220460617i128),
+                    (67260, 5812623076452005012674i128),
                 ]),
                 fee: Ratio::new(10_000u32, 1_000_000u32),
             },
@@ -628,7 +639,7 @@ mod tests {
         );
         append_events(&mut pools, vec![event]);
 
-        assert_eq!(pools[&address].state.tick, BigInt::from(3));
+        assert_eq!(pools[&address].state.tick, 3);
         assert_eq!(pools[&address].state.liquidity, U256::from(2));
         assert_eq!(pools[&address].state.sqrt_price, U256::from(1));
     }
@@ -657,10 +668,7 @@ mod tests {
         append_events(&mut pools, vec![event]);
         assert_eq!(
             pools[&address].state.liquidity_net,
-            BTreeMap::from([
-                (BigInt::from(100_000), BigInt::from(-12345)),
-                (BigInt::from(110_000), BigInt::from(12345))
-            ])
+            BTreeMap::from([(100_000, -12345i128), (110_000, 12345i128)])
         );
 
         // add second burn event
@@ -679,9 +687,9 @@ mod tests {
         assert_eq!(
             pools[&address].state.liquidity_net,
             BTreeMap::from([
-                (BigInt::from(100_000), BigInt::from(-12345)),
-                (BigInt::from(105_000), BigInt::from(-54321)),
-                (BigInt::from(110_000), BigInt::from(66666))
+                (100_000, -12345i128),
+                (105_000, -54321i128),
+                (110_000, 66666i128)
             ])
         );
     }
@@ -711,10 +719,7 @@ mod tests {
         append_events(&mut pools, vec![event]);
         assert_eq!(
             pools[&address].state.liquidity_net,
-            BTreeMap::from([
-                (BigInt::from(100_000), BigInt::from(12345)),
-                (BigInt::from(110_000), BigInt::from(-12345))
-            ])
+            BTreeMap::from([(100_000, 12345i128), (110_000, -12345i128)])
         );
 
         // add second burn event
@@ -734,9 +739,9 @@ mod tests {
         assert_eq!(
             pools[&address].state.liquidity_net,
             BTreeMap::from([
-                (BigInt::from(100_000), BigInt::from(12345)),
-                (BigInt::from(105_000), BigInt::from(54321)),
-                (BigInt::from(110_000), BigInt::from(-66666))
+                (100_000, 12345i128),
+                (105_000, 54321i128),
+                (110_000, -66666i128)
             ])
         );
     }

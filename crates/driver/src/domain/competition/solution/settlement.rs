@@ -15,11 +15,11 @@ use {
                 solution::{self, Interaction, Trade, error},
             },
         },
-        infra::{blockchain::Ethereum, observe, solver::ManageNativeToken},
+        infra::{blockchain::Ethereum, solver::ManageNativeToken},
     },
     alloy::primitives::U256,
     eth_domain_types as eth,
-    futures::future::try_join_all,
+    futures::{FutureExt, future::try_join_all},
     simulator::{self, Simulator},
     std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
@@ -68,12 +68,9 @@ struct SettlementTx {
 }
 
 impl SettlementTx {
-    fn with_access_list(self, access_list: eth::AccessList) -> Self {
-        Self {
-            internalized: self.internalized.set_access_list(access_list.clone()),
-            uninternalized: self.uninternalized.set_access_list(access_list),
-            ..self
-        }
+    fn set_access_list(&mut self, access_list: RequiredAccessList) {
+        self.internalized.set_access_list(access_list.0.clone());
+        self.uninternalized.set_access_list(access_list.0);
     }
 }
 
@@ -110,13 +107,18 @@ impl Settlement {
             return Err(Error::NonBufferableTokensUsed(untrusted_tokens));
         }
 
+        let (internalized, uninternalized) = futures::try_join!(
+            solution.approvals(eth, Internalization::Enable),
+            solution.approvals(eth, Internalization::Disable),
+        )?;
+
         // Encode the solution into a settlement.
         let tx = SettlementTx {
             internalized: encoding::tx(
                 auction,
                 &solution,
                 eth.contracts(),
-                solution.approvals(eth, Internalization::Enable).await?,
+                internalized,
                 Internalization::Enable,
                 solver_native_token,
             )?,
@@ -124,7 +126,7 @@ impl Settlement {
                 auction,
                 &solution,
                 eth.contracts(),
-                solution.approvals(eth, Internalization::Disable).await?,
+                uninternalized,
                 Internalization::Disable,
                 solver_native_token,
             )?,
@@ -138,21 +140,25 @@ impl Settlement {
     async fn new(
         auction_id: auction::Id,
         solution: Solution,
-        transaction: SettlementTx,
+        mut transaction: SettlementTx,
         eth: &Ethereum,
         simulator: &Simulator,
     ) -> Result<Self, Error> {
-        // The settlement contract will fail if the receiver is a smart contract.
-        // Because of this, if the receiver is a smart contract and we try to
-        // estimate the access list, the access list estimation will also fail.
+        // <address payable>.transfer(ETH) is allowed to use at most 2300 gas units (
+        // see <https://fravoll.github.io/solidity-patterns/secure_ether_transfer.html>).
+        // This is not enough when the receiver is a smart contract wallet which does
+        // non-trivial work in the `fallback` handler.
+        // To support sending native ETH to SC wallets we use access lists which
+        // effectively move the cost of accessing storage out of the critical section
+        // and into the tx's initial gas cost.
+        // While correctly built access lists provide a very minor net cost
+        // reduction an access list with unused storage slots increases the cost
+        // significantly. Since the risk is high and the reward is very low we only
+        // compute access list items which are absolutely necessary for the tx to work.
         //
-        // This failure happens because the Ethereum protocol sets a hard gas limit
-        // on transferring ETH into a smart contract, which some contracts exceed unless
-        // the access list is already specified.
-
-        // The solution is to do access list estimation in two steps: first, simulate
-        // moving 1 wei into every smart contract to get a partial access list, and then
-        // use that partial access list to calculate the final access list.
+        // We compute those access lists by using `eth_createAccessList` for a call
+        // sending 1 wei to each SC wallet that is supposed to get ETH during the
+        // settlement. Those lists get merged and added to the settlement transaction.
         //
         // `Some(..)` means at least one trade strictly requires an access list;
         // `None` means it is purely a gas optimization for this settlement, so a
@@ -169,99 +175,49 @@ impl Settlement {
         .reduce(|acc, list| acc.merge(list))
         .map(RequiredAccessList);
 
-        // Simulate the settlement and get the access list and gas.
-        let (access_list, gas) = Self::simulate(
-            transaction.internalized.clone(),
-            partial_access_list.as_ref(),
-            eth,
-            simulator,
-        )
-        .await?;
-        let price = eth.gas_price().await?;
-        let gas = Gas::new(gas, eth.block_gas_limit(), eth.tx_gas_limit())?;
+        if let Some(access_list) = partial_access_list {
+            transaction.set_access_list(access_list.clone());
+        }
 
-        // Ensure that the solver has sufficient balance for the settlement to be mined
-        // even if the gas price keeps climbing during the tx submission.
-        let required_eth_balance =
-            // Converting to U256 first avoids possible overflow
-            gas.required_balance(U256::from(price.max_fee_per_gas).saturating_mul(U256::from(2)));
-        if eth.balance(solution.solver().address()).await? < required_eth_balance {
+        let gas_used_fut = simulator
+            .gas(transaction.internalized.clone())
+            .inspect(|res| {
+                tracing::debug!(
+                    block = eth.current_block().borrow().number,
+                    transaction = ?transaction.internalized,
+                    ?res,
+                    "simulated settlement"
+                )
+            });
+
+        // run everything concurrently to minimize latency added through RPC roundtrips
+        let (gas_used, gas_price, solver_eth) = tokio::join!(
+            gas_used_fut,
+            eth.gas_price(),
+            eth.balance(solution.solver().address()),
+        );
+
+        // Ensure the solver can cover the gas the node reserves to admit the settlement
+        // tx, which is `gas_limit * max_fee_per_gas` at whichever price we submit with.
+        let gas = Gas::new(gas_used?, eth.block_gas_limit(), eth.tx_gas_limit())?;
+        let required_eth_balance = gas.required_balance(submission_max_fee_per_gas(
+            gas_price?.max_fee_per_gas,
+            solution
+                .gas_fee_override()
+                .map(|gas_override| gas_override.max_fee_per_gas),
+        ));
+        if solver_eth? < required_eth_balance {
             return Err(Error::SolverAccountInsufficientBalance(
                 required_eth_balance,
             ));
         }
 
-        // Is at least one interaction internalized?
-        if solution
-            .interactions()
-            .iter()
-            .any(|interaction| interaction.internalize())
-        {
-            // Some rules which are enforced by the settlement contract for non-internalized
-            // interactions are not enforced for internalized interactions (in order to save
-            // gas). However, publishing a settlement with interactions that violate
-            // these rules constitutes a punishable offense for the solver, even if
-            // the interactions are internalized. To ensure that this doesn't happen, check
-            // that the settlement simulates even when internalizations are disabled.
-            Self::simulate(
-                transaction.uninternalized.clone(),
-                partial_access_list.as_ref(),
-                eth,
-                simulator,
-            )
-            .await?;
-        }
-
         Ok(Self {
             auction_id,
             solution,
-            transaction: transaction.with_access_list(access_list),
+            transaction,
             gas,
         })
-    }
-
-    /// Simulate executing this settlement on the blockchain. This process
-    /// ensures that the settlement does not revert, and calculates the
-    /// access list and gas needed to settle the solution.
-    #[instrument(name = "simulate_settlement", skip_all)]
-    async fn simulate(
-        tx: eth::Tx,
-        partial_access_list: Option<&RequiredAccessList>,
-        eth: &Ethereum,
-        simulator: &Simulator,
-    ) -> Result<(eth::AccessList, eth::Gas), Error> {
-        // Add the partial access list to the settlement tx.
-        let tx = tx.set_access_list(
-            partial_access_list
-                .map(|required| required.0.clone())
-                .unwrap_or_default(),
-        );
-
-        // Simulate the full access list, passing the partial access
-        // list into the simulation. When no trade strictly requires the
-        // access-list workaround, a non-revert failure (transport,
-        // deserialization, ...) shouldn't abort the settlement: we can't
-        // reason about the outcome, but the on-chain tx would still succeed
-        // without the access list. Revert errors are propagated either way
-        // since they signal a real problem with the settlement.
-        let access_list = match simulator.access_list(&tx).await {
-            Ok(list) => list,
-            Err(simulator::Error::Other(err)) if partial_access_list.is_none() => {
-                tracing::warn!(
-                    ?err,
-                    "access list estimation failed, falling back to empty list"
-                );
-                eth::AccessList::default()
-            }
-            Err(err) => return Err(err.into()),
-        };
-        let tx = tx.set_access_list(access_list.clone());
-
-        // Simulate the settlement using the full access list and get the gas used.
-        let gas = simulator.gas(&tx).await;
-
-        observe::simulated(eth, &tx, &gas);
-        Ok((access_list, gas?))
     }
 
     /// The calldata for this settlement.
@@ -360,7 +316,10 @@ impl Settlement {
         acc
     }
 
-    /// The uniform price vector this settlement proposes
+    /// The uniform price vector this settlement proposes.
+    ///
+    /// Deprecated: only emitted on the `/solve` response so that autopilots
+    /// running the previous code can deserialise it during a rolling deploy.
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.solution
             .clearing_prices()
@@ -476,6 +435,20 @@ impl Gas {
     }
 }
 
+/// The `max_fee_per_gas` the settlement will be submitted with, used to size
+/// the solver's required balance. Mirrors `apply_gas_fee_override`: with an
+/// override we submit at that value, otherwise at the driver estimate doubled
+/// to absorb the gas price climbing during submission. The override is the
+/// solver's own choice, so we take it as is.
+fn submission_max_fee_per_gas(
+    driver_max_fee_per_gas: u128,
+    override_max_fee_per_gas: Option<u128>,
+) -> U256 {
+    override_max_fee_per_gas
+        .map(U256::from)
+        .unwrap_or_else(|| U256::from(driver_max_fee_per_gas).saturating_mul(U256::from(2)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -544,5 +517,15 @@ mod tests {
             solution::Error::GasLimitExceeded(_, limit) => assert_eq!(limit, gas(60_000_000)),
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn submission_fee_prefers_override_over_driver_estimate() {
+        // No override: driver estimate, doubled.
+        assert_eq!(submission_max_fee_per_gas(100, None), U256::from(200));
+        // Override above the doubled estimate: use the override.
+        assert_eq!(submission_max_fee_per_gas(100, Some(500)), U256::from(500));
+        // Override below the doubled estimate: still the override, not driver * 2.
+        assert_eq!(submission_max_fee_per_gas(100, Some(50)), U256::from(50));
     }
 }
