@@ -42,10 +42,7 @@ pub struct CompetitionEstimator<T> {
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
-    pub fn new(
-        stages: Vec<PriceEstimationStage<T>>,
-        quote_context_mode: QuoteContextMode,
-    ) -> Self {
+    pub fn new(stages: Vec<PriceEstimationStage<T>>, quote_context_mode: QuoteContextMode) -> Self {
         assert!(!stages.is_empty());
         assert!(stages.iter().all(|stage| !stage.is_empty()));
         Self {

@@ -144,8 +144,7 @@ enum QuoteContext {
     /// would be lost due to paying for the gas cost.
     /// If an extremely complex trade route would only result
     /// in slightly more `out_amount` than a simple trade route the simple
-    /// trade route would report a higher `effective_out_amount`. This is also
-    /// referred to as "bang-for-buck" and what matters most to traders.
+    /// trade route would report a higher effective out_amount.
     GasCost {
         native_price: f64,
         gas_price: f64,
@@ -165,13 +164,13 @@ impl QuoteContext {
             } => {
                 let eth_out = f64::from(estimate.out_amount) * native_price;
                 let fees = estimate.gas as f64 * gas_price;
-                let effective_eth_out = match kind {
+                let effective_out = match kind {
                     // High fees mean receiving less `buy_token` from your sell order.
                     OrderKind::Sell => eth_out - fees,
                     // High fees mean paying more `sell_token` for your buy order.
                     OrderKind::Buy => eth_out + fees,
                 };
-                match effective_eth_out {
+                match effective_out {
                     // converts `NaN` and `(-∞, 0]` to `0`
                     v if v.is_sign_negative() || v.is_nan() => U256::ZERO,
                     // Previous case already covered negative infinity
@@ -331,11 +330,11 @@ mod tests {
         Err(err)
     }
 
-    /// Builds a `BestBangForBuck` setup where every token is estimated
+    /// Builds a `GasCost` setup where every token is estimated
     /// to be half as valuable as ETH and the gas price is 2.
     /// That effectively means every unit of `gas` in an estimate worth
     /// 4 units of `out_amount`.
-    fn bang_for_buck_ranking() -> QuoteContextMode {
+    fn gas_cost_mode() -> QuoteContextMode {
         // Make `out_token` half as valuable as `ETH` and set gas price to 2.
         // That means 1 unit of `gas` is equal to 4 units of `out_token`.
         let mut native = MockNativePriceEstimating::new();
@@ -352,10 +351,10 @@ mod tests {
         }
     }
 
-    /// Returns the best estimate with respect to the provided ranking and order
-    /// kind.
+    /// Returns the best estimate with respect to the provided quote context
+    /// mode and order kind.
     async fn best_response(
-        ranking: QuoteContextMode,
+        quote_context_mode: QuoteContextMode,
         kind: OrderKind,
         estimates: Vec<PriceEstimateResult>,
         verification: QuoteVerificationMode,
@@ -377,7 +376,7 @@ mod tests {
                     .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
                     .collect(),
             ],
-            ranking.clone(),
+            quote_context_mode.clone(),
         )
         .with_verification(verification);
 
@@ -389,15 +388,15 @@ mod tests {
             .await
     }
 
-    /// Verifies that `PriceRanking::BestBangForBuck` correctly adjusts
+    /// Verifies that `QuoteContextMode::GasCost` correctly adjusts
     /// `out_amount` of quotes based on the `gas` used for the quote. E.g.
     /// if a quote requires a significantly more complex execution but does
     /// not provide a significantly better `out_amount` than a simpler quote
     /// the simpler quote will be preferred.
     #[tokio::test]
-    async fn best_bang_for_buck_adjusts_for_complexity() {
+    async fn gas_cost_adjusts_for_complexity() {
         let best = best_response(
-            bang_for_buck_ranking(),
+            gas_cost_mode(),
             OrderKind::Sell,
             vec![
                 // User effectively receives `100_000` `buy_token`.
@@ -411,7 +410,7 @@ mod tests {
         assert_eq!(best, price(104_000, 1_000));
 
         let best = best_response(
-            bang_for_buck_ranking(),
+            gas_cost_mode(),
             OrderKind::Buy,
             vec![
                 // User effectively pays `100_000` `sell_token`.
@@ -432,7 +431,7 @@ mod tests {
     #[tokio::test]
     async fn discards_low_gas_cost_estimates() {
         let best = best_response(
-            bang_for_buck_ranking(),
+            gas_cost_mode(),
             OrderKind::Sell,
             vec![
                 // User effectively receives `100_000` `buy_token`.
@@ -449,7 +448,7 @@ mod tests {
         assert_eq!(best, price(104_000, 1_000));
 
         let best = best_response(
-            bang_for_buck_ranking(),
+            gas_cost_mode(),
             OrderKind::Buy,
             vec![
                 // User effectively pays `100_000` `sell_token`.

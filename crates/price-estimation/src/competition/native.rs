@@ -99,10 +99,8 @@ mod tests {
     type NativePriceFuture =
         Pin<Box<dyn Future<Output = Result<f64, PriceEstimationError>> + Send>>;
 
-    /// Returns the best native estimate with respect to the provided ranking
-    /// and order kind.
     async fn best_response(
-        ranking: QuoteContextMode,
+        quote_context_mode: QuoteContextMode,
         estimates: Vec<NativePriceFuture>,
     ) -> Result<f64, PriceEstimationError> {
         fn estimator(estimate: NativePriceFuture) -> Arc<dyn NativePriceEstimating> {
@@ -123,7 +121,7 @@ mod tests {
                         .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
                         .collect(),
                 ],
-                ranking.clone(),
+                quote_context_mode.clone(),
             );
 
         priority

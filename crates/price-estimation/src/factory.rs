@@ -358,11 +358,9 @@ impl<'a> PriceEstimatorFactory<'a> {
         gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
-        let competition_estimator = CompetitionEstimator::new(
-            vec![estimators],
-            QuoteContextMode::GasCost { native, gas },
-        )
-        .with_verification(self.args.quote_verification);
+        let competition_estimator =
+            CompetitionEstimator::new(vec![estimators], QuoteContextMode::GasCost { native, gas })
+                .with_verification(self.args.quote_verification);
         Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
     }
 
@@ -403,10 +401,9 @@ impl<'a> PriceEstimatorFactory<'a> {
             estimators.push(stages);
         }
 
-        let competition_estimator =
-            CompetitionEstimator::new(estimators, QuoteContextMode::None)
-                .with_verification(self.args.quote_verification)
-                .with_early_return(results_required);
+        let competition_estimator = CompetitionEstimator::new(estimators, QuoteContextMode::None)
+            .with_verification(self.args.quote_verification)
+            .with_early_return(results_required);
         Ok(Box::new(competition_estimator))
     }
 
