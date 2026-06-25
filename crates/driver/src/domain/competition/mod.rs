@@ -1213,9 +1213,9 @@ mod submitter_pool_tests {
     }
 
     /// An account benched via [`SubmitterGuard::quarantine`] must not be handed
-    /// back out while it cools down, whereas a normally-released account returns
-    /// to the pool immediately. This is the core of "stop assigning settlements
-    /// to a stuck lane until it recovers" from issue #4541.
+    /// back out while it cools down, whereas a normally-released account
+    /// returns to the pool immediately. This is the core of "stop assigning
+    /// settlements to a stuck lane until it recovers" from issue #4541.
     #[tokio::test]
     async fn quarantined_account_is_withheld_from_the_pool() {
         let pool = SubmitterPool::new(
@@ -1257,8 +1257,8 @@ mod submitter_pool_tests {
         drop(reacquired);
     }
 
-    /// The direct solver EOA is the primary submitter and must never be benched,
-    /// even if it is the account that failed.
+    /// The direct solver EOA is the primary submitter and must never be
+    /// benched, even if it is the account that failed.
     #[test]
     fn direct_slot_is_never_quarantined() {
         let permit = Arc::new(tokio::sync::Semaphore::new(1))
