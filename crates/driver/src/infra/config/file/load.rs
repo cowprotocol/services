@@ -145,6 +145,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 )
                 .await,
                 max_solutions_to_propose: solver_config.max_solutions_to_propose,
+                post_processing_concurrency_limit: solver_config.post_processing_concurrency_limit,
             }
         }))
         .await,
@@ -224,35 +225,32 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::UniswapV3Config::Preset {
                         preset,
                         max_pools_to_initialize,
-                        graph_url,
+                        indexer_config,
                         reinit_interval,
-                        max_pools_per_tick_query,
-                    } => liquidity::config::UniswapV3 {
-                        max_pools_to_initialize,
-                        reinit_interval,
-                        ..match preset {
+                    } => {
+                        let pool_source = uniswap_v3_pool_source(indexer_config);
+                        let preset_defaults = match preset {
                             file::UniswapV3Preset::UniswapV3 => {
-                                liquidity::config::UniswapV3::uniswap_v3(
-                                    &graph_url,
-                                    chain,
-                                    max_pools_per_tick_query,
-                                )
+                                liquidity::config::UniswapV3::uniswap_v3(pool_source, chain)
                             }
                         }
-                        .expect("no Uniswap V3 preset for current network")
-                    },
+                        .expect("no Uniswap V3 preset for current network");
+                        liquidity::config::UniswapV3 {
+                            max_pools_to_initialize,
+                            reinit_interval,
+                            ..preset_defaults
+                        }
+                    }
                     file::UniswapV3Config::Manual {
                         router,
                         max_pools_to_initialize,
-                        graph_url,
+                        indexer_config,
                         reinit_interval,
-                        max_pools_per_tick_query,
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
-                        graph_url,
+                        pool_source: uniswap_v3_pool_source(indexer_config),
                         reinit_interval,
-                        max_pools_per_tick_query,
                     },
                 })
                 .collect(),
@@ -366,6 +364,31 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
         http: config.http,
+    }
+}
+
+fn uniswap_v3_pool_source(
+    indexer_config: file::IndexerConfig,
+) -> liquidity::config::UniswapV3PoolSource {
+    match indexer_config {
+        file::IndexerConfig::Subgraph {
+            url,
+            max_pools_per_tick_query,
+        } => {
+            liquidity::config::UniswapV3PoolSource::Subgraph(liquidity::config::UniswapV3Subgraph {
+                url,
+                max_pools_per_tick_query,
+            })
+        }
+        file::IndexerConfig::PoolIndexer {
+            url,
+            wait_until_timeout,
+        } => liquidity::config::UniswapV3PoolSource::PoolIndexer(
+            liquidity::config::UniswapV3PoolIndexer {
+                url,
+                wait_until_timeout,
+            },
+        ),
     }
 }
 
