@@ -104,7 +104,7 @@ rate-limit = { path = "crates/rate-limit" }
 refunder = { path = "crates/refunder" }
 regex = "1.10.4"
 request-sharing = { path = "crates/request-sharing" }
-reqwest = "0.13"
+reqwest = { version = "0.13", features = ["hickory-dns"] }
 rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 rust_decimal = { version = "1.35.0", default-features = false }
