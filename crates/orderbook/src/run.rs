@@ -382,27 +382,9 @@ pub async fn run(config: Configuration) {
         ))
     };
 
-    let streaming_price_estimator = price_estimator_factory
-        .streaming_price_estimator(
-            &config
-                .order_quoting
-                .price_estimation_drivers
-                .iter()
-                .map(
-                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
-                        name: price_estimator_driver.name.clone(),
-                        url: price_estimator_driver.url.clone(),
-                    },
-                )
-                .collect::<Vec<_>>(),
-            native_price_estimator.clone(),
-            gas_price_estimator.clone(),
-        )
-        .unwrap();
-
     let optimal_quoter = Arc::new(
         OrderQuoter::new(
-            price_estimator,
+            price_estimator.clone(),
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
             Arc::new(postgres_write.clone()),
@@ -423,7 +405,7 @@ pub async fn run(config: Configuration) {
             config.price_estimation.quote_timeout,
             config.price_estimation.max_quote_timeout,
         )
-        .with_streaming_estimator(streaming_price_estimator),
+        .with_streaming_estimator(price_estimator.clone()),
     );
 
     // Fast quoting is able to return early and if none of the produced quotes are

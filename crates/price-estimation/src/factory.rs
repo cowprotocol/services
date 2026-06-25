@@ -2,7 +2,6 @@ use {
     super::{
         NativePriceEstimator as NativePriceEstimatorSource,
         PriceEstimating,
-        StreamingPriceEstimating,
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -352,33 +351,15 @@ impl<'a> PriceEstimatorFactory<'a> {
         )
     }
 
-    pub fn price_estimator(
-        &mut self,
-        solvers: &[ExternalSolver],
-        native: Arc<dyn NativePriceEstimating>,
-        gas: Arc<dyn GasPriceEstimating>,
-    ) -> Result<Arc<dyn PriceEstimating>> {
-        let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
-        let competition_estimator = CompetitionEstimator::new(
-            vec![estimators],
-            PriceRanking::BestBangForBuck { native, gas },
-        )
-        .with_verification(self.args.quote_verification);
-        Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
-    }
-
-    /// Like [`Self::price_estimator`] but exposes each estimator's result as it
-    /// arrives instead of collapsing to the single best one.
-    pub fn streaming_price_estimator(
-        &mut self,
-        solvers: &[ExternalSolver],
-        native: Arc<dyn NativePriceEstimating>,
-        gas: Arc<dyn GasPriceEstimating>,
-    ) -> Result<Arc<dyn StreamingPriceEstimating>> {
-        // Sanitize each estimator individually so the competition can stream
-        // their results directly, instead of forwarding a stream through one
-        // outer sanitizer.
-        let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
+    /// Builds a [`CompetitionEstimator`] over the given estimators, with each
+    /// one wrapped in its own sanitizer. This per-estimator shape lets the
+    /// single competition serve both the one-shot and streaming quote paths,
+    /// instead of forwarding a stream through one outer sanitizer.
+    fn sanitized_competition(
+        &self,
+        estimators: Vec<(String, Arc<dyn PriceEstimating>)>,
+        ranking: PriceRanking,
+    ) -> CompetitionEstimator<Arc<dyn PriceEstimating>> {
         let estimators = estimators
             .into_iter()
             .map(|(name, estimator)| {
@@ -388,12 +369,20 @@ impl<'a> PriceEstimatorFactory<'a> {
                 )
             })
             .collect();
-        let competition_estimator = CompetitionEstimator::new(
-            vec![estimators],
-            PriceRanking::BestBangForBuck { native, gas },
-        )
-        .with_verification(self.args.quote_verification);
-        Ok(Arc::new(competition_estimator))
+        CompetitionEstimator::new(vec![estimators], ranking)
+    }
+
+    pub fn price_estimator(
+        &mut self,
+        solvers: &[ExternalSolver],
+        native: Arc<dyn NativePriceEstimating>,
+        gas: Arc<dyn GasPriceEstimating>,
+    ) -> Result<Arc<CompetitionEstimator<Arc<dyn PriceEstimating>>>> {
+        let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
+        Ok(Arc::new(
+            self.sanitized_competition(estimators, PriceRanking::BestBangForBuck { native, gas })
+                .with_verification(self.args.quote_verification),
+        ))
     }
 
     pub fn fast_price_estimator(
@@ -405,13 +394,8 @@ impl<'a> PriceEstimatorFactory<'a> {
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(solvers, |entry| &entry.fast)?;
         Ok(Arc::new(
-            self.sanitized(Arc::new(
-                CompetitionEstimator::new(
-                    vec![estimators],
-                    PriceRanking::BestBangForBuck { native, gas },
-                )
+            self.sanitized_competition(estimators, PriceRanking::BestBangForBuck { native, gas })
                 .with_early_return(fast_price_estimation_results_required),
-            )),
         ))
     }
 
