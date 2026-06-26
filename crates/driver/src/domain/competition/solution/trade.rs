@@ -10,7 +10,6 @@ use {
 
 /// A trade which executes an order as part of this solution.
 #[derive(Debug, Clone)]
-#[expect(clippy::large_enum_variant)]
 pub enum Trade {
     Fulfillment(Fulfillment),
     Jit(Jit),

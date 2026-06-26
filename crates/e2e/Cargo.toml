@@ -13,6 +13,7 @@ alloy = {
   workspace = true,
   default-features = false,
   features = [
+    "contract",
     "json-rpc",
     "provider-anvil-api",
     "provider-debug-api",
@@ -25,8 +26,8 @@ alloy = {
     "signer-mnemonic",
     "signers",
     "sol-types",
-    "transports"
-  ]
+    "transports",
+  ],
 }
 alloy-signer = { workspace = true, default-features = false, features = ["eip712"] }
 anyhow = { workspace = true }
@@ -53,6 +54,7 @@ model = { workspace = true, features = ["e2e"] }
 number = { workspace = true }
 observe = { workspace = true }
 orderbook = { workspace = true, features = ["e2e", "test-util"] }
+pool-indexer = { workspace = true }
 price-estimation = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "query"] }
 serde = { workspace = true }

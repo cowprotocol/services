@@ -9,7 +9,10 @@ use {
     },
     alloy::primitives::U256,
     eth_domain_types::{self as eth, GasPrice},
-    std::collections::{HashMap, HashSet},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     thiserror::Error,
 };
 
@@ -23,10 +26,10 @@ pub struct Auction {
     /// See the [`Self::orders`] method.
     pub(crate) orders: Vec<competition::Order>,
     /// The tokens that are used in the orders of this auction.
-    pub(crate) tokens: Tokens,
+    pub(crate) tokens: Arc<Tokens>,
     pub(crate) gas_price: eth::GasPrice,
     pub(crate) deadline: chrono::DateTime<chrono::Utc>,
-    pub(crate) surplus_capturing_jit_order_owners: HashSet<eth::Address>,
+    pub(crate) surplus_capturing_jit_order_owners: Arc<HashSet<eth::Address>>,
 }
 
 impl Auction {
@@ -68,10 +71,10 @@ impl Auction {
         Ok(Self {
             id,
             orders,
-            tokens,
+            tokens: Arc::new(tokens),
             gas_price,
             deadline,
-            surplus_capturing_jit_order_owners,
+            surplus_capturing_jit_order_owners: Arc::new(surplus_capturing_jit_order_owners),
         })
     }
 

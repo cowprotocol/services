@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
@@ -24,7 +24,7 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - uses: tombi-toml/setup-tombi@9880d1d3ba5e745d410c697366c513b337704388 # v1.0.11
+      - uses: tombi-toml/setup-tombi@df24458044353545055a12fe0d0742df9d3c5bea # v1.1.2
         with:
           version: "1.1.0"
       - run: |
@@ -41,7 +41,7 @@ jobs:
   trivy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -53,14 +53,14 @@ jobs:
           output: "trivy-results.sarif"
 
       - name: Upload Trivy scan results to GitHub Security
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: "trivy-results.sarif"
 
   cargo-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
@@ -71,7 +71,7 @@ jobs:
   nitpicker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - uses: ethanis/nitpicker@e891622bbd9a6ec97a473bcfacfca7332caf2862 # v1.7
@@ -83,7 +83,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
@@ -102,12 +102,12 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - uses: taiki-e/install-action@d9be7d8cda89035c9c843f78bd44d4f72d8403d4 # 2.79.7
+      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: nextest
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
@@ -125,7 +125,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
@@ -133,7 +133,7 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p orderbook -p database -p autopilot --tests &
-      - uses: taiki-e/install-action@d9be7d8cda89035c9c843f78bd44d4f72d8403d4 # 2.79.7
+      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: nextest
       - run: docker compose -f docker-compose.yaml up -d db
@@ -153,7 +153,7 @@ jobs:
       CARGO_TERM_COLOR: always
       TOML_TRACE_ERROR: 1
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
@@ -162,7 +162,7 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p e2e --tests &
-      - uses: taiki-e/install-action@d9be7d8cda89035c9c843f78bd44d4f72d8403d4 # 2.79.7
+      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: nextest
       - run: docker compose -f docker-compose.yaml up -d db
@@ -188,7 +188,7 @@ jobs:
       FORK_URL_GNOSIS: ${{ secrets.FORK_URL_GNOSIS }}
       TOML_TRACE_ERROR: 1
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
@@ -201,7 +201,7 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p e2e --tests &
-      - uses: taiki-e/install-action@d9be7d8cda89035c9c843f78bd44d4f72d8403d4 # 2.79.7
+      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: nextest
       - run: docker compose -f docker-compose.yaml up -d db
@@ -221,13 +221,13 @@ jobs:
       CARGO_TERM_COLOR: always
       TOML_TRACE_ERROR: 1
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1.8.0
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - uses: taiki-e/install-action@d9be7d8cda89035c9c843f78bd44d4f72d8403d4 # 2.79.7
+      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: nextest
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
@@ -242,7 +242,7 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - name: Build Solidity artifacts
@@ -263,7 +263,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: npm install @apidevtools/swagger-cli @stoplight/spectral-cli
@@ -288,7 +288,7 @@ jobs:
       FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
       FORK_URL_GNOSIS: ${{ secrets.FORK_URL_GNOSIS }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
@@ -297,7 +297,7 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p e2e --tests &
-      - uses: taiki-e/install-action@d9be7d8cda89035c9c843f78bd44d4f72d8403d4 # 2.79.7
+      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: nextest
       - run: docker compose -f docker-compose.yaml up -d db
@@ -320,7 +320,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
@@ -329,7 +329,7 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - uses: tombi-toml/setup-tombi@9880d1d3ba5e745d410c697366c513b337704388 # v1.0.11
+      - uses: tombi-toml/setup-tombi@df24458044353545055a12fe0d0742df9d3c5bea # v1.1.2
         with:
           version: "1.1.0"
       - name: Verify the code hasn't been tampered with by generating contracts again and making sure there has been no changes

@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! Per-transaction helper types used by the decoder.
 //!
 //! These are decoder-side views produced by walking a
@@ -10,24 +11,26 @@
 use {
     crate::types::{
         Signature,
+        slot::Slot,
         wire::{SubscribeUpdateAccountInfo, TokenBalance},
     },
+    bytes::Bytes,
     solana_sdk::pubkey::Pubkey,
 };
 
 /// A single instruction after resolving `program_id_index` against the full
 /// account list.
 #[derive(Debug, Clone)]
-pub struct ResolvedInstruction {
+pub(crate) struct ResolvedInstruction {
     /// Resolved program id.
     pub program_id: Pubkey,
     /// Raw instruction data.
-    pub data: Vec<u8>,
+    pub data: Bytes,
     /// Account indices into the reconstructed account list.
     pub accounts: Vec<u8>,
     /// Index of this instruction within the transaction (outer or
     /// inner).
-    pub ix_index: u8,
+    pub ix_index: u16,
     /// `true` for CPIs (inner instructions).
     pub is_inner: bool,
 }
@@ -36,9 +39,9 @@ pub struct ResolvedInstruction {
 /// transaction signature, and (when both halves have arrived) the joined
 /// account-update snapshot.
 #[derive(Debug, Clone)]
-pub struct TxContext {
+pub(crate) struct TxContext {
     /// Slot the transaction was observed at.
-    pub slot: u64,
+    pub slot: Slot,
     /// Transaction signature.
     pub signature: Signature,
     /// Reconstructed account list (`message.account_keys` ⊕

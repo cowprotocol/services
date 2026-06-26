@@ -7,14 +7,19 @@ use {
     },
     crate::{
         domain::{
-            competition::{solution::Settlement, sorting::SortingStrategy},
+            competition::{
+                order::Uid,
+                pre_processing::DataFetchingTasks,
+                solution::Settlement,
+                sorting::SortingStrategy,
+            },
             time::DeadlineExceeded,
         },
         infra::{
             self,
             blockchain::Ethereum,
             notify,
-            observe::{self, metrics},
+            observe::{self, OrderExcludedFromAuctionReason, metrics},
             solver::{self, Account, SolutionMerging, Solver},
         },
         util::math,
@@ -28,7 +33,7 @@ use {
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
         cmp::Reverse,
-        collections::{HashMap, HashSet, VecDeque},
+        collections::{BTreeMap, HashMap, HashSet, VecDeque},
         sync::{Arc, Mutex},
         time::Instant,
     },
@@ -324,43 +329,16 @@ impl Competition {
                 tracing::error!(?err, "pre-processing auction failed");
                 Error::MalformedRequest
             })?;
-        let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
-        let solver_address = self.solver.address();
-        let order_sorting_strategies = self.order_sorting_strategies.clone();
+        let auction = self.assemble_auction(&tasks).await;
 
-        // Add the CoW AMM orders to the auction
-        let cow_amm_orders = tasks.cow_amm_orders.await;
-        auction.orders.extend(cow_amm_orders.iter().cloned());
-
-        let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
-            // Use spawn_blocking() because a lot of CPU bound computations are happening
-            // and we don't want to block the runtime for too long.
-            Self::sort_orders(auction, solver_address, order_sorting_strategies)
-        });
-
-        // We can sort the orders and fetch auction data in parallel
-        let (auction, balances, app_data) =
-            tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
-
-        let auction = Self::run_blocking_with_timer("update_orders", move || {
-            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
-            // bound computations are happening and we want to avoid blocking
-            // the runtime.
-            Self::update_orders(auction, balances, app_data, cow_amm_orders)
-        })
+        let liquidity = async {
+            match self.solver.liquidity() {
+                solver::Liquidity::Fetch => tasks.liquidity.await,
+                solver::Liquidity::Skip => Arc::new(Vec::new()),
+            }
+        }
         .await;
-
-        // We can run bad token filtering and liquidity fetching in parallel
-        let (liquidity, auction) = tokio::join!(
-            async {
-                match self.solver.liquidity() {
-                    solver::Liquidity::Fetch => tasks.liquidity.await,
-                    solver::Liquidity::Skip => Arc::new(Vec::new()),
-                }
-            },
-            self.without_unsupported_orders(auction)
-        );
 
         let elapsed = start.elapsed();
         metrics::get()
@@ -486,47 +464,31 @@ impl Competition {
         }
 
         // Score the settlements.
-        let scores = settlements
+        let scored: Vec<(Solved, Settlement)> = settlements
             .into_iter()
-            .map(|settlement| {
+            .filter_map(|settlement| {
                 observe::scoring(&settlement);
-                (
-                    settlement.score(
-                        &auction.native_prices(),
-                        auction.surplus_capturing_jit_order_owners(),
-                    ),
-                    settlement,
-                )
-            })
-            .collect_vec();
-
-        // Filter out settlements which failed scoring.
-        let scores = scores
-            .into_iter()
-            .filter_map(|(result, settlement)| {
-                result
-                    .inspect_err(|err| {
-                        observe::scoring_failed(self.solver.name(), err);
+                let score = settlement.score(
+                    &auction.native_prices(),
+                    auction.surplus_capturing_jit_order_owners(),
+                );
+                match score {
+                    Ok(score) => {
+                        observe::score(&settlement, &score);
+                        Some((score, settlement))
+                    }
+                    Err(err) => {
+                        observe::scoring_failed(self.solver.name(), &err);
                         notify::scoring_failed(
                             &self.solver,
                             auction.id(),
                             settlement.solution(),
-                            err,
+                            &err,
                         );
-                    })
-                    .ok()
-                    .map(|score| (score, settlement))
+                        None
+                    }
+                }
             })
-            .collect_vec();
-
-        // Observe the scores.
-        for (score, settlement) in scores.iter() {
-            observe::score(settlement, score);
-        }
-
-        // Build scored settlements sorted best-first.
-        let scored: Vec<(Solved, Settlement)> = scores
-            .into_iter()
             .sorted_by_key(|(score, _)| Reverse(*score))
             .map(|(score, settlement)| {
                 let solved = Solved {
@@ -636,6 +598,52 @@ impl Competition {
         Some(solved.id.get())
     }
 
+    async fn assemble_auction(&self, tasks: &DataFetchingTasks) -> Auction {
+        let (base_auction, cow_amm_orders) =
+            tokio::join!(tasks.auction.clone(), tasks.cow_amm_orders.clone());
+
+        let auction = Auction {
+            id: base_auction.id,
+            orders: base_auction
+                .orders
+                .iter()
+                .cloned()
+                .chain(cow_amm_orders.iter().cloned())
+                .collect(),
+            tokens: base_auction.tokens.clone(),
+            gas_price: base_auction.gas_price,
+            deadline: base_auction.deadline,
+            surplus_capturing_jit_order_owners: base_auction
+                .surplus_capturing_jit_order_owners
+                .clone(),
+        };
+
+        let solver_address = self.solver.address();
+        let order_sorting_strategies = self.order_sorting_strategies.clone();
+
+        let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
+            // Use spawn_blocking() because a lot of CPU bound computations are happening
+            // and we don't want to block the runtime for too long.
+            Self::sort_orders(auction, solver_address, order_sorting_strategies)
+        });
+
+        // We can sort the orders and fetch auction data in parallel
+        let (auction, balances, app_data) = tokio::join!(
+            sort_orders_future,
+            tasks.balances.clone(),
+            tasks.app_data.clone()
+        );
+
+        let auction = Self::run_blocking_with_timer("update_orders", move || {
+            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
+            // bound computations are happening and we want to avoid blocking
+            // the runtime.
+            Self::update_orders(auction, balances, app_data, cow_amm_orders)
+        })
+        .await;
+        self.without_unsupported_orders(auction).await
+    }
+
     // Oders already need to be sorted from most relevant to least relevant so that
     // we allocate balances for the most relevants first.
     fn sort_orders(
@@ -666,6 +674,8 @@ impl Competition {
         // to use and modify the data individually.
         let mut balances = balances.as_ref().clone();
         let cow_amms: HashSet<_> = cow_amm_orders.iter().map(|o| o.uid).collect();
+
+        let mut discarded_orders = BTreeMap::<OrderExcludedFromAuctionReason, Vec<Uid>>::new();
 
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
@@ -708,8 +718,10 @@ impl Competition {
             )) {
                 Some(balance) => balance,
                 None => {
-                    let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance;
-                    observe::order_excluded_from_auction(order, reason);
+                    discarded_orders
+                        .entry(OrderExcludedFromAuctionReason::CouldNotFetchBalance)
+                        .or_default()
+                        .push(order.uid);
                     return false;
                 }
             };
@@ -722,10 +734,10 @@ impl Competition {
                 _ => order::SellAmount::default(),
             };
             if allocated_balance.0.is_zero() {
-                observe::order_excluded_from_auction(
-                    order,
-                    observe::OrderExcludedFromAuctionReason::InsufficientBalance,
-                );
+                discarded_orders
+                    .entry(OrderExcludedFromAuctionReason::InsufficientBalance)
+                    .or_default()
+                    .push(order.uid);
                 return false;
             }
 
@@ -748,10 +760,10 @@ impl Competition {
                 );
             }
             if order.available().is_zero() {
-                observe::order_excluded_from_auction(
-                    order,
-                    observe::OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining,
-                );
+                discarded_orders
+                    .entry(OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining)
+                    .or_default()
+                    .push(order.uid);
                 return false;
             }
 
@@ -759,6 +771,15 @@ impl Competition {
 
             true
         });
+
+        let discarded_total = discarded_orders.values().map(Vec::len).sum::<usize>();
+        if discarded_total > 0 {
+            tracing::debug!(
+                total = discarded_total,
+                ?discarded_orders,
+                "filtered orders during solver specific prioritization logic"
+            );
+        }
 
         auction
     }
@@ -1009,6 +1030,11 @@ pub struct Solved {
     pub id: solution::Id,
     pub score: eth::Ether,
     pub trades: HashMap<order::Uid, Amounts>,
+    /// Deprecated: uniform clearing prices are no longer consumed by the
+    /// autopilot. Still emitted on the `/solve` response so that autopilots
+    /// running the previous code can deserialise it during a rolling deploy.
+    /// Remove together with the response field once the new autopilot is
+    /// fully rolled out.
     pub prices: HashMap<eth::TokenAddress, eth::TokenAmount>,
     pub gas: Option<eth::Gas>,
 }

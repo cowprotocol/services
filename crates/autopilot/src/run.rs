@@ -30,7 +30,7 @@ use {
     chain::Chain,
     clap::Parser,
     configs::autopilot::{Configuration, solver::Account},
-    contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
+    contracts::{GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
     http_client::HttpClientFactory,
@@ -251,18 +251,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .await
         .expect("Couldn't get vault relayer address");
 
-    let vault_address = config.shared.contracts.balancer_v2_vault.or_else(|| {
-        let chain_id = chain.id();
-        let addr = BalancerV2Vault::deployment_address(&chain_id);
-        if addr.is_none() {
-            tracing::warn!(
-                chain_id,
-                "balancer contracts are not deployed on this network"
-            );
-        }
-        addr
-    });
-
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
     let balance_overrider = config.price_estimation.balance_overrides.init(web3.clone());
@@ -273,7 +261,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             eth.contracts().settlement().clone(),
             eth.contracts().balances().clone(),
             vault_relayer,
-            vault_address,
             balance_overrider,
         ),
         eth.current_block().clone(),
@@ -512,6 +499,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 .map(Into::into)
                 .collect(),
             config.shared.enable_sell_equals_buy_volume_fee,
+            *eth.contracts().weth().address(),
         ),
         cow_amm_registry.clone(),
         config.native_price_timeout,

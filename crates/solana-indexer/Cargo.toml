@@ -16,11 +16,11 @@ name = "solana-indexer"
 path = "src/main.rs"
 
 [dependencies]
+async-trait = { workspace = true }
+bytes = { workspace = true }
 dashmap = { workspace = true }
+derive_more = { workspace = true }
 futures = { workspace = true }
-observe = { workspace = true }
-prometheus = { workspace = true }
-prometheus-metric-storage = { workspace = true }
 solana-client = { workspace = true }
 solana-sdk = { workspace = true }
 thiserror = { workspace = true }

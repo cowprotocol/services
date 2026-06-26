@@ -1,12 +1,15 @@
+#![expect(dead_code)]
 //! Recovery-flow types: PDA snapshots and the options struct for
 //! `getSignaturesForAddress` backfills.
+
+use crate::types::order::OrderUid;
 
 /// Current on-chain snapshot of an order PDA, read by `getAccountInfo` for
 /// reconciliation.
 #[derive(Debug, Clone)]
-pub struct PdaSnapshot {
+pub(crate) struct PdaSnapshot {
     /// Order UID.
-    pub order_uid: [u8; 32],
+    pub order_uid: OrderUid,
     /// Cumulative `amount_withdrawn` for the order.
     pub amount_withdrawn: u64,
     /// Cumulative `amount_received` for the order.
@@ -19,7 +22,7 @@ pub struct PdaSnapshot {
 
 /// Options for the `getSignaturesForAddress` RPC used by the recovery backfill.
 #[derive(Debug, Clone, Default)]
-pub struct GetSignaturesOpts {
+pub(crate) struct GetSignaturesOpts {
     /// Start slot (inclusive). `None` means "from the tip".
     pub from_slot: Option<u64>,
     /// End slot (inclusive). `None` means "to the tip".

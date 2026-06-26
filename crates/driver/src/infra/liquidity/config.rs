@@ -158,6 +158,40 @@ impl Swapr {
     }
 }
 
+/// Subgraph-specific Uniswap V3 config.
+#[derive(Clone, Debug)]
+pub struct UniswapV3Subgraph {
+    pub url: Url,
+
+    /// How many pool IDs can be present in a where clause of a Tick query at
+    /// once. Some subgraphs are overloaded and throw errors when there are
+    /// too many.
+    pub max_pools_per_tick_query: usize,
+}
+
+/// Pool-indexer-specific Uniswap V3 config.
+#[derive(Clone, Debug)]
+pub struct UniswapV3PoolIndexer {
+    /// Service root, e.g. `http://pool-indexer/` exposing
+    /// `/api/v1/{network}/uniswap/v3/`.
+    pub url: Url,
+
+    /// Upper bound on a single `wait_until` call. Size per-network to
+    /// comfortably exceed the worst-case first-deploy seed time (~13 min
+    /// for mainnet's ~60k pools; tens of seconds for smaller chains).
+    pub wait_until_timeout: Duration,
+}
+
+/// Where Uniswap V3 pool definitions and tick data are fetched from. Exactly
+/// one source is active per network.
+#[derive(Clone, Debug)]
+pub enum UniswapV3PoolSource {
+    /// A Uniswap V3 subgraph (typically Goldsky-hosted).
+    Subgraph(UniswapV3Subgraph),
+    /// A CoW pool-indexer service exposing `/api/v1/{network}/uniswap/v3/`.
+    PoolIndexer(UniswapV3PoolIndexer),
+}
+
 /// Uniswap V3 liquidity fetching options.
 #[derive(Clone, Debug)]
 pub struct UniswapV3 {
@@ -167,33 +201,23 @@ pub struct UniswapV3 {
     /// How many pools should be initialized during start up.
     pub max_pools_to_initialize: usize,
 
-    /// The URL used to connect to uniswap v3 subgraph client.
-    pub graph_url: Url,
+    /// Where pool data is fetched from (subgraph or pool-indexer).
+    pub pool_source: UniswapV3PoolSource,
 
     /// How often the liquidity source should be reinitialized to
     /// become aware of new pools.
     pub reinit_interval: Option<Duration>,
-
-    /// How many pool IDs can be present in a where clause of a Tick query at
-    /// once. Some subgraphs are overloaded and throw errors when there are
-    /// too many.
-    pub max_pools_per_tick_query: usize,
 }
 
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[expect(clippy::self_named_constructors)]
-    pub fn uniswap_v3(
-        graph_url: &Url,
-        chain: Chain,
-        max_pools_per_tick_query: usize,
-    ) -> Option<Self> {
+    pub fn uniswap_v3(pool_source: UniswapV3PoolSource, chain: Chain) -> Option<Self> {
         Some(Self {
             router: contracts::UniswapV3SwapRouterV2::deployment_address(&chain.id())?.into(),
             max_pools_to_initialize: 100,
-            graph_url: graph_url.clone(),
+            pool_source,
             reinit_interval: None,
-            max_pools_per_tick_query,
         })
     }
 }
