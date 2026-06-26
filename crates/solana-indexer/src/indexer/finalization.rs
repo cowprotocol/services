@@ -25,18 +25,17 @@
 
 use crate::traits::{solana_client::SolanaClient, store::Store};
 
-/// Typical number of slots for a transaction to finalize (~12.8 s). The
-/// promotion pass skips rows fresher than this.
-#[allow(dead_code)]
+/// Slots a transaction usually needs to finalize (~12.8 s at 400 ms/slot).
+/// A heuristic floor, not a guarantee: the promotion pass skips rows fresher
+/// than this because they cannot have finalized yet, and degraded consensus
+/// can push real finalization later (the aged-row sweep catches those).
 pub const FINALIZATION_WINDOW_SLOTS: u64 = 32;
 
 /// Upper limit for the `getSignatureStatuses` batch RPC call.
-#[allow(dead_code)]
 pub const PROMOTION_BATCH_LIMIT: usize = 256;
 
 /// Approximate slot horizon past which `getSignatureStatuses` no longer returns
 /// a result.
-#[allow(dead_code)]
 pub const SIGNATURE_STATUS_RETENTION_SLOTS: u64 = 150;
 
 /// Transaction finalization worker. See the module docs for the two flows it

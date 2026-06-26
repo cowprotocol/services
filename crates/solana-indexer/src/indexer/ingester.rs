@@ -20,7 +20,6 @@ use {
 pub static LATEST_CHAIN_SLOT: AtomicU64 = AtomicU64::new(0);
 
 /// Cap on the exponential backoff between reconnect attempts.
-#[allow(dead_code)]
 pub const RECONNECT_BACKOFF_CAP: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Capacity of the channel from the ingester to the decoder.

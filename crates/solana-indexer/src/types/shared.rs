@@ -37,7 +37,7 @@ pub(crate) enum StreamUpdate {
 /// Key for the shared decoder↔watchdog partials map: the `(slot, signature)`
 /// pair identifying which on-chain event a `PartialEvent` belongs to.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
-pub(crate) struct PartialEventKey(pub u64, pub Signature);
+pub(crate) struct PartialEventKey(pub Slot, pub Signature);
 
 /// One half of a paired on-chain event, recorded by the decoder when only
 /// one of the two matching `StreamUpdate` messages has been observed for a
