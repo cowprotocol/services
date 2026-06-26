@@ -1,5 +1,5 @@
 use {
-    super::{CompetitionEstimator, EstimatorIndex, PriceRanking, compare_error, metrics},
+    super::{CompetitionEstimator, EstimatorIndex, PriceRanking, compare_error},
     crate::{
         Estimate,
         PriceEstimateResult,
@@ -42,7 +42,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                     .is_ok_and(|r| r.gas > 0 && !r.out_amount.is_zero())
             };
             // Records each resolved estimator's own response time so we can
-            // observe the winner's latency after ranking.
+            // log the winner's latency after ranking.
             let timings = Arc::new(Mutex::new(HashMap::<String, Duration>::new()));
             let get_results = self
                 .produce_results(query.clone(), is_reasonable, {
@@ -88,9 +88,13 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 let EstimatorIndex(stage_index, estimator_index) = winner.0;
                 let name = &self.stages[stage_index][estimator_index].0;
                 if let Some(elapsed) = timings.lock().unwrap().get(name) {
-                    metrics()
-                        .winner_response_time
-                        .observe(elapsed.as_secs_f64());
+                    // Numeric field (not a Duration) so it can be aggregated, e.g.
+                    // quantile(elapsed_ms) to size the streaming-quote timeout.
+                    tracing::debug!(
+                        estimator = name,
+                        elapsed_ms = elapsed.as_millis(),
+                        "winning quote response time"
+                    );
                 }
             }
             self.report_winner(&query, query.kind, winner)

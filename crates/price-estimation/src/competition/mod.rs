@@ -244,12 +244,6 @@ struct Metrics {
     /// estimators behave for buy vs sell orders.
     #[metric(labels("estimator_type", "order_kind"))]
     queries_won: prometheus::IntCounterVec,
-
-    /// Response time of the winning estimator, in seconds. Sizes the
-    /// streaming-quote timeout: the winner's own latency, not the competition's
-    /// wait-for-all / early-return time.
-    #[metric(buckets(0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5))]
-    winner_response_time: prometheus::Histogram,
 }
 
 fn metrics() -> &'static Metrics {
