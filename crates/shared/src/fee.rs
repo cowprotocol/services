@@ -1,5 +1,5 @@
 use {
-    crate::arguments::TokenBucketFeeOverride,
+    crate::{arguments::TokenBucketFeeOverride, order_validation::is_same_buy_and_sell_token},
     alloy::primitives::{Address, U256},
     configs::fee_factor::FeeFactor,
 };
@@ -53,6 +53,7 @@ pub struct VolumeFeePolicy {
     bucket_overrides: Vec<TokenBucketFeeOverride>,
     default_factor: Option<FeeFactor>,
     enable_sell_equals_buy_volume_fee: bool,
+    native_token: Address,
 }
 
 impl VolumeFeePolicy {
@@ -60,11 +61,13 @@ impl VolumeFeePolicy {
         bucket_overrides: Vec<TokenBucketFeeOverride>,
         default_factor: Option<FeeFactor>,
         enable_sell_equals_buy_volume_fee: bool,
+        native_token: Address,
     ) -> Self {
         Self {
             bucket_overrides,
             default_factor,
             enable_sell_equals_buy_volume_fee,
+            native_token,
         }
     }
 
@@ -80,8 +83,11 @@ impl VolumeFeePolicy {
         sell_token: Address,
         fee_factor: Option<FeeFactor>,
     ) -> Option<FeeFactor> {
-        // Skip volume fee for same-token trades if the flag is disabled
-        if buy_token == sell_token && !self.enable_sell_equals_buy_volume_fee {
+        // Skip the volume fee for same-token trades (treating a native-ETH buy as
+        // the wrapped token, so e.g. WETH->ETH is a no-op) unless the flag is set.
+        if !self.enable_sell_equals_buy_volume_fee
+            && is_same_buy_and_sell_token(sell_token, buy_token, self.native_token)
+        {
             return None;
         }
 
@@ -101,14 +107,14 @@ impl VolumeFeePolicy {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::address};
+    use {super::*, model::order::BUY_ETH_ADDRESS};
 
     #[test]
     fn test_volume_fee_bucket_override() {
-        let usdc = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
-        let dai = address!("6B175474E89094C44Da98b954EedeAC495271d0F");
-        let usdt = address!("dAC17F958D2ee523a2206206994597C13D831ec7");
-        let weth = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+        let usdc = testlib::tokens::USDC;
+        let dai = testlib::tokens::DAI;
+        let usdt = testlib::tokens::USDT;
+        let weth = testlib::tokens::WETH;
 
         let bucket_pair_override = TokenBucketFeeOverride {
             tokens: [usdc, dai].into_iter().collect(),
@@ -124,6 +130,7 @@ mod tests {
             vec![bucket_pair_override, bucket_group_override],
             Some(default_fee),
             false,
+            weth,
         );
 
         // USDC-DAI (matches both buckets) - pair bucket takes precedence
@@ -137,5 +144,45 @@ mod tests {
         // WETH-DAI (only one in bucket) - should fall back to default fee
         let override_ = volume_fee_policy.get_applicable_volume_fee_factor(weth, dai, None);
         assert_eq!(override_, Some(default_fee));
+    }
+
+    #[test]
+    fn test_same_token_volume_fee_skipped() {
+        let weth = testlib::tokens::WETH;
+        let dai = testlib::tokens::DAI;
+        let default_fee = FeeFactor::try_from(0.001).unwrap();
+
+        let policy = VolumeFeePolicy::new(vec![], Some(default_fee), false, weth);
+
+        // Literal same token: no fee.
+        assert_eq!(
+            policy.get_applicable_volume_fee_factor(weth, weth, None),
+            None
+        );
+        // Native-equivalent (WETH -> ETH): same token.
+        assert_eq!(
+            policy.get_applicable_volume_fee_factor(BUY_ETH_ADDRESS, weth, None),
+            None
+        );
+        // Different pair (incl. non-native -> ETH): fee applies.
+        assert_eq!(
+            policy.get_applicable_volume_fee_factor(weth, dai, None),
+            Some(default_fee)
+        );
+        assert_eq!(
+            policy.get_applicable_volume_fee_factor(BUY_ETH_ADDRESS, dai, None),
+            Some(default_fee)
+        );
+
+        // Opted in: same-token fee is charged.
+        let policy = VolumeFeePolicy::new(vec![], Some(default_fee), true, weth);
+        assert_eq!(
+            policy.get_applicable_volume_fee_factor(weth, weth, None),
+            Some(default_fee)
+        );
+        assert_eq!(
+            policy.get_applicable_volume_fee_factor(BUY_ETH_ADDRESS, weth, None),
+            Some(default_fee)
+        );
     }
 }

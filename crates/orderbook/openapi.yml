@@ -501,14 +501,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PriceEstimationError"
+        "403":
+          description: >-
+            Forbidden, the order owner is deny-listed (`errorType`:
+            `Forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceEstimationError"
         "404":
-          description: No route was found for the specified order.
+          description: >-
+            No route was found for the specified order (`errorType`:
+            `NoLiquidity`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceEstimationError"
         "422":
           description: Unable to parse request body as valid JSON.
         "429":
           description: Too many order quotes.
         "500":
-          description: Unexpected error quoting an order.
+          description: >-
+            Unexpected error (`errorType`: `InternalServerError`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceEstimationError"
   "/api/v2/solver_competition/{auction_id}":
     get:
       operationId: getSolverCompetitionByAuctionIdV2
@@ -902,14 +921,26 @@ components:
         - limit
         - liquidity
     SellTokenSource:
-      description: Where should the `sellToken` be drawn from?
+      description: |-
+        Where should the `sellToken` be drawn from?
+
+        **Only `erc20` is accepted for new orders.** The `internal` and `external`
+        (Balancer Vault) sources are deprecated: orders using them are rejected at
+        creation with `UnsupportedSellTokenSource`. The values remain in the enum
+        because they may still appear on historical orders returned by the API.
       type: string
       enum:
         - erc20
         - internal
         - external
     BuyTokenDestination:
-      description: Where should the `buyToken` be transferred to?
+      description: |-
+        Where should the `buyToken` be transferred to?
+
+        **Only `erc20` is accepted for new orders.** The `internal` (Balancer Vault)
+        destination is rejected at creation with `UnsupportedBuyTokenDestination`.
+        The value remains in the enum because it may still appear on historical
+        orders returned by the API.
       type: string
       enum:
         - erc20
@@ -1017,6 +1048,7 @@ components:
           description: Is the order fill-or-kill or partially fillable?
           type: boolean
         sellTokenBalance:
+          deprecated: true
           description: >
             Where the sell token should be drawn from. Defaults to `erc20` for
             standard ERC-20 token transfers.
@@ -1024,6 +1056,7 @@ components:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          deprecated: true
           description: >
             Where the buy token should be transferred to. Defaults to `erc20` for
             standard ERC-20 token transfers.
@@ -1090,11 +1123,13 @@ components:
           description: "see `OrderParameters::partiallyFillable`"
           type: boolean
         sellTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::sellTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::buyTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
@@ -1447,11 +1482,13 @@ components:
           items:
             $ref: "#/components/schemas/InteractionData"
         sellTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::sellTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::buyTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
@@ -1796,17 +1833,51 @@ components:
         - errorType
         - description
     PriceEstimationError:
+      description: |
+        Error quoting an order.
+
+        Possible `errorType` values per HTTP status:
+        * 400: `AppDataHashMismatch`, `CustomSolverError`, `ExcessiveValidTo`,
+          `InsufficientLiquidity`, `InsufficientValidTo`, `InvalidAppData`,
+          `InvalidNativeSellToken`, `QuoteNotVerified`, `SameBuyAndSellToken`,
+          `SellAmountDoesNotCoverFee`, `TokenTemporarilySuspended`,
+          `TradingOutsideAllowedWindow`, `UnsupportedBuyTokenDestination`,
+          `UnsupportedOrderType`, `UnsupportedSellTokenSource`,
+          `UnsupportedToken`
+        * 403: `Forbidden`
+        * 404: `NoLiquidity`
+        * 500: `InternalServerError`
       type: object
       properties:
         errorType:
           type: string
           enum:
-            - QuoteNotVerified
-            - UnsupportedToken
+            - AppDataHashMismatch
+            - CustomSolverError
+            - ExcessiveValidTo
+            - Forbidden
+            - InsufficientLiquidity
+            - InsufficientValidTo
+            - InternalServerError
+            - InvalidAppData
+            - InvalidNativeSellToken
             - NoLiquidity
+            - QuoteNotVerified
+            - SameBuyAndSellToken
+            - SellAmountDoesNotCoverFee
+            - TokenTemporarilySuspended
+            - TradingOutsideAllowedWindow
+            - UnsupportedBuyTokenDestination
             - UnsupportedOrderType
+            - UnsupportedSellTokenSource
+            - UnsupportedToken
         description:
           type: string
+        data:
+          type: object
+          description: >-
+            Optional error-specific payload: `SellAmountDoesNotCoverFee`
+            returns an object with `fee_amount`.
       required:
         - errorType
         - description
@@ -1927,10 +1998,12 @@ components:
               anyOf:
                 - $ref: "#/components/schemas/AppDataHash"
             sellTokenBalance:
+              deprecated: true
               allOf:
                 - $ref: "#/components/schemas/SellTokenSource"
               default: erc20
             buyTokenBalance:
+              deprecated: true
               allOf:
                 - $ref: "#/components/schemas/BuyTokenDestination"
               default: erc20
@@ -2072,10 +2145,17 @@ components:
             Transaction in which the solution was executed onchain (if available).
           nullable: true
         clearingPrices:
+          deprecated: true
           type: object
           additionalProperties:
             $ref: "#/components/schemas/BigUint"
           description: >
+            Deprecated. The autopilot no longer persists per-solution uniform
+            clearing prices, so this field will be empty for solutions of
+            auctions produced by recent autopilots. Solutions stored before
+            this change keep their original values.
+
+
             The prices of tokens for settled user orders as passed to the
             settlement contract.
         orders:
@@ -2683,10 +2763,12 @@ components:
           allOf:
             - $ref: "#/components/schemas/Address"
         sellTokenBalance:
+          deprecated: true
           description: Where the sell token should be drawn from.
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
         buyTokenBalance:
+          deprecated: true
           description: Where the buy token should be transferred to.
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
