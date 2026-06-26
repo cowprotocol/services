@@ -972,14 +972,26 @@ components:
         - limit
         - liquidity
     SellTokenSource:
-      description: Where should the `sellToken` be drawn from?
+      description: |-
+        Where should the `sellToken` be drawn from?
+
+        **Only `erc20` is accepted for new orders.** The `internal` and `external`
+        (Balancer Vault) sources are deprecated: orders using them are rejected at
+        creation with `UnsupportedSellTokenSource`. The values remain in the enum
+        because they may still appear on historical orders returned by the API.
       type: string
       enum:
         - erc20
         - internal
         - external
     BuyTokenDestination:
-      description: Where should the `buyToken` be transferred to?
+      description: |-
+        Where should the `buyToken` be transferred to?
+
+        **Only `erc20` is accepted for new orders.** The `internal` (Balancer Vault)
+        destination is rejected at creation with `UnsupportedBuyTokenDestination`.
+        The value remains in the enum because it may still appear on historical
+        orders returned by the API.
       type: string
       enum:
         - erc20
@@ -1087,6 +1099,7 @@ components:
           description: Is the order fill-or-kill or partially fillable?
           type: boolean
         sellTokenBalance:
+          deprecated: true
           description: >
             Where the sell token should be drawn from. Defaults to `erc20` for
             standard ERC-20 token transfers.
@@ -1094,6 +1107,7 @@ components:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          deprecated: true
           description: >
             Where the buy token should be transferred to. Defaults to `erc20` for
             standard ERC-20 token transfers.
@@ -1160,11 +1174,13 @@ components:
           description: "see `OrderParameters::partiallyFillable`"
           type: boolean
         sellTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::sellTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::buyTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
@@ -1517,11 +1533,13 @@ components:
           items:
             $ref: "#/components/schemas/InteractionData"
         sellTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::sellTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::buyTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
@@ -2031,10 +2049,12 @@ components:
               anyOf:
                 - $ref: "#/components/schemas/AppDataHash"
             sellTokenBalance:
+              deprecated: true
               allOf:
                 - $ref: "#/components/schemas/SellTokenSource"
               default: erc20
             buyTokenBalance:
+              deprecated: true
               allOf:
                 - $ref: "#/components/schemas/BuyTokenDestination"
               default: erc20
@@ -2794,10 +2814,12 @@ components:
           allOf:
             - $ref: "#/components/schemas/Address"
         sellTokenBalance:
+          deprecated: true
           description: Where the sell token should be drawn from.
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
         buyTokenBalance:
+          deprecated: true
           description: Where the buy token should be transferred to.
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
