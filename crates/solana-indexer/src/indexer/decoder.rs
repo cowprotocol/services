@@ -25,9 +25,9 @@ use {
 ///
 /// The watchdog holds a clone of the same `partials` map, so the two operate on
 /// the same concurrent map without any message passing between them.
-pub(crate) struct Decoder<St: Store> {
+pub(crate) struct Decoder {
     /// Store implementor.
-    pub store: St,
+    pub store: Arc<dyn Store>,
 
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
@@ -44,10 +44,10 @@ pub(crate) struct Decoder<St: Store> {
     pub solflow_program: Pubkey,
 }
 
-impl<St: Store> Decoder<St> {
+impl Decoder {
     /// Construct a new decoder. The caller owns the channel capacity decision.
     pub fn new(
-        store: St,
+        store: Arc<dyn Store>,
         rx: Receiver<StreamUpdate>,
         partials: Arc<DashMap<PartialEventKey, PartialEvent>>,
         settlement_program: Pubkey,

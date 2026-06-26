@@ -9,7 +9,7 @@
 
 use {
     crate::{traits::store::Store, types::shared::StreamUpdate},
-    std::sync::atomic::AtomicU64,
+    std::sync::{Arc, atomic::AtomicU64},
     tokio::sync::mpsc::Sender,
     yellowstone_grpc_client::GrpcConnector,
 };
@@ -29,7 +29,7 @@ pub const INGEST_TO_DECODER_CAPACITY: usize = 1024;
 ///
 /// Generic over a `GrpcConnector` implementor so the unit tests can drive it
 /// with a mock.
-pub(crate) struct Ingester<C: GrpcConnector, St: Store> {
+pub(crate) struct Ingester<C: GrpcConnector> {
     /// gRPC connector implementor
     pub connector: C,
 
@@ -38,12 +38,12 @@ pub(crate) struct Ingester<C: GrpcConnector, St: Store> {
     pub tx: Sender<StreamUpdate>,
 
     /// Store implementor; used to checkpoint the slot.
-    pub store: St,
+    pub store: Arc<dyn Store>,
 }
 
-impl<C: GrpcConnector, St: Store> Ingester<C, St> {
+impl<C: GrpcConnector> Ingester<C> {
     /// Construct a new ingester. The caller owns the channel capacity decision.
-    pub fn new(connector: C, tx: Sender<StreamUpdate>, store: St) -> Self {
+    pub fn new(connector: C, tx: Sender<StreamUpdate>, store: Arc<dyn Store>) -> Self {
         Self {
             connector,
             tx,

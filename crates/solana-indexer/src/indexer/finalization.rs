@@ -23,7 +23,10 @@
 // TODO:  This file only declares the component skeleton. The `run` body is
 // `unimplemented!`; both flows arrive in a later change.
 
-use crate::traits::{solana_client::SolanaClient, store::Store};
+use {
+    crate::traits::{solana_client::SolanaClient, store::Store},
+    std::sync::Arc,
+};
 
 /// Slots a transaction usually needs to finalize (~12.8 s at 400 ms/slot).
 /// A heuristic floor, not a guarantee: the promotion pass skips rows fresher
@@ -40,17 +43,17 @@ pub const SIGNATURE_STATUS_RETENTION_SLOTS: u64 = 150;
 
 /// Transaction finalization worker. See the module docs for the two flows it
 /// runs.
-pub(crate) struct FinalizationWorker<St: Store, R: SolanaClient> {
+pub(crate) struct FinalizationWorker {
     /// Store implementor.
-    pub store: St,
+    pub store: Arc<dyn Store>,
 
     /// RPC implementor.
-    pub rpc: R,
+    pub rpc: Arc<dyn SolanaClient>,
 }
 
-impl<St: Store, R: SolanaClient> FinalizationWorker<St, R> {
+impl FinalizationWorker {
     /// Construct a new finalization worker.
-    pub fn new(store: St, rpc: R) -> Self {
+    pub fn new(store: Arc<dyn Store>, rpc: Arc<dyn SolanaClient>) -> Self {
         Self { store, rpc }
     }
 
