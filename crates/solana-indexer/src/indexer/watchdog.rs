@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! The partial-event watchdog.
 
 // TODO: This file only declares the component skeleton. The `run` body is
@@ -26,9 +27,9 @@ use {
 /// Those entries are flushed to `solana.dead_letter` with a reason of
 /// `AccountUpdateMissing` or `TxUpdateMissing` depending on which half was
 /// missing.
-pub struct PartialEventWatchdog<St: Store> {
+pub(crate) struct PartialEventWatchdog {
     /// Store implementor.
-    pub store: St,
+    pub store: Arc<dyn Store>,
 
     /// Shared in-memory map of partial events keyed by `PartialEventKey`.
     ///
@@ -37,9 +38,12 @@ pub struct PartialEventWatchdog<St: Store> {
     pub partials: Arc<DashMap<PartialEventKey, PartialEvent>>,
 }
 
-impl<St: Store> PartialEventWatchdog<St> {
+impl PartialEventWatchdog {
     /// Construct a new watchdog.
-    pub fn new(store: St, partials: Arc<DashMap<PartialEventKey, PartialEvent>>) -> Self {
+    pub fn new(
+        store: Arc<dyn Store>,
+        partials: Arc<DashMap<PartialEventKey, PartialEvent>>,
+    ) -> Self {
         Self { store, partials }
     }
 

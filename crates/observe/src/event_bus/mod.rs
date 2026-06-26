@@ -188,7 +188,7 @@ async fn log_ack(subject: String, ack_fut: async_nats::jetstream::context::Publi
 /// Enqueues the event to be sent to the event bus in a background task.
 pub fn publish(subject: &str, data: impl Serialize) {
     let Some(bus) = BUS.get() else {
-        tracing::warn!("attempting to publish events without initializing the event bus");
+        tracing::trace!("attempting to publish events without initializing the event bus");
         return;
     };
 

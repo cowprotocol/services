@@ -17,7 +17,6 @@ use {
     clap::Parser,
     configs::orderbook::Configuration,
     contracts::{
-        BalancerV2Vault,
         ChainalysisOracle,
         FlashLoanRouter,
         GPv2Settlement,
@@ -163,20 +162,6 @@ pub async fn run(config: Configuration) {
         balance_overrider.clone(),
     );
 
-    let vault_address = config.shared.contracts.balancer_v2_vault.or_else(|| {
-        let chain_id = chain.id();
-        match BalancerV2Vault::deployment_address(&chain_id) {
-            addr @ Some(_) => addr,
-            addr @ None => {
-                tracing::warn!(
-                    chain_id,
-                    "balancer contracts are not deployed on this network"
-                );
-                addr
-            }
-        }
-    });
-
     let hooks_contract = match config.shared.contracts.hooks {
         Some(address) => HooksTrampoline::Instance::new(address, web3.provider.clone()),
         None => HooksTrampoline::Instance::deployed(&web3.provider)
@@ -218,7 +203,6 @@ pub async fn run(config: Configuration) {
             settlement_contract.clone(),
             balances_contract.clone(),
             vault_relayer,
-            vault_address,
             balance_overrider.clone(),
         ),
     );
@@ -473,6 +457,7 @@ pub async fn run(config: Configuration) {
         config.volume_fee,
         volume_fee_bucket_overrides,
         config.shared.enable_sell_equals_buy_volume_fee,
+        *native_token.address(),
         token_info_fetcher.clone(),
     )
     .with_fast_quoter(fast_quoter);

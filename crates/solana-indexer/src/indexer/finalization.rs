@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! The finalization worker updates the commitment level of the transactions
 //! tracked by the indexer, promoting rows written at `confirmed` to
 //! `finalized`.
@@ -22,35 +23,37 @@
 // TODO:  This file only declares the component skeleton. The `run` body is
 // `unimplemented!`; both flows arrive in a later change.
 
-use crate::traits::{solana_client::SolanaClient, store::Store};
+use {
+    crate::traits::{solana_client::SolanaClient, store::Store},
+    std::sync::Arc,
+};
 
-/// Typical number of slots for a transaction to finalize (~12.8 s). The
-/// promotion pass skips rows fresher than this.
-#[allow(dead_code)]
+/// Slots a transaction usually needs to finalize (~12.8 s at 400 ms/slot).
+/// A heuristic floor, not a guarantee: the promotion pass skips rows fresher
+/// than this because they cannot have finalized yet, and degraded consensus
+/// can push real finalization later (the aged-row sweep catches those).
 pub const FINALIZATION_WINDOW_SLOTS: u64 = 32;
 
 /// Upper limit for the `getSignatureStatuses` batch RPC call.
-#[allow(dead_code)]
 pub const PROMOTION_BATCH_LIMIT: usize = 256;
 
 /// Approximate slot horizon past which `getSignatureStatuses` no longer returns
 /// a result.
-#[allow(dead_code)]
 pub const SIGNATURE_STATUS_RETENTION_SLOTS: u64 = 150;
 
 /// Transaction finalization worker. See the module docs for the two flows it
 /// runs.
-pub struct FinalizationWorker<St: Store, R: SolanaClient> {
+pub(crate) struct FinalizationWorker {
     /// Store implementor.
-    pub store: St,
+    pub store: Arc<dyn Store>,
 
     /// RPC implementor.
-    pub rpc: R,
+    pub rpc: Arc<dyn SolanaClient>,
 }
 
-impl<St: Store, R: SolanaClient> FinalizationWorker<St, R> {
+impl FinalizationWorker {
     /// Construct a new finalization worker.
-    pub fn new(store: St, rpc: R) -> Self {
+    pub fn new(store: Arc<dyn Store>, rpc: Arc<dyn SolanaClient>) -> Self {
         Self { store, rpc }
     }
 

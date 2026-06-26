@@ -24,6 +24,7 @@ use {
             Signature,
             errors::StoreError,
             shared::StreamUpdate,
+            slot::Slot,
             wire::{
                 CommitmentLevel,
                 SubscribeRequest,
@@ -64,7 +65,7 @@ pub const INGEST_TO_DECODER_CAPACITY: usize = 1024;
 /// `Ping`/`Pong` frames are ignored: the library passes them through, but they
 /// carry no data the ingester needs, and answering server pings is not part of
 /// the drain path.
-pub struct Ingester<S>
+pub(crate) struct Ingester<S>
 where
     S: Stream<Item = Result<SubscribeUpdate, Status>> + Unpin + Send,
 {
@@ -184,7 +185,7 @@ where
         Self::forward(
             tx,
             StreamUpdate::Tx {
-                slot: tx_msg.slot,
+                slot: Slot(tx_msg.slot),
                 signature,
                 inner: Box::new(inner),
             },
@@ -209,7 +210,7 @@ where
         Self::forward(
             tx,
             StreamUpdate::Account {
-                slot: account.slot,
+                slot: Slot(account.slot),
                 txn_signature,
                 inner: Box::new(inner),
             },
@@ -223,7 +224,7 @@ where
         latest_chain_slot: &AtomicU64,
         slot: SubscribeUpdateSlot,
     ) -> ControlFlow<()> {
-        latest_chain_slot.store(slot.slot, Ordering::Relaxed);
+        latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
         ControlFlow::Continue(())
     }
 
@@ -234,6 +235,7 @@ where
         match tx.try_send(update) {
             Ok(()) => ControlFlow::Continue(()),
             Err(TrySendError::Full(update)) => {
+                // TODO: Rate-limit if sustained backpressure floods logs.
                 tracing::warn!("decoder channel full; ingester blocked on backpressure");
                 match tx.send(update).await {
                     Ok(()) => ControlFlow::Continue(()),
@@ -247,7 +249,7 @@ where
 
 /// Why the ingester stopped.
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub(crate) enum Error {
     /// The persisted watermark could not be read.
     #[error("failed to read the resume watermark: {0}")]
     Store(#[from] StoreError),

@@ -3,6 +3,7 @@ use {
     crate::types::{
         Signature,
         shared::StreamUpdate,
+        slot::Slot,
         wire::{
             SubscribeUpdate,
             SubscribeUpdateAccount,
@@ -103,7 +104,9 @@ async fn transaction_update_with_valid_signature_is_forwarded() {
 
     assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
     let update = rx.recv().await.unwrap();
-    assert!(matches!(update, StreamUpdate::Tx { slot: 42, signature: s, .. } if s == signature));
+    assert!(
+        matches!(update, StreamUpdate::Tx { slot: Slot(42), signature: s, .. } if s == signature)
+    );
     assert!(rx.is_empty());
 }
 
@@ -115,7 +118,7 @@ async fn account_update_with_body_is_forwarded() {
     assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
     let update = rx.recv().await.unwrap();
     assert!(
-        matches!(update, StreamUpdate::Account { slot: 100, txn_signature: Some(s), .. } if s == signature)
+        matches!(update, StreamUpdate::Account { slot: Slot(100), txn_signature: Some(s), .. } if s == signature)
     );
     assert!(rx.is_empty());
 }
@@ -145,7 +148,9 @@ async fn unrelated_and_empty_updates_are_ignored() {
 
     assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
     let update = rx.recv().await.unwrap();
-    assert!(matches!(update, StreamUpdate::Tx { slot: 7, signature: s, .. } if s == signature(3)));
+    assert!(
+        matches!(update, StreamUpdate::Tx { slot: Slot(7), signature: s, .. } if s == signature(3))
+    );
     assert!(rx.is_empty());
     assert_eq!(slot.load(Ordering::Relaxed), 0);
 }
@@ -176,7 +181,9 @@ async fn transaction_without_body_or_malformed_signature_is_skipped() {
 
     assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
     let update = rx.recv().await.unwrap();
-    assert!(matches!(update, StreamUpdate::Tx { slot: 3, signature: s, .. } if s == signature));
+    assert!(
+        matches!(update, StreamUpdate::Tx { slot: Slot(3), signature: s, .. } if s == signature)
+    );
     assert!(rx.is_empty());
 }
 

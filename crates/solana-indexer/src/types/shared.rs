@@ -1,21 +1,22 @@
-//! Types shared across the internal compoents of this crate.
+#![expect(dead_code)]
+//! Types shared across the internal components of this crate.
 
 use crate::types::{
     Signature,
+    slot::Slot,
     wire::{SubscribeUpdateAccountInfo, SubscribeUpdateTransactionInfo},
 };
 
 /// From `Ingester` → `Decoder`.
 ///
 /// One multiplexed wire message, tagged with the slot the message was observed
-/// at. The org file names the channel payload "Event"; the spec defines that
-/// type as `StreamUpdate`, and that is what this crate uses.
+/// at.
 #[derive(Debug, Clone)]
-pub enum StreamUpdate {
+pub(crate) enum StreamUpdate {
     /// A transaction-update slot message.
     Tx {
         /// Slot the message was observed at.
-        slot: u64,
+        slot: Slot,
         /// Transaction signature.
         signature: Signature,
         /// Wire message body.
@@ -24,7 +25,7 @@ pub enum StreamUpdate {
     /// An account-update slot message.
     Account {
         /// Slot the message was observed at.
-        slot: u64,
+        slot: Slot,
         /// Optional transaction signature linking the write back to its
         /// originating transaction.
         txn_signature: Option<Signature>,
@@ -36,7 +37,7 @@ pub enum StreamUpdate {
 /// Key for the shared decoder↔watchdog partials map: the `(slot, signature)`
 /// pair identifying which on-chain event a `PartialEvent` belongs to.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
-pub struct PartialEventKey(pub u64, pub Signature);
+pub(crate) struct PartialEventKey(pub Slot, pub Signature);
 
 /// One half of a paired on-chain event, recorded by the decoder when only
 /// one of the two matching `StreamUpdate` messages has been observed for a
@@ -52,7 +53,7 @@ pub struct PartialEventKey(pub u64, pub Signature);
 /// `Arc<DashMap<PartialEventKey, PartialEvent>>`, so there is no message
 /// passing between them — the watchdog simply reads what the decoder wrote.
 #[derive(Debug, Clone)]
-pub enum PartialEvent {
+pub(crate) enum PartialEvent {
     /// Transaction-update half.
     Tx(Box<SubscribeUpdateTransactionInfo>),
     /// Account-update half.

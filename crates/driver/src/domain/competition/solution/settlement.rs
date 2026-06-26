@@ -184,6 +184,7 @@ impl Settlement {
             .inspect(|res| {
                 tracing::debug!(
                     block = eth.current_block().borrow().number,
+                    transaction = ?transaction.internalized,
                     ?res,
                     "simulated settlement"
                 )
@@ -196,12 +197,15 @@ impl Settlement {
             eth.balance(solution.solver().address()),
         );
 
-        // Ensure that the solver has sufficient balance for the settlement to be mined
-        // even if the gas price keeps climbing during the tx submission.
+        // Ensure the solver can cover the gas the node reserves to admit the settlement
+        // tx, which is `gas_limit * max_fee_per_gas` at whichever price we submit with.
         let gas = Gas::new(gas_used?, eth.block_gas_limit(), eth.tx_gas_limit())?;
-        let required_eth_balance =
-            // Converting to U256 first avoids possible overflow
-            gas.required_balance(U256::from(gas_price?.max_fee_per_gas).saturating_mul(U256::from(2)));
+        let required_eth_balance = gas.required_balance(submission_max_fee_per_gas(
+            gas_price?.max_fee_per_gas,
+            solution
+                .gas_fee_override()
+                .map(|gas_override| gas_override.max_fee_per_gas),
+        ));
         if solver_eth? < required_eth_balance {
             return Err(Error::SolverAccountInsufficientBalance(
                 required_eth_balance,
@@ -312,7 +316,10 @@ impl Settlement {
         acc
     }
 
-    /// The uniform price vector this settlement proposes
+    /// The uniform price vector this settlement proposes.
+    ///
+    /// Deprecated: only emitted on the `/solve` response so that autopilots
+    /// running the previous code can deserialise it during a rolling deploy.
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.solution
             .clearing_prices()
@@ -428,6 +435,20 @@ impl Gas {
     }
 }
 
+/// The `max_fee_per_gas` the settlement will be submitted with, used to size
+/// the solver's required balance. Mirrors `apply_gas_fee_override`: with an
+/// override we submit at that value, otherwise at the driver estimate doubled
+/// to absorb the gas price climbing during submission. The override is the
+/// solver's own choice, so we take it as is.
+fn submission_max_fee_per_gas(
+    driver_max_fee_per_gas: u128,
+    override_max_fee_per_gas: Option<u128>,
+) -> U256 {
+    override_max_fee_per_gas
+        .map(U256::from)
+        .unwrap_or_else(|| U256::from(driver_max_fee_per_gas).saturating_mul(U256::from(2)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,5 +517,15 @@ mod tests {
             solution::Error::GasLimitExceeded(_, limit) => assert_eq!(limit, gas(60_000_000)),
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn submission_fee_prefers_override_over_driver_estimate() {
+        // No override: driver estimate, doubled.
+        assert_eq!(submission_max_fee_per_gas(100, None), U256::from(200));
+        // Override above the doubled estimate: use the override.
+        assert_eq!(submission_max_fee_per_gas(100, Some(500)), U256::from(500));
+        // Override below the doubled estimate: still the override, not driver * 2.
+        assert_eq!(submission_max_fee_per_gas(100, Some(50)), U256::from(50));
     }
 }

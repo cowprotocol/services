@@ -248,18 +248,8 @@ impl Persistence {
                                 side: order.side.into(),
                             })
                             .collect(),
-                        price_tokens: bid
-                            .solution()
-                            .prices()
-                            .keys()
-                            .map(|token| ByteArray(token.into_array()))
-                            .collect(),
-                        price_values: bid
-                            .solution()
-                            .prices()
-                            .values()
-                            .map(|price| u256_to_big_decimal(&price.get().0))
-                            .collect(),
+                        price_tokens: vec![],
+                        price_values: vec![],
                     };
                     Ok::<_, DatabaseError>(solution)
                 })
