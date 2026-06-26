@@ -7,7 +7,16 @@ use {
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     configs::{
-        autopilot::Configuration,
+        autopilot::{
+            Configuration,
+            fee_policy::{
+                FeePoliciesConfig,
+                FeePolicy as ConfigFeePolicy,
+                FeePolicyKind as ConfigFeePolicyKind,
+                FeePolicyOrderClass as ConfigFeePolicyOrderClass,
+            },
+        },
+        fee_factor::FeeFactor,
         orderbook::order_validation::OrderValidationConfig,
         test_util::TestDefault,
     },
@@ -296,6 +305,8 @@ async fn eth_flow_tx(web3: Web3) {
 /// 4. The settlement wraps the user's ETH into WETH (ethflow's default
 ///    `WRAP_ALL` pre-interaction), settles the same-token swap delivering
 ///    native ETH to the receiver, and finally runs the post-hook.
+/// 5. No volume fee is charged: WETH -> native ETH is a same-token trade, so
+///    the configured volume fee is dropped on both quote and settlement.
 ///
 /// The "bridge" is represented by a `Counter` contract whose `incrementCounter`
 /// we assert ran exactly once — the same hook-proving approach used in
@@ -318,15 +329,31 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
     let post_call_data = const_hex::encode_prefixed(increment.calldata());
 
     let services = Services::new(&onchain).await;
+    let volume_fee = ConfigFeePolicy {
+        kind: ConfigFeePolicyKind::Volume {
+            factor: 0.01.try_into().unwrap(),
+        },
+        order_class: ConfigFeePolicyOrderClass::Any,
+    };
     // `AllowSell` is required for the same-token (WETH -> native ETH) quote below.
     services
         .start_protocol_with_args(
-            Configuration::test("test_solver", solver.address()),
+            Configuration {
+                fee_policies: FeePoliciesConfig {
+                    policies: vec![volume_fee],
+                    ..Default::default()
+                },
+                ..Configuration::test("test_solver", solver.address())
+            },
             configs::orderbook::Configuration {
                 order_validation: OrderValidationConfig {
                     same_tokens_policy: shared::order_validation::SameTokensPolicy::AllowSell,
                     ..Default::default()
                 },
+                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
+                    factor: Some(FeeFactor::new(0.01)),
+                    effective_from_timestamp: None,
+                }),
                 ..configs::orderbook::Configuration::test_default()
             },
             solver.clone(),
@@ -375,6 +402,11 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
     let quote = services.submit_quote(&quote_request).await.unwrap();
     assert!(quote.id.is_some());
     assert!(quote.verified);
+    assert!(
+        quote.protocol_fee_bps.is_none(),
+        "WETH->ETH ethflow quote must not carry a volume fee, got {:?}",
+        quote.protocol_fee_bps
+    );
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
         + timestamp_of_current_block_in_seconds(&web3.provider)
@@ -421,6 +453,28 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
         counter.counters("post".to_string()).call().await.unwrap(),
         U256::from(1),
         "bridge post-hook must have run exactly once as part of the settlement"
+    );
+
+    // Wait for the `order_execution` row (written shortly after settlement) so
+    // the protocol fees we assert on exist.
+    let uid = ethflow_order
+        .uid(onchain.contracts(), ethflow_contract)
+        .await;
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| !order.metadata.executed_fee.is_zero())
+    })
+    .await
+    .unwrap();
+
+    let trade = &services.get_trades(&uid).await.unwrap()[0];
+    assert!(
+        trade.executed_protocol_fees.is_empty(),
+        "WETH->ETH ethflow trade must not be charged a volume fee, got {:?}",
+        trade.executed_protocol_fees
     );
 }
 

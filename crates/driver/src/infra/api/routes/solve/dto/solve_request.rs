@@ -24,6 +24,9 @@ use {
 };
 
 impl SolveRequest {
+    // Deprecated External/Internal arms are retained in case a new
+    // order is placed between now and the PR blocking them going live.
+    #[allow(deprecated)]
     #[instrument(skip_all)]
     pub async fn into_domain(
         self,
@@ -309,7 +312,15 @@ struct Interaction {
 enum SellTokenBalance {
     #[default]
     Erc20,
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     Internal,
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     External,
 }
 
@@ -318,6 +329,10 @@ enum SellTokenBalance {
 enum BuyTokenBalance {
     #[default]
     Erc20,
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     Internal,
 }
 
