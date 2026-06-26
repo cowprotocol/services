@@ -13,7 +13,7 @@ const fn default_cache_concurrent_requests() -> NonZeroUsize {
 }
 
 const fn default_results_required() -> NonZeroUsize {
-    NonZeroUsize::new(2).expect("value should not be zero")
+    NonZeroUsize::new(3).expect("value should not be zero")
 }
 
 #[derive(Debug, Clone, Deserialize)]

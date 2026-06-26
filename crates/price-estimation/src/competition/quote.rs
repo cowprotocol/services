@@ -1,5 +1,5 @@
 use {
-    super::{CompetitionEstimator, PriceRanking, compare_error},
+    super::{CompetitionEstimator, QuoteContextMode, compare_error},
     crate::{
         Estimate,
         PriceEstimateResult,
@@ -31,7 +31,9 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 OrderKind::Buy => query.sell_token,
                 OrderKind::Sell => query.buy_token,
             };
-            let get_context = self.ranking.provide_context(out_token, query.timeout);
+            let get_context = self
+                .quote_context_mode
+                .provide_context(out_token, query.timeout);
 
             // Filter out obviously wrong estimates:
             // - 0 gas cost would lead to us paying huge subsidies
@@ -84,7 +86,7 @@ fn compare_quote_result(
     query: &Query,
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
-    context: &RankingContext,
+    context: &QuoteContext,
     prefer_verified_estimates: bool,
 ) -> Ordering {
     match (a, b) {
@@ -102,27 +104,24 @@ fn compare_quote_result(
     }
 }
 
-fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &RankingContext) -> Ordering {
-    let a = context.effective_eth_out(a, query.kind);
-    let b = context.effective_eth_out(b, query.kind);
+fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &QuoteContext) -> Ordering {
+    let a = context.out_amount(a, query.kind);
+    let b = context.out_amount(b, query.kind);
     match query.kind {
         OrderKind::Buy => a.cmp(&b).reverse(),
         OrderKind::Sell => a.cmp(&b),
     }
 }
 
-impl PriceRanking {
+impl QuoteContextMode {
     async fn provide_context(
         &self,
         token: Address,
         timeout: Duration,
-    ) -> Result<RankingContext, PriceEstimationError> {
+    ) -> Result<QuoteContext, PriceEstimationError> {
         match self {
-            PriceRanking::MaxOutAmount => Ok(RankingContext {
-                native_price: 1.0,
-                gas_price: 0.,
-            }),
-            PriceRanking::BestBangForBuck { native, gas } => {
+            QuoteContextMode::None => Ok(QuoteContext::None),
+            QuoteContextMode::GasCost { native, gas } => {
                 let gas = gas.clone();
                 let native = native.clone();
                 let gas = gas
@@ -131,7 +130,7 @@ impl PriceRanking {
                 let (native_price, gas_price) =
                     futures::try_join!(native.estimate_native_price(token, timeout), gas)?;
 
-                Ok(RankingContext {
+                Ok(QuoteContext::GasCost {
                     native_price,
                     gas_price: gas_price as f64,
                 })
@@ -140,35 +139,49 @@ impl PriceRanking {
     }
 }
 
-struct RankingContext {
-    native_price: f64,
-    gas_price: f64,
+enum QuoteContext {
+    /// Provides enough context to estimate how much of the quote's out_amount
+    /// would be lost due to paying for the gas cost.
+    /// If an extremely complex trade route would only result
+    /// in slightly more `out_amount` than a simple trade route the simple
+    /// trade route would report a higher effective out_amount.
+    GasCost {
+        native_price: f64,
+        gas_price: f64,
+    },
+    None,
 }
 
-impl RankingContext {
-    /// Computes the actual received value from this estimate that takes `gas`
-    /// into account. If an extremely complex trade route would only result
-    /// in slightly more `out_amount` than a simple trade route the simple
-    /// trade route would report a higher `out_amount_in_eth`. This is also
-    /// referred to as "bang-for-buck" and what matters most to traders.
-    fn effective_eth_out(&self, estimate: &Estimate, kind: OrderKind) -> U256 {
-        let eth_out = f64::from(estimate.out_amount) * self.native_price;
-        let fees = estimate.gas as f64 * self.gas_price;
-        let effective_eth_out = match kind {
-            // High fees mean receiving less `buy_token` from your sell order.
-            OrderKind::Sell => eth_out - fees,
-            // High fees mean paying more `sell_token` for your buy order.
-            OrderKind::Buy => eth_out + fees,
-        };
-        match effective_eth_out {
-            // converts `NaN` and `(-∞, 0]` to `0`
-            v if v.is_sign_negative() || v.is_nan() => U256::ZERO,
-            // Previous case already covered negative infinity
-            v if v.is_infinite() => U256::MAX,
-            // Note on truncation: previously we used primitive_types::U256::from_f64_lossy which
-            // truncated the floating point, while alloy is slightly more faithful to the original
-            // value and rounds to closest integer: [0, 0.5) => 0, [0.5, 1] => 1
-            v => U256::from(v.trunc()),
+impl QuoteContext {
+    /// Computes the actual received value from this estimate given the
+    /// available context.
+    fn out_amount(&self, estimate: &Estimate, kind: OrderKind) -> U256 {
+        match self {
+            QuoteContext::None => estimate.out_amount,
+            QuoteContext::GasCost {
+                native_price,
+                gas_price,
+            } => {
+                let eth_out = f64::from(estimate.out_amount) * native_price;
+                let fees = estimate.gas as f64 * gas_price;
+                let effective_out = match kind {
+                    // High fees mean receiving less `buy_token` from your sell order.
+                    OrderKind::Sell => eth_out - fees,
+                    // High fees mean paying more `sell_token` for your buy order.
+                    OrderKind::Buy => eth_out + fees,
+                };
+                match effective_out {
+                    // converts `NaN` and `(-∞, 0]` to `0`
+                    v if v.is_sign_negative() || v.is_nan() => U256::ZERO,
+                    // Previous case already covered negative infinity
+                    v if v.is_infinite() => U256::MAX,
+                    // Note on truncation: previously we used primitive_types::U256::from_f64_lossy
+                    // which truncated the floating point, while alloy is
+                    // slightly more faithful to the original value and rounds
+                    // to closest integer: [0, 0.5) => 0, [0.5, 1] => 1
+                    v => U256::from(v.trunc()),
+                }
+            }
         }
     }
 }
@@ -317,11 +330,11 @@ mod tests {
         Err(err)
     }
 
-    /// Builds a `BestBangForBuck` setup where every token is estimated
+    /// Builds a `GasCost` setup where every token is estimated
     /// to be half as valuable as ETH and the gas price is 2.
     /// That effectively means every unit of `gas` in an estimate worth
     /// 4 units of `out_amount`.
-    fn bang_for_buck_ranking() -> PriceRanking {
+    fn gas_cost_mode() -> QuoteContextMode {
         // Make `out_token` half as valuable as `ETH` and set gas price to 2.
         // That means 1 unit of `gas` is equal to 4 units of `out_token`.
         let mut native = MockNativePriceEstimating::new();
@@ -332,16 +345,16 @@ mod tests {
             max_fee_per_gas: 2,
             max_priority_fee_per_gas: 2,
         }));
-        PriceRanking::BestBangForBuck {
+        QuoteContextMode::GasCost {
             native: Arc::new(native),
             gas,
         }
     }
 
-    /// Returns the best estimate with respect to the provided ranking and order
-    /// kind.
+    /// Returns the best estimate with respect to the provided quote context
+    /// mode and order kind.
     async fn best_response(
-        ranking: PriceRanking,
+        quote_context_mode: QuoteContextMode,
         kind: OrderKind,
         estimates: Vec<PriceEstimateResult>,
         verification: QuoteVerificationMode,
@@ -363,7 +376,7 @@ mod tests {
                     .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
                     .collect(),
             ],
-            ranking.clone(),
+            quote_context_mode.clone(),
         )
         .with_verification(verification);
 
@@ -375,15 +388,15 @@ mod tests {
             .await
     }
 
-    /// Verifies that `PriceRanking::BestBangForBuck` correctly adjusts
+    /// Verifies that `QuoteContextMode::GasCost` correctly adjusts
     /// `out_amount` of quotes based on the `gas` used for the quote. E.g.
     /// if a quote requires a significantly more complex execution but does
     /// not provide a significantly better `out_amount` than a simpler quote
     /// the simpler quote will be preferred.
     #[tokio::test]
-    async fn best_bang_for_buck_adjusts_for_complexity() {
+    async fn gas_cost_adjusts_for_complexity() {
         let best = best_response(
-            bang_for_buck_ranking(),
+            gas_cost_mode(),
             OrderKind::Sell,
             vec![
                 // User effectively receives `100_000` `buy_token`.
@@ -397,7 +410,7 @@ mod tests {
         assert_eq!(best, price(104_000, 1_000));
 
         let best = best_response(
-            bang_for_buck_ranking(),
+            gas_cost_mode(),
             OrderKind::Buy,
             vec![
                 // User effectively pays `100_000` `sell_token`.
@@ -418,7 +431,7 @@ mod tests {
     #[tokio::test]
     async fn discards_low_gas_cost_estimates() {
         let best = best_response(
-            bang_for_buck_ranking(),
+            gas_cost_mode(),
             OrderKind::Sell,
             vec![
                 // User effectively receives `100_000` `buy_token`.
@@ -435,7 +448,7 @@ mod tests {
         assert_eq!(best, price(104_000, 1_000));
 
         let best = best_response(
-            bang_for_buck_ranking(),
+            gas_cost_mode(),
             OrderKind::Buy,
             vec![
                 // User effectively pays `100_000` `sell_token`.
@@ -458,7 +471,7 @@ mod tests {
     async fn returns_highest_priority_error() {
         // Returns errors with highest priority.
         let best = best_response(
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
             OrderKind::Sell,
             vec![
                 error(PriceEstimationError::RateLimited),
@@ -474,7 +487,7 @@ mod tests {
     #[tokio::test]
     async fn prefer_estimate_over_error() {
         let best = best_response(
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
             OrderKind::Sell,
             vec![
                 price(1, 1_000_000),
@@ -502,7 +515,7 @@ mod tests {
         });
 
         let best = best_response(
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
             OrderKind::Sell,
             vec![
                 better_unverified_quote.clone(),
@@ -514,7 +527,7 @@ mod tests {
         assert_eq!(best, worse_verified_quote.clone());
 
         let best = best_response(
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
             OrderKind::Sell,
             vec![
                 better_unverified_quote.clone(),

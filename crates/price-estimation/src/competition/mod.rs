@@ -43,18 +43,18 @@ type ResultWithIndex<O> = (EstimatorIndex, Result<O, PriceEstimationError>);
 pub struct CompetitionEstimator<T> {
     stages: Vec<PriceEstimationStage<T>>,
     usable_results_for_early_return: NonZeroUsize,
-    ranking: PriceRanking,
+    quote_context_mode: QuoteContextMode,
     verification_mode: QuoteVerificationMode,
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
-    pub fn new(stages: Vec<PriceEstimationStage<T>>, ranking: PriceRanking) -> Self {
+    pub fn new(stages: Vec<PriceEstimationStage<T>>, quote_context_mode: QuoteContextMode) -> Self {
         assert!(!stages.is_empty());
         assert!(stages.iter().all(|stage| !stage.is_empty()));
         Self {
             stages,
             usable_results_for_early_return: NonZeroUsize::MAX,
-            ranking,
+            quote_context_mode,
             verification_mode: QuoteVerificationMode::Unverified,
         }
     }
@@ -251,14 +251,14 @@ fn metrics() -> &'static Metrics {
         .expect("unexpected error getting metrics instance")
 }
 
-/// The metric which decides the winning price estimate.
+/// Controls which data will be provided in addition to the
+/// quote to determine which quote is better.
 #[derive(Clone)]
-pub enum PriceRanking {
-    /// The highest quoted `out_amount` gets picked regardless of trade
-    /// complexity.
-    MaxOutAmount,
-    /// Returns the estimate where `out_amount - fees` is highest.
-    BestBangForBuck {
+pub enum QuoteContextMode {
+    /// No additional data will be provided.
+    None,
+    /// Returns information to determine the gas cost of a quote.
+    GasCost {
         native: Arc<dyn NativePriceEstimating>,
         gas: Arc<dyn GasPriceEstimating>,
     },
@@ -383,7 +383,7 @@ mod tests {
                 ("first".to_owned(), Arc::new(first)),
                 ("second".to_owned(), Arc::new(second)),
             ]],
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
         );
 
         let result = priority.estimate(queries[0].clone()).await;
@@ -466,7 +466,7 @@ mod tests {
                 ("second".to_owned(), Arc::new(second)),
                 ("third".to_owned(), Arc::new(third)),
             ]],
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
         );
         let racing = racing.with_early_return(1.try_into().unwrap());
 
@@ -543,7 +543,7 @@ mod tests {
                     ("fourth".to_owned(), Arc::new(fourth)),
                 ],
             ],
-            PriceRanking::MaxOutAmount,
+            QuoteContextMode::None,
         );
         let racing = racing.with_early_return(2.try_into().unwrap());
 
@@ -613,7 +613,7 @@ mod tests {
                 vec![("fourth".to_owned(), Arc::new(fourth))],
             ],
             usable_results_for_early_return: NonZeroUsize::new(2).unwrap(),
-            ranking: PriceRanking::MaxOutAmount,
+            quote_context_mode: QuoteContextMode::None,
             verification_mode: QuoteVerificationMode::Unverified,
         };
 
