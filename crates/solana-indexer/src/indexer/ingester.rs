@@ -17,6 +17,10 @@ use {
 /// The sole writer is the ingester, on every slot-filter message. Anchors the
 /// partial-event watchdog and the finalization worker. Cold start is zero; the
 /// watchdog skips its comparison on the first tick.
+///
+/// This is the chain tip, not indexing progress. How far the indexer has
+/// actually persisted is the watermark in `solana.indexer_state`, written by
+/// the decoder, which is a separate value.
 pub static LATEST_CHAIN_SLOT: AtomicU64 = AtomicU64::new(0);
 
 /// Cap on the exponential backoff between reconnect attempts.
@@ -34,7 +38,7 @@ pub(crate) struct Ingester<C: GrpcConnector> {
     pub connector: C,
 
     /// Sends `StreamUpdate` to the decoder. Should be bounded to
-    /// `RECONNECT_BACKOFF_CAP` entries.
+    /// `INGEST_TO_DECODER_CAPACITY` entries.
     pub tx: Sender<StreamUpdate>,
 
     /// Store implementor; used to checkpoint the slot.
