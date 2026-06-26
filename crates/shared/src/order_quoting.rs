@@ -864,9 +864,8 @@ mod tests {
             eips::eip1559::Eip1559Estimation,
             primitives::{Address, U256 as AlloyU256},
         },
-        async_stream::stream,
         chrono::Utc,
-        futures::{FutureExt, StreamExt},
+        futures::{FutureExt, StreamExt, stream},
         gas_price_estimation::FakeGasPriceEstimator,
         mockall::{Sequence, predicate::eq},
         model::time,
@@ -2062,22 +2061,22 @@ mod tests {
 
         let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
         streaming_estimator.expect_estimate_stream().returning(|_| {
-            stream! {
-                yield Ok(price_estimation::Estimate {
+            stream::iter([
+                Ok(price_estimation::Estimate {
                     out_amount: AlloyU256::from(500),
                     gas: 10,
                     solver: Address::repeat_byte(1),
                     verified: false,
                     execution: Default::default(),
-                });
-                yield Ok(price_estimation::Estimate {
+                }),
+                Ok(price_estimation::Estimate {
                     out_amount: AlloyU256::from(600),
                     gas: 20,
                     solver: Address::repeat_byte(2),
                     verified: false,
                     execution: Default::default(),
-                });
-            }
+                }),
+            ])
             .boxed()
         });
 
@@ -2116,31 +2115,31 @@ mod tests {
 
         let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
         streaming_estimator.expect_estimate_stream().returning(|_| {
-            stream! {
-                yield Ok(price_estimation::Estimate {
+            stream::iter([
+                Ok(price_estimation::Estimate {
                     out_amount: AlloyU256::from(400),
                     gas: 10,
                     solver: Address::repeat_byte(1),
                     verified: false,
                     execution: Default::default(),
-                });
+                }),
                 // zero gas - must be dropped silently
-                yield Ok(price_estimation::Estimate {
+                Ok(price_estimation::Estimate {
                     out_amount: AlloyU256::from(400),
                     gas: 0,
                     solver: Address::repeat_byte(2),
                     verified: false,
                     execution: Default::default(),
-                });
+                }),
                 // zero out_amount - must be dropped silently
-                yield Ok(price_estimation::Estimate {
+                Ok(price_estimation::Estimate {
                     out_amount: AlloyU256::ZERO,
                     gas: 10,
                     solver: Address::repeat_byte(3),
                     verified: false,
                     execution: Default::default(),
-                });
-            }
+                }),
+            ])
             .boxed()
         });
 
@@ -2218,15 +2217,13 @@ mod tests {
 
         let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
         streaming_estimator.expect_estimate_stream().returning(|_| {
-            stream! {
-                yield Ok(price_estimation::Estimate {
-                    out_amount: AlloyU256::from(500),
-                    gas: 10,
-                    solver: Address::repeat_byte(1),
-                    verified: false,
-                    execution: Default::default(),
-                });
-            }
+            stream::iter([Ok(price_estimation::Estimate {
+                out_amount: AlloyU256::from(500),
+                gas: 10,
+                solver: Address::repeat_byte(1),
+                verified: false,
+                execution: Default::default(),
+            })])
             .boxed()
         });
 
@@ -2278,15 +2275,13 @@ mod tests {
 
         let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
         streaming_estimator.expect_estimate_stream().returning(|_| {
-            stream! {
-                yield Ok(price_estimation::Estimate {
-                    out_amount: AlloyU256::from(500),
-                    gas: 2000,
-                    solver: Address::repeat_byte(1),
-                    verified: false,
-                    execution: Default::default(),
-                });
-            }
+            stream::iter([Ok(price_estimation::Estimate {
+                out_amount: AlloyU256::from(500),
+                gas: 2000,
+                solver: Address::repeat_byte(1),
+                verified: false,
+                execution: Default::default(),
+            })])
             .boxed()
         });
 
