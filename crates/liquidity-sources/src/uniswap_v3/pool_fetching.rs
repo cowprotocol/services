@@ -11,8 +11,7 @@ use {
     },
     anyhow::{Context, Result},
     contracts::UniswapV3Pool::UniswapV3Pool::{
-        UniswapV3PoolEvents as AlloyUniswapV3PoolEvents,
-        UniswapV3PoolEvents,
+        UniswapV3PoolEvents as AlloyUniswapV3PoolEvents, UniswapV3PoolEvents,
     },
     ethrpc::{Web3, alloy::ProviderLabelingExt},
     event_indexing::{
@@ -63,11 +62,8 @@ pub struct PoolState {
     pub liquidity: U256,
     #[serde_as(as = "DisplayFromStr")]
     pub tick: i32,
-    // (tick_idx, liquidity_net). `Arc`-shared so cloning a `PoolInfo` (when
-    // applying events via `Arc::make_mut`, or converting to the domain type on
-    // every `/solve`) doesn't deep-copy the whole tick map. The map is only
-    // copied-on-write when actually mutated (Mint/Burn), not on the common Swap
-    // event or on read-only conversions.
+    // (tick_idx, liquidity_net). `Arc`-shared so cloning a `PoolInfo` doesn't
+    // deep-copy the tick map; copied-on-write only when mutated (Mint/Burn).
     #[serde_as(as = "Arc<BTreeMap<DisplayFromStr, DisplayFromStr>>")]
     pub liquidity_net: Arc<BTreeMap<i32, i128>>,
     #[serde(skip_serializing)]
@@ -469,8 +465,6 @@ fn append_events(
                         pool.liquidity -= U256::from(burn.amount);
                     }
 
-                    // Copy-on-write: only clone the shared tick map now that we
-                    // actually mutate it.
                     let liquidity_net = Arc::make_mut(&mut pool.liquidity_net);
                     update_liquidity_net(liquidity_net, tick_lower, -amount);
                     update_liquidity_net(liquidity_net, tick_upper, amount);
@@ -492,8 +486,6 @@ fn append_events(
                         pool.liquidity += U256::from(mint.amount);
                     }
 
-                    // Copy-on-write: only clone the shared tick map now that we
-                    // actually mutate it.
                     let liquidity_net = Arc::make_mut(&mut pool.liquidity_net);
                     update_liquidity_net(liquidity_net, tick_lower, amount);
                     update_liquidity_net(liquidity_net, tick_upper, -amount);

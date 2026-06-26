@@ -22,10 +22,8 @@ pub struct Pool {
     pub sqrt_price: SqrtPrice,
     pub liquidity: Liquidity,
     pub tick: Tick,
-    /// Tick index -> net liquidity. `Arc`-shared with the liquidity source's
-    /// `PoolInfo` so building this domain pool on every `/solve` doesn't
-    /// deep-copy the tick map (see
-    /// `boundary::liquidity::uniswap::v3::to_domain`).
+    /// Tick index -> net liquidity, `Arc`-shared with the source `PoolInfo` to
+    /// avoid deep-copying the tick map on every `/solve`.
     #[debug(ignore)]
     pub liquidity_net: Arc<BTreeMap<i32, i128>>,
     pub fee: Fee,

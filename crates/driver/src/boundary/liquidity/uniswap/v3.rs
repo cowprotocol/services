@@ -58,8 +58,6 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
             sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
             liquidity: Liquidity(u128::try_from(pool.pool.state.liquidity)?),
             tick: Tick(pool.pool.state.tick),
-            // `Arc` clone — shares the tick map with the source `PoolInfo`
-            // instead of rebuilding it on every `/solve`.
             liquidity_net: pool.pool.state.liquidity_net.clone(),
             fee: Fee(pool.pool.state.fee),
         }),

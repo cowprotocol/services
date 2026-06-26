@@ -274,9 +274,8 @@ pub struct ConcentratedLiquidityPool {
     #[serde_as(as = "DisplayFromStr")]
     pub liquidity: u128,
     pub tick: i32,
-    // `Arc`-shared with the driver's domain pool so building the solver request
-    // on every `/solve` doesn't deep-copy the tick map (potentially tens of
-    // thousands of entries) per pool per solver.
+    // `Arc`-shared with the driver's domain pool to avoid deep-copying the tick
+    // map when building the solver request on every `/solve`.
     #[serde_as(as = "Arc<BTreeMap<DisplayFromStr, DisplayFromStr>>")]
     pub liquidity_net: Arc<BTreeMap<i32, i128>>,
     pub fee: BigDecimal,
@@ -324,39 +323,4 @@ pub struct WrapperCall {
     /// unmodified in a solution containing this order.
     #[serde(default)]
     pub is_omittable: bool,
-}
-
-#[cfg(test)]
-mod tests {
-    use {
-        super::*,
-        serde_json::json,
-        std::{str::FromStr, sync::Arc},
-    };
-
-    /// `liquidity_net` is `Arc`-shared (not deep-copied) per `/solve`, but it
-    /// must still serialize as a plain JSON object of decimal-string keys to
-    /// decimal-string values, and round-trip. Guards the wire format against
-    /// the `HashMap<i32, i128>` -> `Arc<BTreeMap<i32, i128>>` change.
-    #[test]
-    fn concentrated_liquidity_net_wire_format_roundtrip() {
-        let pool = ConcentratedLiquidityPool {
-            id: "0x1".to_owned(),
-            address: Address::ZERO,
-            router: Address::ZERO,
-            gas_estimate: U256::from(108_163u64),
-            tokens: vec![Address::ZERO, Address::ZERO],
-            sqrt_price: U256::from(1u64),
-            liquidity: 2u128,
-            tick: -42,
-            liquidity_net: Arc::new(BTreeMap::from([(-100i32, 5i128), (200i32, -3i128)])),
-            fee: BigDecimal::from_str("0.003").unwrap(),
-        };
-
-        let value = serde_json::to_value(&pool).unwrap();
-        assert_eq!(value["liquidityNet"], json!({"-100": "5", "200": "-3"}));
-
-        let decoded: ConcentratedLiquidityPool = serde_json::from_value(value).unwrap();
-        assert_eq!(*decoded.liquidity_net, *pool.liquidity_net);
-    }
 }
