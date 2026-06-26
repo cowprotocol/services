@@ -41,7 +41,7 @@ use {
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
     },
     shared::{
-        order_quoting::{self, OrderQuoter, StreamingQuoting},
+        order_quoting::{self, OrderQuoter},
         order_validation::{OrderSimulator, OrderValidPeriodConfiguration, OrderValidator},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
@@ -481,7 +481,7 @@ pub async fn run(config: Configuration) {
         token_info_fetcher.clone(),
     )
     .with_fast_quoter(fast_quoter)
-    .with_streaming_quoter(optimal_quoter.clone() as Arc<dyn StreamingQuoting>);
+    .with_streaming_quoter(optimal_quoter.clone());
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(

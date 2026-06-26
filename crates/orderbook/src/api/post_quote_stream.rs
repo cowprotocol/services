@@ -25,30 +25,21 @@ pub async fn post_quote_stream_handler(
     };
 
     let events = stream.filter_map(|item| async move {
-        match item {
-            Ok(response) => match Event::default().json_data(&response) {
-                Ok(event) => Some(Ok::<_, Infallible>(event)),
-                Err(err) => {
-                    tracing::error!(?err, "failed to serialize streamed quote");
-                    None
-                }
-            },
+        let event = match item {
+            Ok(response) => Event::default().json_data(&response),
             // Terminal error from the domain: frame it as an SSE error event.
-            Err(err) => {
-                let response = err.into_response();
-                match axum::body::to_bytes(response.into_body(), usize::MAX).await {
-                    Ok(bytes) => Some(Ok::<_, Infallible>(
-                        Event::default()
-                            .event("error")
-                            .data(String::from_utf8_lossy(&bytes)),
-                    )),
-                    Err(err) => {
-                        tracing::error!(?err, "failed to read error event body");
-                        None
-                    }
-                }
-            }
-        }
+            Err(err) => axum::body::to_bytes(err.into_response().into_body(), usize::MAX)
+                .await
+                .map(|bytes| {
+                    Event::default()
+                        .event("error")
+                        .data(String::from_utf8_lossy(&bytes))
+                }),
+        };
+        event
+            .inspect_err(|err| tracing::error!(?err, "failed to build SSE event"))
+            .ok()
+            .map(Ok::<_, Infallible>)
     });
 
     Sse::new(events)
