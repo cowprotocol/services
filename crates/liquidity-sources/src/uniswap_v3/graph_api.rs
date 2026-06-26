@@ -11,7 +11,6 @@ use {
     anyhow::Result,
     async_trait::async_trait,
     event_indexing::event_handler::MAX_REORG_BLOCK_COUNT,
-    num::BigInt,
     number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},
     serde::{Deserialize, Serialize},
@@ -332,7 +331,7 @@ pub struct PoolData {
     #[serde_as(as = "HexOrDecimalU256")]
     pub sqrt_price: U256,
     #[serde_as(as = "DisplayFromStr")]
-    pub tick: BigInt,
+    pub tick: i32,
     pub ticks: Option<Vec<TickData>>,
     /// Not serialised — sources populate this after deserialisation. See
     /// the struct doc for why.
@@ -352,9 +351,9 @@ impl ContainsId for PoolData {
 #[serde(rename_all = "camelCase")]
 pub struct TickData {
     #[serde_as(as = "DisplayFromStr")]
-    pub tick_idx: BigInt,
+    pub tick_idx: i32,
     #[serde_as(as = "DisplayFromStr")]
-    pub liquidity_net: BigInt,
+    pub liquidity_net: i128,
     pub pool_address: Address,
 }
 
@@ -463,7 +462,7 @@ mod tests {
                         fee_tier: U256::from(10000),
                         liquidity: U256::from(303015134493562686441_u128),
                         sqrt_price: U256::from(792216481398733702759960397_u128),
-                        tick: BigInt::from(-92110),
+                        tick: -92110,
                         ticks: None,
                         block_number: 0,
                     },
@@ -480,7 +479,7 @@ mod tests {
                         fee_tier: U256::from(3000),
                         liquidity: U256::from(3125586395511534995_u128),
                         sqrt_price: U256::from(5986323062404391218190509_u128),
-                        tick: BigInt::from(-189822),
+                        tick: -189822,
                         ticks: None,
                         block_number: 0,
                     },
@@ -512,13 +511,13 @@ mod tests {
             Data {
                 inner: vec![
                     TickData {
-                        tick_idx: BigInt::from(0),
-                        liquidity_net: BigInt::from(-303015134493562686441i128),
+                        tick_idx: 0,
+                        liquidity_net: -303015134493562686441i128,
                         pool_address: address!("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
                     },
                     TickData {
-                        tick_idx: BigInt::from(-92200),
-                        liquidity_net: BigInt::from(303015134493562686441i128),
+                        tick_idx: -92200,
+                        liquidity_net: 303015134493562686441i128,
                         pool_address: address!("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
                     },
                 ],
