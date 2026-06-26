@@ -18,8 +18,7 @@ use {
     anyhow::{Context, Result, anyhow},
     eth_domain_types as eth,
     futures::StreamExt,
-    rand::Rng as _,
-    std::time::Duration,
+    shared::retry::retry_with_sleep,
 };
 
 #[derive(Clone)]
@@ -45,9 +44,7 @@ impl Observer {
     /// prod vs. staging).
     pub async fn post_process_outstanding_settlement_transactions(&self) {
         let settlements =
-            match Self::retry_with_sleep(|| self.persistence.get_settlements_without_auction())
-                .await
-            {
+            match retry_with_sleep(|| self.persistence.get_settlements_without_auction()).await {
                 Ok(settlements) => settlements,
                 Err(errs) => {
                     tracing::warn!(?errs, "failed to fetch unprocessed settlements");
@@ -67,7 +64,7 @@ impl Observer {
         futures::stream::iter(settlements)
             .for_each_concurrent(MAX_CONCURRENCY, |settlement| async move {
                 tracing::debug!(tx = ?settlement.transaction, "start post processing of settlement");
-                match Self::retry_with_sleep(|| self.post_process_settlement(settlement)).await {
+                match retry_with_sleep(|| self.post_process_settlement(settlement)).await {
                     Ok(_) =>  tracing::debug!(
                         tx = ?settlement.transaction,
                         "successfully post-processed settlement"
@@ -159,29 +156,5 @@ impl Observer {
                 }
             }
         }
-    }
-
-    async fn retry_with_sleep<F, OK, ERR>(future: impl Fn() -> F) -> Result<OK, Vec<ERR>>
-    where
-        F: Future<Output = Result<OK, ERR>>,
-        ERR: std::fmt::Debug,
-    {
-        const MAX_RETRIES: usize = 5;
-
-        let mut errors = Vec::new();
-        let mut tries = 0;
-        while tries < MAX_RETRIES {
-            match future().await {
-                Ok(res) => return Ok(res),
-                Err(err) => {
-                    errors.push(err);
-                    tries += 1;
-                    // wait a little to give temporary errors a chance to resolve themselves
-                    let timeout_with_jitter = 50u64 + rand::rng().random_range(0..=50);
-                    tokio::time::sleep(Duration::from_millis(timeout_with_jitter)).await;
-                }
-            }
-        }
-        Err(errors)
     }
 }

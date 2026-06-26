@@ -3,7 +3,7 @@ pub(crate) mod aave;
 use {
     crate::detector::{DetectionError, SimulationError, extract_sload_slots, mapping_slot_hash},
     alloy_eips::BlockId,
-    alloy_primitives::{Address, B256, TxKind, U256, keccak256, map::AddressMap},
+    alloy_primitives::{Address, B256, TxKind, U256, address, keccak256, map::AddressMap},
     alloy_provider::ext::DebugApi,
     alloy_rpc_types::{
         TransactionInput,
@@ -34,6 +34,9 @@ const BALANCE_SLOT_SEED: &[u8] = &[0x87, 0xa2, 0x11, 0xa2];
 /// low-byte suffix and resolves to `shift_bits == 0`.
 const SENTINEL: [u8; 32] =
     alloy_primitives::hex!("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20");
+
+/// Marker address for native ETH - the non-ERC20 gas token on many chains.
+const NATIVE_ETH: Address = address!("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
 
 /// Used by Detector when there are multiple slots to increase the chances we
 /// find the correct storage slot quickly.
@@ -131,6 +134,7 @@ pub(crate) enum Strategy {
         underlying: Address,
         web3: Web3,
     },
+    NativeEth,
 }
 
 impl Strategy {
@@ -183,6 +187,10 @@ impl Strategy {
                     None => AddressMap::default(),
                 };
             }
+            Self::NativeEth => {
+                return iter::once((*holder, AccountOverride::default().with_balance(*amount)))
+                    .collect();
+            }
         };
 
         // Pack the balance into its slot position. `checked_shl` returns `None`
@@ -214,14 +222,14 @@ impl Strategy {
         !matches!(self, Self::DirectSlot { .. })
     }
 
-    /// Sets the packing shift on a balance strategy. No-op for `AaveV3AToken`,
-    /// which is never packed.
+    /// Sets the packing shift on a balance strategy. No-op for `AaveV3AToken`
+    /// and `NativeEth`, which are never packed.
     fn with_shift(mut self, shift_bits: usize) -> Self {
         match &mut self {
             Self::SolidityMapping { shift_bits: s, .. }
             | Self::SoladyMapping { shift_bits: s, .. }
             | Self::DirectSlot { shift_bits: s, .. } => *s = shift_bits,
-            Self::AaveV3AToken { .. } => {}
+            Self::AaveV3AToken { .. } | Self::NativeEth => {}
         }
         self
     }
@@ -281,6 +289,7 @@ impl PartialEq for Strategy {
                     ..
                 },
             ) => tc1 == tc2 && p1 == p2 && u1 == u2,
+            (Self::NativeEth, Self::NativeEth) => true,
             _ => false,
         }
     }
@@ -364,6 +373,9 @@ impl Detector {
         token: Address,
         holder: Address,
     ) -> Result<Strategy, DetectionError<TransportErrorKind>> {
+        if token == NATIVE_ETH {
+            return Ok(Strategy::NativeEth);
+        }
         // Aave fast-path. If the token self-identifies as a v3 aToken and
         // the pool confirms it, try the canonical `_userState` slot
         // directly — no `debug_traceCall` needed. An Aave v3 fork that
@@ -563,7 +575,12 @@ fn detect_shift(observed: U256) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy_primitives::address};
+    use {
+        super::*,
+        crate::detector::DEFAULT_VERIFICATION_TIMEOUT,
+        alloy_primitives::address,
+        contracts::WETH9,
+    };
 
     #[test]
     fn detect_shift_locates_packed_balance() {
@@ -761,8 +778,6 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_mainnet() {
-        use crate::detector::DEFAULT_VERIFICATION_TIMEOUT;
-
         let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
 
         let storage = detector
@@ -816,8 +831,6 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_arbitrum() {
-        use crate::detector::DEFAULT_VERIFICATION_TIMEOUT;
-
         let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
 
         let storage = detector
@@ -845,8 +858,6 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_packed_balance_slot_avalanche() {
-        use crate::detector::DEFAULT_VERIFICATION_TIMEOUT;
-
         let ausd = address!("00000000efe302beaa2b3e6e1b18d08d69a9012a");
         let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
 
@@ -866,5 +877,44 @@ mod tests {
             }
             other => panic!("expected DirectSlot with shift, got {other:?}"),
         }
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn detects_native_eth() {
+        let web3 = Web3::new_from_env();
+        let weth = WETH9::Instance::deployed(&web3.provider).await.unwrap();
+        let detector = Detector::new(web3.clone(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
+
+        let user = Address::random();
+        let amount = U256::MAX / U256::from(2);
+
+        let strategy = detector.detect(NATIVE_ETH, user).await.unwrap();
+
+        std::assert_matches!(strategy, Strategy::NativeEth);
+
+        // ETH is not an ERC20 token so we can't do an `eth_call` on `balanceOf()`.
+        // Additionally `eth_getBalance` does not support state overrides.
+        // So to infer that our override works we assert that we can wrap the
+        // desired amount of ETH to WETH.
+        let state = strategy.state_override(&user, &amount).await;
+        assert!(
+            weth.deposit()
+                .value(amount)
+                .from(user)
+                .state(state)
+                .call()
+                .await
+                .is_ok()
+        );
+
+        assert!(
+            weth.deposit()
+                .value(amount)
+                .from(user)
+                .call()
+                .await
+                .is_err()
+        );
     }
 }

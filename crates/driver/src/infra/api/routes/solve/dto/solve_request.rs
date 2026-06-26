@@ -24,6 +24,9 @@ use {
 };
 
 impl SolveRequest {
+    // Deprecated External/Internal arms are retained in case a new
+    // order is placed between now and the PR blocking them going live.
+    #[allow(deprecated)]
     #[instrument(skip_all)]
     pub async fn into_domain(
         self,
@@ -42,32 +45,12 @@ impl SolveRequest {
             Some(self.id.try_into()?),
             self.orders
                 .into_iter()
-                .map(|order| competition::Order {
-                    uid: order.uid.into(),
-                    receiver: order.receiver,
-                    created: order.created.into(),
-                    valid_to: order.valid_to.into(),
-                    buy: eth::Asset {
-                        amount: order.buy_amount.into(),
-                        token: order.buy_token.into(),
-                    },
-                    sell: eth::Asset {
-                        amount: order.sell_amount.into(),
-                        token: order.sell_token.into(),
-                    },
-                    side: match order.kind {
-                        Kind::Sell => competition::order::Side::Sell,
-                        Kind::Buy => competition::order::Side::Buy,
-                    },
-                    kind: match order.class {
-                        Class::Market => competition::order::Kind::Market,
-                        Class::Limit => competition::order::Kind::Limit,
-                    },
-                    app_data: match app_data.get(&AppDataHash::from(order.app_data)) {
+                .map(|order| {
+                    let app_data = match app_data.get(&AppDataHash::from(order.app_data)) {
                         Some(data) => AppData::Full(data.clone()),
                         None => AppData::Hash(AppDataHash::from(order.app_data)),
-                    },
-                    partial: if order.partially_fillable {
+                    };
+                    let partial = if order.partially_fillable {
                         competition::order::Partial::Yes {
                             available: match order.kind {
                                 Kind::Sell => {
@@ -78,82 +61,116 @@ impl SolveRequest {
                         }
                     } else {
                         competition::order::Partial::No
-                    },
-                    pre_interactions: order
-                        .pre_interactions
-                        .into_iter()
-                        .map(|interaction| domain::Interaction {
-                            target: interaction.target,
-                            value: interaction.value.into(),
-                            call_data: interaction.call_data.into(),
-                        })
-                        .collect(),
-                    post_interactions: order
-                        .post_interactions
-                        .into_iter()
-                        .map(|interaction| domain::Interaction {
-                            target: interaction.target,
-                            value: interaction.value.into(),
-                            call_data: interaction.call_data.into(),
-                        })
-                        .collect(),
-                    sell_token_balance: match order.sell_token_balance {
-                        SellTokenBalance::Erc20 => competition::order::SellTokenBalance::Erc20,
-                        SellTokenBalance::Internal => {
-                            competition::order::SellTokenBalance::Internal
-                        }
-                        SellTokenBalance::External => {
-                            competition::order::SellTokenBalance::External
-                        }
-                    },
-                    buy_token_balance: match order.buy_token_balance {
-                        BuyTokenBalance::Erc20 => competition::order::BuyTokenBalance::Erc20,
-                        BuyTokenBalance::Internal => competition::order::BuyTokenBalance::Internal,
-                    },
-                    signature: competition::order::Signature {
-                        scheme: match order.signing_scheme {
-                            SigningScheme::Eip712 => competition::order::signature::Scheme::Eip712,
-                            SigningScheme::EthSign => {
-                                competition::order::signature::Scheme::EthSign
-                            }
-                            SigningScheme::PreSign => {
-                                competition::order::signature::Scheme::PreSign
-                            }
-                            SigningScheme::Eip1271 => {
-                                competition::order::signature::Scheme::Eip1271
-                            }
-                        },
-                        data: order.signature.into(),
-                        signer: order.owner,
-                    },
-                    protocol_fees: order
-                        .protocol_fees
-                        .into_iter()
-                        .map(|policy| match policy {
-                            FeePolicy::Surplus {
-                                factor,
-                                max_volume_factor,
-                            } => competition::order::FeePolicy::Surplus {
-                                factor,
-                                max_volume_factor,
+                    };
+                    competition::Order {
+                        data: Arc::new(competition::order::OrderData {
+                            uid: order.uid.into(),
+                            receiver: order.receiver,
+                            created: order.created.into(),
+                            valid_to: order.valid_to.into(),
+                            buy: eth::Asset {
+                                amount: order.buy_amount.into(),
+                                token: order.buy_token.into(),
                             },
-                            FeePolicy::PriceImprovement {
-                                factor,
-                                max_volume_factor,
-                                quote,
-                            } => competition::order::FeePolicy::PriceImprovement {
-                                factor,
-                                max_volume_factor,
-                                quote: quote.into_domain(order.sell_token, order.buy_token),
+                            sell: eth::Asset {
+                                amount: order.sell_amount.into(),
+                                token: order.sell_token.into(),
                             },
-                            FeePolicy::Volume { factor } => {
-                                competition::order::FeePolicy::Volume { factor }
-                            }
-                        })
-                        .collect(),
-                    quote: order
-                        .quote
-                        .map(|q| q.into_domain(order.sell_token, order.buy_token)),
+                            side: match order.kind {
+                                Kind::Sell => competition::order::Side::Sell,
+                                Kind::Buy => competition::order::Side::Buy,
+                            },
+                            kind: match order.class {
+                                Class::Market => competition::order::Kind::Market,
+                                Class::Limit => competition::order::Kind::Limit,
+                            },
+                            pre_interactions: order
+                                .pre_interactions
+                                .into_iter()
+                                .map(|interaction| domain::Interaction {
+                                    target: interaction.target,
+                                    value: interaction.value.into(),
+                                    call_data: interaction.call_data.into(),
+                                })
+                                .collect(),
+                            post_interactions: order
+                                .post_interactions
+                                .into_iter()
+                                .map(|interaction| domain::Interaction {
+                                    target: interaction.target,
+                                    value: interaction.value.into(),
+                                    call_data: interaction.call_data.into(),
+                                })
+                                .collect(),
+                            sell_token_balance: match order.sell_token_balance {
+                                SellTokenBalance::Erc20 => {
+                                    competition::order::SellTokenBalance::Erc20
+                                }
+                                SellTokenBalance::Internal => {
+                                    competition::order::SellTokenBalance::Internal
+                                }
+                                SellTokenBalance::External => {
+                                    competition::order::SellTokenBalance::External
+                                }
+                            },
+                            buy_token_balance: match order.buy_token_balance {
+                                BuyTokenBalance::Erc20 => {
+                                    competition::order::BuyTokenBalance::Erc20
+                                }
+                                BuyTokenBalance::Internal => {
+                                    competition::order::BuyTokenBalance::Internal
+                                }
+                            },
+                            signature: competition::order::Signature {
+                                scheme: match order.signing_scheme {
+                                    SigningScheme::Eip712 => {
+                                        competition::order::signature::Scheme::Eip712
+                                    }
+                                    SigningScheme::EthSign => {
+                                        competition::order::signature::Scheme::EthSign
+                                    }
+                                    SigningScheme::PreSign => {
+                                        competition::order::signature::Scheme::PreSign
+                                    }
+                                    SigningScheme::Eip1271 => {
+                                        competition::order::signature::Scheme::Eip1271
+                                    }
+                                },
+                                data: order.signature.into(),
+                                signer: order.owner,
+                            },
+                            protocol_fees: order
+                                .protocol_fees
+                                .into_iter()
+                                .map(|policy| match policy {
+                                    FeePolicy::Surplus {
+                                        factor,
+                                        max_volume_factor,
+                                    } => competition::order::FeePolicy::Surplus {
+                                        factor,
+                                        max_volume_factor,
+                                    },
+                                    FeePolicy::PriceImprovement {
+                                        factor,
+                                        max_volume_factor,
+                                        quote,
+                                    } => competition::order::FeePolicy::PriceImprovement {
+                                        factor,
+                                        max_volume_factor,
+                                        quote: quote.into_domain(order.sell_token, order.buy_token),
+                                    },
+                                    FeePolicy::Volume { factor } => {
+                                        competition::order::FeePolicy::Volume { factor }
+                                    }
+                                })
+                                .collect(),
+                            quote: order
+                                .quote
+                                .map(|q| q.into_domain(order.sell_token, order.buy_token)),
+                        }),
+                        app_data,
+                        partial,
+                    }
                 })
                 .collect(),
             self.tokens.into_iter().map(|token| {
@@ -295,7 +312,15 @@ struct Interaction {
 enum SellTokenBalance {
     #[default]
     Erc20,
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     Internal,
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     External,
 }
 
@@ -304,6 +329,10 @@ enum SellTokenBalance {
 enum BuyTokenBalance {
     #[default]
     Erc20,
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     Internal,
 }
 

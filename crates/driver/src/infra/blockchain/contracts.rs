@@ -1,6 +1,6 @@
 use {
     chain::Chain,
-    contracts::{BalancerV2Vault, FlashLoanRouter, GPv2Settlement, WETH9, support::Balances},
+    contracts::{FlashLoanRouter, GPv2Settlement, WETH9, support::Balances},
     eth_domain_types as eth,
     ethrpc::Web3,
     std::collections::HashMap,
@@ -10,7 +10,6 @@ use {
 pub struct Contracts {
     settlement: GPv2Settlement::Instance,
     vault_relayer: eth::ContractAddress,
-    vault: BalancerV2Vault::Instance,
     signatures: contracts::support::Signatures::Instance,
     weth: WETH9::Instance,
 
@@ -54,8 +53,6 @@ impl Contracts {
             web3.provider.clone(),
         );
         let vault_relayer = settlement.vaultRelayer().call().await?;
-        let vault =
-            BalancerV2Vault::Instance::new(settlement.vault().call().await?, web3.provider.clone());
         let balance_helper = Balances::Instance::new(
             addresses
                 .balances
@@ -102,7 +99,6 @@ impl Contracts {
         Ok(Self {
             settlement,
             vault_relayer: vault_relayer.into(),
-            vault,
             signatures,
             weth,
             settlement_domain_separator,
@@ -123,10 +119,6 @@ impl Contracts {
 
     pub fn vault_relayer(&self) -> eth::ContractAddress {
         self.vault_relayer
-    }
-
-    pub fn vault(&self) -> &BalancerV2Vault::Instance {
-        &self.vault
     }
 
     pub fn weth(&self) -> &WETH9::Instance {
