@@ -274,12 +274,20 @@ components:
           items:
             $ref: "#/components/schemas/Interaction"
         sellTokenBalance:
+          deprecated: true
+          description: >
+            In practice only `erc20` occurs; `internal`/`external` (Balancer Vault) 
+            are deprecated and rejected at order creation. Retained for compatibility.
           type: string
           enum:
             - erc20
             - internal
             - external
         buyTokenBalance:
+          deprecated: true
+          description: >
+            In practice only `erc20` occurs; `internal` (Balancer Vault) is
+            rejected at order creation. Retained for compatibility.
           type: string
           enum:
             - erc20
