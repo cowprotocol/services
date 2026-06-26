@@ -1,5 +1,5 @@
 use {
-    super::{CompetitionEstimator, PriceRanking, compare_error},
+    super::{CompetitionEstimator, EstimatorIndex, PriceRanking, compare_error, metrics},
     crate::{
         Estimate,
         PriceEstimateResult,
@@ -15,7 +15,8 @@ use {
     serde::Serialize,
     std::{
         cmp::Ordering,
-        sync::Arc,
+        collections::HashMap,
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
     tracing::instrument,
@@ -40,21 +41,30 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 r.as_ref()
                     .is_ok_and(|r| r.gas > 0 && !r.out_amount.is_zero())
             };
+            // Records each resolved estimator's own response time so we can
+            // observe the winner's latency after ranking.
+            let timings = Arc::new(Mutex::new(HashMap::<String, Duration>::new()));
             let get_results = self
-                .produce_results(query.clone(), is_reasonable, |context| {
-                    // Call estimate() eagerly so its side-effects still happen
-                    // when an early-return drops the future before it's polled.
-                    let start = Instant::now();
-                    let estimator_name = context.name;
-                    let inner_query = context.query.clone();
-                    context
-                        .estimator
-                        .estimate(context.query.clone())
-                        .map(move |res| {
-                            emit_quote_event(estimator_name, &inner_query, &res, start.elapsed());
-                            res
-                        })
-                        .boxed()
+                .produce_results(query.clone(), is_reasonable, {
+                    let timings = timings.clone();
+                    move |context| {
+                        // Call estimate() eagerly so its side-effects still happen
+                        // when an early-return drops the future before it's polled.
+                        let start = Instant::now();
+                        let estimator_name = context.name.to_string();
+                        let inner_query = context.query.clone();
+                        let timings = timings.clone();
+                        context
+                            .estimator
+                            .estimate(context.query.clone())
+                            .map(move |res| {
+                                let elapsed = start.elapsed();
+                                emit_quote_event(&estimator_name, &inner_query, &res, elapsed);
+                                timings.lock().unwrap().insert(estimator_name, elapsed);
+                                res
+                            })
+                            .boxed()
+                    }
                 })
                 .map(Result::Ok);
 
@@ -74,6 +84,15 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 })
                 .with_context(|| "all price estimates were unreasonable (0 gas or 0 out_amount)")
                 .map_err(PriceEstimationError::EstimatorInternal)?;
+            if winner.1.is_ok() {
+                let EstimatorIndex(stage_index, estimator_index) = winner.0;
+                let name = &self.stages[stage_index][estimator_index].0;
+                if let Some(elapsed) = timings.lock().unwrap().get(name) {
+                    metrics()
+                        .winner_response_time
+                        .observe(elapsed.as_secs_f64());
+                }
+            }
             self.report_winner(&query, query.kind, winner)
         }
         .boxed()
