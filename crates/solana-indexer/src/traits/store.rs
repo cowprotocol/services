@@ -10,11 +10,13 @@ use {
         recovery::PdaSnapshot,
         slot::Slot,
     },
+    async_trait::async_trait,
     std::ops::RangeInclusive,
 };
 
 /// PostgreSQL persistence. Used by Decoder, Watchdog, and FinalizationWorker.
-pub(crate) trait Store {
+#[async_trait]
+pub(crate) trait Store: Send + Sync {
     /// Save decoded events and advance the slot watermark atomically.
     async fn persist_events(
         &self,
