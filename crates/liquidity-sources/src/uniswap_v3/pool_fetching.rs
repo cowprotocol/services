@@ -11,7 +11,8 @@ use {
     },
     anyhow::{Context, Result},
     contracts::UniswapV3Pool::UniswapV3Pool::{
-        UniswapV3PoolEvents as AlloyUniswapV3PoolEvents, UniswapV3PoolEvents,
+        UniswapV3PoolEvents as AlloyUniswapV3PoolEvents,
+        UniswapV3PoolEvents,
     },
     ethrpc::{Web3, alloy::ProviderLabelingExt},
     event_indexing::{
