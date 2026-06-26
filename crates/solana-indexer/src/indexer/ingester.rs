@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! The ingester owns the yellowstone gRPC stream. It drains the socket as fast
 //! as yellowstone delivers, pushes tagged updates into the channel, and updates
 //! `LATEST_CHAIN_SLOT` on every slot-filter message. It performs no decoding.
@@ -29,7 +30,7 @@ pub const INGEST_TO_DECODER_CAPACITY: usize = 1024;
 ///
 /// Generic over a `GrpcConnector` implementor so the unit tests can drive it
 /// with a mock.
-pub struct Ingester<C: GrpcConnector, St: Store> {
+pub(crate) struct Ingester<C: GrpcConnector, St: Store> {
     /// gRPC connector implementor
     pub connector: C,
 

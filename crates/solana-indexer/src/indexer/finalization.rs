@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! The finalization worker updates the commitment level of the transactions
 //! tracked by the indexer, promoting rows written at `confirmed` to
 //! `finalized`.
@@ -40,7 +41,7 @@ pub const SIGNATURE_STATUS_RETENTION_SLOTS: u64 = 150;
 
 /// Transaction finalization worker. See the module docs for the two flows it
 /// runs.
-pub struct FinalizationWorker<St: Store, R: SolanaClient> {
+pub(crate) struct FinalizationWorker<St: Store, R: SolanaClient> {
     /// Store implementor.
     pub store: St,
 

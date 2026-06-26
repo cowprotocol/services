@@ -4,9 +4,10 @@ pub mod commitment;
 pub mod dead_letter;
 pub mod errors;
 pub mod events;
-pub mod metrics;
+pub mod order;
 pub mod recovery;
 pub mod shared;
+pub mod slot;
 pub mod tx;
 pub mod wire;
 

@@ -1,35 +1,42 @@
+#![expect(dead_code)]
 //! Domain event taxonomy.
 //!
 //! The settlement program and SolFlow each have their own enum
 //! (`SettlementEvent`, `SolFlowEvent`); the decoder's handoff to the
-//! persistence step is the sum [`DecodedEvent`]. Per-order accounting
-//! is reconstructed from [`TradeDelta`] snapshots.
+//! persistence step is the sum [`DecodedEvent`]. Per-order accounting is
+//! reconstructed from [`TradeDelta`] snapshots.
 
-use {crate::types::Signature, solana_sdk::pubkey::Pubkey};
+use {
+    crate::types::{Signature, order::OrderUid, slot::Slot},
+    solana_sdk::pubkey::Pubkey,
+};
 
-/// Change in a single order's `amount_withdrawn` and `amount_received`
-/// between two consecutive account snapshots.
+/// Change in a single order's `amount_withdrawn` and `amount_received` between
+/// two consecutive account snapshots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TradeDelta {
+pub(crate) struct TradeDelta {
     /// Order UID this delta applies to.
-    pub order_uid: [u8; 32],
+    pub order_uid: OrderUid,
     /// Change in `amount_withdrawn` since the previous snapshot.
     pub amount_withdrawn_delta: u64,
     /// Change in `amount_received` since the previous snapshot.
     pub amount_received_delta: u64,
-    /// `true` when post-trade `amount_withdrawn` equals the order's
-    /// full sell amount, or `amount_received` equals the full buy
-    /// amount.
+    /// Whether the order is fully filled after this trade.
+    ///
+    /// This is **not** a field emitted by the settlement program's event data;
+    /// it is inferred by the decoder from the order PDA's post-trade snapshot.
+    /// It is `true` when post-trade `amount_withdrawn` equals the order's full
+    /// sell amount, or `amount_received` equals the full buy amount.
     pub order_fulfilled: bool,
 }
 
 /// Settlement-program events decoded from on-chain instructions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SettlementEvent {
+pub(crate) enum SettlementEvent {
     /// A new order was created on-chain.
     OrderCreated {
-        /// Intent hash of the order.
-        intent_hash: [u8; 32],
+        /// Order UID this order is identified by.
+        order_uid: OrderUid,
         /// Owner of the order.
         owner: Pubkey,
         /// Address that created the order (relayer / solver).
@@ -37,24 +44,24 @@ pub enum SettlementEvent {
     },
     /// An order was closed.
     OrderClosed {
-        /// Intent hash of the order.
-        intent_hash: [u8; 32],
+        /// Order UID this order is identified by.
+        order_uid: OrderUid,
     },
     /// An order was cancelled.
     OrderCancelled {
-        /// Intent hash of the order.
-        intent_hash: [u8; 32],
+        /// Order UID this order is identified by.
+        order_uid: OrderUid,
     },
     /// A settlement was finalized on-chain.
     SettlementFinalized {
         /// Auction id this settlement belongs to.
-        auction_id: i64,
+        auction_id: u64,
         /// Solver that won the auction.
         solver: Pubkey,
         /// Transaction signature.
         tx_signature: Signature,
         /// Slot the settlement was observed at.
-        slot: u64,
+        slot: Slot,
         /// Per-order accounting deltas.
         trades: Vec<TradeDelta>,
     },
@@ -93,7 +100,7 @@ pub enum SettlementEvent {
         /// Transaction signature.
         tx_signature: Signature,
         /// Index of the instruction within the transaction.
-        ix_index: u8,
+        ix_index: u16,
     },
 }
 
@@ -102,7 +109,8 @@ pub enum SettlementEvent {
 /// Note: the paired `solana.orders` row for `OrderEnabled` is written by the
 /// settlement-program decode path, not here.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SolFlowEvent {
+#[allow(clippy::enum_variant_names)]
+pub(crate) enum SolFlowEvent {
     /// A new order was created on SolFlow.
     OrderCreated {
         /// Custodial PDA that holds the wSOL for this order.
@@ -110,32 +118,41 @@ pub enum SolFlowEvent {
         /// Real owner of the order.
         real_owner: Pubkey,
         /// Order UID.
-        order_uid: [u8; 32],
-        /// From `meta.post_token_balances` on the custodial wSOL
-        /// account.
+        order_uid: OrderUid,
+        /// From `meta.post_token_balances` on the custodial wSOL account.
         sol_amount: u64,
     },
-    /// An order was enabled (custody transferred to settlement program).
+    /// A `SetUpOrder` instruction on the SolFlow program was observed.
+    ///
+    /// The SolFlow order's custodial wSOL PDA has been linked to a
+    /// settlement-program order via CPI. At this point custody of the wrapped
+    /// SOL has effectively been transferred to the settlement program, so the
+    /// SolFlow order is now eligible to be included in auctions and solved.
+    ///
+    /// The `enabler` is the signer of the `SetUpOrder` instruction — an
+    /// unprivileged relayer or participant that pays to set up the SolFlow
+    /// order, not the SolFlow program account. The settlement program records
+    /// the on-chain order's `created_by` as this enabler address.
     OrderEnabled {
         /// Custodial PDA.
         custodial_pda: Pubkey,
-        /// Address that enabled the order.
+        /// Signer of the `SetUpOrder` instruction that enabled the order.
         enabler: Pubkey,
         /// Order UID.
-        order_uid: [u8; 32],
+        order_uid: OrderUid,
     },
     /// An order was recovered (e.g. after a stuck-state cleanup).
     OrderRecovered {
         /// Custodial PDA.
         custodial_pda: Pubkey,
         /// Slot the recovery was observed at.
-        slot: u64,
+        slot: Slot,
     },
 }
 
 /// Sum of the two program-side event enums for the persistence step.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DecodedEvent {
+pub(crate) enum DecodedEvent {
     /// A settlement-program event.
     Settlement(SettlementEvent),
     /// A SolFlow event.

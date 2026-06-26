@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! The decoder pulls `StreamUpdate`s from the ingester, decodes
 //! settlement-program and SolFlow transactions, joins account-update snapshots,
 //! and persists typed events.
@@ -24,7 +25,7 @@ use {
 ///
 /// The watchdog holds a clone of the same `partials` map, so the two operate on
 /// the same concurrent map without any message passing between them.
-pub struct Decoder<St: Store> {
+pub(crate) struct Decoder<St: Store> {
     /// Store implementor.
     pub store: St,
 

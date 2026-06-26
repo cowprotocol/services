@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! The partial-event watchdog.
 
 // TODO: This file only declares the component skeleton. The `run` body is
@@ -29,7 +30,7 @@ use crate::indexer::ingester::LATEST_CHAIN_SLOT;
 /// Those entries are flushed to `solana.dead_letter` with a reason of
 /// `AccountUpdateMissing` or `TxUpdateMissing` depending on which half was
 /// missing.
-pub struct PartialEventWatchdog<St: Store> {
+pub(crate) struct PartialEventWatchdog<St: Store> {
     /// Store implementor.
     pub store: St,
 

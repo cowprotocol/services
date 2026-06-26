@@ -31,7 +31,8 @@ pub mod finalization;
 pub mod ingester;
 pub mod watchdog;
 
-pub use {
+#[expect(unused_imports)]
+pub(crate) use {
     decoder::Decoder,
     finalization::FinalizationWorker,
     ingester::Ingester,

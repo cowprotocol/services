@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! Solana RPC interface for the finalization worker.
 
 use {
@@ -13,7 +14,7 @@ use {
 /// Interface for RPC calls the finalization worker needs:
 /// promoting confirmed transactions to finalized, sweeping aged rows,
 /// and reading account state for recovery.
-pub trait SolanaClient {
+pub(crate) trait SolanaClient {
     /// Fetch status for multiple transaction signatures (up to 256).
     /// `None` = transaction signature not found.
     async fn get_signature_statuses(

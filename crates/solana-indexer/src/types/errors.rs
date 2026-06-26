@@ -1,10 +1,11 @@
+#![expect(dead_code)]
 //! Error types used across the indexer's domain.
 
-use thiserror::Error;
+use {crate::types::slot::Slot, thiserror::Error};
 
 /// Failures surfaced from the decoder.
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum DecodeError {
+pub(crate) enum DecodeError {
     /// The discriminator byte(s) at the start of the instruction data did not
     /// match any known instruction on either program.
     #[error("unknown instruction discriminator")]
@@ -21,7 +22,7 @@ pub enum DecodeError {
 
 /// Failures surfaced from the persistence boundary.
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum StoreError {
+pub(crate) enum StoreError {
     /// The SQL `ON CONFLICT` clause rejected the write (e.g. watermark
     /// regression).
     #[error("store conflict")]
@@ -34,7 +35,7 @@ pub enum StoreError {
 
 /// Failures surfaced from the stream boundary.
 #[derive(Debug, Error)]
-pub enum StreamError {
+pub(crate) enum StreamError {
     /// The stream has been disconnected by the server.
     #[error("stream disconnected")]
     Disconnected,
@@ -44,11 +45,14 @@ pub enum StreamError {
     /// The resume slot is outside the provider's replay window. The caller
     /// should reset `from_slot` to `LATEST_CHAIN_SLOT − replay_window`,
     /// record the lost range, and retry the subscription.
-    #[error("replay window exceeded")]
+    #[error(
+        "replay window exceeded: attempted slot {attempted_slot}, earliest replayable \
+         {earliest_replayable_slot}"
+    )]
     ReplayWindowExceeded {
         /// The slot the subscriber attempted to resume from.
-        attempted_slot: u64,
+        attempted_slot: Slot,
         /// The earliest slot the provider can still serve.
-        earliest_replayable_slot: u64,
+        earliest_replayable_slot: Slot,
     },
 }

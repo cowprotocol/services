@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 //! PostgreSQL persistence layer for decoded events and slot state.
 
 use {
@@ -7,12 +8,13 @@ use {
         errors::StoreError,
         events::DecodedEvent,
         recovery::PdaSnapshot,
+        slot::Slot,
     },
-    std::ops::Range,
+    std::ops::RangeInclusive,
 };
 
 /// PostgreSQL persistence. Used by Decoder, Watchdog, and FinalizationWorker.
-pub trait Store {
+pub(crate) trait Store {
     /// Save decoded events and advance the slot watermark atomically.
     async fn persist_events(
         &self,
@@ -30,16 +32,19 @@ pub trait Store {
     async fn write_dead_letter(&self, entry: DeadLetterEntry) -> Result<(), StoreError>;
 
     /// Record gaps that fell outside the replay window (write-only in v0.1).
-    async fn record_lost_slot_range(&self, range: Range<u64>) -> Result<(), StoreError>;
+    async fn record_lost_slot_range(&self, range: RangeInclusive<u64>) -> Result<(), StoreError>;
 
-    /// Primary promotion pass: fetch `confirmed` rows whose `slot` is at or
-    /// above the finalization-window threshold (`slot >= newer_than_slot`).
-    /// `limit` caps the batch at 256 (RPC batch size). Returns `Err` on
-    /// backend failure so the caller can back off rather than
-    /// silently stall on a dead store.
+    /// Primary promotion pass: fetch `confirmed` rows whose `slot` is old
+    /// enough to be finalized (typically `slot <= tip - 32`) but new enough to
+    /// still be within the RPC signature-status retention horizon.
+    ///
+    /// `limit` is a DB fetch bound (page size), not the RPC batch size. The
+    /// finalization worker chunks the returned rows into <=256-signature
+    /// `getSignatureStatuses` calls. Returns `Err` on backend failure so the
+    /// caller can back off rather than silently stall on a dead store.
     async fn get_confirmed_rows(
         &self,
-        newer_than_slot: u64,
+        max_slot: Slot,
         limit: usize,
     ) -> Result<Vec<UnfinalizedRow>, StoreError>;
 
