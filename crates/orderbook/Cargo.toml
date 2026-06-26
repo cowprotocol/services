@@ -20,6 +20,7 @@ account-balances = { workspace = true }
 alloy = { workspace = true }
 anyhow = { workspace = true }
 app-data = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bad-tokens = { workspace = true }
