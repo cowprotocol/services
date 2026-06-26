@@ -24,27 +24,32 @@ pub async fn post_quote_stream_handler(
         Err(err) => return err.into_response(),
     };
 
-    let events = async_stream::stream! {
-        futures::pin_mut!(stream);
-        while let Some(item) = stream.next().await {
-            match item {
-                Ok(response) => match Event::default().json_data(&response) {
-                    Ok(event) => yield Ok::<_, Infallible>(event),
-                    Err(err) => tracing::error!(?err, "failed to serialize streamed quote"),
-                },
+    let events = stream.filter_map(|item| async move {
+        match item {
+            Ok(response) => match Event::default().json_data(&response) {
+                Ok(event) => Some(Ok::<_, Infallible>(event)),
                 Err(err) => {
-                    // Terminal error from the domain: frame it as an SSE error event.
-                    let response = err.into_response();
-                    match axum::body::to_bytes(response.into_body(), usize::MAX).await {
-                        Ok(bytes) => yield Ok::<_, Infallible>(
-                            Event::default().event("error").data(String::from_utf8_lossy(&bytes)),
-                        ),
-                        Err(err) => tracing::error!(?err, "failed to read error event body"),
+                    tracing::error!(?err, "failed to serialize streamed quote");
+                    None
+                }
+            },
+            // Terminal error from the domain: frame it as an SSE error event.
+            Err(err) => {
+                let response = err.into_response();
+                match axum::body::to_bytes(response.into_body(), usize::MAX).await {
+                    Ok(bytes) => Some(Ok::<_, Infallible>(
+                        Event::default()
+                            .event("error")
+                            .data(String::from_utf8_lossy(&bytes)),
+                    )),
+                    Err(err) => {
+                        tracing::error!(?err, "failed to read error event body");
+                        None
                     }
                 }
             }
         }
-    };
+    });
 
     Sse::new(events)
         .keep_alive(KeepAlive::default())

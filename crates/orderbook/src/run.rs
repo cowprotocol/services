@@ -358,7 +358,7 @@ pub async fn run(config: Configuration) {
     };
 
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
-        Arc::new(OrderQuoter::new(
+        OrderQuoter::new(
             price_estimator,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
@@ -379,40 +379,18 @@ pub async fn run(config: Configuration) {
             },
             config.price_estimation.quote_timeout,
             config.price_estimation.max_quote_timeout,
-        ))
+        )
     };
 
     let optimal_quoter = Arc::new(
-        OrderQuoter::new(
-            price_estimator.clone(),
-            native_price_estimator.clone(),
-            gas_price_estimator.clone(),
-            Arc::new(postgres_write.clone()),
-            order_quoting::Validity {
-                eip1271_onchain_quote: chrono::Duration::from_std(
-                    config.order_quoting.eip1271_onchain_quote_validity,
-                )
-                .unwrap(),
-                presign_onchain_quote: chrono::Duration::from_std(
-                    config.order_quoting.presign_onchain_quote_validity,
-                )
-                .unwrap(),
-                standard_quote: chrono::Duration::from_std(
-                    config.order_quoting.standard_offchain_quote_validity,
-                )
-                .unwrap(),
-            },
-            config.price_estimation.quote_timeout,
-            config.price_estimation.max_quote_timeout,
-        )
-        .with_streaming_estimator(price_estimator.clone()),
+        create_quoter(price_estimator.clone()).with_streaming_estimator(price_estimator.clone()),
     );
 
     // Fast quoting is able to return early and if none of the produced quotes are
     // verifiable we are left with no quote at all. Since fast estimates don't
     // make any promises on correctness we can just skip quote verification for
     // them.
-    let fast_quoter = create_quoter(fast_price_estimator);
+    let fast_quoter = Arc::new(create_quoter(fast_price_estimator));
 
     let app_data_validator = Validator::new(config.app_data_size_limit);
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
