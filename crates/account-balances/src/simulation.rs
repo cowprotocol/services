@@ -7,7 +7,7 @@ use {
     crate::BalanceSimulator,
     alloy_primitives::{Address, U256},
     anyhow::Result,
-    contracts::{BalancerV2Vault::BalancerV2Vault, ERC20},
+    contracts::ERC20,
     ethrpc::{Web3, alloy::ProviderLabelingExt},
     futures::future,
     model::order::SellTokenSource,
@@ -21,13 +21,6 @@ pub struct Balances {
 
 impl Balances {
     pub fn new(web3: &Web3, balance_simulator: BalanceSimulator) -> Self {
-        // Note that the balances simulation **will fail** if the `vault`
-        // address is not a contract and the `source` is set to one of
-        // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
-        // needed). This is because Solidity generates code to verify that
-        // contracts exist at addresses that get called. This allows us to
-        // properly check if the `source` is not supported for the deployment
-        // work without additional code paths :tada:!
         let web3 = web3.labeled("balanceFetching");
 
         Self {
@@ -40,11 +33,12 @@ impl Balances {
         self.balance_simulator.vault_relayer
     }
 
-    fn vault(&self) -> Address {
-        self.balance_simulator.vault
-    }
-
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
+        // Only ERC20 sell-token balances are supported; other sources are deprecated
+        // and rejected at order creation.
+        if query.source != SellTokenSource::Erc20 {
+            anyhow::bail!("unsupported sell token source: {:?}", query.source);
+        }
         let simulation = self
             .balance_simulator
             .simulate(
@@ -68,46 +62,16 @@ impl Balances {
         query: &Query,
         token: &ERC20::Instance,
     ) -> Result<U256> {
-        let usable_balance = match query.source {
-            SellTokenSource::Erc20 => {
-                let balance = token.balanceOf(query.owner);
-                let allowance = token.allowance(query.owner, self.vault_relayer());
-                let (balance, allowance) = futures::try_join!(
-                    balance.call().into_future(),
-                    allowance.call().into_future()
-                )?;
-                std::cmp::min(balance, allowance)
-            }
-            SellTokenSource::External => {
-                let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
-                let balance = token.balanceOf(query.owner);
-                let approved = vault.hasApprovedRelayer(query.owner, self.vault_relayer());
-                let allowance = token.allowance(query.owner, self.vault());
-                let (balance, approved, allowance) = futures::try_join!(
-                    balance.call().into_future(),
-                    approved.call().into_future(),
-                    allowance.call().into_future()
-                )?;
-                match approved {
-                    true => std::cmp::min(balance, allowance),
-                    false => U256::ZERO,
-                }
-            }
-            SellTokenSource::Internal => {
-                let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
-                let balance = vault.getInternalBalance(query.owner, vec![query.token]);
-                let approved = vault.hasApprovedRelayer(query.owner, self.vault_relayer());
-                let (balance, approved) = futures::try_join!(
-                    balance.call().into_future(),
-                    approved.call().into_future()
-                )?;
-                match approved {
-                    true => balance[0], // internal approvals are always U256::MAX
-                    false => U256::ZERO,
-                }
-            }
-        };
-        Ok(usable_balance)
+        // Only ERC20 sell-token balances are supported. Other sources are deprecated
+        // and rejected at order creation.
+        if query.source != SellTokenSource::Erc20 {
+            anyhow::bail!("unsupported sell token source: {:?}", query.source);
+        }
+        let balance = token.balanceOf(query.owner);
+        let allowance = token.allowance(query.owner, self.vault_relayer());
+        let (balance, allowance) =
+            futures::try_join!(balance.call().into_future(), allowance.call().into_future())?;
+        Ok(std::cmp::min(balance, allowance))
     }
 }
 
@@ -163,6 +127,22 @@ impl BalanceFetching for Balances {
 
         Ok(())
     }
+
+    #[instrument(skip(self))]
+    async fn allowance(
+        &self,
+        owner: Address,
+        token: Address,
+        source: SellTokenSource,
+    ) -> Result<U256> {
+        // Only ERC20 sell-token balances are supported; other sources are deprecated
+        // and rejected at order creation.
+        if source != SellTokenSource::Erc20 {
+            anyhow::bail!("unsupported sell token source: {:?}", source);
+        }
+        let token = ERC20::Instance::new(token, self.web3.provider.clone());
+        Ok(token.allowance(owner, self.vault_relayer()).call().await?)
+    }
 }
 
 #[cfg(test)]
@@ -195,7 +175,6 @@ mod tests {
                 settlement,
                 balances,
                 address!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
-                Some(address!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
                 Arc::new(DummyStateOverrider),
             ),
         );

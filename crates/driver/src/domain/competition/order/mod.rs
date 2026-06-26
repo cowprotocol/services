@@ -8,6 +8,7 @@ use {
     derive_more::{From, Into},
     eth_domain_types as eth,
     model::order::{BuyTokenDestination, SellTokenSource},
+    std::sync::Arc,
 };
 pub use {fees::FeePolicy, signature::Signature};
 
@@ -15,9 +16,10 @@ pub mod app_data;
 pub mod fees;
 pub mod signature;
 
-/// An order in the auction.
-#[derive(Debug, Clone)]
-pub struct Order {
+/// The immutable, auction-independent data of an order. Wrapped in [`Arc`] so
+/// that per-solver copies of [`Order`] share a single allocation.
+#[derive(Debug)]
+pub struct OrderData {
     pub uid: Uid,
     /// The user specified a custom address to receive the output of this order.
     pub receiver: Option<eth::Address>,
@@ -29,8 +31,6 @@ pub struct Order {
     pub sell: eth::Asset,
     pub side: Side,
     pub kind: Kind,
-    pub app_data: app_data::AppData,
-    pub partial: Partial,
     /// The onchain calls to run before sending user funds to the settlement
     /// contract.
     /// These are set by the user and included in the settlement transaction.
@@ -48,6 +48,32 @@ pub struct Order {
     pub protocol_fees: Vec<FeePolicy>,
     /// The winning quote.
     pub quote: Option<Quote>,
+}
+
+/// An order in the auction.
+///
+/// Designed to be cheap to clone. Most of the data is immutable and is
+/// reference counted. Solvers only get individual copies of data they
+/// have need to update during the pre-processing phase.
+#[derive(Debug, Clone)]
+pub struct Order {
+    /// Immutable order data shared across all per-solver copies.
+    pub data: Arc<OrderData>,
+    /// Per-solver mutable as the data may only become available after
+    /// assembling the orders.
+    pub app_data: app_data::AppData,
+    /// Per-solver mutable as the driver may allocated different amounts of
+    /// the user's available balance based on the solver's order prioritization
+    /// logic.
+    pub partial: Partial,
+}
+
+impl std::ops::Deref for Order {
+    type Target = OrderData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
 }
 
 /// An amount denominated in the sell token of an [`Order`].
@@ -433,37 +459,43 @@ mod tests {
             amount: eth::U256::from(amount).into(),
         };
 
-        let order = |sell_amount: u64, buy_amount: u64, available: Option<eth::Asset>| Order {
-            uid: Default::default(),
-            receiver: Default::default(),
-            created: util::Timestamp(100),
-            valid_to: util::Timestamp(u32::MAX),
-            buy: buy(buy_amount),
-            sell: sell(sell_amount),
-            side: match available {
+        let order = |sell_amount: u64, buy_amount: u64, available: Option<eth::Asset>| {
+            let side = match available {
                 None => Side::Sell,
                 Some(executed) if executed.token == sell(0).token => Side::Sell,
                 Some(executed) if executed.token == buy(0).token => Side::Buy,
                 _ => panic!(),
-            },
-            kind: Kind::Limit,
-            app_data: Default::default(),
-            partial: available
+            };
+            let partial = available
                 .map(|available| Partial::Yes {
                     available: available.amount.into(),
                 })
-                .unwrap_or(Partial::No),
-            pre_interactions: Default::default(),
-            post_interactions: Default::default(),
-            sell_token_balance: SellTokenBalance::Erc20,
-            buy_token_balance: BuyTokenBalance::Erc20,
-            signature: Signature {
-                scheme: signature::Scheme::PreSign,
-                data: Default::default(),
-                signer: Default::default(),
-            },
-            protocol_fees: Default::default(),
-            quote: Default::default(),
+                .unwrap_or(Partial::No);
+            Order {
+                data: Arc::new(OrderData {
+                    uid: Default::default(),
+                    receiver: Default::default(),
+                    created: util::Timestamp(100),
+                    valid_to: util::Timestamp(u32::MAX),
+                    buy: buy(buy_amount),
+                    sell: sell(sell_amount),
+                    side,
+                    kind: Kind::Limit,
+                    pre_interactions: Default::default(),
+                    post_interactions: Default::default(),
+                    sell_token_balance: SellTokenBalance::Erc20,
+                    buy_token_balance: BuyTokenBalance::Erc20,
+                    signature: Signature {
+                        scheme: signature::Scheme::PreSign,
+                        data: Default::default(),
+                        signer: Default::default(),
+                    },
+                    protocol_fees: Default::default(),
+                    quote: Default::default(),
+                }),
+                app_data: Default::default(),
+                partial,
+            }
         };
 
         assert_eq!(

@@ -26,7 +26,6 @@ use {
     chrono::Utc,
     eth_domain_types::WrappedNativeToken,
     ethrpc::block_stream::CurrentBlockWatcher,
-    itertools::Itertools,
     num::{CheckedSub, Saturating},
     shared::token_list::AutoUpdatingTokenList,
     std::{num::NonZeroUsize, sync::Arc, time::Duration},
@@ -227,11 +226,6 @@ impl RunLoop {
                 return vec![];
             }
         };
-
-        let (solutions, errs): (Vec<_>, Vec<_>) = solutions.into_iter().partition_result();
-        if !errs.is_empty() {
-            tracing::debug!(len = errs.len(), ?errs, "dropping solutions with errors");
-        }
 
         futures::future::join_all(solutions.iter().map(|s| async {
             let response = driver.reveal(reveal::Request {

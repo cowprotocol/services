@@ -13,6 +13,7 @@ pub mod order_creation_simulation;
 pub mod order_quoting;
 pub mod order_validation;
 pub mod remaining_amounts;
+pub mod retry;
 pub mod token_list;
 pub mod url;
 pub mod web3;

@@ -6,27 +6,38 @@ on:
     types: [created]
 
 jobs:
-  review:
-    # Gate the job so it only runs when:
-    #   (a) a non-draft PR is opened or marked ready-for-review, OR
-    #   (b) someone posts an `@claude` comment on a PR (not on an issue).
-    # Also skip bot authors and PRs explicitly labelled `skip-claude-review`,
-    # so authors have an escape hatch for trivial changes.
-    # External contributors are excluded from both triggers by requiring an
-    # internal `author_association` (OWNER/MEMBER).
+  authorize:
+    # Payload-only pre-filter: no API call for bots / drafts / skip-label.
+    # Bots excluded HERE (not via the permission check) so they're skipped
+    # even if a bot account is ever granted write access.
     if: >
       (
         github.event_name == 'pull_request' &&
         github.event.pull_request.draft == false &&
         github.event.pull_request.user.type != 'Bot' &&
-        !contains(github.event.pull_request.labels.*.name, 'skip-claude-review') &&
-        contains(fromJSON('["OWNER", "MEMBER"]'), github.event.pull_request.author_association)
+        !contains(github.event.pull_request.labels.*.name, 'skip-claude-review')
       ) || (
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
-        contains(github.event.comment.body, '@claude') &&
-        contains(fromJSON('["OWNER", "MEMBER"]'), github.event.comment.author_association)
+        github.event.comment.user.type != 'Bot' &&
+        contains(github.event.comment.body, '@claude')
       )
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO:   ${{ github.repository }}
+          AUTHOR: ${{ github.event.pull_request.user.login || github.event.comment.user.login }}
+        run: |
+          allowed=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" \
+                      --jq '.user.permissions.push' 2>/dev/null || echo false)
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+  review:
+    needs: authorize
+    if: needs.authorize.outputs.allowed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -42,12 +53,15 @@ jobs:
           # branch instead of just the latest commit.
           fetch-depth: 0
 
-      - uses: anthropics/claude-code-action@fbda2eb1bdc90d319b8d853f5deb53bca199a7c1 # v1
+      - uses: anthropics/claude-code-action@74eedf1a1892082d619c3edb66b9402da6520e7f # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"
           track_progress: true
           claude_args: |
-            --model claude-opus-4-7
+            --model claude-opus-4-8
             --max-turns 30
-          prompt: "Review this PR. Use the pr-review skill if available."
+            --allowedTools "mcp__github_inline_comment__create_inline_comment"
+          prompt: |
+            Review this PR. Post each issue as an INLINE comment on the exact file and
+            line using the create_inline_comment tool. Follow the pr-review skill if available.

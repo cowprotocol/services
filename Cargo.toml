@@ -84,14 +84,15 @@ multibase = "0.9"
 num = "0.4.3"
 number = { path = "crates/number" }
 observe = { path = "crates/observe" }
-opentelemetry = { version = "0.31", features = ["tracing"] }
-opentelemetry-http = { version = "0.31", default-features = false }  # disable internal-logging
-opentelemetry-otlp = "0.31"
-opentelemetry_sdk = "0.31"
+opentelemetry = { version = "0.32", features = ["tracing"] }
+opentelemetry-http = { version = "0.32", default-features = false }  # disable internal-logging
+opentelemetry-otlp = "0.32"
+opentelemetry_sdk = "0.32"
 order-validation = { path = "crates/order-validation" }
 orderbook = { path = "crates/orderbook" }
 paste = "1.0"
 pin-project-lite = "0.2.14"
+pool-indexer = { path = "crates/pool-indexer" }
 prettyplease = "0.2.37"
 price-estimation = { path = "crates/price-estimation" }
 proc-macro2 = "1.0.103"
@@ -103,7 +104,7 @@ rate-limit = { path = "crates/rate-limit" }
 refunder = { path = "crates/refunder" }
 regex = "1.10.4"
 request-sharing = { path = "crates/request-sharing" }
-reqwest = "0.13"
+reqwest = { version = "0.13.4", features = ["hickory-dns"] }
 rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 rust_decimal = { version = "1.35.0", default-features = false }
@@ -141,7 +142,7 @@ toml = "0.8.14"
 tower = "0.5"
 tower-http = "0.6"
 tracing = "0.1.41"
-tracing-opentelemetry = "0.32.1"
+tracing-opentelemetry = "0.33.0"
 tracing-serde = "0.2"
 tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
