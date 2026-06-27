@@ -1,0 +1,186 @@
+//! Mock Balancer V2 contracts the balancer-indexer e2e test deploys on Anvil,
+//! plus a smoke test that exercises the discovery surface the indexer relies
+//! on: the factory's `PoolCreated`, the pool's `getPoolId` /
+//! `getNormalizedWeights`, and the vault's `getPoolTokens`.
+
+use {
+    alloy::{
+        primitives::{Address, U256},
+        providers::Provider,
+        rpc::types::Filter,
+        sol,
+        sol_types::SolEvent,
+    },
+    e2e::setup::run_test,
+    ethrpc::Web3,
+};
+
+// Compiled from the Solidity below with solc 0.8.30 --optimize
+// --optimize-runs 1000000, evm-version shanghai. Faithful enough for
+// discovery: the vault computes canonical poolIds (first 20 bytes = pool
+// address) and serves getPoolTokens; the factory emits PoolCreated; the
+// pool exposes getPoolId / getNormalizedWeights.
+//
+// // SPDX-License-Identifier: GPL-3.0-or-later
+// pragma solidity ^0.8.17;
+// contract MockBalancerV2Vault {
+//     uint256 private nextNonce;
+//     mapping(bytes32 => address[]) private tokensOf;
+//     event PoolRegistered(
+//         bytes32 indexed poolId, address indexed pool, uint8 spec
+//     );
+//     event TokensRegistered(
+//         bytes32 indexed poolId, address[] tokens, address[] mgrs
+//     );
+//     // poolId layout matches Balancer: address == poolId[0:20].
+//     function registerPool(uint8 spec) external returns (bytes32 id) {
+//         id = bytes32(
+//             (uint256(uint160(msg.sender)) << 96)
+//                 | (uint256(spec) << 80) | (nextNonce++)
+//         );
+//         emit PoolRegistered(id, msg.sender, spec);
+//     }
+//     function registerTokens(bytes32 id, address[] calldata tokens)
+//         external
+//     {
+//         tokensOf[id] = tokens;
+//         emit TokensRegistered(id, tokens, new address[](tokens.length));
+//     }
+//     function getPoolTokens(bytes32 id)
+//         external
+//         view
+//         returns (address[] memory t, uint256[] memory b, uint256 lcb)
+//     {
+//         t = tokensOf[id];
+//         b = new uint256[](t.length);
+//         lcb = 0;
+//     }
+// }
+// contract MockBalancerV2Pool {
+//     bytes32 public poolId;
+//     uint256[] private weights;
+//     constructor(
+//         MockBalancerV2Vault vault,
+//         address[] memory tokens,
+//         uint256[] memory _weights
+//     ) {
+//         weights = _weights;
+//         poolId = vault.registerPool(0);
+//         vault.registerTokens(poolId, tokens);
+//     }
+//     function getPoolId() external view returns (bytes32) {
+//         return poolId;
+//     }
+//     function getNormalizedWeights()
+//         external
+//         view
+//         returns (uint256[] memory)
+//     {
+//         return weights;
+//     }
+// }
+// contract MockBalancerV2PoolFactory {
+//     MockBalancerV2Vault public immutable vault;
+//     event PoolCreated(address indexed pool);
+//     constructor(MockBalancerV2Vault _vault) { vault = _vault; }
+//     function create(
+//         address[] calldata tokens, uint256[] calldata weights
+//     ) external returns (address pool) {
+//         pool = address(new MockBalancerV2Pool(vault, tokens, weights));
+//         emit PoolCreated(pool);
+//     }
+// }
+sol! {
+    #[allow(missing_docs)]
+    #[sol(rpc, bytecode = "0x6080604052348015600e575f5ffd5b506105a78061001c5f395ff3fe608060405234801561000f575f5ffd5b506004361061003f575f3560e01c806309b2760f14610043578063200bf51914610069578063f94d46681461007e575b5f5ffd5b61005661005136600461030f565b6100a0565b6040519081526020015b60405180910390f35b61007c610077366004610336565b61010e565b005b61009161008c3660046103b0565b6101aa565b60405161006093929190610417565b5f805481806100ae83610477565b9091555060405160ff8416815233606081901b6aff00000000000000000000605087901b161792909217925082907f3c13bc30b8e878c53fd2a36b679409c073afd75950be43d8858768e956fbc20e9060200160405180910390a3919050565b5f838152600160205260409020610126908383610275565b50827ff5847d3f2197b16cdcd2098ec95d0905cd1abdaf415f07bb7cef2bba8ac5dec483838067ffffffffffffffff811115610164576101646104d3565b60405190808252806020026020018201604052801561018d578160200160208202803683370190505b5060405161019d93929190610500565b60405180910390a2505050565b6060805f60015f8581526020019081526020015f2080548060200260200160405190810160405280929190818152602001828054801561021e57602002820191905f5260205f20905b815473ffffffffffffffffffffffffffffffffffffffff1681526001909101906020018083116101f3575b50505050509250825167ffffffffffffffff81111561023f5761023f6104d3565b604051908082528060200260200182016040528015610268578160200160208202803683370190505b5091505f90509193909250565b828054828255905f5260205f209081019282156102eb579160200282015b828111156102eb5781547fffffffffffffffffffffffff00000000000000000000000000000000000000001673ffffffffffffffffffffffffffffffffffffffff843516178255602090920191600190910190610293565b506102f79291506102fb565b5090565b5b808211156102f7575f81556001016102fc565b5f6020828403121561031f575f5ffd5b813560ff8116811461032f575f5ffd5b9392505050565b5f5f5f60408486031215610348575f5ffd5b83359250602084013567ffffffffffffffff811115610365575f5ffd5b8401601f81018613610375575f5ffd5b803567ffffffffffffffff81111561038b575f5ffd5b8660208260051b840101111561039f575f5ffd5b939660209190910195509293505050565b5f602082840312156103c0575f5ffd5b5035919050565b5f8151808452602084019350602083015f5b8281101561040d57815173ffffffffffffffffffffffffffffffffffffffff168652602095860195909101906001016103d9565b5093949350505050565b606081525f61042960608301866103c7565b82810360208401528085518083526020830191506020870192505f5b81811015610463578351835260209384019390920191600101610445565b505060409390930193909352509392505050565b5f7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff82036104cc577f4e487b71000000000000000000000000000000000000000000000000000000005f52601160045260245ffd5b5060010190565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52604160045260245ffd5b604080825281018390525f8460608301825b8681101561055357823573ffffffffffffffffffffffffffffffffffffffff811680821461053e575f5ffd5b83525060209283019290910190600101610512565b50838103602085015261056681866103c7565b97965050505050505056fea2646970667358221220382d38d59c2a76b5cbd3260e689658fc8a242378a758a6af234957185f5c20ee64736f6c634300081e0033")]
+    contract MockBalancerV2Vault {
+        function getPoolTokens(bytes32 poolId) external view returns (
+            address[] memory tokens,
+            uint256[] memory balances,
+            uint256 lastChangeBlock
+        );
+    }
+}
+
+sol! {
+    #[allow(missing_docs)]
+    #[sol(rpc, bytecode = "0x60a0604052348015600e575f5ffd5b50604051610868380380610868833981016040819052602b91603b565b6001600160a01b03166080526066565b5f60208284031215604a575f5ffd5b81516001600160a01b0381168114605f575f5ffd5b9392505050565b6080516107e56100835f395f818160790152609e01526107e55ff3fe608060405234801561000f575f5ffd5b5060043610610034575f3560e01c806358d95a9414610038578063fbfa77cf14610074575b5f5ffd5b61004b610046366004610195565b61009b565b60405173ffffffffffffffffffffffffffffffffffffffff909116815260200160405180910390f35b61004b7f000000000000000000000000000000000000000000000000000000000000000081565b5f7f0000000000000000000000000000000000000000000000000000000000000000858585856040516100cd90610140565b6100db959493929190610201565b604051809103905ff0801580156100f4573d5f5f3e3d5ffd5b5060405190915073ffffffffffffffffffffffffffffffffffffffff8216907f83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc905f90a2949350505050565b6104e8806102c883390190565b5f5f83601f84011261015d575f5ffd5b50813567ffffffffffffffff811115610174575f5ffd5b6020830191508360208260051b850101111561018e575f5ffd5b9250929050565b5f5f5f5f604085870312156101a8575f5ffd5b843567ffffffffffffffff8111156101be575f5ffd5b6101ca8782880161014d565b909550935050602085013567ffffffffffffffff8111156101e9575f5ffd5b6101f58782880161014d565b95989497509550505050565b73ffffffffffffffffffffffffffffffffffffffff8616815260606020820181905281018490525f8560808301825b8781101561027157823573ffffffffffffffffffffffffffffffffffffffff811680821461025c575f5ffd5b83525060209283019290910190600101610230565b5083810360408501525f91508481527f07ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff8511156102ac575f5ffd5b8460051b80876020840137016020019897505050505050505056fe608060405234801561000f575f5ffd5b506040516104e83803806104e883398101604081905261002e91610253565b805161004190600190602084019061010f565b506040516309b2760f60e01b81525f60048201526001600160a01b038416906309b2760f906024016020604051808303815f875af1158015610085573d5f5f3e3d5ffd5b505050506040513d601f19601f820116820180604052508101906100a9919061032a565b5f81905560405163200bf51960e01b81526001600160a01b0385169163200bf519916100da91908690600401610341565b5f604051808303815f87803b1580156100f1575f5ffd5b505af1158015610103573d5f5f3e3d5ffd5b50505050505050610397565b828054828255905f5260205f20908101928215610148579160200282015b8281111561014857825182559160200191906001019061012d565b50610154929150610158565b5090565b5b80821115610154575f8155600101610159565b6001600160a01b0381168114610180575f5ffd5b50565b634e487b7160e01b5f52604160045260245ffd5b604051601f8201601f191681016001600160401b03811182821017156101bf576101bf610183565b604052919050565b5f6001600160401b038211156101df576101df610183565b5060051b60200190565b5f82601f8301126101f8575f5ffd5b815161020b610206826101c7565b610197565b8082825260208201915060208360051b86010192508583111561022c575f5ffd5b602085015b83811015610249578051835260209283019201610231565b5095945050505050565b5f5f5f60608486031215610265575f5ffd5b83516102708161016c565b60208501519093506001600160401b0381111561028b575f5ffd5b8401601f8101861361029b575f5ffd5b80516102a9610206826101c7565b8082825260208201915060208360051b8501019250888311156102ca575f5ffd5b6020840193505b828410156102f55783516102e48161016c565b8252602093840193909101906102d1565b6040880151909550925050506001600160401b03811115610314575f5ffd5b610320868287016101e9565b9150509250925092565b5f6020828403121561033a575f5ffd5b5051919050565b5f60408201848352604060208401528084518083526060850191506020860192505f5b8181101561038b5783516001600160a01b0316835260209384019390920191600101610364565b50909695505050505050565b610144806103a45f395ff3fe608060405234801561000f575f5ffd5b506004361061003f575f3560e01c806338fff2d0146100435780633e0dc34e14610059578063f89f27ed14610061575b5f5ffd5b5f545b6040519081526020015b60405180910390f35b6100465f5481565b610069610076565b60405161005091906100cc565b606060018054806020026020016040519081016040528092919081815260200182805480156100c257602002820191905f5260205f20905b8154815260200190600101908083116100ae575b5050505050905090565b602080825282518282018190525f918401906040840190835b818110156101035783518352602093840193909201916001016100e5565b50909594505050505056fea2646970667358221220731a2e9e654b6bac0ab562f25edd604d513cae5f8f5211bfd8a05e2006f7ec0764736f6c634300081e0033a26469706673582212204184aeb80c6b23da766cee6de765fd97e95a2f3c68407416e85c49d336124d6564736f6c634300081e0033")]
+    contract MockBalancerV2PoolFactory {
+        constructor(address vault);
+
+        event PoolCreated(address indexed pool);
+
+        function create(
+            address[] calldata tokens,
+            uint256[] calldata weights
+        ) external returns (address pool);
+    }
+}
+
+sol! {
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    contract MockBalancerV2Pool {
+        function getPoolId() external view returns (bytes32);
+        function getNormalizedWeights() external view returns (uint256[] memory);
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_balancer_indexer_mocks() {
+    run_test(mocks_smoke).await;
+}
+
+/// Deploys the mock Vault + factory, creates a 2-token pool, and asserts the
+/// discovery surface the indexer reads: `PoolCreated` carries the pool address,
+/// `getPoolId()` is the address-derived poolId, `getPoolTokens()` returns the
+/// registered tokens, and `getNormalizedWeights()` round-trips.
+async fn mocks_smoke(web3: Web3) {
+    let provider = web3.provider.clone().erased();
+
+    let vault = MockBalancerV2Vault::deploy(provider.clone()).await.unwrap();
+    let factory = MockBalancerV2PoolFactory::deploy(provider.clone(), *vault.address())
+        .await
+        .unwrap();
+
+    let token0 = Address::repeat_byte(1);
+    let token1 = Address::repeat_byte(2);
+    let weight = U256::from(500_000_000_000_000_000u64); // 0.5 in Bfp 1e18
+
+    factory
+        .create(vec![token0, token1], vec![weight, weight])
+        .send()
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
+
+    let block = provider.get_block_number().await.unwrap();
+    let logs = provider
+        .get_logs(
+            &Filter::new()
+                .from_block(block)
+                .to_block(block)
+                .event_signature(MockBalancerV2PoolFactory::PoolCreated::SIGNATURE_HASH),
+        )
+        .await
+        .unwrap();
+    let pool_addr = MockBalancerV2PoolFactory::PoolCreated::decode_log(&logs[0].inner)
+        .unwrap()
+        .data
+        .pool;
+
+    let pool = MockBalancerV2Pool::MockBalancerV2PoolInstance::new(pool_addr, provider.clone());
+    let pool_id = pool.getPoolId().call().await.unwrap();
+
+    // Balancer invariant: the first 20 bytes of the poolId are the pool address.
+    assert_eq!(&pool_id.0[..20], pool_addr.as_slice());
+
+    let weights = pool.getNormalizedWeights().call().await.unwrap();
+    assert_eq!(weights, vec![weight, weight]);
+
+    let tokens = vault.getPoolTokens(pool_id).call().await.unwrap().tokens;
+    assert_eq!(tokens, vec![token0, token1]);
+}
