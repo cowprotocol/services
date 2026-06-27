@@ -23,6 +23,9 @@ use {
 pub struct Solutions(Vec<solvers_dto::solution::Solution>);
 
 impl Solutions {
+    // Deprecated External/Internal JIT balance arms are retained for wire
+    // compatibility; solvers no longer return them in practice.
+    #[allow(deprecated)]
     pub fn into_domain(
         self,
         auction: &competition::Auction,
@@ -302,6 +305,9 @@ fn find_order<'a>(
 pub struct JitOrder(solvers_dto::solution::JitOrder);
 
 impl JitOrder {
+    // Deprecated External/Internal arms retained for wire compatibility; solvers no
+    // longer send them in practice.
+    #[allow(deprecated)]
     fn raw_order_data(&self) -> OrderData {
         OrderData {
             sell_token: self.0.sell_token,
