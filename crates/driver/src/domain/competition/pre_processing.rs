@@ -25,6 +25,7 @@ use {
         order::{OrderKind, SellTokenSource},
         signature::Signature,
     },
+    observe::tracing::lazy::Lazy,
     signature_validator::SignatureValidating,
     std::{
         collections::HashMap,
@@ -529,6 +530,8 @@ impl Utilities {
             .collect();
 
         if !orders.is_empty() {
+            tracing::trace!(?orders, "generated cow amm template orders (details)");
+            let orders = Lazy(|| orders.iter().map(|o| o.uid).collect_vec());
             tracing::debug!(?orders, "generated cow amm template orders");
         }
 
