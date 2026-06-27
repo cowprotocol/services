@@ -104,7 +104,6 @@ pub struct BalanceSimulator {
     settlement: GPv2Settlement::Instance,
     balances: Balances::Instance,
     vault_relayer: Address,
-    vault: Address,
     balance_overrider: Arc<dyn StateOverriding>,
 }
 
@@ -113,13 +112,11 @@ impl BalanceSimulator {
         settlement: GPv2Settlement::Instance,
         balances: Balances::Instance,
         vault_relayer: Address,
-        vault: Option<Address>,
         balance_overrider: Arc<dyn StateOverriding>,
     ) -> Self {
         Self {
             settlement,
             vault_relayer,
-            vault: vault.unwrap_or_default(),
             balances,
             balance_overrider,
         }
@@ -127,10 +124,6 @@ impl BalanceSimulator {
 
     pub fn vault_relayer(&self) -> Address {
         self.vault_relayer
-    }
-
-    pub fn vault(&self) -> Address {
-        self.vault
     }
 
     pub async fn simulate(
@@ -162,7 +155,9 @@ impl BalanceSimulator {
             contracts: Balances::Balances::Contracts {
                 settlement: *self.settlement.address(),
                 vaultRelayer: self.vault_relayer,
-                vault: self.vault,
+                // The Balancer Vault is only used by the deprecated External/Internal
+                // sell-token sources, which are rejected at order creation.
+                vault: Address::ZERO,
             },
             trader: owner,
             token,
