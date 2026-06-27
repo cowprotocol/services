@@ -17,7 +17,6 @@ use {
     clap::Parser,
     configs::orderbook::Configuration,
     contracts::{
-        BalancerV2Vault,
         ChainalysisOracle,
         FlashLoanRouter,
         GPv2Settlement,
@@ -163,20 +162,6 @@ pub async fn run(config: Configuration) {
         balance_overrider.clone(),
     );
 
-    let vault_address = config.shared.contracts.balancer_v2_vault.or_else(|| {
-        let chain_id = chain.id();
-        match BalancerV2Vault::deployment_address(&chain_id) {
-            addr @ Some(_) => addr,
-            addr @ None => {
-                tracing::warn!(
-                    chain_id,
-                    "balancer contracts are not deployed on this network"
-                );
-                addr
-            }
-        }
-    });
-
     let hooks_contract = match config.shared.contracts.hooks {
         Some(address) => HooksTrampoline::Instance::new(address, web3.provider.clone()),
         None => HooksTrampoline::Instance::deployed(&web3.provider)
@@ -218,7 +203,6 @@ pub async fn run(config: Configuration) {
             settlement_contract.clone(),
             balances_contract.clone(),
             vault_relayer,
-            vault_address,
             balance_overrider.clone(),
         ),
     );
@@ -358,7 +342,7 @@ pub async fn run(config: Configuration) {
     };
 
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
-        Arc::new(OrderQuoter::new(
+        OrderQuoter::new(
             price_estimator,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
@@ -379,14 +363,18 @@ pub async fn run(config: Configuration) {
             },
             config.price_estimation.quote_timeout,
             config.price_estimation.max_quote_timeout,
-        ))
+        )
     };
-    let optimal_quoter = create_quoter(price_estimator);
+
+    let optimal_quoter = Arc::new(
+        create_quoter(price_estimator.clone()).with_streaming_estimator(price_estimator.clone()),
+    );
+
     // Fast quoting is able to return early and if none of the produced quotes are
     // verifiable we are left with no quote at all. Since fast estimates don't
     // make any promises on correctness we can just skip quote verification for
     // them.
-    let fast_quoter = create_quoter(fast_price_estimator);
+    let fast_quoter = Arc::new(create_quoter(fast_price_estimator));
 
     let app_data_validator = Validator::new(config.app_data_size_limit);
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
@@ -468,7 +456,7 @@ pub async fn run(config: Configuration) {
         .collect();
     let quotes = QuoteHandler::new(
         order_validator,
-        optimal_quoter,
+        optimal_quoter.clone(),
         app_data.clone(),
         config.volume_fee,
         volume_fee_bucket_overrides,
@@ -476,7 +464,8 @@ pub async fn run(config: Configuration) {
         *native_token.address(),
         token_info_fetcher.clone(),
     )
-    .with_fast_quoter(fast_quoter);
+    .with_fast_quoter(fast_quoter)
+    .with_streaming_quoter(optimal_quoter.clone());
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(

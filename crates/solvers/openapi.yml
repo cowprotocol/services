@@ -292,6 +292,10 @@ components:
     SellTokenBalance:
       description: |
         Where should the sell token be drawn from?
+
+        In practice only `erc20` occurs: the `internal` and `external` (Balancer
+        Vault) sources are deprecated and rejected at order creation. The values
+        remain for backwards compatibility.
       type: string
       enum:
         - erc20
@@ -300,6 +304,10 @@ components:
     BuyTokenBalance:
       description: |
         Where should the buy token be transferred to?
+
+        In practice only `erc20` occurs: the `internal` (Balancer Vault)
+        destination is rejected at order creation. The value remains for 
+        backwards compatibility.
       type: string
       enum:
         - erc20
@@ -781,9 +789,15 @@ components:
         partiallyFillable:
           type: boolean
         sellTokenBalance:
-          $ref: "#/components/schemas/SellTokenBalance"
+          # Deprecated: only erc20 is used; internal/external no longer occur.
+          # Wrapped in allOf because OpenAPI 3.0 ignores keys siblings to a bare $ref.
+          deprecated: true
+          allOf:
+            - $ref: "#/components/schemas/SellTokenBalance"
         buyTokenBalance:
-          $ref: "#/components/schemas/BuyTokenBalance"
+          deprecated: true
+          allOf:
+            - $ref: "#/components/schemas/BuyTokenBalance"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
         signature:
