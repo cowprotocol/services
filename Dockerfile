@@ -7,7 +7,7 @@ WORKDIR /src/
 
 # Accept build arguments for enabling features
 ARG CARGO_BUILD_FEATURES=""
-ARG RUSTFLAGS=""
+ARG RUSTFLAGS="-Cforce-frame-pointers"
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
