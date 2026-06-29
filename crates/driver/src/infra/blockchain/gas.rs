@@ -17,17 +17,9 @@ use {
     std::sync::Arc,
 };
 
-/// Set of tweaks to fine tune the computed gas price.
-pub struct ManualAdjustments {
-    max_additional_tip: eth::U256,
-    additional_tip_percentage: f64,
-    max_fee_per_gas: eth::U256,
-    min_priority_fee: eth::U256,
-}
-
 pub struct GasPriceEstimator {
     pub(super) gas: Arc<dyn GasPriceEstimating>,
-    adjustments: ManualAdjustments,
+    adjustments: GasPriceParameters,
 }
 
 impl GasPriceEstimator {
@@ -35,7 +27,7 @@ impl GasPriceEstimator {
         provider: &AlloyProvider,
         current_block: &CurrentBlockWatcher,
         gas_estimator_type: &GasEstimatorType,
-        adjustments: ManualAdjustments,
+        adjustments: GasPriceParameters,
     ) -> Result<Self, Error> {
         let gas: Arc<dyn GasPriceEstimating> = match gas_estimator_type {
             GasEstimatorType::Web3 => Arc::new(NodeGasPriceEstimator::new(provider.clone())),
@@ -70,7 +62,7 @@ impl GasPriceEstimator {
                     "overflow on multiplication (max_priority_fee_per_gas * tip_percentage_as_bps)"
                 ))
             };
-            let tip_percentage_as_bps = self.adjustments.additional_tip_percentage * 10000.0;
+            let tip_percentage_as_bps = self.adjustments.additional_tip_factor * 10000.0;
             let calculated_tip = eth::U256::from(estimate.max_priority_fee_per_gas)
                 .checked_mul(eth::U256::from(tip_percentage_as_bps))
                 .ok_or_else(overflow_err)?
@@ -117,36 +109,40 @@ impl GasPriceEstimating for GasPriceEstimator {
     }
 }
 
-pub fn adjustments(mempools: &[mempool::Config]) -> ManualAdjustments {
-    // TODO: simplify logic by moving gas price adjustments out of the individual
-    // mempool configs
-    let (max_additional_tip, additional_tip_percentage) = mempools
-        .iter()
-        .map(|mempool| {
-            (
-                mempool.max_additional_tip,
-                mempool.additional_tip_percentage,
-            )
-        })
-        .next()
-        .unwrap_or((eth::U256::ZERO, 0.));
-    // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
-    let max_fee_per_gas = mempools
-        .iter()
-        .map(|mempool| mempool.gas_price_cap)
-        .min()
-        .expect("at least one mempool");
+/// Set of tweaks to fine tune the computed gas price.
+pub struct GasPriceParameters {
+    /// Maximum priority_fee_per_gas added on top of the price suggested by the
+    /// estimator.
+    max_additional_tip: eth::U256,
+    /// The max_priority_fee_per_gas suggested by the gas price estimator gets
+    /// multiplied with this factor and get capped at `max_additional_tip`.
+    additional_tip_factor: f64,
+    /// Highest `max_fee_per_gas` at which we still want to submit a tx.
+    max_fee_per_gas: eth::U256,
+    /// We'll always tip at least this value for `max_priority_fee_per_gas`.
+    min_priority_fee: eth::U256,
+}
 
-    // Use the highest min_priority_fee of all mempools as the min_priority_fee
-    let min_priority_fee = mempools
-        .iter()
-        .map(|mempool| mempool.min_priority_fee)
-        .max()
-        .expect("at least one mempool");
+pub fn adjustments(mempools: &[mempool::Config]) -> GasPriceParameters {
+    // TODO: make configuration of those parameters more obvious by moving them
+    // into a separate config field instead of deriving them from the mempool
+    // configs
+    let mut max_additional_tip = eth::U256::ZERO;
+    let mut additional_tip_percentage = 0.0f64;
+    let mut max_fee_per_gas = eth::U256::MAX;
+    let mut min_priority_fee = eth::U256::ZERO;
 
-    ManualAdjustments {
+    for mempool in mempools {
+        max_additional_tip = max_additional_tip.max(mempool.max_additional_tip);
+        additional_tip_percentage =
+            additional_tip_percentage.max(mempool.additional_tip_percentage);
+        max_fee_per_gas = max_fee_per_gas.min(mempool.gas_price_cap);
+        min_priority_fee = min_priority_fee.max(mempool.min_priority_fee);
+    }
+
+    GasPriceParameters {
         max_additional_tip,
-        additional_tip_percentage,
+        additional_tip_factor: additional_tip_percentage,
         max_fee_per_gas,
         min_priority_fee,
     }
