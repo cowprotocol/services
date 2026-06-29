@@ -223,7 +223,7 @@ struct SubmitterGuard {
     /// When set, a delegated account is returned to the pool only after this
     /// delay instead of immediately, benching an unhealthy EOA (see
     /// [`SubmitterGuard::quarantine`]). Always `None` for the direct slot.
-    quarantine: Option<Duration>,
+    quarantine: Option<(Duration, mempools::AccountFailure)>,
 }
 
 enum GuardInner {
@@ -254,9 +254,9 @@ impl SubmitterGuard {
     /// account is withheld from the pool for `cooldown` so concurrent and
     /// subsequent settlements stop selecting a stuck or underfunded lane until
     /// it recovers. No-op for the direct solver EOA, which is never benched.
-    fn quarantine(&mut self, cooldown: Duration) {
+    fn quarantine(&mut self, cooldown: Duration, reason: mempools::AccountFailure) {
         if matches!(self.inner, GuardInner::Delegated { .. }) {
-            self.quarantine = Some(cooldown);
+            self.quarantine = Some((cooldown, reason));
         }
     }
 }
@@ -265,11 +265,12 @@ impl Drop for SubmitterGuard {
     fn drop(&mut self) {
         let inner = std::mem::replace(&mut self.inner, GuardInner::Dropped);
         if let GuardInner::Delegated { account, release } = inner {
-            let cooldown = self.quarantine;
+            let quarantine = self.quarantine;
             tokio::spawn(async move {
-                if let Some(cooldown) = cooldown {
+                if let Some((cooldown, reason)) = quarantine {
                     tracing::warn!(
                         submitter = ?account.address(),
+                        ?reason,
                         ?cooldown,
                         "benching unhealthy submission account before returning it to the pool"
                     );
@@ -281,6 +282,54 @@ impl Drop for SubmitterGuard {
             });
         }
         // Direct: OwnedSemaphorePermit drops here, releasing the permit.
+    }
+}
+
+/// Submit a settlement with health-aware fallback: run `submit` from `guard`,
+/// and on an account-specific failure (`SubmitterUnusable`) bench that account
+/// and retry from another one while the deadline still holds. Accounts spent on
+/// this request are held until it returns, so each retry picks a different one.
+/// The submission step is injected as a closure so the fallback flow is
+/// unit-testable without a live mempool.
+async fn submit_with_fallback<F, Fut>(
+    pool: &SubmitterPool,
+    mut guard: SubmitterGuard,
+    cooldown: Duration,
+    deadline_reached: impl Fn() -> bool,
+    mut submit: F,
+) -> Result<eth::TxId, mempools::Error>
+where
+    F: FnMut(SubmissionMode) -> Fut,
+    Fut: std::future::Future<Output = Result<eth::TxId, mempools::Error>>,
+{
+    let mut spent = Vec::new();
+    loop {
+        // acquire()/try_acquire() can wait, so the deadline may pass before we get
+        // here. Check it before each submit so we never submit past it.
+        if deadline_reached() {
+            break Err(mempools::Error::Other(anyhow::anyhow!(
+                "submission deadline reached before submitting"
+            )));
+        }
+        let executed = submit(guard.submission_mode()).await;
+        let Err(mempools::Error::SubmitterUnusable(reason)) = &executed else {
+            break executed;
+        };
+        let reason = *reason;
+        // Bench the failed account (with the reason for the log) regardless of
+        // whether we can retry, so it stops being selected while unhealthy.
+        guard.quarantine(cooldown, reason);
+        let Some(next) = pool.try_acquire() else {
+            // No other account currently free; give up and report the error.
+            break executed;
+        };
+        tracing::warn!(
+            failed = ?guard.submission_mode(),
+            next = ?next.submission_mode(),
+            ?reason,
+            "submission account unusable, retrying from another account"
+        );
+        spent.push(std::mem::replace(&mut guard, next));
     }
 }
 
@@ -981,40 +1030,26 @@ impl Competition {
         // it finishes, so each retry picks a different one. This is safe against
         // double-submission: a settlement that actually lands always returns
         // `Ok`, so only failures (where nothing was broadcast) are ever retried.
-        let mut guard = self
+        let guard = self
             .submitter_pool
             .acquire()
             .await
             .ok_or(Error::SubmissionError)?;
-        let mut spent = Vec::new();
-        let executed = loop {
-            let mode = guard.submission_mode();
-            let executed = self
-                .mempools
-                .execute(&settlement, submission_deadline, &mode)
-                .await;
-
-            if !matches!(executed, Err(mempools::Error::SubmitterUnusable(_))) {
-                break executed;
-            }
-            // The chosen account could not broadcast: bench it regardless of
-            // whether we can retry, so it stops being selected while unhealthy.
-            guard.quarantine(UNHEALTHY_ACCOUNT_COOLDOWN);
-
-            let deadline_reached =
-                self.eth.current_block().borrow().number >= submission_deadline.0;
-            if deadline_reached {
-                break executed;
-            }
-            let Some(next) = self.submitter_pool.try_acquire() else {
-                // No other account currently free; give up and report the error.
-                break executed;
-            };
-            tracing::warn!(
-                ?mode,
-                "submission account unusable, retrying from another account"
-            );
-            spent.push(std::mem::replace(&mut guard, next));
+        let executed = {
+            let mempools = &self.mempools;
+            let settlement = &settlement;
+            submit_with_fallback(
+                &self.submitter_pool,
+                guard,
+                UNHEALTHY_ACCOUNT_COOLDOWN,
+                || self.eth.current_block().borrow().number >= submission_deadline.0,
+                |mode| async move {
+                    mempools
+                        .execute(settlement, submission_deadline, &mode)
+                        .await
+                },
+            )
+            .await
         };
 
         notify::executed(
@@ -1238,7 +1273,7 @@ mod submitter_pool_tests {
 
         // Bench `first` for a cooldown long enough to outlast the test; release
         // `second` the normal way.
-        first.quarantine(Duration::from_secs(3600));
+        first.quarantine(Duration::from_secs(3600), mempools::AccountFailure::Nonce);
         drop(first);
         drop(second);
 
@@ -1269,10 +1304,205 @@ mod submitter_pool_tests {
             solver_address: SOLVER,
             quarantine: None,
         };
-        guard.quarantine(Duration::from_secs(3600));
+        guard.quarantine(Duration::from_secs(3600), mempools::AccountFailure::Nonce);
         assert!(
             guard.quarantine.is_none(),
             "direct slot must not be quarantined"
         );
+    }
+
+    use std::cell::RefCell;
+
+    fn txid(b: u8) -> eth::TxId {
+        eth::TxId(alloy::primitives::B256::repeat_byte(b))
+    }
+
+    /// On an account-specific failure the settlement is retried from a
+    /// different account: here Direct fails, then the delegated account
+    /// succeeds.
+    #[tokio::test]
+    async fn fallback_retries_from_a_second_account() {
+        let pool = SubmitterPool::new(
+            SOLVER,
+            vec![Account::Address(Address::with_last_byte(1))],
+            0,
+        );
+        let guard = pool.acquire().await.expect("direct slot");
+        let modes = RefCell::new(Vec::new());
+        let result = submit_with_fallback(
+            &pool,
+            guard,
+            Duration::from_secs(3600),
+            || false,
+            |mode| {
+                let mut modes = modes.borrow_mut();
+                let n = modes.len();
+                modes.push(mode);
+                std::future::ready(if n == 0 {
+                    Err(mempools::Error::SubmitterUnusable(
+                        mempools::AccountFailure::Nonce,
+                    ))
+                } else {
+                    Ok(txid(0x11))
+                })
+            },
+        )
+        .await;
+        let modes = modes.into_inner();
+        assert_eq!(modes.len(), 2, "should have tried a second account");
+        assert!(matches!(modes[0], SubmissionMode::Direct(_)));
+        assert!(matches!(modes[1], SubmissionMode::Delegated { .. }));
+        assert!(matches!(result, Ok(h) if h.0 == txid(0x11).0));
+    }
+
+    /// Fallback can also go the other way: a delegated account fails, then the
+    /// freed direct solver EOA takes over.
+    #[tokio::test]
+    async fn fallback_can_go_from_delegated_to_direct() {
+        let pool = SubmitterPool::new(
+            SOLVER,
+            vec![Account::Address(Address::with_last_byte(1))],
+            0,
+        );
+        let direct = pool.acquire().await.expect("direct slot");
+        let guard = pool.try_acquire().expect("delegated account");
+        drop(direct); // free the direct slot so the retry can grab it
+        let modes = RefCell::new(Vec::new());
+        let result = submit_with_fallback(
+            &pool,
+            guard,
+            Duration::from_secs(3600),
+            || false,
+            |mode| {
+                let mut modes = modes.borrow_mut();
+                let n = modes.len();
+                modes.push(mode);
+                std::future::ready(if n == 0 {
+                    Err(mempools::Error::SubmitterUnusable(
+                        mempools::AccountFailure::InsufficientFunds,
+                    ))
+                } else {
+                    Ok(txid(0x22))
+                })
+            },
+        )
+        .await;
+        let modes = modes.into_inner();
+        assert_eq!(modes.len(), 2);
+        assert!(matches!(modes[0], SubmissionMode::Delegated { .. }));
+        assert!(matches!(modes[1], SubmissionMode::Direct(_)));
+        assert!(matches!(result, Ok(h) if h.0 == txid(0x22).0));
+    }
+
+    /// With no other account free, the account failure is surfaced after a
+    /// single attempt rather than retried.
+    #[tokio::test]
+    async fn no_retry_when_no_other_account_is_free() {
+        let pool = SubmitterPool::new(SOLVER, vec![], 0);
+        let guard = pool.acquire().await.expect("direct slot");
+        let modes = RefCell::new(Vec::new());
+        let result = submit_with_fallback(
+            &pool,
+            guard,
+            Duration::from_secs(3600),
+            || false,
+            |mode| {
+                modes.borrow_mut().push(mode);
+                std::future::ready(Err(mempools::Error::SubmitterUnusable(
+                    mempools::AccountFailure::Nonce,
+                )))
+            },
+        )
+        .await;
+        assert_eq!(modes.into_inner().len(), 1);
+        assert!(matches!(
+            result,
+            Err(mempools::Error::SubmitterUnusable(
+                mempools::AccountFailure::Nonce
+            ))
+        ));
+    }
+
+    /// A deadline that passed while waiting for a slot fails fast without ever
+    /// submitting.
+    #[tokio::test]
+    async fn no_submit_when_deadline_already_passed() {
+        let pool = SubmitterPool::new(SOLVER, vec![], 0);
+        let guard = pool.acquire().await.expect("direct slot");
+        let modes = RefCell::new(Vec::new());
+        let result = submit_with_fallback(
+            &pool,
+            guard,
+            Duration::from_secs(3600),
+            || true, // deadline already reached
+            |mode| {
+                modes.borrow_mut().push(mode);
+                std::future::ready(Ok(txid(0x33)))
+            },
+        )
+        .await;
+        assert!(
+            modes.into_inner().is_empty(),
+            "must not submit past the deadline"
+        );
+        assert!(matches!(result, Err(mempools::Error::Other(_))));
+    }
+
+    /// A non-account error (e.g. a connection reset, whose tx may be on the
+    /// wire) is never retried, even when another account is available.
+    #[tokio::test]
+    async fn no_retry_on_a_non_account_error() {
+        let pool = SubmitterPool::new(
+            SOLVER,
+            vec![Account::Address(Address::with_last_byte(1))],
+            0,
+        );
+        let guard = pool.acquire().await.expect("direct slot");
+        let modes = RefCell::new(Vec::new());
+        let result = submit_with_fallback(
+            &pool,
+            guard,
+            Duration::from_secs(3600),
+            || false,
+            |mode| {
+                modes.borrow_mut().push(mode);
+                std::future::ready(Err(mempools::Error::Other(anyhow::anyhow!(
+                    "connection reset"
+                ))))
+            },
+        )
+        .await;
+        assert_eq!(
+            modes.into_inner().len(),
+            1,
+            "a non-account error is not retried"
+        );
+        assert!(matches!(result, Err(mempools::Error::Other(_))));
+    }
+
+    /// A settlement that lands on the first attempt returns immediately with no
+    /// retry.
+    #[tokio::test]
+    async fn no_retry_on_immediate_success() {
+        let pool = SubmitterPool::new(
+            SOLVER,
+            vec![Account::Address(Address::with_last_byte(1))],
+            0,
+        );
+        let guard = pool.acquire().await.expect("direct slot");
+        let modes = RefCell::new(Vec::new());
+        let result = submit_with_fallback(
+            &pool,
+            guard,
+            Duration::from_secs(3600),
+            || false,
+            |mode| {
+                modes.borrow_mut().push(mode);
+                std::future::ready(Ok(txid(0x44)))
+            },
+        )
+        .await;
+        assert_eq!(modes.into_inner().len(), 1);
+        assert!(matches!(result, Ok(h) if h.0 == txid(0x44).0));
     }
 }
