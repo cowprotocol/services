@@ -58,6 +58,14 @@ impl Uploader {
         let compressed = tokio::task::spawn_blocking(move || Self::gzip(&content))
             .await
             .context("compression task panicked")??;
+        self.upload_gzipped(id, Bytes::from(compressed)).await
+    }
+
+    /// Uploads bytes that are already gzip-compressed JSON, tagging the object
+    /// with `Content-Encoding: gzip`. Lets callers that compress while
+    /// streaming the data elsewhere avoid ever holding the full
+    /// uncompressed JSON here.
+    pub async fn upload_gzipped(&self, id: String, compressed: Bytes) -> Result<String> {
         let key = std::path::Path::new(&self.filename_prefix)
             .join(format!("{id}.json"))
             .to_str()
