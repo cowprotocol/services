@@ -351,19 +351,38 @@ impl<'a> PriceEstimatorFactory<'a> {
         )
     }
 
+    /// Builds a [`CompetitionEstimator`] over the given estimators, with each
+    /// one wrapped in its own sanitizer. This per-estimator shape lets the
+    /// single competition serve both the one-shot and streaming quote paths,
+    /// instead of forwarding a stream through one outer sanitizer.
+    fn sanitized_competition(
+        &self,
+        estimators: Vec<(String, Arc<dyn PriceEstimating>)>,
+        ranking: PriceRanking,
+    ) -> CompetitionEstimator<Arc<dyn PriceEstimating>> {
+        let estimators = estimators
+            .into_iter()
+            .map(|(name, estimator)| {
+                (
+                    name,
+                    Arc::new(self.sanitized(estimator)) as Arc<dyn PriceEstimating>,
+                )
+            })
+            .collect();
+        CompetitionEstimator::new(vec![estimators], ranking)
+    }
+
     pub fn price_estimator(
         &mut self,
         solvers: &[ExternalSolver],
         native: Arc<dyn NativePriceEstimating>,
         gas: Arc<dyn GasPriceEstimating>,
-    ) -> Result<Arc<dyn PriceEstimating>> {
+    ) -> Result<Arc<CompetitionEstimator<Arc<dyn PriceEstimating>>>> {
         let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
-        let competition_estimator = CompetitionEstimator::new(
-            vec![estimators],
-            PriceRanking::BestBangForBuck { native, gas },
-        )
-        .with_verification(self.args.quote_verification);
-        Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
+        Ok(Arc::new(
+            self.sanitized_competition(estimators, PriceRanking::BestBangForBuck { native, gas })
+                .with_verification(self.args.quote_verification),
+        ))
     }
 
     pub fn fast_price_estimator(
@@ -375,13 +394,8 @@ impl<'a> PriceEstimatorFactory<'a> {
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(solvers, |entry| &entry.fast)?;
         Ok(Arc::new(
-            self.sanitized(Arc::new(
-                CompetitionEstimator::new(
-                    vec![estimators],
-                    PriceRanking::BestBangForBuck { native, gas },
-                )
+            self.sanitized_competition(estimators, PriceRanking::BestBangForBuck { native, gas })
                 .with_early_return(fast_price_estimation_results_required),
-            )),
         ))
     }
 
