@@ -274,9 +274,17 @@ pub struct ConcentratedLiquidityPool {
     #[serde_as(as = "DisplayFromStr")]
     pub liquidity: u128,
     pub tick: i32,
-    // `Arc`-shared with the driver's domain pool to avoid deep-copying the tick
-    // map when building the solver request on every `/solve`.
-    #[serde_as(as = "Arc<BTreeMap<DisplayFromStr, DisplayFromStr>>")]
+    // The driver serializes the full tick map for external/colocated solvers
+    // that route Uniswap V3 offline from it. Our internal solver engine routes
+    // V3 via the on-chain quoter and never reads `liquidity_net`, so we skip
+    // *deserializing* it: the map can hold thousands of entries per pool and
+    // building it for every pool on every `/solve` only to drop it in
+    // `into_domain` was a large, pointless allocation. `skip_deserializing`
+    // leaves it as an empty map (unknown field on the wire is ignored without
+    // allocating). Serialization is unchanged, so external consumers still get
+    // the full map.
+    #[serde_as(serialize_as = "Arc<BTreeMap<DisplayFromStr, DisplayFromStr>>")]
+    #[serde(skip_deserializing)]
     pub liquidity_net: Arc<BTreeMap<i32, i128>>,
     pub fee: BigDecimal,
 }
@@ -323,4 +331,39 @@ pub struct WrapperCall {
     /// unmodified in a solution containing this order.
     #[serde(default)]
     pub is_omittable: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The driver must keep serializing the full V3 tick map (external solvers
+    /// route from it), but our solver engine skips deserializing it to avoid
+    /// building the (potentially huge) per-pool map on every `/solve`.
+    #[test]
+    fn liquidity_net_is_serialized_but_skipped_on_deserialize() {
+        let pool = ConcentratedLiquidityPool {
+            id: "0".to_owned(),
+            address: Address::ZERO,
+            router: Address::ZERO,
+            gas_estimate: U256::from(108_163),
+            tokens: vec![Address::ZERO, Address::with_last_byte(1)],
+            sqrt_price: U256::from(1),
+            liquidity: 1,
+            tick: 0,
+            liquidity_net: Arc::new(BTreeMap::from([(-10, 5i128), (10, -5i128)])),
+            fee: BigDecimal::from(3),
+        };
+
+        // Serialization is unchanged: the full tick map is on the wire.
+        let json = serde_json::to_value(&pool).unwrap();
+        assert_eq!(
+            json["liquidityNet"],
+            serde_json::json!({"-10": "5", "10": "-5"})
+        );
+
+        // Deserialization ignores it (treated as an unknown field, no map built).
+        let parsed: ConcentratedLiquidityPool = serde_json::from_value(json).unwrap();
+        assert!(parsed.liquidity_net.is_empty());
+    }
 }
