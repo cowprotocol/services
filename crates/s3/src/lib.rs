@@ -12,16 +12,13 @@ use {
     std::io::{Read, Write},
 };
 
-/// gzip compression level used for every object archived to S3. Centralized so
-/// the eager [`Uploader::upload`] path and callers that compress while
-/// streaming the same bytes elsewhere produce identically-compressed objects.
+/// gzip level for every object archived to S3, so the eager and streaming
+/// compression paths produce identical output.
 const COMPRESSION_LEVEL: u32 = 3;
 
-/// A streaming gzip sink: write the plaintext JSON in, then
-/// [`GzipWriter::finish`] to get the compressed bytes. Lets callers that stream
-/// a payload somewhere else compress the same bytes in one pass — with the
-/// exact settings the eager upload path uses — without ever materializing the
-/// full plaintext here.
+/// A streaming gzip sink: write plaintext in, then [`GzipWriter::finish`] for
+/// the compressed bytes. Lets callers compress while streaming a payload
+/// elsewhere, without materializing the full plaintext.
 pub struct GzipWriter(write::GzEncoder<Vec<u8>>);
 
 impl GzipWriter {
@@ -32,7 +29,6 @@ impl GzipWriter {
         ))
     }
 
-    /// Finishes the gzip stream and returns the compressed bytes.
     pub fn finish(self) -> std::io::Result<Vec<u8>> {
         self.0.finish()
     }

@@ -134,10 +134,7 @@ impl Request {
 
 impl InjectIntoHttpRequest for Request {
     fn inject(&self, request: RequestBuilder) -> RequestBuilder {
-        // Serve the already-serialized body as a single-chunk stream so it can
-        // be wrapped in `Measured` to time how long the body takes to transmit.
-        // The bytes are already in memory (`hyper`'s `Bytes` are reference
-        // counted), so there's nothing to gain from chunking.
+        // Wrap the in-memory body as a one-chunk stream so `Measured` can time it.
         let body = futures::stream::iter([Ok::<_, Infallible>(self.body.clone())]);
         let request = request
             .body(reqwest::Body::wrap_stream(Measured::new(body)))

@@ -11,19 +11,11 @@ use {
 };
 
 pin_project! {
-    /// Wraps an HTTP request body stream and logs, once the body has been fully
-    /// drained, how long it took to hand off to the network. Useful to tell
-    /// whether a slow round-trip is dominated by us sending a large (multi-MB)
-    /// body or by the remote being slow to read it.
-    ///
-    /// `to_transmission_start_ms` is the gap between construction and the first
-    /// poll (how long until the HTTP client started reading the body);
-    /// `transmission_ms` spans that first poll until the body is exhausted.
-    ///
-    /// The numbers are an approximation: a poll only reflects when `hyper`
-    /// pulled the chunk into the network stack's buffer, not when the bytes
-    /// actually hit the wire. For bodies large enough to require several buffer
-    /// flushes that approximation is close enough to be useful.
+    /// Wraps an HTTP request body stream and, once it is fully drained, logs how
+    /// long transmission took: `to_transmission_start_ms` (construction until
+    /// the first poll, i.e. until the client started reading) and
+    /// `transmission_ms` (first poll until exhausted). Approximate — a poll
+    /// reflects when `hyper` buffered the chunk, not when it hit the wire.
     pub struct Measured<S> {
         #[pin]
         inner: S,
