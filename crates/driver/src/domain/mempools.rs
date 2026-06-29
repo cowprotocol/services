@@ -81,11 +81,17 @@ impl Mempools {
         // not surface a retryable `SubmitterUnusable` even if a sibling mempool
         // rejected pre-broadcast.
         let any_broadcast = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Set if any mempool fails before broadcast with an ambiguous error whose tx
+        // might still reach the chain (timeout, connection reset, `already known`,
+        // `nonce too high`, ...). Unlike a clean account rejection, such a failure
+        // means we can't be sure nothing was sent, so it must not trigger a retry.
+        let saw_nonretryable = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
             |(mempool, stat)| {
                 let account_failure = std::sync::Arc::clone(&account_failure);
                 let any_broadcast = std::sync::Arc::clone(&any_broadcast);
+                let saw_nonretryable = std::sync::Arc::clone(&saw_nonretryable);
                 async move {
                     let result = self
                         .submit(mempool, settlement, submission_deadline, mode, &any_broadcast)
@@ -94,8 +100,19 @@ impl Mempools {
                     // Log inline so errors from mempools that later get superseded still surface;
                     // metrics are emitted from `update_metrics` once the race outcome is known.
                     observe::mempool_log(mempool, settlement, &result);
-                    if let Err(Error::SubmitterUnusable(reason)) = &result {
-                        *account_failure.lock().unwrap() = Some(*reason);
+                    match &result {
+                        Err(Error::SubmitterUnusable(reason)) => {
+                            *account_failure.lock().unwrap() = Some(*reason);
+                        }
+                        // A disabled mempool was skipped without touching the network.
+                        Err(Error::Disabled) => {}
+                        // Any other error (timeout, connection reset, `already known`,
+                        // `nonce too high`, ...) may have put a tx on the wire, so it
+                        // must block a retry from another account.
+                        Err(_) => {
+                            saw_nonretryable.store(true, std::sync::atomic::Ordering::SeqCst)
+                        }
+                        Ok(_) => {}
                     }
                     *stat = Outcome::from(&result);
                     result
@@ -116,6 +133,7 @@ impl Mempools {
                 err,
                 *account_failure.lock().unwrap(),
                 any_broadcast.load(std::sync::atomic::Ordering::SeqCst),
+                saw_nonretryable.load(std::sync::atomic::Ordering::SeqCst),
             )),
         }
     }
@@ -733,14 +751,19 @@ pub fn classify_submission_failure(message: &str) -> Option<AccountFailure> {
 /// `select_ok` yields whichever error finished last, so a `SubmitterUnusable`
 /// reported by one mempool can be masked by a generic error (e.g. a timeout)
 /// from another. The caller benches the account and retries on
-/// `SubmitterUnusable`, so surface it whenever a mempool reported one — unless
-/// `last_error` is a settlement-specific terminal failure (revert/expired),
-/// which is authoritative, or `broadcasted` is set, meaning some mempool
-/// already put a tx on the wire and retrying could double-submit.
+/// `SubmitterUnusable`, so surface it whenever a mempool reported one, unless
+/// one of the following holds: `last_error` is a settlement-specific terminal
+/// failure (revert/expired), which is authoritative; `broadcasted` is set,
+/// meaning some mempool already put a tx on the wire and retrying could
+/// double-submit; or `saw_nonretryable` is set, meaning a mempool failed before
+/// broadcast with an ambiguous error (timeout, connection reset, `already
+/// known`, `nonce too high`) whose tx might still be live, which is likewise
+/// unsafe to retry.
 fn race_error(
     last_error: Error,
     account_failure: Option<AccountFailure>,
     broadcasted: bool,
+    saw_nonretryable: bool,
 ) -> Error {
     // A settlement-specific terminal failure is authoritative and must not be
     // retried from another account, so it always wins over an account failure.
@@ -763,7 +786,19 @@ fn race_error(
         };
     }
     match account_failure {
-        Some(reason) => Error::SubmitterUnusable(reason),
+        // Only retry when every active mempool failed cleanly before sending. If a
+        // sibling lane returned an ambiguous error, its tx might still be on the
+        // wire, so retrying from another account could double-submit; keep the real
+        // error instead, stripping a `SubmitterUnusable` that `select_ok` happened
+        // to return last so it can't leak a retry.
+        Some(reason) if !saw_nonretryable => Error::SubmitterUnusable(reason),
+        Some(reason) => match last_error {
+            Error::SubmitterUnusable(_) => Error::Other(anyhow!(
+                "submission account unusable ({reason}) alongside an ambiguous failure from \
+                 another mempool; not retrying"
+            )),
+            other => other,
+        },
         None => last_error,
     }
 }
@@ -949,20 +984,40 @@ mod tests {
     #[test]
     fn account_failure_is_surfaced_over_a_masking_race_error() {
         use AccountFailure::*;
-        // Pre-broadcast: a generic error returned last by `select_ok` must not hide
-        // an account-specific failure another mempool reported, else the account is
-        // never benched/retried (issue #4541).
+        // Pre-broadcast, every lane failed cleanly: the account-specific failure is
+        // surfaced so the settlement is benched and retried (issue #4541), even when
+        // `select_ok` returns a different clean error (here `Disabled`) last.
+        assert!(matches!(
+            race_error(Error::Disabled, Some(Nonce), false, false),
+            Error::SubmitterUnusable(Nonce)
+        ));
+        // ...and when the account failure is itself the error returned last.
+        assert!(matches!(
+            race_error(Error::SubmitterUnusable(Nonce), Some(Nonce), false, false),
+            Error::SubmitterUnusable(Nonce)
+        ));
+        // Pre-broadcast but a sibling lane returned an ambiguous error (timeout,
+        // connection reset, `already known`, `nonce too high`): its tx might still be
+        // on the wire, so the account failure must NOT be surfaced, or the settlement
+        // could be retried from another EOA and double-submitted.
         assert!(matches!(
             race_error(
                 Error::Other(anyhow!("connection reset")),
                 Some(Nonce),
-                false
+                false,
+                true,
             ),
-            Error::SubmitterUnusable(Nonce)
+            Error::Other(_)
+        ));
+        // Even when the account failure is the error returned last, an ambiguous
+        // sibling downgrades it so the caller does not retry.
+        assert!(matches!(
+            race_error(Error::SubmitterUnusable(Nonce), Some(Nonce), false, true),
+            Error::Other(_)
         ));
         // With no account-specific failure, the original error is preserved.
         assert!(matches!(
-            race_error(Error::Disabled, None, false),
+            race_error(Error::Disabled, None, false, false),
             Error::Disabled
         ));
         // A settlement-specific terminal failure is authoritative and must never
@@ -975,6 +1030,7 @@ mod tests {
                 },
                 Some(InsufficientFunds),
                 false,
+                false,
             ),
             Error::SimulationRevert { .. }
         ));
@@ -986,13 +1042,14 @@ mod tests {
                 Error::Other(anyhow!("Block stream finished unexpectedly")),
                 Some(Nonce),
                 true,
+                false,
             ),
             Error::Other(_)
         ));
         // Even when the last error is itself the pre-broadcast account failure, a
         // broadcast elsewhere downgrades it so the caller does not retry.
         assert!(matches!(
-            race_error(Error::SubmitterUnusable(Nonce), Some(Nonce), true),
+            race_error(Error::SubmitterUnusable(Nonce), Some(Nonce), true, false),
             Error::Other(_)
         ));
     }
