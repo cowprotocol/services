@@ -11,8 +11,11 @@ mod tee_writer;
 
 use {
     bytes::Bytes,
-    flate2::{Compression, write::GzEncoder},
-    std::io::{BufWriter, Write},
+    futures::StreamExt,
+    std::{
+        convert::Infallible,
+        io::{BufWriter, Write},
+    },
     tee_writer::TeeWriter,
     tokio::sync::{mpsc, oneshot},
     tokio_stream::wrappers::ReceiverStream,
@@ -23,9 +26,11 @@ use {
 const CHUNK_SIZE: usize = 64 * 1024;
 
 /// Blocks buffered in the body channel before the serializing thread is parked.
-/// Bounds the streamed request body at ~`CHANNEL_CAPACITY * CHUNK_SIZE` through
-/// backpressure (the gzip archive copy, when enabled, is retained separately).
-const CHANNEL_CAPACITY: usize = 8;
+/// Two is enough for double buffering: the consumer can transmit one block
+/// while the serializer produces the next. A larger value would only raise the
+/// memory ceiling (~`CHANNEL_CAPACITY * CHUNK_SIZE`) without improving
+/// throughput (the gzip archive copy, when enabled, is retained separately).
+const CHANNEL_CAPACITY: usize = 2;
 
 /// Serializes `value` to JSON on a blocking thread, streaming it into the
 /// returned reqwest body. Backpressure from the body channel caps memory.
@@ -55,8 +60,10 @@ where
     T: serde::Serialize + Send + 'static,
     S: Write + Finalize + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel::<std::io::Result<Bytes>>(CHANNEL_CAPACITY);
-    let body = reqwest::Body::wrap_stream(ReceiverStream::new(rx));
+    let (tx, rx) = mpsc::channel::<Bytes>(CHANNEL_CAPACITY);
+    // The channel carries raw `Bytes`; `wrap_stream` wants a `TryStream`, so the
+    // chunks are wrapped into infallible `Ok`s at the boundary.
+    let body = reqwest::Body::wrap_stream(ReceiverStream::new(rx).map(Ok::<_, Infallible>));
     // `spawn_blocking` doesn't inherit the caller's span, so carry it across so
     // the diagnostics below keep the auction/request context.
     let span = tracing::Span::current();
@@ -88,7 +95,7 @@ where
 /// A [`Write`] that sends each block to the body channel, blocking when it's
 /// full so serialization can't outpace the request (backpressure). Dropping it
 /// closes the channel, signalling the end of the body.
-struct ChannelWriter(mpsc::Sender<std::io::Result<Bytes>>);
+struct ChannelWriter(mpsc::Sender<Bytes>);
 
 impl Write for ChannelWriter {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
@@ -98,7 +105,7 @@ impl Write for ChannelWriter {
         // without the copy — at the cost of reimplementing the coalescing
         // `BufWriter` gives us for free.
         self.0
-            .blocking_send(Ok(Bytes::copy_from_slice(data)))
+            .blocking_send(Bytes::copy_from_slice(data))
             .map_err(|_| {
                 std::io::Error::new(
                     std::io::ErrorKind::BrokenPipe,
@@ -127,17 +134,23 @@ impl Finalize for std::io::Sink {
 }
 
 /// A [`Write`] sink that gzips into memory and delivers the bytes over a
-/// oneshot when finalized.
+/// oneshot when finalized. The gzip settings live in the `s3` crate so the
+/// archived copy is compressed identically to the eager upload path.
 struct GzipCapture {
-    encoder: GzEncoder<Vec<u8>>,
+    writer: s3::GzipWriter,
     tx: oneshot::Sender<Bytes>,
 }
 
 impl GzipCapture {
     fn new() -> (Self, oneshot::Receiver<Bytes>) {
         let (tx, rx) = oneshot::channel();
-        let encoder = GzEncoder::new(Vec::new(), Compression::new(3));
-        (Self { encoder, tx }, rx)
+        (
+            Self {
+                writer: s3::GzipWriter::new(),
+                tx,
+            },
+            rx,
+        )
     }
 }
 
@@ -145,7 +158,7 @@ impl Finalize for GzipCapture {
     /// Finishes the gzip stream and sends the bytes. A dropped receiver just
     /// means archival was no longer wanted.
     fn finalize(self) {
-        match self.encoder.finish() {
+        match self.writer.finish() {
             Ok(compressed) => drop(self.tx.send(Bytes::from(compressed))),
             Err(err) => tracing::debug!(?err, "gzip of archived request body failed"),
         }
@@ -154,11 +167,11 @@ impl Finalize for GzipCapture {
 
 impl Write for GzipCapture {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-        self.encoder.write(data)
+        self.writer.write(data)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.encoder.flush()
+        self.writer.flush()
     }
 }
 
@@ -170,7 +183,7 @@ mod tests {
     #[tokio::test]
     async fn channel_writer_forwards_all_bytes() {
         let data = vec![7u8; CHUNK_SIZE * 2 + 123];
-        let (tx, mut rx) = mpsc::channel::<std::io::Result<Bytes>>(CHANNEL_CAPACITY);
+        let (tx, mut rx) = mpsc::channel::<Bytes>(CHANNEL_CAPACITY);
         let expected = data.clone();
         let writer = tokio::task::spawn_blocking(move || {
             let mut writer = BufWriter::with_capacity(CHUNK_SIZE, ChannelWriter(tx));
@@ -180,7 +193,7 @@ mod tests {
 
         let mut reassembled = Vec::new();
         while let Some(chunk) = rx.recv().await {
-            reassembled.extend_from_slice(&chunk.unwrap());
+            reassembled.extend_from_slice(&chunk);
         }
         writer.await.unwrap();
 

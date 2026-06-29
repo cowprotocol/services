@@ -7,10 +7,52 @@ use {
         primitives::{ByteStream, SdkBody},
     },
     bytes::Bytes,
-    flate2::{Compression, bufread::GzEncoder},
+    flate2::{Compression, bufread, write},
     serde::Serialize,
-    std::io::Read,
+    std::io::{Read, Write},
 };
+
+/// gzip compression level used for every object archived to S3. Centralized so
+/// the eager [`Uploader::upload`] path and callers that compress while
+/// streaming the same bytes elsewhere produce identically-compressed objects.
+const COMPRESSION_LEVEL: u32 = 3;
+
+/// A streaming gzip sink: write the plaintext JSON in, then
+/// [`GzipWriter::finish`] to get the compressed bytes. Lets callers that stream
+/// a payload somewhere else compress the same bytes in one pass — with the
+/// exact settings the eager upload path uses — without ever materializing the
+/// full plaintext here.
+pub struct GzipWriter(write::GzEncoder<Vec<u8>>);
+
+impl GzipWriter {
+    pub fn new() -> Self {
+        Self(write::GzEncoder::new(
+            Vec::new(),
+            Compression::new(COMPRESSION_LEVEL),
+        ))
+    }
+
+    /// Finishes the gzip stream and returns the compressed bytes.
+    pub fn finish(self) -> std::io::Result<Vec<u8>> {
+        self.0.finish()
+    }
+}
+
+impl Default for GzipWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Write for GzipWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
 
 #[derive(Default)]
 pub struct Config {
@@ -104,7 +146,7 @@ impl Uploader {
 
     /// Compresses the input bytes using Gzip.
     fn gzip(bytes: &[u8]) -> Result<Vec<u8>> {
-        let mut encoder = GzEncoder::new(bytes, Compression::new(3));
+        let mut encoder = bufread::GzEncoder::new(bytes, Compression::new(COMPRESSION_LEVEL));
         let mut encoded: Vec<u8> = Vec::with_capacity(bytes.len());
         encoder.read_to_end(&mut encoded).context("gzip encoding")?;
         Ok(encoded)

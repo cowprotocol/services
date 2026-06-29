@@ -2,7 +2,8 @@ use std::io::Write;
 
 /// A [`Write`] that fans every write out to two writers, so one serialization
 /// pass feeds independent sinks (e.g. a request body and a gzip copy). A write
-/// succeeds only if it succeeds on both.
+/// succeeds only if it succeeds on both. Named after the UNIX `tee` command,
+/// which likewise duplicates its input to multiple outputs.
 pub(super) struct TeeWriter<A, B> {
     primary: A,
     secondary: B,
