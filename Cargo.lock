@@ -8254,6 +8254,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tikv-jemallocator",
  "tokio",
+ "tokio-util",
  "toml",
  "tower 0.5.3",
  "tower-http",
