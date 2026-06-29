@@ -11,7 +11,10 @@ use {
     alloy_provider::{Provider, utils::eip1559_default_estimator},
     anyhow::{Context, Result},
     configs::gas_price_estimation::EstimatorConfig,
-    ethrpc::{AlloyProvider, block_stream::CurrentBlockWatcher},
+    ethrpc::{
+        AlloyProvider,
+        block_stream::{BlockInfo, CurrentBlockWatcher},
+    },
     futures::StreamExt as _,
     tokio::sync::watch,
     tracing::instrument,
@@ -46,8 +49,8 @@ impl ConfigurableGasPriceEstimator {
         let (sender, receiver) = watch::channel(init);
         let mut current_block_stream = ethrpc::block_stream::into_stream(current_block.clone());
         tokio::task::spawn(async move {
-            while current_block_stream.next().await.is_some() {
-                let gas_price = match current_gas_price(&provider, &config).await {
+            while let Some(block) = current_block_stream.next().await {
+                let gas_price = match current_gas_price(&provider, &config, &block).await {
                     Ok(gas_price) => gas_price,
                     Err(err) => {
                         tracing::warn!(?err, "failed to compute gas price");
@@ -79,6 +82,7 @@ impl ConfigurableGasPriceEstimator {
 async fn current_gas_price(
     provider: &AlloyProvider,
     config: &EstimatorConfig,
+    block: &BlockInfo,
 ) -> Result<Eip1559Estimation> {
     // Fetch fee history with our configured parameters
     let fee_history = provider
@@ -96,17 +100,7 @@ async fn current_gas_price(
         Some(base_fee) if base_fee != 0 => base_fee,
         _ => {
             // empty response, fetch basefee from latest block directly
-            let block = provider
-                .get_block_by_number(BlockNumberOrTag::Latest)
-                .await
-                .context("failed to fetch latest block")?
-                .context("latest block not found")?;
-            u128::from(
-                block
-                    .header
-                    .base_fee_per_gas
-                    .context("base_fee_per_gas not available (eip1559 not supported)")?,
-            )
+            block.base_fee.into()
         }
     };
 
