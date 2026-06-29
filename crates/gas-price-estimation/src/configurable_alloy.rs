@@ -34,9 +34,9 @@ impl ConfigurableGasPriceEstimator {
         config: EstimatorConfig,
         current_block: CurrentBlockWatcher,
     ) -> Self {
-        // use some reasonable initial value. The exact value doesn't matter much since the background
-        // task will update the gas price immediately anyway since the block stream yields
-        // the current block immediately
+        // use some reasonable initial value. The exact value doesn't matter much since
+        // the background task will update the gas price immediately anyway
+        // since the block stream yields the current block immediately
         let base_fee = current_block.borrow().base_fee;
         let init = Eip1559Estimation {
             max_fee_per_gas: u128::from(base_fee * 2),
@@ -214,7 +214,10 @@ mod tests {
         let first = estimator.estimate().await.unwrap();
         let second = estimator.estimate().await.unwrap();
 
-        assert_eq!(first, second, "estimate should return the same cached value");
+        assert_eq!(
+            first, second,
+            "estimate should return the same cached value"
+        );
         assert!(
             asserter.read_q().is_empty(),
             "no additional RPC calls should have been made between estimate() calls"
@@ -244,8 +247,7 @@ mod tests {
             "max_fee after block 1"
         );
         assert_eq!(
-            estimate_after_block_1.max_priority_fee_per_gas,
-            tip,
+            estimate_after_block_1.max_priority_fee_per_gas, tip,
             "max_priority after block 1"
         );
 
@@ -267,4 +269,3 @@ mod tests {
         );
     }
 }
-
