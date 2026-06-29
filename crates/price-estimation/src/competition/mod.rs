@@ -18,7 +18,7 @@ use {
         fmt::Debug,
         num::NonZeroUsize,
         sync::{Arc, OnceLock},
-        time::Instant,
+        time::{Duration, Instant},
     },
 };
 
@@ -27,7 +27,7 @@ mod quote;
 
 /// Stage index and index within stage of an estimator stored in the
 /// [`CompetitionEstimator`] used as an identifier.
-#[derive(Copy, Debug, Clone, Default, Eq, PartialEq)]
+#[derive(Copy, Debug, Clone, Default, Eq, PartialEq, Hash)]
 struct EstimatorIndex(usize, usize);
 
 type PriceEstimationStage<T> = Vec<(String, T)>;
@@ -115,13 +115,15 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
             while stage_index < self.stages.len() && requests.len() < requests_for_batch {
                 let stage = &self.stages.get(stage_index).expect("index checked by loop");
                 let futures = stage.iter().enumerate().map(|(index, (name, estimator))| {
+                    let estimator_index = EstimatorIndex(stage_index, index);
                     get_single_result(Context {
                         estimator,
                         name,
                         query: query.clone(),
                         remaining_stages: Arc::clone(&remaining_stages),
+                        index: estimator_index,
                     })
-                    .map(move |result| (EstimatorIndex(stage_index, index), result))
+                    .map(move |result| (estimator_index, result))
                     .boxed()
                 });
                 requests.extend(futures);
@@ -160,6 +162,7 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         query: &Q,
         kind: OrderKind,
         (index, result): ResultWithIndex<R>,
+        elapsed: Option<Duration>,
     ) -> Result<R, PriceEstimationError> {
         let EstimatorIndex(stage_index, estimator_index) = index;
         let (name, _estimator) = &self.stages[stage_index][estimator_index];
@@ -169,6 +172,13 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
                 .queries_won
                 .with_label_values(&[name.as_str(), kind.label()])
                 .inc();
+            if let Some(elapsed) = elapsed {
+                tracing::debug!(
+                    estimator = name,
+                    elapsed_ms = elapsed.as_millis() as u64,
+                    "winning quote response time"
+                );
+            }
         }
         result
     }
@@ -198,6 +208,9 @@ struct Context<'a, ESTIMATOR, QUERY> {
     remaining_stages: Arc<OnceLock<usize>>,
     /// Name of the estimator
     name: &'a str,
+    /// Position of this estimator in the competition. Used as a collision-free
+    /// timing key, since names aren't guaranteed unique across stages.
+    index: EstimatorIndex,
 }
 
 impl<'a, E, Q> Context<'a, E, Q> {

@@ -43,7 +43,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
             };
             // Records each resolved estimator's own response time so we can
             // log the winner's latency after ranking.
-            let timings = Arc::new(Mutex::new(HashMap::<String, Duration>::new()));
+            let timings = Arc::new(Mutex::new(HashMap::<EstimatorIndex, Duration>::new()));
             let get_results = self
                 .produce_results(query.clone(), is_reasonable, {
                     let timings = timings.clone();
@@ -52,6 +52,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                         // when an early-return drops the future before it's polled.
                         let start = Instant::now();
                         let estimator_name = context.name.to_string();
+                        let estimator_index = context.index;
                         let inner_query = context.query.clone();
                         let timings = timings.clone();
                         context
@@ -60,7 +61,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                             .map(move |res| {
                                 let elapsed = start.elapsed();
                                 emit_quote_event(&estimator_name, &inner_query, &res, elapsed);
-                                timings.lock().unwrap().insert(estimator_name, elapsed);
+                                timings.lock().unwrap().insert(estimator_index, elapsed);
                                 res
                             })
                             .boxed()
@@ -84,17 +85,8 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 })
                 .with_context(|| "all price estimates were unreasonable (0 gas or 0 out_amount)")
                 .map_err(PriceEstimationError::EstimatorInternal)?;
-            if let (EstimatorIndex(stage_index, estimator_index), Ok(_)) = winner {
-                let name = &self.stages[stage_index][estimator_index].0;
-                if let Some(elapsed) = timings.lock().unwrap().get(name) {
-                    tracing::debug!(
-                        estimator = name,
-                        elapsed_ms = elapsed.as_millis(),
-                        "winning quote response time"
-                    );
-                }
-            }
-            self.report_winner(&query, query.kind, winner)
+            let elapsed = timings.lock().unwrap().get(&winner.0).copied();
+            self.report_winner(&query, query.kind, winner, elapsed)
         }
         .boxed()
     }
