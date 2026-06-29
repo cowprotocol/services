@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         domain::blockchain::TxStatus,
-        infra::{blockchain::gas::ManualAdjustments, config::file::GasEstimatorType},
+        infra::{blockchain::gas::GasPriceParameters, config::file::GasEstimatorType},
     },
     account_balances::{BalanceSimulator, SimulationError},
     alloy::{
@@ -111,7 +111,7 @@ impl Ethereum {
         current_block_args: &shared::current_block::Arguments,
         tx_gas_limit: eth::Gas,
         gas_estimator_type: &GasEstimatorType,
-        gas_adjustments: ManualAdjustments,
+        gas_adjustments: GasPriceParameters,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
         let current_block_stream = current_block_args
