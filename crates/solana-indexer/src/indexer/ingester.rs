@@ -133,35 +133,38 @@ where
     }
 
     /// Dispatch one wire message. Breaks when the decoder is gone.
-    ///
-    /// Associated function taking the channel and chain-tip counter by
-    /// reference rather than `&self`, so the future borrows only those (both
-    /// `Sync`) fields across awaits. That keeps `run`'s future `Send` without
-    /// requiring `Ingester: Sync` — the `GeyserStream` field is `Send` but not
-    /// `Sync`.
+    //
+    // Associated function taking the channel and chain-tip counter by reference
+    // rather than `&self`, so the future borrows only those (both `Sync`) fields
+    // across awaits. That keeps `run`'s future `Send` without requiring
+    // `Ingester: Sync`. The `GeyserStream` field is `Send` but not `Sync`.
     async fn handle_update(
         tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
         update: SubscribeUpdate,
     ) -> ControlFlow<()> {
-        use UpdateOneof::*;
-
         let Some(update) = update.update_oneof else {
-            tracing::warn!("update without a payload");
+            tracing::warn!(
+                latest_chain_slot = latest_chain_slot.load(Ordering::Relaxed),
+                "update without a payload"
+            );
             return ControlFlow::Continue(());
         };
         match update {
-            Transaction(tx_msg) => Self::handle_transaction(tx, tx_msg).await,
-            Account(account) => Self::handle_account(tx, account).await,
-            Slot(slot) => Self::handle_slot(latest_chain_slot, slot).await,
+            UpdateOneof::Transaction(tx_msg) => Self::handle_transaction(tx, tx_msg).await,
+            UpdateOneof::Account(account) => Self::handle_account(tx, account).await,
+            UpdateOneof::Slot(slot) => Self::handle_slot(latest_chain_slot, slot).await,
 
             // Ping/Pong frames carry no data the ingester needs; the library passes them through,
             // and we drop them here.
-            Ping(_) | Pong(_) => ControlFlow::Continue(()),
+            UpdateOneof::Ping(_) | UpdateOneof::Pong(_) => ControlFlow::Continue(()),
 
             // Not part of our subscription; irrelevant to the ingester even if the provider sends
             // them.
-            TransactionStatus(_) | Block(_) | BlockMeta(_) | Entry(_) => ControlFlow::Continue(()),
+            UpdateOneof::TransactionStatus(_)
+            | UpdateOneof::Block(_)
+            | UpdateOneof::BlockMeta(_)
+            | UpdateOneof::Entry(_) => ControlFlow::Continue(()),
         }
     }
 
@@ -203,10 +206,19 @@ where
             tracing::warn!(slot = account.slot, "account update without a body");
             return ControlFlow::Continue(());
         };
-        let txn_signature = inner
-            .txn_signature
-            .as_deref()
-            .and_then(|bytes| Signature::try_from(bytes).ok());
+        let txn_signature = match inner.txn_signature.as_deref() {
+            Some(bytes) => match Signature::try_from(bytes) {
+                Ok(signature) => Some(signature),
+                Err(_) => {
+                    tracing::warn!(
+                        slot = account.slot,
+                        "account update with a malformed txn_signature; forwarding without it"
+                    );
+                    None
+                }
+            },
+            None => None,
+        };
         Self::forward(
             tx,
             StreamUpdate::Account {
@@ -304,8 +316,7 @@ impl Ingester<GeyserStream> {
         let (_sink, stream) = client.subscribe_with_request(Some(request)).await?;
 
         let mut ingester = Ingester::new(stream, tx, latest_chain_slot);
-        ingester.run().await?;
-        Ok(())
+        ingester.run().await
     }
 }
 
