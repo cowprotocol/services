@@ -12,6 +12,7 @@ mod tee_writer;
 use {
     bytes::Bytes,
     futures::StreamExt,
+    observe::http_body::Measured,
     std::{
         convert::Infallible,
         io::{BufWriter, Write},
@@ -62,8 +63,10 @@ where
 {
     let (tx, rx) = mpsc::channel::<Bytes>(CHANNEL_CAPACITY);
     // The channel carries raw `Bytes`; `wrap_stream` wants a `TryStream`, so the
-    // chunks are wrapped into infallible `Ok`s at the boundary.
-    let body = reqwest::Body::wrap_stream(ReceiverStream::new(rx).map(Ok::<_, Infallible>));
+    // chunks are wrapped into infallible `Ok`s at the boundary. `Measured` logs
+    // how long the solver took to read the body once it is fully drained.
+    let stream = Measured::new(ReceiverStream::new(rx)).map(Ok::<_, Infallible>);
+    let body = reqwest::Body::wrap_stream(stream);
     // `spawn_blocking` doesn't inherit the caller's span, so carry it across so
     // the diagnostics below keep the auction/request context.
     let span = tracing::Span::current();
