@@ -100,7 +100,7 @@ fn ingester(
 #[tokio::test]
 async fn transaction_update_with_valid_signature_is_forwarded() {
     let signature = signature(1);
-    let (mut ingester, mut rx, _) = ingester(stream::iter(vec![tx_update(42, 1)]));
+    let (mut ingester, mut rx, _) = ingester(stream::iter([tx_update(42, 1)]));
 
     assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
     let update = rx.recv().await.unwrap();
@@ -113,7 +113,7 @@ async fn transaction_update_with_valid_signature_is_forwarded() {
 #[tokio::test]
 async fn account_update_with_body_is_forwarded() {
     let signature = signature(2);
-    let (mut ingester, mut rx, _) = ingester(stream::iter(vec![account_update(100, 2)]));
+    let (mut ingester, mut rx, _) = ingester(stream::iter([account_update(100, 2)]));
 
     assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
     let update = rx.recv().await.unwrap();
@@ -125,7 +125,7 @@ async fn account_update_with_body_is_forwarded() {
 
 #[tokio::test]
 async fn slot_update_advances_latest_chain_slot() {
-    let (mut ingester, _rx, slot) = ingester(stream::iter(vec![slot_update(9_001)]));
+    let (mut ingester, _rx, slot) = ingester(stream::iter([slot_update(9_001)]));
 
     assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
     assert_eq!(slot.load(Ordering::Relaxed), 9_001);
@@ -133,7 +133,7 @@ async fn slot_update_advances_latest_chain_slot() {
 
 #[tokio::test]
 async fn unrelated_and_empty_updates_are_ignored() {
-    let (mut ingester, mut rx, slot) = ingester(stream::iter(vec![
+    let (mut ingester, mut rx, slot) = ingester(stream::iter([
         Ok(SubscribeUpdate::default()),
         update_of(UpdateOneof::Ping(SubscribeUpdatePing::default())),
         update_of(UpdateOneof::Pong(SubscribeUpdatePong::default())),
@@ -158,7 +158,7 @@ async fn unrelated_and_empty_updates_are_ignored() {
 #[tokio::test]
 async fn transaction_without_body_or_malformed_signature_is_skipped() {
     let signature = signature(4);
-    let (mut ingester, mut rx, _) = ingester(stream::iter(vec![
+    let (mut ingester, mut rx, _) = ingester(stream::iter([
         Ok(SubscribeUpdate {
             update_oneof: Some(UpdateOneof::Transaction(SubscribeUpdateTransaction {
                 slot: 1,
@@ -190,7 +190,7 @@ async fn transaction_without_body_or_malformed_signature_is_skipped() {
 #[tokio::test]
 async fn terminal_grpc_status_returns_stream_error() {
     let status = Status::invalid_argument("boom");
-    let (mut ingester, _rx, _) = ingester(stream::iter(vec![Err(status.clone())]));
+    let (mut ingester, _rx, _) = ingester(stream::iter([Err(status.clone())]));
 
     let result = ingester.run().await;
     assert!(
@@ -208,7 +208,7 @@ async fn clean_stream_end_returns_stream_ended() {
 
 #[tokio::test]
 async fn closed_decoder_receiver_stops_cleanly() {
-    let (mut ingester, rx, _) = ingester(stream::iter(vec![tx_update(1, 5)]));
+    let (mut ingester, rx, _) = ingester(stream::iter([tx_update(1, 5)]));
     drop(rx);
 
     assert!(ingester.run().await.is_ok());
