@@ -199,7 +199,7 @@ mod tests {
         let tip: u128 = 1_000_000_000;
 
         // Keep the sender alive so the background task does not terminate.
-        let (block_sender, block_receiver) = watch::channel(block_with_base_fee(1));
+        let (_block_sender, block_receiver) = watch::channel(block_with_base_fee(1));
         let asserter = Asserter::new();
         // Only one response is queued — the estimator must not call RPC more than once.
         push_fee_history(&asserter, base_fee, tip);
