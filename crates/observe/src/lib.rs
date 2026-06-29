@@ -6,6 +6,7 @@ pub mod event_bus;
 pub mod future;
 #[cfg(unix)]
 pub mod heap_dump_handler;
+pub mod http_body;
 pub mod metrics;
 pub mod panic_hook;
 pub mod tracing;
