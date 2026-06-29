@@ -107,7 +107,7 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: nextest
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
@@ -133,7 +133,7 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p orderbook -p database -p autopilot --tests &
-      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: nextest
       - run: docker compose -f docker-compose.yaml up -d db
@@ -162,7 +162,7 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p e2e --tests &
-      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: nextest
       - run: docker compose -f docker-compose.yaml up -d db
@@ -201,7 +201,7 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p e2e --tests &
-      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: nextest
       - run: docker compose -f docker-compose.yaml up -d db
@@ -227,7 +227,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1.8.0
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: nextest
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
@@ -297,7 +297,7 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p e2e --tests &
-      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: nextest
       - run: docker compose -f docker-compose.yaml up -d db
