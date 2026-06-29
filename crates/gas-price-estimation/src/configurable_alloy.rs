@@ -34,9 +34,9 @@ impl ConfigurableGasPriceEstimator {
         config: EstimatorConfig,
         current_block: CurrentBlockWatcher,
     ) -> Self {
-        // use some reasonable initial value. The exact value doesn't matter much since
-        // the background task will update the gas price immediately anyway
-        // since the block stream yields the current block immediately
+        // use some reasonable initial value. The exact value doesn't matter much since the background
+        // task will update the gas price immediately anyway since the block stream yields
+        // the current block immediately
         let base_fee = current_block.borrow().base_fee;
         let init = Eip1559Estimation {
             max_fee_per_gas: u128::from(base_fee * 2),
@@ -131,3 +131,140 @@ impl GasPriceEstimating for ConfigurableGasPriceEstimator {
         Ok(*self.lastest_gas_price.borrow())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        alloy_provider::{Provider, ProviderBuilder, mock::Asserter},
+        ethrpc::block_stream::{BlockInfo, mock_single_block},
+        tokio::{sync::watch, time::Duration},
+    };
+
+    fn mock_provider(asserter: Asserter) -> ethrpc::AlloyProvider {
+        ProviderBuilder::new()
+            .connect_mocked_client(asserter)
+            .erased()
+    }
+
+    fn default_config() -> EstimatorConfig {
+        EstimatorConfig {
+            past_blocks: 5,
+            reward_percentile: 50.0,
+        }
+    }
+
+    fn block_with_base_fee(base_fee: u64) -> BlockInfo {
+        BlockInfo {
+            base_fee,
+            ..Default::default()
+        }
+    }
+
+    // Pushes a fee_history JSON response where `latest_block_base_fee()` returns
+    // `base_fee` and the reward is `tip`. The resulting estimate will be:
+    //   max_priority_fee_per_gas = tip
+    //   max_fee_per_gas          = base_fee * 2 + tip
+    fn push_fee_history(asserter: &Asserter, base_fee: u128, tip: u128) {
+        asserter.push_success(&serde_json::json!({
+            // baseFeePerGas[len-2] is the latest block base fee,
+            // baseFeePerGas[len-1] is the projected next block base fee
+            "baseFeePerGas": [format!("0x{base_fee:x}"), format!("0x{:x}", base_fee * 2)],
+            "gasUsedRatio": [0.5],
+            "oldestBlock": "0x1",
+            "reward": [[format!("0x{tip:x}")]]
+        }));
+    }
+
+    #[tokio::test]
+    async fn base_fee_reads_from_block_watcher_not_rpc() {
+        let base_fee: u64 = 5_000_000_000;
+        let current_block = mock_single_block(block_with_base_fee(base_fee));
+        let asserter = Asserter::new();
+        // Queue one response for the background task's initial fee history fetch.
+        push_fee_history(&asserter, base_fee as u128, 1_000_000_000);
+        let provider = mock_provider(asserter);
+
+        let estimator =
+            ConfigurableGasPriceEstimator::new(provider, default_config(), current_block);
+
+        // base_fee() reads from the block watcher directly — no RPC call needed.
+        let result = estimator.base_fee().await.unwrap();
+        assert_eq!(result, Some(base_fee));
+    }
+
+    #[tokio::test]
+    async fn estimate_caches_result_between_blocks() {
+        let base_fee: u128 = 10_000_000_000;
+        let tip: u128 = 1_000_000_000;
+
+        // Keep the sender alive so the background task does not terminate.
+        let (block_sender, block_receiver) = watch::channel(block_with_base_fee(1));
+        let asserter = Asserter::new();
+        // Only one response is queued — the estimator must not call RPC more than once.
+        push_fee_history(&asserter, base_fee, tip);
+        let provider = mock_provider(asserter.clone());
+
+        let estimator =
+            ConfigurableGasPriceEstimator::new(provider, default_config(), block_receiver);
+
+        // Give the background task time to process the initial block.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let first = estimator.estimate().await.unwrap();
+        let second = estimator.estimate().await.unwrap();
+
+        assert_eq!(first, second, "estimate should return the same cached value");
+        assert!(
+            asserter.read_q().is_empty(),
+            "no additional RPC calls should have been made between estimate() calls"
+        );
+    }
+
+    #[tokio::test]
+    async fn estimate_updates_when_new_block_arrives() {
+        let base_fee_1: u128 = 10_000_000_000;
+        let base_fee_2: u128 = 20_000_000_000;
+        let tip: u128 = 1_000_000_000;
+
+        let (block_sender, block_receiver) = watch::channel(block_with_base_fee(1));
+        let asserter = Asserter::new();
+        push_fee_history(&asserter, base_fee_1, tip);
+        let provider = mock_provider(asserter.clone());
+
+        let estimator =
+            ConfigurableGasPriceEstimator::new(provider, default_config(), block_receiver);
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let estimate_after_block_1 = estimator.estimate().await.unwrap();
+        assert_eq!(
+            estimate_after_block_1.max_fee_per_gas,
+            base_fee_1 * 2 + tip,
+            "max_fee after block 1"
+        );
+        assert_eq!(
+            estimate_after_block_1.max_priority_fee_per_gas,
+            tip,
+            "max_priority after block 1"
+        );
+
+        // Queue the response for the second block and trigger the update.
+        push_fee_history(&asserter, base_fee_2, tip);
+        block_sender.send(block_with_base_fee(2)).unwrap();
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let estimate_after_block_2 = estimator.estimate().await.unwrap();
+        assert_eq!(
+            estimate_after_block_2.max_fee_per_gas,
+            base_fee_2 * 2 + tip,
+            "max_fee after block 2"
+        );
+        assert!(
+            asserter.read_q().is_empty(),
+            "both fee_history responses should have been consumed"
+        );
+    }
+}
+
