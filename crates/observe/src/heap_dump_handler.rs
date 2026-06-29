@@ -1,5 +1,6 @@
 use {
     std::time::Duration,
+    tikv_jemalloc_ctl::{arenas, background_thread, epoch, max_background_threads, raw, stats},
     tokio::{
         io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
         net::{UnixListener, UnixStream},
@@ -10,17 +11,24 @@ use {
 /// at "/tmp/heap_dump_<process_name>.sock".
 /// When "dump" command is sent, it generates a heap profile using
 /// jemalloc_pprof and streams the binary protobuf data back through the socket.
+/// When "stats" command is sent, it streams back a JSON report of jemalloc's
+/// own counters (allocated/active/resident/retained/...) plus background purge
+/// thread state, which is the cheapest way to see the gap between live heap and
+/// process RSS.
 ///
 /// Profiling is enabled at runtime via the MALLOC_CONF environment variable.
 /// Set MALLOC_CONF=prof:true to enable heap profiling.
 ///
 /// Usage:
 /// ```bash
-/// # From your local machine (one-liner):
+/// # Heap profile (one-liner):
 /// kubectl exec <pod> -n <namespace> -- sh -c "echo dump | nc -U /tmp/heap_dump_<binary_name>.sock" > heap.pprof
 ///
 /// # Analyze with pprof:
 /// go tool pprof -http=:8080 heap.pprof
+///
+/// # Allocator stats (live heap vs RSS vs retained):
+/// kubectl exec <pod> -n <namespace> -- sh -c "echo stats | nc -U /tmp/heap_dump_<binary_name>.sock"
 /// ```
 pub fn spawn_heap_dump_handler() {
     // Check if jemalloc profiling is available at runtime
@@ -116,6 +124,9 @@ async fn handle_connection_with_socket(mut socket: UnixStream) {
         Some("dump") => {
             generate_and_stream_dump(&mut socket).await;
         }
+        Some("stats") => {
+            write_jemalloc_stats(&mut socket).await;
+        }
         Some("") => {
             tracing::debug!("client disconnected");
         }
@@ -159,6 +170,105 @@ async fn generate_and_stream_dump(socket: &mut UnixStream) {
             tracing::error!(?err, "failed to generate heap dump");
         }
     }
+}
+
+/// Streams a JSON report of jemalloc's internal counters. `allocated` tracks
+/// the live application bytes (what the heap profile samples), while `resident`
+/// approximates the allocator's contribution to RSS. A large `resident -
+/// allocated` gap points at retained/fragmented pages (decay/arena tuning)
+/// rather than at the application's live data.
+async fn write_jemalloc_stats(socket: &mut UnixStream) {
+    let report = match jemalloc_stats_report() {
+        Ok(report) => report,
+        Err(err) => {
+            tracing::warn!(?err, "failed to read jemalloc stats");
+            format!("failed to read jemalloc stats: {err}\n")
+        }
+    };
+    if let Err(err) = socket.write_all(report.as_bytes()).await {
+        tracing::warn!(?err, "failed to write jemalloc stats to socket");
+    }
+}
+
+/// State of jemalloc's background purge threads, which return dirty/muzzy pages
+/// to the OS. When disabled (or not running), reclaimed pages only go back on
+/// allocator activity, which lets RSS grow under bursty load.
+#[derive(serde::Serialize)]
+struct BackgroundThread {
+    /// Whether background purge threads are currently enabled.
+    enabled: bool,
+    /// Maximum number of background threads jemalloc may create.
+    max_threads: usize,
+    /// Number of background threads currently running.
+    num_threads: usize,
+    /// Total number of background thread runs since start.
+    num_runs: u64,
+    /// Average interval between background thread runs, in nanoseconds.
+    run_interval_ns: u64,
+}
+
+/// Snapshot of jemalloc's global counters. All byte counts are raw (consumers
+/// can convert to MiB with e.g. `jq '.resident / 1048576'`).
+#[derive(serde::Serialize)]
+struct JemallocStats {
+    /// Number of active arenas.
+    narenas: u32,
+    /// Background purge thread state (see [`BackgroundThread`]).
+    background_thread: BackgroundThread,
+    /// Live application bytes (what the heap profile samples).
+    allocated: usize,
+    /// Bytes in active pages.
+    active: usize,
+    /// Physically resident bytes (≈ allocator RSS).
+    resident: usize,
+    /// Total bytes mapped from the OS.
+    mapped: usize,
+    /// Unmapped bytes held back from the OS by decay.
+    retained: usize,
+    /// Allocator bookkeeping bytes.
+    metadata: usize,
+    /// `active - allocated`: internal fragmentation within active pages.
+    fragmentation: usize,
+    /// `resident - allocated`: allocator RSS overhead over live data.
+    overhead: usize,
+}
+
+fn jemalloc_stats_report() -> Result<String, tikv_jemalloc_ctl::Error> {
+    // jemalloc caches the stats; advancing the epoch refreshes the snapshot.
+    epoch::advance()?;
+
+    let allocated = stats::allocated::read()?;
+    let active = stats::active::read()?;
+    let resident = stats::resident::read()?;
+
+    // The `stats.background_thread.*` counters have no typed accessor; read the
+    // raw mallctls (`num_threads` is `size_t`, the others are `uint64_t`).
+    let bg_thread = BackgroundThread {
+        enabled: background_thread::read()?,
+        max_threads: max_background_threads::read()?,
+        num_threads: unsafe { raw::read::<usize>(b"stats.background_thread.num_threads\0")? },
+        num_runs: unsafe { raw::read::<u64>(b"stats.background_thread.num_runs\0")? },
+        run_interval_ns: unsafe { raw::read::<u64>(b"stats.background_thread.run_interval\0")? },
+    };
+
+    let stats = JemallocStats {
+        narenas: arenas::narenas::read()?,
+        background_thread: bg_thread,
+        allocated,
+        active,
+        resident,
+        mapped: stats::mapped::read()?,
+        retained: stats::retained::read()?,
+        metadata: stats::metadata::read()?,
+        fragmentation: active.saturating_sub(allocated),
+        overhead: resident.saturating_sub(allocated),
+    };
+
+    // Serializing a struct of primitives cannot fail.
+    let mut report =
+        serde_json::to_string_pretty(&stats).expect("jemalloc stats serialize infallibly");
+    report.push('\n');
+    Ok(report)
 }
 
 async fn read_line(socket: &mut UnixStream) -> Option<String> {
