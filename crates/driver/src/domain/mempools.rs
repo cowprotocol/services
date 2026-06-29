@@ -699,7 +699,7 @@ pub enum Error {
 pub enum AccountFailure {
     InsufficientFunds,
     Nonce,
-    Underpriced,
+    ReplacementUnderpriced,
 }
 
 impl AccountFailure {
@@ -708,7 +708,7 @@ impl AccountFailure {
         match self {
             AccountFailure::InsufficientFunds => "insufficient_funds",
             AccountFailure::Nonce => "nonce",
-            AccountFailure::Underpriced => "underpriced",
+            AccountFailure::ReplacementUnderpriced => "replacement_underpriced",
         }
     }
 }
@@ -740,7 +740,7 @@ pub fn classify_submission_failure(message: &str) -> Option<AccountFailure> {
         // another account avoids). A plain/global "underpriced" means the fee is
         // below the node's minimum, which every account hits the same way, so it
         // must not be benched or retried.
-        Some(AccountFailure::Underpriced)
+        Some(AccountFailure::ReplacementUnderpriced)
     } else {
         None
     }
@@ -930,7 +930,7 @@ mod tests {
         );
         assert_eq!(
             classify_submission_failure("replacement transaction underpriced"),
-            Some(Underpriced)
+            Some(ReplacementUnderpriced)
         );
         // Case-insensitive.
         assert_eq!(
@@ -977,7 +977,7 @@ mod tests {
         assert_eq!(classify_submission_failure("NonceTooLow"), Some(Nonce));
         assert_eq!(
             classify_submission_failure("ReplacementTransactionUnderpriced"),
-            Some(Underpriced)
+            Some(ReplacementUnderpriced)
         );
     }
 
