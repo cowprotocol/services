@@ -8,7 +8,7 @@ use {
     alloy::eips::eip1559::Eip1559Estimation,
     anyhow::anyhow,
     eth_domain_types as eth,
-    ethrpc::Web3,
+    ethrpc::{AlloyProvider, block_stream::CurrentBlockWatcher},
     gas_price_estimation::{
         GasPriceEstimating,
         configurable_alloy::ConfigurableGasPriceEstimator,
@@ -17,67 +17,41 @@ use {
     std::sync::Arc,
 };
 
-type MaxAdditionalTip = eth::U256;
-type AdditionalTipPercentage = f64;
-type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
-
-pub struct GasPriceEstimator {
-    pub(super) gas: Arc<dyn GasPriceEstimating>,
-    additional_tip: AdditionalTip,
+/// Set of tweaks to fine tune the computed gas price.
+pub struct ManualAdjustments {
+    max_additional_tip: eth::U256,
+    additional_tip_percentage: f64,
     max_fee_per_gas: eth::U256,
     min_priority_fee: eth::U256,
 }
 
+pub struct GasPriceEstimator {
+    pub(super) gas: Arc<dyn GasPriceEstimating>,
+    adjustments: ManualAdjustments,
+}
+
 impl GasPriceEstimator {
     pub async fn new(
-        web3: &Web3,
+        provider: &AlloyProvider,
+        current_block: &CurrentBlockWatcher,
         gas_estimator_type: &GasEstimatorType,
-        mempools: &[mempool::Config],
+        adjustments: ManualAdjustments,
     ) -> Result<Self, Error> {
         let gas: Arc<dyn GasPriceEstimating> = match gas_estimator_type {
-            GasEstimatorType::Web3 => Arc::new(NodeGasPriceEstimator::new(web3.provider.clone())),
+            GasEstimatorType::Web3 => Arc::new(NodeGasPriceEstimator::new(provider.clone())),
             GasEstimatorType::Alloy {
                 past_blocks,
                 reward_percentile,
             } => Arc::new(ConfigurableGasPriceEstimator::new(
-                web3.provider.clone(),
+                provider.clone(),
                 configs::gas_price_estimation::EstimatorConfig {
                     past_blocks: *past_blocks,
                     reward_percentile: *reward_percentile,
                 },
+                current_block.clone(),
             )),
         };
-        // TODO: simplify logic by moving gas price adjustments out of the individual
-        // mempool configs
-        let additional_tip = mempools
-            .iter()
-            .map(|mempool| {
-                (
-                    mempool.max_additional_tip,
-                    mempool.additional_tip_percentage,
-                )
-            })
-            .next()
-            .unwrap_or((eth::U256::ZERO, 0.));
-        // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
-        let max_fee_per_gas = mempools
-            .iter()
-            .map(|mempool| mempool.gas_price_cap)
-            .min()
-            .expect("at least one mempool");
-
-        // Use the highest min_priority_fee of all mempools as the min_priority_fee
-        let min_priority_fee = mempools
-            .iter()
-            .map(|mempool| mempool.min_priority_fee)
-            .max()
-            .expect("at least one mempool");
-        Ok(Self {
-            gas,
-            additional_tip,
-            max_fee_per_gas,
-            min_priority_fee,
-        })
+        Ok(Self { gas, adjustments })
     }
 
     /// Estimates the gas price for a transaction.
@@ -88,29 +62,25 @@ impl GasPriceEstimator {
         let estimate = self.gas.estimate().await.map_err(Error::GasPrice)?;
 
         let max_priority_fee_per_gas = {
-            // the driver supports tweaking the tx gas price tip in case the gas
-            // price estimator is systematically too low => compute configured tip bump
-            let (max_additional_tip, tip_percentage_increase) = self.additional_tip;
-
             // Calculate additional tip in integer space to avoid precision loss
             // Convert percentage to basis points (multiply by 10000) to maintain precision
-            // e.g., tip_percentage_increase = 0.125 (12.5%) becomes 1250
+            // e.g., additional_tip_percentage = 0.125 (12.5%) becomes 1250
             let overflow_err = || {
                 Error::GasPrice(anyhow!(
                     "overflow on multiplication (max_priority_fee_per_gas * tip_percentage_as_bps)"
                 ))
             };
-            let tip_percentage_as_bps = tip_percentage_increase * 10000.0;
+            let tip_percentage_as_bps = self.adjustments.additional_tip_percentage * 10000.0;
             let calculated_tip = eth::U256::from(estimate.max_priority_fee_per_gas)
                 .checked_mul(eth::U256::from(tip_percentage_as_bps))
                 .ok_or_else(overflow_err)?
                 / eth::U256::from(10000u128);
 
-            let additional_tip = max_additional_tip.min(calculated_tip);
+            let additional_tip = self.adjustments.max_additional_tip.min(calculated_tip);
 
             // make sure we tip at least some configurable minimum amount
             std::cmp::max(
-                self.min_priority_fee,
+                self.adjustments.min_priority_fee,
                 eth::U256::from(estimate.max_priority_fee_per_gas) + additional_tip,
             )
         };
@@ -120,7 +90,7 @@ impl GasPriceEstimator {
         let suggested_max_fee_per_gas = eth::U256::from(estimate.max_fee_per_gas);
         let suggested_max_fee_per_gas =
             std::cmp::max(suggested_max_fee_per_gas, max_priority_fee_per_gas);
-        if suggested_max_fee_per_gas > self.max_fee_per_gas {
+        if suggested_max_fee_per_gas > self.adjustments.max_fee_per_gas {
             return Err(Error::GasPrice(anyhow::anyhow!(
                 "suggested gas price is higher than maximum allowed gas price (network is too \
                  congested)"
@@ -144,5 +114,40 @@ impl GasPriceEstimating for GasPriceEstimator {
 
     async fn base_fee(&self) -> ::anyhow::Result<Option<u64>> {
         self.gas.base_fee().await
+    }
+}
+
+pub fn adjustments(mempools: &[mempool::Config]) -> ManualAdjustments {
+    // TODO: simplify logic by moving gas price adjustments out of the individual
+    // mempool configs
+    let (max_additional_tip, additional_tip_percentage) = mempools
+        .iter()
+        .map(|mempool| {
+            (
+                mempool.max_additional_tip,
+                mempool.additional_tip_percentage,
+            )
+        })
+        .next()
+        .unwrap_or((eth::U256::ZERO, 0.));
+    // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
+    let max_fee_per_gas = mempools
+        .iter()
+        .map(|mempool| mempool.gas_price_cap)
+        .min()
+        .expect("at least one mempool");
+
+    // Use the highest min_priority_fee of all mempools as the min_priority_fee
+    let min_priority_fee = mempools
+        .iter()
+        .map(|mempool| mempool.min_priority_fee)
+        .max()
+        .expect("at least one mempool");
+
+    ManualAdjustments {
+        max_additional_tip,
+        additional_tip_percentage,
+        max_fee_per_gas,
+        min_priority_fee,
     }
 }
