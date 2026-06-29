@@ -50,7 +50,7 @@ impl ConfigurableGasPriceEstimator {
                 let gas_price = match current_gas_price(&provider, &config).await {
                     Ok(gas_price) => gas_price,
                     Err(err) => {
-                        tracing::warn!(?err, "failed to computed gas price");
+                        tracing::warn!(?err, "failed to compute gas price");
                         continue;
                     }
                 };
