@@ -84,12 +84,9 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 })
                 .with_context(|| "all price estimates were unreasonable (0 gas or 0 out_amount)")
                 .map_err(PriceEstimationError::EstimatorInternal)?;
-            if winner.1.is_ok() {
-                let EstimatorIndex(stage_index, estimator_index) = winner.0;
+            if let (EstimatorIndex(stage_index, estimator_index), Ok(_)) = winner {
                 let name = &self.stages[stage_index][estimator_index].0;
                 if let Some(elapsed) = timings.lock().unwrap().get(name) {
-                    // Numeric field (not a Duration) so it can be aggregated, e.g.
-                    // quantile(elapsed_ms) to size the streaming-quote timeout.
                     tracing::debug!(
                         estimator = name,
                         elapsed_ms = elapsed.as_millis(),
