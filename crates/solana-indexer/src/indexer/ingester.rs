@@ -4,8 +4,8 @@
 //!
 //! The stream it drains is an `AutoReconnect`-backed
 //! [`GeyserStream`](yellowstone_grpc_client::GeyserStream) from
-//! `yellowstone-grpc-client`: reconnects, backoff, keepalive, and
-//! resume-from-checkpoint are handled inside that stream and never surface
+//! `yellowstone-grpc-client`: reconnects, backoff, and resume-from-checkpoint
+//! are handled inside that stream and never surface
 //! here. The ingester's [`Ingester::run`] loop therefore has no backoff of its
 //! own; it returns when the stream ends (the wrapper gave up on an
 //! unrecoverable error) or when the decoder hangs up.
@@ -15,7 +15,10 @@
 //! opens the `GeyserStream`, and runs the drain loop. It expects the
 //! [`GeyserGrpcClient`] it receives to have been built with a reconnect config
 //! (via `set_reconnect_config`), otherwise the `AutoReconnect` wrapper won't
-//! actually reconnect.
+//! actually reconnect, and with HTTP/2 keepalive (`http2_keep_alive_interval`
+//! / `keep_alive_while_idle`). The ingester does not answer server `Ping`
+//! frames itself, so the transport keepalive is what holds an otherwise idle
+//! connection open.
 
 use {
     crate::{
@@ -170,19 +173,17 @@ where
 
     /// Forward a transaction update to the decoder, skipping frames without a
     /// body or with a malformed signature.
+    #[tracing::instrument(skip_all, fields(slot = tx_msg.slot))]
     async fn handle_transaction(
         tx: &Sender<StreamUpdate>,
         tx_msg: SubscribeUpdateTransaction,
     ) -> ControlFlow<()> {
         let Some(inner) = tx_msg.transaction else {
-            tracing::warn!(slot = tx_msg.slot, "transaction update without a body");
+            tracing::warn!("transaction update without a body");
             return ControlFlow::Continue(());
         };
         let Ok(signature) = Signature::try_from(inner.signature.as_slice()) else {
-            tracing::warn!(
-                slot = tx_msg.slot,
-                "transaction update with a malformed signature"
-            );
+            tracing::warn!("transaction update with a malformed signature");
             return ControlFlow::Continue(());
         };
         Self::forward(
@@ -198,12 +199,13 @@ where
 
     /// Forward an account update to the decoder, skipping frames without a
     /// body.
+    #[tracing::instrument(skip_all, fields(slot = account.slot))]
     async fn handle_account(
         tx: &Sender<StreamUpdate>,
         account: SubscribeUpdateAccount,
     ) -> ControlFlow<()> {
         let Some(inner) = account.account else {
-            tracing::warn!(slot = account.slot, "account update without a body");
+            tracing::warn!("account update without a body");
             return ControlFlow::Continue(());
         };
         let txn_signature = match inner.txn_signature.as_deref() {
@@ -211,7 +213,6 @@ where
                 Ok(signature) => Some(signature),
                 Err(_) => {
                     tracing::warn!(
-                        slot = account.slot,
                         "account update with a malformed txn_signature; forwarding without it"
                     );
                     None
@@ -302,12 +303,8 @@ impl Ingester<GeyserStream> {
         settlement_program: Pubkey,
         solflow_program: Pubkey,
     ) -> Result<(), Error> {
-        let request = subscribe_request(settlement_program, solflow_program);
         let from_slot = store.read_watermark().await?.map(|watermark| watermark + 1);
-        let request = SubscribeRequest {
-            from_slot,
-            ..request
-        };
+        let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
         // subscription at runtime (add/remove a tracked program, change commitment,
@@ -346,8 +343,8 @@ fn assert_serve_future_is_send<St: Store>(
 
 /// The wire-level filter shape: the four named program filters and the
 /// `chain_tip` slot filter, multiplexed into a single subscription at
-/// `confirmed` commitment. `from_slot` is left unset; [`Ingester::serve`] fills
-/// it in from the persisted watermark before subscribing.
+/// `confirmed` commitment. `from_slot` is the resume slot passed in by
+/// [`Ingester::serve`] (watermark + 1, or `None` for the live tip).
 ///
 /// The library auto-adds a `BlockMeta` + `slot` filter (under its
 /// `__autoreconnect` key) so the `AutoReconnect` wrapper can checkpoint and
@@ -356,7 +353,11 @@ fn assert_serve_future_is_send<St: Store>(
 ///
 /// TODO: source the exact subscriptions from a config file once this crate's
 /// configuration module lands.
-fn subscribe_request(settlement_program: Pubkey, solflow_program: Pubkey) -> SubscribeRequest {
+fn subscribe_request(
+    settlement_program: Pubkey,
+    solflow_program: Pubkey,
+    from_slot: Option<u64>,
+) -> SubscribeRequest {
     // `failed: None` includes failed transactions: the failure itself is the
     // on-chain signal downstream consumers read.
     let transactions = |program: Pubkey| SubscribeRequestFilterTransactions {
@@ -393,6 +394,7 @@ fn subscribe_request(settlement_program: Pubkey, solflow_program: Pubkey) -> Sub
         )]
         .into(),
         commitment: Some(CommitmentLevel::Confirmed as i32),
+        from_slot,
         ..Default::default()
     }
 }
