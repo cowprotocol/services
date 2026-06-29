@@ -5,7 +5,7 @@ use {
             self,
             liquidity::{
                 self,
-                uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
+                uniswap::v3::{Fee, Liquidity, Pool, SqrtPrice, Tick},
             },
         },
         infra::{self, blockchain::Ethereum, liquidity::config::UniswapV3PoolSource},
@@ -58,13 +58,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
             sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
             liquidity: Liquidity(u128::try_from(pool.pool.state.liquidity)?),
             tick: Tick(pool.pool.state.tick),
-            liquidity_net: pool
-                .pool
-                .state
-                .liquidity_net
-                .iter()
-                .map(|(key, value)| (Tick(*key), LiquidityNet(*value)))
-                .collect(),
+            liquidity_net: pool.pool.state.liquidity_net.clone(),
             fee: Fee(pool.pool.state.fee),
         }),
     })
