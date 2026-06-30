@@ -6085,6 +6085,7 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_json",
+ "tikv-jemalloc-ctl",
  "time",
  "tokio",
  "tracing",
