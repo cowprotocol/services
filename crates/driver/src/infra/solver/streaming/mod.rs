@@ -6,7 +6,6 @@ mod tee_writer;
 use {
     bytes::Bytes,
     futures::StreamExt,
-    observe::http_body::Measured,
     std::{
         convert::Infallible,
         io::{BufWriter, Write},
@@ -51,8 +50,7 @@ where
     S: Write + Finalize + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<Bytes>(CHANNEL_CAPACITY);
-    let stream = Measured::new(ReceiverStream::new(rx)).map(Ok::<_, Infallible>);
-    let body = reqwest::Body::wrap_stream(stream);
+    let body = reqwest::Body::wrap_stream(ReceiverStream::new(rx).map(Ok::<_, Infallible>));
     // spawn_blocking loses the current span; carry it so the logs keep context.
     let span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {

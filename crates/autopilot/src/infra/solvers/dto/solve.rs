@@ -4,7 +4,7 @@ use {
         domain,
         infra::{
             persistence::dto::{self, order::Order},
-            solvers::InjectIntoHttpRequest,
+            solvers::{InjectIntoHttpRequest, byte_stream::ByteStream},
         },
     },
     alloy::primitives::{Address, U256},
@@ -14,14 +14,12 @@ use {
     eth_domain_types as eth,
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
-    observe::http_body::Measured,
     reqwest::{RequestBuilder, header::HeaderValue},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     std::{
         borrow::Cow,
         collections::{HashMap, HashSet},
-        convert::Infallible,
         io::Write,
         time::Duration,
     },
@@ -134,10 +132,10 @@ impl Request {
 
 impl InjectIntoHttpRequest for Request {
     fn inject(&self, request: RequestBuilder) -> RequestBuilder {
-        // Wrap the in-memory body as a one-chunk stream so `Measured` can time it.
-        let body = futures::stream::iter([Ok::<_, Infallible>(self.body.clone())]);
         let request = request
-            .body(reqwest::Body::wrap_stream(Measured::new(body)))
+            .body(reqwest::Body::wrap_stream(ByteStream::new(
+                self.body.clone(),
+            )))
             // announce which auction this request is for in the
             // headers to help the driver detect duplicated
             // `/solve` requests before streaming the body
