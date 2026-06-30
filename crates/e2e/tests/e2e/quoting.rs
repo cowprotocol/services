@@ -951,7 +951,7 @@ async fn volume_fee(web3: Web3) {
 
 // Smoke test for the SSE streaming quote endpoint. Posts a quote request to
 // /api/v1/quote/stream and asserts that at least one SSE data line parses as
-// a valid OrderQuoteResponse with id == None.
+// a valid OrderQuoteResponse carrying a persisted quote id.
 async fn quote_stream_smoke(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
@@ -1026,8 +1026,8 @@ async fn quote_stream_smoke(web3: Web3) {
     let buy_token = *token.address();
     for response in &parsed {
         assert!(
-            response.id.is_none(),
-            "streaming quotes should have id == null, got {:?}",
+            response.id.is_some(),
+            "streaming quotes should be persisted and carry an id, got {:?}",
             response.id
         );
         assert_eq!(response.from, trader.address());
