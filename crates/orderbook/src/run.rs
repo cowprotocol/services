@@ -213,16 +213,6 @@ pub async fn run(config: Configuration) {
         .iter()
         .map(shared::arguments::gas_estimator_type_from_config)
         .collect();
-    let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
-        gas_price_estimation::create_priority_estimator(
-            http_factory.create(),
-            &web3,
-            &gas_estimators,
-        )
-        .await
-        .expect("failed to create gas price estimator"),
-    ));
-
     let deny_listed_tokens = DenyListedTokens::new(config.unsupported_tokens);
 
     let current_block_args = shared::current_block::Arguments::from(&config.shared.current_block);
@@ -230,6 +220,17 @@ pub async fn run(config: Configuration) {
         .stream(config.shared.node_url.clone(), web3.provider.clone())
         .await
         .unwrap();
+
+    let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
+        gas_price_estimation::create_priority_estimator(
+            http_factory.create(),
+            &web3.provider,
+            &gas_estimators,
+            &current_block_stream,
+        )
+        .await
+        .expect("failed to create gas price estimator"),
+    ));
 
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
