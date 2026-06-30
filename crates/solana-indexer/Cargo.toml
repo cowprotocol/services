@@ -16,8 +16,10 @@ name = "solana-indexer"
 path = "src/main.rs"
 
 [dependencies]
+async-trait = { workspace = true }
 bytes = { workspace = true }
 derive_more = { workspace = true }
+solana-client = { workspace = true }
 solana-sdk = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
