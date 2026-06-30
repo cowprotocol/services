@@ -18,6 +18,9 @@
       matchManagers: ["github-actions"],
       schedule: ["on monday"],
       minimumReleaseAge: "14 days",
+      // Track upgrades by semver tag, but pin the resolved version to its full
+      // commit SHA (semver tag kept as a trailing comment).
+      versioning: "semver",
       pinDigests: true,
       separateMajorMinor: false,
       semanticCommitScope: "{{depName}}",
