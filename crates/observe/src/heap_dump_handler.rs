@@ -1,6 +1,6 @@
 use {
     std::time::Duration,
-    tikv_jemalloc_ctl::{arenas, background_thread, epoch, max_background_threads, raw, stats},
+    tikv_jemalloc_ctl::{arenas, epoch, stats},
     tokio::{
         io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
         net::{UnixListener, UnixStream},
@@ -12,9 +12,8 @@ use {
 /// When "dump" command is sent, it generates a heap profile using
 /// jemalloc_pprof and streams the binary protobuf data back through the socket.
 /// When "stats" command is sent, it streams back a JSON report of jemalloc's
-/// own counters (allocated/active/resident/retained/...) plus background purge
-/// thread state, which is the cheapest way to see the gap between live heap and
-/// process RSS.
+/// own counters (allocated/active/resident/retained/...), which is the cheapest
+/// way to see the gap between live heap and process RSS.
 ///
 /// Profiling is enabled at runtime via the MALLOC_CONF environment variable.
 /// Set MALLOC_CONF=prof:true to enable heap profiling.
@@ -190,31 +189,12 @@ async fn write_jemalloc_stats(socket: &mut UnixStream) {
     }
 }
 
-/// State of jemalloc's background purge threads, which return dirty/muzzy pages
-/// to the OS. When disabled (or not running), reclaimed pages only go back on
-/// allocator activity, which lets RSS grow under bursty load.
-#[derive(serde::Serialize)]
-struct BackgroundThread {
-    /// Whether background purge threads are currently enabled.
-    enabled: bool,
-    /// Maximum number of background threads jemalloc may create.
-    max_threads: usize,
-    /// Number of background threads currently running.
-    num_threads: usize,
-    /// Total number of background thread runs since start.
-    num_runs: u64,
-    /// Average interval between background thread runs, in nanoseconds.
-    run_interval_ns: u64,
-}
-
 /// Snapshot of jemalloc's global counters. All byte counts are raw (consumers
 /// can convert to MiB with e.g. `jq '.resident / 1048576'`).
 #[derive(serde::Serialize)]
 struct JemallocStats {
     /// Number of active arenas.
     narenas: u32,
-    /// Background purge thread state (see [`BackgroundThread`]).
-    background_thread: BackgroundThread,
     /// Live application bytes (what the heap profile samples).
     allocated: usize,
     /// Bytes in active pages.
@@ -241,19 +221,8 @@ fn jemalloc_stats_report() -> Result<String, tikv_jemalloc_ctl::Error> {
     let active = stats::active::read()?;
     let resident = stats::resident::read()?;
 
-    // The `stats.background_thread.*` counters have no typed accessor; read the
-    // raw mallctls (`num_threads` is `size_t`, the others are `uint64_t`).
-    let bg_thread = BackgroundThread {
-        enabled: background_thread::read()?,
-        max_threads: max_background_threads::read()?,
-        num_threads: unsafe { raw::read::<usize>(b"stats.background_thread.num_threads\0")? },
-        num_runs: unsafe { raw::read::<u64>(b"stats.background_thread.num_runs\0")? },
-        run_interval_ns: unsafe { raw::read::<u64>(b"stats.background_thread.run_interval\0")? },
-    };
-
     let stats = JemallocStats {
         narenas: arenas::narenas::read()?,
-        background_thread: bg_thread,
         allocated,
         active,
         resident,
