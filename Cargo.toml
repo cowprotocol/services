@@ -58,6 +58,7 @@ derive_more = { version = "1.0.0", features = ["full"] }
 driver = { path = "crates/driver" }
 eth-domain-types = { path = "crates/eth-domain-types" }
 ethrpc = { path = "crates/ethrpc" }
+event-bus-dto = { path = "crates/event-bus-dto" }
 event-indexing = { path = "crates/event-indexing" }
 flate2 = "1.0.30"
 futures = "0.3.30"
@@ -109,6 +110,7 @@ rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 rust_decimal = { version = "1.35.0", default-features = false }
 s3 = { path = "crates/s3" }
+schemars = "1.2"
 scopeguard = "1.2.0"
 serde = { version = "1.0.203", features = ["derive"] }
 serde-ext = { path = "crates/serde-ext" }

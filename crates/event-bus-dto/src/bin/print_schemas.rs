@@ -1,0 +1,35 @@
+//! Write a JSON document mapping each event subject to the JSON schema of its
+//! full (envelope-wrapped) wire format.
+//!
+//! By default writes to `schemas/events.json` inside the crate. Pass an
+//! alternative path as the first argument to override.
+
+use std::path::PathBuf;
+
+fn main() {
+    let out_path = std::env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("schemas")
+                .join("events.json")
+        });
+
+    // Sort by subject so the generated document is stable across runs
+    // regardless of the order `schemas()` lists events in (and of how
+    // `serde_json::Map` happens to order its keys).
+    let mut entries: Vec<(String, serde_json::Value)> = event_bus_dto::schemas()
+        .into_iter()
+        .map(|(subject, schema)| (subject.to_owned(), serde_json::to_value(schema).unwrap()))
+        .collect();
+    entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+    let schemas: serde_json::Map<String, serde_json::Value> = entries.into_iter().collect();
+    let body = serde_json::to_string_pretty(&schemas).unwrap();
+
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent).expect("failed to create output directory");
+    }
+    std::fs::write(&out_path, format!("{body}\n")).expect("failed to write schema file");
+    eprintln!("wrote {} ({} events)", out_path.display(), schemas.len());
+}

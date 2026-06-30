@@ -1,0 +1,140 @@
+{
+  "priceEstimate": {
+    "$defs": {
+      "EstimateResult": {
+        "anyOf": [
+          {
+            "properties": {
+              "gas": {
+                "description": "Decimal-encoded gas estimate.",
+                "type": "string"
+              },
+              "outAmount": {
+                "description": "Decimal-encoded output amount.",
+                "type": "string"
+              },
+              "verified": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "outAmount",
+              "gas",
+              "verified"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "OrderKind": {
+        "enum": [
+          "sell",
+          "buy"
+        ],
+        "type": "string"
+      },
+      "PriceEstimateEvent": {
+        "properties": {
+          "elapsed": {
+            "description": "Wall-clock time the estimator actually spent, in milliseconds.",
+            "format": "uint128",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "estimator": {
+            "type": "string"
+          },
+          "from": {
+            "description": "Caller address (hex-encoded, including the `0x` prefix).",
+            "type": "string"
+          },
+          "query": {
+            "$ref": "#/$defs/QueryFields"
+          },
+          "result": {
+            "$ref": "#/$defs/EstimateResult"
+          },
+          "timeout": {
+            "description": "Total timeout granted to the estimator, in milliseconds.",
+            "format": "uint128",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query",
+          "from",
+          "timeout",
+          "elapsed",
+          "estimator",
+          "result"
+        ],
+        "type": "object"
+      },
+      "QueryFields": {
+        "properties": {
+          "buyToken": {
+            "description": "Hex-encoded buy token address.",
+            "type": "string"
+          },
+          "inAmount": {
+            "description": "Decimal-encoded input amount (interpretation depends on `kind`).",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/OrderKind"
+          },
+          "sellToken": {
+            "description": "Hex-encoded sell token address.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sellToken",
+          "buyToken",
+          "inAmount",
+          "kind"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "JSON envelope wrapping every event published to the bus. Consumers can\nrely on `version` to evolve their parsers, on `timestamp` for ordering,\nand on `requestId` to correlate events emitted while serving a single\ninbound request (e.g. all the price estimates and the resulting quote of\none quote request share the same `requestId`).",
+    "properties": {
+      "body": {
+        "$ref": "#/$defs/PriceEstimateEvent"
+      },
+      "requestId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timestamp": {
+        "description": "RFC3339 timestamp (millisecond precision, UTC) of when the event was\npublished.",
+        "type": "string"
+      },
+      "version": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "version",
+      "timestamp",
+      "body"
+    ],
+    "title": "Envelope",
+    "type": "object"
+  }
+}

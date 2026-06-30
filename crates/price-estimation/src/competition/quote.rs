@@ -10,9 +10,17 @@ use {
     },
     alloy::primitives::{Address, U256},
     anyhow::Context as _,
+    event_bus_dto::{
+        Event as _,
+        price_estimate::{
+            EstimateResult,
+            OrderKind as DtoOrderKind,
+            PriceEstimateEvent,
+            QueryFields,
+        },
+    },
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
-    serde::Serialize,
     std::{
         cmp::Ordering,
         sync::Arc,
@@ -185,14 +193,14 @@ fn emit_quote_event(
             buy_token: query.buy_token.to_string(),
             in_amount: query.in_amount.to_string(),
             kind: match query.kind {
-                OrderKind::Sell => "sell",
-                OrderKind::Buy => "buy",
+                OrderKind::Sell => DtoOrderKind::Sell,
+                OrderKind::Buy => DtoOrderKind::Buy,
             },
         },
-        from: query.verification.from,
+        from: query.verification.from.to_string(),
         timeout: query.timeout.as_millis(),
         elapsed: elapsed.as_millis(),
-        estimator: estimator_name,
+        estimator: estimator_name.to_owned(),
         result: match result {
             Ok(estimate) => EstimateResult::Ok {
                 out_amount: estimate.out_amount.to_string(),
@@ -204,42 +212,7 @@ fn emit_quote_event(
             },
         },
     };
-    observe::event_bus::publish("priceEstimate", event);
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PriceEstimateEvent<'a> {
-    query: QueryFields,
-    from: Address,
-    timeout: u128,
-    elapsed: u128,
-    estimator: &'a str,
-    result: EstimateResult,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct QueryFields {
-    sell_token: String,
-    buy_token: String,
-    in_amount: String,
-    kind: &'static str,
-}
-
-/// Mirrors the previous JSON: either the estimate fields or an `error`.
-#[derive(Serialize)]
-#[serde(untagged)]
-enum EstimateResult {
-    #[serde(rename_all = "camelCase")]
-    Ok {
-        out_amount: String,
-        gas: String,
-        verified: bool,
-    },
-    Err {
-        error: String,
-    },
+    observe::event_bus::publish(PriceEstimateEvent::SUBJECT, event);
 }
 
 #[cfg(test)]
@@ -250,60 +223,7 @@ mod tests {
         alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
         gas_price_estimation::FakeGasPriceEstimator,
         model::order::OrderKind,
-        serde_json::json,
     };
-
-    #[test]
-    fn price_estimate_event_matches_wire_format() {
-        let event = PriceEstimateEvent {
-            query: QueryFields {
-                sell_token: "0x01".into(),
-                buy_token: "0x02".into(),
-                in_amount: "100".into(),
-                kind: "sell",
-            },
-            from: Address::ZERO,
-            timeout: 5000,
-            elapsed: 12,
-            estimator: "baseline",
-            result: EstimateResult::Ok {
-                out_amount: "99".into(),
-                gas: "21000".into(),
-                verified: true,
-            },
-        };
-        assert_eq!(
-            serde_json::to_value(&event).unwrap(),
-            json!({
-                "query": {
-                    "sellToken": "0x01",
-                    "buyToken": "0x02",
-                    "inAmount": "100",
-                    "kind": "sell",
-                },
-                "from": Address::ZERO,
-                "timeout": 5000,
-                "elapsed": 12,
-                "estimator": "baseline",
-                "result": {
-                    "outAmount": "99",
-                    "gas": "21000",
-                    "verified": true,
-                },
-            }),
-        );
-    }
-
-    #[test]
-    fn price_estimate_event_error_variant() {
-        let result = EstimateResult::Err {
-            error: "boom".into(),
-        };
-        assert_eq!(
-            serde_json::to_value(&result).unwrap(),
-            json!({ "error": "boom" }),
-        );
-    }
 
     fn price(out_amount: u128, gas: u64) -> PriceEstimateResult {
         Ok(Estimate {
