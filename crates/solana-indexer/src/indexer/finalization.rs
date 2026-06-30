@@ -44,8 +44,8 @@ pub const SIGNATURE_STATUS_RETENTION_SLOTS: u64 = 150;
 /// Transaction finalization worker. See the module docs for the two flows it
 /// runs.
 pub(crate) struct FinalizationWorker {
-    /// Store implementor.
-    pub store: Persistence,
+    /// Persistence layer.
+    pub persistence: Persistence,
 
     /// RPC implementor.
     pub rpc: Arc<dyn SolanaClient>,
@@ -53,8 +53,8 @@ pub(crate) struct FinalizationWorker {
 
 impl FinalizationWorker {
     /// Construct a new finalization worker.
-    pub fn new(store: Persistence, rpc: Arc<dyn SolanaClient>) -> Self {
-        Self { store, rpc }
+    pub fn new(persistence: Persistence, rpc: Arc<dyn SolanaClient>) -> Self {
+        Self { persistence, rpc }
     }
 
     /// Outer loop. Runs the promotion pass and the aged-row sweep on a timer.

@@ -298,12 +298,15 @@ impl Ingester<GeyserStream> {
     pub async fn serve(
         mut client: GeyserGrpcClient,
         tx: Sender<StreamUpdate>,
-        store: Persistence,
+        persistence: Persistence,
         latest_chain_slot: Arc<AtomicU64>,
         settlement_program: Pubkey,
         solflow_program: Pubkey,
     ) -> Result<(), Error> {
-        let from_slot = store.read_watermark().await?.map(|watermark| watermark + 1);
+        let from_slot = persistence
+            .read_watermark()
+            .await?
+            .map(|watermark| watermark + 1);
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
@@ -325,7 +328,7 @@ impl Ingester<GeyserStream> {
 fn assert_serve_future_is_send(
     client: GeyserGrpcClient,
     tx: Sender<StreamUpdate>,
-    store: Persistence,
+    persistence: Persistence,
     latest_chain_slot: Arc<AtomicU64>,
     settlement_program: Pubkey,
     solflow_program: Pubkey,
@@ -334,7 +337,7 @@ fn assert_serve_future_is_send(
     is_send(Ingester::serve(
         client,
         tx,
-        store,
+        persistence,
         latest_chain_slot,
         settlement_program,
         solflow_program,
