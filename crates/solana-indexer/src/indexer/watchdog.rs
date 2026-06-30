@@ -31,8 +31,8 @@ use crate::indexer::ingester::LATEST_CHAIN_SLOT;
 /// `AccountUpdateMissing` or `TxUpdateMissing` depending on which half was
 /// missing.
 pub(crate) struct PartialEventWatchdog {
-    /// Store implementor.
-    pub store: Persistence,
+    /// Persistence layer.
+    pub persistence: Persistence,
 
     /// Shared in-memory map of partial events keyed by `PartialEventKey`.
     ///
@@ -43,8 +43,14 @@ pub(crate) struct PartialEventWatchdog {
 
 impl PartialEventWatchdog {
     /// Construct a new watchdog.
-    pub fn new(store: Persistence, partials: Arc<DashMap<PartialEventKey, PartialEvent>>) -> Self {
-        Self { store, partials }
+    pub fn new(
+        persistence: Persistence,
+        partials: Arc<DashMap<PartialEventKey, PartialEvent>>,
+    ) -> Self {
+        Self {
+            persistence,
+            partials,
+        }
     }
 
     /// Outer loop. Runs the periodic scan over the shared partial-event map.

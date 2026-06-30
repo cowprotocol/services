@@ -41,17 +41,17 @@ pub(crate) struct Ingester<C: GrpcConnector> {
     /// `INGEST_TO_DECODER_CAPACITY` entries.
     pub tx: Sender<StreamUpdate>,
 
-    /// Store implementor; used to checkpoint the slot.
-    pub store: Persistence,
+    /// Persistence layer, used to checkpoint the slot.
+    pub persistence: Persistence,
 }
 
 impl<C: GrpcConnector> Ingester<C> {
     /// Construct a new ingester. The caller owns the channel capacity decision.
-    pub fn new(connector: C, tx: Sender<StreamUpdate>, store: Persistence) -> Self {
+    pub fn new(connector: C, tx: Sender<StreamUpdate>, persistence: Persistence) -> Self {
         Self {
             connector,
             tx,
-            store,
+            persistence,
         }
     }
 
