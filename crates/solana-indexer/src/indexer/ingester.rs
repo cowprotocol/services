@@ -22,10 +22,10 @@
 
 use {
     crate::{
-        traits::store::Store,
+        persistence::Persistence,
         types::{
             Signature,
-            errors::StoreError,
+            errors::PersistenceError,
             shared::StreamUpdate,
             slot::Slot,
             wire::{
@@ -265,7 +265,7 @@ where
 pub(crate) enum Error {
     /// The persisted watermark could not be read.
     #[error("failed to read the resume watermark: {0}")]
-    Store(#[from] StoreError),
+    Persistence(#[from] PersistenceError),
     /// The yellowstone subscription could not be opened.
     #[error("failed to open the yellowstone subscription: {0}")]
     Subscribe(#[from] GeyserGrpcClientError),
@@ -295,10 +295,10 @@ impl Ingester<GeyserStream> {
     /// `latest_chain_slot` is taken from the caller so the same `Arc` can be
     /// shared with the watchdog and finalization worker and reused across
     /// restarts.
-    pub async fn serve<St: Store>(
+    pub async fn serve(
         mut client: GeyserGrpcClient,
         tx: Sender<StreamUpdate>,
-        store: St,
+        store: Persistence,
         latest_chain_slot: Arc<AtomicU64>,
         settlement_program: Pubkey,
         solflow_program: Pubkey,
@@ -322,10 +322,10 @@ impl Ingester<GeyserStream> {
 /// Keep this only until a real `tokio::spawn(Ingester::serve(...))` call site
 /// lands; the actual spawn is the better check. Delete this helper then.
 #[allow(dead_code)]
-fn assert_serve_future_is_send<St: Store>(
+fn assert_serve_future_is_send(
     client: GeyserGrpcClient,
     tx: Sender<StreamUpdate>,
-    store: St,
+    store: Persistence,
     latest_chain_slot: Arc<AtomicU64>,
     settlement_program: Pubkey,
     solflow_program: Pubkey,

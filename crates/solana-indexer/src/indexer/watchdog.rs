@@ -7,9 +7,9 @@
 
 use {
     crate::{
-        traits::store::Store,
+        persistence::Persistence,
         types::{
-            errors::StoreError,
+            errors::PersistenceError,
             shared::{PartialEvent, PartialEventKey},
         },
     },
@@ -29,7 +29,7 @@ use {
 /// missing.
 pub(crate) struct PartialEventWatchdog {
     /// Store implementor.
-    pub store: Arc<dyn Store>,
+    pub store: Persistence,
 
     /// Shared in-memory map of partial events keyed by `PartialEventKey`.
     ///
@@ -40,15 +40,12 @@ pub(crate) struct PartialEventWatchdog {
 
 impl PartialEventWatchdog {
     /// Construct a new watchdog.
-    pub fn new(
-        store: Arc<dyn Store>,
-        partials: Arc<DashMap<PartialEventKey, PartialEvent>>,
-    ) -> Self {
+    pub fn new(store: Persistence, partials: Arc<DashMap<PartialEventKey, PartialEvent>>) -> Self {
         Self { store, partials }
     }
 
     /// Outer loop. Runs the periodic scan over the shared partial-event map.
-    pub async fn run(&mut self) -> Result<(), StoreError> {
+    pub async fn run(&mut self) -> Result<(), PersistenceError> {
         unimplemented!()
     }
 }
