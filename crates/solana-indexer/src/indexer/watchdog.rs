@@ -17,15 +17,12 @@ use {
     std::sync::Arc,
 };
 
-#[allow(unused_imports)]
-use crate::indexer::ingester::LATEST_CHAIN_SLOT;
-
 /// Partial-event watchdog component.
 ///
 /// The watchdog holds a view of the partial-event map the decoder mutates.
 ///
 /// Every 500 ms it scans the map and gives up on any partial more than 32 slots
-/// behind `LATEST_CHAIN_SLOT`.
+/// behind the ingester's latest-chain-slot counter.
 ///
 /// Those entries are flushed to `solana.dead_letter` with a reason of
 /// `AccountUpdateMissing` or `TxUpdateMissing` depending on which half was

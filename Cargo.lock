@@ -9855,6 +9855,7 @@ dependencies = [
  "bytes",
  "dashmap 6.1.0",
  "derive_more 1.0.0",
+ "futures",
  "solana-client",
  "solana-sdk",
  "thiserror 1.0.69",
