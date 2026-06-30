@@ -5722,7 +5722,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "system-configuration 0.5.1",
  "tokio",
  "tower-service",
@@ -7944,7 +7944,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -7984,7 +7984,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -8589,6 +8589,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b92b125634d9b795e7beca796cc790df15a7fb38323bf3196fda83292d06b1f"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
@@ -9852,11 +9853,14 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "dashmap 6.1.0",
  "derive_more 1.0.0",
  "solana-client",
  "solana-sdk",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
+ "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
 
@@ -12289,8 +12293,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f32a6f80051a4111560201420c7885d0082ba9efe2ab61875c587bb6b18b9a0"
 dependencies = [
  "async-trait",
+ "axum 0.8.8",
  "base64 0.22.1",
  "bytes",
+ "flate2",
+ "h2 0.4.13",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",
@@ -12299,13 +12306,17 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
+ "rustls-native-certs",
+ "socket2 0.6.4",
  "sync_wrapper 1.0.2",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tower 0.5.3",
  "tower-layer",
  "tower-service",
  "tracing",
+ "zstd",
 ]
 
 [[package]]
@@ -12318,6 +12329,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
+]
+
+[[package]]
+name = "tonic-health"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4ff0636fef47afb3ec02818f5bceb4377b8abb9d6a386aeade18bd6212f8eb7"
+dependencies = [
+ "prost 0.14.3",
+ "tokio",
+ "tokio-stream",
+ "tonic 0.14.4",
+ "tonic-prost",
 ]
 
 [[package]]
@@ -13601,6 +13625,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 
 [[package]]
+name = "yellowstone-grpc-client"
+version = "13.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad8d3827e1b27fe865ded7a4b1afdab34fbd427f9ffdd966a7c17c9fcde43181"
+dependencies = [
+ "arc-swap",
+ "bytes",
+ "futures",
+ "hyper-util",
+ "log",
+ "pin-project",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic 0.14.4",
+ "tonic-health",
+ "tower 0.4.13",
+ "yellowstone-grpc-proto",
+]
+
+[[package]]
 name = "yellowstone-grpc-proto"
 version = "12.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13613,6 +13657,8 @@ dependencies = [
  "siphasher 1.0.3",
  "solana-pubkey 4.2.0",
  "thiserror 2.0.18",
+ "tonic 0.14.4",
+ "tonic-prost",
  "tonic-prost-build",
 ]
 
