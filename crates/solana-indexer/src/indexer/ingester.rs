@@ -8,8 +8,8 @@
 // in a later change.
 
 use {
-    crate::{traits::store::Store, types::shared::StreamUpdate},
-    std::sync::{Arc, atomic::AtomicU64},
+    crate::{persistence::Persistence, types::shared::StreamUpdate},
+    std::sync::atomic::AtomicU64,
     tokio::sync::mpsc::Sender,
     yellowstone_grpc_client::GrpcConnector,
 };
@@ -42,12 +42,12 @@ pub(crate) struct Ingester<C: GrpcConnector> {
     pub tx: Sender<StreamUpdate>,
 
     /// Store implementor; used to checkpoint the slot.
-    pub store: Arc<dyn Store>,
+    pub store: Persistence,
 }
 
 impl<C: GrpcConnector> Ingester<C> {
     /// Construct a new ingester. The caller owns the channel capacity decision.
-    pub fn new(connector: C, tx: Sender<StreamUpdate>, store: Arc<dyn Store>) -> Self {
+    pub fn new(connector: C, tx: Sender<StreamUpdate>, store: Persistence) -> Self {
         Self {
             connector,
             tx,

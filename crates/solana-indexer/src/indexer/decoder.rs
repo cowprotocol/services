@@ -9,9 +9,9 @@
 
 use {
     crate::{
-        traits::store::Store,
+        persistence::Persistence,
         types::{
-            errors::StoreError,
+            errors::PersistenceError,
             shared::{PartialEvent, PartialEventKey, StreamUpdate},
         },
     },
@@ -27,7 +27,7 @@ use {
 /// the same concurrent map without any message passing between them.
 pub(crate) struct Decoder {
     /// Store implementor.
-    pub store: Arc<dyn Store>,
+    pub store: Persistence,
 
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
@@ -47,7 +47,7 @@ pub(crate) struct Decoder {
 impl Decoder {
     /// Construct a new decoder. The caller owns the channel capacity decision.
     pub fn new(
-        store: Arc<dyn Store>,
+        store: Persistence,
         rx: Receiver<StreamUpdate>,
         partials: Arc<DashMap<PartialEventKey, PartialEvent>>,
         settlement_program: Pubkey,
@@ -65,7 +65,7 @@ impl Decoder {
     /// Main loop. Pulls `StreamUpdate` from the receiver, runs the decode
     /// pipeline, persists, and records partial events in the shared map for the
     /// watchdog to read.
-    pub async fn run(&mut self) -> Result<(), StoreError> {
+    pub async fn run(&mut self) -> Result<(), PersistenceError> {
         unimplemented!()
     }
 }

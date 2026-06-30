@@ -24,7 +24,7 @@
 // `unimplemented!`; both flows arrive in a later change.
 
 use {
-    crate::traits::{solana_client::SolanaClient, store::Store},
+    crate::{persistence::Persistence, traits::solana_client::SolanaClient},
     std::sync::Arc,
 };
 
@@ -45,7 +45,7 @@ pub const SIGNATURE_STATUS_RETENTION_SLOTS: u64 = 150;
 /// runs.
 pub(crate) struct FinalizationWorker {
     /// Store implementor.
-    pub store: Arc<dyn Store>,
+    pub store: Persistence,
 
     /// RPC implementor.
     pub rpc: Arc<dyn SolanaClient>,
@@ -53,7 +53,7 @@ pub(crate) struct FinalizationWorker {
 
 impl FinalizationWorker {
     /// Construct a new finalization worker.
-    pub fn new(store: Arc<dyn Store>, rpc: Arc<dyn SolanaClient>) -> Self {
+    pub fn new(store: Persistence, rpc: Arc<dyn SolanaClient>) -> Self {
         Self { store, rpc }
     }
 
