@@ -706,13 +706,12 @@ impl StreamingQuoting for OrderQuoter {
                     quote = quote.with_scaled_sell_amount(sell_amount);
                 }
                 // Persist the quote so it can be referenced by id when the
-                // order is later placed, mirroring the one-shot endpoint.
+                // order is later placed, mirroring the one-shot endpoint. A
+                // failed write must not turn an otherwise good quote into an
+                // error event.
                 match storage.save(quote.data.clone()).await {
                     Ok(id) => quote.id = Some(id),
-                    Err(err) => {
-                        yield Err(CalculateQuoteError::Other(err));
-                        continue;
-                    }
+                    Err(err) => tracing::warn!(?err, "failed to persist streamed quote"),
                 }
                 yield Ok(quote);
             }
