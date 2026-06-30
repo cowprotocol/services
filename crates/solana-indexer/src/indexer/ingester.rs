@@ -401,3 +401,6 @@ fn subscribe_request(
         ..Default::default()
     }
 }
+
+#[cfg(test)]
+mod tests;
