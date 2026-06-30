@@ -2,7 +2,6 @@
 
 use {
     futures::Stream,
-    pin_project_lite::pin_project,
     std::{
         pin::Pin,
         task::{Context, Poll},
@@ -10,27 +9,17 @@ use {
     },
 };
 
-pin_project! {
-    /// Wraps an HTTP request body stream and logs, once the body has been fully
-    /// drained, how long it took to hand off to the network. Useful to tell
-    /// whether a slow round-trip is dominated by us sending a large (multi-MB)
-    /// body or by the remote being slow to read it.
-    ///
-    /// `to_transmission_start_ms` is the gap between construction and the first
-    /// poll (how long until the HTTP client started reading the body);
-    /// `transmission_ms` spans that first poll until the body is exhausted.
-    ///
-    /// The numbers are an approximation: a poll only reflects when `hyper`
-    /// pulled the chunk into the network stack's buffer, not when the bytes
-    /// actually hit the wire. For bodies large enough to require several buffer
-    /// flushes that approximation is close enough to be useful.
-    pub struct Measured<S> {
-        #[pin]
-        inner: S,
-        created_at: Instant,
-        first_polled_at: Option<Instant>,
-        span: tracing::Span,
-    }
+/// Wraps an HTTP request body stream and, once it's fully drained, logs how
+/// long the hand-off to the network took — to tell whether a slow round-trip
+/// is us sending a large body or the remote being slow to read it.
+///
+/// `to_transmission_start_ms` is construction to first poll (until the client
+/// starts reading); `transmission_ms` is first poll to exhaustion.
+pub struct Measured<S> {
+    inner: S,
+    created_at: Instant,
+    first_polled_at: Option<Instant>,
+    span: tracing::Span,
 }
 
 impl<S> Measured<S> {
@@ -44,18 +33,18 @@ impl<S> Measured<S> {
     }
 }
 
-impl<S: Stream> Stream for Measured<S> {
+impl<S: Stream + Unpin> Stream for Measured<S> {
     type Item = S::Item;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<S::Item>> {
-        let this = self.project();
+        let this = self.get_mut();
         let first_polled_at = *this.first_polled_at.get_or_insert_with(Instant::now);
-        let poll = this.inner.poll_next(cx);
+        let poll = Pin::new(&mut this.inner).poll_next(cx);
         if matches!(poll, Poll::Ready(None)) {
             let _span = this.span.enter();
             tracing::debug!(
                 to_transmission_start_ms =
-                    first_polled_at.duration_since(*this.created_at).as_millis(),
+                    first_polled_at.duration_since(this.created_at).as_millis(),
                 transmission_ms = first_polled_at.elapsed().as_millis(),
                 "finished streaming http request body"
             );
