@@ -131,7 +131,9 @@ impl Finalize for GzipCapture {
     /// A dropped receiver just means the archive was no longer wanted.
     fn finalize(self) {
         match self.writer.finish() {
-            Ok(compressed) => drop(self.tx.send(Bytes::from(compressed))),
+            Ok(compressed) => {
+                let _ = self.tx.send(Bytes::from(compressed));
+            }
             Err(err) => tracing::debug!(?err, "gzip of archived request body failed"),
         }
     }

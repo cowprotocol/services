@@ -100,9 +100,9 @@ impl Uploader {
     }
 
     /// Uploads bytes that are already gzip-compressed JSON, tagging the object
-    /// with `Content-Encoding: gzip`. Lets callers that compress while
-    /// streaming the data elsewhere avoid ever holding the full
-    /// uncompressed JSON here.
+    /// with `Content-Encoding: gzip`.
+    // NOTE: PUT's the whole gzipped blob, if the gzipped JSON is larger than 5MB
+    // it might be worth it to consider multipart uploads as it's the minimium S3 part size
     pub async fn upload_gzipped(&self, id: String, compressed: Bytes) -> Result<String> {
         let key = std::path::Path::new(&self.filename_prefix)
             .join(format!("{id}.json"))
