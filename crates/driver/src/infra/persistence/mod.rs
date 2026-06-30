@@ -59,10 +59,8 @@ impl Persistence {
     }
 
     /// Archives the auction body to S3 (fire and forget). The body is
-    /// gzip-compressed while it is streamed to the solver, so the full
-    /// uncompressed JSON is never held in memory; the compressed bytes arrive
-    /// through `compressed` once serialization finishes. An error on the
-    /// receiver means the request was aborted, so there is nothing to archive.
+    /// gzip-compressed while streaming to the solver; the compressed bytes
+    /// arrive through `compressed` once serialization finishes.
     pub fn archive_auction_gzipped(&self, auction_id: Id, compressed: oneshot::Receiver<Bytes>) {
         let Some(uploader) = self.s3.clone() else {
             return;

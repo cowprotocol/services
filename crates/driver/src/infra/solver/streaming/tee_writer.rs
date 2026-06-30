@@ -1,4 +1,4 @@
-use std::io::Write;
+use {super::Finalize, std::io::Write};
 
 /// A [`Write`] that fans every write out to two writers (à la UNIX `tee`), so
 /// one serialization pass feeds two sinks — a request body and a gzip copy. A
@@ -12,11 +12,12 @@ impl<A, B> TeeWriter<A, B> {
     pub(super) fn new(primary: A, secondary: B) -> Self {
         Self { primary, secondary }
     }
+}
 
-    /// Splits the tee back into its two sinks so each can be finalized on its
-    /// own.
-    pub(super) fn into_parts(self) -> (A, B) {
-        (self.primary, self.secondary)
+impl<A: Finalize, B: Finalize> Finalize for TeeWriter<A, B> {
+    fn finalize(self) {
+        self.primary.finalize();
+        self.secondary.finalize();
     }
 }
 

@@ -1,6 +1,3 @@
-//! Streams a serializable value into a reqwest body so the full (multi-MB)
-//! payload is never held in memory at once.
-
 mod tee_writer;
 
 use {
@@ -31,8 +28,7 @@ where
 }
 
 /// Like [`stream_body`], but also gzips the same serialization in one pass. The
-/// receiver yields the compressed bytes when serialization finishes, or errors
-/// if it aborts (nothing to archive).
+/// receiver yields the compressed bytes once serialization finishes.
 pub fn stream_body_and_gzip<T>(value: T) -> (reqwest::Body, oneshot::Receiver<Bytes>)
 where
     T: serde::Serialize + Send + 'static,
@@ -68,10 +64,7 @@ where
                 return;
             }
         };
-        let (channel, secondary) = tee.into_parts();
-        // Closing the sender ends the body; finalize the copy after.
-        drop(channel);
-        secondary.finalize();
+        tee.finalize();
     });
     body
 }
@@ -98,13 +91,19 @@ impl Write for ChannelWriter {
     }
 }
 
-/// Cleanup for the tee's secondary sink once the body is fully written. Only
-/// called on success; an aborted serialization drops the sink instead.
+/// Consumes a sink once the body is fully written, running any cleanup (e.g.
+/// finishing a gzip stream). Only called on success; an aborted serialization
+/// drops the sink instead.
 trait Finalize {
     fn finalize(self);
 }
 
 impl Finalize for std::io::Sink {
+    fn finalize(self) {}
+}
+
+impl Finalize for ChannelWriter {
+    /// Dropping the sender closes the channel, ending the request body.
     fn finalize(self) {}
 }
 
