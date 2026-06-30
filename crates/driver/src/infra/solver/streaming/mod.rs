@@ -1,6 +1,8 @@
+mod best_effort_sink;
 mod tee_writer;
 
 use {
+    best_effort_sink::BestEffortSink,
     bytes::Bytes,
     futures::StreamExt,
     std::{
@@ -39,7 +41,9 @@ where
 }
 
 /// Serializes `value` into a tee of the body channel and `secondary` on a
-/// blocking thread, then finalizes each sink.
+/// blocking thread, then finalizes each sink. Serialization always runs to
+/// completion even if the request receiver drops, so the secondary sink (the
+/// gzip archive) is captured regardless of the request outcome.
 fn stream_into<T, S>(value: T, secondary: S) -> reqwest::Body
 where
     T: serde::Serialize + Send + 'static,
@@ -51,16 +55,20 @@ where
     let span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
         let _guard = span.enter();
-        let mut writer =
-            BufWriter::with_capacity(CHUNK_SIZE, TeeWriter::new(ChannelWriter(tx), secondary));
+        // Make the request channel best-effort: if it fails (the solver
+        // connection went away), serialization keeps feeding the secondary sink
+        // so the archive still completes. Any error left here is a genuine
+        // serialization or gzip failure.
+        let channel = BestEffortSink::new(ChannelWriter(tx));
+        let mut writer = BufWriter::with_capacity(CHUNK_SIZE, TeeWriter::new(channel, secondary));
         if let Err(err) = serde_json::to_writer(&mut writer, &value) {
-            tracing::debug!(?err, "aborting streamed request body");
+            tracing::warn!(?err, "serializing streamed request body failed");
             return;
         }
         let tee = match writer.into_inner() {
             Ok(tee) => tee,
             Err(err) => {
-                tracing::debug!(err = ?err.error(), "flushing streamed request body failed");
+                tracing::warn!(err = ?err.error(), "flushing streamed request body failed");
                 return;
             }
         };
@@ -71,6 +79,9 @@ where
 
 /// A [`Write`] that sends each block to the body channel, blocking when it's
 /// full so serialization can't outpace the request. Dropping it ends the body.
+/// A dropped receiver (the solver connection went away) surfaces as an error;
+/// wrap it in [`BestEffortSink`] to keep serializing the archive past that
+/// point.
 struct ChannelWriter(mpsc::Sender<Bytes>);
 
 impl Write for ChannelWriter {
@@ -179,6 +190,21 @@ mod tests {
         // Keep `body` alive: dropping its receiver would abort serialization
         // before the gzip is captured.
         let (_body, gzip_rx) = stream_body_and_gzip(value.clone());
+
+        let compressed = gzip_rx.await.unwrap();
+        let mut decoded = Vec::new();
+        GzDecoder::new(&compressed[..])
+            .read_to_end(&mut decoded)
+            .unwrap();
+        assert_eq!(decoded, serde_json::to_vec(&value).unwrap());
+    }
+
+    #[tokio::test]
+    async fn gzip_captured_even_if_request_body_dropped() {
+        let value = json!({ "a": 1, "b": [1, 2, 3], "c": "hello" });
+        let (body, gzip_rx) = stream_body_and_gzip(value.clone());
+        // The solver connection going away mid-stream must not skip the archive.
+        drop(body);
 
         let compressed = gzip_rx.await.unwrap();
         let mut decoded = Vec::new();
