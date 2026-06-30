@@ -2011,8 +2011,6 @@ mod tests {
         gas_price: alloy::eips::eip1559::Eip1559Estimation,
         now: chrono::DateTime<Utc>,
     ) -> OrderQuoter {
-        // Streamed quotes are persisted, so hand back incrementing ids starting
-        // at 1 for each saved quote.
         let next_id = std::sync::atomic::AtomicI64::new(1);
         let mut storage = MockQuoteStoring::new();
         storage

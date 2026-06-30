@@ -539,10 +539,8 @@ paths:
         as solvers respond. Solvers without a usable quote emit no event, so you
         may receive fewer events than there are solvers. The stream closes when
         the quote timeout elapses or all solvers have responded. Each emitted
-        quote is persisted, so every event carries a non-null `id` that can be
-        referenced when placing an order, just like `POST /api/v1/quote`.
+        quote carries an `id` that can be referenced when placing an order.
         Clients can use this to show progressive quote updates in real time.
-
 
         The `priceQuality` field of the request body is ignored: this endpoint
         always queries all solvers and attempts verification, emitting each
