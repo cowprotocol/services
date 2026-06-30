@@ -19,7 +19,7 @@ use {
         default_past_blocks,
         default_reward_percentile,
     },
-    ethrpc::Web3,
+    ethrpc::{AlloyProvider, block_stream::CurrentBlockWatcher},
     tracing::instrument,
     url::Url,
 };
@@ -54,10 +54,11 @@ pub enum GasEstimatorType {
 #[instrument(skip_all)]
 pub async fn create_priority_estimator(
     http_client: reqwest::Client,
-    web3: &Web3,
+    provider: &AlloyProvider,
     estimator_types: &[GasEstimatorType],
+    current_block: &CurrentBlockWatcher,
 ) -> Result<impl GasPriceEstimating + use<>> {
-    let network_id = web3.provider.get_chain_id().await?.to_string();
+    let network_id = provider.get_chain_id().await?.to_string();
     let mut estimators = Vec::<Box<dyn GasPriceEstimating>>::new();
 
     for estimator_type in estimator_types {
@@ -67,19 +68,20 @@ pub async fn create_priority_estimator(
                 estimators.push(Box::new(DriverGasEstimator::new(
                     http_client.clone(),
                     url.clone(),
-                    web3.provider.clone(),
+                    provider.clone(),
                 )));
             }
             GasEstimatorType::Web3 => {
-                estimators.push(Box::new(NodeGasPriceEstimator::new(web3.provider.clone())))
+                estimators.push(Box::new(NodeGasPriceEstimator::new(provider.clone())))
             }
             GasEstimatorType::Alloy => {
                 let estimator = ConfigurableGasPriceEstimator::new(
-                    web3.provider.clone(),
+                    provider.clone(),
                     EstimatorConfig {
                         past_blocks: default_past_blocks(),
                         reward_percentile: default_reward_percentile(),
                     },
+                    current_block.clone(),
                 );
                 estimators.push(Box::new(estimator))
             }
