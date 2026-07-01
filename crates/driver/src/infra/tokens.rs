@@ -110,12 +110,7 @@ async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
             .filter(|(_token, info)| info.monitor_balance)
             .map(|(token, _info)| {
                 let erc20 = inner.eth.erc20(*token);
-                async move {
-                    Ok::<(eth::TokenAddress, eth::TokenAmount), blockchain::Error>((
-                        erc20.address(),
-                        erc20.balance(settlement).await?,
-                    ))
-                }
+                async move { (erc20.address(), erc20.balance(settlement).await) }
             })
             .collect()
     };
@@ -128,25 +123,25 @@ async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     // Don't hold on to the lock while fetching balances to allow concurrent
     // updates. This may lead to new entries arriving in the meantime, however
     // their balances should already be up-to-date.
-    let mut balances = futures::future::try_join_all(futures)
-        .await?
-        .into_iter()
-        .collect::<HashMap<_, _>>();
+    let balances = futures::future::join_all(futures).await;
 
-    let mut keys_without_balances = vec![];
+    let mut failed_updates = vec![];
     {
         let mut cache = inner.cache.write().unwrap();
-        for (key, entry) in cache.iter_mut() {
-            if let Some(balance) = balances.remove(key) {
+        for (token, balance_result) in balances {
+            let Ok(balance) = balance_result else {
+                failed_updates.push(token);
+                continue;
+            };
+
+            if let Some(entry) = cache.get_mut(&token) {
                 entry.balance = balance;
-            } else {
-                // Avoid logging while holding the exclusive lock.
-                keys_without_balances.push(*key);
             }
         }
     }
-    if !keys_without_balances.is_empty() {
-        tracing::info!(keys = ?keys_without_balances, "updated keys without balance");
+
+    if !failed_updates.is_empty() {
+        tracing::info!(tokens = ?failed_updates, "failed to update token balance");
     }
 
     Ok(())
