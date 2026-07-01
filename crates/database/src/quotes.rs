@@ -124,8 +124,7 @@ WHERE
     expiration_timestamp >= $7 AND
     quote_kind = $8
 -- Return the best quote for the user: the highest buy/sell exchange rate net of
--- the (sell-token-denominated) fee. This ranks both order kinds correctly, since
--- maximizing buy per sell spent also minimizes sell spent for a fixed buy amount.
+-- the (sell-token-denominated) fee.
 ORDER BY buy_amount / (sell_amount + gas_amount * gas_price * sell_token_price) DESC
 LIMIT 1
     "#;
@@ -455,9 +454,6 @@ mod tests {
             expiration: now,
             quote_kind: QuoteKind::Standard,
         };
-
-        // The cheaper-fee quote wins despite a smaller buy amount, proving we rank
-        // by the net-of-fee exchange rate rather than the raw buy amount.
         assert_eq!(find(&mut db, &search).await.unwrap().unwrap(), best_rate);
     }
 
@@ -519,9 +515,10 @@ mod tests {
             quote_kind: QuoteKind::Standard,
         };
 
-        // The cheaper-fee quote wins despite a larger raw sell amount, proving we
-        // rank by total sell spend (incl. fee), not the raw sell amount.
-        assert_eq!(find(&mut db, &search).await.unwrap().unwrap(), high_sell_low_fee);
+        assert_eq!(
+            find(&mut db, &search).await.unwrap().unwrap(),
+            high_sell_low_fee
+        );
     }
 
     #[tokio::test]
