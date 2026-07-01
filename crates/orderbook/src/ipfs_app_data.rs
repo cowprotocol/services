@@ -91,8 +91,10 @@ impl IpfsAppData {
             metric.with_label_values(&[outcome(&cached), "cache"]).inc();
             return Ok(cached);
         }
-        let _timer = self.metrics.fetches.start_timer();
-        let result = self.fetch_raw(contract_app_data).await;
+        let result = {
+            let _timer = self.metrics.fetches.start_timer();
+            self.fetch_raw(contract_app_data).await
+        };
         match &result {
             Ok(result) => {
                 self.cache.insert(*contract_app_data, result.clone()).await;
