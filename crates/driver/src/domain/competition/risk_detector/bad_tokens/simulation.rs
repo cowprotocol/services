@@ -5,10 +5,12 @@ use {
         infra::{self, observe::metrics},
     },
     bad_tokens::{TokenQuality, trace_call::TraceCallDetectorRaw},
+    eth_domain_types as eth,
     futures::FutureExt,
     model::interaction::InteractionData,
     request_sharing::BoxRequestSharing,
     std::{
+        ops::Deref,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -20,6 +22,29 @@ use {
 /// based simulation.
 #[derive(Clone)]
 pub struct Detector(Arc<Inner>);
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
+pub trait DetectorApi: Send + Sync {
+    async fn determine_sell_token_quality(&self, order: &Order, now: Instant) -> Quality;
+    fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Quality;
+    fn evict_outdated_entries(&self);
+}
+
+#[async_trait::async_trait]
+impl DetectorApi for Detector {
+    async fn determine_sell_token_quality(&self, order: &Order, now: Instant) -> Quality {
+        self.determine_sell_token_quality(order, now).await
+    }
+
+    fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Quality {
+        Deref::deref(self).get_quality(token, now)
+    }
+
+    fn evict_outdated_entries(&self) {
+        Deref::deref(self).evict_outdated_entries()
+    }
+}
 
 struct Inner {
     cache: Cache,
@@ -107,7 +132,7 @@ impl Detector {
     }
 }
 
-impl std::ops::Deref for Detector {
+impl Deref for Detector {
     type Target = Cache;
 
     fn deref(&self) -> &Self::Target {
