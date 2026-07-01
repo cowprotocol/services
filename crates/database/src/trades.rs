@@ -18,7 +18,33 @@ pub struct TradesQueryRow {
     pub sell_token: Address,
     pub tx_hash: Option<TransactionHash>,
     pub auction_id: Option<AuctionId>,
+    /// This trade's share of the settlement transaction's gas cost in native
+    /// token wei (`gas_used * effective_gas_price / trades_in_settlement`).
+    /// `NULL` for settlements observed before gas was persisted (see V111).
+    pub gas_cost: Option<BigDecimal>,
 }
+
+/// SQL expression computing a single trade's share of its settlement's on-chain
+/// gas cost: the settlement's total cost (`gas_used * effective_gas_price`)
+/// divided equally across all trades settled in the same transaction. Expects
+/// the settlement row to be aliased `s`; selected as the column `gas_cost`,
+/// which is `NULL` for settlements whose gas was not persisted (see migration
+/// V111). Shared by [`trades`] and [`order_gas_costs`] so the two cannot drift.
+const GAS_COST_EXPR: &str = r#"FLOOR(
+            (s.gas_used * s.effective_gas_price)
+            / NULLIF((
+                SELECT COUNT(*)
+                FROM trades tc
+                WHERE tc.block_number = s.block_number
+                AND   tc.log_index < s.log_index
+                AND   tc.log_index > COALESCE((
+                    SELECT MAX(sp.log_index)
+                    FROM settlements sp
+                    WHERE sp.block_number = s.block_number
+                    AND   sp.log_index < s.log_index
+                ), -1)
+            ), 0)
+        ) AS gas_cost"#;
 
 pub fn trades<'a>(
     ex: &'a mut PgConnection,
@@ -37,24 +63,37 @@ SELECT
     t.sell_amount - t.fee_amount as sell_amount_before_fees,
     o.owner,
     o.buy_token,
-    o.sell_token,
-    settlement.tx_hash,
-    settlement.auction_id"#;
+    o.sell_token"#;
 
-    const SETTLEMENT_JOIN: &str = r#"
+    // Resolves the settlement that included each returned trade (the first
+    // settlement event in the same block after the trade) and computes that
+    // trade's share of the settlement's on-chain gas cost. Joined onto the
+    // already-paginated `page` CTE rather than inside the UNION branches, so the
+    // settlement lookup and the (relatively expensive) gas computation run only
+    // for the rows actually returned instead of for every candidate row across
+    // all three branches.
+    const GAS_JOIN: &str = const_format::concatcp!(
+        r#"
 LEFT OUTER JOIN LATERAL (
-    SELECT tx_hash, auction_id FROM settlements s
-    WHERE s.block_number = t.block_number
-    AND   s.log_index > t.log_index
+    SELECT
+        s.tx_hash,
+        s.auction_id,
+        "#,
+        GAS_COST_EXPR,
+        r#"
+    FROM settlements s
+    WHERE s.block_number = page.block_number
+    AND   s.log_index > page.log_index
     ORDER BY s.log_index ASC
     LIMIT 1
-) AS settlement ON true"#;
+) AS settlement ON true"#,
+    );
 
     const QUERY: &str = const_format::concatcp!(
+        "WITH page AS (",
         "(",
         SELECT,
         " FROM trades t",
-        SETTLEMENT_JOIN,
         " JOIN orders o ON o.uid = t.order_uid",
         // the uid already contains the owner address and we have
         // an index on this expression so this is very efficient
@@ -67,7 +106,6 @@ LEFT OUTER JOIN LATERAL (
         "(",
         SELECT,
         " FROM trades t",
-        SETTLEMENT_JOIN,
         " JOIN orders o ON o.uid = t.order_uid",
         " JOIN onchain_placed_orders onchain_o",
         " ON onchain_o.uid = t.order_uid",
@@ -101,13 +139,30 @@ LEFT OUTER JOIN LATERAL (
         SELECT,
         " FROM jit o",
         " JOIN trades t ON o.uid = t.order_uid",
-        SETTLEMENT_JOIN,
         " ORDER BY t.block_number DESC, t.log_index DESC",
         " LIMIT $3 + $4",
         ")",
         " ORDER BY block_number DESC, log_index DESC",
         " LIMIT $3",
         " OFFSET $4",
+        ")",
+        r#"
+SELECT
+    page.block_number,
+    page.log_index,
+    page.order_uid,
+    page.buy_amount,
+    page.sell_amount,
+    page.sell_amount_before_fees,
+    page.owner,
+    page.buy_token,
+    page.sell_token,
+    settlement.tx_hash,
+    settlement.auction_id,
+    settlement.gas_cost
+FROM page"#,
+        GAS_JOIN,
+        " ORDER BY page.block_number DESC, page.log_index DESC",
     );
 
     sqlx::query_as(QUERY)
@@ -117,6 +172,41 @@ LEFT OUTER JOIN LATERAL (
         .bind(offset)
         .fetch_all(ex)
         .instrument(info_span!("trades"))
+}
+
+/// Returns, per order, the total on-chain gas cost (native token wei)
+/// attributed to the order across all of its trades. Each trade contributes its
+/// share of its settlement's gas cost (see [`GAS_COST_EXPR`]). Orders whose
+/// settlements have no persisted gas (see V111) are absent from the result.
+#[instrument(skip_all)]
+pub async fn order_gas_costs(
+    ex: &mut PgConnection,
+    order_uids: &[OrderUid],
+) -> Result<Vec<(OrderUid, BigDecimal)>, sqlx::Error> {
+    if order_uids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    const QUERY: &str = const_format::concatcp!(
+        r#"
+SELECT t.order_uid, FLOOR(SUM(settlement.gas_cost)) AS gas_cost
+FROM trades t
+JOIN LATERAL (
+    SELECT "#,
+        GAS_COST_EXPR,
+        r#"
+    FROM settlements s
+    WHERE s.block_number = t.block_number
+    AND   s.log_index > t.log_index
+    ORDER BY s.log_index ASC
+    LIMIT 1
+) AS settlement ON true
+WHERE settlement.gas_cost IS NOT NULL
+AND t.order_uid = ANY($1)
+GROUP BY t.order_uid"#,
+    );
+
+    sqlx::query_as(QUERY).bind(order_uids).fetch_all(ex).await
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
