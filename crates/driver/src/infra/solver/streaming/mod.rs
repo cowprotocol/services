@@ -102,6 +102,8 @@ impl Write for ChannelWriter {
         Ok(data.len())
     }
 
+    /// `write` sends each block downstream immediately, so a write effectively
+    /// always flushes and there's nothing buffered left to do here.
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }

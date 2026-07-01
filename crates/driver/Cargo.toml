@@ -38,7 +38,6 @@ derive_more = { workspace = true }
 eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
-flate2 = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
@@ -94,6 +93,7 @@ alloy = { workspace = true, features = ["signer-mnemonic"] }
 app-data = { workspace = true, features = ["test_helpers"] }
 contracts = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
+flate2 = { workspace = true }
 maplit = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["process", "test-util"] }
