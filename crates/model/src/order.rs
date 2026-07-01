@@ -874,6 +874,8 @@ pub enum OrderKind {
     EnumString,
     AsRefStr,
     VariantNames,
+    PartialOrd,
+    Ord,
 )]
 #[strum(ascii_case_insensitive)]
 #[serde(tag = "class", rename_all = "lowercase")]

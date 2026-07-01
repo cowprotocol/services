@@ -22,7 +22,6 @@ use {
         },
     },
     futures::FutureExt,
-    itertools::Itertools,
     model::{
         order::{Order, OrderClass, OrderUid},
         signature::Signature,
@@ -109,9 +108,13 @@ impl Metrics {
         let metrics = Metrics::get();
         metrics.auction_creations.inc();
 
-        let remaining_counts = orders
-            .iter()
-            .counts_by(|order| order.metadata.class.as_ref());
+        let mut remaining_counts = BTreeMap::<&str, usize>::new();
+        for order in orders {
+            *remaining_counts
+                .entry(order.metadata.class.as_ref())
+                .or_default() += 1;
+        }
+
         for class in OrderClass::VARIANTS {
             let count = remaining_counts.get(class).copied().unwrap_or_default();
             metrics
