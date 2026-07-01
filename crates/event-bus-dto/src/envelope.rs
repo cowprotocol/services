@@ -12,6 +12,7 @@ pub const ENVELOPE_VERSION: &str = "v1";
 #[derive(Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Envelope<T> {
+    #[schemars(extend("const" = ENVELOPE_VERSION))]
     pub version: &'static str,
     /// RFC3339 timestamp (millisecond precision, UTC) of when the event was
     /// published.
