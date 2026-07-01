@@ -4229,6 +4229,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-bus-dto"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "schemars 1.2.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "event-indexing"
 version = "0.1.0"
 dependencies = [
@@ -6073,6 +6083,7 @@ dependencies = [
  "bytes",
  "chrono",
  "console-subscriber",
+ "event-bus-dto",
  "futures",
  "jemalloc_pprof",
  "opentelemetry",
@@ -6647,6 +6658,7 @@ dependencies = [
  "dashmap",
  "derive_more 1.0.0",
  "ethrpc",
+ "event-bus-dto",
  "futures",
  "gas-price-estimation",
  "hex-literal",
@@ -7634,8 +7646,21 @@ checksum = "54e910108742c57a770f492731f99be216a52fadd361b06c8fb59d74ccc267d2"
 dependencies = [
  "dyn-clone",
  "ref-cast",
+ "schemars_derive",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4908ad288c5035a8eb12cfdf0d49270def0a268ee162b75eeee0f85d155a7c45"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -7780,6 +7805,17 @@ name = "serde_derive"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
+name = "serde_derive_internals"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
 dependencies = [
  "proc-macro2",
  "quote",
