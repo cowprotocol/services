@@ -580,8 +580,6 @@ fn orders_with_balance<'a>(
     settlement_contract: Address,
     filter_bypass_orders: &HashSet<OrderUid>,
 ) -> (Vec<&'a Order>, Vec<OrderUid>) {
-    // Prefer newer orders over older ones.
-    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     let mut filtered_orders = vec![];
     let keep = |order: &Order| {
         // Skip balance check for all EIP-1271 orders (they can rely on pre-interactions
