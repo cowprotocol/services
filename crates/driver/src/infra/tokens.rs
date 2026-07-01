@@ -72,8 +72,6 @@ impl Fetcher {
                 .collect()
         };
         if !tokens_to_update.is_empty() {
-            // now that we know we actually have to update some tokens we take a write
-            // lock
             let mut cache = self.0.cache.write().unwrap();
             tokens_to_update.into_iter().for_each(|token| {
                 if let Some(entry) = cache.get_mut(&((*token).into())) {
