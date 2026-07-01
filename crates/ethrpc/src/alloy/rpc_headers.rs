@@ -1,20 +1,22 @@
 //! Transport layer that annotates outgoing HTTP RPC requests with headers
-//! describing the JSON-RPC call(s) they carry: the method(s), the request
-//! id(s), and the distributed-tracing request id.
+//! describing the JSON-RPC call(s) they carry: the `method:id` pair(s) and the
+//! distributed-tracing request id.
 //!
-//! It MUST be installed as the innermost layer (closest to the HTTP transpor)
+//! It MUST be installed as the innermost layer (closest to the HTTP transport)
 //! so that it observes the request packet exactly as it goes out on the wire.
 use {
-    alloy_json_rpc::{RequestPacket, SerializedRequest},
+    alloy_json_rpc::RequestPacket,
     reqwest::header::{HeaderName, HeaderValue},
-    std::task::{Context, Poll},
+    std::{
+        fmt::Write as _,
+        task::{Context, Poll},
+    },
     tower::{Layer, Service},
 };
 
-/// Comma-separated list of the JSON-RPC method(s) in the packet.
-const METHOD: &str = "x-rpc-method";
-/// Comma-separated list of the JSON-RPC id(s) in the packet.
-const REQUEST_ID: &str = "x-rpc-request-id";
+/// Comma-separated list of the JSON-RPC calls in the packet, each formatted as
+/// `method:id` so every method stays paired with its id.
+const CALLS: &str = "x-rpc-calls";
 /// Distributed-tracing request id, correlating this call with the originating
 /// task's logs across processes.
 const TRACING_REQUEST_ID: &str = "x-request-id";
@@ -56,31 +58,27 @@ where
 
 /// Attaches the RPC correlation headers to the packet.
 ///
-/// The batching layer may coalesce several calls into one packet, so the method
-/// and id headers list every call. The headers are written onto the last
-/// request because header aggregation across a packet is last-wins, so a single
-/// writer surfaces them for the whole request.
+/// The batching layer may coalesce several calls into one packet, so the calls
+/// header lists every `method:id` pair. It is written onto the last request
+/// because header aggregation across a packet is last-wins, so a single writer
+/// surfaces it for the whole request.
 fn annotate(req: &mut RequestPacket, request_id: Option<&str>) {
     let requests = req.requests_mut();
-    let methods = requests
-        .iter()
-        .map(SerializedRequest::method)
-        .collect::<Vec<_>>()
-        .join(",");
-    let ids = requests
-        .iter()
-        .map(|r| r.id().to_string())
-        .collect::<Vec<_>>()
-        .join(",");
+    // Build the `method:id` list in a single pass, writing directly into the
+    // buffer to avoid intermediate `Vec` and per-id `String` allocations.
+    let mut calls = String::new();
+    for (i, r) in requests.iter().enumerate() {
+        if i > 0 {
+            calls.push(',');
+        }
+        let _ = write!(calls, "{}:{}", r.method(), r.id());
+    }
     let Some(last) = requests.last_mut() else {
         return;
     };
     let headers = last.headers_mut();
-    if let Some(v) = header_value(&methods) {
-        headers.insert(HeaderName::from_static(METHOD), v);
-    }
-    if let Some(v) = header_value(&ids) {
-        headers.insert(HeaderName::from_static(REQUEST_ID), v);
+    if let Some(v) = header_value(&calls) {
+        headers.insert(HeaderName::from_static(CALLS), v);
     }
     if let Some(v) = request_id.and_then(header_value) {
         headers.insert(HeaderName::from_static(TRACING_REQUEST_ID), v);
@@ -95,7 +93,7 @@ fn header_value(s: &str) -> Option<HeaderValue> {
 mod tests {
     use {
         super::*,
-        alloy_json_rpc::{Id, Request},
+        alloy_json_rpc::{Id, Request, SerializedRequest},
     };
 
     fn request(method: &'static str, id: u64) -> SerializedRequest {
@@ -111,8 +109,7 @@ mod tests {
         annotate(&mut packet, None);
 
         let headers = packet.headers();
-        assert_eq!(headers[METHOD], "eth_sendRawTransaction");
-        assert_eq!(headers[REQUEST_ID], "7");
+        assert_eq!(headers[CALLS], "eth_sendRawTransaction:7");
         assert!(!headers.contains_key(TRACING_REQUEST_ID));
     }
 
@@ -138,8 +135,7 @@ mod tests {
         annotate(&mut packet, Some("auction-42"));
 
         let headers = packet.headers();
-        assert_eq!(headers[METHOD], "eth_call,eth_getBalance,eth_chainId");
-        assert_eq!(headers[REQUEST_ID], "1,2,3");
+        assert_eq!(headers[CALLS], "eth_call:1,eth_getBalance:2,eth_chainId:3");
         assert_eq!(headers[TRACING_REQUEST_ID], "auction-42");
     }
 
@@ -149,7 +145,6 @@ mod tests {
         annotate(&mut packet, None);
 
         let headers = packet.headers();
-        assert_eq!(headers[METHOD], "eth_chainId");
-        assert_eq!(headers[REQUEST_ID], "9");
+        assert_eq!(headers[CALLS], "eth_chainId:9");
     }
 }
