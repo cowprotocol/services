@@ -216,8 +216,8 @@ impl SolvableOrdersCache {
             .map(|order| order.as_ref())
             .collect();
 
-        let mut invalid_order_uids = HashMap::new();
-        let mut filtered_order_events: Vec<(OrderUid, OrderFilterReason)> = Vec::new();
+        let mut invalid_order_uids = BTreeMap::new();
+        let mut filtered_order_events = BTreeMap::new();
 
         let balance_filter_exempt_orders: HashSet<_> = orders
             .iter()
@@ -247,10 +247,12 @@ impl SolvableOrdersCache {
         // on-chain.
         let (orders, removed) = filter_out_in_flight_orders(orders, &in_flight);
         Metrics::track_filtered_orders(InFlight, &removed);
-        filtered_order_events.extend(removed.into_iter().map(|uid| (uid, InFlight)));
+        filtered_order_events.insert(InFlight, removed);
         // It's possible that some orders got marked as invalid due to missing balance
         // or so, but the order is perfectly fine if it's in-flight
-        invalid_order_uids.retain(|uid, _| !in_flight.contains(uid));
+        invalid_order_uids
+            .values_mut()
+            .for_each(|orders| orders.retain(|uid| in_flight.contains(uid)));
 
         let orders = if self.disable_order_balance_filter {
             orders
@@ -262,11 +264,13 @@ impl SolvableOrdersCache {
                 &balance_filter_exempt_orders,
             );
             Metrics::track_filtered_orders(InsufficientBalance, &removed);
-            invalid_order_uids.extend(removed.into_iter().map(|uid| (uid, InsufficientBalance)));
+            invalid_order_uids
+                .entry(InsufficientBalance)
+                .or_insert(removed);
 
             let (orders, removed) = filter_dust_orders(orders, &balances);
             Metrics::track_filtered_orders(DustOrder, &removed);
-            filtered_order_events.extend(removed.into_iter().map(|uid| (uid, DustOrder)));
+            filtered_order_events.insert(DustOrder, removed);
 
             orders
         };
@@ -295,7 +299,7 @@ impl SolvableOrdersCache {
             .entry(self.weth)
             .or_insert_with(|| to_normalized_price(1.0).unwrap());
         Metrics::track_filtered_orders(MissingNativePrice, &removed);
-        filtered_order_events.extend(removed.into_iter().map(|uid| (uid, MissingNativePrice)));
+        filtered_order_events.insert(MissingNativePrice, removed);
 
         Metrics::track_orders_in_final_auction(&orders);
 
@@ -451,7 +455,7 @@ impl SolvableOrdersCache {
     async fn filter_invalid_orders<'a>(
         &self,
         mut orders: Vec<&'a Order>,
-        invalid_order_uids: &mut HashMap<OrderUid, OrderFilterReason>,
+        invalid_order_uids: &mut BTreeMap<OrderFilterReason, Vec<OrderUid>>,
     ) -> Vec<&'a Order> {
         let presignature_pending_orders = find_presignature_pending_orders(&orders);
 
@@ -464,22 +468,21 @@ impl SolvableOrdersCache {
             .await;
         tracing::trace!("filtered invalid orders");
 
+        let all_invalid_orders = banned_user_orders
+            .iter()
+            .chain(&presignature_pending_orders)
+            .chain(&unsupported_token_orders)
+            .collect::<HashSet<_>>();
+        orders.retain(|order| !all_invalid_orders.contains(&order.metadata.uid));
+
         Metrics::track_filtered_orders(BannedUser, &banned_user_orders);
         Metrics::track_filtered_orders(InvalidSignature, &presignature_pending_orders);
         Metrics::track_filtered_orders(UnsupportedToken, &unsupported_token_orders);
-        invalid_order_uids.extend(banned_user_orders.into_iter().map(|uid| (uid, BannedUser)));
-        invalid_order_uids.extend(
-            presignature_pending_orders
-                .into_iter()
-                .map(|uid| (uid, InvalidSignature)),
-        );
-        invalid_order_uids.extend(
-            unsupported_token_orders
-                .into_iter()
-                .map(|uid| (uid, UnsupportedToken)),
-        );
 
-        orders.retain(|order| !invalid_order_uids.contains_key(&order.metadata.uid));
+        invalid_order_uids.insert(BannedUser, banned_user_orders);
+        invalid_order_uids.insert(InvalidSignature, presignature_pending_orders);
+        invalid_order_uids.insert(UnsupportedToken, unsupported_token_orders);
+
         orders
     }
 
@@ -499,16 +502,13 @@ impl SolvableOrdersCache {
         fut.await
     }
 
+    // what we actually want is a (Vec<OrderUid>, OrderFilterReason)
     fn store_events_by_reason(
         &self,
-        orders: impl IntoIterator<Item = (OrderUid, OrderFilterReason)>,
+        orders: BTreeMap<OrderFilterReason, Vec<OrderUid>>,
         label: OrderEventLabel,
     ) {
-        let mut by_reason: HashMap<OrderFilterReason, Vec<OrderUid>> = HashMap::new();
-        for (uid, reason) in orders {
-            by_reason.entry(reason).or_default().push(uid);
-        }
-        for (reason, uids) in by_reason {
+        for (reason, uids) in orders {
             self.persistence.store_order_events_owned(
                 uids,
                 |uid| domain::OrderUid(uid.0),

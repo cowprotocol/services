@@ -781,13 +781,7 @@ impl FromStr for OrderUid {
 
 impl Display for OrderUid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut bytes = [0u8; 2 + 56 * 2];
-        bytes[..2].copy_from_slice(b"0x");
-        // Unwrap because the length is always correct.
-        const_hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
-        // Unwrap because the string is always valid utf8.
-        let str = std::str::from_utf8(&bytes).unwrap();
-        f.write_str(str)
+        f.write_str(&const_hex::encode_prefixed(self.0))
     }
 }
 

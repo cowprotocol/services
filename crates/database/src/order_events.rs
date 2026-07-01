@@ -35,7 +35,7 @@ pub enum OrderEventLabel {
 }
 
 /// Why an order was filtered or marked invalid.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, sqlx::Type, PartialOrd, Ord)]
 #[sqlx(type_name = "OrderFilterReason")]
 #[sqlx(rename_all = "snake_case")]
 pub enum OrderFilterReason {
