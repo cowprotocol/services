@@ -2,13 +2,12 @@ use {
     crate::ipfs::Ipfs,
     anyhow::Result,
     app_data::{AppDataHash, create_ipfs_cid},
-    cached::{Cached, TimedSizedCache},
-    std::sync::Mutex,
+    moka::future::Cache,
 };
 
 pub struct IpfsAppData {
     ipfs: Ipfs,
-    cache: Mutex<TimedSizedCache<AppDataHash, Option<String>>>,
+    cache: Cache<AppDataHash, Option<String>>,
     metrics: &'static Metrics,
 }
 
@@ -34,9 +33,10 @@ impl IpfsAppData {
         }
         Self {
             ipfs,
-            cache: Mutex::new(TimedSizedCache::with_size_and_lifespan_and_refresh(
-                1000, 600, false,
-            )),
+            cache: Cache::builder()
+                .max_capacity(1000)
+                .time_to_live(std::time::Duration::from_secs(600))
+                .build(),
             metrics,
         }
     }
@@ -63,7 +63,7 @@ impl IpfsAppData {
                     result
                 }
                 Ok(None) => {
-                    tracing::debug!(?contract_app_data, %cid,"no full app data");
+                    tracing::debug!(?contract_app_data, %cid, "no full app data");
                     return Ok(None);
                 }
                 Err(err) => {
@@ -86,37 +86,25 @@ impl IpfsAppData {
 
     pub async fn fetch(&self, contract_app_data: &AppDataHash) -> Result<Option<String>> {
         let outcome = |data: &Option<String>| if data.is_some() { "found" } else { "missing" };
-
         let metric = &self.metrics.app_data;
-        if let Some(cached) = self
-            .cache
-            .lock()
-            .unwrap()
-            .cache_get(contract_app_data)
-            .cloned()
-        {
+        if let Some(cached) = self.cache.get(contract_app_data).await {
             metric.with_label_values(&[outcome(&cached), "cache"]).inc();
             return Ok(cached);
         }
-
-        let fetched = {
+        let result = {
             let _timer = self.metrics.fetches.start_timer();
             self.fetch_raw(contract_app_data).await
         };
-        let result = match fetched {
-            Ok(result) => result,
-            Err(err) => {
-                metric.with_label_values(&["error", "node"]).inc();
-                return Err(err);
+        match &result {
+            Ok(result) => {
+                self.cache.insert(*contract_app_data, result.clone()).await;
+                metric.with_label_values(&[outcome(result), "node"]).inc();
             }
-        };
-
-        self.cache
-            .lock()
-            .unwrap()
-            .cache_set(*contract_app_data, result.clone());
-        metric.with_label_values(&[outcome(&result), "node"]).inc();
-        Ok(result)
+            Err(_) => {
+                metric.with_label_values(&["error", "node"]).inc();
+            }
+        }
+        result
     }
 }
 
