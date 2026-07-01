@@ -126,6 +126,7 @@
         "type": "string"
       },
       "version": {
+        "const": "v1",
         "type": "string"
       }
     },
