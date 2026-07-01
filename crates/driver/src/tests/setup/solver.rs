@@ -9,7 +9,12 @@ use {
             competition::order,
             time::{self},
         },
-        infra::{self, Ethereum, blockchain::contracts::Addresses, config::file::FeeHandler},
+        infra::{
+            self,
+            Ethereum,
+            blockchain::{contracts::Addresses, gas},
+            config::file::FeeHandler,
+        },
         tests::setup::blockchain::Trade,
     },
     alloy::{primitives::Address, signers::local::PrivateKeySigner},
@@ -474,17 +479,6 @@ impl Solver {
         })
         .await
         .unwrap();
-        let gas = Arc::new(
-            infra::blockchain::GasPriceEstimator::new(
-                rpc.web3(),
-                &Default::default(),
-                &[infra::mempool::Config::test_config(
-                    config.blockchain.web3_url.parse().unwrap(),
-                )],
-            )
-            .await
-            .unwrap(),
-        );
         let eth = Ethereum::new(
             rpc,
             Addresses {
@@ -495,12 +489,15 @@ impl Solver {
                 cow_amm_helper_by_factory: Default::default(),
                 flashloan_router: Some((*config.blockchain.flashloan_router.address()).into()),
             },
-            gas,
             &shared::current_block::Arguments {
                 block_stream_poll_interval: None,
                 node_ws_url: Some(config.blockchain.web3_ws_url.parse().unwrap()),
             },
             eth_domain_types::Gas(eth_domain_types::U256::from(45_000_000u64)),
+            &Default::default(),
+            gas::adjustments(&[infra::mempool::Config::test_config(
+                config.blockchain.web3_url.parse().unwrap(),
+            )]),
         )
         .await;
 
