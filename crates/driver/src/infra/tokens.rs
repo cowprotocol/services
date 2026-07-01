@@ -20,6 +20,9 @@ pub struct Metadata {
     pub symbol: Option<String>,
     /// Current balance of the smart contract.
     pub balance: eth::TokenAmount,
+    /// If this flag is true a background task will continuously
+    /// update this token's [`Metadata::balance`] field.
+    pub keep_track_of_balance: bool,
 }
 
 #[derive(Clone)]
@@ -50,6 +53,35 @@ impl Fetcher {
     ) -> HashMap<eth::TokenAddress, Metadata> {
         self.0.get(addresses).await
     }
+
+    /// Tells the cache to continuously update the settlement contract balance
+    /// of the given tokens if they are already present in the cache. That only
+    /// really makes sense for tokens where internal buffer trading is allowed.
+    pub fn keep_track_of_balances<'a>(&self, tokens: impl IntoIterator<Item = &'a eth::Address>) {
+        // most of the time no updates are needed so we first take a read lock to
+        // check if we even have to take a write lock for updating the tokens at all
+        let tokens_to_update: Vec<_> = {
+            let cache = self.0.cache.read().unwrap();
+            tokens
+                .into_iter()
+                .filter(|token| {
+                    cache
+                        .get(&((**token).into()))
+                        .is_some_and(|entry| !entry.keep_track_of_balance)
+                })
+                .collect()
+        };
+        if !tokens_to_update.is_empty() {
+            // now that we know we actually have to update some tokens we take a write
+            // lock
+            let mut cache = self.0.cache.write().unwrap();
+            tokens_to_update.into_iter().for_each(|token| {
+                if let Some(entry) = cache.get_mut(&((*token).into())) {
+                    entry.keep_track_of_balance = true;
+                }
+            })
+        }
+    }
 }
 
 /// Runs a single cache update cycle whenever a new block arrives until the
@@ -71,18 +103,21 @@ async fn update_task(blocks: CurrentBlockWatcher, inner: std::sync::Weak<Inner>)
 /// Updates the settlement contract's balance for every cached token.
 async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     let settlement = *inner.eth.contracts().settlement().address();
-    let futures = {
+    let futures: Vec<_> = {
         let cache = inner.cache.read().unwrap();
-        let tokens = cache.keys().cloned().collect::<Vec<_>>();
-        tokens.into_iter().map(|token| {
-            let erc20 = inner.eth.erc20(token);
-            async move {
-                Ok::<(eth::TokenAddress, eth::TokenAmount), blockchain::Error>((
-                    token,
-                    erc20.balance(settlement).await?,
-                ))
-            }
-        })
+        cache
+            .iter()
+            .filter(|(_token, info)| info.keep_track_of_balance)
+            .map(|(token, _info)| {
+                let erc20 = inner.eth.erc20(*token);
+                async move {
+                    Ok::<(eth::TokenAddress, eth::TokenAmount), blockchain::Error>((
+                        erc20.address(),
+                        erc20.balance(settlement).await?,
+                    ))
+                }
+            })
+            .collect()
     };
 
     tracing::debug!(
@@ -152,6 +187,7 @@ impl Inner {
                             decimals,
                             symbol,
                             balance,
+                            keep_track_of_balance: false,
                         },
                     ))
                 }
