@@ -22,7 +22,7 @@ pub struct Metadata {
     pub balance: eth::TokenAmount,
     /// If this flag is true a background task will continuously
     /// update this token's [`Metadata::balance`] field.
-    pub keep_track_of_balance: bool,
+    pub monitor_balance: bool,
 }
 
 #[derive(Clone)]
@@ -67,7 +67,7 @@ impl Fetcher {
                 .filter(|token| {
                     cache
                         .get(&((**token).into()))
-                        .is_some_and(|entry| !entry.keep_track_of_balance)
+                        .is_some_and(|entry| !entry.monitor_balance)
                 })
                 .collect()
         };
@@ -77,7 +77,7 @@ impl Fetcher {
             let mut cache = self.0.cache.write().unwrap();
             tokens_to_update.into_iter().for_each(|token| {
                 if let Some(entry) = cache.get_mut(&((*token).into())) {
-                    entry.keep_track_of_balance = true;
+                    entry.monitor_balance = true;
                 }
             })
         }
@@ -107,7 +107,7 @@ async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
         let cache = inner.cache.read().unwrap();
         cache
             .iter()
-            .filter(|(_token, info)| info.keep_track_of_balance)
+            .filter(|(_token, info)| info.monitor_balance)
             .map(|(token, _info)| {
                 let erc20 = inner.eth.erc20(*token);
                 async move {
@@ -187,7 +187,7 @@ impl Inner {
                             decimals,
                             symbol,
                             balance,
-                            keep_track_of_balance: false,
+                            monitor_balance: false,
                         },
                     ))
                 }
