@@ -55,10 +55,13 @@ where
     let span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
         let _guard = span.enter();
-        // Make the request channel best-effort: if it fails (the solver
-        // connection went away), serialization keeps feeding the secondary sink
-        // so the archive still completes. Any error left here is a genuine
-        // serialization or gzip failure.
+        // Covers serialization *and* socket transmission (since network "pulls" the
+        // serialization along). Kept as `serialize_request` phase to avoid breaking
+        // Grafana dashboards.
+        let start = std::time::Instant::now();
+
+        // Best effort channel so if sending the JSON to solver fails,
+        // we can still upload it to S3
         let channel = BestEffortSink::new(ChannelWriter(tx));
         let mut writer = BufWriter::with_capacity(CHUNK_SIZE, TeeWriter::new(channel, secondary));
         if let Err(err) = serde_json::to_writer(&mut writer, &value) {
@@ -72,6 +75,8 @@ where
                 return;
             }
         };
+        // Measure before `finalize` so the gzip finish cost stays out of the metric.
+        observe::metrics::metrics().measure_auction_overhead(start, "driver", "serialize_request");
         tee.finalize();
     });
     body

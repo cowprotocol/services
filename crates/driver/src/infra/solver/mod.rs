@@ -32,10 +32,7 @@ use {
     num::BigRational,
     observe::tracing::distributed::headers::tracing_headers,
     reqwest::header::HeaderName,
-    std::{
-        collections::HashMap,
-        time::{Duration, Instant},
-    },
+    std::{collections::HashMap, time::Duration},
     thiserror::Error,
     tracing::{Instrument, instrument},
 };
@@ -368,8 +365,6 @@ impl Solver {
         auction: &Auction,
         liquidity: &[liquidity::Liquidity],
     ) -> Result<Vec<Solution>, Error> {
-        let start = Instant::now();
-
         let flashloan_hints = self.assemble_flashloan_hints(auction);
         let wrappers = self.assemble_wrappers(auction);
 
@@ -407,13 +402,6 @@ impl Solver {
             }
             None => streaming::stream_body(auction_dto),
         };
-        if auction.id().is_some() {
-            ::observe::metrics::metrics().measure_auction_overhead(
-                start,
-                "driver",
-                "serialize_request",
-            );
-        }
 
         let timeout = match auction.deadline(self.timeouts()).solvers().remaining() {
             Ok(timeout) => timeout,
