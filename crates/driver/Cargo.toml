@@ -38,6 +38,7 @@ derive_more = { workspace = true }
 eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
+flate2 = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
@@ -55,7 +56,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 request-sharing = { workspace = true }
-reqwest = { workspace = true, features = ["query"] }
+reqwest = { workspace = true, features = ["query", "stream"] }
 s3 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde-ext = { workspace = true }
@@ -67,6 +68,7 @@ thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
 token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
+tokio-stream = { workspace = true }
 toml = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["decompression-br", "limit", "trace"] }

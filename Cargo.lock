@@ -3761,7 +3761,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -3938,6 +3938,7 @@ dependencies = [
  "eth-domain-types",
  "ethrpc",
  "event-indexing",
+ "flate2",
  "futures",
  "gas-price-estimation",
  "hex-literal",
@@ -3974,6 +3975,7 @@ dependencies = [
  "tikv-jemallocator",
  "token-info",
  "tokio",
+ "tokio-stream",
  "toml",
  "tower 0.5.3",
  "tower-http",
