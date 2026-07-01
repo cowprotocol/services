@@ -2,10 +2,8 @@
 //! describing the JSON-RPC call(s) they carry: the method(s), the request
 //! id(s), and the distributed-tracing request id.
 //!
-//! It MUST be installed as the innermost layer (closest to the HTTP transport,
-//! i.e. after [`super::buffering::BatchCallLayer`]) so that it observes the
-//! request packet exactly as it goes out on the wire — in particular *after*
-//! the batching layer has coalesced individual calls into a batch.
+//! It MUST be installed as the innermost layer (closest to the HTTP transpor)
+//! so that it observes the request packet exactly as it goes out on the wire.
 use {
     alloy_json_rpc::{RequestPacket, SerializedRequest},
     reqwest::header::{HeaderName, HeaderValue},
