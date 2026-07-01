@@ -4232,6 +4232,7 @@ dependencies = [
 name = "event-bus-dto"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "schemars 1.2.0",
  "serde",
  "serde_json",

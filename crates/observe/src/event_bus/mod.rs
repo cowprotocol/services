@@ -9,8 +9,7 @@ use {
     crate::config::EventBusConfig,
     async_nats::jetstream::Context as JetstreamClient,
     bytes::Bytes,
-    chrono::Utc,
-    event_bus_dto::Envelope,
+    event_bus_dto::{Envelope, Event},
     futures::stream::{FuturesUnordered, StreamExt},
     serde::Serialize,
     tokio::sync::{
@@ -159,6 +158,13 @@ async fn log_ack(subject: String, ack_fut: async_nats::jetstream::context::Publi
 }
 
 /// Enqueues the event to be sent to the event bus in a background task.
+///
+/// For ad-hoc events, use [`publish`] instead.
+pub fn publish_event<E: Event>(event: E) {
+    publish(E::SUBJECT, event);
+}
+
+/// Enqueues the event to be sent to the event bus in a background task.
 pub fn publish(subject: &str, data: impl Serialize) {
     let Some(bus) = BUS.get() else {
         tracing::trace!("attempting to publish events without initializing the event bus");
@@ -166,7 +172,6 @@ pub fn publish(subject: &str, data: impl Serialize) {
     };
 
     let envelope = Envelope::new(
-        Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         crate::tracing::distributed::request_id::from_current_span(),
         data,
     );

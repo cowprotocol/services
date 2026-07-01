@@ -1,4 +1,4 @@
-use {schemars::JsonSchema, serde::Serialize};
+use {chrono::Utc, schemars::JsonSchema, serde::Serialize};
 
 /// Wire format version of the JSON envelope sent on every event. Bump
 /// alongside any breaking change to [`Envelope`].
@@ -22,10 +22,10 @@ pub struct Envelope<T> {
 }
 
 impl<T> Envelope<T> {
-    pub fn new(timestamp: String, request_id: Option<String>, body: T) -> Self {
+    pub fn new(request_id: Option<String>, body: T) -> Self {
         Self {
             version: ENVELOPE_VERSION,
-            timestamp,
+            timestamp: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
             request_id,
             body,
         }
@@ -38,16 +38,12 @@ mod tests {
 
     #[test]
     fn envelope_matches_wire_format() {
-        let envelope = Envelope::new(
-            "2026-05-22T12:00:00.000Z".to_string(),
-            Some("req-1".to_string()),
-            json!({"outAmount": 1234}),
-        );
+        let envelope = Envelope::new(Some("req-1".to_string()), json!({"outAmount": 1234}));
         assert_eq!(
             serde_json::to_value(&envelope).unwrap(),
             json!({
                 "version": "v1",
-                "timestamp": "2026-05-22T12:00:00.000Z",
+                "timestamp": envelope.timestamp,
                 "requestId": "req-1",
                 "body": {"outAmount": 1234},
             })
@@ -56,7 +52,7 @@ mod tests {
 
     #[test]
     fn envelope_omits_missing_request_id() {
-        let envelope = Envelope::new("2026-05-22T12:00:00.000Z".to_string(), None, json!({}));
+        let envelope = Envelope::new(None, json!({}));
         let serialized = serde_json::to_value(&envelope).unwrap();
         assert!(serialized.get("requestId").is_none());
     }

@@ -10,14 +10,11 @@ use {
     },
     alloy::primitives::{Address, U256},
     anyhow::Context as _,
-    event_bus_dto::{
-        Event as _,
-        price_estimate::{
-            EstimateResult,
-            OrderKind as DtoOrderKind,
-            PriceEstimateEvent,
-            QueryFields,
-        },
+    event_bus_dto::price_estimate::{
+        EstimateResult,
+        OrderKind as DtoOrderKind,
+        PriceEstimateEvent,
+        QueryFields,
     },
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
@@ -212,7 +209,7 @@ fn emit_quote_event(
             },
         },
     };
-    observe::event_bus::publish(PriceEstimateEvent::SUBJECT, event);
+    observe::event_bus::publish_event(event);
 }
 
 #[cfg(test)]
