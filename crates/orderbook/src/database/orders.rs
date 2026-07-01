@@ -381,8 +381,17 @@ impl OrderStoring for Postgres {
             .with_label_values(&["user_orders"])
             .start_timer();
 
-        let mut ex = self.pool.acquire().await?;
-        database::order_history::user_orders(
+        // This query's phase-1 page computation sorts and hash-aggregates up to
+        // OFFSET+LIMIT rows, which spills to disk for accounts with many orders.
+        // Raise work_mem for just this transaction (SET LOCAL auto-reverts on
+        // commit/rollback, so it never leaks onto the pooled connection) to keep
+        // the sort and aggregate in memory.
+        let mut ex = self.pool.begin().await?;
+        sqlx::query("SET LOCAL work_mem = '32MB'")
+            .execute(&mut *ex)
+            .await?;
+
+        let orders = database::order_history::user_orders(
             &mut ex,
             &ByteArray(owner.0.0),
             i64::try_from(offset).unwrap_or(i64::MAX),
@@ -393,7 +402,10 @@ impl OrderStoring for Postgres {
             Err(err) => Err(anyhow::Error::from(err)),
         })
         .try_collect()
-        .await
+        .await?;
+
+        ex.commit().await?;
+        Ok(orders)
     }
 
     async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>> {
