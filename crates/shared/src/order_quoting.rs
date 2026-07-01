@@ -711,7 +711,7 @@ impl StreamingQuoting for OrderQuoter {
                 // error event.
                 match storage.save(quote.data.clone()).await {
                     Ok(id) => quote.id = Some(id),
-                    Err(err) => tracing::warn!(?err, "failed to persist streamed quote"),
+                    Err(err) => tracing::error!(?err, "failed to persist streamed quote"),
                 }
                 yield Ok(quote);
             }

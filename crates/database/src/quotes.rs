@@ -123,7 +123,10 @@ WHERE
     order_kind = $6 AND
     expiration_timestamp >= $7 AND
     quote_kind = $8
-ORDER BY gas_amount * gas_price * sell_token_price ASC
+-- Return the best quote for the user: the highest buy/sell exchange rate net of
+-- the (sell-token-denominated) fee. This ranks both order kinds correctly, since
+-- maximizing buy per sell spent also minimizes sell spent for a fixed buy amount.
+ORDER BY buy_amount / (sell_amount + gas_amount * gas_price * sell_token_price) DESC
 LIMIT 1
     "#;
     sqlx::query_as(QUERY)
@@ -393,6 +396,132 @@ mod tests {
             .unwrap();
         assert_eq!(find(&mut db, &search_a).await.unwrap(), None);
         assert_eq!(find(&mut db, &search_b).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_find_quote_picks_best_net_of_fee_rate_sell_order() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let now = low_precision_now();
+        // All candidates quote the same sell order (same sell amount); they only
+        // differ in buy amount and fee.
+        let base = Quote {
+            id: Default::default(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 1000.into(),
+            buy_amount: Default::default(),
+            gas_amount: 0.,
+            gas_price: 1.,
+            sell_token_price: 1.,
+            order_kind: OrderKind::Sell,
+            expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: Default::default(),
+        };
+
+        // Highest absolute buy amount, but an expensive fee.
+        // net rate = 210 / (1000 + 100) ≈ 0.1909
+        let mut high_buy_high_fee = Quote {
+            buy_amount: 210.into(),
+            gas_amount: 100.,
+            solver: ByteArray([1; 20]),
+            ..base.clone()
+        };
+        high_buy_high_fee.id = save(&mut db, &high_buy_high_fee).await.unwrap();
+
+        // Lower absolute buy amount, but a negligible fee -> best net-of-fee rate.
+        // net rate = 200 / (1000 + 1) ≈ 0.1998
+        let mut best_rate = Quote {
+            buy_amount: 200.into(),
+            gas_amount: 1.,
+            solver: ByteArray([2; 20]),
+            ..base.clone()
+        };
+        best_rate.id = save(&mut db, &best_rate).await.unwrap();
+
+        let search = QuoteSearchParameters {
+            sell_token: base.sell_token,
+            buy_token: base.buy_token,
+            sell_amount_0: base.sell_amount.clone(),
+            sell_amount_1: base.sell_amount.clone(),
+            buy_amount: Default::default(),
+            kind: OrderKind::Sell,
+            expiration: now,
+            quote_kind: QuoteKind::Standard,
+        };
+
+        // The cheaper-fee quote wins despite a smaller buy amount, proving we rank
+        // by the net-of-fee exchange rate rather than the raw buy amount.
+        assert_eq!(find(&mut db, &search).await.unwrap().unwrap(), best_rate);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_find_quote_picks_best_net_of_fee_rate_buy_order() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let now = low_precision_now();
+        // All candidates quote the same buy order (same buy amount); they only
+        // differ in sell amount and fee.
+        let base = Quote {
+            id: Default::default(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: Default::default(),
+            buy_amount: 100.into(),
+            gas_amount: 0.,
+            gas_price: 1.,
+            sell_token_price: 1.,
+            order_kind: OrderKind::Buy,
+            expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: Default::default(),
+        };
+
+        // Lowest absolute sell amount, but an expensive fee -> total spend 1200.
+        // net rate = 100 / (1000 + 200) ≈ 0.0833
+        let mut low_sell_high_fee = Quote {
+            sell_amount: 1000.into(),
+            gas_amount: 200.,
+            solver: ByteArray([1; 20]),
+            ..base.clone()
+        };
+        low_sell_high_fee.id = save(&mut db, &low_sell_high_fee).await.unwrap();
+
+        // Higher absolute sell amount, but a negligible fee -> total spend 1101.
+        // net rate = 100 / (1100 + 1) ≈ 0.0908 -> best (least total spend)
+        let mut high_sell_low_fee = Quote {
+            sell_amount: 1100.into(),
+            gas_amount: 1.,
+            solver: ByteArray([2; 20]),
+            ..base.clone()
+        };
+        high_sell_low_fee.id = save(&mut db, &high_sell_low_fee).await.unwrap();
+
+        let search = QuoteSearchParameters {
+            sell_token: base.sell_token,
+            buy_token: base.buy_token,
+            sell_amount_0: Default::default(),
+            sell_amount_1: Default::default(),
+            buy_amount: base.buy_amount.clone(),
+            kind: OrderKind::Buy,
+            expiration: now,
+            quote_kind: QuoteKind::Standard,
+        };
+
+        // The cheaper-fee quote wins despite a larger raw sell amount, proving we
+        // rank by total sell spend (incl. fee), not the raw sell amount.
+        assert_eq!(find(&mut db, &search).await.unwrap().unwrap(), high_sell_low_fee);
     }
 
     #[tokio::test]
