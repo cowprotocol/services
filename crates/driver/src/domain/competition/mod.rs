@@ -355,7 +355,7 @@ impl Competition {
         let auction_handle = tokio::spawn(
             async move {
                 risk_detector
-                    .without_unsupported_orders(&mut auction.orders, flashloans_enabled)
+                    .without_unsupported_orders(&mut auction.orders, auction.id, flashloans_enabled)
                     .await;
                 auction
             }

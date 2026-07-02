@@ -19,6 +19,7 @@
 use {
     crate::domain::competition::{
         Order,
+        auction::Id,
         order::Uid,
         risk_detector::bad_tokens::simulation::DetectorApi,
     },
@@ -101,6 +102,7 @@ impl Detector {
     pub async fn without_unsupported_orders(
         &self,
         orders: &mut Vec<Order>,
+        auction_id: Option<Id>,
         flashloans_enabled: bool,
     ) {
         let now = Instant::now();
@@ -128,7 +130,7 @@ impl Detector {
                 &mut removed_uids,
             ),
         };
-        if !removed_uids.is_empty() {
+        if !removed_uids.is_empty() && auction_id.is_some() {
             tracing::debug!(orders = ?removed_uids, "ignored orders with unsupported tokens");
         }
         // Replace the original orders in the auction with supported orders
@@ -448,7 +450,9 @@ mod tests {
     async fn without_unsupported_orders_returns_empty() {
         let mut orders = vec![];
         let detector = detector(HashMap::new(), HashSet::new());
-        detector.without_unsupported_orders(&mut orders, true).await;
+        detector
+            .without_unsupported_orders(&mut orders, Some(Id(0)), true)
+            .await;
         assert!(orders.is_empty());
     }
 
@@ -464,7 +468,7 @@ mod tests {
         )];
         let detector = detector(HashMap::new(), HashSet::new());
         detector
-            .without_unsupported_orders(&mut orders, false)
+            .without_unsupported_orders(&mut orders, Some(Id(0)), false)
             .await;
         assert!(orders.is_empty());
     }
@@ -484,7 +488,9 @@ mod tests {
 
         // Note: This could be filtered out for other reasons later in reality
         // but is contained to be true for this test
-        detector.without_unsupported_orders(&mut orders, true).await;
+        detector
+            .without_unsupported_orders(&mut orders, Some(Id(0)), true)
+            .await;
         assert_eq!(orders[0].uid, id);
     }
 
@@ -501,7 +507,9 @@ mod tests {
         )];
         let detector = detector(HashMap::new(), HashSet::from([unsupported_uid]));
 
-        detector.without_unsupported_orders(&mut orders, true).await;
+        detector
+            .without_unsupported_orders(&mut orders, Some(Id(0)), true)
+            .await;
         assert!(orders.is_empty());
     }
 
@@ -519,7 +527,9 @@ mod tests {
             HashSet::new(),
         );
 
-        detector.without_unsupported_orders(&mut orders, true).await;
+        detector
+            .without_unsupported_orders(&mut orders, Some(Id(0)), true)
+            .await;
         assert_eq!(orders[0].uid, uid);
     }
 
@@ -535,7 +545,9 @@ mod tests {
         );
         detector.with_simulation_detector(simulation_detector(HashSet::new()));
 
-        detector.without_unsupported_orders(&mut orders, true).await;
+        detector
+            .without_unsupported_orders(&mut orders, Some(Id(0)), true)
+            .await;
         assert!(orders.is_empty());
     }
 
@@ -641,7 +653,7 @@ mod tests {
         detector.with_simulation_detector(simulation_detector(HashSet::from([simulation_bad_uid])));
 
         detector
-            .without_unsupported_orders(&mut orders, false)
+            .without_unsupported_orders(&mut orders, Some(Id(0)), false)
             .await;
 
         assert_eq!(orders.len(), 1);

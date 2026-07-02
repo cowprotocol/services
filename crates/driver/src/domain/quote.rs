@@ -149,7 +149,11 @@ impl Order {
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
         risk_detector
-            .without_unsupported_orders(&mut auction.orders, solver.config().flashloans_enabled)
+            .without_unsupported_orders(
+                &mut auction.orders,
+                auction.id,
+                solver.config().flashloans_enabled,
+            )
             .await;
         if auction.orders.is_empty() {
             return Err(QuotingFailed::UnsupportedToken.into());
