@@ -8,7 +8,14 @@ on:
 
 jobs:
   playground-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        compose-file:
+          - docker-compose.fork.yml
+          - docker-compose.non-interactive.yml
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
     steps:
@@ -41,13 +48,24 @@ jobs:
           cat playground/.env
 
       - name: Start docker containers
+        id: containers
         working-directory: playground
         run: |
           # firstly start explorer container to workaround yarn cache problem
-          docker compose -f docker-compose.non-interactive.yml up -d explorer
-          docker compose -f docker-compose.non-interactive.yml up -d
+          docker compose -f ${{ matrix.compose-file }} up -d explorer
+          docker compose -f ${{ matrix.compose-file }} up -d
+
+      - name: Wait for orderbook to be ready
+        # The fork variant compiles the workspace inside the containers after
+        # `up -d` returns, which takes far longer than the validation script's
+        # built-in 2 minute retry window.
+        working-directory: playground
+        run: |
+          timeout 3600 bash -c \
+            'until curl -sf -m 5 http://localhost:8080/api/v1/version > /dev/null; do sleep 30; done'
 
       - name: Execute validation script
+        id: test_script
         working-directory: playground
         run: ./test_playground.sh
 
@@ -70,7 +88,7 @@ jobs:
         id: artifact-upload-step
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: logs.tgz
+          name: logs-${{ matrix.compose-file }}.tgz
           path: ./logs.tgz
 
       - name: Slack notification on failure
