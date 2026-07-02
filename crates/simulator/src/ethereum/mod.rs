@@ -114,7 +114,13 @@ impl Ethereum {
     where
         T: Into<TransactionRequest>,
     {
-        let tx = tx.into();
+        // Cap the search at the per-tx gas limit so a rogue solution can't force
+        // the node to binary-search up to the block gas limit. `Gas::new` rejects
+        // anything above this cap anyway, so no accepted solution is affected.
+        let gas_limit = self.inner.tx_gas_limit.try_into().map_err(|err| {
+            Error::GasPrice(anyhow!("failed to convert gas_limit to u64: {err:?}"))
+        })?;
+        let tx = tx.into().with_gas_limit(gas_limit);
         let tx = match self.simulation_gas_price().await {
             Some(gas_price) => tx.with_gas_price(gas_price),
             _ => tx,
