@@ -20,6 +20,9 @@ pub struct Metadata {
     pub symbol: Option<String>,
     /// Current balance of the smart contract.
     pub balance: eth::TokenAmount,
+    /// If this flag is true a background task will continuously
+    /// update this token's [`Metadata::balance`] field.
+    pub monitor_balance: bool,
 }
 
 #[derive(Clone)]
@@ -50,6 +53,33 @@ impl Fetcher {
     ) -> HashMap<eth::TokenAddress, Metadata> {
         self.0.get(addresses).await
     }
+
+    /// Tells the cache to continuously update the settlement contract balance
+    /// of the given tokens if they are already present in the cache. That only
+    /// really makes sense for tokens where internal buffer trading is allowed.
+    pub fn keep_track_of_balances<'a>(&self, tokens: impl IntoIterator<Item = &'a eth::Address>) {
+        // most of the time no updates are needed so we first take a read lock to
+        // check if we even have to take a write lock for updating the tokens at all
+        let tokens_to_update: Vec<_> = {
+            let cache = self.0.cache.read().unwrap();
+            tokens
+                .into_iter()
+                .filter(|token| {
+                    cache
+                        .get(&((**token).into()))
+                        .is_some_and(|entry| !entry.monitor_balance)
+                })
+                .collect()
+        };
+        if !tokens_to_update.is_empty() {
+            let mut cache = self.0.cache.write().unwrap();
+            tokens_to_update.into_iter().for_each(|token| {
+                if let Some(entry) = cache.get_mut(&((*token).into())) {
+                    entry.monitor_balance = true;
+                }
+            })
+        }
+    }
 }
 
 /// Runs a single cache update cycle whenever a new block arrives until the
@@ -71,18 +101,16 @@ async fn update_task(blocks: CurrentBlockWatcher, inner: std::sync::Weak<Inner>)
 /// Updates the settlement contract's balance for every cached token.
 async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     let settlement = *inner.eth.contracts().settlement().address();
-    let futures = {
+    let futures: Vec<_> = {
         let cache = inner.cache.read().unwrap();
-        let tokens = cache.keys().cloned().collect::<Vec<_>>();
-        tokens.into_iter().map(|token| {
-            let erc20 = inner.eth.erc20(token);
-            async move {
-                Ok::<(eth::TokenAddress, eth::TokenAmount), blockchain::Error>((
-                    token,
-                    erc20.balance(settlement).await?,
-                ))
-            }
-        })
+        cache
+            .iter()
+            .filter(|(_token, info)| info.monitor_balance)
+            .map(|(token, _info)| {
+                let erc20 = inner.eth.erc20(*token);
+                async move { (erc20.address(), erc20.balance(settlement).await) }
+            })
+            .collect()
     };
 
     tracing::debug!(
@@ -93,25 +121,25 @@ async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     // Don't hold on to the lock while fetching balances to allow concurrent
     // updates. This may lead to new entries arriving in the meantime, however
     // their balances should already be up-to-date.
-    let mut balances = futures::future::try_join_all(futures)
-        .await?
-        .into_iter()
-        .collect::<HashMap<_, _>>();
+    let balances = futures::future::join_all(futures).await;
 
-    let mut keys_without_balances = vec![];
+    let mut failed_updates = vec![];
     {
         let mut cache = inner.cache.write().unwrap();
-        for (key, entry) in cache.iter_mut() {
-            if let Some(balance) = balances.remove(key) {
+        for (token, balance_result) in balances {
+            let Ok(balance) = balance_result else {
+                failed_updates.push(token);
+                continue;
+            };
+
+            if let Some(entry) = cache.get_mut(&token) {
                 entry.balance = balance;
-            } else {
-                // Avoid logging while holding the exclusive lock.
-                keys_without_balances.push(*key);
             }
         }
     }
-    if !keys_without_balances.is_empty() {
-        tracing::info!(keys = ?keys_without_balances, "updated keys without balance");
+
+    if !failed_updates.is_empty() {
+        tracing::info!(tokens = ?failed_updates, "failed to update token balance");
     }
 
     Ok(())
@@ -152,6 +180,7 @@ impl Inner {
                             decimals,
                             symbol,
                             balance,
+                            monitor_balance: false,
                         },
                     ))
                 }
