@@ -148,7 +148,7 @@ pub struct SolvableOrdersCache {
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
-    auction: domain::RawAuctionData,
+    auction: Arc<domain::RawAuctionData>,
     solvable_orders: boundary::SolvableOrders,
 }
 
@@ -186,12 +186,12 @@ impl SolvableOrdersCache {
         })
     }
 
-    pub async fn current_auction(&self) -> Option<domain::RawAuctionData> {
+    pub async fn current_auction(&self) -> Option<Arc<domain::RawAuctionData>> {
         self.cache
             .lock()
             .await
             .as_ref()
-            .map(|inner| inner.auction.clone())
+            .map(|inner| Arc::clone(&inner.auction))
     }
 
     /// Manually update solvable orders. Usually called by the background
@@ -358,7 +358,7 @@ impl SolvableOrdersCache {
         };
 
         *self.cache.lock().await = Some(Inner {
-            auction,
+            auction: Arc::new(auction),
             solvable_orders: db_solvable_orders,
         });
 
