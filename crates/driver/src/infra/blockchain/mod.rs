@@ -234,7 +234,11 @@ impl Ethereum {
         // Cap the search at the per-tx gas limit so a rogue solution can't force
         // the node to binary-search up to the block gas limit while we re-check
         // the settlement on every block during submission.
-        let gas_limit = u64::try_from(self.inner.tx_gas_limit.0).unwrap_or(u64::MAX);
+        let gas_limit = u64::try_from(self.inner.tx_gas_limit.0).map_err(|err| {
+            Error::GasPrice(anyhow::anyhow!(
+                "failed to convert gas_limit to u64: {err:?}"
+            ))
+        })?;
         let tx = TransactionRequest::default()
             .from(tx.from)
             .to(tx.to)
