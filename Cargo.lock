@@ -2833,9 +2833,9 @@ dependencies = [
 
 [[package]]
 name = "console"
-version = "0.16.3"
+version = "0.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d64e8af5551369d19cf50138de61f1c42074ab970f74e99be916646777f8fc87"
+checksum = "4fe5f465a4f6fee88fad41b85d990f84c835335e85b5d9e6e63e0d06d28cba7c"
 dependencies = [
  "encode_unicode",
  "libc",
@@ -4474,6 +4474,7 @@ dependencies = [
  "eth-domain-types",
  "ethrpc",
  "event-indexing",
+ "flate2",
  "futures",
  "gas-price-estimation",
  "hex-literal",
@@ -4510,6 +4511,7 @@ dependencies = [
  "tikv-jemallocator",
  "token-info",
  "tokio",
+ "tokio-stream",
  "toml",
  "tower 0.5.3",
  "tower-http",
@@ -5175,6 +5177,7 @@ dependencies = [
  "prometheus",
  "prometheus-metric-storage",
  "reqwest 0.13.4",
+ "serde_json",
  "tokio",
  "tracing",
  "url",
@@ -5913,9 +5916,9 @@ dependencies = [
 
 [[package]]
 name = "indicatif"
-version = "0.18.5"
+version = "0.18.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "993f007684f2e9727160da8b960ec161264703bfd1af084fd2e34d040c9a0dd4"
+checksum = "9433806cd6b4ec1aba79c021c7e4c58fb4c3b9977c085062e611ac929998fb0c"
 dependencies = [
  "console",
  "portable-atomic",
@@ -6904,6 +6907,7 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_json",
+ "tikv-jemalloc-ctl",
  "time",
  "tokio",
  "tracing",
@@ -10068,9 +10072,9 @@ dependencies = [
 
 [[package]]
 name = "solana-nullable"
-version = "1.1.1"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0f95d3028ef0f682bb174b77379c19d5dae2904a649f4a103fe29be7a139980"
+checksum = "ec7b49f68ccea949a6ea75f485dbe2e17cf4c1d894ed262371d584269359e1a0"
 dependencies = [
  "bytemuck",
 ]
@@ -11108,9 +11112,9 @@ dependencies = [
 
 [[package]]
 name = "solana-vote-interface"
-version = "6.0.2"
+version = "6.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61843d7be827cac5e025c3a16c1101a34fcdd8cf593f6a82eafdd253bd55a26b"
+checksum = "13a7a204b455a53fe8c9a26a6885391a5896835e06694dbe0cf37c580f82f128"
 dependencies = [
  "bincode",
  "cfg_eval",

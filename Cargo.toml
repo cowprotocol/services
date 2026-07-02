@@ -134,6 +134,7 @@ syn = "2.0.108"
 tempfile = "3.10.1"
 testlib = { path = "crates/testlib" }
 thiserror = "1.0.61"
+tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
 tikv-jemallocator = { version = "0.6", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 time = "0.3.47"
 token-info = { path = "crates/token-info" }
