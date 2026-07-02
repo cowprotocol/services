@@ -2,6 +2,7 @@ name: Playground operation check
 
 on:
   workflow_dispatch:
+  push:
   schedule:
     # Run this job once per day
     - cron: "0 0 * * *"
@@ -43,9 +44,9 @@ jobs:
       - name: Start docker containers
         working-directory: playground
         run: |
-          # firstly start explorer container to workaround yarn cache problem 
-          docker compose -f docker-compose.fork.yml up -d explorer
-          docker compose -f docker-compose.fork.yml up -d
+          # firstly start explorer container to workaround yarn cache problem
+          docker compose -f docker-compose.non-interactive.yml up -d explorer
+          docker compose -f docker-compose.non-interactive.yml up -d
 
       - name: Execute validation script
         working-directory: playground
