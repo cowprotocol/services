@@ -119,6 +119,7 @@ shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
 solana-indexer = { path = "crates/solana-indexer" }
+solana-sdk = "4"
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
@@ -132,6 +133,7 @@ syn = "2.0.108"
 tempfile = "3.10.1"
 testlib = { path = "crates/testlib" }
 thiserror = "1.0.61"
+tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
 tikv-jemallocator = { version = "0.6", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 time = "0.3.47"
 token-info = { path = "crates/token-info" }
@@ -147,6 +149,7 @@ tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
 vergen = "8"
 winner-selection = { path = "crates/winner-selection" }
+yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"

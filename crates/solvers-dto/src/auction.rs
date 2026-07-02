@@ -5,7 +5,10 @@ use {
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
-    std::collections::HashMap,
+    std::{
+        collections::{BTreeMap, HashMap},
+        sync::Arc,
+    },
 };
 
 #[serde_as]
@@ -271,8 +274,10 @@ pub struct ConcentratedLiquidityPool {
     #[serde_as(as = "DisplayFromStr")]
     pub liquidity: u128,
     pub tick: i32,
-    #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
-    pub liquidity_net: HashMap<i32, i128>,
+    // `Arc`-shared with the driver's domain pool to avoid deep-copying the tick
+    // map when building the solver request on every `/solve`.
+    #[serde_as(as = "Arc<BTreeMap<DisplayFromStr, DisplayFromStr>>")]
+    pub liquidity_net: Arc<BTreeMap<i32, i128>>,
     pub fee: BigDecimal,
 }
 
