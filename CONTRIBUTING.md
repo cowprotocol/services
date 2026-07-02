@@ -26,7 +26,7 @@ Every label below is a signal about whether and how external work is welcomed. M
 - **`needs discussion`** — the default state for newly opened external issues. Maintainers have not yet decided whether the work is wanted, in scope, or correctly framed. Code work should not start yet.
 - **`accepting contributions`** — scope is agreed and external contributors are welcome to pick this up.
 - **`good first issue`** — small, well-scoped, and a good fit for someone new to the codebase.
-- **`help wanted`** — explicitly tagged for community pickup, with a 100 DAI bounty attached (see [Reward program](https://www.notion.so/cownation/New-Contribution-Guidelines-3598da5f04ca80c6a9aef563a4865ac4#reward-program)). Applied manually by maintainers.
+- **`help wanted`** — explicitly tagged for community pickup, with a 100 DAI bounty attached (see [Reward program](#reward-program)). Applied manually by maintainers.
 
 **Absence of any of these labels means the issue is not greenlit for external work.** Treat unlabeled issues as if they were `core team only` until a maintainer says otherwise.
 
@@ -39,7 +39,7 @@ For bugs, feature requests, or contribution proposals, open a GitHub Issue. Plea
 - The proposed approach, if you have one in mind.
 - Alternatives you've already considered.
 
-> If you already have changes in mind, you may also open a *draft* PR for as a discussion starting point.
+> In the name of practicality, you may open a *draft* PR as a instead of an issue, the code should help illustrate your point and evaluate how big of a change it is.
 
 ### From proposal to approval
 
@@ -72,7 +72,7 @@ Reviews work best on small, focused PRs. Before opening one, please use the foll
 The team's review capacity is finite, and we'd rather set realistic expectations than leave you guessing.
 
 - **Core-team work takes review priority.** External PRs are reviewed on a best-effort basis and may sit for several weeks.
-- **Make sure CI is green before requesting review.** Please do not request review on a PR with failing checks.
+- **Make sure CI is green.** Please do not re-request reviews on a PR with failing checks.
 - **One ping per week, maximum.** A polite check-in after seven or more days of silence is welcome; more frequent nudges are not.
 - **Use the PR description to do the work for you.** Link the agreed issue, summarize the approach, include screenshots or benchmarks where relevant. The more self-explanatory the PR, the faster it can be reviewed.
 
