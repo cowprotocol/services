@@ -70,18 +70,20 @@ services:
       context: ../
       target: orderbook
       dockerfile: ./Dockerfile
+    # explicit tag so the localdev and prebuilt compose variants never reuse
+    # each other's images (default tags collide on project + service name)
+    image: playground-orderbook:prebuilt
     restart: always
     command: ["--config", "/orderbook.toml"]
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - RUST_BACKTRACE=0
+      - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - TOKIO_CONSOLE=true
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
-      - ../:/src
       - ./configs/orderbook.toml:/orderbook.toml
     depends_on:
       - db-migrations
@@ -95,6 +97,7 @@ services:
       context: ../
       target: autopilot
       dockerfile: ./Dockerfile
+    image: playground-autopilot:prebuilt
     restart: always
     command: ["--config", "/autopilot.toml"]
     environment:
@@ -121,6 +124,7 @@ services:
       context: ../
       target: driver
       dockerfile: ./Dockerfile
+    image: playground-driver:prebuilt
     restart: always
     command: ["--config", "/driver.toml"]
     environment:
@@ -147,6 +151,7 @@ services:
       context: ../
       target: solvers
       dockerfile: ./Dockerfile
+    image: playground-baseline:prebuilt
     restart: always
     command: ["baseline", "--config", "/baseline.toml"]
     environment:
@@ -169,7 +174,8 @@ services:
       dockerfile: Dockerfile.cowswap
       args:
         - CHAIN=$CHAIN
-        - ETH_RPC_URL=http://chain:8545
+        # consumed by the user's browser, so it must be host-reachable
+        - ETH_RPC_URL=http://127.0.0.1:8545
     ports:
       - 8000:80
 
