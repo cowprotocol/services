@@ -4,7 +4,7 @@
 use {crate::types::slot::Slot, thiserror::Error};
 
 /// Failures surfaced from the decoder.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub(crate) enum DecodeError {
     /// The discriminator byte(s) at the start of the instruction data did not
     /// match any known instruction on either program.
@@ -21,7 +21,7 @@ pub(crate) enum DecodeError {
 }
 
 /// Failures surfaced from the persistence boundary.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub(crate) enum StoreError {
     /// The SQL `ON CONFLICT` clause rejected the write (e.g. watermark
     /// regression).
