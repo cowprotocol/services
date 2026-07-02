@@ -35,6 +35,7 @@ fn cache_config() -> CacheConfig {
     CacheConfig {
         number_of_blocks_to_cache: NonZeroU64::new(10).unwrap(),
         number_of_entries_to_auto_update: NonZeroUsize::new(1000).unwrap(),
+        auto_update_ttl: Duration::from_mins(5),
         maximum_recent_block_age: 4,
         max_retries: 5,
         delay_between_retries: Duration::from_secs(1),
