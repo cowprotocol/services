@@ -275,8 +275,9 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let gas_price_estimator = Arc::new(
         gas_price_estimation::create_priority_estimator(
             http_factory.create(),
-            &web3,
+            &web3.provider,
             &gas_estimators,
+            eth.current_block(),
         )
         .await
         .expect("failed to create gas price estimator"),
