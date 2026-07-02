@@ -58,7 +58,7 @@ services:
     build:
       context: ../
       target: migrations
-      dockerfile: ./playground/Dockerfile
+      dockerfile: ./Dockerfile
     restart: on-failure
     environment:
       - FLYWAY_URL=jdbc:postgresql://db/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -70,6 +70,9 @@ services:
       context: ../
       target: localdev
       dockerfile: ./playground/Dockerfile
+    # explicit tag so the localdev and prebuilt compose variants never reuse
+    # each other's images (default tags collide on project + service name)
+    image: playground-orderbook:localdev
     restart: always
     command:
       [
@@ -100,6 +103,7 @@ services:
       context: ../
       target: localdev
       dockerfile: ./playground/Dockerfile
+    image: playground-autopilot:localdev
     restart: always
     command:
       [
@@ -132,6 +136,7 @@ services:
       context: ../
       target: localdev
       dockerfile: ./playground/Dockerfile
+    image: playground-driver:localdev
     restart: always
     command:
       [
@@ -164,6 +169,7 @@ services:
       context: ../
       target: localdev
       dockerfile: ./playground/Dockerfile
+    image: playground-baseline:localdev
     restart: always
     command:
       [
@@ -192,6 +198,7 @@ services:
       dockerfile: Dockerfile.cowswap
       args:
         - CHAIN=$CHAIN
+        # consumed by the user's browser, so it must be host-reachable
         - ETH_RPC_URL=http://127.0.0.1:8545
     ports:
       - 8000:80
@@ -238,6 +245,7 @@ services:
       retries: 5
       start_period: 30s
 
+  # Otterscan - Local blockchain block explorer for Anvil
   otterscan:
     build:
       context: .
