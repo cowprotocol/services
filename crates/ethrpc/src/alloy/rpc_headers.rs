@@ -1,16 +1,7 @@
 //! Transport layers that annotate outgoing HTTP RPC requests with headers
 //! describing the JSON-RPC call(s) they carry: the `method:id` pair(s) and the
 //! distributed-tracing request id.
-//!
-//! Two layers cooperate:
-//! - [`TracingRequestIdLayer`] runs *outside* the batching layer, while still
-//!   on the caller's task, and stamps the current span's distributed-tracing
-//!   request id onto the request. This is necessary because the batching layer
-//!   forwards requests from a background task that no longer sees that span.
-//! - [`RpcHeadersLayer`] MUST be installed as the innermost layer (closest to
-//!   the HTTP transport) so it observes the final (possibly batched) packet on
-//!   the wire; it writes the `method:id` list and aggregates the request ids
-//!   stamped above.
+
 use {
     alloy_json_rpc::RequestPacket,
     reqwest::header::{HeaderName, HeaderValue},
@@ -28,6 +19,9 @@ const CALLS: &str = "x-rpc-calls";
 /// task's logs across processes.
 const TRACING_REQUEST_ID: &str = "x-request-id";
 
+/// MUST be installed as the innermost layer (closest to the HTTP transport)
+/// so it observes the final (possibly batched) packet on the wire;
+/// it writes the `method:id` list and aggregates the request ids stamped above.
 pub(crate) struct RpcHeadersLayer;
 
 impl<S> Layer<S> for RpcHeadersLayer {
@@ -38,6 +32,10 @@ impl<S> Layer<S> for RpcHeadersLayer {
     }
 }
 
+/// Runs *outside* the batching layer, while still on the caller's task,
+/// and stamps the current span's distributed-tracing request id onto the
+/// request. This is necessary because the batching layer forwards requests
+/// from a  background task that no longer sees that span.
 #[derive(Debug, Clone)]
 pub(crate) struct RpcHeadersService<S> {
     inner: S,
