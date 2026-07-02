@@ -505,7 +505,6 @@ impl SolvableOrdersCache {
         fut.await
     }
 
-    // what we actually want is a (Vec<OrderUid>, OrderFilterReason)
     fn store_events_by_reason(
         &self,
         orders: BTreeMap<OrderFilterReason, Vec<OrderUid>>,
