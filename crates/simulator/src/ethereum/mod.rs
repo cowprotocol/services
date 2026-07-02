@@ -91,7 +91,10 @@ impl Ethereum {
         let gas_limit = self.inner.tx_gas_limit.try_into().map_err(|err| {
             Error::GasPrice(anyhow!("failed to convert gas_limit to u64: {err:?}"))
         })?;
-        let tx = tx.into().with_gas_limit(gas_limit);
+        // A cap only lowers, so keep a tighter ceiling if the caller set one.
+        let tx = tx.into();
+        let gas_limit = tx.gas.map(|g| g.min(gas_limit)).unwrap_or(gas_limit);
+        let tx = tx.with_gas_limit(gas_limit);
         let tx = match self.simulation_gas_price().await {
             Some(gas_price) => tx.with_gas_price(gas_price),
             _ => tx,
