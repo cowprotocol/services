@@ -260,6 +260,13 @@ impl V3PoolDataSource for UniV3SubgraphClient {
         ids: &[Address],
         target_block: u64,
     ) -> Result<PoolsWithTicks> {
+        // `0` means "latest available" (see the V3PoolDataSource contract). The
+        // subgraph needs a concrete block — `block: { number: 0 }` queries genesis
+        // — so resolve a recent safe block first.
+        let target_block = match target_block {
+            0 => self.get_safe_block().await?,
+            n => n,
+        };
         let (pools, ticks) = futures::try_join!(
             self.get_pools_by_pool_ids(ids, target_block),
             self.get_ticks_by_pools_ids(ids, target_block)
