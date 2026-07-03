@@ -1,5 +1,5 @@
 pub mod config;
-pub use run::{run, start};
+pub use run::{bootstrap, run, start};
 
 mod api;
 mod arguments;
