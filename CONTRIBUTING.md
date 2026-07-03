@@ -16,17 +16,17 @@ GitHub is the only venue where contribution proposals are evaluated. Conversatio
 
 For general user questions and troubleshooting that aren't bug reports, the [CoW Protocol Discord](https://discord.gg/cowprotocol) is the right place.
 
-For security disclosures, please reach out at `security@cow.fi`. **Do not file vulnerabilities as public issues, and do not disclose them publicly without the team's confirmation.**
+For security vulnerabilities, please reach out at `security@cow.fi`. **Do not file vulnerabilities as public issues, and do not disclose them publicly without the team's confirmation.**
 
 ## How issues are labeled
 
 Every label below is a signal about whether and how external work is welcomed. Maintainers apply these labels manually as part of triage.
 
 - **`core team only`** — actively being worked on by the team, or planned for the near-term roadmap. Please do not open PRs against these.
-- **`needs discussion`** — the default state for newly opened external issues. Maintainers have not yet decided whether the work is wanted, in scope, or correctly framed. Code work should not start yet.
+- **`needs discussion`** — a maintainer has picked the issue up for triage but hasn't yet decided whether the work is wanted, in scope, or correctly framed. Code work should not start yet.
 - **`accepting contributions`** — scope is agreed and external contributors are welcome to pick this up.
 - **`good first issue`** — small, well-scoped, and a good fit for someone new to the codebase.
-- **`help wanted`** — explicitly tagged for community pickup, with a 100 DAI bounty attached (see [Reward program](#reward-program)). Applied manually by maintainers.
+- **`help wanted`** — explicitly tagged for community pickup and the only label eligible for the [reward program](#reward-program).
 
 **Absence of any of these labels means the issue is not greenlit for external work.** Treat unlabeled issues as if they were `core team only` until a maintainer says otherwise.
 
@@ -39,15 +39,15 @@ For bugs, feature requests, or contribution proposals, open a GitHub Issue. Plea
 - The proposed approach, if you have one in mind.
 - Alternatives you've already considered.
 
-> In the name of practicality, you may open a *draft* PR, instead of an issue. The code should help illustrate your point and evaluate how big of a change it is.
+> **Exception:** if you already have a concrete change in mind, you can open a *draft* PR in place of an issue — the code itself illustrates the proposal and its size. The draft PR then stands in for the issue throughout the flow below, going through the same triage, scoping, and greenlight before implementation continues.
 
 ### From proposal to approval
 
-1. **File the issue.** It will land as `needs discussion`.
-2. **Triage.** A maintainer reads it and either asks for clarification, applies `core team only`, closes as out of scope, or moves to scoping.
-3. **Scoping.** Discussion in the issue settles the approach.
-4. **Greenlight.** The maintainer applies `accepting contributions`, `help wanted`, or `good first issue`. The issue is now ready to be worked on.
-5. **Claim and implement.** Comment to claim the issue, get it assigned, and open a draft PR linked to it. Significant changes to the agreed scope should be raised back in the issue, not in PR review.
+1. **File the issue** (or draft PR). It starts unlabeled.
+2. **Triage.** A maintainer picks it up, applies `needs discussion`, and either asks for clarification, applies `core team only`, closes as out of scope, or moves to scoping.
+3. **Scoping.** Discussion settles the approach.
+4. **Greenlight.** The maintainer applies `accepting contributions`, `help wanted`, or `good first issue`. It is now ready to be worked on.
+5. **Claim and implement.** Comment to claim it, get it assigned, and open a draft PR linked to the issue (or keep working in the draft PR you opened). Significant changes to the agreed scope should be raised back in the discussion, not in PR review.
 
 Claimed issues with no activity for two weeks return to the unclaimed pool.
 
@@ -69,7 +69,7 @@ Reviews work best on small, focused PRs. Before opening one, please use the foll
 
 ## Reviews and expectations
 
-The team's review capacity is finite, and we'd rather set realistic expectations than leave you guessing.
+The team's review capacity is finite, and we'd rather set realistic expectations than leave you waiting.
 
 - **Core-team work takes review priority.** External PRs are reviewed on a best-effort basis and may sit for several weeks.
 - **Make sure CI is green.** Please do not re-request reviews on a PR with failing checks.
@@ -78,17 +78,17 @@ The team's review capacity is finite, and we'd rather set realistic expectations
 
 ## Reward program
 
-For merged PRs that close an issue labeled `help wanted`, we offer **100 DAI** as a thank-you. The `help wanted` label is applied manually by maintainers and is the only label tied to a bounty. PRs against `accepting contributions` or `good first issue` are not bountied.
+For merged PRs that close an issue labeled `help wanted`, we offer **100 DAI** as a thank-you. It is the only label tied to a bounty — PRs against `accepting contributions` or `good first issue` are not bountied.
 
-To claim, leave a Gnosis Chain address in the PR description or DM `mastercow.eth` on Discord.
+To claim, leave a Gnosis Chain address in the PR description.
 
 ## What gets a PR closed without detailed review
 
 So that nothing here is a surprise, the following result in a polite close with a link back to this guide:
 
 - The PR targets a `core team only`, `needs discussion`, or unlabeled issue.
-- The PR has no associated issue at all, beyond trivial typo or documentation fixes.
-- The PR is clearly outside the [size and scope](https://www.notion.so/cownation/New-Contribution-Guidelines-3598da5f04ca80c6a9aef563a4865ac4#pr-size-and-scope) guidelines and the design wasn't agreed in the issue first.
+- The PR expects review or merge with no agreed issue (or draft-PR proposal) behind it, beyond trivial typo or documentation fixes.
+- The PR is clearly outside the [size and scope](#pr-size-and-scope) guidelines and the design wasn't agreed in the issue first.
 - The PR mixes unrelated changes (for example, a feature alongside an unrelated refactor in the same diff).
 
 In every case, you're welcome to revise the approach in the issue and try again.
