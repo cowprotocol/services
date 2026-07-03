@@ -39,7 +39,7 @@ For bugs, feature requests, or contribution proposals, open a GitHub Issue. Plea
 - The proposed approach, if you have one in mind.
 - Alternatives you've already considered.
 
-> In the name of practicality, you may open a *draft* PR as a instead of an issue, the code should help illustrate your point and evaluate how big of a change it is.
+> In the name of practicality, you may open a *draft* PR, instead of an issue. The code should help illustrate your point and evaluate how big of a change it is.
 
 ### From proposal to approval
 
