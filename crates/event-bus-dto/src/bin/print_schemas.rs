@@ -4,7 +4,7 @@
 //! By default writes to `schemas/events.json` inside the crate. Pass an
 //! alternative path as the first argument to override.
 
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 fn main() {
     let out_path = std::env::args()
@@ -19,11 +19,10 @@ fn main() {
     // Sort by subject so the generated document is stable across runs
     // regardless of the order `schemas()` lists events in (and of how
     // `serde_json::Map` happens to order its keys).
-    let mut entries: Vec<(String, serde_json::Value)> = event_bus_dto::schemas()
+    let entries: BTreeMap<String, serde_json::Value> = event_bus_dto::schemas()
         .into_iter()
         .map(|(subject, schema)| (subject.to_owned(), serde_json::to_value(schema).unwrap()))
         .collect();
-    entries.sort_by(|(a, _), (b, _)| a.cmp(b));
     let schemas: serde_json::Map<String, serde_json::Value> = entries.into_iter().collect();
     let body = serde_json::to_string_pretty(&schemas).unwrap();
 
