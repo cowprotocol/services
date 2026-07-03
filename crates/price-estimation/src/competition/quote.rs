@@ -1,20 +1,13 @@
 use {
     super::{CompetitionEstimator, PriceRanking, compare_error},
     crate::{
-        Estimate,
-        PriceEstimateResult,
-        PriceEstimating,
-        PriceEstimationError,
-        Query,
+        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
         QuoteVerificationMode,
     },
     alloy::primitives::{Address, U256},
     anyhow::Context as _,
     event_bus_dto::price_estimate::{
-        EstimateResult,
-        OrderKind as DtoOrderKind,
-        PriceEstimateEvent,
-        QueryFields,
+        EstimateResult, OrderKind as DtoOrderKind, PriceEstimateEvent, QueryFields,
     },
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
@@ -195,8 +188,11 @@ fn emit_quote_event(
             },
         },
         from: query.verification.from.to_string(),
-        timeout: query.timeout.as_millis(),
-        elapsed: elapsed.as_millis(),
+        // even though as_millis returns u128 timeout and elapsed are not expected to even surpass
+        // JSON's 53bit limit as u53::MAX would roughly be half a milion years, furthermore,
+        // the cast truncates values to u64
+        timeout: query.timeout.as_millis() as u64,
+        elapsed: elapsed.as_millis() as u64,
         estimator: estimator_name.to_owned(),
         result: match result {
             Ok(estimate) => EstimateResult::Ok {

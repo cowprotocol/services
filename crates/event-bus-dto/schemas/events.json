@@ -48,7 +48,7 @@
         "properties": {
           "elapsed": {
             "description": "Wall-clock time the estimator actually spent, in milliseconds.",
-            "format": "uint128",
+            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -67,7 +67,7 @@
           },
           "timeout": {
             "description": "Total timeout granted to the estimator, in milliseconds.",
-            "format": "uint128",
+            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           }

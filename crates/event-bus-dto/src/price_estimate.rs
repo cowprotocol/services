@@ -7,9 +7,9 @@ pub struct PriceEstimateEvent {
     /// Caller address (hex-encoded, including the `0x` prefix).
     pub from: String,
     /// Total timeout granted to the estimator, in milliseconds.
-    pub timeout: u128,
+    pub timeout: u64,
     /// Wall-clock time the estimator actually spent, in milliseconds.
-    pub elapsed: u128,
+    pub elapsed: u64,
     pub estimator: String,
     pub result: EstimateResult,
 }
