@@ -4,11 +4,13 @@ use {
     anyhow::Result,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::StreamExt,
+    indexmap::IndexSet,
     itertools::Itertools,
     model::order::SellTokenSource,
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
+        time::Instant,
     },
     tracing::{Instrument, instrument},
 };
@@ -86,24 +88,27 @@ impl Balances {
     }
 }
 
-struct CacheResponse {
+struct CacheResponse<'a> {
     // The indices and results of queries that were in the cache.
     cached: Vec<(usize, Result<U256>)>,
-    // Indices of queries that were not in the cache.
-    missing: Vec<usize>,
+    // Unique queries not found in the cache.
+    missing: IndexSet<&'a Query>,
     requested_at: BlockNumber,
 }
 
 impl Balances {
-    fn get_cached_balances(&self, queries: &[Query]) -> CacheResponse {
+    fn get_cached_balances<'a>(&self, queries: &'a [Query]) -> CacheResponse<'a> {
         let mut cache = self.balance_cache.lock().unwrap();
-        let (cached, missing) = queries
-            .iter()
-            .enumerate()
-            .partition_map(|(i, query)| match cache.get_cached_balance(query) {
-                Some(balance) => itertools::Either::Left((i, Ok(balance))),
-                None => itertools::Either::Right(i),
-            });
+        let (cached, missing) =
+            queries
+                .iter()
+                .enumerate()
+                .partition_map(
+                    |(original_index, query)| match cache.get_cached_balance(query) {
+                        Some(balance) => itertools::Either::Left((original_index, Ok(balance))),
+                        None => itertools::Either::Right(query),
+                    },
+                );
         CacheResponse {
             cached,
             missing,
@@ -134,7 +139,13 @@ impl Balances {
                         .collect_vec()
                 };
 
+                let start = Instant::now();
                 let results = inner.get_balances(&balances_to_update).await;
+                tracing::debug!(
+                    len = balances_to_update.len(),
+                    elapsed = ?start.elapsed(),
+                    "updated balances"
+                );
 
                 let mut cache = cache.lock().unwrap();
                 balances_to_update
@@ -170,19 +181,41 @@ impl BalanceFetching for Balances {
             return cached.into_iter().map(|(_, result)| result).collect();
         }
 
-        let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
-        let new_balances = self.inner.get_balances(&missing_queries).await;
+        let missing_results = self
+            .inner
+            .get_balances(&missing.iter().map(|q| (*q).clone()).collect::<Vec<_>>())
+            .await;
 
+        let start = Instant::now();
         {
             let mut cache = self.balance_cache.lock().unwrap();
-            for (query, result) in missing_queries.into_iter().zip(new_balances.iter()) {
+            for (query, result) in missing.iter().zip(missing_results.iter()) {
                 if let Ok(balance) = result {
-                    cache.insert_balance(query, *balance, requested_at)
+                    cache.insert_balance(Query::clone(query), *balance, requested_at);
                 }
             }
         }
 
-        cached.extend(missing.into_iter().zip(new_balances));
+        tracing::debug!(
+            cached = cached.len(),
+            missing = missing.len(),
+            elapsed = ?start.elapsed(),
+            "fetched missing balances"
+        );
+
+        cached.extend(
+            queries
+                .iter()
+                .enumerate()
+                .filter_map(|(original_index, query)| {
+                    let missing_index = missing.get_index_of(query)?;
+                    let result = match &missing_results[missing_index] {
+                        Ok(balance) => Ok(*balance),
+                        Err(e) => Err(anyhow::anyhow!("{e}")),
+                    };
+                    Some((original_index, result))
+                }),
+        );
         cached.sort_by_key(|(i, _)| *i);
         cached.into_iter().map(|(_, balance)| balance).collect()
     }
@@ -325,6 +358,23 @@ mod tests {
         // Now balance 2 is also in the cache. Skipping call to `inner`.
         let result = fetcher.get_balances(&[query(2)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::from(2));
+    }
+
+    #[tokio::test]
+    async fn deduplicates_missing_queries() {
+        let mut inner = MockBalanceFetching::new();
+        // query(1) appears twice but inner must only be called once with a single
+        // entry.
+        inner
+            .expect_get_balances()
+            .times(1)
+            .withf(|arg| arg == [query(1)])
+            .returning(|_| vec![Ok(U256::ONE)]);
+
+        let fetcher = Balances::new(Arc::new(inner));
+        let result = fetcher.get_balances(&[query(1), query(1)]).await;
+        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
+        assert_eq!(result[1].as_ref().unwrap(), &U256::ONE);
     }
 
     #[tokio::test]

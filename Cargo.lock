@@ -17,6 +17,7 @@ dependencies = [
  "contracts",
  "ethrpc",
  "futures",
+ "indexmap 2.14.0",
  "itertools 0.14.0",
  "mockall",
  "model",

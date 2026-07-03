@@ -17,6 +17,7 @@ balance-overrides = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
+indexmap = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 model = { workspace = true }
