@@ -43,8 +43,8 @@ pub(crate) enum StreamError {
     #[error("stream send timeout")]
     SendTimeout,
     /// The resume slot is outside the provider's replay window. The caller
-    /// should reset `from_slot` to `LATEST_CHAIN_SLOT − replay_window`,
-    /// record the lost range, and retry the subscription.
+    /// should reset `from_slot` to the latest chain slot minus the replay
+    /// window, record the lost range, and retry the subscription.
     #[error(
         "replay window exceeded: attempted slot {attempted_slot}, earliest replayable \
          {earliest_replayable_slot}"
