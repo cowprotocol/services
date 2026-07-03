@@ -37,9 +37,9 @@ fn inner(program_id_index: u32, accounts: Vec<u8>, data: Vec<u8>) -> InnerInstru
     }
 }
 
-/// Build a transaction-update fixture from resolved pubkeys: the static account
-/// keys, the ALT-loaded writable and readonly addresses, the top-level
-/// instructions, and the inner-instruction groups.
+/// Build a transaction-update fixture: static account keys, ALT-loaded writable
+/// and readonly addresses, top-level instructions, and inner-instruction
+/// groups.
 fn tx_info(
     account_keys: Vec<Pubkey>,
     loaded_writable: Vec<Pubkey>,
@@ -66,12 +66,9 @@ fn tx_info(
     }
 }
 
-/// One realistic transaction that exercises the four things that can actually
-/// break: the account list is `static ++ ALT-writable ++ ALT-readonly` (so the
-/// ALT indices only resolve if the regions are concatenated in that order),
-/// settlement is reachable only as a CPI (so inner instructions must be
-/// walked), an untracked program is present (so the filter must drop it), and
-/// each kept instruction records its position.
+/// One realistic transaction: settlement reached only via a CPI, an untracked
+/// program that must be dropped, and ALT-loaded programs so the account-list
+/// order is exercised.
 #[test]
 fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
     let (settlement, solflow, router) = (pubkey(1), pubkey(2), pubkey(9));
@@ -96,7 +93,7 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
 
     let relevant = relevant_instructions(&tx, &settlement, &solflow);
 
-    // router dropped; solflow (top-level) and settlement (CPI) kept, in that order.
+    // router dropped, solflow (top-level) and settlement (CPI) kept, in order.
     assert_eq!(relevant.len(), 2);
 
     assert_eq!(relevant[0].program, solflow);
@@ -112,9 +109,8 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
     assert_eq!(relevant[1].data, vec![7]);
 }
 
-/// Malformed stream data must drop rather than panic: an out-of-range account
-/// index on a program-matched instruction, an out-of-range program index, and a
-/// wrong-length key that becomes the zero pubkey and matches nothing.
+/// Malformed stream data must drop, not panic: out-of-range program and account
+/// indices, and a wrong-length key that becomes the zero pubkey.
 #[test]
 fn malformed_instructions_are_dropped_without_panicking() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));

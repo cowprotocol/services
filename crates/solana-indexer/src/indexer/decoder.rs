@@ -3,9 +3,8 @@
 //! settlement-program and SolFlow transactions, joins account-update snapshots,
 //! and persists typed events.
 
-// TODO: This file only declares the component skeleton. The `run` body is
-// `unimplemented!`; the dispatch logic and persist path arrive in a later
-// change.
+// TODO: `run` is unimplemented. The dispatch and persist steps that consume the
+// resolved instructions below are not wired up yet.
 
 use {
     crate::{
@@ -73,13 +72,12 @@ impl Decoder {
     }
 }
 
-/// An instruction that targets a program the decoder tracks, with its program
-/// and accounts resolved against the transaction's full account list, and its
-/// position in the transaction. This is what the per-program dispatch consumes.
+/// An instruction targeting a tracked program (settlement or SolFlow), with its
+/// program and accounts resolved to pubkeys and its position in the
+/// transaction.
 pub(crate) struct RelevantInstruction {
-    /// Top-level instruction index. For a CPI, the index of the top-level
-    /// instruction it runs under. PR7 maps `(instruction_index, inner_index)`
-    /// to the `solana.trades` `(instruction_index, inner_ix_path)` key.
+    /// Top-level instruction index. For a CPI, the top-level instruction it
+    /// runs under.
     pub instruction_index: u32,
     /// Position within the top-level instruction's inner list, or `None` for a
     /// top-level instruction.
@@ -88,19 +86,14 @@ pub(crate) struct RelevantInstruction {
     pub program: Pubkey,
     /// The instruction's accounts, resolved to pubkeys in order.
     pub accounts: Vec<Pubkey>,
-    /// Raw instruction data, decoded by the per-program dispatch.
+    /// Raw instruction data.
     pub data: Vec<u8>,
 }
 
-/// §6.3.1.a: the transaction's full account list - `message.account_keys` then
-/// the ALT-loaded writable then readonly addresses, concatenated in that fixed
-/// order. Versioned transactions put ALT-loaded accounts in the latter two
-/// fields, so an instruction's `program_id_index` only resolves against the
-/// concatenation.
-///
-/// A wrong-length key becomes the zero pubkey to keep index alignment. It
-/// cannot match a tracked program, so any instruction naming it as its program
-/// is dropped by [`relevant_instructions`].
+/// The transaction's full account list that instruction indices resolve
+/// against: static keys, then ALT-loaded writable addresses, then readonly, in
+/// that order. A wrong-length key becomes the zero pubkey to keep the indices
+/// aligned, so it matches no tracked program.
 fn build_account_keys(tx: &SubscribeUpdateTransactionInfo) -> Vec<Pubkey> {
     let static_keys = tx
         .transaction
@@ -126,29 +119,27 @@ fn build_account_keys(tx: &SubscribeUpdateTransactionInfo) -> Vec<Pubkey> {
         .collect()
 }
 
-/// A transaction instruction (top-level or inner/CPI) paired with its position
-/// in the transaction, before its program and account indices are resolved to
-/// pubkeys.
+/// A top-level or inner (CPI) instruction with its position, before its program
+/// and account indices are resolved to pubkeys.
 struct RawInstruction<'a> {
-    /// Top-level instruction index. For a CPI, the index of the top-level
-    /// instruction it runs under (`InnerInstructions.index`).
+    /// Top-level instruction index. For a CPI, the top-level instruction it
+    /// runs under.
     instruction_index: u32,
-    /// Position within that top-level instruction's inner list, or `None` for a
+    /// Position within the top-level instruction's inner list, or `None` for a
     /// top-level instruction.
     inner_index: Option<u32>,
-    /// Index into the account list identifying the program invoked.
+    /// Index of the invoked program in the account list.
     program_id_index: u32,
-    /// Indices into the account list of the accounts the instruction touches.
+    /// Account-list indices of the accounts the instruction touches.
     account_indices: &'a [u8],
-    /// Raw instruction data (discriminator + payload).
+    /// Raw instruction data.
     data: &'a [u8],
 }
 
 impl RawInstruction<'_> {
     /// Resolve against `account_keys`, keeping the instruction only if its
-    /// program is the settlement or SolFlow program. Returns `None` when the
-    /// program is untracked, or when the program or an account index falls
-    /// outside the account list.
+    /// program is the settlement or SolFlow program. Returns `None` if the
+    /// program is untracked or any index is out of range.
     fn resolve(
         &self,
         account_keys: &[Pubkey],
@@ -159,9 +150,8 @@ impl RawInstruction<'_> {
         if program != *settlement_program && program != *solflow_program {
             return None;
         }
-        // TODO(PR7): here the program matched a tracked program but an account
-        // index is out of range - a malformed settlement we identified and then
-        // drop with no trace. Decide whether to dead-letter or log instead.
+        // TODO: a tracked program with an out-of-range account index is dropped
+        // silently here. Consider surfacing it instead.
         let accounts = self
             .account_indices
             .iter()
@@ -177,11 +167,9 @@ impl RawInstruction<'_> {
     }
 }
 
-/// §6.3.1.b/c: resolve every instruction in the transaction against
-/// `account_keys` and keep only those whose program is the settlement or
-/// SolFlow program. Walks top-level (`message.instructions`) then inner/CPI
-/// (`meta.inner_instructions[_].instructions`). CPIs into the settlement
-/// program appear only in the inner list.
+/// Resolve every instruction against `account_keys` and keep only those whose
+/// program is the settlement or SolFlow program. Walks top-level instructions
+/// then inner/CPI ones, where settlement is often reached only as a CPI.
 fn relevant_instructions(
     tx: &SubscribeUpdateTransactionInfo,
     settlement_program: &Pubkey,
@@ -222,10 +210,8 @@ fn relevant_instructions(
                     data: &ix.data,
                 })
         });
-    // TODO(PR7): top-level instructions are emitted before inner/CPI ones, not
-    // in on-chain execution order (CPIs run interleaved with their parent).
-    // Confirm PR7 keys off (instruction_index, inner_index) rather than list
-    // order, or interleave here if it needs execution order.
+    // TODO: top-level instructions come before inner ones here, which is not the
+    // on-chain execution order. Revisit if ordering across the two matters.
     top_level
         .chain(inner)
         .filter_map(|raw| raw.resolve(&account_keys, settlement_program, solflow_program))
