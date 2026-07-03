@@ -25,8 +25,8 @@ use {
         persistence::Persistence,
         types::{
             Signature,
+            channel::StreamUpdate,
             errors::PersistenceError,
-            shared::StreamUpdate,
             slot::Slot,
             wire::{
                 CommitmentLevel,
@@ -265,7 +265,7 @@ where
 pub(crate) enum Error {
     /// The persisted watermark could not be read.
     #[error("failed to read the resume watermark: {0}")]
-    Persistence(#[from] PersistenceError),
+    CantReadWatermark(#[from] PersistenceError),
     /// The yellowstone subscription could not be opened.
     #[error("failed to open the yellowstone subscription: {0}")]
     Subscribe(#[from] GeyserGrpcClientError),

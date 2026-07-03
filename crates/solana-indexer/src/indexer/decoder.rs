@@ -11,8 +11,10 @@ use {
     crate::{
         persistence::Persistence,
         types::{
+            Signature,
+            channel::{PartialHalf, StreamUpdate},
             errors::PersistenceError,
-            shared::{PartialEvent, PartialEventKey, StreamUpdate},
+            slot::Slot,
         },
     },
     dashmap::DashMap,
@@ -32,10 +34,10 @@ pub(crate) struct Decoder {
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
 
-    /// Shared in-memory map of partial events keyed by `PartialEventKey`,
+    /// Shared in-memory map of partial events keyed by `(slot, signature)`,
     /// holding either-half events waiting for their pair. The watchdog holds a
     /// clone of this `Arc`.
-    pub partials: Arc<DashMap<PartialEventKey, PartialEvent>>,
+    pub partials: Arc<DashMap<(Slot, Signature), PartialHalf>>,
 
     /// Settlement program id (filter target for the decoder).
     pub settlement_program: Pubkey,
@@ -49,7 +51,7 @@ impl Decoder {
     pub fn new(
         persistence: Persistence,
         rx: Receiver<StreamUpdate>,
-        partials: Arc<DashMap<PartialEventKey, PartialEvent>>,
+        partials: Arc<DashMap<(Slot, Signature), PartialHalf>>,
         settlement_program: Pubkey,
         solflow_program: Pubkey,
     ) -> Self {

@@ -2,21 +2,16 @@ use {
     super::{Error, INGEST_TO_DECODER_CAPACITY, Ingester},
     crate::types::{
         Signature,
-        shared::StreamUpdate,
+        channel::StreamUpdate,
         slot::Slot,
         wire::{
             SubscribeUpdate,
             SubscribeUpdateAccount,
             SubscribeUpdateAccountInfo,
-            SubscribeUpdateBlock,
-            SubscribeUpdateBlockMeta,
-            SubscribeUpdateEntry,
             SubscribeUpdatePing,
-            SubscribeUpdatePong,
             SubscribeUpdateSlot,
             SubscribeUpdateTransaction,
             SubscribeUpdateTransactionInfo,
-            SubscribeUpdateTransactionStatus,
             UpdateOneof,
         },
     },
@@ -26,7 +21,18 @@ use {
         atomic::{AtomicU64, Ordering},
     },
     tokio::sync::mpsc::channel,
-    yellowstone_grpc_proto::tonic::Status,
+    // Update variants the ingester ignores by falling through its match. Pulled
+    // from the proto crate directly rather than the curated `wire` surface.
+    yellowstone_grpc_proto::{
+        geyser::{
+            SubscribeUpdateBlock,
+            SubscribeUpdateBlockMeta,
+            SubscribeUpdateEntry,
+            SubscribeUpdatePong,
+            SubscribeUpdateTransactionStatus,
+        },
+        tonic::Status,
+    },
 };
 
 fn signature(n: u8) -> Signature {
