@@ -4815,6 +4815,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-bus-dto"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "schemars 1.2.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "event-indexing"
 version = "0.1.0"
 dependencies = [
@@ -6895,6 +6905,7 @@ dependencies = [
  "bytes",
  "chrono",
  "console-subscriber",
+ "event-bus-dto",
  "futures",
  "jemalloc_pprof",
  "opentelemetry",
@@ -7539,6 +7550,7 @@ dependencies = [
  "dashmap 6.1.0",
  "derive_more 1.0.0",
  "ethrpc",
+ "event-bus-dto",
  "futures",
  "gas-price-estimation",
  "hex-literal",
@@ -8737,10 +8749,24 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "54e910108742c57a770f492731f99be216a52fadd361b06c8fb59d74ccc267d2"
 dependencies = [
+ "chrono",
  "dyn-clone",
  "ref-cast",
+ "schemars_derive",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4908ad288c5035a8eb12cfdf0d49270def0a268ee162b75eeee0f85d155a7c45"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -8908,6 +8934,17 @@ name = "serde_derive"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
+
+[[package]]
+name = "serde_derive_internals"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9989,9 +10026,9 @@ checksum = "1979153aec32d4c501761af021e6ba881d6e05578b6518062cdc4f62970dc8e3"
 
 [[package]]
 name = "solana-message"
-version = "4.2.3"
+version = "4.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b94164f9740d40f41568f6f48140a0866251a79a7bce013eb4ffefe12d0e38cc"
+checksum = "d2666e0ff38557ad1239d0fc42f4688fb9df0817fb12c041dbae90c2b2e3fa55"
 dependencies = [
  "blake3",
  "serde",
@@ -11013,9 +11050,9 @@ dependencies = [
 
 [[package]]
 name = "solana-transaction"
-version = "4.1.4"
+version = "4.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2509e70bdce879db3e0f56cf97e40edd53742e8f0e6f34d64c46e7900071b53f"
+checksum = "6aa9b0f8543b99e1cb7db16a7c1a392139d82db57a90d262fb0a394807337bec"
 dependencies = [
  "serde",
  "serde_derive",
@@ -11052,9 +11089,9 @@ dependencies = [
 
 [[package]]
 name = "solana-transaction-error"
-version = "3.3.0"
+version = "3.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "757a648388ab1e7350a806ffceb31ce656dc5b5fe607b9f8209aa56f63040179"
+checksum = "a949797bc1ac31836d0070e791083028a8c2e0d493fa4cf51c0bed7a04c65c22"
 dependencies = [
  "serde",
  "serde_derive",
