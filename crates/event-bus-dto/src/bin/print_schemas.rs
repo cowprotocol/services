@@ -17,13 +17,10 @@ fn main() {
         });
 
     // Sort by subject so the generated document is stable across runs
-    // regardless of the order `schemas()` lists events in (and of how
-    // `serde_json::Map` happens to order its keys).
-    let entries: BTreeMap<String, serde_json::Value> = event_bus_dto::schemas()
+    let schemas: BTreeMap<String, serde_json::Value> = event_bus_dto::schemas()
         .into_iter()
         .map(|(subject, schema)| (subject.to_owned(), serde_json::to_value(schema).unwrap()))
         .collect();
-    let schemas: serde_json::Map<String, serde_json::Value> = entries.into_iter().collect();
     let body = serde_json::to_string_pretty(&schemas).unwrap();
 
     if let Some(parent) = out_path.parent() {
