@@ -189,7 +189,7 @@ impl QuoteHandler {
                 )
                 .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))
                 .and_then(|adjusted| {
-                    build_order_quote_response(&request, &quote, &adjusted, None, valid_to)
+                    build_order_quote_response(&request, &quote, &adjusted, quote.id, valid_to)
                 });
                 match response {
                     Ok(response) => {
