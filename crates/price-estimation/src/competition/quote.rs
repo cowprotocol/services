@@ -56,7 +56,14 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                         .estimator
                         .estimate(context.query.clone())
                         .map(move |res| {
-                            emit_quote_event(estimator_name, &inner_query, &res, start.elapsed());
+                            if res.is_ok() {
+                                emit_quote_event(
+                                    estimator_name,
+                                    &inner_query,
+                                    &res,
+                                    start.elapsed(),
+                                );
+                            }
                             res
                         })
                         .boxed()
