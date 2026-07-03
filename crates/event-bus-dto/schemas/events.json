@@ -123,6 +123,7 @@
       },
       "timestamp": {
         "description": "RFC3339 timestamp (millisecond precision, UTC) of when the event was\npublished.",
+        "format": "date-time",
         "type": "string"
       },
       "version": {

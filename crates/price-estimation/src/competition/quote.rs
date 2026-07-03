@@ -1,13 +1,20 @@
 use {
     super::{CompetitionEstimator, PriceRanking, compare_error},
     crate::{
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
         QuoteVerificationMode,
     },
     alloy::primitives::{Address, U256},
     anyhow::Context as _,
     event_bus_dto::price_estimate::{
-        EstimateResult, OrderKind as DtoOrderKind, PriceEstimateEvent, QueryFields,
+        EstimateResult,
+        OrderKind as DtoOrderKind,
+        PriceEstimateEvent,
+        QueryFields,
     },
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,

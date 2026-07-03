@@ -10,7 +10,7 @@ name = "event-bus-schemas"
 path = "src/bin/print_schemas.rs"
 
 [dependencies]
-chrono = { workspace = true, features = ["clock"] }
+chrono = { workspace = true, features = ["clock", "serde"] }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
