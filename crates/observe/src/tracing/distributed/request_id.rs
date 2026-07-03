@@ -48,11 +48,16 @@ pub(crate) fn request_id(headers: &HeaderMap<HeaderValue>) -> String {
 }
 
 /// Name of the span that stores the id used to associated logs
-/// across processes.
-pub const SPAN_NAME: &str = "request";
+/// across processes. Must match the span created by
+/// [`crate::tracing::distributed::axum::make_span`].
+pub const SPAN_NAME: &str = "http_request";
+
+/// Field on [`SPAN_NAME`] holding the request id. Recorded as a plain string
+/// (not `?`/Debug) so [`RequestIdLayer`] can read it via `record_str`.
+pub const SPAN_FIELD: &str = "request_id";
 
 pub fn info_span(request_id: String) -> Span {
-    tracing::info_span!(SPAN_NAME, id = request_id)
+    tracing::info_span!(SPAN_NAME, request_id = request_id)
 }
 
 /// Looks up the request id from the current tracing span.
@@ -105,7 +110,7 @@ impl<S: Subscriber + for<'lookup> LookupSpan<'lookup>> Layer<S> for RequestIdLay
             fn record_debug(&mut self, _field: &Field, _value: &dyn fmt::Debug) {}
 
             fn record_str(&mut self, field: &Field, value: &str) {
-                if field.name() == "id" {
+                if field.name() == SPAN_FIELD {
                     self.0 = Some(RequestId(value.to_string()));
                 }
             }
@@ -202,6 +207,22 @@ mod test {
             .unwrap();
         }
         .instrument(info_span("test".to_string()))
+        .await
+    }
+
+    #[tokio::test]
+    async fn make_span_is_readable_by_from_current_span() {
+        // Guards the wiring between `make_span` (creates the request span) and
+        // `from_current_span` (reads it): they must agree on span name + field.
+        init_tracing("error");
+        let request = axum::http::Request::builder()
+            .header("X-Request-ID", "abc123")
+            .body(())
+            .unwrap();
+        async {
+            assert_eq!(Some("abc123".to_string()), from_current_span());
+        }
+        .instrument(crate::tracing::distributed::axum::make_span(&request))
         .await
     }
 
