@@ -41,6 +41,14 @@ impl SolveRequest {
             .collect();
         let token_infos = tokens.get(&token_addresses).await;
 
+        // register all tokens where internal buffer trading is allowed
+        // for continuous balance monitoring
+        tokens.keep_track_of_balances(
+            self.tokens
+                .iter()
+                .filter_map(|t| t.trusted.then_some(&t.address)),
+        );
+
         competition::Auction::new(
             Some(self.id.try_into()?),
             self.orders

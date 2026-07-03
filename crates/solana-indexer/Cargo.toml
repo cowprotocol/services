@@ -15,5 +15,19 @@ path = "src/lib.rs"
 name = "solana-indexer"
 path = "src/main.rs"
 
+[dependencies]
+async-trait = { workspace = true }
+bytes = { workspace = true }
+dashmap = { workspace = true }
+derive_more = { workspace = true }
+futures = { workspace = true }
+solana-client = { workspace = true }
+solana-sdk = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+tracing = { workspace = true }
+yellowstone-grpc-client = { workspace = true }
+yellowstone-grpc-proto = { workspace = true }
+
 [lints]
 workspace = true
