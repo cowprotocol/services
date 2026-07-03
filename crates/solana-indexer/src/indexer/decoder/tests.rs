@@ -9,6 +9,7 @@ use {
         Transaction,
         TransactionStatusMeta,
     },
+    bytes::Bytes,
     solana_sdk::pubkey::Pubkey,
 };
 
@@ -91,28 +92,37 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
         }],
     );
 
+    // The ALT indices (2, 3) only resolve if the three regions are concatenated
+    // static, then writable, then readonly.
+    assert_eq!(
+        build_account_keys(&tx),
+        vec![router, acct_a, settlement, solflow, acct_b]
+    );
+
     let relevant = relevant_instructions(&tx, &settlement, &solflow);
 
     // router dropped, solflow (top-level) and settlement (CPI) kept, in order.
     assert_eq!(relevant.len(), 2);
 
-    assert_eq!(relevant[0].program, solflow);
+    assert_eq!(relevant[0].program_id, solflow);
     assert_eq!(relevant[0].instruction_index, 1);
     assert_eq!(relevant[0].inner_index, None);
-    assert_eq!(relevant[0].accounts, vec![acct_a, acct_b]);
-    assert_eq!(relevant[0].data, vec![1, 2, 3]);
+    assert_eq!(relevant[0].accounts, vec![1, 4]);
+    assert_eq!(relevant[0].data, Bytes::from(vec![1, 2, 3]));
 
-    assert_eq!(relevant[1].program, settlement);
+    assert_eq!(relevant[1].program_id, settlement);
     assert_eq!(relevant[1].instruction_index, 0);
     assert_eq!(relevant[1].inner_index, Some(0));
-    assert_eq!(relevant[1].accounts, vec![acct_a]);
-    assert_eq!(relevant[1].data, vec![7]);
+    assert_eq!(relevant[1].accounts, vec![1]);
+    assert_eq!(relevant[1].data, Bytes::from(vec![7]));
 }
 
-/// Malformed stream data must drop, not panic: out-of-range program and account
-/// indices, and a wrong-length key that becomes the zero pubkey.
+/// A program index that does not resolve to a tracked program is dropped
+/// (out of range, or a wrong-length key that becomes the zero pubkey). Account
+/// indices are carried through unresolved, so a bad one does not drop the
+/// instruction here.
 #[test]
-fn malformed_instructions_are_dropped_without_panicking() {
+fn unresolvable_programs_dropped_account_indices_carried_through() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     // Account list: [settlement(0), <5-byte key -> zero pubkey>(1)].
     let tx = SubscribeUpdateTransactionInfo {
@@ -120,12 +130,12 @@ fn malformed_instructions_are_dropped_without_panicking() {
             message: Some(Message {
                 account_keys: vec![key_bytes(settlement), vec![1, 2, 3, 4, 5]],
                 instructions: vec![
-                    // settlement matches, but account index 5 is out of range
-                    compiled(0, vec![5], vec![0]),
-                    // program index 9 is out of range
+                    // program index 9 is out of range -> dropped
                     compiled(9, vec![0], vec![0]),
-                    // program index 1 is the zeroed bad key, matching nothing
+                    // program index 1 is the zeroed bad key -> untracked, dropped
                     compiled(1, vec![0], vec![0]),
+                    // settlement, with an out-of-range account index carried as-is
+                    compiled(0, vec![5], vec![7]),
                 ],
                 ..Default::default()
             }),
@@ -135,5 +145,10 @@ fn malformed_instructions_are_dropped_without_panicking() {
     };
 
     assert_eq!(build_account_keys(&tx), vec![settlement, Pubkey::default()]);
-    assert!(relevant_instructions(&tx, &settlement, &solflow).is_empty());
+
+    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    assert_eq!(relevant.len(), 1);
+    assert_eq!(relevant[0].program_id, settlement);
+    assert_eq!(relevant[0].instruction_index, 2);
+    assert_eq!(relevant[0].accounts, vec![5]);
 }

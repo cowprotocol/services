@@ -14,9 +14,11 @@ use {
             channel::{PartialHalf, StreamUpdate},
             errors::PersistenceError,
             slot::Slot,
+            tx::ResolvedInstruction,
             wire::SubscribeUpdateTransactionInfo,
         },
     },
+    bytes::Bytes,
     dashmap::DashMap,
     solana_sdk::pubkey::Pubkey,
     std::sync::Arc,
@@ -72,24 +74,6 @@ impl Decoder {
     }
 }
 
-/// An instruction targeting a tracked program (settlement or SolFlow), with its
-/// program and accounts resolved to pubkeys and its position in the
-/// transaction.
-pub(crate) struct RelevantInstruction {
-    /// Top-level instruction index. For a CPI, the top-level instruction it
-    /// runs under.
-    pub instruction_index: u32,
-    /// Position within the top-level instruction's inner list, or `None` for a
-    /// top-level instruction.
-    pub inner_index: Option<u32>,
-    /// Resolved program id: the settlement or SolFlow program.
-    pub program: Pubkey,
-    /// The instruction's accounts, resolved to pubkeys in order.
-    pub accounts: Vec<Pubkey>,
-    /// Raw instruction data.
-    pub data: Vec<u8>,
-}
-
 /// The transaction's full account list that instruction indices resolve
 /// against: static keys, then ALT-loaded writable addresses, then readonly, in
 /// that order. A wrong-length key becomes the zero pubkey to keep the indices
@@ -137,32 +121,26 @@ struct RawInstruction<'a> {
 }
 
 impl RawInstruction<'_> {
-    /// Resolve against `account_keys`, keeping the instruction only if its
-    /// program is the settlement or SolFlow program. Returns `None` if the
-    /// program is untracked or any index is out of range.
+    /// Resolve the program against `account_keys`, keeping the instruction only
+    /// if that program is the settlement or SolFlow program. Account indices
+    /// are carried through unresolved. Returns `None` if the program is
+    /// untracked or its index is out of range.
     fn resolve(
         &self,
         account_keys: &[Pubkey],
         settlement_program: &Pubkey,
         solflow_program: &Pubkey,
-    ) -> Option<RelevantInstruction> {
-        let program = *account_keys.get(self.program_id_index as usize)?;
-        if program != *settlement_program && program != *solflow_program {
+    ) -> Option<ResolvedInstruction> {
+        let program_id = *account_keys.get(self.program_id_index as usize)?;
+        if program_id != *settlement_program && program_id != *solflow_program {
             return None;
         }
-        // TODO: a tracked program with an out-of-range account index is dropped
-        // silently here. Consider surfacing it instead.
-        let accounts = self
-            .account_indices
-            .iter()
-            .map(|&index| account_keys.get(index as usize).copied())
-            .collect::<Option<Vec<_>>>()?;
-        Some(RelevantInstruction {
+        Some(ResolvedInstruction {
+            program_id,
+            data: Bytes::copy_from_slice(self.data),
+            accounts: self.account_indices.to_vec(),
             instruction_index: self.instruction_index,
             inner_index: self.inner_index,
-            program,
-            accounts,
-            data: self.data.to_vec(),
         })
     }
 }
@@ -174,7 +152,7 @@ fn relevant_instructions(
     tx: &SubscribeUpdateTransactionInfo,
     settlement_program: &Pubkey,
     solflow_program: &Pubkey,
-) -> Vec<RelevantInstruction> {
+) -> Vec<ResolvedInstruction> {
     let account_keys = build_account_keys(tx);
     let top_level = tx
         .transaction

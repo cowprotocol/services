@@ -6,7 +6,7 @@
 //! `solana-sdk` or `solana-message` because the upstream types carry raw
 //! `program_id_index: u8` values, while these views resolve that index
 //! against the reconstructed `account_keys` list and tag each instruction
-//! with its source (`is_inner`) and position (`ix_index`).
+//! with its position in the transaction.
 
 use {
     crate::types::{
@@ -28,11 +28,12 @@ pub(crate) struct ResolvedInstruction {
     pub data: Bytes,
     /// Account indices into the reconstructed account list.
     pub accounts: Vec<u8>,
-    /// Index of this instruction within the transaction (outer or
-    /// inner).
-    pub ix_index: u16,
-    /// `true` for CPIs (inner instructions).
-    pub is_inner: bool,
+    /// Top-level instruction index. For a CPI, the top-level instruction it
+    /// runs under.
+    pub instruction_index: u32,
+    /// Position within the top-level instruction's inner list, or `None` for a
+    /// top-level instruction.
+    pub inner_index: Option<u32>,
 }
 
 /// Per-decode-pass context: the reconstructed account list, the slot, the
