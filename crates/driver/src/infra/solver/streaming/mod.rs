@@ -6,7 +6,7 @@ use {
     best_effort_sink::BestEffortSink,
     bytes::Bytes,
     futures::StreamExt,
-    observe::http_body::Measured,
+    observe::{http_body::Measured, metrics::Metrics},
     std::{
         convert::Infallible,
         io::{BufWriter, Write},
@@ -29,7 +29,9 @@ pub fn stream_body<T>(value: T) -> reqwest::Body
 where
     T: serde::Serialize + Send + 'static,
 {
-    stream_into(value, std::io::sink())
+    // Set to None since this function is (at the time of writing)
+    // used only for quotes and we're not interested in measuring them
+    stream_into(value, std::io::sink(), None)
 }
 
 /// Like [`stream_body`], but also gzips the same serialization in one pass. The
@@ -39,7 +41,8 @@ where
     T: serde::Serialize + Send + 'static,
 {
     let (gzip, compressed) = GzipCapture::new();
-    let body = stream_into(value, gzip);
+    // The opposite of `stream_body`, we use this version for proper auctions
+    let body = stream_into(value, gzip, Some(observe::metrics::metrics()));
     (body, compressed)
 }
 
@@ -47,7 +50,7 @@ where
 /// blocking thread, then finalizes each sink. Serialization always runs to
 /// completion even if the request receiver drops, so the secondary sink (the
 /// gzip archive) is captured regardless of the request outcome.
-fn stream_into<T, S>(value: T, secondary: S) -> reqwest::Body
+fn stream_into<T, S>(value: T, secondary: S, metrics: Option<&'static Metrics>) -> reqwest::Body
 where
     T: serde::Serialize + Send + 'static,
     S: Write + Finalize + Send + 'static,
@@ -83,13 +86,11 @@ where
                 return;
             }
         };
-        // Measure before `finalize` so the gzip finish cost stays out of the metric.
-        let serialize = start.elapsed().saturating_sub(timed.elapsed());
-        observe::metrics::metrics().record_auction_overhead(
-            serialize,
-            "driver",
-            "serialize_request",
-        );
+        if let Some(metrics) = metrics {
+            // Measure before `finalize` so the gzip finish cost stays out of the metric.
+            let serialize = start.elapsed().saturating_sub(timed.elapsed());
+            metrics.record_auction_overhead(serialize, "driver", "serialize_request");
+        }
         timed.into_inner().finalize();
     });
     body
