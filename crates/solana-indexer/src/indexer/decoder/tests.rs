@@ -1,5 +1,5 @@
 use {
-    super::{RelevantInstruction, build_account_keys, filter_relevant, walk_instructions},
+    super::{build_account_keys, relevant_instructions},
     crate::types::wire::{
         CompiledInstruction,
         InnerInstruction,
@@ -64,16 +64,6 @@ fn tx_info(
         }),
         ..Default::default()
     }
-}
-
-fn relevant_instructions(
-    tx: &SubscribeUpdateTransactionInfo,
-    settlement: &Pubkey,
-    solflow: &Pubkey,
-) -> Vec<RelevantInstruction> {
-    let account_keys = build_account_keys(tx);
-    let instructions = walk_instructions(tx);
-    filter_relevant(&account_keys, &instructions, settlement, solflow)
 }
 
 #[test]

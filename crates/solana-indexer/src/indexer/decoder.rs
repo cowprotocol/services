@@ -73,18 +73,6 @@ impl Decoder {
     }
 }
 
-/// A transaction instruction (top-level or inner/CPI) as it appears on the
-/// wire, before its `program_id_index` and account indices are resolved to
-/// pubkeys against the transaction's account list.
-struct RawInstruction<'a> {
-    /// Index into the account list identifying the program invoked.
-    program_id_index: u32,
-    /// Indices into the account list of the accounts the instruction touches.
-    account_indices: &'a [u8],
-    /// Raw instruction data (discriminator + payload).
-    data: &'a [u8],
-}
-
 /// An instruction that targets a program the decoder tracks, with its program
 /// and accounts resolved against the transaction's full account list. This is
 /// what the per-program dispatch consumes.
@@ -105,7 +93,7 @@ pub(crate) struct RelevantInstruction {
 ///
 /// A wrong-length key becomes the zero pubkey to keep index alignment. It
 /// cannot match a tracked program, so any instruction naming it as its program
-/// is dropped by [`filter_relevant`].
+/// is dropped by [`relevant_instructions`].
 fn build_account_keys(tx: &SubscribeUpdateTransactionInfo) -> Vec<Pubkey> {
     let static_keys = tx
         .transaction
@@ -131,11 +119,37 @@ fn build_account_keys(tx: &SubscribeUpdateTransactionInfo) -> Vec<Pubkey> {
         .collect()
 }
 
-/// §6.3.1.b: every instruction in the transaction - top-level
-/// (`message.instructions`) followed by inner/CPI
+/// §6.3.1.b/c: resolve every instruction in the transaction against
+/// `account_keys` and keep only those whose program is the settlement or
+/// SolFlow program. Walks top-level (`message.instructions`) then inner/CPI
 /// (`meta.inner_instructions[_].instructions`). CPIs into the settlement
-/// program appear only in the inner list.
-fn walk_instructions(tx: &SubscribeUpdateTransactionInfo) -> Vec<RawInstruction<'_>> {
+/// program appear only in the inner list. An instruction whose program or
+/// account indices fall outside the account list is malformed and dropped.
+fn relevant_instructions(
+    tx: &SubscribeUpdateTransactionInfo,
+    settlement_program: &Pubkey,
+    solflow_program: &Pubkey,
+) -> Vec<RelevantInstruction> {
+    let account_keys = build_account_keys(tx);
+    let resolve = |program_id_index: u32,
+                   account_indices: &[u8],
+                   data: &[u8]|
+     -> Option<RelevantInstruction> {
+        let program = *account_keys.get(program_id_index as usize)?;
+        if program != *settlement_program && program != *solflow_program {
+            return None;
+        }
+        let accounts = account_indices
+            .iter()
+            .map(|&index| account_keys.get(index as usize).copied())
+            .collect::<Option<Vec<_>>>()?;
+        Some(RelevantInstruction {
+            program,
+            accounts,
+            data: data.to_vec(),
+        })
+    };
+
     let top_level = tx
         .transaction
         .as_ref()
@@ -143,11 +157,7 @@ fn walk_instructions(tx: &SubscribeUpdateTransactionInfo) -> Vec<RawInstruction<
         .map(|message| message.instructions.as_slice())
         .unwrap_or_default()
         .iter()
-        .map(|ix| RawInstruction {
-            program_id_index: ix.program_id_index,
-            account_indices: &ix.accounts,
-            data: &ix.data,
-        });
+        .filter_map(|ix| resolve(ix.program_id_index, &ix.accounts, &ix.data));
     let inner = tx
         .meta
         .as_ref()
@@ -155,43 +165,8 @@ fn walk_instructions(tx: &SubscribeUpdateTransactionInfo) -> Vec<RawInstruction<
         .unwrap_or_default()
         .iter()
         .flat_map(|group| group.instructions.iter())
-        .map(|ix| RawInstruction {
-            program_id_index: ix.program_id_index,
-            account_indices: &ix.accounts,
-            data: &ix.data,
-        });
+        .filter_map(|ix| resolve(ix.program_id_index, &ix.accounts, &ix.data));
     top_level.chain(inner).collect()
-}
-
-/// §6.3.1.c: keep only the instructions whose `program_id_index` resolves,
-/// against `account_keys`, to the settlement or SolFlow program, with their
-/// program and accounts resolved to pubkeys. An instruction whose program or
-/// account indices fall outside the account list is malformed and dropped.
-fn filter_relevant(
-    account_keys: &[Pubkey],
-    instructions: &[RawInstruction],
-    settlement_program: &Pubkey,
-    solflow_program: &Pubkey,
-) -> Vec<RelevantInstruction> {
-    instructions
-        .iter()
-        .filter_map(|instruction| {
-            let program = *account_keys.get(instruction.program_id_index as usize)?;
-            if program != *settlement_program && program != *solflow_program {
-                return None;
-            }
-            let accounts = instruction
-                .account_indices
-                .iter()
-                .map(|&index| account_keys.get(index as usize).copied())
-                .collect::<Option<Vec<_>>>()?;
-            Some(RelevantInstruction {
-                program,
-                accounts,
-                data: instruction.data.to_vec(),
-            })
-        })
-        .collect()
 }
 
 #[cfg(test)]
