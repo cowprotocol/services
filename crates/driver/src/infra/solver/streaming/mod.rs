@@ -1,15 +1,18 @@
 mod best_effort_sink;
 mod tee_writer;
+mod timed_writer;
 
 use {
     best_effort_sink::BestEffortSink,
     bytes::Bytes,
     futures::StreamExt,
+    observe::http_body::Measured,
     std::{
         convert::Infallible,
         io::{BufWriter, Write},
     },
     tee_writer::TeeWriter,
+    timed_writer::Timed,
     tokio::sync::{mpsc, oneshot},
     tokio_stream::wrappers::ReceiverStream,
 };
@@ -50,34 +53,44 @@ where
     S: Write + Finalize + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<Bytes>(CHANNEL_CAPACITY);
-    let body = reqwest::Body::wrap_stream(ReceiverStream::new(rx).map(Ok::<_, Infallible>));
+    // E2E measurement of the body transfer time (includes serialization)
+    let stream = Measured::new(ReceiverStream::new(rx)).map(Ok::<_, Infallible>);
+    let body = reqwest::Body::wrap_stream(stream);
     // spawn_blocking loses the current span; carry it so the logs keep context.
     let span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
         let _guard = span.enter();
-        // Covers serialization *and* socket transmission (since network "pulls" the
-        // serialization along). Kept as `serialize_request` phase to avoid breaking
-        // Grafana dashboards.
+        // We measure total time + Tee transfer time (includes network + gzip)
+        // total time - Tee transfer time = serialization overhead
         let start = std::time::Instant::now();
 
-        // Best effort channel so if sending the JSON to solver fails,
-        // we can still upload it to S3
+        // If sending to solvers fails, we should still be able to upload to S3
         let channel = BestEffortSink::new(ChannelWriter(tx));
-        let mut writer = BufWriter::with_capacity(CHUNK_SIZE, TeeWriter::new(channel, secondary));
+        // Note that `channel` writes to the solver, while secondary to the gzip
+        // (in-memory) as such, writing delays *should* mostly be due to the
+        // solver network transfer and not really the gzip; this will have the
+        // secondary effect of slowing down *when* the S3 upload starts
+        let timed_tee = Timed::new(TeeWriter::new(channel, secondary));
+        let mut writer = BufWriter::with_capacity(CHUNK_SIZE, timed_tee);
         if let Err(err) = serde_json::to_writer(&mut writer, &value) {
             tracing::warn!(?err, "serializing streamed request body failed");
             return;
         }
-        let tee = match writer.into_inner() {
-            Ok(tee) => tee,
+        let timed = match writer.into_inner() {
+            Ok(timed) => timed,
             Err(err) => {
                 tracing::warn!(err = ?err.error(), "flushing streamed request body failed");
                 return;
             }
         };
         // Measure before `finalize` so the gzip finish cost stays out of the metric.
-        observe::metrics::metrics().measure_auction_overhead(start, "driver", "serialize_request");
-        tee.finalize();
+        let serialize = start.elapsed().saturating_sub(timed.elapsed());
+        observe::metrics::metrics().record_auction_overhead(
+            serialize,
+            "driver",
+            "serialize_request",
+        );
+        timed.into_inner().finalize();
     });
     body
 }
