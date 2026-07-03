@@ -84,17 +84,24 @@ impl Ethereum {
         }
     }
 
+    /// Cap the transaction's gas limit at the configured per-tx gas limit so a
+    /// rogue solution can't force the node to binary-search up to the block gas
+    /// limit. `Gas::new` rejects anything above this cap anyway, so no accepted
+    /// solution is affected. A cap only lowers, so a tighter ceiling set by the
+    /// caller is kept.
+    fn cap_gas_limit(&self, tx: TransactionRequest) -> Result<TransactionRequest, Error> {
+        let cap = self.inner.tx_gas_limit.try_into().map_err(|err| {
+            Error::GasPrice(anyhow!("failed to convert gas_limit to u64: {err:?}"))
+        })?;
+        let gas_limit = tx.gas.map(|g| g.min(cap)).unwrap_or(cap);
+        Ok(tx.with_gas_limit(gas_limit))
+    }
+
     pub async fn create_access_list<T>(&self, tx: T) -> Result<AccessList, Error>
     where
         T: Into<TransactionRequest>,
     {
-        let gas_limit = self.inner.tx_gas_limit.try_into().map_err(|err| {
-            Error::GasPrice(anyhow!("failed to convert gas_limit to u64: {err:?}"))
-        })?;
-        // A cap only lowers, so keep a tighter ceiling if the caller set one.
-        let tx = tx.into();
-        let gas_limit = tx.gas.map(|g| g.min(gas_limit)).unwrap_or(gas_limit);
-        let tx = tx.with_gas_limit(gas_limit);
+        let tx = self.cap_gas_limit(tx.into())?;
         let tx = match self.simulation_gas_price().await {
             Some(gas_price) => tx.with_gas_price(gas_price),
             _ => tx,
@@ -117,16 +124,7 @@ impl Ethereum {
     where
         T: Into<TransactionRequest>,
     {
-        // Cap the search at the per-tx gas limit so a rogue solution can't force
-        // the node to binary-search up to the block gas limit. `Gas::new` rejects
-        // anything above this cap anyway, so no accepted solution is affected.
-        // A cap only lowers, so keep a tighter ceiling if the caller set one.
-        let gas_limit = self.inner.tx_gas_limit.try_into().map_err(|err| {
-            Error::GasPrice(anyhow!("failed to convert gas_limit to u64: {err:?}"))
-        })?;
-        let tx = tx.into();
-        let gas_limit = tx.gas.map(|g| g.min(gas_limit)).unwrap_or(gas_limit);
-        let tx = tx.with_gas_limit(gas_limit);
+        let tx = self.cap_gas_limit(tx.into())?;
         let tx = match self.simulation_gas_price().await {
             Some(gas_price) => tx.with_gas_price(gas_price),
             _ => tx,
