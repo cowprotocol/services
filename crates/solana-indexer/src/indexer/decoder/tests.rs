@@ -66,151 +66,71 @@ fn tx_info(
     }
 }
 
+/// One realistic transaction that exercises the four things that can actually
+/// break: the account list is `static ++ ALT-writable ++ ALT-readonly` (so the
+/// ALT indices only resolve if the regions are concatenated in that order),
+/// settlement is reachable only as a CPI (so inner instructions must be
+/// walked), an untracked program is present (so the filter must drop it), and
+/// each kept instruction records its position.
 #[test]
-fn top_level_settlement_instruction_is_kept() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
+fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
+    let (settlement, solflow, router) = (pubkey(1), pubkey(2), pubkey(9));
     let (acct_a, acct_b) = (pubkey(3), pubkey(4));
-    // account list: [settlement(0), acct_a(1), acct_b(2)]
+    // Full list: [router(0), acct_a(1)] ++ [settlement(2)] ++ [solflow(3),
+    // acct_b(4)]
     let tx = tx_info(
-        vec![settlement, acct_a, acct_b],
-        vec![],
-        vec![],
-        vec![compiled(0, vec![1, 2], vec![9, 9, 9])],
-        vec![],
-    );
-
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
-
-    assert_eq!(relevant.len(), 1);
-    assert_eq!(relevant[0].program, settlement);
-    assert_eq!(relevant[0].instruction_index, 0);
-    assert_eq!(relevant[0].inner_index, None);
-    assert_eq!(relevant[0].accounts, vec![acct_a, acct_b]);
-    assert_eq!(relevant[0].data, vec![9, 9, 9]);
-}
-
-#[test]
-fn settlement_cpi_in_inner_instructions_is_kept() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (other_program, acct) = (pubkey(5), pubkey(3));
-    // account list: [other_program(0), settlement(1), acct(2)]. The settlement
-    // call is a CPI, so it only appears in the inner instructions.
-    let tx = tx_info(
-        vec![other_program, settlement, acct],
-        vec![],
-        vec![],
-        vec![compiled(0, vec![], vec![0])],
+        vec![router, acct_a],
+        vec![settlement],
+        vec![solflow, acct_b],
+        // top-level: a router call (dropped) then a solflow call (kept, index 1)
+        vec![
+            compiled(0, vec![1], vec![0]),
+            compiled(3, vec![1, 4], vec![1, 2, 3]),
+        ],
+        // settlement invoked as a CPI under top-level instruction 0
         vec![InnerInstructions {
             index: 0,
-            instructions: vec![inner(1, vec![2], vec![7])],
+            instructions: vec![inner(2, vec![1], vec![7])],
         }],
     );
 
     let relevant = relevant_instructions(&tx, &settlement, &solflow);
 
-    assert_eq!(relevant.len(), 1);
-    assert_eq!(relevant[0].program, settlement);
-    assert_eq!(relevant[0].instruction_index, 0);
-    assert_eq!(relevant[0].inner_index, Some(0));
-    assert_eq!(relevant[0].accounts, vec![acct]);
-    assert_eq!(relevant[0].data, vec![7]);
-}
+    // router dropped; solflow (top-level) and settlement (CPI) kept, in that order.
+    assert_eq!(relevant.len(), 2);
 
-#[test]
-fn alt_loaded_program_is_resolved() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (acct, readonly) = (pubkey(3), pubkey(6));
-    // static [acct], ALT writable [settlement], ALT readonly [readonly], so the
-    // full list is [acct(0), settlement(1), readonly(2)] and program_id_index 1
-    // resolves into the ALT-loaded region.
-    let tx = tx_info(
-        vec![acct],
-        vec![settlement],
-        vec![readonly],
-        vec![compiled(1, vec![0], vec![5])],
-        vec![],
-    );
-
-    assert_eq!(build_account_keys(&tx), vec![acct, settlement, readonly]);
-
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
-
-    assert_eq!(relevant.len(), 1);
-    assert_eq!(relevant[0].program, settlement);
-    assert_eq!(relevant[0].instruction_index, 0);
-    assert_eq!(relevant[0].inner_index, None);
-    assert_eq!(relevant[0].accounts, vec![acct]);
-}
-
-#[test]
-fn solflow_program_instruction_is_kept() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (other_program, acct) = (pubkey(5), pubkey(3));
-    // account list: [other_program(0), solflow(1), acct(2)]. Two top-level
-    // instructions; only the second (index 1) targets a tracked program.
-    let tx = tx_info(
-        vec![other_program, solflow, acct],
-        vec![],
-        vec![],
-        vec![
-            compiled(0, vec![2], vec![0]),
-            compiled(1, vec![2], vec![1, 2, 3]),
-        ],
-        vec![],
-    );
-
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
-
-    assert_eq!(relevant.len(), 1);
     assert_eq!(relevant[0].program, solflow);
     assert_eq!(relevant[0].instruction_index, 1);
     assert_eq!(relevant[0].inner_index, None);
-    assert_eq!(relevant[0].accounts, vec![acct]);
+    assert_eq!(relevant[0].accounts, vec![acct_a, acct_b]);
     assert_eq!(relevant[0].data, vec![1, 2, 3]);
+
+    assert_eq!(relevant[1].program, settlement);
+    assert_eq!(relevant[1].instruction_index, 0);
+    assert_eq!(relevant[1].inner_index, Some(0));
+    assert_eq!(relevant[1].accounts, vec![acct_a]);
+    assert_eq!(relevant[1].data, vec![7]);
 }
 
+/// Malformed stream data must drop rather than panic: an out-of-range account
+/// index on a program-matched instruction, an out-of-range program index, and a
+/// wrong-length key that becomes the zero pubkey and matches nothing.
 #[test]
-fn instruction_with_out_of_range_program_index_is_dropped() {
+fn malformed_instructions_are_dropped_without_panicking() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
-    // account list has one entry (index 0); program_id_index 5 is out of range.
-    let tx = tx_info(
-        vec![settlement],
-        vec![],
-        vec![],
-        vec![compiled(5, vec![0], vec![0])],
-        vec![],
-    );
-
-    assert!(relevant_instructions(&tx, &settlement, &solflow).is_empty());
-}
-
-#[test]
-fn relevant_instruction_with_out_of_range_account_index_is_dropped() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    // program resolves to settlement (index 0), but account index 9 is out of
-    // range, so the whole instruction is dropped.
-    let tx = tx_info(
-        vec![settlement],
-        vec![],
-        vec![],
-        vec![compiled(0, vec![9], vec![0])],
-        vec![],
-    );
-
-    assert!(relevant_instructions(&tx, &settlement, &solflow).is_empty());
-}
-
-#[test]
-fn wrong_length_account_key_is_zeroed_and_not_matched() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    // A 5-byte static key at index 0 becomes the zero pubkey, keeping index
-    // alignment. An instruction naming it as its program matches no tracked
-    // program and is dropped.
+    // Account list: [settlement(0), <5-byte key -> zero pubkey>(1)].
     let tx = SubscribeUpdateTransactionInfo {
         transaction: Some(Transaction {
             message: Some(Message {
-                account_keys: vec![vec![1, 2, 3, 4, 5]],
-                instructions: vec![compiled(0, vec![], vec![0])],
+                account_keys: vec![key_bytes(settlement), vec![1, 2, 3, 4, 5]],
+                instructions: vec![
+                    // settlement matches, but account index 5 is out of range
+                    compiled(0, vec![5], vec![0]),
+                    // program index 9 is out of range
+                    compiled(9, vec![0], vec![0]),
+                    // program index 1 is the zeroed bad key, matching nothing
+                    compiled(1, vec![0], vec![0]),
+                ],
                 ..Default::default()
             }),
             ..Default::default()
@@ -218,6 +138,6 @@ fn wrong_length_account_key_is_zeroed_and_not_matched() {
         ..Default::default()
     };
 
-    assert_eq!(build_account_keys(&tx), vec![Pubkey::default()]);
+    assert_eq!(build_account_keys(&tx), vec![settlement, Pubkey::default()]);
     assert!(relevant_instructions(&tx, &settlement, &solflow).is_empty());
 }
