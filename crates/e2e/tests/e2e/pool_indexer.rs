@@ -131,7 +131,10 @@ sol! {
 const POOL_INDEXER_PORT: u16 = 7778;
 const POOL_INDEXER_HOST: &str = "http://127.0.0.1:7778";
 const POOL_INDEXER_METRICS_PORT: u16 = 7779;
-const LOCAL_DB_URL: &str = "postgresql://";
+// The indexer has its own database (mirrors the per-network prod DB), migrated
+// from `database/sql-pool-indexer` by the `migrations-pool-indexer` flyway step
+// (docker-compose / setup-e2e.sh), separate from the shared autopilot DB.
+const POOL_INDEXER_DB_URL: &str = "postgresql:///pool_indexer";
 
 // sqrt(1) * 2^96 — valid starting price
 const INITIAL_SQRT_PRICE: u128 = 1u128 << 96;
@@ -162,6 +165,8 @@ struct TicksResponse {
 #[derive(Deserialize)]
 struct TickEntry {}
 
+/// Truncates the indexer's tables between tests. The schema itself is
+/// provisioned by flyway (`migrations-pool-indexer`), so this just clears rows.
 async fn clear_pool_indexer_tables(db: &PgPool) {
     sqlx::query(
         "TRUNCATE uniswap_v3_ticks, uniswap_v3_pool_states, uniswap_v3_pools, \
@@ -185,12 +190,10 @@ async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
     .unwrap();
 }
 
-/// Spawns the pool-indexer task and waits for its `/health` endpoint to come
-/// up.
-async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task::JoinHandle<()> {
-    let config = Configuration {
+fn pool_indexer_config(factory: Address, metrics_port: u16) -> Configuration {
+    Configuration {
         database: DatabaseConfig {
-            url: LOCAL_DB_URL.parse().unwrap(),
+            url: POOL_INDEXER_DB_URL.parse().unwrap(),
             max_connections: NonZeroU32::new(5).unwrap(),
         },
         network: NetworkConfig {
@@ -212,7 +215,13 @@ async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task:
         metrics: MetricsConfig {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, metrics_port)),
         },
-    };
+    }
+}
+
+/// Spawns the pool-indexer task and waits for its `/health` endpoint to come
+/// up.
+async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task::JoinHandle<()> {
+    let config = pool_indexer_config(factory, metrics_port);
     let handle = tokio::task::spawn(pool_indexer::run(config));
     wait_for_condition(TIMEOUT, || async {
         reqwest::get(format!("{POOL_INDEXER_HOST}/health"))
@@ -390,7 +399,7 @@ async fn driver_integration(web3: Web3) {
     const POOLS_BY_IDS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools/by-ids";
     const TICKS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools/ticks";
 
-    let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
@@ -482,7 +491,7 @@ async fn local_node_pool_indexer_checkpoint_resume() {
 /// count, sqrt_price / tick / liquidity, and the checkpoint all survive a
 /// stop+start.
 async fn checkpoint_resume(web3: Web3) {
-    let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
     let (factory, pool_addr) = deploy_univ3(&web3).await;
@@ -533,7 +542,7 @@ async fn local_node_pool_indexer_api_errors() {
 /// 400, a valid-but-unknown address must come back as 200 with empty ticks.
 /// Lets callers distinguish "garbage input" from "no data yet".
 async fn api_errors(web3: Web3) {
-    let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
     let (factory, _pool) = deploy_univ3(&web3).await;
@@ -585,7 +594,7 @@ async fn local_node_pool_indexer_pagination() {
 /// every pool exactly once. Three pools is the smallest set that exercises
 /// a mid-stream cursor and the `next_cursor = null` terminator.
 async fn pagination(web3: Web3) {
-    let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
     let (factory, _pool1) = deploy_univ3(&web3).await;
@@ -641,4 +650,46 @@ async fn pagination(web3: Web3) {
         );
     })
     .await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_pool_indexer_bootstrap_idempotent() {
+    run_test(bootstrap_idempotent).await;
+}
+
+/// `--bootstrap-only` on an already-seeded DB must be a fast no-op: detect the
+/// existing checkpoint, skip the (here unreachable) subgraph seeder, and return
+/// without binding any ports — mirroring a re-run of the bootstrap
+/// initContainer on a pod restart.
+async fn bootstrap_idempotent(web3: Web3) {
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
+    clear_pool_indexer_tables(&db).await;
+
+    // A pre-seeded checkpoint marks the DB as already bootstrapped. No on-chain
+    // factory is needed: bootstrap reads the checkpoint and returns before any
+    // seeding or catch-up. The RPC is only used for the chain_id sanity check.
+    let factory = Address::repeat_byte(0x11);
+    let head = web3.provider.get_block_number().await.unwrap();
+    seed_checkpoint(&db, factory, head).await;
+
+    tokio::time::timeout(
+        TIMEOUT,
+        pool_indexer::bootstrap(pool_indexer_config(factory, POOL_INDEXER_METRICS_PORT)),
+    )
+    .await
+    .expect("bootstrap-only did not exit on an already-seeded DB");
+
+    let checkpoint: i64 = sqlx::query_scalar(
+        "SELECT block_number FROM pool_indexer_checkpoints WHERE contract_address = $1",
+    )
+    .bind(factory.as_slice())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        checkpoint,
+        head.cast_signed(),
+        "bootstrap mutated an already-seeded checkpoint"
+    );
 }
