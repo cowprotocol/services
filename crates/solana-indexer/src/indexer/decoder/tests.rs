@@ -83,6 +83,8 @@ fn top_level_settlement_instruction_is_kept() {
 
     assert_eq!(relevant.len(), 1);
     assert_eq!(relevant[0].program, settlement);
+    assert_eq!(relevant[0].instruction_index, 0);
+    assert_eq!(relevant[0].inner_index, None);
     assert_eq!(relevant[0].accounts, vec![acct_a, acct_b]);
     assert_eq!(relevant[0].data, vec![9, 9, 9]);
 }
@@ -108,6 +110,8 @@ fn settlement_cpi_in_inner_instructions_is_kept() {
 
     assert_eq!(relevant.len(), 1);
     assert_eq!(relevant[0].program, settlement);
+    assert_eq!(relevant[0].instruction_index, 0);
+    assert_eq!(relevant[0].inner_index, Some(0));
     assert_eq!(relevant[0].accounts, vec![acct]);
     assert_eq!(relevant[0].data, vec![7]);
 }
@@ -133,5 +137,87 @@ fn alt_loaded_program_is_resolved() {
 
     assert_eq!(relevant.len(), 1);
     assert_eq!(relevant[0].program, settlement);
+    assert_eq!(relevant[0].instruction_index, 0);
+    assert_eq!(relevant[0].inner_index, None);
     assert_eq!(relevant[0].accounts, vec![acct]);
+}
+
+#[test]
+fn solflow_program_instruction_is_kept() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (other_program, acct) = (pubkey(5), pubkey(3));
+    // account list: [other_program(0), solflow(1), acct(2)]. Two top-level
+    // instructions; only the second (index 1) targets a tracked program.
+    let tx = tx_info(
+        vec![other_program, solflow, acct],
+        vec![],
+        vec![],
+        vec![
+            compiled(0, vec![2], vec![0]),
+            compiled(1, vec![2], vec![1, 2, 3]),
+        ],
+        vec![],
+    );
+
+    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+
+    assert_eq!(relevant.len(), 1);
+    assert_eq!(relevant[0].program, solflow);
+    assert_eq!(relevant[0].instruction_index, 1);
+    assert_eq!(relevant[0].inner_index, None);
+    assert_eq!(relevant[0].accounts, vec![acct]);
+    assert_eq!(relevant[0].data, vec![1, 2, 3]);
+}
+
+#[test]
+fn instruction_with_out_of_range_program_index_is_dropped() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    // account list has one entry (index 0); program_id_index 5 is out of range.
+    let tx = tx_info(
+        vec![settlement],
+        vec![],
+        vec![],
+        vec![compiled(5, vec![0], vec![0])],
+        vec![],
+    );
+
+    assert!(relevant_instructions(&tx, &settlement, &solflow).is_empty());
+}
+
+#[test]
+fn relevant_instruction_with_out_of_range_account_index_is_dropped() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    // program resolves to settlement (index 0), but account index 9 is out of
+    // range, so the whole instruction is dropped.
+    let tx = tx_info(
+        vec![settlement],
+        vec![],
+        vec![],
+        vec![compiled(0, vec![9], vec![0])],
+        vec![],
+    );
+
+    assert!(relevant_instructions(&tx, &settlement, &solflow).is_empty());
+}
+
+#[test]
+fn wrong_length_account_key_is_zeroed_and_not_matched() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    // A 5-byte static key at index 0 becomes the zero pubkey, keeping index
+    // alignment. An instruction naming it as its program matches no tracked
+    // program and is dropped.
+    let tx = SubscribeUpdateTransactionInfo {
+        transaction: Some(Transaction {
+            message: Some(Message {
+                account_keys: vec![vec![1, 2, 3, 4, 5]],
+                instructions: vec![compiled(0, vec![], vec![0])],
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    assert_eq!(build_account_keys(&tx), vec![Pubkey::default()]);
+    assert!(relevant_instructions(&tx, &settlement, &solflow).is_empty());
 }
