@@ -101,20 +101,21 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
 
     let relevant = relevant_instructions(&tx, &settlement, &solflow);
 
-    // router dropped, solflow (top-level) and settlement (CPI) kept, in order.
+    // Execution order: top-level 0's settlement CPI runs before top-level 1's
+    // solflow call. The router at top-level 0 is dropped.
     assert_eq!(relevant.len(), 2);
 
-    assert_eq!(relevant[0].program_id, solflow);
-    assert_eq!(relevant[0].instruction_index, 1);
-    assert_eq!(relevant[0].inner_index, None);
-    assert_eq!(relevant[0].accounts, vec![1, 4]);
-    assert_eq!(relevant[0].data, Bytes::from(vec![1, 2, 3]));
+    assert_eq!(relevant[0].program_id, settlement);
+    assert_eq!(relevant[0].instruction_index, 0);
+    assert_eq!(relevant[0].inner_index, Some(0));
+    assert_eq!(relevant[0].accounts, vec![1]);
+    assert_eq!(relevant[0].data, Bytes::from(vec![7]));
 
-    assert_eq!(relevant[1].program_id, settlement);
-    assert_eq!(relevant[1].instruction_index, 0);
-    assert_eq!(relevant[1].inner_index, Some(0));
-    assert_eq!(relevant[1].accounts, vec![1]);
-    assert_eq!(relevant[1].data, Bytes::from(vec![7]));
+    assert_eq!(relevant[1].program_id, solflow);
+    assert_eq!(relevant[1].instruction_index, 1);
+    assert_eq!(relevant[1].inner_index, None);
+    assert_eq!(relevant[1].accounts, vec![1, 4]);
+    assert_eq!(relevant[1].data, Bytes::from(vec![1, 2, 3]));
 }
 
 /// A program index that does not resolve to a tracked program is dropped

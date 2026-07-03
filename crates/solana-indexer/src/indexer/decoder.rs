@@ -125,7 +125,7 @@ impl RawInstruction<'_> {
     /// if that program is the settlement or SolFlow program. Account indices
     /// are carried through unresolved. Returns `None` if the program is
     /// untracked or its index is out of range.
-    fn resolve(
+    fn resolve_protocol_instruction(
         &self,
         account_keys: &[Pubkey],
         settlement_program: &Pubkey,
@@ -146,8 +146,10 @@ impl RawInstruction<'_> {
 }
 
 /// Resolve every instruction against `account_keys` and keep only those whose
-/// program is the settlement or SolFlow program. Walks top-level instructions
-/// then inner/CPI ones, where settlement is often reached only as a CPI.
+/// program is the settlement or SolFlow program, where settlement is often
+/// reached only as a CPI. Instructions are returned in on-chain execution
+/// order: each top-level instruction is followed by the inner (CPI)
+/// instructions it triggered.
 fn relevant_instructions(
     tx: &SubscribeUpdateTransactionInfo,
     settlement_program: &Pubkey,
@@ -159,40 +161,41 @@ fn relevant_instructions(
         .as_ref()
         .and_then(|transaction| transaction.message.as_ref())
         .map(|message| message.instructions.as_slice())
-        .unwrap_or_default()
-        .iter()
-        .enumerate()
-        .map(|(index, ix)| RawInstruction {
-            instruction_index: index as u32,
-            inner_index: None,
-            program_id_index: ix.program_id_index,
-            account_indices: &ix.accounts,
-            data: &ix.data,
-        });
-    let inner = tx
+        .unwrap_or_default();
+    let inner_groups = tx
         .meta
         .as_ref()
         .map(|meta| meta.inner_instructions.as_slice())
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    top_level
         .iter()
-        .flat_map(|group| {
-            group
-                .instructions
+        .enumerate()
+        .flat_map(|(index, ix)| {
+            let index = index as u32;
+            let top = RawInstruction {
+                instruction_index: index,
+                inner_index: None,
+                program_id_index: ix.program_id_index,
+                account_indices: &ix.accounts,
+                data: &ix.data,
+            };
+            let inners = inner_groups
                 .iter()
-                .enumerate()
+                .filter(move |group| group.index == index)
+                .flat_map(|group| group.instructions.iter().enumerate())
                 .map(move |(offset, ix)| RawInstruction {
-                    instruction_index: group.index,
+                    instruction_index: index,
                     inner_index: Some(offset as u32),
                     program_id_index: ix.program_id_index,
                     account_indices: &ix.accounts,
                     data: &ix.data,
-                })
-        });
-    // TODO: top-level instructions come before inner ones here, which is not the
-    // on-chain execution order. Revisit if ordering across the two matters.
-    top_level
-        .chain(inner)
-        .filter_map(|raw| raw.resolve(&account_keys, settlement_program, solflow_program))
+                });
+            std::iter::once(top).chain(inners)
+        })
+        .filter_map(|raw| {
+            raw.resolve_protocol_instruction(&account_keys, settlement_program, solflow_program)
+        })
         .collect()
 }
 
