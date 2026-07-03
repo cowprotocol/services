@@ -5,7 +5,10 @@ use {
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
-    std::collections::HashMap,
+    std::{
+        collections::{BTreeMap, HashMap},
+        sync::Arc,
+    },
 };
 
 #[serde_as]
@@ -70,6 +73,10 @@ pub enum BuyTokenDestination {
     /// Pay trade proceeds as an ERC20 token transfer
     Erc20,
     /// Pay trade proceeds as a Vault internal balance transfer
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     Internal,
 }
 
@@ -80,8 +87,16 @@ pub enum SellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
     Erc20,
     /// Internal balances to the Vault with GPv2 relayer approval
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     External,
     /// ERC20 allowances to the Vault with GPv2 relayer approval
+    #[deprecated(
+        note = "Balancer Vault token sources are deprecated and no longer appear in auctions; \
+                only erc20 is used"
+    )]
     Internal,
 }
 
@@ -259,8 +274,10 @@ pub struct ConcentratedLiquidityPool {
     #[serde_as(as = "DisplayFromStr")]
     pub liquidity: u128,
     pub tick: i32,
-    #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
-    pub liquidity_net: HashMap<i32, i128>,
+    // `Arc`-shared with the driver's domain pool to avoid deep-copying the tick
+    // map when building the solver request on every `/solve`.
+    #[serde_as(as = "Arc<BTreeMap<DisplayFromStr, DisplayFromStr>>")]
+    pub liquidity_net: Arc<BTreeMap<i32, i128>>,
     pub fee: BigDecimal,
 }
 
