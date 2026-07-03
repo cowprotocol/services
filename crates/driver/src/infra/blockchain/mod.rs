@@ -1,5 +1,9 @@
 use {
-    crate::{boundary, domain::blockchain::TxStatus},
+    crate::{
+        boundary,
+        domain::blockchain::TxStatus,
+        infra::{blockchain::gas::GasPriceParameters, config::file::GasEstimatorType},
+    },
     account_balances::{BalanceSimulator, SimulationError},
     alloy::{
         eips::eip1559::Eip1559Estimation,
@@ -104,15 +108,27 @@ impl Ethereum {
     pub async fn new(
         rpc: Rpc,
         addresses: contracts::Addresses,
-        gas: Arc<GasPriceEstimator>,
         current_block_args: &shared::current_block::Arguments,
         tx_gas_limit: eth::Gas,
+        gas_estimator_type: &GasEstimatorType,
+        gas_adjustments: GasPriceParameters,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
         let current_block_stream = current_block_args
             .stream(args.url.clone(), web3.provider.clone())
             .await
             .expect("couldn't initialize current block stream");
+
+        let gas = Arc::new(
+            GasPriceEstimator::new(
+                &web3.provider,
+                &current_block_stream,
+                gas_estimator_type,
+                gas_adjustments,
+            )
+            .await
+            .expect("initialize gas price estimator"),
+        );
 
         let contracts = Contracts::new(&web3, chain, addresses)
             .await
@@ -122,7 +138,6 @@ impl Ethereum {
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
             *contracts.vault_relayer(),
-            Some(*contracts.vault().address()),
             state_overrider.clone(),
         );
 
