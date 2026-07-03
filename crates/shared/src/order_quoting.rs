@@ -608,9 +608,9 @@ impl OrderQuoting for OrderQuoter {
 #[async_trait::async_trait]
 pub trait StreamingQuoting: Send + Sync {
     /// Fetches gas and native prices once, then yields one `Quote` per solver
-    /// result as it arrives. Each yielded quote is persisted (just like the
-    /// one-shot quote endpoint) so it can be referenced by id during a later
-    /// order placement.
+    /// result as it arrives. Each yielded quote is persisted (as opposed to
+    /// just the final quote in the one-shot quote endpoint) so it can be
+    /// referenced by id during a later order placement.
     async fn calculate_quote_stream(
         &self,
         parameters: QuoteParameters,
