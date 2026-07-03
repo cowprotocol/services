@@ -9,8 +9,8 @@ use {
     crate::{
         persistence::Persistence,
         types::{
+            channel::{PartialEvent, PartialEventKey},
             errors::PersistenceError,
-            shared::{PartialEvent, PartialEventKey},
         },
     },
     dashmap::DashMap,

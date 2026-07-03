@@ -11,8 +11,8 @@ use {
     crate::{
         persistence::Persistence,
         types::{
+            channel::{PartialEvent, PartialEventKey, StreamUpdate},
             errors::PersistenceError,
-            shared::{PartialEvent, PartialEventKey, StreamUpdate},
         },
     },
     dashmap::DashMap,

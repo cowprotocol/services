@@ -8,7 +8,7 @@
 // in a later change.
 
 use {
-    crate::{persistence::Persistence, types::shared::StreamUpdate},
+    crate::{persistence::Persistence, types::channel::StreamUpdate},
     std::sync::atomic::AtomicU64,
     tokio::sync::mpsc::Sender,
     yellowstone_grpc_client::GrpcConnector,

@@ -1,5 +1,5 @@
 #![expect(dead_code)]
-//! Types shared across the internal components of this crate.
+//! Types passed between internal components of this crate.
 
 use crate::types::{
     Signature,
