@@ -22,14 +22,14 @@ pub(crate) enum DecodeError {
 
 /// Failures surfaced from the persistence boundary.
 #[derive(Debug, Error)]
-pub(crate) enum StoreError {
+pub(crate) enum PersistenceError {
     /// The SQL `ON CONFLICT` clause rejected the write (e.g. watermark
     /// regression).
-    #[error("store conflict")]
+    #[error("persistence conflict")]
     Conflict,
-    /// The store is temporarily unavailable (e.g. connection lost, pool
-    /// exhausted). The caller is expected to retry.
-    #[error("store unavailable")]
+    /// The persistence layer is temporarily unavailable (e.g. connection lost,
+    /// pool exhausted). The caller is expected to retry.
+    #[error("persistence unavailable")]
     Unavailable,
 }
 
