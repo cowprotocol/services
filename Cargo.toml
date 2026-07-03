@@ -110,7 +110,7 @@ rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 rust_decimal = { version = "1.35.0", default-features = false }
 s3 = { path = "crates/s3" }
-schemars = "1.2"
+schemars = { version = "1.2", features = ["chrono04"] }
 scopeguard = "1.2.0"
 serde = { version = "1.0.203", features = ["derive"] }
 serde-ext = { path = "crates/serde-ext" }

@@ -16,7 +16,7 @@ pub struct Envelope<T> {
     pub version: &'static str,
     /// RFC3339 timestamp (millisecond precision, UTC) of when the event was
     /// published.
-    pub timestamp: String,
+    pub timestamp: chrono::DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
     pub body: T,
@@ -26,7 +26,7 @@ impl<T> Envelope<T> {
     pub fn new(request_id: Option<String>, body: T) -> Self {
         Self {
             version: ENVELOPE_VERSION,
-            timestamp: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            timestamp: Utc::now(),
             request_id,
             body,
         }
