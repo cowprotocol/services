@@ -1,5 +1,5 @@
 use {
-    crate::request_id::request_id,
+    crate::request_id::{SPAN_NAME, request_id},
     axum::http::Request,
     opentelemetry::{global, trace::TraceContextExt},
     opentelemetry_http::HeaderExtractor,
@@ -25,7 +25,7 @@ pub fn make_span<B>(request: &Request<B>) -> Span {
     });
     let request_id = request_id(request.headers());
 
-    let span = info_span!("http_request", ?request_id, trace_id = field::Empty);
+    let span = info_span!(SPAN_NAME, request_id = request_id, trace_id = field::Empty);
     if let Err(err) = span.set_parent(parent_context) {
         tracing::debug!(?err, "failed to set request parent span");
     }
