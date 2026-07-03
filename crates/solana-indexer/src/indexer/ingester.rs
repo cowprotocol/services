@@ -25,8 +25,8 @@ use {
         persistence::Persistence,
         types::{
             Signature,
+            channel::StreamUpdate,
             errors::PersistenceError,
-            shared::StreamUpdate,
             slot::Slot,
             wire::{
                 CommitmentLevel,
