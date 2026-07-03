@@ -47,13 +47,9 @@ pub(crate) fn request_id(headers: &HeaderMap<HeaderValue>) -> String {
     }
 }
 
-/// Name of the span that stores the id used to associated logs
-/// across processes. Must match the span created by
-/// [`crate::tracing::distributed::axum::make_span`].
+/// Name of the span/field that stores the id used to associated logs
+/// across processes. Must match the ones used in `make_span`
 pub const SPAN_NAME: &str = "http_request";
-
-/// Field on [`SPAN_NAME`] holding the request id. Recorded as a plain string
-/// (not `?`/Debug) so [`RequestIdLayer`] can read it via `record_str`.
 pub const SPAN_FIELD: &str = "request_id";
 
 pub fn info_span(request_id: String) -> Span {
