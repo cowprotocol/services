@@ -1,5 +1,9 @@
 #![expect(dead_code)]
-//! Types passed between internal components of this crate.
+//! Message types passed over the internal channels.
+//!
+//! The ingester pushes [`StreamUpdate`] into the channel to the decoder; the
+//! decoder pushes [`PartialEvent`] / [`PartialHalf`] to the partial-event
+//! watchdog.
 
 use crate::types::{
     Signature,
@@ -26,34 +30,32 @@ pub(crate) enum StreamUpdate {
     Account {
         /// Slot the message was observed at.
         slot: Slot,
-        /// Optional transaction signature linking the write back to its
-        /// originating transaction.
+        /// Optional signature linking the write back to its originating
+        /// transaction.
         txn_signature: Option<Signature>,
         /// Wire message body.
         inner: Box<SubscribeUpdateAccountInfo>,
     },
 }
 
-/// Key for the shared decoder↔watchdog partials map: the `(slot, signature)`
-/// pair identifying which on-chain event a `PartialEvent` belongs to.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
-pub(crate) struct PartialEventKey(pub Slot, pub Signature);
+/// From `Decoder` → `PartialEventWatchdog`.
+///
+/// The watchdog holds incomplete `(slot, signature)` pairs until both halves
+/// arrive; each delivery carries the half that just landed.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PartialEvent {
+    /// Slot the partial was observed at.
+    pub slot: Slot,
+    /// Transaction signature the partial corresponds to.
+    pub signature: Signature,
+}
 
-/// One half of a paired on-chain event, recorded by the decoder when only
-/// one of the two matching `StreamUpdate` messages has been observed for a
-/// given `PartialEventKey`.
+/// One of the two halves a [`StreamUpdate`] can produce.
 ///
-/// The other half is expected to arrive shortly; until it does, the entry
-/// lives in the shared decoder↔watchdog map. The watchdog scans the map and
-/// dead-letters any partial that has aged out (the matching half never
-/// arrived within the slot window), using the variant to report which half
-/// was missing.
-///
-/// Both components hold a clone of the same
-/// `Arc<DashMap<PartialEventKey, PartialEvent>>`, so there is no message
-/// passing between them — the watchdog simply reads what the decoder wrote.
+/// The decoder pushes one `PartialEvent` per `StreamUpdate` it processes; the
+/// watchdog uses the `(slot, signature)` key to match pairs.
 #[derive(Debug, Clone)]
-pub(crate) enum PartialEvent {
+pub(crate) enum PartialHalf {
     /// Transaction-update half.
     Tx(Box<SubscribeUpdateTransactionInfo>),
     /// Account-update half.

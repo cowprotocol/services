@@ -8,10 +8,7 @@
 use {
     crate::{
         persistence::Persistence,
-        types::{
-            channel::{PartialEvent, PartialEventKey},
-            errors::PersistenceError,
-        },
+        types::{Signature, channel::PartialHalf, errors::PersistenceError, slot::Slot},
     },
     dashmap::DashMap,
     std::sync::Arc,
@@ -34,18 +31,18 @@ pub(crate) struct PartialEventWatchdog {
     /// Persistence layer.
     pub persistence: Persistence,
 
-    /// Shared in-memory map of partial events keyed by `PartialEventKey`.
+    /// Shared in-memory map of partial events keyed by `(slot, signature)`.
     ///
     /// The decoder holds a clone of this `Arc` and both inserts and removes
     /// halves as it processes them.
-    pub partials: Arc<DashMap<PartialEventKey, PartialEvent>>,
+    pub partials: Arc<DashMap<(Slot, Signature), PartialHalf>>,
 }
 
 impl PartialEventWatchdog {
     /// Construct a new watchdog.
     pub fn new(
         persistence: Persistence,
-        partials: Arc<DashMap<PartialEventKey, PartialEvent>>,
+        partials: Arc<DashMap<(Slot, Signature), PartialHalf>>,
     ) -> Self {
         Self {
             persistence,
