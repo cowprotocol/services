@@ -12,6 +12,7 @@ use {
         domain,
     },
     alloy::primitives::{Address, U256},
+    app_data::ParsedAppDataCache,
     chrono::{DateTime, Utc},
     configs::{
         autopilot::fee_policy::{
@@ -89,6 +90,7 @@ pub struct ProtocolFees {
     max_partner_fee: FeeFactor,
     upcoming_fee_policies: Option<UpcomingProtocolFees>,
     volume_fee_policy: VolumeFeePolicy,
+    parsed_app_data_cache: ParsedAppDataCache,
 }
 
 impl ProtocolFees {
@@ -116,11 +118,13 @@ impl ProtocolFees {
                 config.upcoming_policies.clone(),
             ),
             volume_fee_policy,
+            parsed_app_data_cache: ParsedAppDataCache::default(),
         }
     }
 
     /// Returns the capped aggregated partner fee
     fn get_partner_fee(
+        cache: &ParsedAppDataCache,
         order: &boundary::Order,
         quote: &domain::Quote,
         max_partner_fee: f64,
@@ -170,10 +174,10 @@ impl ProtocolFees {
         let Ok(max_partner_fee) = Decimal::try_from(max_partner_fee) else {
             return vec![];
         };
-        let Some(full_app_data) = order.metadata.full_app_data.as_ref() else {
-            return vec![];
-        };
-        let Ok(parsed_app_data) = app_data::parse(full_app_data.as_bytes()) else {
+        let Some(parsed_app_data) = cache.get_or_parse(
+            &order.data.app_data,
+            order.metadata.full_app_data.as_deref(),
+        ) else {
             return vec![];
         };
 
@@ -257,8 +261,12 @@ impl ProtocolFees {
             solver: Address::ZERO,
         });
 
-        let partner_fee =
-            Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get());
+        let partner_fee = Self::get_partner_fee(
+            &self.parsed_app_data_cache,
+            order,
+            &reference_quote,
+            self.max_partner_fee.get(),
+        );
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner) {
             return boundary::order::to_domain(order, partner_fee, quote);
@@ -379,7 +387,7 @@ impl Quote {
 
 #[cfg(test)]
 mod test {
-    use {super::*, model::order::OrderMetadata};
+    use {super::*, app_data::ParsedAppDataCache, model::order::OrderMetadata};
 
     #[test]
     fn test_get_partner_fee_valid_multiple_fees_not_capped() {
@@ -414,7 +422,12 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(
+            &ParsedAppDataCache::default(),
+            &order,
+            &Default::default(),
+            max_partner_fee,
+        );
 
         // Expected: The compounded percentage (1 + 0.05) * (1 + 0.20) - 1 = 0.26 < 0.3
         // (not capped)
@@ -455,7 +468,12 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(
+            &ParsedAppDataCache::default(),
+            &order,
+            &Default::default(),
+            max_partner_fee,
+        );
 
         // Expected: Empty vector since there are no partner fees
         assert_eq!(result, vec![]);
@@ -490,7 +508,12 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(
+            &ParsedAppDataCache::default(),
+            &order,
+            &Default::default(),
+            max_partner_fee,
+        );
 
         // Expected: Empty vector since the only fee has 0 bps
         assert_eq!(
@@ -534,7 +557,12 @@ mod test {
         };
 
         let max_partner_fee = 0.0; // 0%
-        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(
+            &ParsedAppDataCache::default(),
+            &order,
+            &Default::default(),
+            max_partner_fee,
+        );
 
         // Expected: All fees are capped to zero but still appear
         assert_eq!(
@@ -579,7 +607,12 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(
+            &ParsedAppDataCache::default(),
+            &order,
+            &Default::default(),
+            max_partner_fee,
+        );
 
         // Expected: Single fee capped at 0.3 (instead of 0.5)
         assert_eq!(
@@ -623,7 +656,12 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(
+            &ParsedAppDataCache::default(),
+            &order,
+            &Default::default(),
+            max_partner_fee,
+        );
 
         // Expected: With compounding:
         // First fee: 0.1
@@ -679,7 +717,12 @@ mod test {
         };
 
         let max_partner_fee = 0.3; // 30%
-        let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
+        let result = ProtocolFees::get_partner_fee(
+            &ParsedAppDataCache::default(),
+            &order,
+            &Default::default(),
+            max_partner_fee,
+        );
 
         // Expected: With compounding, fees accumulate as follows:
         // First fee: 0.1

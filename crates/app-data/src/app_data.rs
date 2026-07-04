@@ -10,6 +10,7 @@ use {
     std::{
         fmt::{self, Display},
         slice::Iter,
+        sync::Arc,
     },
 };
 
@@ -389,6 +390,36 @@ impl WrapperCache {
         });
         self.0.insert(*hash, result);
         result
+    }
+}
+
+/// Caches parsed app data documents, keyed by hash.
+pub struct ParsedAppDataCache(Cache<AppDataHash, Option<Arc<ProtocolAppData>>>);
+
+impl ParsedAppDataCache {
+    pub fn get_or_parse(
+        &self,
+        hash: &AppDataHash,
+        document: Option<&str>,
+    ) -> Option<Arc<ProtocolAppData>> {
+        if let Some(cached) = self.0.get(hash) {
+            return cached;
+        }
+        let result = document
+            .and_then(|doc| parse(doc.as_bytes()).ok())
+            .map(Arc::new);
+        self.0.insert(*hash, result.clone());
+        result
+    }
+}
+
+impl Default for ParsedAppDataCache {
+    fn default() -> Self {
+        Self(
+            Cache::builder()
+                .time_to_idle(std::time::Duration::from_secs(60))
+                .build(),
+        )
     }
 }
 
