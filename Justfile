@@ -29,7 +29,7 @@ test-unit:
 
 # Run doc tests
 test-doc:
-    cargo test --doc
+    cargo test --doc --workspace --exclude 'cow-contract-*'
 
 # Run database tests
 test-db:
