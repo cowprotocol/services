@@ -9,6 +9,7 @@ pub mod heap_dump_handler;
 pub mod metrics;
 pub mod panic_hook;
 pub mod tracing;
+pub mod version;
 
 pub use {
     crate::tracing::distributed::request_id,
