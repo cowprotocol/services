@@ -1,7 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
-exclude = ["contracts/"]
+members = [
+  "contracts/generated/contracts-facade",
+  "crates/*",
+]
 
 [workspace.dependencies]
 account-balances = { path = "crates/account-balances" }
@@ -157,3 +159,6 @@ yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tokio_unstable)"] }
