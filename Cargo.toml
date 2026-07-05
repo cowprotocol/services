@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "contracts/generated/contracts-facade",
+  "contracts/generated/contracts-generated/*",
   "crates/*",
 ]
 
