@@ -1,16 +1,25 @@
 use {
-    super::{build_account_keys, relevant_instructions},
-    crate::types::wire::{
-        CompiledInstruction,
-        InnerInstruction,
-        InnerInstructions,
-        Message,
-        SubscribeUpdateTransactionInfo,
-        Transaction,
-        TransactionStatusMeta,
+    super::{Decoder, build_account_keys, relevant_instructions},
+    crate::{
+        persistence::Persistence,
+        types::{
+            Signature,
+            channel::StreamUpdate,
+            slot::Slot,
+            wire::{
+                CompiledInstruction,
+                InnerInstruction,
+                InnerInstructions,
+                Message,
+                SubscribeUpdateTransactionInfo,
+                Transaction,
+                TransactionStatusMeta,
+            },
+        },
     },
     bytes::Bytes,
     solana_sdk::pubkey::Pubkey,
+    tokio::sync::mpsc::Sender,
 };
 
 fn pubkey(n: u8) -> Pubkey {
@@ -223,4 +232,45 @@ fn corrupt_stack_height_is_clamped() {
     assert_eq!(relevant[0].program_id, settlement);
     // depth 9999 clamped to 4, so the path is bounded, not 9999 elements
     assert_eq!(relevant[0].inner_ix_path, vec![0, 0, 0, 0]);
+}
+
+fn signature(n: u8) -> Signature {
+    Signature::from([n; 64])
+}
+
+fn test_decoder(settlement: Pubkey, solflow: Pubkey) -> (Decoder, Sender<StreamUpdate>) {
+    let (sender, rx) = tokio::sync::mpsc::channel(16);
+    let decoder = Decoder::new(Persistence {}, rx, settlement, solflow);
+    (decoder, sender)
+}
+
+/// A transaction carrying one settlement instruction, so draining it also
+/// routes into `decode_settlement`.
+fn stream_tx(slot: Slot, signature: Signature, settlement: Pubkey) -> StreamUpdate {
+    let info = tx_info(
+        vec![settlement, pubkey(8)],
+        vec![],
+        vec![],
+        vec![compiled(0, vec![1], vec![0])],
+        vec![],
+    );
+    StreamUpdate::Tx {
+        slot,
+        signature,
+        inner: Box::new(info),
+    }
+}
+
+#[tokio::test]
+async fn run_drains_transactions_until_the_sender_drops() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (mut decoder, sender) = test_decoder(settlement, solflow);
+
+    sender
+        .send(stream_tx(Slot(7), signature(3), settlement))
+        .await
+        .unwrap();
+    drop(sender);
+
+    assert!(decoder.run().await.is_ok());
 }
