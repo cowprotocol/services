@@ -1,6 +1,7 @@
 use {
     crate::{
         autopilot::{
+            balance_cache::BalancesCacheConfig,
             cow_amm::CowAmmGroupConfig,
             ethflow::EthflowConfig,
             fee_policy::FeePoliciesConfig,
@@ -25,6 +26,7 @@ use {
     url::Url,
 };
 
+pub mod balance_cache;
 pub mod cow_amm;
 pub mod ethflow;
 pub mod fee_policy;
@@ -164,6 +166,11 @@ pub struct Configuration {
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
     pub price_estimation: PriceEstimation,
+
+    /// Settings for the cache storing user balances that's maintained by a
+    /// background task.
+    #[serde(default)]
+    pub balances_cache: BalancesCacheConfig,
 }
 
 impl Configuration {
@@ -228,6 +235,7 @@ impl Configuration {
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
             price_estimation: TestDefault::test_default(),
+            balances_cache: Default::default(),
         }
     }
 
@@ -259,6 +267,7 @@ impl Configuration {
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
             price_estimation: TestDefault::test_default(),
+            balances_cache: Default::default(),
         }
     }
 

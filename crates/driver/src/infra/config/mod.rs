@@ -8,7 +8,10 @@ use {
         solver,
     },
     eth_domain_types as eth,
-    std::time::Duration,
+    std::{
+        num::{NonZeroU64, NonZeroUsize},
+        time::Duration,
+    },
 };
 
 pub mod file;
@@ -30,4 +33,11 @@ pub struct Config {
     pub app_data_fetching: AppDataFetching,
     pub tx_gas_limit: eth::U256,
     pub http: configs::http_client::HttpClient,
+    pub balances_cache: BalancesCacheConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct BalancesCacheConfig {
+    pub max_age: NonZeroU64,
+    pub max_concurrent_updates: NonZeroUsize,
 }

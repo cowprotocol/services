@@ -330,12 +330,11 @@ impl Utilities {
             })
             .collect::<Vec<_>>();
 
-        let balances = self.balance_fetcher.get_balances(&queries).await;
-
-        let result: HashMap<_, _> = queries
-            .into_iter()
-            .zip(balances)
-            .filter_map(|(query, balance)| {
+        let result: HashMap<_, _> = self
+            .balance_fetcher
+            .get_balances(queries)
+            .buffer_unordered(usize::MAX)
+            .filter_map(|(query, balance)| async move {
                 let balance = balance.ok()?;
                 Some((
                     (
@@ -350,7 +349,8 @@ impl Utilities {
                     order::SellAmount(balance),
                 ))
             })
-            .collect();
+            .collect()
+            .await;
 
         Arc::new(result)
     }

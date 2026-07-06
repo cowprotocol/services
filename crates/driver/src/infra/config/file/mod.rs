@@ -9,7 +9,11 @@ use {
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
-    std::{collections::HashMap, num::NonZeroUsize, time::Duration},
+    std::{
+        collections::HashMap,
+        num::{NonZeroU64, NonZeroUsize},
+        time::Duration,
+    },
 };
 
 mod load;
@@ -82,6 +86,11 @@ struct Config {
 
     #[serde_as(as = "HexOrDecimalU256")]
     tx_gas_limit: eth::U256,
+
+    /// Configures cache for user balances and the background task
+    /// that periodically updates it.
+    #[serde(default)]
+    balances_cache: BalancesCacheConfig,
 
     #[serde(default)]
     simulator: configs::simulator::Config,
@@ -1041,6 +1050,37 @@ enum AtBlock {
     Latest,
     /// Use the latest finalized block.
     Finalized,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BalancesCacheConfig {
+    /// For how many blocks a particular balance must not have been requested
+    /// before getting evicted from the cache.
+    #[serde(default = "default_max_request_age")]
+    pub max_request_age: NonZeroU64,
+
+    /// How many balances may be fetched at most in parallel by the background
+    /// task.
+    #[serde(default = "default_max_concurrent_updates")]
+    pub max_concurrent_updates: NonZeroUsize,
+}
+
+impl Default for BalancesCacheConfig {
+    fn default() -> Self {
+        Self {
+            max_request_age: default_max_request_age(),
+            max_concurrent_updates: default_max_concurrent_updates(),
+        }
+    }
+}
+
+fn default_max_request_age() -> NonZeroU64 {
+    NonZeroU64::new(5).unwrap()
+}
+
+fn default_max_concurrent_updates() -> NonZeroUsize {
+    NonZeroUsize::new(100).unwrap()
 }
 
 #[cfg(test)]

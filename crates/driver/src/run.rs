@@ -91,6 +91,13 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         } => Some(AppDataRetriever::new(orderbook_url.clone(), *cache_size)),
         config::file::AppDataFetching::Disabled => None,
     };
+    let balance_fetcher = account_balances::cached(
+        eth.web3(),
+        eth.balance_simulator().clone(),
+        eth.current_block().clone(),
+        config.balances_cache.max_age,
+        config.balances_cache.max_concurrent_updates,
+    );
     let solvers = solvers(&config, &eth).await;
     let http_factory = HttpClientFactory::new(&config.http);
     // Set up EIP-7702 delegate deployment and solver delegation for solvers
@@ -131,6 +138,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             &eth,
         ),
         eth,
+        balance_fetcher,
         addr: args.addr,
         addr_sender,
     }
