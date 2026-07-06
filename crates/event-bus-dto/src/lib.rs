@@ -11,11 +11,13 @@
 
 pub mod envelope;
 pub mod price_estimate;
+pub mod query;
 pub mod quote_requested;
 
 pub use {
     envelope::{ENVELOPE_VERSION, Envelope},
     price_estimate::PriceEstimateEvent,
+    query::{OrderKind, QueryFields},
     quote_requested::QuoteRequestedEvent,
 };
 use {schemars::JsonSchema, serde::Serialize};

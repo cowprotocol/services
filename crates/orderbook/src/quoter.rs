@@ -4,11 +4,9 @@ use {
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
     configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
-    event_bus_dto::quote_requested::{
-        OrderKind as DtoOrderKind,
-        PriceQuality as DtoPriceQuality,
-        QueryFields,
-        QuoteRequestedEvent,
+    event_bus_dto::{
+        query::{OrderKind as DtoOrderKind, QueryFields},
+        quote_requested::{PriceQuality as DtoPriceQuality, QuoteRequestedEvent},
     },
     futures::stream::{BoxStream, StreamExt},
     model::{
@@ -251,18 +249,21 @@ impl QuoteHandler {
             .order_validator
             .validate_app_data(&request.app_data, &full_app_data_override)?;
 
+        let order = PreOrderData::from(request);
+        // Capture valid_to once so the value validated here is the exact value
+        // returned in the response (and, for streaming, shared by all events).
+        let valid_to = order.valid_to;
+        self.order_validator.partial_validate(order).await?;
+
+        // Emit only after validation succeeds so every `quoteRequested` event
+        // is followed by the `priceEstimate` events of the same request,
+        // keeping the two correlatable by request id without orphans.
         emit_quote_requested_event(
             request,
             sell_token_symbol,
             buy_token_symbol,
             &app_data.inner.document,
         );
-
-        let order = PreOrderData::from(request);
-        // Capture valid_to once so the value validated here is the exact value
-        // returned in the response (and, for streaming, shared by all events).
-        let valid_to = order.valid_to;
-        self.order_validator.partial_validate(order).await?;
 
         Ok((
             QuoteParameters {
@@ -313,6 +314,8 @@ fn emit_quote_requested_event(
             kind,
         },
         from: request.from.to_string(),
+        // Deliberate second parse: `appCode` lives at the document root, not in
+        // the already-parsed `ProtocolAppData`. Cheap given the 8KB app-data cap.
         app_code: ::app_data::app_code(document.as_bytes()),
         sell_token_symbol,
         buy_token_symbol,
