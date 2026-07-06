@@ -405,11 +405,9 @@ impl ParsedAppDataCache {
         if let Some(cached) = self.0.get(hash) {
             return cached;
         }
-        let result = document
-            .and_then(|doc| parse(doc.as_bytes()).ok())
-            .map(Arc::new);
-        self.0.insert(*hash, result.clone());
-        result
+        let parsed = parse(document?.as_bytes()).ok().map(Arc::new);
+        self.0.insert(*hash, parsed.clone());
+        parsed
     }
 }
 
