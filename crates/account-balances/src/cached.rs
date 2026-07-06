@@ -181,12 +181,12 @@ impl BalanceFetching for Balances {
             return cached.into_iter().map(|(_, result)| result).collect();
         }
 
+        let start = Instant::now();
         let missing_results = self
             .inner
             .get_balances(&missing.iter().map(|q| (*q).clone()).collect::<Vec<_>>())
             .await;
 
-        let start = Instant::now();
         {
             let mut cache = self.balance_cache.lock().unwrap();
             for (query, result) in missing.iter().zip(missing_results.iter()) {
@@ -198,7 +198,8 @@ impl BalanceFetching for Balances {
 
         tracing::debug!(
             cached = cached.len(),
-            missing = missing.len(),
+            missing_total = queries.len().saturating_sub(cached.len()),
+            missing_unique = missing.len(),
             elapsed = ?start.elapsed(),
             "fetched missing balances"
         );
