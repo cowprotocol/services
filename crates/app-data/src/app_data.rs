@@ -402,12 +402,8 @@ impl ParsedAppDataCache {
         hash: &AppDataHash,
         document: Option<&str>,
     ) -> Option<Arc<ProtocolAppData>> {
-        if let Some(cached) = self.0.get(hash) {
-            return cached;
-        }
-        let parsed = parse(document?.as_bytes()).ok().map(Arc::new);
-        self.0.insert(*hash, parsed.clone());
-        parsed
+        self.0
+            .get_with_by_ref(hash, || Some(Arc::new(parse(document?.as_bytes()).ok()?)))
     }
 }
 
