@@ -9,15 +9,8 @@
 //!   other components use to know how far the chain has advanced.
 //!
 //! - [`Decoder`]: receives the raw stream updates, picks out transactions
-//!   belonging to the settlement and SolFlow programs, matches each transaction
-//!   with its corresponding account-update snapshot, and persists the resulting
-//!   typed events to the store.
-//!
-//! - [`PartialEventWatchdog`]: some events arrive in two halves (a transaction
-//!   update and an account update) that don't always land together. The decoder
-//!   parks the half it has in a map shared with the watchdog; the watchdog
-//!   periodically scans that map and dead-letters any entry whose other half
-//!   never showed up within the slot window, recording which half went missing.
+//!   belonging to the settlement and SolFlow programs, and persists the
+//!   resulting typed events to the store.
 //!
 //! - [`FinalizationWorker`]: rows are first written at the `confirmed`
 //!   commitment level. This worker re-checks them against the chain and
@@ -29,12 +22,6 @@
 pub mod decoder;
 pub mod finalization;
 pub mod ingester;
-pub mod watchdog;
 
 #[expect(unused_imports)]
-pub(crate) use {
-    decoder::Decoder,
-    finalization::FinalizationWorker,
-    ingester::Ingester,
-    watchdog::PartialEventWatchdog,
-};
+pub(crate) use {decoder::Decoder, finalization::FinalizationWorker, ingester::Ingester};

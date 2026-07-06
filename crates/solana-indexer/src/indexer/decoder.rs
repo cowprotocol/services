@@ -1,7 +1,6 @@
 #![expect(dead_code)]
 //! The decoder pulls `StreamUpdate`s from the ingester, decodes
-//! settlement-program and SolFlow transactions, joins account-update snapshots,
-//! and persists typed events.
+//! settlement-program and SolFlow transactions, and persists typed events.
 
 // TODO: `run` is unimplemented. The dispatch and persist steps that consume the
 // resolved instructions below are not wired up yet.
@@ -10,36 +9,24 @@ use {
     crate::{
         persistence::Persistence,
         types::{
-            Signature,
-            channel::{PartialHalf, StreamUpdate},
+            channel::StreamUpdate,
             errors::PersistenceError,
-            slot::Slot,
             tx::ResolvedInstruction,
             wire::SubscribeUpdateTransactionInfo,
         },
     },
     bytes::Bytes,
-    dashmap::DashMap,
     solana_sdk::pubkey::Pubkey,
-    std::sync::Arc,
     tokio::sync::mpsc::Receiver,
 };
 
 /// Decoder component.
-///
-/// The watchdog holds a clone of the same `partials` map, so the two operate on
-/// the same concurrent map without any message passing between them.
 pub(crate) struct Decoder {
     /// Persistence layer.
     pub persistence: Persistence,
 
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
-
-    /// Shared in-memory map of partial events keyed by `(slot, signature)`,
-    /// holding either-half events waiting for their pair. The watchdog holds a
-    /// clone of this `Arc`.
-    pub partials: Arc<DashMap<(Slot, Signature), PartialHalf>>,
 
     /// Settlement program id (filter target for the decoder).
     pub settlement_program: Pubkey,
@@ -53,22 +40,19 @@ impl Decoder {
     pub fn new(
         persistence: Persistence,
         rx: Receiver<StreamUpdate>,
-        partials: Arc<DashMap<(Slot, Signature), PartialHalf>>,
         settlement_program: Pubkey,
         solflow_program: Pubkey,
     ) -> Self {
         Self {
             persistence,
             rx,
-            partials,
             settlement_program,
             solflow_program,
         }
     }
 
     /// Main loop. Pulls `StreamUpdate` from the receiver, runs the decode
-    /// pipeline, persists, and records partial events in the shared map for the
-    /// watchdog to read.
+    /// pipeline, and persists typed events.
     pub async fn run(&mut self) -> Result<(), PersistenceError> {
         unimplemented!()
     }
