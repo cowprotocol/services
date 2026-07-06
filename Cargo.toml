@@ -153,7 +153,6 @@ tracing-opentelemetry = "0.33.0"
 tracing-serde = "0.2"
 tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
-vergen = "8"
 winner-selection = { path = "crates/winner-selection" }
 yellowstone-grpc-client = "13.1.0"
 yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
