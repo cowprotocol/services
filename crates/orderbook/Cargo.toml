@@ -35,8 +35,8 @@ const-hex = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
 eth-domain-types = { workspace = true }
-event-bus-dto = { workspace = true }
 ethrpc = { workspace = true }
+event-bus-dto = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
