@@ -27,7 +27,7 @@ use {
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,
-    simulator::{simulation_builder::SettlementSimulator, tenderly},
+    simulator::{self, simulation_builder::SettlementSimulator, tenderly},
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
     token_info::TokenInfoFetching,
 };
@@ -119,6 +119,13 @@ impl<'a> PriceEstimatorFactory<'a> {
         });
         let settlement_contract =
             GPv2Settlement::GPv2Settlement::new(network.settlement, web3.provider.clone());
+        let simulation_overrides = args.state_override_stream.as_ref().map(|cfg| {
+            simulator::state_override_stream::spawn(
+                cfg,
+                network.block_stream.clone(),
+                network.chain.block_time_in_ms(),
+            )
+        });
         let simulator = SettlementSimulator::new(
             settlement_contract,
             network.flash_loan_router,
@@ -128,6 +135,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             balance_overrides,
             network.block_stream.clone(),
             tenderly.clone(),
+            simulation_overrides,
         )
         .await?;
 

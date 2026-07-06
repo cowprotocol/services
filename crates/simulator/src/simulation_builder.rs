@@ -3,6 +3,7 @@ use {
     alloy_primitives::{Address, B256, Bytes, U256, address, b256, keccak256},
     alloy_provider::{DynProvider, Provider, ext::DebugApi},
     alloy_rpc_types::{
+        BlockOverrides,
         TransactionRequest,
         state::{AccountOverride, StateOverride},
         trace::geth::{CallConfig, GethDebugTracingCallOptions, GethDebugTracingOptions},
@@ -41,6 +42,7 @@ pub(crate) struct Inner {
     pub(crate) chain_id: u64,
     pub(crate) current_block: CurrentBlockWatcher,
     pub(crate) tenderly: Option<Arc<dyn tenderly::Api>>,
+    pub(crate) simulation_overrides: Option<crate::state_override_stream::SimulationOverrides>,
 }
 
 impl SettlementSimulator {
@@ -54,6 +56,7 @@ impl SettlementSimulator {
         state_overrides: Arc<dyn StateOverriding>,
         current_block: CurrentBlockWatcher,
         tenderly: Option<Arc<dyn tenderly::Api>>,
+        simulation_overrides: Option<crate::state_override_stream::SimulationOverrides>,
     ) -> Result<Self> {
         let authenticator = settlement.authenticator().call().await?;
         let vault_relayer = Address(settlement.vaultRelayer().call().await?.0);
@@ -74,6 +77,7 @@ impl SettlementSimulator {
             chain_id,
             current_block,
             tenderly,
+            simulation_overrides,
         })))
     }
 
@@ -436,6 +440,7 @@ pub struct EthCallInputs {
     pub to: Address,
     pub calldata: Bytes,
     pub state_overrides: StateOverride,
+    pub block_overrides: Option<BlockOverrides>,
     pub simulator: SettlementSimulator,
     pub block: u64,
     pub failed_state_overrides: Vec<AccountOverrideRequest>,
@@ -461,6 +466,7 @@ impl EthCallInputs {
             .clone()
             .call(self.as_transaction_request())
             .overrides(self.state_overrides.clone())
+            .with_block_overrides_opt(self.block_overrides.clone())
             .block(self.block.into())
             .await
     }
@@ -472,6 +478,12 @@ impl EthCallInputs {
     pub async fn simulation_report(
         &self,
     ) -> Result<report::SimulationReport, RpcError<alloy_transport::TransportErrorKind>> {
+        let mut trace_options = GethDebugTracingCallOptions::default()
+            .with_tracing_options(GethDebugTracingOptions::call_tracer(CallConfig::default()))
+            .with_state_overrides(self.state_overrides.clone());
+        if let Some(block_overrides) = self.block_overrides.clone() {
+            trace_options = trace_options.with_block_overrides(block_overrides);
+        }
         let trace = self
             .simulator
             .0
@@ -480,11 +492,7 @@ impl EthCallInputs {
             .debug_trace_call_callframe(
                 self.as_transaction_request(),
                 self.block.into(),
-                GethDebugTracingCallOptions::default()
-                    .with_tracing_options(GethDebugTracingOptions::call_tracer(
-                        CallConfig::default(),
-                    ))
-                    .with_state_overrides(self.state_overrides.clone()),
+                trace_options,
             )
             .await?;
 

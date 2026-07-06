@@ -162,6 +162,8 @@ fn simulator(
     eth: simulator::Ethereum,
     http_factory: &HttpClientFactory,
 ) -> Simulator {
+    let block_time = eth.chain().block_time_in_ms();
+    let block_stream = eth.current_block().clone();
     let mut simulator = match &config.simulator {
         configs::simulator::Config {
             kind: configs::simulator::SimulatorKind::Tenderly(config),
@@ -178,6 +180,13 @@ fn simulator(
     }
     if let Some(gas) = config.disable_gas_simulation {
         simulator.disable_gas(gas);
+    }
+    if let Some(cfg) = &config.simulator.state_override_stream {
+        simulator.set_simulation_overrides(simulator::state_override_stream::spawn(
+            cfg,
+            block_stream,
+            block_time,
+        ));
     }
 
     simulator

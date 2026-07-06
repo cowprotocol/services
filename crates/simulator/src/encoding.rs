@@ -490,6 +490,27 @@ pub(crate) async fn finish_simulation_builder(
         }
         None => return Err(BuildError::NoSolver),
     };
+
+    // Streamed overrides are appended as Custom requests so
+    // build_final_state_overrides' merge arbitrates against the verifier's own.
+    // Only latest-block simulations get overrides; historical-block sims have no
+    // head timestamp to derive next-block overrides from.
+    let mut block_overrides = None;
+    if matches!(builder.block, Block::Latest)
+        && let Some(stream) = builder.simulator.0.simulation_overrides.as_ref()
+        && let Some(set) = stream.current()
+    {
+        block_overrides = Some(set.block_overrides);
+        for (account, state) in set.state_overrides.iter() {
+            builder
+                .account_override_requests
+                .push(AccountOverrideRequest::Custom {
+                    account: *account,
+                    state: state.clone(),
+                });
+        }
+    }
+
     let (state_overrides, state_override_errors) = build_final_state_overrides(
         builder.account_override_requests,
         builder.simulator.0.state_overrides.as_ref(),
@@ -503,6 +524,7 @@ pub(crate) async fn finish_simulation_builder(
         to,
         calldata,
         state_overrides,
+        block_overrides,
         block,
         simulator: builder.simulator,
         failed_state_overrides: state_override_errors,
