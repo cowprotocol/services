@@ -403,7 +403,7 @@ impl ParsedAppDataCache {
         document: Option<&str>,
     ) -> Option<Arc<ProtocolAppData>> {
         self.0
-            .get_with_by_ref(hash, || Some(Arc::new(parse(document?.as_bytes()).ok()?)))
+            .get_with_by_ref(hash, || parse(document?.as_bytes()).ok().map(Arc::new))
     }
 }
 
