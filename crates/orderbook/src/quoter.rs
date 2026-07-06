@@ -4,10 +4,23 @@ use {
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
     configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
+    event_bus_dto::quote_requested::{
+        OrderKind as DtoOrderKind,
+        PriceQuality as DtoPriceQuality,
+        QueryFields,
+        QuoteRequestedEvent,
+    },
     futures::stream::{BoxStream, StreamExt},
     model::{
         order::OrderCreationAppData,
-        quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
+        quote::{
+            OrderQuote,
+            OrderQuoteRequest,
+            OrderQuoteResponse,
+            OrderQuoteSide,
+            PriceQuality,
+            SellAmount,
+        },
     },
     price_estimation::{PriceEstimationError, Verification},
     shared::{
@@ -238,6 +251,13 @@ impl QuoteHandler {
             .order_validator
             .validate_app_data(&request.app_data, &full_app_data_override)?;
 
+        emit_quote_requested_event(
+            request,
+            sell_token_symbol,
+            buy_token_symbol,
+            &app_data.inner.document,
+        );
+
         let order = PreOrderData::from(request);
         // Capture valid_to once so the value validated here is the exact value
         // returned in the response (and, for streaming, shared by all events).
@@ -261,6 +281,48 @@ impl QuoteHandler {
             valid_to,
         ))
     }
+}
+
+/// Publishes a "calculating quote" event on the event bus so downstream
+/// analytics can correlate quote requests with their price estimates via the
+/// envelope's request id. Carries the app code and token symbols, which the
+/// per-estimator `priceEstimate` events don't have.
+fn emit_quote_requested_event(
+    request: &OrderQuoteRequest,
+    sell_token_symbol: Option<String>,
+    buy_token_symbol: Option<String>,
+    document: &str,
+) {
+    let (in_amount, kind) = match request.side {
+        OrderQuoteSide::Sell { sell_amount } => {
+            let value = match sell_amount {
+                SellAmount::BeforeFee { value } | SellAmount::AfterFee { value } => value,
+            };
+            (value.to_string(), DtoOrderKind::Sell)
+        }
+        OrderQuoteSide::Buy {
+            buy_amount_after_fee,
+        } => (buy_amount_after_fee.to_string(), DtoOrderKind::Buy),
+    };
+
+    let event = QuoteRequestedEvent {
+        query: QueryFields {
+            sell_token: request.sell_token.to_string(),
+            buy_token: request.buy_token.to_string(),
+            in_amount,
+            kind,
+        },
+        from: request.from.to_string(),
+        app_code: ::app_data::app_code(document.as_bytes()),
+        sell_token_symbol,
+        buy_token_symbol,
+        price_quality: match request.price_quality {
+            PriceQuality::Fast => DtoPriceQuality::Fast,
+            PriceQuality::Optimal => DtoPriceQuality::Optimal,
+            PriceQuality::Verified => DtoPriceQuality::Verified,
+        },
+    };
+    observe::event_bus::publish_event(event);
 }
 
 fn build_order_quote_response(
