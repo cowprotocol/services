@@ -7,7 +7,11 @@ use {
         map_interactions_data,
     },
     ::alloy::sol_types::SolCall,
-    alloy::primitives::{Address, U256, address, aliases::I512},
+    alloy::{
+        primitives::{Address, Bytes, U256, address, aliases::I512},
+        providers::Provider,
+        rpc::types::{TransactionRequest, state::StateOverride},
+    },
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     contracts::support::Solver,
@@ -129,9 +133,26 @@ impl TradeVerifier {
             .assemble_settle_call(&verification, query, trade)
             .await?;
 
-        let summary = self
-            .generate_execution_report(settle_call, trade, query, &verification)
-            .await?;
+        let swap_call = self.build_swap_call(settle_call, trade, query, &verification)?;
+
+        let summary = match self
+            .execute_and_analyze(&swap_call, query, &verification)
+            .await
+        {
+            Ok(s) => s,
+            Err(err) => {
+                if let Some(tenderly) = &self.tenderly
+                    && let Err(log_err) = tenderly.log_simulation_command(
+                        swap_call.tx_request,
+                        swap_call.state_overrides,
+                        swap_call.block.into(),
+                    )
+                {
+                    tracing::debug!(?log_err, "could not log tenderly simulation command");
+                }
+                return Err(err);
+            }
+        };
 
         tracing::debug!(
             tokens_lost = ?summary.tokens_lost,
@@ -150,16 +171,16 @@ impl TradeVerifier {
         ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
     }
 
-    /// To understand what's happening during the `settle_call` we need to
-    /// execute it through a helper contract. This function sets this up,
-    /// runs the simulation, and returns the resulting report.
-    async fn generate_execution_report(
+    /// Prepares a `SwapCall` by encoding the settlement through the helper
+    /// solver contract. The returned value can be used both to execute the
+    /// simulation and, on failure, to generate a Tenderly debugging command.
+    fn build_swap_call(
         &self,
         settle_call: EthCallInputs,
         trade: &TradeKind,
         query: &PriceQuery,
         verification: &Verification,
-    ) -> Result<SettleOutput, Error> {
+    ) -> Result<SwapCall, Error> {
         // Use `tx_origin` if response indicates that a special address is needed for
         // the simulation to pass. Otherwise just use the solver address.
         let solver_contract =
@@ -180,7 +201,7 @@ impl TradeVerifier {
             OrderKind::Buy => trade.out_amount(query)?,
         };
 
-        let swap_call = solver_contract
+        let call = solver_contract
             .swap(
                 self.simulator.settlement_address(),
                 tokens.clone(),
@@ -192,33 +213,46 @@ impl TradeVerifier {
                 settle_call.calldata.clone(),
             )
             .from(*solver_contract.address())
-            .gas(self.simulator.max_gas_limit())
-            .block(settle_call.block.into())
-            .state(settle_call.state_overrides.clone());
+            .gas(self.simulator.max_gas_limit());
 
-        if let Some(tenderly) = &self.tenderly
-            && let Err(err) = tenderly.log_simulation_command(
-                swap_call.clone().into_transaction_request(),
-                settle_call.state_overrides,
-                settle_call.block.into(),
-            )
-        {
-            tracing::debug!(?err, "could not log tenderly simulation command");
-        }
+        Ok(SwapCall {
+            tx_request: call.into_transaction_request(),
+            state_overrides: settle_call.state_overrides,
+            block: settle_call.block,
+            tokens,
+            calldata: settle_call.calldata,
+        })
+    }
 
-        let output = swap_call
-            .call()
+    /// Runs the `swap_call` simulation via a raw provider call and extracts
+    /// the [`SettleOutput`] from the decoded response.
+    async fn execute_and_analyze(
+        &self,
+        swap: &SwapCall,
+        query: &PriceQuery,
+        verification: &Verification,
+    ) -> Result<SettleOutput, Error> {
+        let output_bytes = self
+            .simulator
+            .provider()
+            .call(swap.tx_request.clone())
+            .overrides(swap.state_overrides.clone())
+            .block(swap.block.into())
             .await
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed)?;
 
-        let mut summary = SettleOutput::from_swap(output, query.kind, &tokens)?;
+        let output = Solver::Solver::swapCall::abi_decode_returns(&output_bytes)
+            .context("failed to decode swap output")
+            .map_err(Error::SimulationFailed)?;
+
+        let mut summary = SettleOutput::from_swap(output, query.kind, &swap.tokens)?;
 
         // adjust the reported gas cost since it does not take into account the 21K
         // units every tx has to pay and the cost for the calldata. we are
         // overcounting the calldata cost slightly since a regular settlement
         // would not include the 2 interactions measuring the token balances.
-        let call_data_cost = settle_call
+        let call_data_cost = swap
             .calldata
             .iter()
             .map(|byte| if byte == &0x0 { 4 } else { 16 })
@@ -624,6 +658,20 @@ impl TradeVerifying for TradeVerifier {
             }
         }
     }
+}
+
+/// Prepared simulation call: contains a transaction request ready to execute
+/// via `eth_call` plus all the metadata needed to construct a Tenderly
+/// debugging command on failure.
+struct SwapCall {
+    tx_request: TransactionRequest,
+    state_overrides: StateOverride,
+    /// Block number used for both execution and Tenderly logging.
+    block: u64,
+    /// Token list passed to `Solver::swap` for balance-change tracking.
+    tokens: Vec<Address>,
+    /// Encoded settlement calldata, needed for gas cost computation.
+    calldata: Bytes,
 }
 
 /// Analyzed output of `Solver::settle` smart contract call.
