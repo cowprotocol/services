@@ -11,10 +11,14 @@
 
 pub mod envelope;
 pub mod price_estimate;
+pub mod query;
+pub mod quote_requested;
 
 pub use {
     envelope::{ENVELOPE_VERSION, Envelope},
     price_estimate::PriceEstimateEvent,
+    query::{OrderKind, QueryFields},
+    quote_requested::QuoteRequestedEvent,
 };
 use {schemars::JsonSchema, serde::Serialize};
 
@@ -30,8 +34,14 @@ pub trait Event: Serialize + JsonSchema {
 /// CLI and any other place that needs to enumerate the full set of events
 /// (e.g. tests that pin the wire format).
 pub fn schemas() -> Vec<(&'static str, schemars::Schema)> {
-    vec![(
-        PriceEstimateEvent::SUBJECT,
-        schemars::schema_for!(Envelope<PriceEstimateEvent>),
-    )]
+    vec![
+        (
+            PriceEstimateEvent::SUBJECT,
+            schemars::schema_for!(Envelope<PriceEstimateEvent>),
+        ),
+        (
+            QuoteRequestedEvent::SUBJECT,
+            schemars::schema_for!(Envelope<QuoteRequestedEvent>),
+        ),
+    ]
 }
