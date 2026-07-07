@@ -80,6 +80,7 @@ services:
     # explicit tag so the localdev and prebuilt compose variants never reuse
     # each other's images (default tags collide on project + service name)
     image: playground-orderbook:localdev
+    pull_policy: build
     restart: always
     command:
       [
@@ -111,6 +112,7 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     image: playground-autopilot:localdev
+    pull_policy: build
     restart: always
     command:
       [
@@ -144,6 +146,7 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     image: playground-driver:localdev
+    pull_policy: build
     restart: always
     command:
       [
@@ -177,6 +180,7 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     image: playground-baseline:localdev
+    pull_policy: build
     restart: always
     command:
       [
