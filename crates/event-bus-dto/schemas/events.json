@@ -315,5 +315,88 @@
     ],
     "title": "Envelope",
     "type": "object"
+  },
+  "winningPriceEstimate": {
+    "$defs": {
+      "OrderKind": {
+        "enum": [
+          "sell",
+          "buy"
+        ],
+        "type": "string"
+      },
+      "QueryFields": {
+        "properties": {
+          "buyToken": {
+            "description": "Hex-encoded buy token address.",
+            "type": "string"
+          },
+          "inAmount": {
+            "description": "Decimal-encoded input amount (interpretation depends on `kind`).",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/OrderKind"
+          },
+          "sellToken": {
+            "description": "Hex-encoded sell token address.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sellToken",
+          "buyToken",
+          "inAmount",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "WinningPriceEstimateEvent": {
+        "description": "Emitted once price-estimate competition has picked the winning estimate that\nbecomes the official quote. Its job is correlation: the winning\n[`crate::PriceEstimateEvent`] of the same request is the one carrying the\nmatching `query` and `estimator` under the same envelope `requestId`.\n\nLike [`crate::PriceEstimateEvent`], one is emitted per competition run, so a\nsingle `/quote` that also derives native prices yields several — consumers\npick the official quote's winner by matching `query` to the traded pair.",
+        "properties": {
+          "estimator": {
+            "description": "Name of the estimator whose price estimate won the competition.",
+            "type": "string"
+          },
+          "query": {
+            "$ref": "#/$defs/QueryFields"
+          }
+        },
+        "required": [
+          "query",
+          "estimator"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "JSON envelope wrapping every event published to the bus. Consumers can\nrely on `version` to evolve their parsers, on `timestamp` for ordering,\nand on `requestId` to correlate events emitted while serving a single\ninbound request (e.g. all the price estimates and the resulting quote of\none quote request share the same `requestId`).",
+    "properties": {
+      "body": {
+        "$ref": "#/$defs/WinningPriceEstimateEvent"
+      },
+      "requestId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timestamp": {
+        "description": "RFC3339 timestamp (millisecond precision, UTC) of when the event was\npublished.",
+        "format": "date-time",
+        "type": "string"
+      },
+      "version": {
+        "const": "v1",
+        "type": "string"
+      }
+    },
+    "required": [
+      "version",
+      "timestamp",
+      "body"
+    ],
+    "title": "Envelope",
+    "type": "object"
   }
 }
