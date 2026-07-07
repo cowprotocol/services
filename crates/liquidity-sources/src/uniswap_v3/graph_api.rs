@@ -260,10 +260,12 @@ impl V3PoolDataSource for UniV3SubgraphClient {
         ids: &[Address],
         target_block: u64,
     ) -> Result<PoolsWithTicks> {
-        // `0` means "latest available" (see the V3PoolDataSource contract). The
-        // subgraph needs a concrete block — `block: { number: 0 }` queries genesis
-        // — so resolve a recent safe block first.
+        if ids.is_empty() {
+            return Ok(PoolsWithTicks::default());
+        }
+        // `0` means "latest available" for V3PoolDataSource
         let target_block = match target_block {
+            // inversely, here `0` would be "genesis", so fetch the latest safe block
             0 => self.get_safe_block().await?,
             n => n,
         };
