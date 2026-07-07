@@ -388,7 +388,7 @@ impl SolvableOrdersCache {
         let stream = self
             .balance_fetcher
             .get_balances(queries)
-            .buffer_unordered(10)
+            .buffer_unordered(usize::MAX)
             .filter_map(|(query, res)| async move {
                 match res {
                     Ok(balance) => Some((query, balance)),
