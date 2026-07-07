@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "GPL-3.0-or-later"
-build = "build.rs"
 
 [lib]
 doctest = false
@@ -79,10 +78,6 @@ mockall = { workspace = true }
 shared = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-
-[build-dependencies]
-anyhow = { workspace = true }
-vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
 e2e = []
