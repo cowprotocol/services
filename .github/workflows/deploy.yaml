@@ -128,7 +128,7 @@ jobs:
         if: ${{ github.ref == 'refs/heads/main' }}
         uses: peter-evans/repository-dispatch@428de239af282baa9ed57c8003ca2082586703c3 # v4.0.1
         with:
-          token: ${{ secrets.INFRA_DISPATCH_TOKEN }}
+          token: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
           repository: cowprotocol/infrastructure
           event-type: run-automated-trades
           client-payload: |-
