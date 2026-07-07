@@ -77,7 +77,7 @@ impl Decoder {
 /// The transaction's full account list that instruction indices resolve
 /// against: static keys, then ALT-loaded writable addresses, then readonly, in
 /// that order. A wrong-length key becomes the zero pubkey to keep the indices
-/// aligned, so it matches no tracked program.
+/// aligned, so it does not match a tracked program.
 fn build_account_keys(tx: &SubscribeUpdateTransactionInfo) -> Vec<Pubkey> {
     let static_keys = tx
         .transaction
@@ -122,9 +122,10 @@ struct RawInstruction<'a> {
 
 impl RawInstruction<'_> {
     /// Resolve the program against `account_keys`, keeping the instruction only
-    /// if that program is the settlement or SolFlow program. Account indices
-    /// are carried through unresolved. Returns `None` if the program is
-    /// untracked or its index is out of range.
+    /// if that program is the settlement or SolFlow program. The `accounts`
+    /// field keeps the raw account-list indices, resolving them to pubkeys is
+    /// left to the decode step. Returns `None` if the program is untracked or
+    /// its index is out of range.
     fn resolve_protocol_instruction(
         &self,
         account_keys: &[Pubkey],
@@ -147,9 +148,11 @@ impl RawInstruction<'_> {
 
 /// Resolve every instruction against `account_keys` and keep only those whose
 /// program is the settlement or SolFlow program, where settlement is often
-/// reached only as a CPI. Instructions are returned in on-chain execution
-/// order: each top-level instruction is followed by the inner (CPI)
-/// instructions it triggered.
+/// reached only as a CPI. A top-level instruction and its inner instructions
+/// are filtered independently, so a top-level call to an untracked program is
+/// dropped while a settlement CPI nested under it is still kept. Instructions
+/// are returned in on-chain execution order: each top-level instruction is
+/// followed by the inner (CPI) instructions it triggered.
 fn relevant_instructions(
     tx: &SubscribeUpdateTransactionInfo,
     settlement_program: &Pubkey,
