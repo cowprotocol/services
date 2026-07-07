@@ -20,6 +20,10 @@ _format_generated_contracts:
     cd ../.. && \
     tombi format
 
+# Generate the event bus JSON schemas
+generate-event-schemas:
+    cargo run -p event-bus-dto --bin event-bus-schemas
+
 # Run unit tests
 test-unit:
     cargo nextest run
