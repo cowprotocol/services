@@ -39,7 +39,8 @@ struct Inner {
 pub struct Balances(Arc<Inner>);
 
 struct CacheResponse {
-    cached: Vec<(Query, Result<U256>)>,
+    /// stream of cached balances which yields items immediately
+    cached: BoxStream<'static, BoxFuture<'static, (Query, Result<U256>)>>,
     missing: Vec<Query>,
     requested_at: BlockNumber,
 }
@@ -62,14 +63,15 @@ impl Balances {
             match self.0.cache.get_mut(&query) {
                 Some(mut entry) => {
                     entry.requested_at = requested_at;
-                    cached.push((query, Ok(entry.balance)));
+                    let fut = futures::future::ready((query, Ok(entry.balance))).boxed();
+                    cached.push(fut);
                 }
                 None => missing.push(query),
             }
         }
 
         CacheResponse {
-            cached,
+            cached: stream::iter(cached).boxed(),
             missing,
             requested_at,
         }
@@ -139,9 +141,8 @@ impl BalanceFetching for Balances {
             requested_at,
         } = self.get_cached_balances(queries);
 
-        let cached_stream = stream::iter(cached.into_iter().map(|res| async move { res }.boxed()));
         if missing.is_empty() {
-            return cached_stream.boxed();
+            return cached;
         }
 
         let inner = self.0.clone();
@@ -164,7 +165,7 @@ impl BalanceFetching for Balances {
             .boxed()
         });
 
-        cached_stream.chain(missing_stream).boxed()
+        cached.chain(missing_stream).boxed()
     }
 
     async fn can_transfer(
