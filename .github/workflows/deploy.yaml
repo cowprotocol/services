@@ -22,9 +22,9 @@ on:
 
 jobs:
   deploy:
-    # ubuntu-22.04 provides glibc 2.35; binaries compiled here are compatible
-    # with the debian:bookworm-slim runtime image which has glibc 2.36.
-    runs-on: ubuntu-22.04
+    # the build runner must have a glibc version <= the docker base image we copy the build
+    # artifacts onto to be compatible
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
