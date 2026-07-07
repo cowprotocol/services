@@ -10,7 +10,6 @@ use {
         future::BoxFuture,
         stream::{self, BoxStream},
     },
-    itertools::Itertools,
     model::order::SellTokenSource,
     std::{
         num::{NonZeroU64, NonZeroUsize},
@@ -56,16 +55,19 @@ impl Balances {
 
     fn get_cached_balances(&self, queries: Vec<Query>) -> CacheResponse {
         let requested_at = self.0.last_seen_block.load(Ordering::Relaxed);
-        let (cached, missing) =
-            queries
-                .into_iter()
-                .partition_map(|query| match self.0.cache.get_mut(&query) {
-                    Some(mut entry) => {
-                        entry.requested_at = requested_at;
-                        itertools::Either::Left((query, Ok(entry.balance)))
-                    }
-                    None => itertools::Either::Right(query),
-                });
+
+        let mut cached = Vec::with_capacity(queries.len());
+        let mut missing = Vec::new();
+        for query in queries {
+            match self.0.cache.get_mut(&query) {
+                Some(mut entry) => {
+                    entry.requested_at = requested_at;
+                    cached.push((query, Ok(entry.balance)));
+                }
+                None => missing.push(query),
+            }
+        }
+
         CacheResponse {
             cached,
             missing,
