@@ -1,4 +1,8 @@
-use {crate::Event, schemars::JsonSchema, serde::Serialize};
+use {
+    crate::{Event, query::QueryFields},
+    schemars::JsonSchema,
+    serde::Serialize,
+};
 
 #[derive(Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -19,25 +23,6 @@ impl Event for PriceEstimateEvent {
 }
 
 #[derive(Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct QueryFields {
-    /// Hex-encoded sell token address.
-    pub sell_token: String,
-    /// Hex-encoded buy token address.
-    pub buy_token: String,
-    /// Decimal-encoded input amount (interpretation depends on `kind`).
-    pub in_amount: String,
-    pub kind: OrderKind,
-}
-
-#[derive(Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum OrderKind {
-    Sell,
-    Buy,
-}
-
-#[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum EstimateResult {
     #[serde(rename_all = "camelCase")]
@@ -55,7 +40,7 @@ pub enum EstimateResult {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json};
+    use {super::*, crate::query::OrderKind, serde_json::json};
 
     #[test]
     fn matches_wire_format() {

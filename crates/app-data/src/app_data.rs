@@ -299,6 +299,24 @@ pub fn parse(full_app_data: &[u8]) -> Result<ProtocolAppData, serde_json::Error>
     Ok(parsed)
 }
 
+/// Extracts the `appCode` from a full app-data document, if present.
+///
+/// `appCode` sits at the document root, next to (not inside) the protocol
+/// `metadata`, so it is not part of [`ProtocolAppData`] and callers that want
+/// it — e.g. for analytics — parse it separately with this helper. Returns
+/// `None` for absent or malformed app data.
+pub fn app_code(full_app_data: &[u8]) -> Option<String> {
+    #[derive(Deserialize)]
+    struct AppCode {
+        #[serde(rename = "appCode")]
+        app_code: Option<String>,
+    }
+
+    serde_json::from_slice::<AppCode>(full_app_data)
+        .ok()?
+        .app_code
+}
+
 /// The root app data JSON object.
 ///
 /// App data JSON is organised in an object of the form
@@ -550,6 +568,17 @@ mod tests {
     #[test]
     fn empty_is_valid() {
         assert_app_data!(EMPTY, ProtocolAppData::default());
+    }
+
+    #[test]
+    fn extracts_app_code() {
+        assert_eq!(
+            app_code(br#"{"appCode": "CoW Swap", "version": "0.9.0"}"#),
+            Some("CoW Swap".to_string()),
+        );
+        assert_eq!(app_code(EMPTY.as_bytes()), None);
+        assert_eq!(app_code(br#"{"version": "0.9.0"}"#), None);
+        assert_eq!(app_code(b"not json"), None);
     }
 
     #[test]
