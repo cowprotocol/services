@@ -20,6 +20,7 @@ use {
         event_handler::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
         maintenance::Maintaining,
     },
+    itertools::{Either, Itertools},
     model::TokenPair,
     num::rational::Ratio,
     number::serialization::HexOrDecimalU256,
@@ -246,17 +247,11 @@ impl PoolsCheckpointHandler {
         match pool_ids.peek() {
             Some(_) => {
                 let mut pools_checkpoint = self.pools_checkpoint.lock().unwrap();
-                let mut pools = HashMap::<Address, Arc<PoolInfo>>::default();
-                let missing = pool_ids
-                    .filter(|pool_id| match pools_checkpoint.pools.get(*pool_id) {
-                        Some(entry) => {
-                            pools.insert(**pool_id, entry.clone());
-                            false
-                        }
-                        None => true,
-                    })
-                    .copied()
-                    .collect::<Vec<_>>();
+                let (pools, missing): (HashMap<Address, Arc<PoolInfo>>, Vec<Address>) = pool_ids
+                    .partition_map(|pool_id| match pools_checkpoint.pools.get(pool_id) {
+                        Some(entry) => Either::Left((*pool_id, entry.clone())),
+                        None => Either::Right(*pool_id),
+                    });
 
                 tracing::trace!("cache hit: {:?}, cache miss: {:?}", pools.keys(), missing);
                 pools_checkpoint.missing_pools.extend(&missing);
@@ -462,8 +457,7 @@ impl PoolFetching for UniswapV3PoolFetcher {
             block_number: checkpoint_block_number,
         } = self.checkpoint.get(token_pairs);
 
-        // if `get` returns block 0 there's no pools for these pairs; skip the
-        // replay, it would otherwise scan events from block 1 onwards.
+        // No pools registered for these pairs: nothing to fetch or replay.
         if checkpoint.is_empty() && missing.is_empty() {
             return Ok(Vec::new());
         }
