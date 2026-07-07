@@ -10,15 +10,8 @@ use {
     },
     futures::stream::{BoxStream, StreamExt},
     model::{
-        order::OrderCreationAppData,
-        quote::{
-            OrderQuote,
-            OrderQuoteRequest,
-            OrderQuoteResponse,
-            OrderQuoteSide,
-            PriceQuality,
-            SellAmount,
-        },
+        order::{OrderCreationAppData, OrderKind},
+        quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
     },
     price_estimation::{PriceEstimationError, Verification},
     shared::{
@@ -255,9 +248,12 @@ impl QuoteHandler {
         let valid_to = order.valid_to;
         self.order_validator.partial_validate(order).await?;
 
-        // Emit only after validation succeeds so every `quoteRequested` event
-        // is followed by the `priceEstimate` events of the same request,
-        // keeping the two correlatable by request id without orphans.
+        // Emit only after validation succeeds so we don't announce requests
+        // that never reach the estimator (invalid app-data / order data return
+        // early above). This is best-effort correlation, not a guarantee: if
+        // every estimator errors, (at the time of writing) price estimation emits no
+        // `priceEstimate` events, so a `quoteRequested` can still end up without follow
+        // up none following.
         emit_quote_requested_event(
             request,
             sell_token_symbol,
@@ -294,23 +290,17 @@ fn emit_quote_requested_event(
     buy_token_symbol: Option<String>,
     document: &str,
 ) {
-    let (in_amount, kind) = match request.side {
-        OrderQuoteSide::Sell { sell_amount } => {
-            let value = match sell_amount {
-                SellAmount::BeforeFee { value } | SellAmount::AfterFee { value } => value,
-            };
-            (value.to_string(), DtoOrderKind::Sell)
-        }
-        OrderQuoteSide::Buy {
-            buy_amount_after_fee,
-        } => (buy_amount_after_fee.to_string(), DtoOrderKind::Buy),
+    let (kind, in_amount) = request.side.kind_and_amount();
+    let kind = match kind {
+        OrderKind::Sell => DtoOrderKind::Sell,
+        OrderKind::Buy => DtoOrderKind::Buy,
     };
 
     let event = QuoteRequestedEvent {
         query: QueryFields {
             sell_token: request.sell_token.to_string(),
             buy_token: request.buy_token.to_string(),
-            in_amount,
+            in_amount: in_amount.to_string(),
             kind,
         },
         from: request.from.to_string(),
