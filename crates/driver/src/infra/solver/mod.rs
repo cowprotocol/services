@@ -408,12 +408,18 @@ impl Solver {
         // reports the timing once serialization finishes, independently of
         // whether the auction was archived.
         if auction.id().is_some() {
+            let solver = self.config.name.clone();
             tokio::spawn(async move {
                 if let Ok(measurements) = measurements.await {
                     observe::metrics::metrics().record_auction_overhead(
                         measurements.serialize,
                         "driver",
                         "serialize_request",
+                    );
+                    super::observe::serialized_solve_request(
+                        &solver,
+                        measurements.serialize,
+                        measurements.total,
                     );
                 }
             });

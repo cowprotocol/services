@@ -31,6 +31,9 @@ pub struct Measurements {
     /// Wall-clock serialization cost, isolated from the time spent blocked
     /// writing to the sinks (solver transfer + gzip).
     pub serialize: Duration,
+    /// Total wall-clock of the streaming task: serialization plus the time
+    /// spent blocked writing to the sinks (solver transfer + gzip).
+    pub total: Duration,
 }
 
 /// Serializes `value` to JSON on a blocking thread, streaming it into the
@@ -101,9 +104,10 @@ where
                 return;
             }
         };
-        // Measure before `finalize` so the gzip finish cost stays out of the metric.
-        let serialize = start.elapsed().saturating_sub(timed.elapsed());
-        let _ = measurements_tx.send(Measurements { serialize });
+        // Measure before `finalize` so the gzip finish cost stays out of the metrics.
+        let total = start.elapsed();
+        let serialize = total.saturating_sub(timed.elapsed());
+        let _ = measurements_tx.send(Measurements { serialize, total });
         timed.into_inner().finalize();
     });
     (body, measurements_rx)
