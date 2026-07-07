@@ -9,7 +9,7 @@ use {
         extract::State,
         response::{IntoResponse, Response},
     },
-    model::quote::OrderQuoteRequest,
+    model::quote::{OrderQuoteRequest, PriceQuality},
     reqwest::StatusCode,
     shared::order_quoting::CalculateQuoteError,
     std::sync::Arc,
@@ -19,13 +19,80 @@ pub async fn post_quote_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<OrderQuoteRequest>,
 ) -> Response {
-    state
-        .quotes
-        .calculate_quote(&request)
-        .await
+    // Record the request synchronously, before the first `.await`, so requests
+    // whose future is dropped (client disconnects) are still counted. The guard
+    // defaults to `cancelled` and is overwritten only once a response exists, so
+    // a dropped future records a cancellation when it is dropped.
+    let mut guard = QuoteRequestGuard::new(price_quality_label(&request.price_quality));
+
+    let result = state.quotes.calculate_quote(&request).await;
+    guard.finish(if result.is_ok() { "success" } else { "error" });
+
+    result
         .map(Json)
         .inspect_err(|err| tracing::warn!(%err, ?request, "post_quote error"))
         .into_response()
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "quote")]
+struct QuoteMetrics {
+    /// /quote requests received, incremented at handler entry before any await
+    /// so client-cancelled requests are still counted.
+    #[metric(labels("price_quality"))]
+    requests_started: prometheus::IntCounterVec,
+
+    /// /quote requests that finished, by `result` (`success`, `error`, or
+    /// `cancelled`). `cancelled` means the client dropped the connection before
+    /// a response was produced. Invariant: started == sum(finished).
+    #[metric(labels("price_quality", "result"))]
+    requests_finished: prometheus::IntCounterVec,
+}
+
+/// Ties a `requests_started` increment at handler entry to a
+/// `requests_finished` increment when the handler future completes or is
+/// dropped. Defaults the outcome to `cancelled`; [`QuoteRequestGuard::finish`]
+/// records the real outcome once a response is available.
+struct QuoteRequestGuard {
+    metrics: &'static QuoteMetrics,
+    price_quality: &'static str,
+    result: &'static str,
+}
+
+impl QuoteRequestGuard {
+    fn new(price_quality: &'static str) -> Self {
+        let metrics = QuoteMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+        metrics
+            .requests_started
+            .with_label_values(&[price_quality])
+            .inc();
+        Self {
+            metrics,
+            price_quality,
+            result: "cancelled",
+        }
+    }
+
+    fn finish(&mut self, result: &'static str) {
+        self.result = result;
+    }
+}
+
+impl Drop for QuoteRequestGuard {
+    fn drop(&mut self) {
+        self.metrics
+            .requests_finished
+            .with_label_values(&[self.price_quality, self.result])
+            .inc();
+    }
+}
+
+fn price_quality_label(price_quality: &PriceQuality) -> &'static str {
+    match price_quality {
+        PriceQuality::Fast => "fast",
+        PriceQuality::Optimal => "optimal",
+        PriceQuality::Verified => "verified",
+    }
 }
 
 impl IntoResponse for OrderQuoteError {
@@ -305,5 +372,83 @@ mod tests {
         assert_eq!(body, expected_error);
         // There are many other FeeAndQuoteErrors, but writing a test for each
         // would follow the same pattern as this.
+    }
+
+    // Unique per-test labels keep the shared global metrics registry from
+    // leaking counts between tests.
+    #[test]
+    fn guard_records_cancelled_when_dropped_without_finish() {
+        let metrics = QuoteMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+        let started = metrics
+            .requests_started
+            .with_label_values(&["dropped"])
+            .get();
+        let cancelled = metrics
+            .requests_finished
+            .with_label_values(&["dropped", "cancelled"])
+            .get();
+
+        // Dropping the guard without `finish` models a client-cancelled request.
+        drop(QuoteRequestGuard::new("dropped"));
+
+        assert_eq!(
+            metrics
+                .requests_started
+                .with_label_values(&["dropped"])
+                .get(),
+            started + 1
+        );
+        assert_eq!(
+            metrics
+                .requests_finished
+                .with_label_values(&["dropped", "cancelled"])
+                .get(),
+            cancelled + 1
+        );
+    }
+
+    #[test]
+    fn guard_records_outcome_after_finish() {
+        let metrics = QuoteMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+        let started = metrics
+            .requests_started
+            .with_label_values(&["finished"])
+            .get();
+        let success = metrics
+            .requests_finished
+            .with_label_values(&["finished", "success"])
+            .get();
+        let cancelled = metrics
+            .requests_finished
+            .with_label_values(&["finished", "cancelled"])
+            .get();
+
+        let mut guard = QuoteRequestGuard::new("finished");
+        guard.finish("success");
+        drop(guard);
+
+        // started == sum(finished): exactly one started and one success, no
+        // cancellation recorded once `finish` ran.
+        assert_eq!(
+            metrics
+                .requests_started
+                .with_label_values(&["finished"])
+                .get(),
+            started + 1
+        );
+        assert_eq!(
+            metrics
+                .requests_finished
+                .with_label_values(&["finished", "success"])
+                .get(),
+            success + 1
+        );
+        assert_eq!(
+            metrics
+                .requests_finished
+                .with_label_values(&["finished", "cancelled"])
+                .get(),
+            cancelled
+        );
     }
 }

@@ -413,6 +413,19 @@ pub struct OrderQuoter {
     streaming_price_estimator: Option<Arc<dyn StreamingPriceEstimating>>,
 }
 
+/// Metrics for the quote computation path. Registered under the binary's metric
+/// prefix, yielding `gp_v2_api_quote_downstream_requests` in the orderbook.
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "quote")]
+struct Metrics {
+    /// Downstream estimation requests dispatched while computing quotes, by
+    /// `kind` (`trade` or `native`). Counted above the estimator caches, so it
+    /// reflects quotes reaching the estimation layer rather than raw external
+    /// calls (see `price_estimates` for per-estimator counts).
+    #[metric(labels("kind"))]
+    downstream_requests: prometheus::IntCounterVec,
+}
+
 impl OrderQuoter {
     pub fn new(
         price_estimator: Arc<dyn PriceEstimating>,
@@ -465,6 +478,20 @@ impl OrderQuoter {
 
         let trade_query =
             Arc::new(parameters.to_price_query(self.default_quote_timeout, self.max_quote_timeout));
+
+        // One trade estimate plus two native price lookups (sell + buy) are
+        // dispatched below. Count them before the fan-out so the metric captures
+        // quotes that reached estimation.
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+        metrics
+            .downstream_requests
+            .with_label_values(&["trade"])
+            .inc();
+        metrics
+            .downstream_requests
+            .with_label_values(&["native"])
+            .inc_by(2);
+
         let (effective_gas_price, trade_estimate, sell_token_price, _) = futures::try_join!(
             self.gas_estimator
                 .effective_gas_price()
