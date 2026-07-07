@@ -310,18 +310,18 @@ impl PoolsCheckpointHandler {
     /// Fetches the pools flagged missing by `get` at the checkpoint block and
     /// caches them. Runs from periodic maintenance.
     async fn update_missing_pools(&self) -> Result<()> {
-        // Copy the ids out and drop the lock before the async fetch.
+        // Clone out and drop the lock before the async fetch.
         let (missing, block_number) = {
             let checkpoint = self.pools_checkpoint.lock().unwrap();
-            (
-                checkpoint.missing_pools.iter().copied().collect::<Vec<_>>(),
-                checkpoint.block_number,
-            )
+            (checkpoint.missing_pools.clone(), checkpoint.block_number)
         };
         if missing.is_empty() {
             return Ok(());
         }
-        let fetched = self.fetch_pools(&missing, block_number).await?;
+
+        let fetched = self
+            .fetch_pools(&Vec::from_iter(missing), block_number)
+            .await?;
         let mut checkpoint = self.pools_checkpoint.lock().unwrap();
         for (id, info) in fetched {
             checkpoint.missing_pools.remove(&id);
