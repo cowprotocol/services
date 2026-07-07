@@ -25,6 +25,7 @@ contracts = { workspace = true }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
+event-bus-dto = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 http-client = { workspace = true }

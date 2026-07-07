@@ -49,16 +49,7 @@ impl QuoteParameters {
         default_quote_timeout: std::time::Duration,
         max_quote_timeout: std::time::Duration,
     ) -> price_estimation::Query {
-        let (kind, in_amount) = match self.side {
-            OrderQuoteSide::Sell {
-                sell_amount:
-                    SellAmount::BeforeFee { value: sell_amount }
-                    | SellAmount::AfterFee { value: sell_amount },
-            } => (OrderKind::Sell, sell_amount),
-            OrderQuoteSide::Buy {
-                buy_amount_after_fee,
-            } => (OrderKind::Buy, buy_amount_after_fee),
-        };
+        let (kind, in_amount) = self.side.kind_and_amount();
 
         let timeout = self
             .timeout
@@ -608,7 +599,9 @@ impl OrderQuoting for OrderQuoter {
 #[async_trait::async_trait]
 pub trait StreamingQuoting: Send + Sync {
     /// Fetches gas and native prices once, then yields one `Quote` per solver
-    /// result as it arrives. Stores nothing.
+    /// result as it arrives. Each yielded quote is persisted (as opposed to
+    /// just the final quote in the one-shot quote endpoint) so it can be
+    /// referenced by id during a later order placement.
     async fn calculate_quote_stream(
         &self,
         parameters: QuoteParameters,
@@ -664,6 +657,7 @@ impl StreamingQuoting for OrderQuoter {
         };
 
         let additional_cost = parameters.additional_cost();
+        let storage = self.storage.clone();
 
         let stream = async_stream::stream! {
             let inner = estimator.estimate_stream(trade_query);
@@ -701,6 +695,14 @@ impl StreamingQuoting for OrderQuoter {
                         continue;
                     }
                     quote = quote.with_scaled_sell_amount(sell_amount);
+                }
+                // Persist the quote so it can be referenced by id when the
+                // order is later placed, mirroring the one-shot endpoint. A
+                // failed write must not turn an otherwise good quote into an
+                // error event.
+                match storage.save(quote.data.clone()).await {
+                    Ok(id) => quote.id = Some(id),
+                    Err(err) => tracing::error!(?err, "failed to persist streamed quote"),
                 }
                 yield Ok(quote);
             }
@@ -1999,11 +2001,18 @@ mod tests {
         gas_price: alloy::eips::eip1559::Eip1559Estimation,
         now: chrono::DateTime<Utc>,
     ) -> OrderQuoter {
+        let next_id = std::sync::atomic::AtomicI64::new(1);
+        let mut storage = MockQuoteStoring::new();
+        storage
+            .expect_save()
+            .times(0..)
+            .returning(move |_| Ok(next_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+
         OrderQuoter {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(FakeGasPriceEstimator::new(gas_price)),
-            storage: Arc::new(MockQuoteStoring::new()),
+            storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
@@ -2091,8 +2100,8 @@ mod tests {
         let q2 = stream.next().await.expect("second quote").expect("ok");
         assert!(stream.next().await.is_none());
 
-        assert_eq!(q1.id, None);
-        assert_eq!(q2.id, None);
+        assert_eq!(q1.id, Some(1));
+        assert_eq!(q2.id, Some(2));
         assert_eq!(q1.data.quoted_buy_amount, AlloyU256::from(500));
         assert_eq!(q2.data.quoted_buy_amount, AlloyU256::from(600));
     }

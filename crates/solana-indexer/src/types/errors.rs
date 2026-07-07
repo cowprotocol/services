@@ -22,14 +22,14 @@ pub(crate) enum DecodeError {
 
 /// Failures surfaced from the persistence boundary.
 #[derive(Debug, Error)]
-pub(crate) enum StoreError {
+pub(crate) enum PersistenceError {
     /// The SQL `ON CONFLICT` clause rejected the write (e.g. watermark
     /// regression).
-    #[error("store conflict")]
+    #[error("persistence conflict")]
     Conflict,
-    /// The store is temporarily unavailable (e.g. connection lost, pool
-    /// exhausted). The caller is expected to retry.
-    #[error("store unavailable")]
+    /// The persistence layer is temporarily unavailable (e.g. connection lost,
+    /// pool exhausted). The caller is expected to retry.
+    #[error("persistence unavailable")]
     Unavailable,
 }
 
@@ -43,8 +43,8 @@ pub(crate) enum StreamError {
     #[error("stream send timeout")]
     SendTimeout,
     /// The resume slot is outside the provider's replay window. The caller
-    /// should reset `from_slot` to `LATEST_CHAIN_SLOT − replay_window`,
-    /// record the lost range, and retry the subscription.
+    /// should reset `from_slot` to the latest chain slot minus the replay
+    /// window, record the lost range, and retry the subscription.
     #[error(
         "replay window exceeded: attempted slot {attempted_slot}, earliest replayable \
          {earliest_replayable_slot}"
