@@ -17,6 +17,7 @@ use {
         },
     },
     bytes::Bytes,
+    settlement_interface::{SettlementInstruction, recover_discriminator},
     solana_sdk::pubkey::Pubkey,
     tokio::sync::mpsc::Receiver,
 };
@@ -77,12 +78,53 @@ impl Decoder {
         }
     }
 
-    /// TODO: decode the settlement instruction data into typed events.
+    /// Identify the settlement instruction by its discriminator and route it to
+    /// the matching decode step.
+    ///
+    /// TODO: the per-instruction bodies are stubbed. Real decoding is blocked
+    /// on the program emitting `auction_id` (BeginSettle) and the sell/push
+    /// amounts (BeginSettle/FinalizeSettle), and on a data-only interface
+    /// parser: the interface's `parse` wants on-chain `AccountView`s a
+    /// tx-only indexer does not have. Discriminator dispatch is wired so
+    /// each arm can be filled once those land.
     fn decode_settlement(&self, instruction: &ResolvedInstruction) {
-        tracing::debug!(
-            instruction_index = instruction.instruction_index,
-            "settlement instruction decode not implemented"
-        );
+        let index = instruction.instruction_index;
+        let Ok((discriminator, _body)) = recover_discriminator(&instruction.data) else {
+            tracing::debug!(
+                instruction_index = index,
+                "settlement instruction with an unknown discriminator, skipping"
+            );
+            return;
+        };
+        match discriminator {
+            SettlementInstruction::CreateOrder => {
+                tracing::debug!(
+                    instruction_index = index,
+                    "CreateOrder, OrderCreated decode stubbed"
+                );
+            }
+            SettlementInstruction::BeginSettle => {
+                tracing::debug!(
+                    instruction_index = index,
+                    "BeginSettle, sell amounts + auction_id decode stubbed"
+                );
+            }
+            SettlementInstruction::FinalizeSettle => {
+                tracing::debug!(
+                    instruction_index = index,
+                    "FinalizeSettle, push amounts decode stubbed"
+                );
+            }
+            SettlementInstruction::CreateBuffer => {
+                tracing::debug!(
+                    instruction_index = index,
+                    "CreateBuffer, BufferCreated decode stubbed"
+                );
+            }
+            SettlementInstruction::Initialize => {
+                tracing::debug!(instruction_index = index, "Initialize, no domain event");
+            }
+        }
     }
 
     /// TODO: decode the SolFlow instruction data. The on-chain program does not
