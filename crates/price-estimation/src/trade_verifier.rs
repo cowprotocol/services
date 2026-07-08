@@ -11,6 +11,7 @@ use {
         primitives::{Address, Bytes, U256, address, aliases::I512},
         providers::Provider,
         rpc::types::{TransactionRequest, state::StateOverride},
+        uint,
     },
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
@@ -751,16 +752,28 @@ impl SettleOutput {
         })
     }
 
+    /// Adjusts the reported gas cost since the simulation measurement does not
+    /// take into account the 21K units every tx has to pay and the cost for
+    /// the calldata. We are overcounting the calldata cost slightly since a
+    /// regular settlement would not include the 2 interactions measuring
+    /// the token balances.
     fn with_call_overhead(mut self, calldata: &[u8]) -> Self {
-        // adjust the reported gas cost since it does not take into account the 21K
-        // units every tx has to pay and the cost for the calldata. we are
-        // overcounting the calldata cost slightly since a regular settlement
-        // would not include the 2 interactions measuring the token balances.
+        // constants as defined in <https://ethereum.github.io/yellowpaper/paper.pdf>
+        // refferred to as Gtransaction, Gtxdatazero, and Gtxdatanonzero
+        const TX_BASE_COST: u64 = 21_000;
+        const CALLDATA_COST_PER_ZERO_BYTE: u64 = 4;
+        const CALLDATA_COST_PER_NONZERO_BYTE: u64 = 16;
         let call_data_cost = calldata
             .iter()
-            .map(|byte| if byte == &0x0 { 4 } else { 16 })
+            .map(|byte| {
+                if byte == &0x0 {
+                    CALLDATA_COST_PER_ZERO_BYTE
+                } else {
+                    CALLDATA_COST_PER_NONZERO_BYTE
+                }
+            })
             .sum::<u64>();
-        self.gas_used += U256::from(21_000) + U256::from(call_data_cost);
+        self.gas_used += U256::from(TX_BASE_COST.saturating_add(call_data_cost));
         self
     }
 }
