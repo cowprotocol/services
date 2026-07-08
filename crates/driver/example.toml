@@ -120,4 +120,3 @@ max-order-age = "1m"
 # # >=1.13, reth, nethermind, recent erigon, anvil).
 # ws-url = "wss://eu.rpc.titanbuilder.xyz/ws/pamm_quote_stream"
 # max-age = "3s"        # ignore the snapshot if the last frame is older than this
-# max-block-lag = 1     # ignore the snapshot if its block number lags head by more than this

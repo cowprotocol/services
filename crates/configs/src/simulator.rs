@@ -51,19 +51,10 @@ pub struct StateOverrideStream {
     /// Ignore the snapshot if the last frame is older than this.
     #[serde(with = "humantime_serde", default = "default_override_max_age")]
     pub max_age: Duration,
-
-    /// Ignore the snapshot if its block number lags the current head by more
-    /// than this many blocks.
-    #[serde(default = "default_override_max_block_lag")]
-    pub max_block_lag: u64,
 }
 
 const fn default_override_max_age() -> Duration {
     Duration::from_secs(3)
-}
-
-const fn default_override_max_block_lag() -> u64 {
-    1
 }
 
 fn default_ethrpc_batch_delay() -> Duration {
@@ -258,7 +249,6 @@ mod tests {
         let stream = config.state_override_stream.unwrap();
         assert_eq!(stream.ws_url.as_str(), "wss://example.com/stream");
         assert_eq!(stream.max_age, Duration::from_secs(3));
-        assert_eq!(stream.max_block_lag, 1);
     }
 
     #[test]
@@ -267,12 +257,10 @@ mod tests {
         [state-override-stream]
         ws-url = "wss://example.com/stream"
         max-age = "5s"
-        max-block-lag = 2
         "#;
         let config: Config = toml::from_str(toml).unwrap();
         let stream = config.state_override_stream.unwrap();
         assert_eq!(stream.max_age, Duration::from_secs(5));
-        assert_eq!(stream.max_block_lag, 2);
     }
 
     #[test]

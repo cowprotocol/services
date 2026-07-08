@@ -36,7 +36,6 @@ struct Inner {
     snapshots: watch::Receiver<Snapshot>,
     current_block: CurrentBlockWatcher,
     max_age: Duration,
-    max_block_lag: u64,
     block_time: Duration,
 }
 
@@ -50,7 +49,6 @@ impl std::fmt::Debug for SimulationOverrides {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SimulationOverrides")
             .field("max_age", &self.0.max_age)
-            .field("max_block_lag", &self.0.max_block_lag)
             .field("block_time", &self.0.block_time)
             .finish()
     }
@@ -74,7 +72,7 @@ impl SimulationOverrides {
             let info = self.0.current_block.borrow();
             (info.number, info.timestamp)
         };
-        if snapshot.block_number + self.0.max_block_lag < current_block_number {
+        if snapshot.block_number != current_block_number {
             Metrics::get().record_override_result(OverrideResult::Stale);
             return None;
         }
@@ -214,7 +212,6 @@ pub fn spawn(
         snapshots: receiver,
         current_block,
         max_age: cfg.max_age,
-        max_block_lag: cfg.max_block_lag,
         block_time,
     }))
 }
@@ -442,7 +439,6 @@ mod tests {
             snapshots: receiver,
             current_block: block_rx,
             max_age,
-            max_block_lag: 1,
             block_time: Duration::from_secs(12),
         }))
     }
@@ -474,7 +470,7 @@ mod tests {
                 .is_none()
         );
 
-        // Stale by block lag: snapshot block 100, head block 105, max lag 1.
+        // Stale by block mismatch: snapshot block 100, head block 105.
         let (_sender, receiver) = watch::channel(non_empty_snapshot(100, Instant::now()));
         let (_, block_rx) = block(105, 1000);
         assert!(
@@ -524,7 +520,6 @@ mod tests {
         let cfg = Config {
             ws_url: server_url,
             max_age: Duration::from_secs(30),
-            max_block_lag: 100,
         };
         let handle = spawn(&cfg, block_rx, Duration::from_secs(12));
 
@@ -602,7 +597,6 @@ mod tests {
             snapshots: receiver,
             current_block: block_rx,
             max_age: Duration::from_secs(30),
-            max_block_lag: 1,
             block_time: Duration::from_secs(12),
         }));
 
