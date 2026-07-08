@@ -171,6 +171,9 @@ impl TradeVerifier {
         ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
     }
 
+    /// Takes the prepared `settle_call` and builds the final `Solver::swap()`
+    /// call from it. That calls into the verification machinery that
+    /// collects additional data while the `settle_call` gets executed.
     fn build_swap_call(
         &self,
         settle_call: EthCallInputs,
@@ -265,7 +268,7 @@ impl TradeVerifier {
     ///   `0`). That way the solver can deliver **less** than promised and we
     ///   can still measure how much they actually delivered since the
     ///   simulation will not revert due to limit price violations.
-    async fn assemble_settle_call(
+    async fn build_settle_call(
         &self,
         verification: &Verification,
         query: &PriceQuery,
@@ -600,14 +603,14 @@ impl TradeVerifying for TradeVerifier {
             );
         }
 
-        let swap_call = self
-            .assemble_settle_call(&verification, query, &trade)
+        let swap_call_res = self
+            .build_settle_call(&verification, query, &trade)
             .await
             .and_then(|settle_call| {
                 self.build_swap_call(settle_call, &trade, query, &verification)
             });
 
-        let swap_call = match swap_call {
+        let swap_call = match swap_call_res {
             Ok(c) => c,
             Err(err) => {
                 tracing::debug!(
@@ -617,6 +620,14 @@ impl TradeVerifying for TradeVerifier {
                 );
                 return unverified_result;
             }
+        };
+
+        let verification_err = match self
+            .verify_quote(&swap_call, query, &verification, &trade)
+            .await
+        {
+            Ok(verified) => return Ok(verified),
+            Err(err) => err,
         };
 
         // For some tokens it's not possible to provide verifiable calldata in the
@@ -634,35 +645,27 @@ impl TradeVerifying for TradeVerifier {
         // `Error::BuffersPayForOrder` errors if the solver actually tried to provide
         // an execution plan but it's just not correct. In all other cases we just
         // flag the solution as unverified but let it pass.
-        match self
-            .verify_quote(&swap_call, query, &verification, &trade)
-            .await
-        {
-            Ok(verified) => Ok(verified),
-            Err(err) => {
-                let has_execution_plan = trade.has_execution_plan();
-                if has_execution_plan && matches!(err, Error::BuffersPayForOrder) {
-                    tracing::debug!(
-                        has_execution_plan,
-                        "discarding quote because buffers pay for order"
-                    );
-                    // because this log is extremely large we only emit the command
-                    // to resimulate quotes that had some issue
-                    if let Some(tenderly) = &self.tenderly
-                        && let Err(log_err) = tenderly.log_simulation_command(
-                            swap_call.tx_request,
-                            swap_call.state_overrides,
-                            swap_call.block.into(),
-                        )
-                    {
-                        tracing::debug!(?log_err, "could not log tenderly simulation command");
-                    }
-                    Err(err.into())
-                } else {
-                    tracing::debug!(estimate = ?unverified_result, ?err, "quote verification failed");
-                    unverified_result
-                }
+        let has_execution_plan = trade.has_execution_plan();
+        if has_execution_plan && matches!(verification_err, Error::BuffersPayForOrder) {
+            tracing::debug!(
+                has_execution_plan,
+                "discarding quote because buffers pay for order"
+            );
+            // because this log is extremely large we only emit the command
+            // to resimulate quotes that had some issue
+            if let Some(tenderly) = &self.tenderly
+                && let Err(log_err) = tenderly.log_simulation_command(
+                    swap_call.tx_request,
+                    swap_call.state_overrides,
+                    swap_call.block.into(),
+                )
+            {
+                tracing::debug!(?log_err, "could not log tenderly simulation command");
             }
+            Err(verification_err.into())
+        } else {
+            tracing::debug!(estimate = ?unverified_result, ?verification_err, "quote verification failed");
+            unverified_result
         }
     }
 }
