@@ -1,5 +1,6 @@
 use {
     super::{
+        BlockTarget,
         V3PoolDataSource,
         event_fetching::{RecentEventsCache, UniswapV3PoolEventFetcher},
         graph_api::{PoolData, Token},
@@ -167,7 +168,9 @@ impl PoolsCheckpointHandler {
             .await
             .context("read finalized block for snapshot target_block")?
             .number;
-        let mut registered_pools = source.get_registered_pools(target_block).await?;
+        let mut registered_pools = source
+            .get_registered_pools(BlockTarget::Number(target_block))
+            .await?;
         tracing::debug!(
             target_block,
             block = %registered_pools.fetched_block_number,
@@ -209,7 +212,10 @@ impl PoolsCheckpointHandler {
             .take(max_pools_to_initialize_cache)
             .collect::<Vec<_>>();
         let pools_with_ticks = source
-            .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)
+            .get_pools_with_ticks_by_ids(
+                &pool_ids,
+                BlockTarget::Number(registered_pools.fetched_block_number),
+            )
             .await?;
         let pools = pools_with_ticks
             .pools
@@ -265,13 +271,12 @@ impl PoolsCheckpointHandler {
         }
     }
 
-    /// Fetches and converts the given pools from the source at `target_block`
-    /// (`0` = latest available, see [`V3PoolDataSource`]), skipping any that
-    /// can't be converted yet (e.g. missing ticks).
+    /// Fetches and converts the given pools from the source at `target_block`,
+    /// skipping any that can't be converted yet (e.g. missing ticks).
     async fn fetch_pools(
         &self,
         pool_ids: &[Address],
-        target_block: u64,
+        target_block: BlockTarget,
     ) -> Result<Vec<(Address, Arc<PoolInfo>)>> {
         let pools_with_ticks = self
             .source
@@ -293,15 +298,6 @@ impl PoolsCheckpointHandler {
             .collect())
     }
 
-    /// Fetches the given pools at the source's current block; shorthand for
-    /// `fetch_pools(_, 0)`. Empty on failure so callers can fall back.
-    async fn fetch_at_current_block(&self, pool_ids: &[Address]) -> Vec<(Address, Arc<PoolInfo>)> {
-        self.fetch_pools(pool_ids, 0)
-            .await
-            .inspect_err(|err| tracing::debug!(?err, "current-block pool fetch failed"))
-            .unwrap_or_default()
-    }
-
     /// Fetches the pools flagged missing by `get` at the checkpoint block and
     /// caches them. Runs from periodic maintenance.
     async fn update_missing_pools(&self) -> Result<()> {
@@ -315,7 +311,7 @@ impl PoolsCheckpointHandler {
         }
 
         let fetched = self
-            .fetch_pools(&Vec::from_iter(missing), block_number)
+            .fetch_pools(&Vec::from_iter(missing), BlockTarget::Number(block_number))
             .await?;
         let mut checkpoint = self.pools_checkpoint.lock().unwrap();
         for (id, info) in fetched {
@@ -470,12 +466,19 @@ impl PoolFetching for UniswapV3PoolFetcher {
 
         // The warm cache only holds the top pools by raw liquidity, so many
         // registered pairs are absent. Fetch the missing ones at the source's
-        // current block rather than the checkpoint block: the checkpoint tracks
+        // latest block rather than the checkpoint block: the checkpoint tracks
         // latest-minus-reorg and can sit ahead of the finalized head the indexer
         // serves, so waiting on it would hang the quote. They come back current,
-        // so merge after the replay instead of replaying them.
+        // so merge after the replay instead of replaying them. A fetch failure
+        // just yields fewer pools rather than failing the whole quote.
         if !missing.is_empty() {
-            checkpoint.extend(self.checkpoint.fetch_at_current_block(&missing).await);
+            let fetched = self
+                .checkpoint
+                .fetch_pools(&missing, BlockTarget::Latest)
+                .await
+                .inspect_err(|err| tracing::debug!(?err, "on-demand pool fetch failed"))
+                .unwrap_or_default();
+            checkpoint.extend(fetched);
         }
 
         // return only pools which current liquidity is positive
@@ -821,7 +824,7 @@ mod tests {
     impl V3PoolDataSource for StubSource {
         async fn get_registered_pools(
             &self,
-            _target_block: u64,
+            _target_block: BlockTarget,
         ) -> Result<crate::uniswap_v3::graph_api::RegisteredPools> {
             Ok(Default::default())
         }
@@ -829,8 +832,12 @@ mod tests {
         async fn get_pools_with_ticks_by_ids(
             &self,
             ids: &[Address],
-            target_block: u64,
+            target_block: BlockTarget,
         ) -> Result<crate::uniswap_v3::graph_api::PoolsWithTicks> {
+            let target_block = match target_block {
+                BlockTarget::Latest => self.served_block,
+                BlockTarget::Number(n) => n,
+            };
             anyhow::ensure!(
                 target_block <= self.served_block,
                 "indexer at {} hasn't reached target block {target_block}",
@@ -905,8 +912,8 @@ mod tests {
 
     /// The on-demand path must not block on the checkpoint block (which can sit
     /// persistently ahead of the indexer's served block); it fetches at the
-    /// indexer's current block. A source that errors for any block above its
-    /// head still yields the pool via `fetch_at_current_block`.
+    /// indexer's latest block. A source that errors for any block above its
+    /// head still yields the pool via a `BlockTarget::Latest` fetch.
     #[tokio::test]
     async fn on_demand_does_not_wait_for_future_block() {
         let token0 = Address::with_last_byte(1);
@@ -925,14 +932,21 @@ mod tests {
             },
         );
 
-        // fetch_at_current_block uses target 0, so it succeeds despite
-        // served_block < checkpoint.
-        let fetched = handler.fetch_at_current_block(&[pool]).await;
+        // Latest serves at-head, so it succeeds despite served_block < checkpoint.
+        let fetched = handler
+            .fetch_pools(&[pool], BlockTarget::Latest)
+            .await
+            .unwrap();
         assert_eq!(fetched.len(), 1);
         assert_eq!(fetched[0].0, pool);
 
         // Fetching at the checkpoint block would fail (indexer hasn't reached it).
-        assert!(handler.fetch_pools(&[pool], 100).await.is_err());
+        assert!(
+            handler
+                .fetch_pools(&[pool], BlockTarget::Number(100))
+                .await
+                .is_err()
+        );
     }
 
     /// Unknown pairs have no registered pools, so `get` reports block 0 with
@@ -979,7 +993,10 @@ mod tests {
             },
         );
 
-        let fetched = handler.fetch_pools(&[good, bad], 0).await.unwrap();
+        let fetched = handler
+            .fetch_pools(&[good, bad], BlockTarget::Latest)
+            .await
+            .unwrap();
         assert_eq!(fetched.len(), 1);
         assert_eq!(fetched[0].0, good);
     }
