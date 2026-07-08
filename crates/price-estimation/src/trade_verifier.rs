@@ -670,9 +670,8 @@ impl TradeVerifying for TradeVerifier {
     }
 }
 
-/// Prepared simulation call: contains a transaction request ready to execute
-/// via `eth_call` plus all the metadata needed to construct a Tenderly
-/// debugging command on failure.
+/// Contains information to execute the simulation request, interpret the data
+/// and construct a tenderly simulation from it for debugging.
 struct SwapCall {
     tx_request: TransactionRequest,
     state_overrides: StateOverride,
