@@ -9047,6 +9047,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "settlement-finder"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-types",
+ "alloy-sol-types",
+ "anyhow",
+ "bigdecimal",
+ "clap",
+ "contracts",
+ "ethrpc",
+ "number",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "sha1"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -18,6 +18,7 @@ pub struct Trade {
     pub sell_amount_including_fee: BigDecimal,
     pub buy_amount: BigDecimal,
     pub fee_amount: BigDecimal,
+    pub tx_hash: TransactionHash,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -117,7 +118,8 @@ pub async fn insert_trade(
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
         INSERT INTO trades (block_number, log_index, order_uid, sell_amount, buy_amount, \
-                         fee_amount) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING;";
+                         fee_amount, tx_hash) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO \
+                         NOTHING;";
     sqlx::query(QUERY)
         .bind(index.block_number)
         .bind(index.log_index)
@@ -125,6 +127,7 @@ pub async fn insert_trade(
         .bind(&event.sell_amount_including_fee)
         .bind(&event.buy_amount)
         .bind(&event.fee_amount)
+        .bind(event.tx_hash)
         .execute(ex)
         .await?;
     Ok(())
@@ -168,4 +171,34 @@ async fn insert_presignature(
         .execute(ex)
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_trade_stores_tx_hash() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let index = EventIndex {
+            block_number: 1,
+            log_index: 0,
+        };
+        let event = Trade {
+            order_uid: ByteArray([1u8; 56]),
+            tx_hash: ByteArray([2u8; 32]),
+            ..Default::default()
+        };
+        insert_trade(&mut db, &index, &event).await.unwrap();
+
+        let tx_hash: TransactionHash = sqlx::query_scalar("SELECT tx_hash FROM trades")
+            .fetch_one(&mut *db)
+            .await
+            .unwrap();
+        assert_eq!(tx_hash, event.tx_hash);
+    }
 }

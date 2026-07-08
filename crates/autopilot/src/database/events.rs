@@ -132,6 +132,7 @@ fn convert_trade(trade: &GPv2Settlement::Trade, log: ValidatedLog) -> Result<(Ev
         sell_amount_including_fee: u256_to_big_decimal(&trade.sellAmount),
         buy_amount: u256_to_big_decimal(&trade.buyAmount),
         fee_amount: u256_to_big_decimal(&trade.feeAmount),
+        tx_hash: log.tx_hash,
     };
     Ok((log.into(), Event::Trade(event)))
 }

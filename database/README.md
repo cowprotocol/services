@@ -480,6 +480,7 @@ This table contains data of [`Trade`](https://github.com/cowprotocol/contracts/b
  sell\_amount  | numeric | not null | amount of sell\_token that got taken from the order owner
  buy\_amount   | numeric | not null | amount of buy\_token received by the order owner
  fee\_amount   | numeric | not null | fee amount in sell\_token that got taken in this trade. Note that this amount refers to all or a portion of the static fee\_amount the user signed during the order creation.
+ tx\_hash      | bytea   | nullable | hash of the settlement transaction that emitted this event; only null for rows indexed before the column was introduced that have not been backfilled yet
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)

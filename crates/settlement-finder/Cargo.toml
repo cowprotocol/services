@@ -1,0 +1,24 @@
+[package]
+name = "settlement-finder"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true }
+alloy-rpc-types = { workspace = true }
+alloy-sol-types = { workspace = true }
+anyhow = { workspace = true }
+bigdecimal = { workspace = true }
+clap = { workspace = true }
+contracts = { workspace = true }
+ethrpc = { workspace = true }
+number = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

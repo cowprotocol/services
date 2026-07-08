@@ -232,6 +232,7 @@ mod tests {
                 event_index,
                 Event::Trade(Trade {
                     order_uid: ByteArray(order_uid.0),
+                    tx_hash: tx_hash.unwrap_or_default(),
                     ..Default::default()
                 }),
             )],

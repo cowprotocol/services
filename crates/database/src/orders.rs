@@ -1771,6 +1771,7 @@ mod tests {
                         sell_amount_including_fee: sell_amount_including_fee.clone().into(),
                         buy_amount: u256_max.clone().into(),
                         fee_amount: fee_amount.clone().into(),
+                        ..Default::default()
                     }),
                 )],
             )
@@ -2331,6 +2332,7 @@ mod tests {
                     sell_amount_including_fee: BigDecimal::from(10),
                     buy_amount: BigDecimal::from(100),
                     fee_amount: BigDecimal::from(1),
+                    ..Default::default()
                 },
             )
         };
@@ -2345,6 +2347,7 @@ mod tests {
                     sell_amount_including_fee: BigDecimal::from(20),
                     buy_amount: BigDecimal::from(200),
                     fee_amount: BigDecimal::from(2),
+                    ..Default::default()
                 },
             )
         };
@@ -2359,6 +2362,7 @@ mod tests {
                     sell_amount_including_fee: BigDecimal::from(40),
                     buy_amount: BigDecimal::from(400),
                     fee_amount: BigDecimal::from(4),
+                    ..Default::default()
                 },
             )
         };
