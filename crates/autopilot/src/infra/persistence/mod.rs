@@ -438,22 +438,24 @@ impl Persistence {
             .await
             .map_err(error::Auction::DatabaseError)?;
 
-        let surplus_capturing_jit_order_owners =
-            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
-                .await
-                .map_err(error::Auction::DatabaseError)?
-                .ok_or(error::Auction::NotFound)?
-                .into_iter()
-                .map(|owner| eth::Address::new(owner.0))
-                .collect();
-
-        let prices = database::auction_prices::fetch(&mut ex, auction_id)
+        let auction_row = database::auction::fetch(&mut ex, auction_id)
             .await
             .map_err(error::Auction::DatabaseError)?
+            .ok_or(error::Auction::NotFound)?;
+
+        let surplus_capturing_jit_order_owners = auction_row
+            .surplus_capturing_jit_order_owners
             .into_iter()
-            .map(|price| {
-                let token = eth::Address::new(price.token.0).into();
-                let price = big_decimal_to_u256(&price.price)
+            .map(|owner| eth::Address::new(owner.0))
+            .collect();
+
+        let prices = auction_row
+            .price_tokens
+            .into_iter()
+            .zip(auction_row.price_values)
+            .map(|(token, price)| {
+                let token = eth::Address::new(token.0).into();
+                let price = big_decimal_to_u256(&price)
                     .ok_or(domain::auction::InvalidPrice)
                     .and_then(|p| domain::auction::Price::try_new(p.into()))
                     .map_err(|_err| error::Auction::InvalidPrice(token));
@@ -461,19 +463,21 @@ impl Persistence {
             })
             .collect::<Result<_, _>>()?;
 
+        let block = u64::try_from(auction_row.block)
+            .map_err(|_| error::Auction::NotFound)?
+            .into();
+
         let orders = {
-            let auction_orders = database::auction::get_order_uids(&mut ex, auction_id)
-                .await
-                .map_err(error::Auction::DatabaseError)?
-                .ok_or(error::Auction::NotFound)?
-                .into_iter()
-                .map(|order| domain::OrderUid(order.0))
-                .collect::<HashSet<_>>();
             // Code that uses the data assembled by this function determines JIT orders
             // by their presence in the `orders => fee_policies` mapping. If an order has
             // a mapping it is assumed that this was a regular order and not a JIT order.
             // So in order to not misclassify JIT orders as regular orders we only fetch
             // fee policies for orders that were part of the original auction.
+            let auction_orders: HashSet<domain::OrderUid> = auction_row
+                .order_uids
+                .into_iter()
+                .map(|order| domain::OrderUid(order.0))
+                .collect();
             let relevant_orders: HashSet<_> = trades
                 .iter()
                 .filter(|t| auction_orders.contains(&t.uid))
@@ -529,16 +533,6 @@ impl Persistence {
                 orders.insert(*order, order_policies);
             }
             orders
-        };
-
-        let block = {
-            let block = database::solver_competition::auction_start_block(&mut ex, auction_id)
-                .await?
-                .ok_or(error::Auction::NotFound)?;
-            block
-                .parse::<u64>()
-                .map_err(|_| error::Auction::NotFound)?
-                .into()
         };
 
         Ok(domain::settlement::Auction {

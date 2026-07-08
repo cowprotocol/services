@@ -86,7 +86,6 @@ impl super::Postgres {
         ex.commit().await.context("commit")
     }
 
-    /// Saves the surplus capturing jit order owners to the DB
     pub async fn save_surplus_capturing_jit_order_owners(
         &self,
         auction_id: AuctionId,
