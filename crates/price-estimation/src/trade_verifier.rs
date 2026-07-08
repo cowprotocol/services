@@ -139,10 +139,8 @@ impl TradeVerifier {
             .context("solver provided no gas estimate")
     }
 
-    /// Executes the simulation and checks quote accuracy. Takes the `SwapCall`
-    /// by reference so the caller retains ownership for Tenderly logging when
-    /// it decides to surface the error.
-    async fn verify_quote(
+    /// Executes the simulation and checks quote accuracy.
+    async fn get_verified_price_estimate(
         &self,
         swap: &SwapCall,
         query: &PriceQuery,
@@ -171,10 +169,10 @@ impl TradeVerifier {
         ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
     }
 
-    /// Takes the prepared `settle_call` and builds the final `Solver::swap()`
-    /// call from it. That calls into the verification machinery that
-    /// collects additional data while the `settle_call` gets executed.
-    fn build_swap_call(
+    /// Passes the prepared `settle_call` to the simulation machinery which
+    /// makes sure all the pre-conditions are met and collects additional
+    /// information throughout the call (e.g. token movements, gas costs).
+    fn build_simulation_call(
         &self,
         settle_call: EthCallInputs,
         trade: &TradeKind,
@@ -224,8 +222,8 @@ impl TradeVerifier {
         })
     }
 
-    /// Runs the `swap_call` simulation via a raw provider call and extracts
-    /// the [`SettleOutput`] from the decoded response.
+    /// Runs the `swap_call` simulation, decodes the returned data, and analyzes
+    /// it.
     async fn execute_and_analyze(
         &self,
         swap: &SwapCall,
@@ -607,7 +605,7 @@ impl TradeVerifying for TradeVerifier {
             .build_settle_call(&verification, query, &trade)
             .await
             .and_then(|settle_call| {
-                self.build_swap_call(settle_call, &trade, query, &verification)
+                self.build_simulation_call(settle_call, &trade, query, &verification)
             });
 
         let swap_call = match swap_call_res {
@@ -623,7 +621,7 @@ impl TradeVerifying for TradeVerifier {
         };
 
         let verification_err = match self
-            .verify_quote(&swap_call, query, &verification, &trade)
+            .get_verified_price_estimate(&swap_call, query, &verification, &trade)
             .await
         {
             Ok(verified) => return Ok(verified),
