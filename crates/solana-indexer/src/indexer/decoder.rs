@@ -109,9 +109,10 @@ struct RawInstruction<'a> {
     /// Top-level instruction index. For a CPI, the top-level instruction it
     /// runs under.
     instruction_index: u32,
-    /// Position within the top-level instruction's inner list, or `None` for a
-    /// top-level instruction.
-    inner_index: Option<u32>,
+    /// Path within the top-level instruction's CPI tree (see
+    /// `ResolvedInstruction::inner_ix_path`). Empty for a top-level
+    /// instruction.
+    inner_ix_path: Vec<u8>,
     /// Index of the invoked program in the account list.
     program_id_index: u32,
     /// Account-list indices of the accounts the instruction touches.
@@ -127,7 +128,7 @@ impl RawInstruction<'_> {
     /// left to the decode step. Returns `None` if the program is untracked or
     /// its index is out of range.
     fn resolve_protocol_instruction(
-        &self,
+        self,
         account_keys: &[Pubkey],
         settlement_program: &Pubkey,
         solflow_program: &Pubkey,
@@ -141,10 +142,15 @@ impl RawInstruction<'_> {
             data: Bytes::copy_from_slice(self.data),
             accounts: self.account_indices.to_vec(),
             instruction_index: self.instruction_index,
-            inner_index: self.inner_index,
+            inner_ix_path: self.inner_ix_path,
         })
     }
 }
+
+/// Solana caps the instruction stack at height 5 (top-level = height 1), so a
+/// CPI path is at most 4 deep. Clamping to it guards against a corrupt
+/// `stack_height` forcing a huge allocation.
+const MAX_CPI_DEPTH: usize = 4;
 
 /// Resolve every instruction against `account_keys` and keep only those whose
 /// program is the settlement or SolFlow program, where settlement is often
@@ -171,35 +177,66 @@ fn relevant_instructions(
         .map(|meta| meta.inner_instructions.as_slice())
         .unwrap_or_default();
 
-    top_level
-        .iter()
-        .enumerate()
-        .flat_map(|(index, ix)| {
-            let index = index as u32;
-            let top = RawInstruction {
-                instruction_index: index,
-                inner_index: None,
-                program_id_index: ix.program_id_index,
-                account_indices: &ix.accounts,
-                data: &ix.data,
+    let mut resolved = Vec::new();
+    for (index, ix) in top_level.iter().enumerate() {
+        let instruction_index = index as u32;
+        let top = RawInstruction {
+            instruction_index,
+            inner_ix_path: Vec::new(),
+            program_id_index: ix.program_id_index,
+            account_indices: &ix.accounts,
+            data: &ix.data,
+        };
+        if let Some(resolved_ix) =
+            top.resolve_protocol_instruction(&account_keys, settlement_program, solflow_program)
+        {
+            resolved.push(resolved_ix);
+        }
+
+        let Some(group) = inner_groups
+            .iter()
+            .find(|group| group.index == instruction_index)
+        else {
+            continue;
+        };
+
+        // `group.instructions` is a depth-first, execution-ordered flat list of
+        // every CPI under this top-level instruction, across all nesting levels.
+        // `stack_height` is the only per-CPI depth signal (2 = a direct CPI, 3 =
+        // a CPI that one made, ...), so rebuild the sibling position at each
+        // level from it. A dropped (untracked) inner still advances the counter,
+        // so kept siblings keep their true position. A missing stack_height
+        // (pre-Solana-1.14.6 data) falls back to depth 1.
+        let mut path: Vec<u8> = Vec::new();
+        for inner in &group.instructions {
+            let depth = inner
+                .stack_height
+                .map(|height| height.saturating_sub(1) as usize)
+                .unwrap_or(1)
+                .clamp(1, MAX_CPI_DEPTH);
+            if depth > path.len() {
+                path.resize(depth, 0);
+            } else {
+                path.truncate(depth);
+                if let Some(last) = path.last_mut() {
+                    *last = last.saturating_add(1);
+                }
+            }
+            let raw = RawInstruction {
+                instruction_index,
+                inner_ix_path: path.clone(),
+                program_id_index: inner.program_id_index,
+                account_indices: &inner.accounts,
+                data: &inner.data,
             };
-            let inners = inner_groups
-                .iter()
-                .filter(move |group| group.index == index)
-                .flat_map(|group| group.instructions.iter().enumerate())
-                .map(move |(offset, ix)| RawInstruction {
-                    instruction_index: index,
-                    inner_index: Some(offset as u32),
-                    program_id_index: ix.program_id_index,
-                    account_indices: &ix.accounts,
-                    data: &ix.data,
-                });
-            std::iter::once(top).chain(inners)
-        })
-        .filter_map(|raw| {
-            raw.resolve_protocol_instruction(&account_keys, settlement_program, solflow_program)
-        })
-        .collect()
+            if let Some(resolved_ix) =
+                raw.resolve_protocol_instruction(&account_keys, settlement_program, solflow_program)
+            {
+                resolved.push(resolved_ix);
+            }
+        }
+    }
+    resolved
 }
 
 #[cfg(test)]

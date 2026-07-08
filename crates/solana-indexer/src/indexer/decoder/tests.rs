@@ -29,12 +29,17 @@ fn compiled(program_id_index: u32, accounts: Vec<u8>, data: Vec<u8>) -> Compiled
     }
 }
 
-fn inner(program_id_index: u32, accounts: Vec<u8>, data: Vec<u8>) -> InnerInstruction {
+fn inner(
+    program_id_index: u32,
+    accounts: Vec<u8>,
+    data: Vec<u8>,
+    stack_height: Option<u32>,
+) -> InnerInstruction {
     InnerInstruction {
         program_id_index,
         accounts,
         data,
-        stack_height: None,
+        stack_height,
     }
 }
 
@@ -88,7 +93,7 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
         // settlement invoked as a CPI under top-level instruction 0
         vec![InnerInstructions {
             index: 0,
-            instructions: vec![inner(2, vec![1], vec![7])],
+            instructions: vec![inner(2, vec![1], vec![7], None)],
         }],
     );
 
@@ -107,13 +112,13 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
 
     assert_eq!(relevant[0].program_id, settlement);
     assert_eq!(relevant[0].instruction_index, 0);
-    assert_eq!(relevant[0].inner_index, Some(0));
+    assert_eq!(relevant[0].inner_ix_path, vec![0]);
     assert_eq!(relevant[0].accounts, vec![1]);
     assert_eq!(relevant[0].data, Bytes::from(vec![7]));
 
     assert_eq!(relevant[1].program_id, solflow);
     assert_eq!(relevant[1].instruction_index, 1);
-    assert_eq!(relevant[1].inner_index, None);
+    assert!(relevant[1].inner_ix_path.is_empty());
     assert_eq!(relevant[1].accounts, vec![1, 4]);
     assert_eq!(relevant[1].data, Bytes::from(vec![1, 2, 3]));
 }
@@ -152,4 +157,70 @@ fn unresolvable_programs_dropped_account_indices_carried_through() {
     assert_eq!(relevant[0].program_id, settlement);
     assert_eq!(relevant[0].instruction_index, 2);
     assert_eq!(relevant[0].accounts, vec![5]);
+}
+
+/// CPIs nest deeper than one level. `stack_height` drives the per-level path,
+/// and a dropped (untracked) inner still advances the sibling counter, so kept
+/// siblings keep their true position.
+#[test]
+fn inner_ix_path_tracks_cpi_nesting_depth() {
+    let (settlement, solflow, router, other) = (pubkey(1), pubkey(2), pubkey(9), pubkey(8));
+    // static account list: [router(0), settlement(1), other(2), solflow(3),
+    // acct(4)]
+    let tx = tx_info(
+        vec![router, settlement, other, solflow, pubkey(4)],
+        vec![],
+        vec![],
+        // one top-level router call (dropped)
+        vec![compiled(0, vec![4], vec![0])],
+        vec![InnerInstructions {
+            index: 0,
+            instructions: vec![
+                inner(1, vec![4], vec![10], Some(2)), // settlement, depth 1 -> [0]     kept
+                inner(2, vec![4], vec![11], Some(3)), // other,      depth 2 -> [0, 0]  dropped
+                inner(1, vec![4], vec![12], Some(3)), // settlement, depth 2 -> [0, 1]  kept
+                inner(3, vec![4], vec![13], Some(2)), // solflow,    depth 1 -> [1]     kept
+            ],
+        }],
+    );
+
+    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    assert_eq!(relevant.len(), 3);
+
+    assert_eq!(relevant[0].program_id, settlement);
+    assert_eq!(relevant[0].inner_ix_path, vec![0]);
+    assert_eq!(relevant[0].data, Bytes::from(vec![10]));
+
+    // the dropped depth-2 CPI still advanced the counter, so this sibling is [0, 1]
+    assert_eq!(relevant[1].program_id, settlement);
+    assert_eq!(relevant[1].inner_ix_path, vec![0, 1]);
+    assert_eq!(relevant[1].data, Bytes::from(vec![12]));
+
+    // back to depth 1: the second direct CPI under the top-level
+    assert_eq!(relevant[2].program_id, solflow);
+    assert_eq!(relevant[2].inner_ix_path, vec![1]);
+    assert_eq!(relevant[2].data, Bytes::from(vec![13]));
+}
+
+/// A corrupt `stack_height` from the stream must not drive an unbounded path
+/// allocation: depth is clamped to `MAX_CPI_DEPTH`.
+#[test]
+fn corrupt_stack_height_is_clamped() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let tx = tx_info(
+        vec![pubkey(9), settlement], // [router(0), settlement(1)]
+        vec![],
+        vec![],
+        vec![compiled(0, vec![1], vec![0])], // top-level router, dropped
+        vec![InnerInstructions {
+            index: 0,
+            instructions: vec![inner(1, vec![1], vec![7], Some(10_000))],
+        }],
+    );
+
+    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    assert_eq!(relevant.len(), 1);
+    assert_eq!(relevant[0].program_id, settlement);
+    // depth 9999 clamped to 4, so the path is bounded, not 9999 elements
+    assert_eq!(relevant[0].inner_ix_path, vec![0, 0, 0, 0]);
 }

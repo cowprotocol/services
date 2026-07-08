@@ -31,9 +31,11 @@ pub(crate) struct ResolvedInstruction {
     /// Top-level instruction index. For a CPI, the top-level instruction it
     /// runs under.
     pub instruction_index: u32,
-    /// Position within the top-level instruction's inner list, or `None` for a
-    /// top-level instruction.
-    pub inner_index: Option<u32>,
+    /// Path to this instruction within the top-level instruction's CPI tree,
+    /// one sibling position per nesting level: empty for a top-level
+    /// instruction, `[0]` for its first CPI, `[0, 1]` for the second CPI made
+    /// by that first CPI. Reconstructed from `stack_height`.
+    pub inner_ix_path: Vec<u8>,
 }
 
 /// Per-decode-pass context: the reconstructed account list, the slot, the
