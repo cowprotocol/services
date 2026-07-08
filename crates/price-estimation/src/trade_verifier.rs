@@ -670,7 +670,7 @@ impl TradeVerifying for TradeVerifier {
     }
 }
 
-/// Contains information to execute the simulation request, interpret the data
+/// Contains information to execute the simulation request, interpret the result
 /// and construct a tenderly simulation from it for debugging.
 struct SwapCall {
     tx_request: TransactionRequest,
