@@ -151,14 +151,12 @@ async fn build_pool_data_source(
         UniswapV3PoolSource::PoolIndexer(indexer) => {
             tracing::info!(
                 url = %indexer.url,
-                wait_until_timeout = ?indexer.wait_until_timeout,
                 "uniswap v3: using pool-indexer as data source",
             );
             Ok(Arc::new(PoolIndexerClient::new(
                 indexer.url.clone(),
                 eth.chain(),
                 http,
-                indexer.wait_until_timeout,
             )))
         }
         UniswapV3PoolSource::Subgraph(subgraph) => {
