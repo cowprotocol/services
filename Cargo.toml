@@ -1,7 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
-exclude = ["contracts/"]
+members = [
+  "contracts/generated/contracts-facade",
+  "contracts/generated/contracts-generated/*",
+  "crates/*",
+]
 
 [workspace.dependencies]
 account-balances = { path = "crates/account-balances" }
@@ -58,6 +61,7 @@ derive_more = { version = "1.0.0", features = ["full"] }
 driver = { path = "crates/driver" }
 eth-domain-types = { path = "crates/eth-domain-types" }
 ethrpc = { path = "crates/ethrpc" }
+event-bus-dto = { path = "crates/event-bus-dto" }
 event-indexing = { path = "crates/event-indexing" }
 flate2 = "1.0.30"
 futures = "0.3.30"
@@ -109,6 +113,7 @@ rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 rust_decimal = { version = "1.35.0", default-features = false }
 s3 = { path = "crates/s3" }
+schemars = { version = "1.2", features = ["chrono04"] }
 scopeguard = "1.2.0"
 serde = { version = "1.0.203", features = ["derive"] }
 serde-ext = { path = "crates/serde-ext" }
@@ -118,7 +123,9 @@ sha2 = "0.10"
 shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
+solana-client = "4"
 solana-indexer = { path = "crates/solana-indexer" }
+solana-sdk = "4"
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
@@ -146,8 +153,12 @@ tracing-opentelemetry = "0.33.0"
 tracing-serde = "0.2"
 tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
-vergen = "8"
 winner-selection = { path = "crates/winner-selection" }
+yellowstone-grpc-client = "13.1.0"
+yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tokio_unstable)"] }

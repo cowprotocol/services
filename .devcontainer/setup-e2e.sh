@@ -66,4 +66,17 @@ docker run --rm --network=host \
     -url="jdbc:postgresql://127.0.0.1:${PGPORT}/${PGDATABASE}?user=${PGUSER}&password=" \
     migrate
 
+# The pool-indexer has its own database migrated from its own directory (mirrors
+# the per-network prod DB), separate from the autopilot/orderbook set above.
+psql -h 127.0.0.1 -U postgres -d postgres -tAc \
+    "SELECT 1 FROM pg_database WHERE datname='pool_indexer'" | grep -q 1 \
+    || psql -h 127.0.0.1 -U postgres -d postgres -c \
+        "CREATE DATABASE pool_indexer OWNER \"${PGUSER}\";"
+docker run --rm --network=host \
+    -v "$REPO_ROOT/database/sql-pool-indexer:/flyway/sql:ro" \
+    -v "$REPO_ROOT/database/conf:/flyway/conf:ro" \
+    flyway/flyway:10.7.1 \
+    -url="jdbc:postgresql://127.0.0.1:${PGPORT}/pool_indexer?user=${PGUSER}&password=" \
+    migrate
+
 echo "==> e2e environment ready (postgres)"

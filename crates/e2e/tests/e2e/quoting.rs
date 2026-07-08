@@ -26,6 +26,7 @@ use {
     shared::web3::Web3,
     solvers_dto::solution::{SolverError, SolverErrorCode, SolverResponse},
     std::{
+        ops::DerefMut,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -951,16 +952,36 @@ async fn volume_fee(web3: Web3) {
 
 // Smoke test for the SSE streaming quote endpoint. Posts a quote request to
 // /api/v1/quote/stream and asserts that at least one SSE data line parses as
-// a valid OrderQuoteResponse with id == None.
+// a valid OrderQuoteResponse carrying a persisted quote id.
 async fn quote_stream_smoke(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
-    let [trader] = onchain.make_accounts(2u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
+
+    // Wrap and approve WETH so the trader can later place an order referencing
+    // one of the streamed quotes.
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, 2u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(2u64.eth())
+        .send_and_watch()
+        .await
+        .unwrap();
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
@@ -1026,8 +1047,8 @@ async fn quote_stream_smoke(web3: Web3) {
     let buy_token = *token.address();
     for response in &parsed {
         assert!(
-            response.id.is_none(),
-            "streaming quotes should have id == null, got {:?}",
+            response.id.is_some(),
+            "streaming quotes should be persisted and carry an id, got {:?}",
             response.id
         );
         assert_eq!(response.from, trader.address());
@@ -1038,4 +1059,46 @@ async fn quote_stream_smoke(web3: Web3) {
             "streamed quote should have a non-zero buy amount, got {response:?}"
         );
     }
+
+    // Prove that placing an order with a streamed quote id reuses the persisted
+    // quote instead of re-quoting: the quote attached to the order must be the
+    // exact one we stored while streaming (same metadata).
+    let streamed = parsed
+        .iter()
+        .find(|response| response.id.is_some())
+        .expect("at least one streamed quote should carry an id");
+    let quote_id = streamed.id.unwrap();
+    let (streamed_metadata,) = crate::database::quote_metadata(services.db(), quote_id)
+        .await
+        .expect("streamed quote should be persisted");
+
+    tracing::info!("Placing order referencing a streamed quote id.");
+    let order = OrderCreation {
+        quote_id: Some(quote_id),
+        sell_token: weth,
+        sell_amount: 1u64.eth(),
+        buy_token,
+        buy_amount: streamed.quote.buy_amount,
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let order_uid = services.create_order(&order).await.unwrap();
+
+    let order_quote = database::orders::read_quote(
+        services.db().acquire().await.unwrap().deref_mut(),
+        &database::byte_array::ByteArray(order_uid.0),
+    )
+    .await
+    .unwrap()
+    .expect("order should reference a stored quote");
+    assert_eq!(
+        streamed_metadata, order_quote.metadata,
+        "order should reuse the streamed quote, not trigger a re-quote"
+    );
 }

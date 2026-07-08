@@ -26,8 +26,8 @@
 
 use {
     alloy::eips::BlockId,
-    anyhow::Result,
-    cached::{Cached, SizedCache},
+    anyhow::{Context, Result},
+    cached::{Cached, TimedSizedCache},
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::StreamExt,
     itertools::Itertools,
@@ -114,6 +114,7 @@ where
 pub struct CacheConfig {
     pub number_of_blocks_to_cache: NonZeroU64,
     pub number_of_entries_to_auto_update: NonZeroUsize,
+    pub auto_update_ttl: Duration,
     pub maximum_recent_block_age: u64,
     pub max_retries: u32,
     pub delay_between_retries: Duration,
@@ -124,6 +125,7 @@ impl Default for CacheConfig {
         Self {
             number_of_blocks_to_cache: NonZeroU64::new(1).unwrap(),
             number_of_entries_to_auto_update: NonZeroUsize::new(1).unwrap(),
+            auto_update_ttl: Duration::from_secs(1),
             maximum_recent_block_age: Default::default(),
             max_retries: Default::default(),
             delay_between_retries: Default::default(),
@@ -168,6 +170,7 @@ where
         let inner = Arc::new(Inner {
             mutexed: Mutex::new(Mutexed::new(
                 config.number_of_entries_to_auto_update,
+                config.auto_update_ttl,
                 block,
                 config.maximum_recent_block_age,
             )),
@@ -336,7 +339,7 @@ struct Mutexed<K, V>
 where
     K: CacheKey<V>,
 {
-    recently_used: SizedCache<K, ()>,
+    recently_used: TimedSizedCache<K, ()>,
     // For quickly finding at which block an entry is cached.
     cached_most_recently_at_block: HashMap<K, u64>,
     // Tuple ordering allows us to efficiently construct range queries by block.
@@ -353,11 +356,15 @@ where
 {
     fn new(
         entries_lru_size: NonZeroUsize,
+        entries_ttl: Duration,
         current_block: u64,
         maximum_recent_block_age: u64,
     ) -> Self {
         Self {
-            recently_used: SizedCache::with_size(entries_lru_size.get()),
+            recently_used: TimedSizedCache::with_size_and_lifespan(
+                entries_lru_size.get(),
+                entries_ttl.as_secs(),
+            ),
             cached_most_recently_at_block: HashMap::new(),
             entries: BTreeMap::new(),
             last_update_block: current_block,
