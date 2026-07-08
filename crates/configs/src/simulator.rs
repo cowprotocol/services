@@ -54,7 +54,7 @@ pub struct StateOverrideStream {
 }
 
 const fn default_override_max_age() -> Duration {
-    Duration::from_secs(3)
+    Duration::from_secs(5)
 }
 
 fn default_ethrpc_batch_delay() -> Duration {
@@ -248,7 +248,7 @@ mod tests {
         let config: Config = toml::from_str(toml).unwrap();
         let stream = config.state_override_stream.unwrap();
         assert_eq!(stream.ws_url.as_str(), "wss://example.com/stream");
-        assert_eq!(stream.max_age, Duration::from_secs(3));
+        assert_eq!(stream.max_age, Duration::from_secs(5));
     }
 
     #[test]
