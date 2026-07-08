@@ -2,7 +2,7 @@ use {
     crate::ethereum::contracts::Contracts,
     alloy_primitives::U256,
     alloy_provider::{Provider, network::TransactionBuilder},
-    alloy_rpc_types::{BlockOverrides, TransactionRequest, state::StateOverride},
+    alloy_rpc_types::{TransactionRequest, state::StateOverride},
     anyhow::{Result, anyhow},
     chain::Chain,
     eth_domain_types::AccessList,
@@ -124,7 +124,6 @@ impl Ethereum {
         &self,
         tx: T,
         overrides: Option<StateOverride>,
-        block_overrides: Option<BlockOverrides>,
     ) -> Result<eth_domain_types::Gas, Error>
     where
         T: Into<TransactionRequest>,
@@ -135,15 +134,14 @@ impl Ethereum {
             _ => tx,
         };
 
-        // `None` omits the RPC params entirely (byte-identical to today).
-        // Requires a node supporting eth_estimateGas state/block overrides
+        // `None` omits the RPC param entirely (byte-identical to today).
+        // Requires a node supporting eth_estimateGas state overrides
         // (geth >=1.13, reth, nethermind, recent erigon, anvil).
         let estimated_gas = self
             .web3
             .provider
             .estimate_gas(tx)
             .overrides_opt(overrides)
-            .with_block_overrides_opt(block_overrides)
             .pending()
             .await
             .map_err(Error::Rpc)?

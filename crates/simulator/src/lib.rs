@@ -107,14 +107,10 @@ impl Simulator {
             return Ok(gas);
         }
         let block: eth::BlockNo = self.eth.current_block().borrow().number.into();
-        let (state_overrides, block_overrides) = match self
+        let state_overrides = self
             .simulation_overrides
             .as_ref()
-            .and_then(|overrides| overrides.current())
-        {
-            Some(set) => (Some(set.state_overrides), Some(set.block_overrides)),
-            None => (None, None),
-        };
+            .and_then(|overrides| overrides.current());
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
@@ -131,7 +127,7 @@ impl Simulator {
             }
             Inner::Ethereum => self
                 .eth
-                .estimate_gas(tx.clone(), state_overrides, block_overrides)
+                .estimate_gas(tx.clone(), state_overrides)
                 .await
                 .map_err(with(tx, block))?,
         })

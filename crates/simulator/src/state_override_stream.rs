@@ -6,8 +6,8 @@
 //! previous-block state.
 
 use {
-    alloy_primitives::{Address, U256},
-    alloy_rpc_types::{BlockOverrides, state::StateOverride},
+    alloy_primitives::Address,
+    alloy_rpc_types::state::StateOverride,
     configs::simulator::StateOverrideStream as Config,
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::{SinkExt, StreamExt},
@@ -36,42 +36,27 @@ struct Inner {
     snapshots: watch::Receiver<Snapshot>,
     current_block: CurrentBlockWatcher,
     max_age: Duration,
-    block_time: Duration,
-}
-
-#[derive(Clone)]
-pub struct SimulationOverrideSet {
-    pub state_overrides: StateOverride,
-    pub block_overrides: BlockOverrides,
 }
 
 impl std::fmt::Debug for SimulationOverrides {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SimulationOverrides")
             .field("max_age", &self.0.max_age)
-            .field("block_time", &self.0.block_time)
             .finish()
     }
 }
 
 impl SimulationOverrides {
-    /// Returns `None` (callers omit the RPC override params entirely) when the
-    /// stream is stale or unconfigured.
-    ///
-    /// The frame `timestamp` is the producer wall clock, not block time, so the
-    /// next-block timestamp is derived from the head block's timestamp plus the
-    /// chain block time.
-    pub fn current(&self) -> Option<SimulationOverrideSet> {
+    /// Returns the live state overrides, or `None` (callers omit the RPC
+    /// override param entirely) when the stream is stale or unconfigured.
+    pub fn current(&self) -> Option<StateOverride> {
         let snapshot = self.0.snapshots.borrow();
         let received_at = snapshot.received_at?;
         if received_at.elapsed() > self.0.max_age {
             Metrics::get().record_override_result(OverrideResult::Stale);
             return None;
         }
-        let (current_block_number, current_block_timestamp) = {
-            let info = self.0.current_block.borrow();
-            (info.number, info.timestamp)
-        };
+        let current_block_number = self.0.current_block.borrow().number;
         if snapshot.block_number != current_block_number {
             Metrics::get().record_override_result(OverrideResult::Stale);
             return None;
@@ -81,15 +66,7 @@ impl SimulationOverrides {
             return None;
         }
         Metrics::get().record_override_result(OverrideResult::Applied);
-        let block_overrides = BlockOverrides {
-            number: Some(U256::from(current_block_number + 1)),
-            time: Some(current_block_timestamp + self.0.block_time.as_secs()),
-            ..Default::default()
-        };
-        Some(SimulationOverrideSet {
-            state_overrides: snapshot.overrides.clone(),
-            block_overrides,
-        })
+        Some(snapshot.overrides.clone())
     }
 }
 
@@ -192,11 +169,7 @@ where
     deserializer.deserialize_map(Vis)
 }
 
-pub fn spawn(
-    cfg: &Config,
-    current_block: CurrentBlockWatcher,
-    block_time: Duration,
-) -> SimulationOverrides {
+pub fn spawn(cfg: &Config, current_block: CurrentBlockWatcher) -> SimulationOverrides {
     let (sender, receiver) = watch::channel(Snapshot {
         overrides: StateOverride::default(),
         block_number: 0,
@@ -212,7 +185,6 @@ pub fn spawn(
         snapshots: receiver,
         current_block,
         max_age: cfg.max_age,
-        block_time,
     }))
 }
 
@@ -294,7 +266,7 @@ fn publish(overrides: &StateOverride, block_number: u64, sender: &watch::Sender<
 mod tests {
     use {
         super::*,
-        alloy_primitives::{B256, address},
+        alloy_primitives::{B256, U256, address},
         alloy_rpc_types::state::AccountOverride,
         ethrpc::block_stream::BlockInfo,
         futures::StreamExt,
@@ -439,7 +411,6 @@ mod tests {
             snapshots: receiver,
             current_block: block_rx,
             max_age,
-            block_time: Duration::from_secs(12),
         }))
     }
 
@@ -521,17 +492,15 @@ mod tests {
             ws_url: server_url,
             max_age: Duration::from_secs(30),
         };
-        let handle = spawn(&cfg, block_rx, Duration::from_secs(12));
+        let handle = spawn(&cfg, block_rx);
 
         let _ = server_handle.await;
 
         let got = timeout(Duration::from_secs(2), async {
             loop {
-                if let Some(set) = handle.current()
-                    && let Some(account_override) = set.state_overrides.get(&account)
+                if let Some(overrides) = handle.current()
+                    && let Some(account_override) = overrides.get(&account)
                     && account_override.balance == Some(U256::from(2))
-                    && set.block_overrides.number == Some(U256::from(12))
-                    && set.block_overrides.time == Some(1012)
                 {
                     return;
                 }
@@ -582,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn current_yields_next_block_overrides_for_real_data() {
+    fn current_yields_state_overrides_for_real_data() {
         let (block_tx, block_rx) = block(25475333, 1783363000);
         let (_sender, receiver) = watch::channel(Snapshot {
             overrides: {
@@ -597,13 +566,10 @@ mod tests {
             snapshots: receiver,
             current_block: block_rx,
             max_age: Duration::from_secs(30),
-            block_time: Duration::from_secs(12),
         }));
 
-        let set = handle.current().unwrap();
-        assert_eq!(set.block_overrides.number, Some(U256::from(25475334)));
-        assert_eq!(set.block_overrides.time, Some(1783363012));
-        assert_eq!(set.state_overrides.len(), 5);
+        let overrides = handle.current().unwrap();
+        assert_eq!(overrides.len(), 5);
 
         block_tx
             .send(BlockInfo {

@@ -3,7 +3,6 @@ use {
         primitives::{Address, B256, U256, address, hex, map::B256Map},
         providers::{Provider, ProviderBuilder},
         rpc::types::{
-            BlockOverrides,
             TransactionRequest,
             state::{AccountOverride, StateOverride},
         },
@@ -83,45 +82,18 @@ async fn local_node_estimate_gas_state_override() {
     let contract = deploy().await;
     let eth = ethereum().await;
 
-    let without = eth.estimate_gas(gate_call(contract), None, None).await;
+    let without = eth.estimate_gas(gate_call(contract), None).await;
     assert!(
         without.is_err(),
         "gate() should revert without the slot-0 override, got {without:?}",
     );
 
     let with = eth
-        .estimate_gas(gate_call(contract), Some(slot0_override(contract)), None)
+        .estimate_gas(gate_call(contract), Some(slot0_override(contract)))
         .await;
     assert!(
         with.is_ok(),
         "gate() should succeed with the slot-0 override, got {with:?}",
-    );
-
-    node.kill().await;
-}
-
-#[tokio::test]
-#[ignore = "requires anvil; run via `just test-e2e local_node_estimate_gas_block_overrides`"]
-async fn local_node_estimate_gas_block_overrides() {
-    let mut node = Node::new().await;
-    let contract = deploy().await;
-    let eth = ethereum().await;
-
-    let block_overrides = BlockOverrides {
-        number: Some(U256::from(42)),
-        time: Some(17),
-        ..Default::default()
-    };
-    let with_state_and_block = eth
-        .estimate_gas(
-            gate_call(contract),
-            Some(slot0_override(contract)),
-            Some(block_overrides),
-        )
-        .await;
-    assert!(
-        with_state_and_block.is_ok(),
-        "estimate_gas should accept block overrides, got {with_state_and_block:?}",
     );
 
     node.kill().await;

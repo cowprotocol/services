@@ -3,7 +3,6 @@ use {
     alloy_primitives::{Address, B256, Bytes, U256, address, b256, keccak256},
     alloy_provider::{DynProvider, Provider, ext::DebugApi},
     alloy_rpc_types::{
-        BlockOverrides,
         TransactionRequest,
         state::{AccountOverride, StateOverride},
         trace::geth::{CallConfig, GethDebugTracingCallOptions, GethDebugTracingOptions},
@@ -440,7 +439,6 @@ pub struct EthCallInputs {
     pub to: Address,
     pub calldata: Bytes,
     pub state_overrides: StateOverride,
-    pub block_overrides: Option<BlockOverrides>,
     pub simulator: SettlementSimulator,
     pub block: u64,
     pub failed_state_overrides: Vec<AccountOverrideRequest>,
@@ -466,7 +464,6 @@ impl EthCallInputs {
             .clone()
             .call(self.as_transaction_request())
             .overrides(self.state_overrides.clone())
-            .with_block_overrides_opt(self.block_overrides.clone())
             .block(self.block.into())
             .await
     }
@@ -478,12 +475,9 @@ impl EthCallInputs {
     pub async fn simulation_report(
         &self,
     ) -> Result<report::SimulationReport, RpcError<alloy_transport::TransportErrorKind>> {
-        let mut trace_options = GethDebugTracingCallOptions::default()
+        let trace_options = GethDebugTracingCallOptions::default()
             .with_tracing_options(GethDebugTracingOptions::call_tracer(CallConfig::default()))
             .with_state_overrides(self.state_overrides.clone());
-        if let Some(block_overrides) = self.block_overrides.clone() {
-            trace_options = trace_options.with_block_overrides(block_overrides);
-        }
         let trace = self
             .simulator
             .0

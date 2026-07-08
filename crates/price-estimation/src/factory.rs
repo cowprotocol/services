@@ -119,13 +119,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         });
         let settlement_contract =
             GPv2Settlement::GPv2Settlement::new(network.settlement, web3.provider.clone());
-        let simulation_overrides = args.state_override_stream.as_ref().map(|cfg| {
-            simulator::state_override_stream::spawn(
-                cfg,
-                network.block_stream.clone(),
-                network.chain.block_time_in_ms(),
-            )
-        });
+        let simulation_overrides = args
+            .state_override_stream
+            .as_ref()
+            .map(|cfg| simulator::state_override_stream::spawn(cfg, network.block_stream.clone()));
         let simulator = SettlementSimulator::new(
             settlement_contract,
             network.flash_loan_router,

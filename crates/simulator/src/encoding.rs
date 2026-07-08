@@ -493,15 +493,13 @@ pub(crate) async fn finish_simulation_builder(
 
     // Streamed overrides are appended as Custom requests so
     // build_final_state_overrides' merge arbitrates against the verifier's own.
-    // Only latest-block simulations get overrides; historical-block sims have no
-    // head timestamp to derive next-block overrides from.
-    let mut block_overrides = None;
+    // Only latest-block simulations get overrides; historical-block sims replay
+    // against a pinned block whose pAMM state is not the live stream's.
     if matches!(builder.block, Block::Latest)
         && let Some(stream) = builder.simulator.0.simulation_overrides.as_ref()
-        && let Some(set) = stream.current()
+        && let Some(state_overrides) = stream.current()
     {
-        block_overrides = Some(set.block_overrides);
-        for (account, state) in set.state_overrides.iter() {
+        for (account, state) in state_overrides.iter() {
             builder
                 .account_override_requests
                 .push(AccountOverrideRequest::Custom {
@@ -524,7 +522,6 @@ pub(crate) async fn finish_simulation_builder(
         to,
         calldata,
         state_overrides,
-        block_overrides,
         block,
         simulator: builder.simulator,
         failed_state_overrides: state_override_errors,
