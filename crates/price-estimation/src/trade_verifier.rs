@@ -11,7 +11,6 @@ use {
         primitives::{Address, Bytes, U256, address, aliases::I512},
         providers::Provider,
         rpc::types::{TransactionRequest, state::StateOverride},
-        uint,
     },
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
