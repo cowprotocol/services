@@ -7,7 +7,7 @@ use {
         infra::{
             self,
             Api,
-            blockchain::{self, Ethereum},
+            blockchain::{self, Ethereum, gas},
             cli,
             config,
             liquidity,
@@ -16,12 +16,11 @@ use {
         },
     },
     clap::Parser,
-    eth_domain_types as eth,
     futures::future::join_all,
     http_client::HttpClientFactory,
     shared::arguments::tracing_config,
     simulator::{self, Simulator},
-    std::{net::SocketAddr, sync::Arc, time::Duration},
+    std::{net::SocketAddr, time::Duration},
     tokio::sync::oneshot,
 };
 
@@ -59,12 +58,21 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     let ethrpc = ethrpc(&args).await;
     let config = config::file::load(ethrpc.chain(), &args.config).await;
 
-    let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
+    let version = observe::version::git_version();
 
-    tracing::info!(%commit_hash, "running driver with {config:#?}");
+    tracing::info!(%version, "running driver with {config:#?}");
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let eth = ethereum(&config, ethrpc.clone(), &args.current_block).await;
+    let eth = Ethereum::new(
+        ethrpc.clone(),
+        config.contracts.clone(),
+        &args.current_block,
+        config.tx_gas_limit.into(),
+        &config.gas_estimator,
+        gas::adjustments(&config.mempools),
+    )
+    .await;
+
     let simulator_eth = simulator::Ethereum::new(
         ethrpc.web3().clone(),
         ethrpc.chain(),
@@ -184,26 +192,6 @@ async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
     blockchain::Rpc::try_new(args)
         .await
         .expect("connect ethereum RPC")
-}
-
-async fn ethereum(
-    config: &infra::Config,
-    ethrpc: blockchain::Rpc,
-    current_block_args: &shared::current_block::Arguments,
-) -> Ethereum {
-    let gas = Arc::new(
-        blockchain::GasPriceEstimator::new(ethrpc.web3(), &config.gas_estimator, &config.mempools)
-            .await
-            .expect("initialize gas price estimator"),
-    );
-    Ethereum::new(
-        ethrpc,
-        config.contracts.clone(),
-        gas,
-        current_block_args,
-        eth::Gas(config.tx_gas_limit),
-    )
-    .await
 }
 
 async fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {

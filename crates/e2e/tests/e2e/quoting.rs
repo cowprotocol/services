@@ -11,7 +11,13 @@ use {
     futures::FutureExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
-        quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, SellAmount},
+        quote::{
+            OrderQuoteRequest,
+            OrderQuoteResponse,
+            OrderQuoteSide,
+            QuoteSigningScheme,
+            SellAmount,
+        },
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
@@ -20,6 +26,7 @@ use {
     shared::web3::Web3,
     solvers_dto::solution::{SolverError, SolverErrorCode, SolverResponse},
     std::{
+        ops::DerefMut,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -65,6 +72,12 @@ async fn local_node_native_price_custom_solver_errors() {
 #[ignore]
 async fn local_node_quote_custom_solver_errors_prioritized() {
     run_test(quote_custom_solver_errors_prioritized).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_quote_stream_smoke() {
+    run_test(quote_stream_smoke).await;
 }
 
 // Test that quoting works as expected, specifically, that we can quote for a
@@ -934,5 +947,158 @@ async fn volume_fee(web3: Web3) {
         override_quote.protocol_fee_bps.as_ref().unwrap(),
         "5",
         "Bucket override should apply 5 bps, not default 2 bps"
+    );
+}
+
+// Smoke test for the SSE streaming quote endpoint. Posts a quote request to
+// /api/v1/quote/stream and asserts that at least one SSE data line parses as
+// a valid OrderQuoteResponse carrying a persisted quote id.
+async fn quote_stream_smoke(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // Wrap and approve WETH so the trader can later place an order referencing
+    // one of the streamed quotes.
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, 2u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(2u64.eth())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(1u64.eth()).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+
+    tracing::info!("Sending streaming quote request.");
+    let stream_url = format!("{API_HOST}{QUOTING_ENDPOINT}/stream");
+    let response = reqwest::Client::new()
+        .post(&stream_url)
+        .json(&request)
+        .send()
+        .await
+        .expect("streaming quote request failed");
+
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::OK,
+        "expected 200 from /api/v1/quote/stream"
+    );
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        content_type.starts_with("text/event-stream"),
+        "expected text/event-stream, got {content_type:?}"
+    );
+
+    let body = response.text().await.expect("failed to read SSE body");
+    tracing::info!(%body, "SSE response body");
+
+    // SSE lines look like: "data: <json>\n"
+    let parsed: Vec<OrderQuoteResponse> = body
+        .lines()
+        .filter(|line| line.starts_with("data:"))
+        .filter_map(|line| {
+            let json = line.trim_start_matches("data:").trim();
+            serde_json::from_str(json).ok()
+        })
+        .collect();
+
+    assert!(
+        !parsed.is_empty(),
+        "expected at least one valid OrderQuoteResponse in SSE stream, body was: {body}"
+    );
+
+    let weth = *onchain.contracts().weth.address();
+    let buy_token = *token.address();
+    for response in &parsed {
+        assert!(
+            response.id.is_some(),
+            "streaming quotes should be persisted and carry an id, got {:?}",
+            response.id
+        );
+        assert_eq!(response.from, trader.address());
+        assert_eq!(response.quote.sell_token, weth);
+        assert_eq!(response.quote.buy_token, buy_token);
+        assert!(
+            !response.quote.buy_amount.is_zero(),
+            "streamed quote should have a non-zero buy amount, got {response:?}"
+        );
+    }
+
+    // Prove that placing an order with a streamed quote id reuses the persisted
+    // quote instead of re-quoting: the quote attached to the order must be the
+    // exact one we stored while streaming (same metadata).
+    let streamed = parsed
+        .iter()
+        .find(|response| response.id.is_some())
+        .expect("at least one streamed quote should carry an id");
+    let quote_id = streamed.id.unwrap();
+    let (streamed_metadata,) = crate::database::quote_metadata(services.db(), quote_id)
+        .await
+        .expect("streamed quote should be persisted");
+
+    tracing::info!("Placing order referencing a streamed quote id.");
+    let order = OrderCreation {
+        quote_id: Some(quote_id),
+        sell_token: weth,
+        sell_amount: 1u64.eth(),
+        buy_token,
+        buy_amount: streamed.quote.buy_amount,
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let order_uid = services.create_order(&order).await.unwrap();
+
+    let order_quote = database::orders::read_quote(
+        services.db().acquire().await.unwrap().deref_mut(),
+        &database::byte_array::ByteArray(order_uid.0),
+    )
+    .await
+    .unwrap()
+    .expect("order should reference a stored quote");
+    assert_eq!(
+        streamed_metadata, order_quote.metadata,
+        "order should reuse the streamed quote, not trigger a re-quote"
     );
 }

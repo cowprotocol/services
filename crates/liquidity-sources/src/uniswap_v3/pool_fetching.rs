@@ -21,13 +21,12 @@ use {
         maintenance::Maintaining,
     },
     model::TokenPair,
-    num::{BigInt, Zero, rational::Ratio},
+    num::rational::Ratio,
     number::serialization::HexOrDecimalU256,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
     std::{
         collections::{BTreeMap, HashMap, HashSet},
-        ops::Neg,
         sync::{Arc, Mutex},
     },
     tracing::instrument,
@@ -63,10 +62,11 @@ pub struct PoolState {
     #[serde_as(as = "HexOrDecimalU256")]
     pub liquidity: U256,
     #[serde_as(as = "DisplayFromStr")]
-    pub tick: BigInt,
-    // (tick_idx, liquidity_net)
-    #[serde_as(as = "BTreeMap<DisplayFromStr, DisplayFromStr>")]
-    pub liquidity_net: BTreeMap<BigInt, BigInt>,
+    pub tick: i32,
+    // (tick_idx, liquidity_net). `Arc`-shared so cloning a `PoolInfo` doesn't
+    // deep-copy the tick map; copied-on-write only when mutated (Mint/Burn).
+    #[serde_as(as = "Arc<BTreeMap<DisplayFromStr, DisplayFromStr>>")]
+    pub liquidity_net: Arc<BTreeMap<i32, i128>>,
     #[serde(skip_serializing)]
     pub fee: Ratio<u32>,
 }
@@ -91,18 +91,19 @@ impl TryFrom<PoolData> for PoolInfo {
                 sqrt_price: pool.sqrt_price,
                 liquidity: pool.liquidity,
                 tick: pool.tick,
-                liquidity_net: pool
-                    .ticks
-                    .context("no ticks")?
-                    .into_iter()
-                    .filter_map(|tick| {
-                        if tick.liquidity_net.is_zero() {
-                            None
-                        } else {
-                            Some((tick.tick_idx, tick.liquidity_net))
-                        }
-                    })
-                    .collect(),
+                liquidity_net: Arc::new(
+                    pool.ticks
+                        .context("no ticks")?
+                        .into_iter()
+                        .filter_map(|tick| {
+                            if tick.liquidity_net == 0 {
+                                None
+                            } else {
+                                Some((tick.tick_idx, tick.liquidity_net))
+                            }
+                        })
+                        .collect(),
+                ),
                 fee: Ratio::new(u32::try_from(pool.fee_tier)?, 1_000_000u32),
             },
             gas_stats: PoolStats {
@@ -447,8 +448,17 @@ fn append_events(
             let pool = &mut pool.state;
             match event.inner() {
                 UniswapV3PoolEvents::Burn(burn) => {
-                    let tick_lower = BigInt::from(burn.tickLower.as_i32());
-                    let tick_upper = BigInt::from(burn.tickUpper.as_i32());
+                    let tick_lower = burn.tickLower.as_i32();
+                    let tick_upper = burn.tickUpper.as_i32();
+                    // `amount` is the position's `uint128` liquidity and always fits
+                    // `i128`: it's capped on-chain by `maxLiquidityPerTick` (~1.9e32) which
+                    // is far below `i128::MAX` (~1.7e38), so this branch is unreachable for
+                    // any valid event. We skip the whole event (not just the tick deltas)
+                    // so `liquidity` and `liquidity_net` can't desync.
+                    let Ok(amount) = i128::try_from(burn.amount) else {
+                        tracing::warn!(amount = %burn.amount, "burn liquidity exceeds i128; skipping event");
+                        continue;
+                    };
 
                     // liquidity tracks the liquidity on recent tick,
                     // only need to update it if the new position includes the recent tick.
@@ -456,28 +466,20 @@ fn append_events(
                         pool.liquidity -= U256::from(burn.amount);
                     }
 
-                    pool.liquidity_net
-                        .entry(tick_lower.clone())
-                        .and_modify(|tick| *tick -= BigInt::from(burn.amount))
-                        .or_insert_with(|| BigInt::from(burn.amount).neg());
-
-                    pool.liquidity_net
-                        .entry(tick_upper.clone())
-                        .and_modify(|tick| *tick += BigInt::from(burn.amount))
-                        .or_insert_with(|| BigInt::from(burn.amount));
-
-                    // remove 0 entries to save bandwidth
-                    if pool.liquidity_net[&tick_lower].is_zero() {
-                        pool.liquidity_net.remove(&tick_lower);
-                    }
-
-                    if pool.liquidity_net[&tick_upper].is_zero() {
-                        pool.liquidity_net.remove(&tick_upper);
-                    }
+                    let liquidity_net = Arc::make_mut(&mut pool.liquidity_net);
+                    update_liquidity_net(liquidity_net, tick_lower, -amount);
+                    update_liquidity_net(liquidity_net, tick_upper, amount);
                 }
                 UniswapV3PoolEvents::Mint(mint) => {
-                    let tick_lower = BigInt::from(mint.tickLower.as_i32());
-                    let tick_upper = BigInt::from(mint.tickUpper.as_i32());
+                    let tick_lower = mint.tickLower.as_i32();
+                    let tick_upper = mint.tickUpper.as_i32();
+                    // Unreachable for the same reason as the `Burn` arm (per-position
+                    // liquidity is capped well below `i128::MAX`); skip the whole event to
+                    // avoid desyncing `liquidity` from `liquidity_net`.
+                    let Ok(amount) = i128::try_from(mint.amount) else {
+                        tracing::warn!(amount = %mint.amount, "mint liquidity exceeds i128; skipping event");
+                        continue;
+                    };
 
                     // liquidity tracks the liquidity on recent tick,
                     // only need to update it if the new position includes the recent tick.
@@ -485,33 +487,30 @@ fn append_events(
                         pool.liquidity += U256::from(mint.amount);
                     }
 
-                    pool.liquidity_net
-                        .entry(tick_lower.clone())
-                        .and_modify(|tick| *tick += BigInt::from(mint.amount))
-                        .or_insert_with(|| BigInt::from(mint.amount));
-
-                    pool.liquidity_net
-                        .entry(tick_upper.clone())
-                        .and_modify(|tick| *tick -= BigInt::from(mint.amount))
-                        .or_insert_with(|| BigInt::from(mint.amount).neg());
-
-                    // remove 0 entries to save bandwidth
-                    if pool.liquidity_net[&tick_lower].is_zero() {
-                        pool.liquidity_net.remove(&tick_lower);
-                    }
-
-                    if pool.liquidity_net[&tick_upper].is_zero() {
-                        pool.liquidity_net.remove(&tick_upper);
-                    }
+                    let liquidity_net = Arc::make_mut(&mut pool.liquidity_net);
+                    update_liquidity_net(liquidity_net, tick_lower, amount);
+                    update_liquidity_net(liquidity_net, tick_upper, -amount);
                 }
                 UniswapV3PoolEvents::Swap(swap) => {
-                    pool.tick = BigInt::from(swap.tick.as_i32());
+                    pool.tick = swap.tick.as_i32();
                     pool.liquidity = U256::from(swap.liquidity);
                     pool.sqrt_price = U256::from(swap.sqrtPriceX96);
                 }
                 _ => continue,
             }
         }
+    }
+}
+
+/// Applies a signed `delta` to a tick's net liquidity, dropping the entry when
+/// it cancels out to zero. The accumulated value mirrors the pool's on-chain
+/// `int128` `liquidityNet`, so a real overflow is impossible; `saturating_add`
+/// just keeps us panic-free against malformed event data.
+fn update_liquidity_net(liquidity_net: &mut BTreeMap<i32, i128>, tick: i32, delta: i128) {
+    let entry = liquidity_net.entry(tick).or_insert(0);
+    *entry = entry.saturating_add(delta);
+    if *entry == 0 {
+        liquidity_net.remove(&tick);
     }
 }
 
@@ -547,7 +546,6 @@ mod tests {
         alloy::primitives::{U160, address, aliases::I24},
         contracts::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
         serde_json::json,
-        std::str::FromStr,
         testlib::assert_json_matches,
     };
 
@@ -596,21 +594,12 @@ mod tests {
             state: PoolState {
                 sqrt_price: U256::from(792216481398733702759960397_u128),
                 liquidity: U256::from(303015134493562686441_u128),
-                tick: BigInt::from_str("-92110").unwrap(),
-                liquidity_net: BTreeMap::from([
-                    (
-                        BigInt::from_str("-122070").unwrap(),
-                        BigInt::from_str("104713649338178916454").unwrap(),
-                    ),
-                    (
-                        BigInt::from_str("-77030").unwrap(),
-                        BigInt::from_str("1182024318125220460617").unwrap(),
-                    ),
-                    (
-                        BigInt::from_str("67260").unwrap(),
-                        BigInt::from_str("5812623076452005012674").unwrap(),
-                    ),
-                ]),
+                tick: -92110,
+                liquidity_net: Arc::new(BTreeMap::from([
+                    (-122070, 104713649338178916454i128),
+                    (-77030, 1182024318125220460617i128),
+                    (67260, 5812623076452005012674i128),
+                ])),
                 fee: Ratio::new(10_000u32, 1_000_000u32),
             },
             gas_stats: PoolStats {
@@ -654,7 +643,7 @@ mod tests {
         );
         append_events(&mut pools, vec![event]);
 
-        assert_eq!(pools[&address].state.tick, BigInt::from(3));
+        assert_eq!(pools[&address].state.tick, 3);
         assert_eq!(pools[&address].state.liquidity, U256::from(2));
         assert_eq!(pools[&address].state.sqrt_price, U256::from(1));
     }
@@ -682,11 +671,8 @@ mod tests {
         );
         append_events(&mut pools, vec![event]);
         assert_eq!(
-            pools[&address].state.liquidity_net,
-            BTreeMap::from([
-                (BigInt::from(100_000), BigInt::from(-12345)),
-                (BigInt::from(110_000), BigInt::from(12345))
-            ])
+            *pools[&address].state.liquidity_net,
+            BTreeMap::from([(100_000, -12345i128), (110_000, 12345i128)])
         );
 
         // add second burn event
@@ -703,11 +689,11 @@ mod tests {
         );
         append_events(&mut pools, vec![event]);
         assert_eq!(
-            pools[&address].state.liquidity_net,
+            *pools[&address].state.liquidity_net,
             BTreeMap::from([
-                (BigInt::from(100_000), BigInt::from(-12345)),
-                (BigInt::from(105_000), BigInt::from(-54321)),
-                (BigInt::from(110_000), BigInt::from(66666))
+                (100_000, -12345i128),
+                (105_000, -54321i128),
+                (110_000, 66666i128)
             ])
         );
     }
@@ -736,11 +722,8 @@ mod tests {
         );
         append_events(&mut pools, vec![event]);
         assert_eq!(
-            pools[&address].state.liquidity_net,
-            BTreeMap::from([
-                (BigInt::from(100_000), BigInt::from(12345)),
-                (BigInt::from(110_000), BigInt::from(-12345))
-            ])
+            *pools[&address].state.liquidity_net,
+            BTreeMap::from([(100_000, 12345i128), (110_000, -12345i128)])
         );
 
         // add second burn event
@@ -758,11 +741,11 @@ mod tests {
         );
         append_events(&mut pools, vec![event]);
         assert_eq!(
-            pools[&address].state.liquidity_net,
+            *pools[&address].state.liquidity_net,
             BTreeMap::from([
-                (BigInt::from(100_000), BigInt::from(12345)),
-                (BigInt::from(105_000), BigInt::from(54321)),
-                (BigInt::from(110_000), BigInt::from(-66666))
+                (100_000, 12345i128),
+                (105_000, 54321i128),
+                (110_000, -66666i128)
             ])
         );
     }

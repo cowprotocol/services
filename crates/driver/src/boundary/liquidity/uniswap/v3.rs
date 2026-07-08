@@ -5,7 +5,7 @@ use {
             self,
             liquidity::{
                 self,
-                uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
+                uniswap::v3::{Fee, Liquidity, Pool, SqrtPrice, Tick},
             },
         },
         infra::{self, blockchain::Ethereum, liquidity::config::UniswapV3PoolSource},
@@ -30,7 +30,7 @@ use {
         },
         liquidity_collector::{BackgroundInitLiquiditySource, LiquidityCollecting},
     },
-    std::{collections::BTreeMap, sync::Arc},
+    std::sync::Arc,
 };
 
 pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liquidity::Liquidity> {
@@ -57,16 +57,8 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
             )?,
             sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
             liquidity: Liquidity(u128::try_from(pool.pool.state.liquidity)?),
-            tick: Tick(pool.pool.state.tick.clone().try_into()?),
-            liquidity_net: pool
-                .pool
-                .state
-                .liquidity_net
-                .iter()
-                .map(|(key, value)| -> Result<_> {
-                    Ok((Tick(key.try_into()?), LiquidityNet(value.try_into()?)))
-                })
-                .collect::<Result<BTreeMap<_, _>>>()?,
+            tick: Tick(pool.pool.state.tick),
+            liquidity_net: pool.pool.state.liquidity_net.clone(),
             fee: Fee(pool.pool.state.fee),
         }),
     })

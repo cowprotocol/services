@@ -15,10 +15,13 @@ generate-contracts:
     just _format_generated_contracts
 
 _format_generated_contracts:
-    cd contracts && cargo +nightly fmt --all && \
-    cd generated && cargo +nightly fmt --all && \
-    cd ../.. && \
+    cd contracts && cargo +nightly fmt --all
+    cargo +nightly fmt --all
     tombi format
+
+# Generate the event bus JSON schemas
+generate-event-schemas:
+    cargo run -p event-bus-dto --bin event-bus-schemas
 
 # Run unit tests
 test-unit:
@@ -26,7 +29,7 @@ test-unit:
 
 # Run doc tests
 test-doc:
-    cargo test --doc
+    cargo test --doc --workspace --exclude 'cow-contract-*'
 
 # Run database tests
 test-db:

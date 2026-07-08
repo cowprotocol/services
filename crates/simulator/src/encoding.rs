@@ -490,7 +490,7 @@ pub(crate) async fn finish_simulation_builder(
         }
         None => return Err(BuildError::NoSolver),
     };
-    let state_overrides = build_final_state_overrides(
+    let (state_overrides, state_override_errors) = build_final_state_overrides(
         builder.account_override_requests,
         builder.simulator.0.state_overrides.as_ref(),
         builder.simulator.0.authenticator,
@@ -505,6 +505,7 @@ pub(crate) async fn finish_simulation_builder(
         state_overrides,
         block,
         simulator: builder.simulator,
+        failed_state_overrides: state_override_errors,
     })
 }
 
@@ -545,18 +546,18 @@ async fn executed_amount(
 }
 
 /// Resolves all [`AccountOverrideRequest`]s concurrently on a best-effort
-/// basis. Failures are logged and the corresponding override is skipped rather
-/// than aborting the whole build.
+/// basis. Returns the fully resolved state overrides and
+/// [`AccountOverrideRequest`]s that failed to resolve.
 async fn build_final_state_overrides(
     requests: Vec<AccountOverrideRequest>,
     state_overrides: &dyn StateOverriding,
     authenticator: Address,
     settlement_contract: Address,
-) -> StateOverride {
+) -> (StateOverride, Vec<AccountOverrideRequest>) {
     let futures = requests.into_iter().map(|request| async move {
-        match request {
+        let state_override = match &request {
             AccountOverrideRequest::SufficientEthBalance(addr) => Some((
-                addr,
+                *addr,
                 AccountOverride::default().with_balance(U256::MAX / U256::from(2)),
             )),
             AccountOverrideRequest::AuthenticateAsSolver(addr) => {
@@ -579,22 +580,18 @@ async fn build_final_state_overrides(
                 token,
                 amount,
             } => {
-                let result = state_overrides
+                state_overrides
                     .balance_override(BalanceOverrideRequest {
-                        token,
-                        holder,
-                        amount,
+                        token: *token,
+                        holder: *holder,
+                        amount: *amount,
                     })
-                    .await;
-                if result.is_none() {
-                    tracing::warn!(%token, %holder, "failed to compute balance state override, skipping");
-                }
-                result
+                    .await
             }
             AccountOverrideRequest::Code { account, code } => Some((
-                account,
+                *account,
                 AccountOverride {
-                    code: Some(code),
+                    code: Some(code.clone()),
                     ..Default::default()
                 },
             )),
@@ -605,13 +602,15 @@ async fn build_final_state_overrides(
                 // <https://github.com/cowprotocol/contracts/blob/c6b61ce75841ce4c25ab126def9cc981c568e6c6/src/contracts/mixins/GPv2Signing.sol#L57>
                 let mut buf = [0u8; 56 + 32];
                 buf[0..56].copy_from_slice(order.0.as_slice());
-                // no need to copy anything for storage slot 0 since the array gets 0 initialized.
+                // no need to copy anything for storage slot 0 since the array gets 0
+                // initialized.
                 let slot = keccak256(buf);
 
                 // Sentinel value expected by the settlement contract to indicate that the order
                 // was pre-signed by the user.
                 // See <https://github.com/cowprotocol/contracts/blob/c6b61ce75841ce4c25ab126def9cc981c568e6c6/src/contracts/mixins/GPv2Signing.sol#L44-L46>
-                const PRE_SIGN_SENTINEL: B256 = b256!("f59c009283ff87aa78203fc4d9c2df025ee851130fb69cc3e068941f6b5e2d6f");
+                const PRE_SIGN_SENTINEL: B256 =
+                    b256!("f59c009283ff87aa78203fc4d9c2df025ee851130fb69cc3e068941f6b5e2d6f");
                 Some((
                     settlement_contract,
                     AccountOverride::default()
@@ -624,34 +623,39 @@ async fn build_final_state_overrides(
                 spender,
                 amount,
             } => {
-                let result = state_overrides
+                state_overrides
                     .approval_override(ApprovalOverrideRequest {
-                        token,
-                        owner,
-                        spender,
-                        amount,
+                        token: *token,
+                        owner: *owner,
+                        spender: *spender,
+                        amount: *amount,
                     })
-                    .await;
-                if result.is_none() {
-                    tracing::warn!(%token, %owner, %spender, "failed to compute approval state override, skipping");
-                }
-                result
+                    .await
             }
-            AccountOverrideRequest::Custom { account, state } => Some((account, state)),
+            AccountOverrideRequest::Custom { account, state } => Some((*account, state.clone())),
+        };
+
+        if state_override.is_none() {
+            tracing::debug!(?request, "failed to compute state override");
         }
+        (request, state_override)
     });
 
     let mut state_overrides = StateOverride::default();
-    for (address, account_override) in futures::future::join_all(futures)
-        .await
-        .into_iter()
-        .flatten()
-    {
+    let mut errors = vec![];
+
+    for (request, state_override) in futures::future::join_all(futures).await.into_iter() {
+        let Some((address, account_override)) = state_override else {
+            errors.push(request);
+            continue;
+        };
+
         if let Err(err) = apply_account_override(&mut state_overrides, address, account_override) {
-            tracing::warn!(?err, %address, "conflicting state overrides for address, skipping");
+            tracing::warn!(?err, ?request, %address, "conflicting state overrides, skipping");
+            errors.push(request);
         }
     }
-    state_overrides
+    (state_overrides, errors)
 }
 
 /// Merges `new` into `existing` field by field.

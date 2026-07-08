@@ -18,6 +18,11 @@
       matchManagers: ["github-actions"],
       schedule: ["on monday"],
       minimumReleaseAge: "14 days",
+      // Track upgrades by semver tag, but pin the resolved version to its full
+      // commit SHA (semver tag kept as a trailing comment). Use the coerced
+      // variant so short tags like `v3` / `v1.7` (which several actions only
+      // publish) still parse instead of silently stopping updates.
+      versioning: "semver-coerced",
       pinDigests: true,
       separateMajorMinor: false,
       semanticCommitScope: "{{depName}}",
