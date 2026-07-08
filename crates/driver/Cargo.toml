@@ -98,10 +98,6 @@ maplit = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["process", "test-util"] }
 
-[build-dependencies]
-anyhow = { workspace = true }
-vergen = { workspace = true, features = ["git", "gitcl"] }
-
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
