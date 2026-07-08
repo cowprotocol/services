@@ -628,6 +628,19 @@ impl TradeVerifying for TradeVerifier {
             Err(err) => err,
         };
 
+        // because this log is extremely large we only emit the resimulation
+        // command if the trade had some interactions and it didn't pass verification
+        if trade.has_execution_plan()
+            && let Some(tenderly) = &self.tenderly
+            && let Err(log_err) = tenderly.log_simulation_command(
+                swap_call.tx_request,
+                swap_call.state_overrides,
+                swap_call.block.into(),
+            )
+        {
+            tracing::debug!(?log_err, "could not log tenderly simulation command");
+        }
+
         // For some tokens it's not possible to provide verifiable calldata in the
         // quote (e.g. when they require the use of proprietary APIs which don't give
         // out calldata willy nilly).
@@ -643,23 +656,8 @@ impl TradeVerifying for TradeVerifier {
         // `Error::BuffersPayForOrder` errors if the solver actually tried to provide
         // an execution plan but it's just not correct. In all other cases we just
         // flag the solution as unverified but let it pass.
-        let has_execution_plan = trade.has_execution_plan();
-        if has_execution_plan && matches!(verification_err, Error::BuffersPayForOrder) {
-            tracing::debug!(
-                has_execution_plan,
-                "discarding quote because buffers pay for order"
-            );
-            // because this log is extremely large we only emit the command
-            // to resimulate quotes that had some issue
-            if let Some(tenderly) = &self.tenderly
-                && let Err(log_err) = tenderly.log_simulation_command(
-                    swap_call.tx_request,
-                    swap_call.state_overrides,
-                    swap_call.block.into(),
-                )
-            {
-                tracing::debug!(?log_err, "could not log tenderly simulation command");
-            }
+        if trade.has_execution_plan() && matches!(verification_err, Error::BuffersPayForOrder) {
+            tracing::debug!("discarding quote because buffers pay for order");
             Err(verification_err.into())
         } else {
             tracing::debug!(estimate = ?unverified_result, ?verification_err, "quote verification failed");
