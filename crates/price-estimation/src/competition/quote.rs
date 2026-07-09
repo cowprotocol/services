@@ -10,11 +10,9 @@ use {
     },
     alloy::primitives::{Address, U256},
     anyhow::Context as _,
-    event_bus_dto::price_estimate::{
-        EstimateResult,
-        OrderKind as DtoOrderKind,
-        PriceEstimateEvent,
-        QueryFields,
+    event_bus_dto::{
+        price_estimate::{EstimateResult, PriceEstimateEvent},
+        query::{OrderKind as DtoOrderKind, QueryFields},
     },
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,

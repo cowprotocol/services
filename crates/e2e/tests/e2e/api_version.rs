@@ -8,6 +8,11 @@ async fn local_node_api_version() {
 
 /// Test that the API version endpoint returns a version string
 async fn api_version(web3: Web3) {
+    unsafe {
+        std::env::set_var("GIT_SHA", "2491c6a");
+        std::env::set_var("GIT_BRANCH", "branch");
+    }
+
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [solver] = onchain.make_solvers(1u64.eth()).await;
 
@@ -17,15 +22,5 @@ async fn api_version(web3: Web3) {
     // Get the API version
     let version = services.get_api_version().await.unwrap();
 
-    // Version should match git describe format
-    // Format examples: v1.2.3, v1.2.3-4-gabcd1234, or abcd1234
-    let is_valid_version = version.starts_with('v')
-        || version
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.');
-
-    assert!(
-        is_valid_version,
-        "Version should be valid git describe format: {version}"
-    );
+    assert_eq!(version, "branch@2491c6a");
 }
