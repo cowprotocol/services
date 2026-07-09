@@ -4,6 +4,11 @@ use {super::Finalize, std::io::Write};
 /// one serialization pass feeds two sinks — a request body and a gzip copy. A
 /// write succeeds only if it succeeds on both; wrap a sink to make it
 /// best-effort if its failure shouldn't abort the other.
+///
+/// Writes are sequential — `primary` first, so it has priority. With no
+/// per-sink buffering the two advance in lockstep at the slower sink's pace;
+/// the secondary is currently an in-memory gzip copy that never blocks, so the
+/// pace is set by the primary draining to the network.
 pub(super) struct TeeWriter<A, B> {
     primary: A,
     secondary: B,

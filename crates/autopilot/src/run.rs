@@ -166,9 +166,9 @@ pub async fn start(args: impl Iterator<Item = String>) {
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
 
-    let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
+    let version = observe::version::git_version();
 
-    tracing::info!(%commit_hash, "running autopilot with validated arguments:\n{}", args);
+    tracing::info!(%version, "running autopilot with validated arguments:\n{}", args);
     tracing::info!("file configuration:\n{:#?}", config);
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);

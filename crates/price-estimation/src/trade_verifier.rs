@@ -7,7 +7,11 @@ use {
         map_interactions_data,
     },
     ::alloy::sol_types::SolCall,
-    alloy::primitives::{Address, U256, address, aliases::I512},
+    alloy::{
+        primitives::{Address, Bytes, U256, address, aliases::I512},
+        providers::Provider,
+        rpc::types::{TransactionRequest, state::StateOverride},
+    },
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     contracts::support::Solver,
@@ -106,32 +110,47 @@ impl TradeVerifier {
         }
     }
 
-    async fn verify_inner(
+    /// Builds an unverified estimate from the trade's own gas estimate and
+    /// promised output amount. Returns an error if the trade provides no gas
+    /// estimate, since an unverified quote is meaningless without one.
+    fn unverified_estimate(&self, query: &PriceQuery, trade: &TradeKind) -> Result<Estimate> {
+        let out_amount = trade
+            .out_amount(query)
+            .context("failed to compute trade out amount")?;
+        trade
+            .gas_estimate()
+            .map(|gas| {
+                let gas = gas.clamp(
+                    self.min_gas_amount_for_unverified_quotes as u64,
+                    self.max_gas_amount_for_unverified_quotes as u64,
+                );
+                Estimate {
+                    out_amount,
+                    gas,
+                    solver: trade.solver(),
+                    verified: false,
+                    execution: QuoteExecution {
+                        interactions: map_interactions_data(trade.interactions()),
+                        pre_interactions: map_interactions_data(trade.pre_interactions()),
+                        jit_orders: trade.jit_orders().cloned().collect(),
+                    },
+                }
+            })
+            .context("solver provided no gas estimate")
+    }
+
+    /// Executes the simulation and checks quote accuracy.
+    async fn get_verified_price_estimate(
         &self,
+        swap: &SwapCall,
         query: &PriceQuery,
-        mut verification: Verification,
+        verification: &Verification,
         trade: &TradeKind,
     ) -> Result<Estimate, Error> {
         let start = std::time::Instant::now();
         let out_amount = trade.out_amount(query)?;
 
-        // if the user does not have their wallet connected we use a random
-        // address because many tokens revert when transfers involve the 0 address.
-        if verification.from.is_zero() {
-            verification.from = Address::random();
-            tracing::debug!(
-                trader = ?verification.from,
-                "using random trader address with fake balances"
-            );
-        }
-
-        let settle_call = self
-            .assemble_settle_call(&verification, query, trade)
-            .await?;
-
-        let summary = self
-            .generate_execution_report(settle_call, trade, query, &verification)
-            .await?;
+        let summary = self.execute_and_analyze(swap, query, verification).await?;
 
         tracing::debug!(
             tokens_lost = ?summary.tokens_lost,
@@ -150,16 +169,16 @@ impl TradeVerifier {
         ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
     }
 
-    /// To understand what's happening during the `settle_call` we need to
-    /// execute it through a helper contract. This function sets this up,
-    /// runs the simulation, and returns the resulting report.
-    async fn generate_execution_report(
+    /// Passes the prepared `settle_call` to the simulation machinery which
+    /// makes sure all the pre-conditions are met and collects additional
+    /// information throughout the call (e.g. token movements, gas costs).
+    fn build_simulation_call(
         &self,
         settle_call: EthCallInputs,
         trade: &TradeKind,
         query: &PriceQuery,
         verification: &Verification,
-    ) -> Result<SettleOutput, Error> {
+    ) -> Result<SwapCall, Error> {
         // Use `tx_origin` if response indicates that a special address is needed for
         // the simulation to pass. Otherwise just use the solver address.
         let solver_contract =
@@ -180,7 +199,7 @@ impl TradeVerifier {
             OrderKind::Buy => trade.out_amount(query)?,
         };
 
-        let swap_call = solver_contract
+        let call = solver_contract
             .swap(
                 self.simulator.settlement_address(),
                 tokens.clone(),
@@ -192,38 +211,41 @@ impl TradeVerifier {
                 settle_call.calldata.clone(),
             )
             .from(*solver_contract.address())
-            .gas(self.simulator.max_gas_limit())
-            .block(settle_call.block.into())
-            .state(settle_call.state_overrides.clone());
+            .gas(self.simulator.max_gas_limit());
 
-        if let Some(tenderly) = &self.tenderly
-            && let Err(err) = tenderly.log_simulation_command(
-                swap_call.clone().into_transaction_request(),
-                settle_call.state_overrides,
-                settle_call.block.into(),
-            )
-        {
-            tracing::debug!(?err, "could not log tenderly simulation command");
-        }
+        Ok(SwapCall {
+            tx_request: call.into_transaction_request(),
+            state_overrides: settle_call.state_overrides,
+            block: settle_call.block,
+            tokens,
+            settle_calldata: settle_call.calldata,
+        })
+    }
 
-        let output = swap_call
-            .call()
+    /// Runs the `swap_call` simulation, decodes the returned data, and analyzes
+    /// it.
+    async fn execute_and_analyze(
+        &self,
+        swap: &SwapCall,
+        query: &PriceQuery,
+        verification: &Verification,
+    ) -> Result<SettleOutput, Error> {
+        let output_bytes = self
+            .simulator
+            .provider()
+            .call(swap.tx_request.clone())
+            .overrides(swap.state_overrides.clone())
+            .block(swap.block.into())
             .await
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed)?;
 
-        let mut summary = SettleOutput::from_swap(output, query.kind, &tokens)?;
+        let output = Solver::Solver::swapCall::abi_decode_returns(&output_bytes)
+            .context("failed to decode swap output")
+            .map_err(Error::SimulationFailed)?;
 
-        // adjust the reported gas cost since it does not take into account the 21K
-        // units every tx has to pay and the cost for the calldata. we are
-        // overcounting the calldata cost slightly since a regular settlement
-        // would not include the 2 interactions measuring the token balances.
-        let call_data_cost = settle_call
-            .calldata
-            .iter()
-            .map(|byte| if byte == &0x0 { 4 } else { 16 })
-            .sum::<u64>();
-        summary.gas_used += U256::from(21_000) + U256::from(call_data_cost);
+        let summary = SettleOutput::from_swap(output, query.kind, &swap.tokens)?
+            .with_call_overhead(&swap.settle_calldata);
 
         Self::post_process_summary(
             self.simulator.settlement_address(),
@@ -244,7 +266,7 @@ impl TradeVerifier {
     ///   `0`). That way the solver can deliver **less** than promised and we
     ///   can still measure how much they actually delivered since the
     ///   simulation will not revert due to limit price violations.
-    async fn assemble_settle_call(
+    async fn build_settle_call(
         &self,
         verification: &Verification,
         query: &PriceQuery,
@@ -558,31 +580,7 @@ impl TradeVerifying for TradeVerifier {
         verification: &Verification,
         trade: TradeKind,
     ) -> Result<Estimate> {
-        let out_amount = trade
-            .out_amount(query)
-            .context("failed to compute trade out amount")?;
-
-        let unverified_result = trade
-            .gas_estimate()
-            .map(|gas| {
-                let gas = gas.clamp(
-                    self.min_gas_amount_for_unverified_quotes as u64,
-                    self.max_gas_amount_for_unverified_quotes as u64,
-                );
-
-                Estimate {
-                    out_amount,
-                    gas,
-                    solver: trade.solver(),
-                    verified: false,
-                    execution: QuoteExecution {
-                        interactions: map_interactions_data(trade.interactions()),
-                        pre_interactions: map_interactions_data(trade.pre_interactions()),
-                        jit_orders: trade.jit_orders().cloned().collect(),
-                    },
-                }
-            })
-            .context("solver provided no gas estimate");
+        let unverified_result = self.unverified_estimate(query, &trade);
 
         let skip_verification = [query.buy_token, query.sell_token]
             .iter()
@@ -592,38 +590,96 @@ impl TradeVerifying for TradeVerifier {
             return unverified_result;
         }
 
-        match self.verify_inner(query, verification.clone(), &trade).await {
-            Ok(verified) => Ok(verified),
+        let mut verification = verification.clone();
+        // if the user does not have their wallet connected we use a random
+        // address because many tokens revert when transfers involve the 0 address.
+        if verification.from.is_zero() {
+            verification.from = Address::random();
+            tracing::debug!(
+                trader = ?verification.from,
+                "using random trader address with fake balances"
+            );
+        }
+
+        let swap_call_res = self
+            .build_settle_call(&verification, query, &trade)
+            .await
+            .and_then(|settle_call| {
+                self.build_simulation_call(settle_call, &trade, query, &verification)
+            });
+
+        let swap_call = match swap_call_res {
+            Ok(c) => c,
             Err(err) => {
-                // For some tokens it's not possible to provide verifiable calldata in the
-                // quote (e.g. when they require the use of proprietary APIs which don't give
-                // out calldata willy nilly).
-                //
-                // Since you can't magically make up calldata that makes your quote verifiable
-                // solvers don't provide any call data in those cases.
-                // This has 2 possible outcomes:
-                // 1. the settlement contract has enough buy_tokens to pay for the order =>
-                //    Error::BuffersPayForOrder
-                // 2. not enough buy tokens in buffer => error::SimulationFailure
-                //
-                // To make handling of these quotes more predictable we'll only discard
-                // `Error::BufferPayForOrder` errors if the solver actually tried to provide a
-                // an execution plan but it's just not correct. In all other cases we just flag
-                // the solution as unverified but let it pass.
-                let has_execution_plan = trade.has_execution_plan();
-                if has_execution_plan && matches!(err, Error::BuffersPayForOrder) {
-                    tracing::debug!(
-                        has_execution_plan,
-                        "discarding quote because buffers pay for order"
-                    );
-                    Err(err.into())
-                } else {
-                    tracing::debug!(estimate = ?unverified_result, ?err, "quote verification failed");
-                    unverified_result
-                }
+                tracing::debug!(
+                    estimate = ?unverified_result,
+                    ?err,
+                    "quote verification failed"
+                );
+                return unverified_result;
             }
+        };
+
+        let verification_err = match self
+            .get_verified_price_estimate(&swap_call, query, &verification, &trade)
+            .await
+        {
+            Ok(verified) => return Ok(verified),
+            Err(err) => err,
+        };
+
+        // because this log is extremely large we only emit the resimulation
+        // command if the trade had some interactions and it didn't pass verification
+        if trade.has_execution_plan()
+            && let Some(tenderly) = &self.tenderly
+            && let Err(log_err) = tenderly.log_simulation_command(
+                swap_call.tx_request,
+                swap_call.state_overrides,
+                swap_call.block.into(),
+            )
+        {
+            tracing::debug!(?log_err, "could not log tenderly simulation command");
+        }
+
+        // For some tokens it's not possible to provide verifiable calldata in the
+        // quote (e.g. when they require the use of proprietary APIs which don't give
+        // out calldata willy nilly).
+        //
+        // Since you can't magically make up calldata that makes your quote verifiable
+        // solvers don't provide any call data in those cases.
+        // This has 2 possible outcomes:
+        // 1. the settlement contract has enough buy_tokens to pay for the order =>
+        //    Error::BuffersPayForOrder
+        // 2. not enough buy tokens in buffer => Error::SimulationFailed
+        //
+        // To make handling of these quotes more predictable we'll only discard
+        // `Error::BuffersPayForOrder` errors if the solver actually tried to provide
+        // an execution plan but it's just not correct. In all other cases we just
+        // flag the solution as unverified but let it pass.
+        if trade.has_execution_plan() && matches!(verification_err, Error::BuffersPayForOrder) {
+            tracing::debug!("discarding quote because buffers pay for order");
+            Err(verification_err.into())
+        } else {
+            tracing::debug!(estimate = ?unverified_result, ?verification_err, "quote verification failed");
+            unverified_result
         }
     }
+}
+
+/// Contains information to execute the simulation request, interpret the result
+/// and construct a tenderly simulation from it for debugging.
+struct SwapCall {
+    tx_request: TransactionRequest,
+    state_overrides: StateOverride,
+    /// Block number used for both execution and Tenderly logging.
+    block: u64,
+    /// Token list passed to `Solver::swap` for balance-change tracking.
+    tokens: Vec<Address>,
+    /// Calldata of the `settle()` call we are analysing. Note that this is
+    /// different from the calldata of the `tx_request` as that calls into
+    /// additionaly machinery needed for the analysis.
+    /// This calldata gets used to finalize the gas used of the simulation.
+    settle_calldata: Bytes,
 }
 
 /// Analyzed output of `Solver::settle` smart contract call.
@@ -693,6 +749,31 @@ impl SettleOutput {
             out_amount,
             tokens_lost,
         })
+    }
+
+    /// Adjusts the reported gas cost since the simulation measurement does not
+    /// take into account the 21K units every tx has to pay and the cost for
+    /// the calldata. We are overcounting the calldata cost slightly since a
+    /// regular settlement would not include the 2 interactions measuring
+    /// the token balances.
+    fn with_call_overhead(mut self, calldata: &[u8]) -> Self {
+        // constants as defined in <https://ethereum.github.io/yellowpaper/paper.pdf>
+        // refferred to as Gtransaction, Gtxdatazero, and Gtxdatanonzero
+        const TX_BASE_COST: u64 = 21_000;
+        const CALLDATA_COST_PER_ZERO_BYTE: u64 = 4;
+        const CALLDATA_COST_PER_NONZERO_BYTE: u64 = 16;
+        let call_data_cost = calldata
+            .iter()
+            .map(|byte| {
+                if byte == &0x0 {
+                    CALLDATA_COST_PER_ZERO_BYTE
+                } else {
+                    CALLDATA_COST_PER_NONZERO_BYTE
+                }
+            })
+            .sum::<u64>();
+        self.gas_used += U256::from(TX_BASE_COST.saturating_add(call_data_cost));
+        self
     }
 }
 
