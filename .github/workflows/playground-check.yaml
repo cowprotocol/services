@@ -5,6 +5,9 @@ on:
   schedule:
     # Run this job once per day
     - cron: "0 0 * * *"
+  pull_request:
+    paths:
+      - "playground/**"
 
 jobs:
   playground-check:
