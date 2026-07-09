@@ -77,7 +77,6 @@ pub const TABLES: &[&str] = &[
 pub const LARGE_TABLES: &[&str] = &[
     "auction_orders",
     "auction_prices",
-    "competition_auctions",
     "fee_policies",
     "orders",
     "order_events",
