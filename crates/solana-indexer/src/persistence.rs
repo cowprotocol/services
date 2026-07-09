@@ -4,7 +4,6 @@
 use {
     crate::types::{
         commitment::{Commitment, UnfinalizedRow},
-        dead_letter::DeadLetterEntry,
         errors::PersistenceError,
         events::DecodedEvent,
         recovery::PdaSnapshot,
@@ -38,14 +37,6 @@ impl Persistence {
 
     /// Read persisted watermark for resuming after reconnect.
     pub(crate) async fn read_watermark(&self) -> Result<Option<u64>, PersistenceError> {
-        todo!()
-    }
-
-    /// Move stale partials (>32 slots behind) to dead letter table.
-    pub(crate) async fn write_dead_letter(
-        &self,
-        entry: DeadLetterEntry,
-    ) -> Result<(), PersistenceError> {
         todo!()
     }
 
