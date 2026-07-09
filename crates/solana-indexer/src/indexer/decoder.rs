@@ -103,6 +103,9 @@ impl Decoder {
             post_token_balances,
         };
 
+        // `relevant_instructions` yields only settlement and SolFlow instructions.
+        // The settlement set is decoded here and the SolFlow set below, so the two
+        // filters are exhaustive and nothing is silently dropped.
         let settlement: Vec<ResolvedInstruction> = instructions
             .iter()
             .filter(|instruction| instruction.program_id == self.settlement_program)

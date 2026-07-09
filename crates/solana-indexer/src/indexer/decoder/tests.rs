@@ -277,6 +277,10 @@ fn stream_tx(slot: Slot, signature: Signature, settlement: Pubkey) -> StreamUpda
     }
 }
 
+/// Verifies the run loop drains buffered updates and returns Ok when the sender
+/// drops. It does not assert the decoded event yet: decode output is dropped
+/// until the persistence adapter lands, at which point this test should assert
+/// the emitted event.
 #[tokio::test]
 async fn run_drains_transactions_until_the_sender_drops() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
