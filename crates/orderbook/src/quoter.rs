@@ -4,9 +4,14 @@ use {
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
     configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
+    event_bus_dto::{
+        query::{OrderKind as DtoOrderKind, QueryFields},
+        quote_computed::QuoteComputedEvent,
+        quote_requested::{PriceQuality as DtoPriceQuality, QuoteRequestedEvent},
+    },
     futures::stream::{BoxStream, StreamExt},
     model::{
-        order::OrderCreationAppData,
+        order::{OrderCreationAppData, OrderKind},
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
     },
     price_estimation::{PriceEstimationError, Verification},
@@ -115,6 +120,9 @@ impl QuoteHandler {
         request: &OrderQuoteRequest,
     ) -> Result<OrderQuoteResponse, OrderQuoteError> {
         let (params, valid_to) = self.build_quote_params(request).await?;
+        // Captured before `params` is consumed below; the document isn't
+        // available on the response.
+        let app_code = ::app_data::app_code(params.verification.app_data.as_bytes());
 
         let quote = match request.price_quality {
             PriceQuality::Optimal | PriceQuality::Verified => {
@@ -145,6 +153,11 @@ impl QuoteHandler {
 
         let response = build_order_quote_response(request, &quote, &adjusted, quote.id, valid_to)?;
         tracing::debug!(?response, "finished computing quote");
+        observe::event_bus::publish_event(QuoteComputedEvent {
+            quote_id: response.id,
+            app_code,
+            verified: response.verified,
+        });
         Ok(response)
     }
 
@@ -153,13 +166,19 @@ impl QuoteHandler {
         request: &OrderQuoteRequest,
     ) -> Result<BoxStream<'static, Result<OrderQuoteResponse, OrderQuoteError>>, OrderQuoteError>
     {
-        let (params, valid_to) = self.build_quote_params(request).await?;
-
+        // Resolve the streaming quoter before `build_quote_params` so a
+        // misconfigured endpoint fails fast without emitting a `quoteRequested`
+        // event that could never be followed by a `quoteComputed`.
         let streaming = self.streaming_quoter.clone().ok_or_else(|| {
             OrderQuoteError::CalculateQuote(
                 anyhow::anyhow!("streaming quoter not configured").into(),
             )
         })?;
+
+        let (params, valid_to) = self.build_quote_params(request).await?;
+        // Captured before `params` is consumed below; the document isn't
+        // available on the response.
+        let app_code = ::app_data::app_code(params.verification.app_data.as_bytes());
 
         let inner = streaming.calculate_quote_stream(params).await?;
 
@@ -194,6 +213,14 @@ impl QuoteHandler {
                 match response {
                     Ok(response) => {
                         any_ok = true;
+                        // One event per streamed quote so streaming requests get a
+                        // `quoteComputed` counterpart to their `quoteRequested`, just
+                        // like the one-shot endpoint.
+                        observe::event_bus::publish_event(QuoteComputedEvent {
+                            quote_id: response.id,
+                            app_code: app_code.clone(),
+                            verified: response.verified,
+                        });
                         yield Ok(response);
                     }
                     Err(err) => tracing::debug!(%err, "dropping unconvertible streamed quote"),
@@ -244,6 +271,19 @@ impl QuoteHandler {
         let valid_to = order.valid_to;
         self.order_validator.partial_validate(order).await?;
 
+        // Emit only after validation succeeds so we don't announce requests
+        // that never reach the estimator (invalid app-data / order data return
+        // early above). This is best-effort correlation, not a guarantee: if
+        // every estimator errors, (at the time of writing) price estimation emits no
+        // `priceEstimate` events, so a `quoteRequested` can still end up without follow
+        // up none following.
+        emit_quote_requested_event(
+            request,
+            sell_token_symbol,
+            buy_token_symbol,
+            &app_data.inner.document,
+        );
+
         Ok((
             QuoteParameters {
                 sell_token: request.sell_token,
@@ -261,6 +301,44 @@ impl QuoteHandler {
             valid_to,
         ))
     }
+}
+
+/// Publishes a "calculating quote" event on the event bus so downstream
+/// analytics can correlate quote requests with their price estimates via the
+/// envelope's request id. Carries the app code and token symbols, which the
+/// per-estimator `priceEstimate` events don't have.
+fn emit_quote_requested_event(
+    request: &OrderQuoteRequest,
+    sell_token_symbol: Option<String>,
+    buy_token_symbol: Option<String>,
+    document: &str,
+) {
+    let (kind, in_amount) = request.side.kind_and_amount();
+    let kind = match kind {
+        OrderKind::Sell => DtoOrderKind::Sell,
+        OrderKind::Buy => DtoOrderKind::Buy,
+    };
+
+    let event = QuoteRequestedEvent {
+        query: QueryFields {
+            sell_token: request.sell_token.to_string(),
+            buy_token: request.buy_token.to_string(),
+            in_amount: in_amount.to_string(),
+            kind,
+        },
+        from: request.from.to_string(),
+        // Deliberate second parse: `appCode` lives at the document root, not in
+        // the already-parsed `ProtocolAppData`. Cheap given the 8KB app-data cap.
+        app_code: ::app_data::app_code(document.as_bytes()),
+        sell_token_symbol,
+        buy_token_symbol,
+        price_quality: match request.price_quality {
+            PriceQuality::Fast => DtoPriceQuality::Fast,
+            PriceQuality::Optimal => DtoPriceQuality::Optimal,
+            PriceQuality::Verified => DtoPriceQuality::Verified,
+        },
+    };
+    observe::event_bus::publish_event(event);
 }
 
 fn build_order_quote_response(

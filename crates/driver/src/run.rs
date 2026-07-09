@@ -58,9 +58,9 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     let ethrpc = ethrpc(&args).await;
     let config = config::file::load(ethrpc.chain(), &args.config).await;
 
-    let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
+    let version = observe::version::git_version();
 
-    tracing::info!(%commit_hash, "running driver with {config:#?}");
+    tracing::info!(%version, "running driver with {config:#?}");
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = Ethereum::new(

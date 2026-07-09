@@ -2,7 +2,6 @@
 
 pub mod channel;
 pub mod commitment;
-pub mod dead_letter;
 pub mod errors;
 pub mod events;
 pub mod order;

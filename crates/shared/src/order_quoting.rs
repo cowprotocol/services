@@ -49,16 +49,7 @@ impl QuoteParameters {
         default_quote_timeout: std::time::Duration,
         max_quote_timeout: std::time::Duration,
     ) -> price_estimation::Query {
-        let (kind, in_amount) = match self.side {
-            OrderQuoteSide::Sell {
-                sell_amount:
-                    SellAmount::BeforeFee { value: sell_amount }
-                    | SellAmount::AfterFee { value: sell_amount },
-            } => (OrderKind::Sell, sell_amount),
-            OrderQuoteSide::Buy {
-                buy_amount_after_fee,
-            } => (OrderKind::Buy, buy_amount_after_fee),
-        };
+        let (kind, in_amount) = self.side.kind_and_amount();
 
         let timeout = self
             .timeout
