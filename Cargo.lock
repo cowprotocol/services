@@ -9882,7 +9882,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
- "dashmap 6.1.0",
  "derive_more 1.0.0",
  "futures",
  "solana-client",

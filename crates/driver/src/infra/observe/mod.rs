@@ -338,6 +338,21 @@ pub fn solver_request(endpoint: &Url, req: impl AsRef<[u8]>) {
     tracing::trace!(%endpoint, %req, "sending request to solver");
 }
 
+/// Observe how long serializing and streaming the solve request body to a
+/// solver took, both the isolated serialization cost and the total including
+/// the solver transfer.
+pub fn serialized_solve_request(solver: &solver::Name, serialize: Duration, total: Duration) {
+    let metrics = metrics::get();
+    metrics
+        .solve_request_body_time
+        .with_label_values(&[solver.as_str(), "serialization"])
+        .observe(serialize.as_secs_f64());
+    metrics
+        .solve_request_body_time
+        .with_label_values(&[solver.as_str(), "total"])
+        .observe(total.as_secs_f64());
+}
+
 /// Observe that a response was received from the solver.
 pub fn solver_response(
     endpoint: &Url,

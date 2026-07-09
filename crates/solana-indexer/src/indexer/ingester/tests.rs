@@ -116,16 +116,13 @@ async fn transaction_update_with_valid_signature_is_forwarded() {
     assert!(rx.is_empty());
 }
 
+/// Account updates are not part of the tx-only subscription, so the ingester
+/// drops them and forwards nothing.
 #[tokio::test]
-async fn account_update_with_body_is_forwarded() {
-    let signature = signature(2);
-    let (mut ingester, mut rx, _) = ingester(stream::iter([account_update(100, 2)]));
+async fn account_update_is_ignored() {
+    let (mut ingester, rx, _) = ingester(stream::iter([account_update(100, 2)]));
 
     assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
-    let update = rx.recv().await.unwrap();
-    assert!(
-        matches!(update, StreamUpdate::Account { slot: Slot(100), txn_signature: Some(s), .. } if s == signature)
-    );
     assert!(rx.is_empty());
 }
 
