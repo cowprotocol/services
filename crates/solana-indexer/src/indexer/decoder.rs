@@ -2,8 +2,9 @@
 //! The decoder pulls `StreamUpdate`s from the ingester, decodes
 //! settlement-program and SolFlow transactions, and persists typed events.
 
-// TODO: `run` is unimplemented. The dispatch and persist steps that consume the
-// resolved instructions below are not wired up yet.
+// TODO: `decode_settlement`/`decode_solflow` and the persist path are stubbed.
+// `run` drains the channel and routes each transaction's tracked instructions
+// to those stubs.
 
 use {
     crate::{
@@ -51,10 +52,46 @@ impl Decoder {
         }
     }
 
-    /// Main loop. Pulls `StreamUpdate` from the receiver, runs the decode
-    /// pipeline, and persists typed events.
+    /// Main loop. Drains the channel and routes each transaction's tracked
+    /// instructions to their per-program decoders. Returns when the ingester
+    /// drops the sender.
     pub async fn run(&mut self) -> Result<(), PersistenceError> {
-        unimplemented!()
+        while let Some(update) = self.rx.recv().await {
+            let StreamUpdate::Tx { inner, .. } = update;
+            self.decode(&inner);
+        }
+        Ok(())
+    }
+
+    /// Route each tracked instruction in the transaction to its per-program
+    /// decoder.
+    fn decode(&self, tx: &SubscribeUpdateTransactionInfo) {
+        for instruction in
+            relevant_instructions(tx, &self.settlement_program, &self.solflow_program)
+        {
+            if instruction.program_id == self.settlement_program {
+                self.decode_settlement(&instruction);
+            } else {
+                self.decode_solflow(&instruction);
+            }
+        }
+    }
+
+    /// TODO: decode the settlement instruction data into typed events.
+    fn decode_settlement(&self, instruction: &ResolvedInstruction) {
+        tracing::debug!(
+            instruction_index = instruction.instruction_index,
+            "settlement instruction decode not implemented"
+        );
+    }
+
+    /// TODO: decode the SolFlow instruction data. The on-chain program does not
+    /// exist yet.
+    fn decode_solflow(&self, instruction: &ResolvedInstruction) {
+        tracing::debug!(
+            instruction_index = instruction.instruction_index,
+            "sol_flow instruction decode not implemented"
+        );
     }
 }
 
