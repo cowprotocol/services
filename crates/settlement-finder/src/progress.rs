@@ -65,8 +65,10 @@ pub struct VerifyRun {
     pub blocks_scanned: u64,
     pub mismatch_blocks: u64,
     pub mismatches: u64,
-    /// A truncated run did not finish its range, so it must not advance the
-    /// verified high-water mark.
+    /// Whether the run stopped before its intended `to_block` (a failed chunk,
+    /// a DB error, or the mismatch cap). Recorded in the run history; coverage
+    /// still advances by the blocks actually scanned, since the scan is
+    /// contiguous.
     pub truncated: bool,
     pub report_path: Option<String>,
 }
@@ -158,8 +160,10 @@ impl ProgressStore {
         Ok(row.map(|(to,)| to.cast_unsigned()))
     }
 
-    /// Records a run in the history and, unless it was truncated, advances the
-    /// (chain, db) coverage extent to include the run's range.
+    /// Records a run in the history and advances the (chain, db) coverage
+    /// extent to the blocks it actually verified. A forward scan is contiguous,
+    /// so even a run that stopped early still extends coverage up to its last
+    /// scanned block.
     pub async fn record_run(&mut self, run: &VerifyRun) -> Result<()> {
         let now = Utc::now().to_rfc3339();
 
@@ -184,11 +188,17 @@ impl ProgressStore {
         .await
         .context("could not insert verify run")?;
 
-        if !run.truncated {
-            // Extend the recorded coverage with this run's range. The extent
-            // is a single interval, so it may only absorb a range that
-            // overlaps or touches it; a min/max hull over a disjoint range
-            // would claim the gap between them was verified when it never was.
+        // The scan verifies blocks in ascending order, so even a run that
+        // stopped early (truncated, a failed chunk, the mismatch cap) has
+        // contiguously verified [from_block, from_block + blocks_scanned - 1].
+        // Advance coverage to that actual extent — not the intended to_block —
+        // so an interrupted long scan lets the next run resume where it stopped
+        // instead of restarting. A run that scanned nothing changes nothing.
+        //
+        // The extent is a single interval, so it may only absorb a range that
+        // overlaps or touches it; a min/max hull over a disjoint range would
+        // claim the gap between them was verified when it never was.
+        if run.blocks_scanned > 0 {
             let existing: Option<(i64, i64)> = sqlx::query_as(
                 "SELECT verified_from_block, verified_to_block FROM network_progress WHERE \
                  chain_id = ?1 AND db_url = ?2",
@@ -199,7 +209,10 @@ impl ProgressStore {
             .await
             .context("could not read network progress")?;
 
-            let (from, to) = (run.from_block.cast_signed(), run.to_block.cast_signed());
+            let (from, to) = (
+                run.from_block.cast_signed(),
+                (run.from_block + run.blocks_scanned - 1).cast_signed(),
+            );
             let (extent_from, extent_to) = match existing {
                 Some((old_from, old_to)) if from <= old_to + 1 && old_from <= to + 1 => {
                     (old_from.min(from), old_to.max(to))
@@ -300,15 +313,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn progress_high_water_advances_and_skips_truncated() {
+    async fn progress_advances_by_blocks_actually_scanned() {
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join("progress.sqlite");
         let mut store = ProgressStore::open(&db).await.unwrap();
 
         store.record_run(&run(100, 200, 0, false)).await.unwrap();
         store.record_run(&run(200, 300, 2, false)).await.unwrap();
-        // A truncated run must not advance coverage even though it reaches further.
-        store.record_run(&run(300, 999, 0, true)).await.unwrap();
+        // A truncated run still verified its range contiguously up to the last
+        // block it scanned, so coverage advances to there — not its intended
+        // to_block (999), and not nowhere.
+        let mut truncated = run(300, 999, 0, true);
+        truncated.blocks_scanned = 100; // scanned 300..=399 before stopping
+        store.record_run(&truncated).await.unwrap();
 
         let (from, to, runs): (i64, i64, i64) = sqlx::query_as(
             "SELECT verified_from_block, verified_to_block, (SELECT count(*) FROM verify_runs) \
@@ -319,7 +336,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(from, 100);
-        assert_eq!(to, 300);
+        assert_eq!(to, 399);
         assert_eq!(runs, 3);
     }
 
@@ -340,8 +357,10 @@ mod tests {
             store.verified_to_block(1, "postgres://prod").await.unwrap(),
             Some(200)
         );
-        // A truncated run must not advance the mark.
-        store.record_run(&run(201, 999, 0, true)).await.unwrap();
+        // A run that scanned nothing (immediate failure) doesn't move the mark.
+        let mut nothing = run(201, 999, 0, true);
+        nothing.blocks_scanned = 0;
+        store.record_run(&nothing).await.unwrap();
         assert_eq!(
             store.verified_to_block(1, "postgres://prod").await.unwrap(),
             Some(200)
