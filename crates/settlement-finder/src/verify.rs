@@ -457,10 +457,6 @@ pub async fn verify_cmd(
         .await
         .context("could not connect to database")?;
 
-    // Opened up front so the recorded high-water mark can seed the default
-    // --from-block below; reused at the end to record this run.
-    let mut store = ProgressStore::open(progress_db).await?;
-
     // Resolve the range, defaulting to the block span of the indexed tables so
     // that omitting both bounds scans the whole database.
     let stats = table_stats(&mut db).await?;
@@ -481,8 +477,16 @@ pub async fn verify_cmd(
                     .context("negative block number in database")?;
             // Resume after the last block verified for this (network, db), so a
             // re-run continues where the previous one left off instead of
-            // rescanning the whole history. Never start below db_min.
-            match store.verified_to_block(chain_id, db_url).await? {
+            // rescanning the whole history. Never start below db_min. The store
+            // is opened only for this read and closed again immediately: holding
+            // the SQLite connection open across the multi-hour scan risks a
+            // `SQLITE_READONLY_DBMOVED` write failure if the file is replaced
+            // meanwhile.
+            let verified_to = ProgressStore::open(progress_db)
+                .await?
+                .verified_to_block(chain_id, db_url)
+                .await?;
+            match verified_to {
                 Some(last) if last + 1 > db_min => {
                     let resume = last + 1;
                     tracing::info!(
@@ -747,7 +751,11 @@ pub async fn verify_cmd(
     let report_path = save_report(report_dir, &network, &doc)?;
     tracing::info!(path = %report_path.display(), "saved report");
 
-    store
+    // Open the store fresh here rather than holding it across the scan (see the
+    // resume read above): a connection open for hours can hit
+    // `SQLITE_READONLY_DBMOVED` on write if the file was replaced meanwhile.
+    ProgressStore::open(progress_db)
+        .await?
         .record_run(&VerifyRun {
             network,
             chain_id,
