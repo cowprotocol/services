@@ -1,11 +1,7 @@
 use {
     super::{CompetitionEstimator, EstimatorIndex, PriceRanking, compare_error},
     crate::{
-        Estimate,
-        PriceEstimateResult,
-        PriceEstimating,
-        PriceEstimationError,
-        Query,
+        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
         QuoteVerificationMode,
     },
     alloy::primitives::{Address, U256},
@@ -91,7 +87,9 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 let (name, _) = &self.stages[stage_index][estimator_index];
                 emit_winning_price_estimate_event(name, &query);
             }
-
+            // the winner.is_ok check is repeated inside report_winner
+            // but due to the return, the simplest way to handle this is keep it here
+            // TODO: clean this up
             self.report_winner(&query, query.kind, winner)
         }
         .boxed()
