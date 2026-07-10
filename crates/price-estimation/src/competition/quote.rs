@@ -1,7 +1,11 @@
 use {
     super::{CompetitionEstimator, EstimatorIndex, PriceRanking, compare_error},
     crate::{
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
         QuoteVerificationMode,
     },
     alloy::primitives::{Address, U256},

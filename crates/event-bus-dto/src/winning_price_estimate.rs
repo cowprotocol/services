@@ -10,7 +10,8 @@ use {
 /// competing estimator, all sharing the envelope `requestId`), the winning one
 /// is the one whose `estimator` matches this event.
 ///
-/// Exactly one is emitted per quote competition.
+/// At most one is emitted per quote competition (because all may have errored
+/// in which case there's effectively no winner).
 #[derive(Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WinningPriceEstimateEvent {
