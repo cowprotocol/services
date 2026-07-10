@@ -22,7 +22,7 @@ use {
     serde_json::{Value, json},
     sqlx::PgPool,
     std::time::Duration,
-    tracing::{info, instrument},
+    tracing::{info, instrument, warn},
     url::Url,
 };
 
@@ -451,11 +451,19 @@ fn parse_seeded_pool_state(
         return Ok(None);
     }
 
+    // The subgraph's `liquidity` is a derived value that can drift negative, so
+    // it doesn't always parse as the on-chain `u128`. Skip just this pool's
+    // seed state (the pool stays registered) rather than aborting the bootstrap.
+    let Ok(liquidity) = pool.liquidity.parse::<u128>() else {
+        warn!(pool = %pool.id, liquidity = %pool.liquidity, "skipping seed state: unparseable liquidity");
+        return Ok(None);
+    };
+
     Ok(Some(PoolStateData {
         pool_address: address,
         block_number: snapshot_block,
         sqrt_price_x96: pool.sqrt_price.parse::<U160>().context("parse sqrtPrice")?,
-        liquidity: pool.liquidity.parse().context("parse liquidity")?,
+        liquidity,
         tick: tick.parse().context("parse tick")?,
     }))
 }
