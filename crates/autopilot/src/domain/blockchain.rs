@@ -23,6 +23,17 @@ pub struct CallFrame {
     pub calls: Vec<CallFrame>,
 }
 
+// custom drop implementation to avoid stack overflows on very
+// deeply nested [`CallFrame`]s
+impl Drop for CallFrame {
+    fn drop(&mut self) {
+        let mut stack = std::mem::take(&mut self.calls);
+        while let Some(mut frame) = stack.pop() {
+            stack.append(&mut frame.calls);
+        }
+    }
+}
+
 /// Any type of on-chain transaction.
 #[derive(Debug, Clone, Default)]
 pub struct Transaction {
