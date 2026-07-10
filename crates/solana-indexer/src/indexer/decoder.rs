@@ -253,8 +253,8 @@ fn decode_order_created(
 ) -> Result<SettlementEvent, DecodeError> {
     let intent_bytes: &[u8; EncodedOrderIntent::SIZE] =
         body.try_into().map_err(|_| DecodeError::SchemaMismatch)?;
-    let (intent, uid) =
-        EncodedOrderIntent::decode_and_hash(intent_bytes).map_err(|_| DecodeError::SchemaMismatch)?;
+    let (intent, uid) = EncodedOrderIntent::decode_and_hash(intent_bytes)
+        .map_err(|_| DecodeError::SchemaMismatch)?;
     let created_by = resolve_account(instruction, account_keys, CREATE_ORDER_CREATED_BY)
         .ok_or(DecodeError::SchemaMismatch)?;
     Ok(SettlementEvent::OrderCreated {
