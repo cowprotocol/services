@@ -23,17 +23,6 @@ pub struct CallFrame {
     pub calls: Vec<CallFrame>,
 }
 
-impl From<alloy::rpc::types::trace::geth::CallFrame> for CallFrame {
-    fn from(value: alloy::rpc::types::trace::geth::CallFrame) -> Self {
-        Self {
-            from: value.from,
-            to: value.to,
-            input: value.input,
-            calls: value.calls.into_iter().map(Into::into).collect(),
-        }
-    }
-}
-
 /// Any type of on-chain transaction.
 #[derive(Debug, Clone, Default)]
 pub struct Transaction {
