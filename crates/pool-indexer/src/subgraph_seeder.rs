@@ -451,13 +451,13 @@ fn parse_seeded_pool_state(
         return Ok(None);
     }
 
-    // The subgraph's `liquidity` is a derived value that can drift negative, so
-    // it doesn't always parse as the on-chain `u128`. Skip just this pool's
-    // seed state (the pool stays registered) rather than aborting the bootstrap.
-    let Ok(liquidity) = pool.liquidity.parse::<u128>() else {
-        warn!(pool = %pool.id, liquidity = %pool.liquidity, "skipping seed state: unparseable liquidity");
-        return Ok(None);
-    };
+    // The subgraph's derived `liquidity` can be negative or exceed `u128`, so it
+    // doesn't always parse. Clamp to 0 like the live indexer so the pool keeps a
+    // state row (and stays visible) with its correct on-chain price and tick.
+    let liquidity = pool.liquidity.parse::<u128>().unwrap_or_else(|_| {
+        warn!(pool = %pool.id, liquidity = %pool.liquidity, "clamping unparseable liquidity to 0");
+        0
+    });
 
     Ok(Some(PoolStateData {
         pool_address: address,
