@@ -571,6 +571,24 @@ pub async fn verify_cmd(
     let (revalidation_provider, _revalidation_wallet) =
         ethrpc::alloy::unbuffered_provider(rpc_url, Some("settlement-finder revalidation"));
 
+    // Give the scan `concurrency` separate connections and round-robin chunks
+    // over them. Alloy multiplexes every request of one provider onto a single
+    // HTTP/2 connection, so a single shared provider funnels all in-flight
+    // getLogs through one connection — when it stalls, all `concurrency`
+    // requests time out together. One unbuffered provider per slot is one
+    // reqwest client, i.e. one connection each, so a stall isolates to its slot
+    // (retried with backoff) instead of taking down the whole batch, and the
+    // slots make real parallel progress.
+    let scan_providers: Vec<_> = (0..concurrency)
+        .map(|i| {
+            ethrpc::alloy::unbuffered_provider(
+                rpc_url,
+                Some(&format!("settlement-finder scan {i}")),
+            )
+            .0
+        })
+        .collect();
+
     // Chunk the range up front, then keep up to `concurrency` getLogs calls in
     // flight while the single-connection DB comparison consumes them in block
     // order. getLogs dominates the wall time, so overlapping its latency is the
@@ -583,8 +601,11 @@ pub async fn verify_cmd(
         ranges.push((chunk_from, chunk_to));
         chunk_from = chunk_to + 1;
     }
-    let mut fetches = stream::iter(ranges.into_iter().map(|(from, to)| async move {
-        (from, to, fetch_logs(provider, sources, from, to).await)
+    let mut fetches = stream::iter(ranges.into_iter().enumerate().map(|(i, (from, to))| {
+        // The `concurrency` chunks in flight at any moment map to `concurrency`
+        // distinct providers, so no two active fetches share a connection.
+        let provider = &scan_providers[i % scan_providers.len()];
+        async move { (from, to, fetch_logs(provider, sources, from, to).await) }
     }))
     .buffered(concurrency);
 
