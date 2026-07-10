@@ -6,6 +6,7 @@
 -- trades get the hash directly from the event log.
 --
 -- Nullable: rows indexed before this migration have to be backfilled manually
--- (long running update; see database/backfills/backfill_trades_tx_hash.sql).
+-- (long running update; run `settlement-finder backfill`, see
+-- crates/settlement-finder).
 ALTER TABLE trades
     ADD COLUMN tx_hash bytea;
