@@ -202,22 +202,3 @@ pub enum Error {
     #[error("failed to deserialize tx: {0:?}")]
     DeserializationFailed(#[from] serde_json::Error),
 }
-
-#[cfg(test)]
-mod tests {
-    use {super::*, alloy::primitives::b256};
-
-    #[tokio::test]
-    async fn test_base_tx() {
-        let provider = ethrpc::Web3::new_from_url("http://localhost:8545");
-        let traces = fetch_debug_trace(
-            &provider.provider,
-            eth::TxId(b256!(
-                "0x5200aab12fbe4e0aef019748bf0f79266155fbbea00557bf1071fa2859e7eb9b"
-            )),
-        )
-        .await
-        .unwrap();
-        dbg!(traces);
-    }
-}
