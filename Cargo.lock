@@ -9051,10 +9051,12 @@ dependencies = [
 name = "settlement-finder"
 version = "0.1.0"
 dependencies = [
+ "alloy-json-rpc",
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-types",
  "alloy-sol-types",
+ "alloy-transport",
  "anyhow",
  "bigdecimal",
  "chain",
