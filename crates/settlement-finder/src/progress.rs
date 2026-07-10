@@ -22,14 +22,30 @@ pub fn network_name(chain_id: u64) -> String {
         .unwrap_or_else(|_| format!("chain-{chain_id}"))
 }
 
-/// Writes the report document to `<dir>/<network>_<timestamp>.json`, creating
+/// Reduces an RPC URL to scheme and host for recording which data source a run
+/// used. The path, query and userinfo are dropped because that is where
+/// providers embed API keys (e.g. `https://eth-mainnet.g.alchemy.com/v2/KEY`).
+pub fn sanitize_rpc_url(url: &str) -> String {
+    let (scheme, rest) = match url.split_once("://") {
+        Some((scheme, rest)) => (Some(scheme), rest),
+        None => (None, url),
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    let host = host.rsplit('@').next().unwrap_or(host);
+    match scheme {
+        Some(scheme) => format!("{scheme}://{host}"),
+        None => host.to_owned(),
+    }
+}
+
+/// Writes the report document to `<dir>/<network>-<timestamp>.json`, creating
 /// the directory if needed, and returns the path it wrote. `timestamp` is the
 /// UTC run time in `YYYYMMDDThhmmssZ` form so files sort chronologically.
 pub fn save_report(dir: &Path, network: &str, doc: &serde_json::Value) -> Result<PathBuf> {
     std::fs::create_dir_all(dir)
         .with_context(|| format!("could not create report directory {}", dir.display()))?;
     let timestamp = Utc::now().format("%Y%m%dT%H%M%SZ");
-    let path = dir.join(format!("{network}_{timestamp}.json"));
+    let path = dir.join(format!("{network}-{timestamp}.json"));
     let contents = serde_json::to_string_pretty(doc)?;
     std::fs::write(&path, contents)
         .with_context(|| format!("could not write report to {}", path.display()))?;
@@ -40,6 +56,9 @@ pub fn save_report(dir: &Path, network: &str, doc: &serde_json::Value) -> Result
 pub struct VerifyRun {
     pub network: String,
     pub chain_id: u64,
+    /// Sanitized (scheme and host only) so a mismatch report can be traced
+    /// back to the node that produced its chain view.
+    pub rpc_url: String,
     pub db_url: String,
     pub from_block: u64,
     pub to_block: u64,
@@ -90,6 +109,20 @@ impl ProgressStore {
         .await
         .context("could not create verify_runs table")?;
 
+        // Older databases predate the rpc_url column; add it in place.
+        let (has_rpc_url,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM pragma_table_info('verify_runs') WHERE name = 'rpc_url'",
+        )
+        .fetch_one(&mut conn)
+        .await
+        .context("could not inspect the verify_runs schema")?;
+        if has_rpc_url == 0 {
+            sqlx::query("ALTER TABLE verify_runs ADD COLUMN rpc_url TEXT")
+                .execute(&mut conn)
+                .await
+                .context("could not add the rpc_url column")?;
+        }
+
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS network_progress (
                 chain_id            INTEGER NOT NULL,
@@ -110,18 +143,34 @@ impl ProgressStore {
         Ok(Self { conn })
     }
 
+    /// The last block verified for `(chain_id, db_url)`, i.e. the upper end of
+    /// the recorded contiguous coverage, or `None` if this environment has no
+    /// prior run. A scan can resume from the block after it.
+    pub async fn verified_to_block(&mut self, chain_id: u64, db_url: &str) -> Result<Option<u64>> {
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT verified_to_block FROM network_progress WHERE chain_id = ?1 AND db_url = ?2",
+        )
+        .bind(chain_id.cast_signed())
+        .bind(db_url)
+        .fetch_optional(&mut self.conn)
+        .await
+        .context("could not read recorded progress")?;
+        Ok(row.map(|(to,)| to.cast_unsigned()))
+    }
+
     /// Records a run in the history and, unless it was truncated, advances the
     /// (chain, db) coverage extent to include the run's range.
     pub async fn record_run(&mut self, run: &VerifyRun) -> Result<()> {
         let now = Utc::now().to_rfc3339();
 
         sqlx::query(
-            "INSERT INTO verify_runs (network, chain_id, db_url, from_block, to_block, \
+            "INSERT INTO verify_runs (network, chain_id, rpc_url, db_url, from_block, to_block, \
              blocks_scanned, mismatch_blocks, mismatches, truncated, report_path, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&run.network)
         .bind(run.chain_id.cast_signed())
+        .bind(&run.rpc_url)
         .bind(&run.db_url)
         .bind(run.from_block.cast_signed())
         .bind(run.to_block.cast_signed())
@@ -136,21 +185,55 @@ impl ProgressStore {
         .context("could not insert verify run")?;
 
         if !run.truncated {
-            // Widen the recorded coverage to span both the previous extent and
-            // this run's range.
+            // Extend the recorded coverage with this run's range. The extent
+            // is a single interval, so it may only absorb a range that
+            // overlaps or touches it; a min/max hull over a disjoint range
+            // would claim the gap between them was verified when it never was.
+            let existing: Option<(i64, i64)> = sqlx::query_as(
+                "SELECT verified_from_block, verified_to_block FROM network_progress WHERE \
+                 chain_id = ?1 AND db_url = ?2",
+            )
+            .bind(run.chain_id.cast_signed())
+            .bind(&run.db_url)
+            .fetch_optional(&mut self.conn)
+            .await
+            .context("could not read network progress")?;
+
+            let (from, to) = (run.from_block.cast_signed(), run.to_block.cast_signed());
+            let (extent_from, extent_to) = match existing {
+                Some((old_from, old_to)) if from <= old_to + 1 && old_from <= to + 1 => {
+                    (old_from.min(from), old_to.max(to))
+                }
+                Some((old_from, old_to)) => {
+                    tracing::warn!(
+                        old_from,
+                        old_to,
+                        from,
+                        to,
+                        "run range is disjoint from the recorded coverage; replacing the extent \
+                         with the higher range (the store tracks one contiguous interval)"
+                    );
+                    if to > old_to {
+                        (from, to)
+                    } else {
+                        (old_from, old_to)
+                    }
+                }
+                None => (from, to),
+            };
+
             sqlx::query(
                 "INSERT INTO network_progress (chain_id, db_url, network, verified_from_block, \
                  verified_to_block, last_mismatches, last_report_path, updated_at) VALUES (?1, \
                  ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (chain_id, db_url) DO UPDATE SET network \
-                 = ?3, verified_from_block = min(verified_from_block, ?4), verified_to_block = \
-                 max(verified_to_block, ?5), last_mismatches = ?6, last_report_path = ?7, \
-                 updated_at = ?8",
+                 = ?3, verified_from_block = ?4, verified_to_block = ?5, last_mismatches = ?6, \
+                 last_report_path = ?7, updated_at = ?8",
             )
             .bind(run.chain_id.cast_signed())
             .bind(&run.db_url)
             .bind(&run.network)
-            .bind(run.from_block.cast_signed())
-            .bind(run.to_block.cast_signed())
+            .bind(extent_from)
+            .bind(extent_to)
             .bind(run.mismatches.cast_signed())
             .bind(&run.report_path)
             .bind(&now)
@@ -171,6 +254,7 @@ mod tests {
         VerifyRun {
             network: "mainnet".into(),
             chain_id: 1,
+            rpc_url: "https://rpc.example.com".into(),
             db_url: "postgres://prod".into(),
             from_block: from,
             to_block: to,
@@ -182,6 +266,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn sanitize_rpc_url_strips_credentials() {
+        for (url, expected) in [
+            (
+                "https://eth-mainnet.g.alchemy.com/v2/secret-key",
+                "https://eth-mainnet.g.alchemy.com",
+            ),
+            (
+                "https://user:pass@node.example.com:8545/path?apikey=k",
+                "https://node.example.com:8545",
+            ),
+            ("wss://rpc.gnosischain.com/wss", "wss://rpc.gnosischain.com"),
+            ("localhost:8545", "localhost:8545"),
+        ] {
+            assert_eq!(sanitize_rpc_url(url), expected);
+        }
+    }
+
     #[tokio::test]
     async fn save_report_writes_named_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -189,7 +291,7 @@ mod tests {
         let path = save_report(dir.path(), "mainnet", &doc).unwrap();
         let name = path.file_name().unwrap().to_str().unwrap();
         assert!(
-            name.starts_with("mainnet_") && name.ends_with(".json"),
+            name.starts_with("mainnet-") && name.ends_with(".json"),
             "{name}"
         );
         let written: serde_json::Value =
@@ -219,5 +321,70 @@ mod tests {
         assert_eq!(from, 100);
         assert_eq!(to, 300);
         assert_eq!(runs, 3);
+    }
+
+    #[tokio::test]
+    async fn verified_to_block_reads_back_the_high_water_mark() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("progress.sqlite");
+        let mut store = ProgressStore::open(&db).await.unwrap();
+
+        // No prior run: nothing to resume after.
+        assert_eq!(
+            store.verified_to_block(1, "postgres://prod").await.unwrap(),
+            None
+        );
+
+        store.record_run(&run(100, 200, 0, false)).await.unwrap();
+        assert_eq!(
+            store.verified_to_block(1, "postgres://prod").await.unwrap(),
+            Some(200)
+        );
+        // A truncated run must not advance the mark.
+        store.record_run(&run(201, 999, 0, true)).await.unwrap();
+        assert_eq!(
+            store.verified_to_block(1, "postgres://prod").await.unwrap(),
+            Some(200)
+        );
+        // Scoped per (chain, db): another environment has no progress here.
+        assert_eq!(
+            store
+                .verified_to_block(1, "postgres://staging")
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn progress_does_not_hull_over_disjoint_ranges() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("progress.sqlite");
+        let mut store = ProgressStore::open(&db).await.unwrap();
+
+        store.record_run(&run(100, 200, 0, false)).await.unwrap();
+        // Disjoint higher range: the extent must move, not stretch over the
+        // unverified gap 201..499.
+        store.record_run(&run(500, 600, 0, false)).await.unwrap();
+
+        let (from, to): (i64, i64) = sqlx::query_as(
+            "SELECT verified_from_block, verified_to_block FROM network_progress WHERE chain_id = \
+             1 AND db_url = 'postgres://prod'",
+        )
+        .fetch_one(&mut store.conn)
+        .await
+        .unwrap();
+        assert_eq!((from, to), (500, 600));
+
+        // A disjoint lower range must not shrink the recorded coverage.
+        store.record_run(&run(0, 50, 0, false)).await.unwrap();
+        let (from, to): (i64, i64) = sqlx::query_as(
+            "SELECT verified_from_block, verified_to_block FROM network_progress WHERE chain_id = \
+             1 AND db_url = 'postgres://prod'",
+        )
+        .fetch_one(&mut store.conn)
+        .await
+        .unwrap();
+        assert_eq!((from, to), (500, 600));
     }
 }
