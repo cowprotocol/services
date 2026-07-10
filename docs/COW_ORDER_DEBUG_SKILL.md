@@ -496,10 +496,12 @@ WHERE oq.order_uid = '\x$ORDER_UID_HEX';
 
 ### Check auction inclusion history:
 ```sql
-SELECT id AS auction_id
-FROM competition_auctions
-WHERE order_uids @> ARRAY['\x$ORDER_UID_HEX'::bytea]
-ORDER BY id DESC
+WITH matches AS MATERIALIZED (
+  SELECT * FROM competition_auctions
+  WHERE order_uids @> ARRAY['\x$ORDER_UID_HEX'::bytea]
+  ORDER BY id DESC
+)
+SELECT id FROM matches
 LIMIT 20;
 ```
 
