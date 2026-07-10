@@ -161,8 +161,7 @@ async fn fetch_debug_trace(provider: &impl Provider, hash: eth::TxId) -> Result<
 
     let mut de = serde_json::Deserializer::from_str(raw.get());
     de.disable_recursion_limit();
-    GethTrace::deserialize(&mut de)
-        .map_err(|e| Error::IncompleteTransactionData(anyhow::anyhow!(e)))
+    GethTrace::deserialize(&mut de).map_err(Error::DeserializationFailed)
 }
 
 fn into_domain(
@@ -199,4 +198,6 @@ pub enum Error {
     TransactionNotFound,
     #[error("unsupported chain")]
     UnsupportedChain,
+    #[error("failed to deserialize tx: {0:?}")]
+    DeserializationFailed(#[from] serde_json::Error),
 }
