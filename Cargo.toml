@@ -117,7 +117,7 @@ schemars = { version = "1.2", features = ["chrono04"] }
 scopeguard = "1.2.0"
 serde = { version = "1.0.203", features = ["derive"] }
 serde-ext = { path = "crates/serde-ext" }
-serde_json = { version = "1.0.117", features = ["unbounded_depth"] }
+serde_json = { version = "1.0.117", features = ["unbounded_depth", "raw_value"] }
 serde_with = "3.8.1"
 sha2 = "0.10"
 shared = { path = "crates/shared" }
