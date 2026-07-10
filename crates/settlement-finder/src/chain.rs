@@ -23,8 +23,8 @@ const RETRY_MAX_DELAY: Duration = Duration::from_secs(10);
 /// Per-attempt ceiling for a single RPC call, so a hung connection (a stalled
 /// body read, a half-open socket) is abandoned and retried rather than
 /// blocking the scan forever. Kept short: a healthy `getLogs` returns well
-/// within it, and on the multi-block range path a timeout is treated as a
-/// signal that the batch is too big and the range is split ASAP.
+/// within it, so a timeout signals a stalled connection (retry with backoff),
+/// not an oversized batch (which surfaces as an explicit error and is split).
 const RPC_CALL_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Whether an RPC error means "the block range or result set is too large" —
@@ -446,13 +446,13 @@ pub async fn validate_canonical_hashes(provider: &impl Provider, logs: &[Log]) -
 }
 
 /// Fetches all logs of `addresses` in `[from, to]`, retrying transient errors
-/// with backoff and halving the range whenever the batch is too large — when
-/// the node says so outright (too many results / too wide a range), when an
-/// oversized response fails to deliver (a broken body stream, an HTTP 413), and
-/// when a multi-block request times out (a big batch the node cannot return
-/// within `RPC_CALL_TIMEOUT`). Sub-ranges are processed with a work stack, so a
-/// dense span is subdivided only as far as the node's limit requires; a range
-/// that still fails at a single block surfaces the error.
+/// (including timeouts) with backoff and halving the range whenever the batch
+/// is too large — when the node says so outright (too many results / too wide a
+/// range) or when an oversized response fails to deliver (a broken body stream,
+/// an HTTP 413). A timeout is treated as transient, not as a size signal (see
+/// the loop below). Sub-ranges are processed with a work stack, so a dense span
+/// is subdivided only as far as the node's limit requires; a range that still
+/// fails at a single block surfaces the error.
 async fn fetch_range(
     provider: &impl Provider,
     addresses: &[Address],
@@ -481,20 +481,6 @@ async fn fetch_range(
                         logs.extend(fetched);
                         break;
                     }
-                    // A timeout on a multi-block range almost always means the
-                    // batch is too big to return in time, so split ASAP rather
-                    // than burning retries on the same doomed range.
-                    Err(_elapsed) if from < to => {
-                        let mid = split(&mut pending, from, to);
-                        tracing::info!(
-                            from,
-                            to,
-                            split_at = mid,
-                            status = "timeout",
-                            "getLogs timed out, splitting the range and retrying the halves"
-                        );
-                        break;
-                    }
                     Ok(Err(err))
                         if from < to
                             && !is_rate_limited(&err)
@@ -511,6 +497,13 @@ async fn fetch_range(
                         );
                         break;
                     }
+                    // A timeout is a latency signal, not a size signal: a full
+                    // chunk returns well within the deadline on a healthy
+                    // connection, so a timeout means the (shared) connection
+                    // stalled — every request multiplexed on it trips the
+                    // deadline at once. Splitting would only re-issue more
+                    // requests onto the same stalled connection; retry with
+                    // backoff instead and let it recover.
                     Err(_elapsed) => (
                         "timeout".to_owned(),
                         anyhow::anyhow!("timed out after {}s", RPC_CALL_TIMEOUT.as_secs()),
