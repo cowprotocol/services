@@ -21,7 +21,6 @@ pub mod settlement_executions;
 pub mod settlements;
 pub mod solver_competition;
 pub mod solver_competition_v2;
-pub mod surplus_capturing_jit_order_owners;
 pub mod trades;
 
 use {
@@ -69,7 +68,6 @@ pub const TABLES: &[&str] = &[
     "settlement_executions",
     "settlements",
     "solver_competitions",
-    "surplus_capturing_jit_order_owners",
     "trades",
 ];
 
