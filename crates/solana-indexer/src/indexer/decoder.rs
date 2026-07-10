@@ -12,7 +12,7 @@ use {
         types::{
             Signature,
             channel::StreamUpdate,
-            errors::PersistenceError,
+            errors::{DecodeError, PersistenceError},
             events::{SettlementEvent, TradeDelta},
             order::OrderUid,
             slot::Slot,
@@ -197,26 +197,39 @@ fn decode_settlement(
 
     // Instructions decodable on their own, without tx-level pairing.
     for instruction in instructions {
-        let Ok((discriminator, _)) = recover_discriminator(&instruction.data) else {
+        let Ok((discriminator, body)) = recover_discriminator(&instruction.data) else {
             tracing::debug!(
                 instruction_index = instruction.instruction_index,
                 "settlement instruction with an unknown discriminator, skipping"
             );
             continue;
         };
-        match discriminator {
+        // A landed (non-reverted) transaction carries valid instruction data, so
+        // a decode failure here means a decoder bug or an unannounced program
+        // layout change, not a normal case. Surface it as a warning rather than
+        // dropping it silently. Once the persistence adapter lands these route to
+        // the dead-letter table.
+        let decoded = match discriminator {
             SettlementInstruction::CreateOrder => {
-                if let Some(event) = decode_order_created(instruction, &ctx.account_keys) {
-                    events.push(event);
-                }
+                decode_order_created(instruction, body, &ctx.account_keys).map(|event| vec![event])
             }
             SettlementInstruction::CreateBuffer => {
-                events.extend(decode_buffers_created(instruction, &ctx.account_keys));
+                decode_buffers_created(instruction, &ctx.account_keys)
             }
             // Bootstrap only, no domain event.
-            SettlementInstruction::Initialize => {}
+            SettlementInstruction::Initialize => Ok(Vec::new()),
             // Paired below, once both halves of the settlement are in hand.
-            SettlementInstruction::BeginSettle | SettlementInstruction::FinalizeSettle => {}
+            SettlementInstruction::BeginSettle | SettlementInstruction::FinalizeSettle => {
+                Ok(Vec::new())
+            }
+        };
+        match decoded {
+            Ok(decoded_events) => events.extend(decoded_events),
+            Err(err) => tracing::warn!(
+                instruction_index = instruction.instruction_index,
+                %err,
+                "failed to decode settlement instruction"
+            ),
         }
     }
 
@@ -235,13 +248,16 @@ fn decode_settlement(
 /// resolved from the instruction's account list.
 fn decode_order_created(
     instruction: &ResolvedInstruction,
+    body: &[u8],
     account_keys: &[Pubkey],
-) -> Option<SettlementEvent> {
-    let (_, body) = recover_discriminator(&instruction.data).ok()?;
-    let intent_bytes: &[u8; EncodedOrderIntent::SIZE] = body.try_into().ok()?;
-    let (intent, uid) = EncodedOrderIntent::decode_and_hash(intent_bytes).ok()?;
-    let created_by = resolve_account(instruction, account_keys, CREATE_ORDER_CREATED_BY)?;
-    Some(SettlementEvent::OrderCreated {
+) -> Result<SettlementEvent, DecodeError> {
+    let intent_bytes: &[u8; EncodedOrderIntent::SIZE] =
+        body.try_into().map_err(|_| DecodeError::SchemaMismatch)?;
+    let (intent, uid) =
+        EncodedOrderIntent::decode_and_hash(intent_bytes).map_err(|_| DecodeError::SchemaMismatch)?;
+    let created_by = resolve_account(instruction, account_keys, CREATE_ORDER_CREATED_BY)
+        .ok_or(DecodeError::SchemaMismatch)?;
+    Ok(SettlementEvent::OrderCreated {
         order_uid: OrderUid(uid.to_bytes()),
         owner: to_sdk_pubkey(intent.owner),
         created_by,
@@ -254,25 +270,24 @@ fn decode_order_created(
 fn decode_buffers_created(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
-) -> Vec<SettlementEvent> {
-    let Some(per_buffer) = instruction.accounts.get(CREATE_BUFFER_SHARED_ACCOUNTS..) else {
-        return Vec::new();
-    };
+) -> Result<Vec<SettlementEvent>, DecodeError> {
+    let per_buffer = instruction
+        .accounts
+        .get(CREATE_BUFFER_SHARED_ACCOUNTS..)
+        .ok_or(DecodeError::SchemaMismatch)?;
     let (pairs, remainder) = per_buffer.as_chunks::<2>();
     if !remainder.is_empty() || pairs.is_empty() {
-        tracing::debug!(
-            instruction_index = instruction.instruction_index,
-            "CreateBuffer accounts did not form whole (buffer, mint) pairs, skipping"
-        );
-        return Vec::new();
+        return Err(DecodeError::SchemaMismatch);
     }
     pairs
         .iter()
-        .filter_map(|pair| {
+        .map(|pair| {
             // Each pair is `[buffer_pda_index, mint_index]`; the event token is
             // the buffer's mint.
-            let token = account_keys.get(usize::from(pair[1]))?;
-            Some(SettlementEvent::BufferCreated { token: *token })
+            let token = account_keys
+                .get(usize::from(pair[1]))
+                .ok_or(DecodeError::SchemaMismatch)?;
+            Ok(SettlementEvent::BufferCreated { token: *token })
         })
         .collect()
 }
