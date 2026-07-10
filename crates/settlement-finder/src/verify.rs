@@ -30,12 +30,13 @@ use {
         },
         progress::{ProgressStore, VerifyRun, network_name, sanitize_rpc_url, save_report},
     },
-    alloy_primitives::{Address, B256, U256, hex},
+    alloy_primitives::{Address, Bytes, TxHash, U256, hex},
     alloy_provider::Provider,
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     futures::stream::{self, StreamExt},
     number::conversions::u256_to_big_decimal,
+    serde::Serialize,
     serde_json::json,
     sqlx::{Connection, PgConnection},
     std::{
@@ -44,27 +45,32 @@ use {
     },
 };
 
-/// A single discrepancy between the DB and the chain at one block.
+/// A single discrepancy between the DB and the chain at one block. Serializes
+/// to a flat object tagged with `kind` (each field's name is its JSON key, and
+/// `Bytes` fields render as `0x`-prefixed hex); the enclosing block number is
+/// added by [`Mismatch::json`].
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[allow(clippy::enum_variant_names)]
 pub enum Mismatch {
     /// A DB settlement whose (log_index) the chain has no settlement at.
     SettlementNotOnChain {
         log_index: u64,
-        tx_hash: Vec<u8>,
-        solver: Vec<u8>,
+        db_tx_hash: Bytes,
+        solver: Address,
     },
     /// A chain settlement the DB has no row for at that log_index.
     SettlementMissing {
         log_index: u64,
-        tx_hash: B256,
+        chain_tx_hash: TxHash,
         solver: Address,
     },
     /// DB and chain both have a settlement at this log_index but the tx hash
     /// disagrees (the settlement was indexed from a fork).
     SettlementWrongTxHash {
         log_index: u64,
-        db_tx_hash: Vec<u8>,
-        chain_tx_hash: B256,
+        db_tx_hash: Bytes,
+        chain_tx_hash: TxHash,
     },
     /// DB and chain have the same settlement (by tx hash) in this block but at
     /// different log indices. Reported as one finding instead of a
@@ -72,13 +78,13 @@ pub enum Mismatch {
     SettlementWrongLogIndex {
         db_log_index: u64,
         chain_log_index: u64,
-        tx_hash: Vec<u8>,
+        tx_hash: Bytes,
     },
     /// DB and chain both have this settlement at this log_index (same tx hash)
     /// but the recorded solver differs.
     SettlementSolverMismatch {
         log_index: u64,
-        db_solver: Vec<u8>,
+        db_solver: Address,
         chain_solver: Address,
     },
     /// A settlement present on both sides resolves a different number of trades
@@ -92,31 +98,31 @@ pub enum Mismatch {
     /// amounts disagree.
     TradeContentMismatch {
         log_index: u64,
-        order_uid: Vec<u8>,
+        order_uid: Bytes,
         diffs: Vec<String>,
     },
     /// A DB trade at a log_index the chain has no trade at (a mislocated fill).
-    TradeMisplaced { log_index: u64, order_uid: Vec<u8> },
+    TradeMisplaced { log_index: u64, order_uid: Bytes },
     /// DB and chain have the same trade (by order uid and amounts) in this
     /// block but at different log indices.
     TradeWrongLogIndex {
         db_log_index: u64,
         chain_log_index: u64,
-        order_uid: Vec<u8>,
+        order_uid: Bytes,
     },
     /// A chain trade at a log_index the DB has no trade at.
     TradeMissing {
         log_index: u64,
-        order_uid: Vec<u8>,
-        tx_hash: B256,
+        order_uid: Bytes,
+        chain_tx_hash: TxHash,
     },
     /// DB and chain both have a trade at this log_index but the tx hash
     /// disagrees (the fill was adopted from another settlement).
     TradeWrongTxHash {
         log_index: u64,
-        order_uid: Vec<u8>,
-        db_tx_hash: Vec<u8>,
-        chain_tx_hash: B256,
+        order_uid: Bytes,
+        db_tx_hash: Bytes,
+        chain_tx_hash: TxHash,
     },
 }
 
@@ -137,120 +143,20 @@ impl Mismatch {
         }
     }
 
+    /// The mismatch as a flat JSON object: the enclosing `block` plus the
+    /// derived `{ kind, <fields> }` representation, i.e. `{ block, ...self }`.
     fn json(&self, block: u64) -> serde_json::Value {
-        let mut value = json!({ "block": block, "kind": self.kind() });
-        let object = value.as_object_mut().unwrap();
-        match self {
-            Self::SettlementNotOnChain {
-                log_index,
-                tx_hash,
-                solver,
-            } => {
-                object.insert("log_index".into(), (*log_index).into());
-                object.insert("db_tx_hash".into(), hex::encode_prefixed(tx_hash).into());
-                object.insert("solver".into(), hex::encode_prefixed(solver).into());
-            }
-            Self::SettlementMissing {
-                log_index,
-                tx_hash,
-                solver,
-            } => {
-                object.insert("log_index".into(), (*log_index).into());
-                object.insert("chain_tx_hash".into(), tx_hash.to_string().into());
-                object.insert(
-                    "solver".into(),
-                    hex::encode_prefixed(solver.as_slice()).into(),
-                );
-            }
-            Self::SettlementWrongTxHash {
-                log_index,
-                db_tx_hash,
-                chain_tx_hash,
-            } => {
-                object.insert("log_index".into(), (*log_index).into());
-                object.insert("db_tx_hash".into(), hex::encode_prefixed(db_tx_hash).into());
-                object.insert("chain_tx_hash".into(), chain_tx_hash.to_string().into());
-            }
-            Self::SettlementWrongLogIndex {
-                db_log_index,
-                chain_log_index,
-                tx_hash,
-            } => {
-                object.insert("db_log_index".into(), (*db_log_index).into());
-                object.insert("chain_log_index".into(), (*chain_log_index).into());
-                object.insert("tx_hash".into(), hex::encode_prefixed(tx_hash).into());
-            }
-            Self::SettlementSolverMismatch {
-                log_index,
-                db_solver,
-                chain_solver,
-            } => {
-                object.insert("log_index".into(), (*log_index).into());
-                object.insert("db_solver".into(), hex::encode_prefixed(db_solver).into());
-                object.insert(
-                    "chain_solver".into(),
-                    hex::encode_prefixed(chain_solver.as_slice()).into(),
-                );
-            }
-            Self::TradeCountMismatch {
-                settlement_log_index,
-                db_count,
-                chain_count,
-            } => {
-                object.insert(
-                    "settlement_log_index".into(),
-                    (*settlement_log_index).into(),
-                );
-                object.insert("db_count".into(), (*db_count).into());
-                object.insert("chain_count".into(), (*chain_count).into());
-            }
-            Self::TradeContentMismatch {
-                log_index,
-                order_uid,
-                diffs,
-            } => {
-                object.insert("log_index".into(), (*log_index).into());
-                object.insert("order_uid".into(), hex::encode_prefixed(order_uid).into());
-                object.insert("diffs".into(), diffs.clone().into());
-            }
-            Self::TradeMisplaced {
-                log_index,
-                order_uid,
-            } => {
-                object.insert("log_index".into(), (*log_index).into());
-                object.insert("order_uid".into(), hex::encode_prefixed(order_uid).into());
-            }
-            Self::TradeWrongLogIndex {
-                db_log_index,
-                chain_log_index,
-                order_uid,
-            } => {
-                object.insert("db_log_index".into(), (*db_log_index).into());
-                object.insert("chain_log_index".into(), (*chain_log_index).into());
-                object.insert("order_uid".into(), hex::encode_prefixed(order_uid).into());
-            }
-            Self::TradeMissing {
-                log_index,
-                order_uid,
-                tx_hash,
-            } => {
-                object.insert("log_index".into(), (*log_index).into());
-                object.insert("order_uid".into(), hex::encode_prefixed(order_uid).into());
-                object.insert("chain_tx_hash".into(), tx_hash.to_string().into());
-            }
-            Self::TradeWrongTxHash {
-                log_index,
-                order_uid,
-                db_tx_hash,
-                chain_tx_hash,
-            } => {
-                object.insert("log_index".into(), (*log_index).into());
-                object.insert("order_uid".into(), hex::encode_prefixed(order_uid).into());
-                object.insert("db_tx_hash".into(), hex::encode_prefixed(db_tx_hash).into());
-                object.insert("chain_tx_hash".into(), chain_tx_hash.to_string().into());
-            }
+        #[derive(Serialize)]
+        struct WithBlock<'a> {
+            block: u64,
+            #[serde(flatten)]
+            mismatch: &'a Mismatch,
         }
-        value
+        serde_json::to_value(WithBlock {
+            block,
+            mismatch: self,
+        })
+        .expect("Mismatch serializes to a JSON object")
     }
 }
 
@@ -335,27 +241,27 @@ fn compare_block(
                         mismatches.push(Mismatch::SettlementWrongLogIndex {
                             db_log_index: log_index,
                             chain_log_index,
-                            tx_hash: db.tx_hash.clone(),
+                            tx_hash: db.tx_hash.clone().into(),
                         });
                     }
                     None => mismatches.push(Mismatch::SettlementNotOnChain {
                         log_index,
-                        tx_hash: db.tx_hash.clone(),
-                        solver: db.solver.clone(),
+                        db_tx_hash: db.tx_hash.clone().into(),
+                        solver: Address::from_slice(&db.solver),
                     }),
                 }
             }
             Some(chain) if db.tx_hash.as_slice() != chain.tx_hash.as_slice() => {
                 mismatches.push(Mismatch::SettlementWrongTxHash {
                     log_index,
-                    db_tx_hash: db.tx_hash.clone(),
+                    db_tx_hash: db.tx_hash.clone().into(),
                     chain_tx_hash: chain.tx_hash,
                 });
             }
             Some(chain) if db.solver.as_slice() != chain.solver.as_slice() => {
                 mismatches.push(Mismatch::SettlementSolverMismatch {
                     log_index,
-                    db_solver: db.solver.clone(),
+                    db_solver: Address::from_slice(&db.solver),
                     chain_solver: chain.solver,
                 });
             }
@@ -366,7 +272,7 @@ fn compare_block(
         if !db_settle.contains_key(&log_index) && !claimed_settlements.contains(&log_index) {
             mismatches.push(Mismatch::SettlementMissing {
                 log_index,
-                tx_hash: chain.tx_hash,
+                chain_tx_hash: chain.tx_hash,
                 solver: chain.solver,
             });
         }
@@ -396,12 +302,12 @@ fn compare_block(
                         mismatches.push(Mismatch::TradeWrongLogIndex {
                             db_log_index: log_index,
                             chain_log_index,
-                            order_uid: db.order_uid.clone(),
+                            order_uid: db.order_uid.clone().into(),
                         });
                     }
                     None => mismatches.push(Mismatch::TradeMisplaced {
                         log_index,
-                        order_uid: db.order_uid.clone(),
+                        order_uid: db.order_uid.clone().into(),
                     }),
                 }
             }
@@ -410,7 +316,7 @@ fn compare_block(
                 if !diffs.is_empty() {
                     mismatches.push(Mismatch::TradeContentMismatch {
                         log_index,
-                        order_uid: db.order_uid.clone(),
+                        order_uid: db.order_uid.clone().into(),
                         diffs,
                     });
                 }
@@ -419,8 +325,8 @@ fn compare_block(
                 {
                     mismatches.push(Mismatch::TradeWrongTxHash {
                         log_index,
-                        order_uid: db.order_uid.clone(),
-                        db_tx_hash: db_tx.clone(),
+                        order_uid: db.order_uid.clone().into(),
+                        db_tx_hash: db_tx.clone().into(),
                         chain_tx_hash: chain.tx_hash,
                     });
                 }
@@ -431,8 +337,8 @@ fn compare_block(
         if !db_trade_indices.contains(&log_index) && !claimed_trades.contains(&log_index) {
             mismatches.push(Mismatch::TradeMissing {
                 log_index,
-                order_uid: chain.order_uid.clone(),
-                tx_hash: chain.tx_hash,
+                order_uid: chain.order_uid.clone().into(),
+                chain_tx_hash: chain.tx_hash,
             });
         }
     }
@@ -873,7 +779,7 @@ mod tests {
             block: 1,
             log_index,
             solver: Address::repeat_byte(solver),
-            tx_hash: B256::repeat_byte(tx),
+            tx_hash: TxHash::repeat_byte(tx),
         }
     }
 
@@ -882,7 +788,7 @@ mod tests {
             block_number: 1,
             log_index,
             solver: Address::repeat_byte(solver).as_slice().to_vec(),
-            tx_hash: B256::repeat_byte(tx).to_vec(),
+            tx_hash: TxHash::repeat_byte(tx).to_vec(),
         }
     }
 
@@ -894,7 +800,7 @@ mod tests {
             sell_amount: U256::from(1),
             buy_amount: U256::from(2),
             fee_amount: U256::from(3),
-            tx_hash: B256::repeat_byte(tx),
+            tx_hash: TxHash::repeat_byte(tx),
         }
     }
 
@@ -906,7 +812,7 @@ mod tests {
             sell_amount: u256_to_big_decimal(&U256::from(1)),
             buy_amount: u256_to_big_decimal(&U256::from(2)),
             fee_amount: u256_to_big_decimal(&U256::from(3)),
-            tx_hash: Some(B256::repeat_byte(tx).to_vec()),
+            tx_hash: Some(TxHash::repeat_byte(tx).to_vec()),
         }
     }
 
@@ -936,6 +842,45 @@ mod tests {
             &[db_trade(8, 7, 1), db_trade(9, 8, 1)],
         );
         assert!(kinds.is_empty(), "{kinds:?}");
+    }
+
+    #[test]
+    fn json_is_flat_tagged_and_lowercase_hex() {
+        // Address must serialize as lowercase hex (not EIP-55 checksummed) and
+        // block/kind/fields must be flattened into one object.
+        let settlement = Mismatch::SettlementMissing {
+            log_index: 3,
+            chain_tx_hash: TxHash::repeat_byte(0xab),
+            solver: Address::repeat_byte(0xcd),
+        };
+        assert_eq!(
+            settlement.json(100),
+            json!({
+                "block": 100,
+                "kind": "settlement_missing",
+                "log_index": 3,
+                "chain_tx_hash": TxHash::repeat_byte(0xab).to_string(),
+                "solver": hex::encode_prefixed(Address::repeat_byte(0xcd).as_slice()),
+            })
+        );
+
+        let trade = Mismatch::TradeWrongTxHash {
+            log_index: 5,
+            order_uid: vec![1u8; 56].into(),
+            db_tx_hash: vec![2u8; 32].into(),
+            chain_tx_hash: TxHash::repeat_byte(3),
+        };
+        assert_eq!(
+            trade.json(7),
+            json!({
+                "block": 7,
+                "kind": "trade_wrong_tx_hash",
+                "log_index": 5,
+                "order_uid": hex::encode_prefixed([1u8; 56]),
+                "db_tx_hash": hex::encode_prefixed([2u8; 32]),
+                "chain_tx_hash": TxHash::repeat_byte(3).to_string(),
+            })
+        );
     }
 
     #[test]

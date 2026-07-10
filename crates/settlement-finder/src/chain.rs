@@ -1,7 +1,7 @@
 //! Fetching and decoding settlement contract logs from the chain.
 
 use {
-    alloy_primitives::{Address, B256, U256},
+    alloy_primitives::{Address, B256, TxHash, U256},
     alloy_provider::Provider,
     alloy_rpc_types::{Filter, FilterSet, Log},
     alloy_sol_types::{SolEvent, SolEventInterface},
@@ -316,7 +316,7 @@ pub struct ChainTrade {
 /// All events a settlement transaction emitted, in log order.
 pub struct SettlementTx {
     pub block: u64,
-    pub tx_hash: B256,
+    pub tx_hash: TxHash,
     pub tx_index: Option<u64>,
     pub settlements: Vec<(u64, Address)>,
     pub trades: Vec<ChainTrade>,
@@ -638,14 +638,14 @@ pub struct CanonicalTrade {
     pub sell_amount: U256,
     pub buy_amount: U256,
     pub fee_amount: U256,
-    pub tx_hash: B256,
+    pub tx_hash: TxHash,
 }
 
 pub struct CanonicalSettlement {
     pub block: u64,
     pub log_index: u64,
     pub solver: Address,
-    pub tx_hash: B256,
+    pub tx_hash: TxHash,
 }
 
 pub struct CanonicalInvalidation {
