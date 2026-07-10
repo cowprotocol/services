@@ -11,7 +11,14 @@
 
 use {
     crate::{
-        chain::{CanonicalEvents, SettlementSource, decode_canonical, fetch_logs, format_sources},
+        chain::{
+            CanonicalEvents,
+            SettlementSource,
+            decode_canonical,
+            fetch_logs,
+            format_sources,
+            validate_canonical_hashes,
+        },
         db::{db_settlements_by_tx, trades_have_tx_hash},
         orphans::{TradeReport, locate_orphans},
     },
@@ -96,6 +103,27 @@ fn plan_auction_restores(
     canonical: &CanonicalEvents,
     saved: &[SavedAuction],
 ) -> Vec<AuctionRestore> {
+    // Rank pairing assumes the DB rows' (block, log_index) order matches the
+    // canonical order of the tx's settlements — a fork can have swapped it, so
+    // flag txs where the pairing distributes non-identical auction data.
+    type AuctionData = (Option<i64>, Option<i64>);
+    let mut saved_by_tx: BTreeMap<&[u8], Vec<AuctionData>> = BTreeMap::new();
+    for row in saved {
+        saved_by_tx
+            .entry(row.tx_hash.as_slice())
+            .or_default()
+            .push((row.auction_id, row.solution_uid));
+    }
+    for (tx, data) in &saved_by_tx {
+        if data.len() > 1 && data.windows(2).any(|pair| pair[0] != pair[1]) {
+            tracing::warn!(
+                tx = %hex::encode_prefixed(tx),
+                "multiple settlements of this tx carry different auction data; rank-order \
+                 pairing may swap them, verify auction_id/solution_uid after the repair"
+            );
+        }
+    }
+
     let mut canonical_by_tx: BTreeMap<&[u8], Vec<(i64, i64)>> = BTreeMap::new();
     for settlement in &canonical.settlements {
         canonical_by_tx
@@ -210,36 +238,60 @@ async fn account_range(
             .get_transaction_receipt(hash)
             .await
             .context("could not fetch settlement tx receipt")?
-            .and_then(|receipt| receipt.block_number)
         {
-            None => tracing::warn!(
-                block = row.block_number,
-                log_index = row.log_index,
-                %tx,
-                "deleting a settlements row whose transaction is not on the canonical chain (fork \
-                 artifact)"
-            ),
-            Some(canonical_block) if (from..=to).contains(&canonical_block) => {
-                problems.push(format!(
-                    "settlements tx {tx} is canonically at block {canonical_block} inside the \
-                     range but missing from the fetched logs (RPC gap)"
-                ))
+            None => {
+                // A missing receipt is how a fork artifact looks, but also how
+                // a pruned or lagging node answers; only treat it as fork
+                // garbage when the node consistently knows nothing about the
+                // transaction either.
+                let tx_known = provider
+                    .get_transaction_by_hash(hash)
+                    .await
+                    .context("could not fetch settlement tx")?
+                    .is_some();
+                if tx_known {
+                    problems.push(format!(
+                        "settlements tx {tx} has no receipt although the node knows the \
+                         transaction; refusing to treat it as a fork artifact (inconsistent node)"
+                    ));
+                } else {
+                    tracing::warn!(
+                        block = row.block_number,
+                        log_index = row.log_index,
+                        %tx,
+                        "deleting a settlements row whose transaction is not on the canonical \
+                         chain (fork artifact)"
+                    );
+                }
             }
-            Some(canonical_block) if covered(intervals, canonical_block) => tracing::info!(
-                %tx,
-                canonical_block,
-                "settlements row will be re-created by the range covering its canonical block"
-            ),
-            Some(canonical_block) => problems.push(format!(
-                "settlements tx {tx} is canonically at block {canonical_block}, outside every \
-                 repair range; widen --window so the range includes it"
-            )),
+            Some(receipt) => match receipt.block_number {
+                None => problems.push(format!(
+                    "settlements tx {tx} has a receipt without a block number (still pending?); \
+                     refusing to delete it"
+                )),
+                Some(canonical_block) if (from..=to).contains(&canonical_block) => {
+                    problems.push(format!(
+                        "settlements tx {tx} is canonically at block {canonical_block} inside the \
+                         range but missing from the fetched logs (RPC gap)"
+                    ))
+                }
+                Some(canonical_block) if covered(intervals, canonical_block) => tracing::info!(
+                    %tx,
+                    canonical_block,
+                    "settlements row will be re-created by the range covering its canonical block"
+                ),
+                Some(canonical_block) => problems.push(format!(
+                    "settlements tx {tx} is canonically at block {canonical_block}, outside every \
+                     repair range; widen --window so the range includes it"
+                )),
+            },
         }
     }
 
     // Trades: each DB row must be re-created here or already have an identical
-    // copy outside the range (its canonical home, re-created by another range
-    // or never disturbed).
+    // copy outside every repair interval (its canonical home, never disturbed;
+    // a copy inside another interval would be deleted by that interval's own
+    // repair, so it cannot vouch for this one).
     let db_trades: Vec<DbTradeRow> = sqlx::query_as(
         "SELECT block_number, log_index, order_uid, sell_amount, buy_amount, fee_amount FROM \
          trades WHERE block_number BETWEEN $1 AND $2",
@@ -248,32 +300,73 @@ async fn account_range(
     .bind(to.cast_signed())
     .fetch_all(&mut *db)
     .await?;
+
+    // Count identical fills on each side: a plain any() lets one canonical
+    // trade vouch for several identical DB rows. A DB surplus is usually the
+    // fork dedup this command exists for, but it deserves a visible trace.
+    type FillKey<'a> = (&'a [u8], BigDecimal, BigDecimal, BigDecimal);
+    let mut canonical_fills: BTreeMap<FillKey, usize> = BTreeMap::new();
+    for t in &canonical.trades {
+        *canonical_fills
+            .entry((
+                t.order_uid.as_slice(),
+                u256_to_big_decimal(&t.sell_amount),
+                u256_to_big_decimal(&t.buy_amount),
+                u256_to_big_decimal(&t.fee_amount),
+            ))
+            .or_default() += 1;
+    }
+    let mut db_fills: BTreeMap<FillKey, usize> = BTreeMap::new();
     for row in &db_trades {
-        let reproduced = canonical.trades.iter().any(|t| {
-            t.order_uid == row.order_uid
-                && u256_to_big_decimal(&t.sell_amount) == row.sell_amount
-                && u256_to_big_decimal(&t.buy_amount) == row.buy_amount
-                && u256_to_big_decimal(&t.fee_amount) == row.fee_amount
-        });
+        *db_fills
+            .entry((
+                row.order_uid.as_slice(),
+                row.sell_amount.clone(),
+                row.buy_amount.clone(),
+                row.fee_amount.clone(),
+            ))
+            .or_default() += 1;
+    }
+    for (key, &db_count) in &db_fills {
+        let canonical_count = canonical_fills.get(key).copied().unwrap_or(0);
+        if db_count > canonical_count && canonical_count > 0 {
+            tracing::warn!(
+                order = %hex::encode_prefixed(key.0),
+                db_count,
+                canonical_count,
+                "deleting surplus identical fills of this order (fork copies not re-created)"
+            );
+        }
+    }
+
+    for row in &db_trades {
+        let reproduced = canonical_fills.contains_key(&(
+            row.order_uid.as_slice(),
+            row.sell_amount.clone(),
+            row.buy_amount.clone(),
+            row.fee_amount.clone(),
+        ));
         if reproduced {
             continue;
         }
-        let (copy_elsewhere,): (bool,) = sqlx::query_as(
-            "SELECT EXISTS (SELECT 1 FROM trades WHERE order_uid = $1 AND sell_amount = $2 AND \
-             buy_amount = $3 AND fee_amount = $4 AND block_number NOT BETWEEN $5 AND $6)",
+        let copies: Vec<(i64,)> = sqlx::query_as(
+            "SELECT block_number FROM trades WHERE order_uid = $1 AND sell_amount = $2 AND \
+             buy_amount = $3 AND fee_amount = $4",
         )
         .bind(row.order_uid.as_slice())
         .bind(&row.sell_amount)
         .bind(&row.buy_amount)
         .bind(&row.fee_amount)
-        .bind(from.cast_signed())
-        .bind(to.cast_signed())
-        .fetch_one(&mut *db)
+        .fetch_all(&mut *db)
         .await?;
-        if !copy_elsewhere {
+        let copy_preserved = copies
+            .iter()
+            .any(|&(block,)| u64::try_from(block).is_ok_and(|block| !covered(intervals, block)));
+        if !copy_preserved {
             problems.push(format!(
                 "trades row {}/{} (order {}) is not reproduced by the fetched logs and has no \
-                 copy outside the range; deleting it would lose the only record of this fill",
+                 copy outside the repair ranges; deleting it would lose the only record of this \
+                 fill",
                 row.block_number,
                 row.log_index,
                 hex::encode_prefixed(&row.order_uid)
@@ -517,7 +610,13 @@ async fn process_range(
         return Ok(RangeOutcome::Aborted);
     }
 
-    let canonical = decode_canonical(&fetch_logs(provider, sources, from, to).await?);
+    // These logs get written into the DB, so they must provably belong to the
+    // canonical chain: a node whose log index serves another block's logs
+    // under the queried number (observed on public Gnosis endpoints) would
+    // otherwise poison the very tables this command repairs.
+    let logs = fetch_logs(provider, sources, from, to).await?;
+    validate_canonical_hashes(provider, &logs).await?;
+    let canonical = decode_canonical(&logs);
     let located_in_range: Vec<(u64, B256, u64)> = located
         .iter()
         .copied()
