@@ -555,6 +555,18 @@ pub async fn verify_cmd(
     let mut blocks_scanned: u64 = 0;
     let mut truncated = false;
 
+    // Revalidation issues small, latency-sensitive requests (a block header, a
+    // single block's logs by hash). Give it its own connection so it is not
+    // starved by the large, multi-MB `getLogs` bodies the scan keeps in flight
+    // on the main provider: those share one HTTP/2 connection, and while
+    // `buffered` parks their bodies mid-stream the connection's flow-control
+    // window fills, stalling anything else multiplexed onto it (a small
+    // `eth_getBlockByNumber` that a fresh connection answers in ~0.1s then times
+    // out). A separate provider is a separate reqwest client, i.e. a separate
+    // connection.
+    let (revalidation_provider, _revalidation_wallet) =
+        ethrpc::alloy::unbuffered_provider(rpc_url, Some("settlement-finder revalidation"));
+
     // Chunk the range up front, then keep up to `concurrency` getLogs calls in
     // flight while the single-connection DB comparison consumes them in block
     // order. getLogs dominates the wall time, so overlapping its latency is the
@@ -660,7 +672,7 @@ pub async fn verify_cmd(
             );
             if !mismatches.is_empty() {
                 mismatches = revalidate_block(
-                    provider,
+                    &revalidation_provider,
                     sources,
                     block,
                     db_settlements,
