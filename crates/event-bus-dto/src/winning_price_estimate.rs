@@ -5,13 +5,12 @@ use {
 };
 
 /// Emitted once price-estimate competition has picked the winning estimate that
-/// becomes the official quote. Its job is correlation: the winning
-/// [`crate::PriceEstimateEvent`] of the same request is the one carrying the
-/// matching `query` and `estimator` under the same envelope `requestId`.
+/// becomes the official quote. Its job is correlation: among the
+/// [`crate::PriceEstimateEvent`]s emitted for the same request (one per
+/// competing estimator, all sharing the envelope `requestId`), the winning one
+/// is the one whose `estimator` matches this event.
 ///
-/// Like [`crate::PriceEstimateEvent`], one is emitted per competition run, so a
-/// single `/quote` that also derives native prices yields several — consumers
-/// pick the official quote's winner by matching `query` to the traded pair.
+/// Exactly one is emitted per quote competition.
 #[derive(Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WinningPriceEstimateEvent {

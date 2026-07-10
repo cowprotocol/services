@@ -31,11 +31,9 @@ use {
             wire::{
                 CommitmentLevel,
                 SubscribeRequest,
-                SubscribeRequestFilterAccounts,
                 SubscribeRequestFilterSlots,
                 SubscribeRequestFilterTransactions,
                 SubscribeUpdate,
-                SubscribeUpdateAccount,
                 SubscribeUpdateSlot,
                 SubscribeUpdateTransaction,
                 UpdateOneof,
@@ -82,9 +80,9 @@ where
     pub tx: Sender<StreamUpdate>,
 
     /// Latest chain slot seen on the slot filter. The ingester is the sole
-    /// writer. The `Arc` is taken from the caller so the watchdog and the
-    /// finalization worker can share it as a read handle once they are wired
-    /// up; neither reads it yet. Cold start is zero (`AtomicU64::default`).
+    /// writer. The `Arc` is taken from the caller so the finalization worker
+    /// can share it as a read handle once it is wired up; it doesn't read it
+    /// yet. Cold start is zero (`AtomicU64::default`).
     pub latest_chain_slot: Arc<AtomicU64>,
 }
 
@@ -94,8 +92,8 @@ where
 {
     /// Construct a new ingester over an already-open update stream. The caller
     /// supplies `latest_chain_slot` so it can share the same `Arc<AtomicU64>`
-    /// with the partial-event watchdog and the finalization worker, and reuse
-    /// it across restarts. The caller also owns building the stream, the
+    /// with the finalization worker, and reuse it across restarts. The caller
+    /// also owns building the stream, the
     /// subscription request, the resume slot, and the reconnect policy that
     /// come with it. Production wiring lives in [`Ingester::serve`].
     pub fn new(stream: S, tx: Sender<StreamUpdate>, latest_chain_slot: Arc<AtomicU64>) -> Self {
@@ -155,7 +153,6 @@ where
         };
         match update {
             UpdateOneof::Transaction(tx_msg) => Self::handle_transaction(tx, tx_msg).await,
-            UpdateOneof::Account(account) => Self::handle_account(tx, account).await,
             UpdateOneof::Slot(slot) => Self::handle_slot(latest_chain_slot, slot).await,
 
             // Ping/Pong frames carry no data the ingester needs; the library passes them through,
@@ -164,7 +161,8 @@ where
 
             // Not part of our subscription; irrelevant to the ingester even if the provider sends
             // them.
-            UpdateOneof::TransactionStatus(_)
+            UpdateOneof::Account(_)
+            | UpdateOneof::TransactionStatus(_)
             | UpdateOneof::Block(_)
             | UpdateOneof::BlockMeta(_)
             | UpdateOneof::Entry(_) => ControlFlow::Continue(()),
@@ -191,40 +189,6 @@ where
             StreamUpdate::Tx {
                 slot: Slot(tx_msg.slot),
                 signature,
-                inner: Box::new(inner),
-            },
-        )
-        .await
-    }
-
-    /// Forward an account update to the decoder, skipping frames without a
-    /// body.
-    #[tracing::instrument(skip_all, fields(slot = account.slot))]
-    async fn handle_account(
-        tx: &Sender<StreamUpdate>,
-        account: SubscribeUpdateAccount,
-    ) -> ControlFlow<()> {
-        let Some(inner) = account.account else {
-            tracing::warn!("account update without a body");
-            return ControlFlow::Continue(());
-        };
-        let txn_signature = match inner.txn_signature.as_deref() {
-            Some(bytes) => match Signature::try_from(bytes) {
-                Ok(signature) => Some(signature),
-                Err(_) => {
-                    tracing::warn!(
-                        "account update with a malformed txn_signature; forwarding without it"
-                    );
-                    None
-                }
-            },
-            None => None,
-        };
-        Self::forward(
-            tx,
-            StreamUpdate::Account {
-                slot: Slot(account.slot),
-                txn_signature,
                 inner: Box::new(inner),
             },
         )
@@ -293,8 +257,7 @@ impl Ingester<GeyserStream> {
     /// client is consumed and dropped with the ingester.
     ///
     /// `latest_chain_slot` is taken from the caller so the same `Arc` can be
-    /// shared with the watchdog and finalization worker and reused across
-    /// restarts.
+    /// shared with the finalization worker and reused across restarts.
     pub async fn serve(
         mut client: GeyserGrpcClient,
         tx: Sender<StreamUpdate>,
@@ -344,7 +307,7 @@ fn assert_serve_future_is_send(
     ));
 }
 
-/// The wire-level filter shape: the four named program filters and the
+/// The wire-level filter shape: the two named transaction filters and the
 /// `chain_tip` slot filter, multiplexed into a single subscription at
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
 /// [`Ingester::serve`] (watermark + 1, or `None` for the live tip).
@@ -369,10 +332,6 @@ fn subscribe_request(
         account_include: vec![program.to_string()],
         ..Default::default()
     };
-    let accounts = |program: Pubkey| SubscribeRequestFilterAccounts {
-        owner: vec![program.to_string()],
-        ..Default::default()
-    };
     SubscribeRequest {
         transactions: [
             (
@@ -380,11 +339,6 @@ fn subscribe_request(
                 transactions(settlement_program),
             ),
             ("sol_flow_txs".to_owned(), transactions(solflow_program)),
-        ]
-        .into(),
-        accounts: [
-            ("settlement_owned".to_owned(), accounts(settlement_program)),
-            ("sol_flow_owned".to_owned(), accounts(solflow_program)),
         ]
         .into(),
         slots: [(

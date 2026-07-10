@@ -6,14 +6,10 @@
 //! `solana-sdk` or `solana-message` because the upstream types carry raw
 //! `program_id_index: u8` values, while these views resolve that index
 //! against the reconstructed `account_keys` list and tag each instruction
-//! with its source (`is_inner`) and position (`ix_index`).
+//! with its position in the transaction.
 
 use {
-    crate::types::{
-        Signature,
-        slot::Slot,
-        wire::{SubscribeUpdateAccountInfo, TokenBalance},
-    },
+    crate::types::{Signature, slot::Slot, wire::TokenBalance},
     bytes::Bytes,
     solana_sdk::pubkey::Pubkey,
 };
@@ -28,16 +24,18 @@ pub(crate) struct ResolvedInstruction {
     pub data: Bytes,
     /// Account indices into the reconstructed account list.
     pub accounts: Vec<u8>,
-    /// Index of this instruction within the transaction (outer or
-    /// inner).
-    pub ix_index: u16,
-    /// `true` for CPIs (inner instructions).
-    pub is_inner: bool,
+    /// Top-level instruction index. For a CPI, the top-level instruction it
+    /// runs under.
+    pub instruction_index: u32,
+    /// Path to this instruction within the top-level instruction's CPI tree,
+    /// one sibling position per nesting level: empty for a top-level
+    /// instruction, `[0]` for its first CPI, `[0, 1]` for the second CPI made
+    /// by that first CPI. Reconstructed from `stack_height`.
+    pub inner_ix_path: Vec<u8>,
 }
 
-/// Per-decode-pass context: the reconstructed account list, the slot, the
-/// transaction signature, and (when both halves have arrived) the joined
-/// account-update snapshot.
+/// Per-decode-pass context: the reconstructed account list, the slot, and the
+/// transaction signature.
 #[derive(Debug, Clone)]
 pub(crate) struct TxContext {
     /// Slot the transaction was observed at.
@@ -52,6 +50,4 @@ pub(crate) struct TxContext {
     /// The SolFlow `OrderCreated` branch reads the wSOL balance on the
     /// custodial PDA here.
     pub post_token_balances: Vec<TokenBalance>,
-    /// Account-update snapshot, if both halves have arrived.
-    pub account_snapshot: Option<SubscribeUpdateAccountInfo>,
 }

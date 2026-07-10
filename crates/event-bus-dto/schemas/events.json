@@ -352,7 +352,7 @@
         "type": "object"
       },
       "WinningPriceEstimateEvent": {
-        "description": "Emitted once price-estimate competition has picked the winning estimate that\nbecomes the official quote. Its job is correlation: the winning\n[`crate::PriceEstimateEvent`] of the same request is the one carrying the\nmatching `query` and `estimator` under the same envelope `requestId`.\n\nLike [`crate::PriceEstimateEvent`], one is emitted per competition run, so a\nsingle `/quote` that also derives native prices yields several — consumers\npick the official quote's winner by matching `query` to the traded pair.",
+        "description": "Emitted once price-estimate competition has picked the winning estimate that\nbecomes the official quote. Its job is correlation: among the\n[`crate::PriceEstimateEvent`]s emitted for the same request (one per\ncompeting estimator, all sharing the envelope `requestId`), the winning one\nis the one whose `estimator` matches this event.\n\nExactly one is emitted per quote competition.",
         "properties": {
           "estimator": {
             "description": "Name of the estimator whose price estimate won the competition.",
