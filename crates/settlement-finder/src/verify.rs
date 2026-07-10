@@ -14,8 +14,10 @@ use {
             CanonicalSettlement,
             CanonicalTrade,
             SettlementSource,
+            canonical_block_hash,
             decode_canonical,
             fetch_logs,
+            fetch_logs_by_block_hash,
             format_sources,
         },
         db::{
@@ -26,7 +28,7 @@ use {
             table_stats,
             trades_have_tx_hash,
         },
-        progress::{ProgressStore, VerifyRun, network_name, save_report},
+        progress::{ProgressStore, VerifyRun, network_name, sanitize_rpc_url, save_report},
     },
     alloy_primitives::{Address, B256, U256, hex},
     alloy_provider::Provider,
@@ -64,6 +66,21 @@ pub enum Mismatch {
         db_tx_hash: Vec<u8>,
         chain_tx_hash: B256,
     },
+    /// DB and chain have the same settlement (by tx hash) in this block but at
+    /// different log indices. Reported as one finding instead of a
+    /// not-on-chain/missing pair so an index shift reads as what it is.
+    SettlementWrongLogIndex {
+        db_log_index: u64,
+        chain_log_index: u64,
+        tx_hash: Vec<u8>,
+    },
+    /// DB and chain both have this settlement at this log_index (same tx hash)
+    /// but the recorded solver differs.
+    SettlementSolverMismatch {
+        log_index: u64,
+        db_solver: Vec<u8>,
+        chain_solver: Address,
+    },
     /// A settlement present on both sides resolves a different number of trades
     /// in the DB than the chain emitted for it.
     TradeCountMismatch {
@@ -80,6 +97,19 @@ pub enum Mismatch {
     },
     /// A DB trade at a log_index the chain has no trade at (a mislocated fill).
     TradeMisplaced { log_index: u64, order_uid: Vec<u8> },
+    /// DB and chain have the same trade (by order uid and amounts) in this
+    /// block but at different log indices.
+    TradeWrongLogIndex {
+        db_log_index: u64,
+        chain_log_index: u64,
+        order_uid: Vec<u8>,
+    },
+    /// A chain trade at a log_index the DB has no trade at.
+    TradeMissing {
+        log_index: u64,
+        order_uid: Vec<u8>,
+        tx_hash: B256,
+    },
     /// DB and chain both have a trade at this log_index but the tx hash
     /// disagrees (the fill was adopted from another settlement).
     TradeWrongTxHash {
@@ -96,73 +126,14 @@ impl Mismatch {
             Self::SettlementNotOnChain { .. } => "settlement_not_on_chain",
             Self::SettlementMissing { .. } => "settlement_missing",
             Self::SettlementWrongTxHash { .. } => "settlement_wrong_tx_hash",
+            Self::SettlementWrongLogIndex { .. } => "settlement_wrong_log_index",
+            Self::SettlementSolverMismatch { .. } => "settlement_solver_mismatch",
             Self::TradeCountMismatch { .. } => "trade_count_mismatch",
             Self::TradeContentMismatch { .. } => "trade_content_mismatch",
             Self::TradeMisplaced { .. } => "trade_misplaced",
+            Self::TradeWrongLogIndex { .. } => "trade_wrong_log_index",
+            Self::TradeMissing { .. } => "trade_missing",
             Self::TradeWrongTxHash { .. } => "trade_wrong_tx_hash",
-        }
-    }
-
-    fn detail(&self) -> String {
-        match self {
-            Self::SettlementNotOnChain {
-                log_index,
-                tx_hash,
-                solver,
-            } => format!(
-                "log {log_index}: db settlement tx {} solver {} not on chain",
-                hex::encode_prefixed(tx_hash),
-                hex::encode_prefixed(solver),
-            ),
-            Self::SettlementMissing {
-                log_index,
-                tx_hash,
-                solver,
-            } => format!(
-                "log {log_index}: chain settlement tx {tx_hash} solver {solver} missing from db"
-            ),
-            Self::SettlementWrongTxHash {
-                log_index,
-                db_tx_hash,
-                chain_tx_hash,
-            } => format!(
-                "log {log_index}: settlement tx db {} != chain {chain_tx_hash}",
-                hex::encode_prefixed(db_tx_hash),
-            ),
-            Self::TradeCountMismatch {
-                settlement_log_index,
-                db_count,
-                chain_count,
-            } => format!(
-                "settlement log {settlement_log_index} resolves {db_count} db trades but chain \
-                 emitted {chain_count}"
-            ),
-            Self::TradeContentMismatch {
-                log_index,
-                order_uid,
-                diffs,
-            } => format!(
-                "log {log_index}: order {} {}",
-                hex::encode_prefixed(order_uid),
-                diffs.join("; ")
-            ),
-            Self::TradeMisplaced {
-                log_index,
-                order_uid,
-            } => format!(
-                "log {log_index}: db trade order {} has no chain trade there",
-                hex::encode_prefixed(order_uid)
-            ),
-            Self::TradeWrongTxHash {
-                log_index,
-                order_uid,
-                db_tx_hash,
-                chain_tx_hash,
-            } => format!(
-                "log {log_index}: trade order {} tx db {} != chain {chain_tx_hash}",
-                hex::encode_prefixed(order_uid),
-                hex::encode_prefixed(db_tx_hash),
-            ),
         }
     }
 
@@ -186,7 +157,10 @@ impl Mismatch {
             } => {
                 object.insert("log_index".into(), (*log_index).into());
                 object.insert("chain_tx_hash".into(), tx_hash.to_string().into());
-                object.insert("solver".into(), solver.to_string().into());
+                object.insert(
+                    "solver".into(),
+                    hex::encode_prefixed(solver.as_slice()).into(),
+                );
             }
             Self::SettlementWrongTxHash {
                 log_index,
@@ -196,6 +170,27 @@ impl Mismatch {
                 object.insert("log_index".into(), (*log_index).into());
                 object.insert("db_tx_hash".into(), hex::encode_prefixed(db_tx_hash).into());
                 object.insert("chain_tx_hash".into(), chain_tx_hash.to_string().into());
+            }
+            Self::SettlementWrongLogIndex {
+                db_log_index,
+                chain_log_index,
+                tx_hash,
+            } => {
+                object.insert("db_log_index".into(), (*db_log_index).into());
+                object.insert("chain_log_index".into(), (*chain_log_index).into());
+                object.insert("tx_hash".into(), hex::encode_prefixed(tx_hash).into());
+            }
+            Self::SettlementSolverMismatch {
+                log_index,
+                db_solver,
+                chain_solver,
+            } => {
+                object.insert("log_index".into(), (*log_index).into());
+                object.insert("db_solver".into(), hex::encode_prefixed(db_solver).into());
+                object.insert(
+                    "chain_solver".into(),
+                    hex::encode_prefixed(chain_solver.as_slice()).into(),
+                );
             }
             Self::TradeCountMismatch {
                 settlement_log_index,
@@ -224,6 +219,24 @@ impl Mismatch {
             } => {
                 object.insert("log_index".into(), (*log_index).into());
                 object.insert("order_uid".into(), hex::encode_prefixed(order_uid).into());
+            }
+            Self::TradeWrongLogIndex {
+                db_log_index,
+                chain_log_index,
+                order_uid,
+            } => {
+                object.insert("db_log_index".into(), (*db_log_index).into());
+                object.insert("chain_log_index".into(), (*chain_log_index).into());
+                object.insert("order_uid".into(), hex::encode_prefixed(order_uid).into());
+            }
+            Self::TradeMissing {
+                log_index,
+                order_uid,
+                tx_hash,
+            } => {
+                object.insert("log_index".into(), (*log_index).into());
+                object.insert("order_uid".into(), hex::encode_prefixed(order_uid).into());
+                object.insert("chain_tx_hash".into(), tx_hash.to_string().into());
             }
             Self::TradeWrongTxHash {
                 log_index,
@@ -304,13 +317,34 @@ fn compare_block(
         .map(|s| (s.log_index.cast_unsigned(), *s))
         .collect();
 
+    // Chain settlements paired to an unmatched DB settlement by tx hash, so a
+    // log-index shift is reported once as such rather than as an alarming
+    // not-on-chain/missing pair.
+    let mut claimed_settlements: BTreeSet<u64> = BTreeSet::new();
     for (&log_index, db) in &db_settle {
         match chain_settle.get(&log_index) {
-            None => mismatches.push(Mismatch::SettlementNotOnChain {
-                log_index,
-                tx_hash: db.tx_hash.clone(),
-                solver: db.solver.clone(),
-            }),
+            None => {
+                let moved = chain_settle.iter().find(|(chain_index, chain)| {
+                    !db_settle.contains_key(chain_index)
+                        && !claimed_settlements.contains(chain_index)
+                        && chain.tx_hash.as_slice() == db.tx_hash.as_slice()
+                });
+                match moved {
+                    Some((&chain_log_index, _)) => {
+                        claimed_settlements.insert(chain_log_index);
+                        mismatches.push(Mismatch::SettlementWrongLogIndex {
+                            db_log_index: log_index,
+                            chain_log_index,
+                            tx_hash: db.tx_hash.clone(),
+                        });
+                    }
+                    None => mismatches.push(Mismatch::SettlementNotOnChain {
+                        log_index,
+                        tx_hash: db.tx_hash.clone(),
+                        solver: db.solver.clone(),
+                    }),
+                }
+            }
             Some(chain) if db.tx_hash.as_slice() != chain.tx_hash.as_slice() => {
                 mismatches.push(Mismatch::SettlementWrongTxHash {
                     log_index,
@@ -318,11 +352,18 @@ fn compare_block(
                     chain_tx_hash: chain.tx_hash,
                 });
             }
+            Some(chain) if db.solver.as_slice() != chain.solver.as_slice() => {
+                mismatches.push(Mismatch::SettlementSolverMismatch {
+                    log_index,
+                    db_solver: db.solver.clone(),
+                    chain_solver: chain.solver,
+                });
+            }
             Some(_) => {}
         }
     }
     for (&log_index, chain) in &chain_settle {
-        if !db_settle.contains_key(&log_index) {
+        if !db_settle.contains_key(&log_index) && !claimed_settlements.contains(&log_index) {
             mismatches.push(Mismatch::SettlementMissing {
                 log_index,
                 tx_hash: chain.tx_hash,
@@ -331,16 +372,39 @@ fn compare_block(
         }
     }
 
-    // Trades, keyed by log_index.
+    // Trades, keyed by log_index, with the same moved-within-the-block pairing
+    // (by order uid and amounts) as settlements.
     let chain_trade: BTreeMap<u64, &CanonicalTrade> =
         chain_trades.iter().map(|t| (t.log_index, *t)).collect();
+    let db_trade_indices: BTreeSet<u64> = db_trades
+        .iter()
+        .map(|t| t.log_index.cast_unsigned())
+        .collect();
+    let mut claimed_trades: BTreeSet<u64> = BTreeSet::new();
     for db in db_trades {
         let log_index = db.log_index.cast_unsigned();
         match chain_trade.get(&log_index) {
-            None => mismatches.push(Mismatch::TradeMisplaced {
-                log_index,
-                order_uid: db.order_uid.clone(),
-            }),
+            None => {
+                let moved = chain_trade.iter().find(|(chain_index, chain)| {
+                    !db_trade_indices.contains(chain_index)
+                        && !claimed_trades.contains(chain_index)
+                        && trade_content_diffs(db, chain).is_empty()
+                });
+                match moved {
+                    Some((&chain_log_index, _)) => {
+                        claimed_trades.insert(chain_log_index);
+                        mismatches.push(Mismatch::TradeWrongLogIndex {
+                            db_log_index: log_index,
+                            chain_log_index,
+                            order_uid: db.order_uid.clone(),
+                        });
+                    }
+                    None => mismatches.push(Mismatch::TradeMisplaced {
+                        log_index,
+                        order_uid: db.order_uid.clone(),
+                    }),
+                }
+            }
             Some(chain) => {
                 let diffs = trade_content_diffs(db, chain);
                 if !diffs.is_empty() {
@@ -361,6 +425,15 @@ fn compare_block(
                     });
                 }
             }
+        }
+    }
+    for (&log_index, chain) in &chain_trade {
+        if !db_trade_indices.contains(&log_index) && !claimed_trades.contains(&log_index) {
+            mismatches.push(Mismatch::TradeMissing {
+                log_index,
+                order_uid: chain.order_uid.clone(),
+                tx_hash: chain.tx_hash,
+            });
         }
     }
 
@@ -393,11 +466,64 @@ fn compare_block(
     mismatches
 }
 
+/// Re-checks a mismatching block against a blockHash-pinned getLogs query
+/// (EIP-234) before reporting it. A node's block-number log index can serve
+/// another block's logs under the queried number — observed on public Gnosis
+/// endpoints as shifted log indices producing mass false mismatches — while
+/// the same node answers correctly when asked by hash, so mismatches that
+/// vanish here were RPC artifacts, not DB damage. Falls back to the
+/// unvalidated mismatches (with a warning) if the re-check itself fails.
+async fn revalidate_block(
+    provider: &impl Provider,
+    sources: &[SettlementSource],
+    block: u64,
+    db_settlements: &[&DbSettlementInRange],
+    db_trades: &[&DbTradeInRange],
+    unvalidated: Vec<Mismatch>,
+) -> Vec<Mismatch> {
+    let recheck = async {
+        let hash = canonical_block_hash(provider, block)
+            .await?
+            .with_context(|| format!("node has no block {block}"))?;
+        let logs = fetch_logs_by_block_hash(provider, sources, block, hash).await?;
+        let canonical = decode_canonical(&logs);
+        anyhow::Ok(compare_block(
+            &canonical.settlements.iter().collect::<Vec<_>>(),
+            &canonical.trades.iter().collect::<Vec<_>>(),
+            db_settlements,
+            db_trades,
+        ))
+    };
+    match recheck.await {
+        Ok(confirmed) => {
+            if confirmed.len() != unvalidated.len() {
+                tracing::warn!(
+                    block,
+                    unvalidated = unvalidated.len(),
+                    confirmed = confirmed.len(),
+                    "range getLogs and blockHash getLogs disagree; the node's block-number log \
+                     index is unreliable, trusting the blockHash view"
+                );
+            }
+            confirmed
+        }
+        Err(err) => {
+            tracing::warn!(
+                block,
+                ?err,
+                "could not re-check the block by hash; reporting the unvalidated mismatches"
+            );
+            unvalidated
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn verify_cmd(
     provider: &impl Provider,
     sources: &[SettlementSource],
     chain_id: u64,
+    rpc_url: &str,
     db_url: &str,
     from_block: Option<u64>,
     to_block: Option<u64>,
@@ -405,12 +531,15 @@ pub async fn verify_cmd(
     concurrency: usize,
     max_mismatch_blocks: u64,
     finality: u64,
-    json: bool,
     report_dir: &Path,
     progress_db: &Path,
 ) -> Result<()> {
     anyhow::ensure!(chunk > 0, "--chunk must be positive");
     anyhow::ensure!(concurrency > 0, "--concurrency must be positive");
+    anyhow::ensure!(
+        max_mismatch_blocks > 0,
+        "--max-mismatch-blocks must be positive"
+    );
 
     let head = provider
         .get_block_number()
@@ -421,6 +550,10 @@ pub async fn verify_cmd(
     let mut db = PgConnection::connect(db_url)
         .await
         .context("could not connect to database")?;
+
+    // Opened up front so the recorded high-water mark can seed the default
+    // --from-block below; reused at the end to record this run.
+    let mut store = ProgressStore::open(progress_db).await?;
 
     // Resolve the range, defaulting to the block span of the indexed tables so
     // that omitting both bounds scans the whole database.
@@ -436,8 +569,27 @@ pub async fn verify_cmd(
 
     let from_block = match from_block {
         Some(from) => from,
-        None => u64::try_from(db_min.context("database has no trades or settlements to verify")?)
-            .context("negative block number in database")?,
+        None => {
+            let db_min =
+                u64::try_from(db_min.context("database has no trades or settlements to verify")?)
+                    .context("negative block number in database")?;
+            // Resume after the last block verified for this (network, db), so a
+            // re-run continues where the previous one left off instead of
+            // rescanning the whole history. Never start below db_min.
+            match store.verified_to_block(chain_id, db_url).await? {
+                Some(last) if last + 1 > db_min => {
+                    let resume = last + 1;
+                    tracing::info!(
+                        resume,
+                        last_verified = last,
+                        "resuming after the last verified block recorded for this network and \
+                         database (pass --from-block to override)"
+                    );
+                    resume
+                }
+                _ => db_min,
+            }
+        }
     };
     let to_block = match to_block {
         Some(to) => {
@@ -468,8 +620,9 @@ pub async fn verify_cmd(
     };
     anyhow::ensure!(
         from_block <= to_block,
-        "resolved range is empty: --from-block {from_block} is above --to-block {to_block} (the \
-         indexed history may lie entirely within the unfinalized head)"
+        "resolved range is empty: --from-block {from_block} is above --to-block {to_block} (this \
+         network and database may already be verified up to the finalized head, or the indexed \
+         history may lie entirely within the unfinalized head)"
     );
 
     let have_tx_hash = trades_have_tx_hash(&mut db).await?;
@@ -491,6 +644,7 @@ pub async fn verify_cmd(
         "verifying db against chain"
     );
 
+    let total_blocks = to_block - from_block + 1;
     let mut reports: Vec<BlockReport> = Vec::new();
     let mut blocks_scanned: u64 = 0;
     let mut truncated = false;
@@ -513,10 +667,45 @@ pub async fn verify_cmd(
     .buffered(concurrency);
 
     while let Some((chunk_from, chunk_to, logs)) = fetches.next().await {
-        tracing::info!(from = chunk_from, to = chunk_to, "verified chunk");
-        let canonical = decode_canonical(&logs?);
-        let db_settlements = db_settlements_in_range(&mut db, chunk_from, chunk_to).await?;
-        let db_trades = db_trades_in_range(&mut db, chunk_from, chunk_to, have_tx_hash).await?;
+        // A chunk that failed even after retries must not discard the hours of
+        // work before it: stop early, save the partial report and keep the
+        // progress high-water mark where it is (truncated runs don't advance).
+        let logs = match logs {
+            Ok(logs) => logs,
+            Err(err) => {
+                tracing::error!(
+                    from = chunk_from,
+                    to = chunk_to,
+                    ?err,
+                    "chunk failed after retries; stopping the scan early and saving partial \
+                     results"
+                );
+                truncated = true;
+                break;
+            }
+        };
+        let canonical = decode_canonical(&logs);
+        // A mid-scan DB error is treated like a failed chunk: stop and save what
+        // was compared so far rather than discarding the whole run.
+        let db_events = async {
+            let settlements = db_settlements_in_range(&mut db, chunk_from, chunk_to).await?;
+            let trades = db_trades_in_range(&mut db, chunk_from, chunk_to, have_tx_hash).await?;
+            anyhow::Ok((settlements, trades))
+        }
+        .await;
+        let (db_settlements, db_trades) = match db_events {
+            Ok(events) => events,
+            Err(err) => {
+                tracing::error!(
+                    from = chunk_from,
+                    to = chunk_to,
+                    ?err,
+                    "db query failed; stopping the scan early and saving partial results"
+                );
+                truncated = true;
+                break;
+            }
+        };
 
         // Group each side by block. All four inputs are already sorted by
         // (block, log_index).
@@ -555,20 +744,41 @@ pub async fn verify_cmd(
             let empty_trade_c: Vec<&CanonicalTrade> = Vec::new();
             let empty_settle_d: Vec<&DbSettlementInRange> = Vec::new();
             let empty_trade_d: Vec<&DbTradeInRange> = Vec::new();
-            let mismatches = compare_block(
+            let db_settlements = db_settle_by_block.get(&block).unwrap_or(&empty_settle_d);
+            let db_trades = db_trade_by_block.get(&block).unwrap_or(&empty_trade_d);
+            let mut mismatches = compare_block(
                 chain_settle_by_block.get(&block).unwrap_or(&empty_settle_c),
                 chain_trade_by_block.get(&block).unwrap_or(&empty_trade_c),
-                db_settle_by_block.get(&block).unwrap_or(&empty_settle_d),
-                db_trade_by_block.get(&block).unwrap_or(&empty_trade_d),
+                db_settlements,
+                db_trades,
             );
+            if !mismatches.is_empty() {
+                mismatches = revalidate_block(
+                    provider,
+                    sources,
+                    block,
+                    db_settlements,
+                    db_trades,
+                    mismatches,
+                )
+                .await;
+            }
             if !mismatches.is_empty() {
                 reports.push(BlockReport { block, mismatches });
             }
         }
 
         blocks_scanned += chunk_to - chunk_from + 1;
+        tracing::info!(
+            through_block = chunk_to,
+            blocks_scanned,
+            total_blocks,
+            percent = blocks_scanned * 100 / total_blocks,
+            mismatch_blocks = reports.len(),
+            "scan progress"
+        );
 
-        if reports.len() as u64 > max_mismatch_blocks {
+        if reports.len() as u64 >= max_mismatch_blocks {
             tracing::error!(
                 mismatch_blocks = reports.len(),
                 max_mismatch_blocks,
@@ -590,12 +800,17 @@ pub async fn verify_cmd(
     let total: usize = by_kind.values().sum();
 
     let network = network_name(chain_id);
+    let rpc = sanitize_rpc_url(rpc_url);
     let doc = json!({
         "network": network,
         "chain_id": chain_id,
+        "rpc": rpc,
         "contracts": sources.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "from": from_block,
         "to": to_block,
+        // Scanning proceeds in block order, so a truncated run has still
+        // covered everything up to here.
+        "scanned_through": (blocks_scanned > 0).then(|| from_block + blocks_scanned - 1),
         "blocks_scanned": blocks_scanned,
         "truncated": truncated,
         "mismatches": reports.iter().flat_map(|r| {
@@ -608,46 +823,17 @@ pub async fn verify_cmd(
         },
     });
 
-    if json {
-        println!("{}", serde_json::to_string_pretty(&doc)?);
-    } else if reports.is_empty() {
-        println!(
-            "no mismatches in blocks {from_block}..={to_block} ({blocks_scanned} scanned); the db \
-             matches the chain over this range"
-        );
-    } else {
-        println!("{:<12}  {:<24}  detail", "block", "kind");
-        println!("{}  {}  {}", "-".repeat(12), "-".repeat(24), "-".repeat(6));
-        for report in &reports {
-            for mismatch in &report.mismatches {
-                println!(
-                    "{:<12}  {:<24}  {}",
-                    report.block,
-                    mismatch.kind(),
-                    mismatch.detail()
-                );
-            }
-        }
-        println!(
-            "\nsummary: {total} mismatches across {} blocks (scanned {blocks_scanned} of \
-             {from_block}..={to_block})",
-            reports.len()
-        );
-        for (kind, count) in &by_kind {
-            println!("  {kind}: {count}");
-        }
-    }
-
-    // Persist the report to disk and advance this environment's progress before
-    // the mismatch exit below, so a failed verification is still recorded.
+    // Always persist the report and progress first — before the stdout
+    // formatting below and before the mismatch exit — so the run is recorded no
+    // matter how it ends (clean, mismatched, or stopped early).
     let report_path = save_report(report_dir, &network, &doc)?;
     tracing::info!(path = %report_path.display(), "saved report");
 
-    let mut store = ProgressStore::open(progress_db).await?;
     store
         .record_run(&VerifyRun {
             network,
             chain_id,
+            rpc_url: rpc,
             db_url: db_url.to_owned(),
             from_block,
             to_block,
@@ -659,6 +845,8 @@ pub async fn verify_cmd(
         })
         .await?;
     tracing::info!(path = %progress_db.display(), "recorded progress");
+
+    println!("{}", serde_json::to_string_pretty(&doc)?);
 
     tracing::info!(
         from_block,
@@ -674,4 +862,137 @@ pub async fn verify_cmd(
         std::process::exit(1);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chain_settlement(log_index: u64, tx: u8, solver: u8) -> CanonicalSettlement {
+        CanonicalSettlement {
+            block: 1,
+            log_index,
+            solver: Address::repeat_byte(solver),
+            tx_hash: B256::repeat_byte(tx),
+        }
+    }
+
+    fn db_settlement(log_index: i64, tx: u8, solver: u8) -> DbSettlementInRange {
+        DbSettlementInRange {
+            block_number: 1,
+            log_index,
+            solver: Address::repeat_byte(solver).as_slice().to_vec(),
+            tx_hash: B256::repeat_byte(tx).to_vec(),
+        }
+    }
+
+    fn chain_trade(log_index: u64, uid: u8, tx: u8) -> CanonicalTrade {
+        CanonicalTrade {
+            block: 1,
+            log_index,
+            order_uid: vec![uid; 56],
+            sell_amount: U256::from(1),
+            buy_amount: U256::from(2),
+            fee_amount: U256::from(3),
+            tx_hash: B256::repeat_byte(tx),
+        }
+    }
+
+    fn db_trade(log_index: i64, uid: u8, tx: u8) -> DbTradeInRange {
+        DbTradeInRange {
+            block_number: 1,
+            log_index,
+            order_uid: vec![uid; 56],
+            sell_amount: u256_to_big_decimal(&U256::from(1)),
+            buy_amount: u256_to_big_decimal(&U256::from(2)),
+            fee_amount: u256_to_big_decimal(&U256::from(3)),
+            tx_hash: Some(B256::repeat_byte(tx).to_vec()),
+        }
+    }
+
+    fn compare(
+        chain_settlements: &[CanonicalSettlement],
+        chain_trades: &[CanonicalTrade],
+        db_settlements: &[DbSettlementInRange],
+        db_trades: &[DbTradeInRange],
+    ) -> Vec<&'static str> {
+        compare_block(
+            &chain_settlements.iter().collect::<Vec<_>>(),
+            &chain_trades.iter().collect::<Vec<_>>(),
+            &db_settlements.iter().collect::<Vec<_>>(),
+            &db_trades.iter().collect::<Vec<_>>(),
+        )
+        .iter()
+        .map(Mismatch::kind)
+        .collect()
+    }
+
+    #[test]
+    fn matching_block_has_no_mismatches() {
+        let kinds = compare(
+            &[chain_settlement(10, 1, 1)],
+            &[chain_trade(8, 7, 1), chain_trade(9, 8, 1)],
+            &[db_settlement(10, 1, 1)],
+            &[db_trade(8, 7, 1), db_trade(9, 8, 1)],
+        );
+        assert!(kinds.is_empty(), "{kinds:?}");
+    }
+
+    #[test]
+    fn index_shift_pairs_by_identity_instead_of_alarming() {
+        // The same settlement and trades, with the chain view 20 log indices
+        // lower — the exact shape a corrupt block-number log index produced on
+        // Gnosis (db 138/91/92 vs chain 118/71/72). Keyed matching alone would
+        // report five mismatches (not-on-chain + missing + 2x misplaced + the
+        // trades missing); identity pairing reports the three real movements.
+        let kinds = compare(
+            &[chain_settlement(118, 1, 1)],
+            &[chain_trade(71, 7, 1), chain_trade(72, 8, 1)],
+            &[db_settlement(138, 1, 1)],
+            &[db_trade(91, 7, 1), db_trade(92, 8, 1)],
+        );
+        assert_eq!(
+            kinds,
+            vec![
+                "settlement_wrong_log_index",
+                "trade_wrong_log_index",
+                "trade_wrong_log_index",
+            ],
+        );
+    }
+
+    #[test]
+    fn solver_mismatch_is_reported() {
+        let kinds = compare(
+            &[chain_settlement(10, 1, 1)],
+            &[],
+            &[db_settlement(10, 1, 2)],
+            &[],
+        );
+        assert_eq!(kinds, vec!["settlement_solver_mismatch"]);
+    }
+
+    #[test]
+    fn chain_trade_absent_from_db_is_reported() {
+        let kinds = compare(
+            &[chain_settlement(10, 1, 1)],
+            &[chain_trade(8, 7, 1), chain_trade(9, 8, 1)],
+            &[db_settlement(10, 1, 1)],
+            &[db_trade(8, 7, 1)],
+        );
+        assert_eq!(kinds, vec!["trade_missing", "trade_count_mismatch"]);
+    }
+
+    #[test]
+    fn unrelated_settlements_still_report_as_a_pair() {
+        // Different tx hashes: this is not a shift, so the classic pair is
+        // correct.
+        let kinds = compare(
+            &[chain_settlement(10, 1, 1)],
+            &[],
+            &[db_settlement(20, 2, 1)],
+            &[],
+        );
+        assert_eq!(kinds, vec!["settlement_not_on_chain", "settlement_missing"]);
+    }
 }
