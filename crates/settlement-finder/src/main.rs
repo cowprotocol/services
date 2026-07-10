@@ -69,10 +69,6 @@ enum Command {
         #[arg(long, default_value_t = 25)]
         window: u64,
 
-        /// Print results as a JSON document on stdout.
-        #[arg(long)]
-        json: bool,
-
         #[command(flatten)]
         filter: FilterArgs,
     },
@@ -100,10 +96,6 @@ enum Command {
         /// have orphaned trades (guards against an empty or wrong database).
         #[arg(long, default_value_t = 1000)]
         max_orphan_blocks: u64,
-
-        /// Print results as a JSON document on stdout.
-        #[arg(long)]
-        json: bool,
     },
     /// Re-index the block ranges around orphaned trades from canonical chain
     /// data: for every uniquely located trade (see check) the range spanning
@@ -153,9 +145,10 @@ enum Command {
         #[arg(long, env = "DB_URL")]
         db: String,
 
-        /// First block of the range to check (inclusive). Defaults to the
-        /// lowest block present in the trades/settlements tables, i.e. scans
-        /// from the start of the indexed history.
+        /// First block of the range to check (inclusive). Defaults to resuming
+        /// after the last block verified for this (network, database) as
+        /// recorded in the progress database, or the lowest block present in
+        /// the trades/settlements tables if there is no prior run.
         #[arg(long)]
         from_block: Option<u64>,
 
@@ -188,10 +181,6 @@ enum Command {
         #[arg(long, default_value_t = 64)]
         finality: u64,
 
-        /// Print results as a JSON document on stdout.
-        #[arg(long)]
-        json: bool,
-
         /// Directory to save the final JSON report in. The file is named
         /// `<network>_<timestamp>.json`. Created if it does not exist.
         #[arg(long, default_value = "reports")]
@@ -213,10 +202,6 @@ enum Command {
         /// Postgres connection string of the database to inspect.
         #[arg(long, env = "DB_URL")]
         db: String,
-
-        /// Print results as a JSON document on stdout.
-        #[arg(long)]
-        json: bool,
     },
     /// Backfill trades.tx_hash (introduced in migration V112) for rows
     /// indexed before the column existed, from the settlements table. Runs in
@@ -254,7 +239,7 @@ async fn main() -> Result<()> {
 
     // The DB-only commands do not need a chain connection.
     match args.command {
-        Command::Stats { db, json } => return stats_cmd(&db, json).await,
+        Command::Stats { db } => return stats_cmd(&db).await,
         Command::Backfill {
             db,
             batch_size,
@@ -289,26 +274,13 @@ async fn main() -> Result<()> {
         Command::Block {
             block,
             window,
-            json,
             filter,
-        } => block_cmd(&provider, sources, chain_id, block, window, &filter, json).await,
+        } => block_cmd(&provider, sources, chain_id, block, window, &filter).await,
         Command::Check {
             db,
             window,
             max_orphan_blocks,
-            json,
-        } => {
-            check_cmd(
-                &provider,
-                sources,
-                chain_id,
-                &db,
-                window,
-                max_orphan_blocks,
-                json,
-            )
-            .await
-        }
+        } => check_cmd(&provider, sources, chain_id, &db, window, max_orphan_blocks).await,
         Command::Repair {
             db,
             window,
@@ -336,7 +308,6 @@ async fn main() -> Result<()> {
             concurrency,
             max_mismatch_blocks,
             finality,
-            json,
             report_dir,
             progress_db,
         } => {
@@ -344,6 +315,7 @@ async fn main() -> Result<()> {
                 &provider,
                 sources,
                 chain_id,
+                &rpc_url,
                 &db,
                 from_block,
                 to_block,
@@ -351,7 +323,6 @@ async fn main() -> Result<()> {
                 concurrency,
                 max_mismatch_blocks,
                 finality,
-                json,
                 &report_dir,
                 &progress_db,
             )

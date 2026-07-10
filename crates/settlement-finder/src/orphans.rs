@@ -94,13 +94,6 @@ impl TradeReport {
             _ => "ambiguous",
         }
     }
-
-    pub fn order_note(&self) -> &'static str {
-        match self.trade.sell_token {
-            Some(_) => "",
-            None => "order not in orders/jit_orders; matched on uid and amounts only",
-        }
-    }
 }
 
 /// Finds all orphaned DB trades and locates them on-chain. Aborts before any

@@ -70,7 +70,7 @@ struct Stats {
     last_unmatched_settlement_block: Option<i64>,
 }
 
-pub async fn stats_cmd(db_url: &str, json: bool) -> Result<()> {
+pub async fn stats_cmd(db_url: &str) -> Result<()> {
     let mut db = PgConnection::connect(db_url)
         .await
         .context("could not connect to database")?;
@@ -85,68 +85,22 @@ pub async fn stats_cmd(db_url: &str, json: bool) -> Result<()> {
         .await
         .context("could not query association stats")?;
 
-    if json {
-        let doc = json!({
-            "trades": table_stats.trades,
-            "settlements": table_stats.settlements,
-            "min_trade_block": table_stats.min_trade_block,
-            "max_trade_block": table_stats.max_trade_block,
-            "min_settlement_block": table_stats.min_settlement_block,
-            "max_settlement_block": table_stats.max_settlement_block,
-            "trades_without_settlement": stats.trades_without_settlement,
-            "first_unmatched_trade_block": stats.first_unmatched_trade_block,
-            "last_unmatched_trade_block": stats.last_unmatched_trade_block,
-            "settlements_without_trades": stats.settlements_without_trades,
-            "first_unmatched_settlement_block": stats.first_unmatched_settlement_block,
-            "last_unmatched_settlement_block": stats.last_unmatched_settlement_block,
-        });
-        println!("{}", serde_json::to_string_pretty(&doc)?);
-    } else {
-        let range = |first: Option<i64>, last: Option<i64>| match (first, last) {
-            (Some(first), Some(last)) => format!("{first} .. {last}"),
-            _ => "-".to_string(),
-        };
-        println!("{:<28}  {:>12}  blocks", "metric", "count");
-        println!(
-            "{:<28}  {:>12}  {}",
-            "-".repeat(28),
-            "-".repeat(12),
-            "-".repeat(16)
-        );
-        println!(
-            "{:<28}  {:>12}  {}",
-            "trades",
-            table_stats.trades,
-            range(table_stats.min_trade_block, table_stats.max_trade_block)
-        );
-        println!(
-            "{:<28}  {:>12}  {}",
-            "settlements",
-            table_stats.settlements,
-            range(
-                table_stats.min_settlement_block,
-                table_stats.max_settlement_block
-            )
-        );
-        println!(
-            "{:<28}  {:>12}  {}",
-            "trades_without_settlement",
-            stats.trades_without_settlement,
-            range(
-                stats.first_unmatched_trade_block,
-                stats.last_unmatched_trade_block
-            )
-        );
-        println!(
-            "{:<28}  {:>12}  {}",
-            "settlements_without_trades",
-            stats.settlements_without_trades,
-            range(
-                stats.first_unmatched_settlement_block,
-                stats.last_unmatched_settlement_block
-            )
-        );
-    }
+    let doc = json!({
+        "trades": table_stats.trades,
+        "settlements": table_stats.settlements,
+        "min_trade_block": table_stats.min_trade_block,
+        "max_trade_block": table_stats.max_trade_block,
+        "min_settlement_block": table_stats.min_settlement_block,
+        "max_settlement_block": table_stats.max_settlement_block,
+        "trades_without_settlement": stats.trades_without_settlement,
+        "first_unmatched_trade_block": stats.first_unmatched_trade_block,
+        "last_unmatched_trade_block": stats.last_unmatched_trade_block,
+        "settlements_without_trades": stats.settlements_without_trades,
+        "first_unmatched_settlement_block": stats.first_unmatched_settlement_block,
+        "last_unmatched_settlement_block": stats.last_unmatched_settlement_block,
+    });
+    println!("{}", serde_json::to_string_pretty(&doc)?);
+
     if stats.settlements_without_trades > 0 {
         tracing::info!(
             "settlements without trades are not necessarily indexing gaps: settle() calls with an \
