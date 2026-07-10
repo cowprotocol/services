@@ -6,7 +6,7 @@ use {
             self,
             settlement::{SettlementEvent, TradeEvent, transaction::EncodedTrade},
         },
-        infra::persistence::dto::{AuctionId, RawAuctionData},
+        infra::persistence::dto::RawAuctionData,
     },
     ::winner_selection::state::RankedItem,
     alloy::primitives::B256,
@@ -258,24 +258,6 @@ impl Persistence {
         .await?;
 
         Ok(ex.commit().await?)
-    }
-
-    /// Saves the surplus capturing jit order owners to the DB
-    pub async fn save_surplus_capturing_jit_order_owners(
-        &self,
-        auction_id: AuctionId,
-        surplus_capturing_jit_order_owners: &[eth::Address],
-    ) -> Result<(), DatabaseError> {
-        self.postgres
-            .save_surplus_capturing_jit_order_owners(
-                auction_id,
-                &surplus_capturing_jit_order_owners
-                    .iter()
-                    .map(|address| ByteArray(address.0.into()))
-                    .collect::<Vec<_>>(),
-            )
-            .await
-            .map_err(DatabaseError)
     }
 
     /// Inserts an order event for each order uid in the given set.
