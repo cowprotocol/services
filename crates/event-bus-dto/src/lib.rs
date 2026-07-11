@@ -14,6 +14,7 @@ pub mod price_estimate;
 pub mod query;
 pub mod quote_computed;
 pub mod quote_requested;
+pub mod winning_price_estimate;
 
 pub use {
     envelope::{ENVELOPE_VERSION, Envelope},
@@ -21,6 +22,7 @@ pub use {
     query::{OrderKind, QueryFields},
     quote_computed::QuoteComputedEvent,
     quote_requested::QuoteRequestedEvent,
+    winning_price_estimate::WinningPriceEstimateEvent,
 };
 use {schemars::JsonSchema, serde::Serialize};
 
@@ -48,5 +50,10 @@ macro_rules! event_schemas {
 /// CLI and any other place that needs to enumerate the full set of events
 /// (e.g. tests that pin the wire format).
 pub fn schemas() -> Vec<(&'static str, schemars::Schema)> {
-    event_schemas![PriceEstimateEvent, QuoteRequestedEvent, QuoteComputedEvent]
+    event_schemas![
+        PriceEstimateEvent,
+        QuoteRequestedEvent,
+        QuoteComputedEvent,
+        WinningPriceEstimateEvent
+    ]
 }
