@@ -2,12 +2,7 @@ use {
     crate::domain::competition::Score,
     alloy::primitives::{Address, U256},
     anyhow::Context,
-    database::{
-        auction::AuctionId,
-        auction_prices::AuctionPrice,
-        byte_array::ByteArray,
-        surplus_capturing_jit_order_owners,
-    },
+    database::{auction::AuctionId, auction_prices::AuctionPrice, byte_array::ByteArray},
     derive_more::Debug,
     model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
@@ -84,23 +79,5 @@ impl super::Postgres {
             .context("solver_competition::save")?;
 
         ex.commit().await.context("commit")
-    }
-
-    /// Saves the surplus capturing jit order owners to the DB
-    pub async fn save_surplus_capturing_jit_order_owners(
-        &self,
-        auction_id: AuctionId,
-        surplus_capturing_jit_order_owners: &[database::Address],
-    ) -> anyhow::Result<()> {
-        let mut ex = self.pool.acquire().await.context("acquire")?;
-
-        surplus_capturing_jit_order_owners::insert(
-            &mut ex,
-            auction_id,
-            surplus_capturing_jit_order_owners,
-        )
-        .await?;
-
-        Ok(())
     }
 }
