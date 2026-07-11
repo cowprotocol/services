@@ -349,6 +349,13 @@ async fn create_config_file(
                 .join(", ");
             writeln!(file, "               submission-accounts = [{accounts}]").unwrap();
         }
+        if let Some(limit) = solver.post_processing_concurrency_limit {
+            writeln!(
+                file,
+                "               post-processing-concurrency-limit = {limit}"
+            )
+            .unwrap();
+        }
     }
     file.into_temp_path()
 }

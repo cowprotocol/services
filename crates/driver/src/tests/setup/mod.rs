@@ -54,6 +54,11 @@ use {
         collections::{HashMap, HashSet},
         path::PathBuf,
         str::FromStr,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
     },
 };
 
@@ -365,6 +370,8 @@ pub struct Solver {
     max_solutions_to_propose: usize,
     /// Additional submission accounts for EIP-7702 parallel settlement.
     submission_accounts: Vec<PrivateKeySigner>,
+    /// Maximum number of solutions post-processed concurrently by the driver.
+    post_processing_concurrency_limit: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -394,6 +401,7 @@ pub fn test_solver() -> Solver {
         haircut_bps: 0,
         max_solutions_to_propose: 1,
         submission_accounts: vec![],
+        post_processing_concurrency_limit: None,
     }
 }
 
@@ -442,6 +450,11 @@ impl Solver {
 
     pub fn max_solutions_to_propose(mut self, n: usize) -> Self {
         self.max_solutions_to_propose = n;
+        self
+    }
+
+    pub fn post_processing_concurrency_limit(mut self, n: usize) -> Self {
+        self.post_processing_concurrency_limit = Some(n);
         self
     }
 
@@ -560,6 +573,8 @@ pub struct Setup {
     settle_submission_deadline: u64,
     /// Should flashloan-hint orders be accepted by the driver? True by default.
     flashloans_enabled: bool,
+    /// Deadline offset from fixed test time. Defaults to 2 seconds.
+    deadline_after: Option<Duration>,
 }
 
 /// The validity of a solution.
@@ -909,6 +924,11 @@ impl Setup {
         self
     }
 
+    pub fn deadline_after(mut self, deadline_after: Duration) -> Self {
+        self.deadline_after = Some(deadline_after);
+        self
+    }
+
     /// Toggle acceptance of flashloan-hint orders at the driver level.
     pub fn flashloans_enabled(mut self, flashloans_enabled: bool) -> Self {
         self.flashloans_enabled = flashloans_enabled;
@@ -995,7 +1015,7 @@ impl Setup {
             .into_iter()
             .map(|order| blockchain.quote(&order))
             .collect::<Vec<_>>();
-        let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
+        let solver_instances = join_all(self.solvers.iter().map(|solver| async {
             let instance = SolverInstance::new(solver::Config {
                 blockchain: &blockchain,
                 solutions: &solutions,
@@ -1012,9 +1032,17 @@ impl Setup {
             })
             .await;
 
-            (solver.clone(), instance.addr)
+            (solver.clone(), instance)
         }))
         .await;
+        let solve_requests = solver_instances
+            .iter()
+            .find(|(solver, _)| solver.name == solver::NAME)
+            .map(|(_, instance)| Arc::clone(&instance.requests));
+        let solvers_with_address = solver_instances
+            .iter()
+            .map(|(solver, instance)| (solver.clone(), instance.addr))
+            .collect();
 
         let driver = Driver::new(
             &driver::Config {
@@ -1043,6 +1071,7 @@ impl Setup {
             quote: self.quote,
             surplus_capturing_jit_order_owners,
             auction_id: self.auction_id,
+            solve_requests,
         }
     }
 
@@ -1061,7 +1090,9 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        crate::infra::time::now() + chrono::Duration::seconds(2)
+        crate::infra::time::now()
+            + chrono::Duration::from_std(self.deadline_after.unwrap_or(Duration::from_secs(2)))
+                .unwrap()
     }
 
     pub fn allow_multiple_solve_requests(mut self) -> Self {
@@ -1085,6 +1116,7 @@ pub struct Test {
     /// List of surplus capturing JIT-order owners
     surplus_capturing_jit_order_owners: Vec<eth::Address>,
     auction_id: i64,
+    solve_requests: Option<Arc<AtomicUsize>>,
 }
 
 impl Test {
@@ -1247,6 +1279,13 @@ impl Test {
 
     pub async fn set_auto_mining(&self, enabled: bool) {
         self.blockchain.set_auto_mining(enabled).await
+    }
+
+    pub fn solve_requests(&self) -> usize {
+        self.solve_requests
+            .as_ref()
+            .expect("default solver not found")
+            .load(Ordering::SeqCst)
     }
 }
 

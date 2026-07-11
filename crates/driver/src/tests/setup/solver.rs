@@ -30,7 +30,10 @@ use {
     std::{
         collections::{HashMap, HashSet},
         net::SocketAddr,
-        sync::{Arc, Mutex},
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
     },
 };
 
@@ -38,6 +41,7 @@ pub const NAME: &str = "test-solver";
 
 pub struct Solver {
     pub addr: SocketAddr,
+    pub requests: Arc<AtomicUsize>,
 }
 
 #[derive(Debug)]
@@ -501,16 +505,22 @@ impl Solver {
         )
         .await;
 
-        let state = Arc::new(Mutex::new(StateInner {
-            called: false,
+        let requests = Arc::new(AtomicUsize::new(0));
+        let state = State {
+            requests: Arc::clone(&requests),
             allow_multiple_solve_requests: config.allow_multiple_solve_requests,
-        }));
+        };
         let app = axum::Router::new()
         .route(
             "/solve",
             axum::routing::post(
                 move |axum::extract::State(state): axum::extract::State<State>,
-                 axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
+                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
+                    let previous_requests = state.requests.fetch_add(1, Ordering::SeqCst);
+                    assert!(
+                        previous_requests == 0 || state.allow_multiple_solve_requests,
+                        "can't call /solve multiple times"
+                    );
                     let base_fee = eth.current_block().borrow().base_fee;
                     let effective_gas_price = eth.gas_price().await.unwrap().effective(base_fee).to_string();
                     let expected = json!({
@@ -523,23 +533,17 @@ impl Solver {
                         "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
                     check_solve_request(req, expected);
-                    let mut state = state.0.lock().unwrap();
-                    assert!(
-                        !state.called || state.allow_multiple_solve_requests,
-                        "can't call /solve multiple times"
-                    );
-                    state.called = true;
                     axum::response::Json(json!({
                         "solutions": solutions_json,
                     }))
                 },
             ),
         )
-        .with_state(State(state));
+        .with_state(state);
         let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        Self { addr }
+        Self { addr, requests }
     }
 }
 
@@ -582,13 +586,7 @@ fn check_solve_request(request: Value, expected: Value) {
 }
 
 #[derive(Debug, Clone)]
-struct StateInner {
-    /// Has this solver been called yet? If so, attempting to make another call
-    /// will result in a failed test.
-    called: bool,
-    /// In case you want to allow calling a solver multiple times.
+struct State {
+    requests: Arc<AtomicUsize>,
     allow_multiple_solve_requests: bool,
 }
-
-#[derive(Debug, Clone)]
-struct State(Arc<Mutex<StateInner>>);
