@@ -111,7 +111,7 @@ impl NativePriceEstimator {
 impl Display for NativePriceEstimator {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            NativePriceEstimator::Driver(s) => write!(f, "Driver|{}|{}", &s.name, s.url),
+            NativePriceEstimator::Driver(s) => write!(f, "Driver|{}|{}", s.name, s.url),
             NativePriceEstimator::Forwarder { url } => write!(f, "Forwarder|{}", url),
             NativePriceEstimator::OneInchSpotPriceApi => write!(f, "OneInchSpotPriceApi"),
             NativePriceEstimator::CoinGecko => write!(f, "CoinGecko"),
