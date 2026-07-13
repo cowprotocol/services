@@ -365,7 +365,9 @@ impl Bitget {
         }
 
         Err(match error_code.unwrap_or(80000) {
-            80001 // Insufficient token balance
+            80000 // Bitget internal error; not actionable on our side, retried
+                  // next auction. Treated as "no swap" so it doesn't alert.
+            | 80001 // Insufficient token balance
             | 80004 // Order expired
             | 80005 // Insufficient liquidity
             | 80008 // Reverse quote did not converge
@@ -374,6 +376,7 @@ impl Bitget {
             | 80011 // Failed to generate calldata
             | 80012 // Quote failed
             | 80014 // Order not found
+            | 80020 // Quote deviation too high (output too low): no competitive route
             => Error::NotFound,
             80002 // Amount below minimum
             | 80003 // Amount above maximum
