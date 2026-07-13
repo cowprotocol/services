@@ -24,7 +24,7 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - uses: tombi-toml/setup-tombi@90dc1ab19ff45cc28017aab8cd0093516d908532 # v1.1.5
+      - uses: tombi-toml/setup-tombi@c0035bf190feee444a3a8da06990959e72058808 # v1.1.6
         with:
           version: "1.1.0"
       - run: |
@@ -330,7 +330,7 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - uses: tombi-toml/setup-tombi@90dc1ab19ff45cc28017aab8cd0093516d908532 # v1.1.5
+      - uses: tombi-toml/setup-tombi@c0035bf190feee444a3a8da06990959e72058808 # v1.1.6
         with:
           version: "1.1.0"
       - name: Verify the code hasn't been tampered with by generating contracts again and making sure there has been no changes
