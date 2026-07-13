@@ -156,7 +156,7 @@ jobs:
       # to verify the deployment end-to-end.
       - name: "📣 Dispatch automated trades to infrastructure repo"
         if: ${{ github.ref == 'refs/heads/main' }}
-        uses: peter-evans/repository-dispatch@428de239af282baa9ed57c8003ca2082586703c3 # v4.0.1
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
           repository: cowprotocol/infrastructure
