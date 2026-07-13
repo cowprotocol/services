@@ -86,12 +86,17 @@ impl Mempools {
         // `nonce too high`, ...). Unlike a clean account rejection, such a failure
         // means we can't be sure nothing was sent, so it must not trigger a retry.
         let saw_nonretryable = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Capture a settlement-specific terminal failure (revert/expired) from any
+        // lane so `race_error` surfaces the real error, not whatever `select_ok`
+        // returns last.
+        let terminal: std::sync::Arc<std::sync::Mutex<Option<Error>>> = Default::default();
 
         let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
             |(mempool, stat)| {
                 let account_failure = std::sync::Arc::clone(&account_failure);
                 let any_broadcast = std::sync::Arc::clone(&any_broadcast);
                 let saw_nonretryable = std::sync::Arc::clone(&saw_nonretryable);
+                let terminal = std::sync::Arc::clone(&terminal);
                 async move {
                     let result = self
                         .submit(mempool, settlement, submission_deadline, mode, &any_broadcast)
@@ -106,12 +111,17 @@ impl Mempools {
                         }
                         // A disabled mempool was skipped without touching the network.
                         Err(Error::Disabled) => {}
-                        // Any other error (timeout, connection reset, `already known`,
-                        // `nonce too high`, ...) may have put a tx on the wire, so it
-                        // must block a retry from another account.
-                        Err(_) => {
-                            saw_nonretryable.store(true, std::sync::atomic::Ordering::SeqCst)
-                        }
+                        Err(err) => match err.terminal() {
+                            Some(term) => {
+                                terminal.lock().unwrap().get_or_insert(term);
+                            }
+                            // Any other error (timeout, connection reset, `already
+                            // known`, `nonce too high`, ...) may have put a tx on the
+                            // wire, so it must block a retry from another account.
+                            None => {
+                                saw_nonretryable.store(true, std::sync::atomic::Ordering::SeqCst)
+                            }
+                        },
                         Ok(_) => {}
                     }
                     *stat = Outcome::from(&result);
@@ -131,6 +141,7 @@ impl Mempools {
             Ok(success) => Ok(success.tx_hash),
             Err(err) => Err(race_error(
                 err,
+                terminal.lock().unwrap().take(),
                 *account_failure.lock().unwrap(),
                 any_broadcast.load(std::sync::atomic::Ordering::SeqCst),
                 saw_nonretryable.load(std::sync::atomic::Ordering::SeqCst),
@@ -778,26 +789,25 @@ pub fn classify_submission_failure(message: &str) -> Option<AccountFailure> {
 /// reported by one mempool can be masked by a generic error (e.g. a timeout)
 /// from another. The caller benches the account and retries on
 /// `SubmitterUnusable`, so surface it whenever a mempool reported one, unless
-/// one of the following holds: `last_error` is a settlement-specific terminal
-/// failure (revert/expired), which is authoritative; `broadcasted` is set,
-/// meaning some mempool already put a tx on the wire and retrying could
-/// double-submit; or `saw_nonretryable` is set, meaning a mempool failed before
-/// broadcast with an ambiguous error (timeout, connection reset, `already
-/// known`, `nonce too high`) whose tx might still be live, which is likewise
-/// unsafe to retry.
+/// one of the following holds: `terminal` is set, meaning some lane hit a
+/// settlement-specific terminal failure (revert/expired), which is
+/// authoritative; `broadcasted` is set, meaning some mempool already put a tx
+/// on the wire and retrying could double-submit; or `saw_nonretryable` is set,
+/// meaning a mempool failed before broadcast with an ambiguous error (timeout,
+/// connection reset, `already known`, `nonce too high`) whose tx might still be
+/// live, which is likewise unsafe to retry.
 fn race_error(
     last_error: Error,
+    terminal: Option<Error>,
     account_failure: Option<AccountFailure>,
     broadcasted: bool,
     saw_nonretryable: bool,
 ) -> Error {
-    // A settlement-specific terminal failure is authoritative and must not be
-    // retried from another account, so it always wins over an account failure.
-    if matches!(
-        last_error,
-        Error::Revert { .. } | Error::SimulationRevert { .. } | Error::Expired { .. }
-    ) {
-        return last_error;
+    // A terminal failure (revert/expired) from any lane is authoritative and
+    // never retryable, so it always wins the race, whichever lane's error
+    // `select_ok` returns last.
+    if let Some(terminal) = terminal {
+        return terminal;
     }
     // Once a tx is on the wire, never surface a retryable account failure:
     // downgrade even a `SubmitterUnusable` that `select_ok` happened to return
@@ -851,6 +861,41 @@ impl Error {
             Self::Disabled | Self::SubmitterUnusable(_) | Self::Other(_) => return None,
         };
         Some(end.saturating_sub(start).0)
+    }
+
+    /// A standalone copy of this error if it is a settlement-specific terminal
+    /// failure (revert/expired), else `None`. `Error` isn't `Clone` (the
+    /// `Other(anyhow::Error)` variant), but the terminal variants carry only
+    /// `Copy` fields.
+    fn terminal(&self) -> Option<Error> {
+        match self {
+            Error::Revert {
+                tx_id,
+                submitted_at_block,
+                reverted_at_block,
+            } => Some(Error::Revert {
+                tx_id: *tx_id,
+                submitted_at_block: *submitted_at_block,
+                reverted_at_block: *reverted_at_block,
+            }),
+            Error::SimulationRevert {
+                submitted_at_block,
+                reverted_at_block,
+            } => Some(Error::SimulationRevert {
+                submitted_at_block: *submitted_at_block,
+                reverted_at_block: *reverted_at_block,
+            }),
+            Error::Expired {
+                tx_id,
+                submitted_at_block,
+                submission_deadline,
+            } => Some(Error::Expired {
+                tx_id: *tx_id,
+                submitted_at_block: *submitted_at_block,
+                submission_deadline: *submission_deadline,
+            }),
+            Error::Disabled | Error::SubmitterUnusable(_) | Error::Other(_) => None,
+        }
     }
 }
 
@@ -1014,12 +1059,18 @@ mod tests {
         // surfaced so the settlement is benched and retried (issue #4541), even when
         // `select_ok` returns a different clean error (here `Disabled`) last.
         assert!(matches!(
-            race_error(Error::Disabled, Some(Nonce), false, false),
+            race_error(Error::Disabled, None, Some(Nonce), false, false),
             Error::SubmitterUnusable(Nonce)
         ));
         // ...and when the account failure is itself the error returned last.
         assert!(matches!(
-            race_error(Error::SubmitterUnusable(Nonce), Some(Nonce), false, false),
+            race_error(
+                Error::SubmitterUnusable(Nonce),
+                None,
+                Some(Nonce),
+                false,
+                false
+            ),
             Error::SubmitterUnusable(Nonce)
         ));
         // Pre-broadcast but a sibling lane returned an ambiguous error (timeout,
@@ -1029,6 +1080,7 @@ mod tests {
         assert!(matches!(
             race_error(
                 Error::Other(anyhow!("connection reset")),
+                None,
                 Some(Nonce),
                 false,
                 true,
@@ -1038,24 +1090,48 @@ mod tests {
         // Even when the account failure is the error returned last, an ambiguous
         // sibling downgrades it so the caller does not retry.
         assert!(matches!(
-            race_error(Error::SubmitterUnusable(Nonce), Some(Nonce), false, true),
+            race_error(
+                Error::SubmitterUnusable(Nonce),
+                None,
+                Some(Nonce),
+                false,
+                true
+            ),
             Error::Other(_)
         ));
         // With no account-specific failure, the original error is preserved.
         assert!(matches!(
-            race_error(Error::Disabled, None, false, false),
+            race_error(Error::Disabled, None, None, false, false),
             Error::Disabled
         ));
-        // A settlement-specific terminal failure is authoritative and must never
-        // be turned into a retryable account failure.
+        // A terminal failure (revert/expired) from any lane wins the race, even
+        // when `select_ok` returns a `SubmitterUnusable` from another lane last.
+        // Otherwise the terminal reason degrades to `Other` and the solver sees
+        // `Fail` instead of the revert.
         assert!(matches!(
             race_error(
-                Error::SimulationRevert {
+                Error::SubmitterUnusable(Nonce),
+                Some(Error::SimulationRevert {
                     submitted_at_block: BlockNo(1),
                     reverted_at_block: BlockNo(2),
-                },
+                }),
                 Some(InsufficientFunds),
                 false,
+                true,
+            ),
+            Error::SimulationRevert { .. }
+        ));
+        // A terminal failure stays authoritative even once another lane broadcast:
+        // a terminal error never triggers a retry, so surfacing it is safe.
+        assert!(matches!(
+            race_error(
+                Error::Other(anyhow!("Block stream finished unexpectedly")),
+                Some(Error::SimulationRevert {
+                    submitted_at_block: BlockNo(1),
+                    reverted_at_block: BlockNo(2),
+                }),
+                None,
+                true,
                 false,
             ),
             Error::SimulationRevert { .. }
@@ -1066,6 +1142,7 @@ mod tests {
         assert!(matches!(
             race_error(
                 Error::Other(anyhow!("Block stream finished unexpectedly")),
+                None,
                 Some(Nonce),
                 true,
                 false,
@@ -1075,7 +1152,13 @@ mod tests {
         // Even when the last error is itself the pre-broadcast account failure, a
         // broadcast elsewhere downgrades it so the caller does not retry.
         assert!(matches!(
-            race_error(Error::SubmitterUnusable(Nonce), Some(Nonce), true, false),
+            race_error(
+                Error::SubmitterUnusable(Nonce),
+                None,
+                Some(Nonce),
+                true,
+                false
+            ),
             Error::Other(_)
         ));
     }
