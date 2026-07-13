@@ -1,0 +1,2981 @@
+{
+  "environment": "prod",
+  "network": "mainnet",
+  "chain_id": 1,
+  "contracts": [
+    "0x3328f5f2cEcAF00a2443082B657CedEAf70bfAEf:11973117-17502498",
+    "0x4E608b7Da83f8E9213F554BDAA77C72e125529d0:-12369542",
+    "0x9008D19f58AAbD9eD0D60971565AA8510560ab41:12593265-"
+  ],
+  "rpc": [
+    "https://eth-mainnet.g.alchemy.com"
+  ],
+  "from": 12153263,
+  "to": 25511973,
+  "scanned_through": 21673262,
+  "blocks_scanned": 9520000,
+  "truncated": true,
+  "summary": {
+    "by_kind": {
+      "settlement_missing": 190,
+      "settlement_not_on_chain": 1,
+      "trade_misplaced": 6,
+      "trade_missing": 222
+    },
+    "mismatch_blocks": 192,
+    "total": 419
+  },
+  "source_reports": [
+    {
+      "file": "mainnet-20260711T213959Z.json",
+      "in_sqlite": true,
+      "chain_id": 1,
+      "from": 12153263,
+      "to": 25511973,
+      "scanned_through": 21673262,
+      "truncated": true,
+      "mismatches_in_file": 419,
+      "mismatches_added": 419,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 48,
+          "created_at": "2026-07-11T21:39:59.055747+00:00",
+          "from_block": 12153263,
+          "to_block": 25511973,
+          "mismatches": 419,
+          "truncated": true
+        }
+      ]
+    }
+  ],
+  "mismatches": [
+    {
+      "block": 12959355,
+      "chain_tx_hash": "0x08100e7ba81be84ee0bdce43db6640e2f992ec9991a740a689e97d20dea9dafa",
+      "kind": "trade_missing",
+      "log_index": 287,
+      "order_uid": "0x81dbb9631c0bec7d9762e170ff5feb2c9b366d5ca9502036d20d99c91cafb8bfb54872859733a3dfbb2c5401ac68cd9ca84b3cd1610ab36f"
+    },
+    {
+      "block": 12959355,
+      "chain_tx_hash": "0x08100e7ba81be84ee0bdce43db6640e2f992ec9991a740a689e97d20dea9dafa",
+      "kind": "settlement_missing",
+      "log_index": 297,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12963539,
+      "chain_tx_hash": "0x8772387c9e80b23080cba1ce607defc91f6680d5803f745dedbcc218e98562e8",
+      "kind": "trade_missing",
+      "log_index": 132,
+      "order_uid": "0xee0db370db55b657a0a2e507249d6e17575196c82434dee380fc1922e94b37967b2e78d4dfaaba045a167a70da285e30e8fca196610b92dc"
+    },
+    {
+      "block": 12963539,
+      "chain_tx_hash": "0x8772387c9e80b23080cba1ce607defc91f6680d5803f745dedbcc218e98562e8",
+      "kind": "settlement_missing",
+      "log_index": 142,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12963790,
+      "chain_tx_hash": "0x5baf36801788b2d23d99b0797cf472922c0962644ef96109c6b204aba244ac68",
+      "kind": "trade_missing",
+      "log_index": 118,
+      "order_uid": "0xd77be88ba691a3e170a4d4b1643f4387b7d98b7c3d71706951b90e5db37e7954424a46612794dbb8000194937834250dc723ffa5610ba248"
+    },
+    {
+      "block": 12963790,
+      "chain_tx_hash": "0x5baf36801788b2d23d99b0797cf472922c0962644ef96109c6b204aba244ac68",
+      "kind": "settlement_missing",
+      "log_index": 128,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12963793,
+      "chain_tx_hash": "0x7bf86ce3974f68bcb790e97e99c630f604db08ce5925122af8efe9edc6210f36",
+      "kind": "trade_missing",
+      "log_index": 145,
+      "order_uid": "0xe9f07f0edc2dfcb86bbaa5c1b4628403b5707796931ee58d05de277321acd6748bc0fe84022542e1611ff252090028df741ad670610ba26b"
+    },
+    {
+      "block": 12963793,
+      "chain_tx_hash": "0x7bf86ce3974f68bcb790e97e99c630f604db08ce5925122af8efe9edc6210f36",
+      "kind": "settlement_missing",
+      "log_index": 156,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12963809,
+      "chain_tx_hash": "0x9cb8bb8c8227e893c3a5be72ffb093dc02c4ef154cdc24bfa9a90bc4f67b4734",
+      "kind": "trade_missing",
+      "log_index": 79,
+      "order_uid": "0xb69bc1be0b676c615f729d73a90cd111adab5e31d1c8dd64fecd5be146c7cb86424a46612794dbb8000194937834250dc723ffa5610ba3c1"
+    },
+    {
+      "block": 12963809,
+      "chain_tx_hash": "0x9cb8bb8c8227e893c3a5be72ffb093dc02c4ef154cdc24bfa9a90bc4f67b4734",
+      "kind": "settlement_missing",
+      "log_index": 83,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12963827,
+      "chain_tx_hash": "0x0143df0301e2b14420109dd63073450e71a1277f585d9680cedbe9a632860097",
+      "kind": "trade_missing",
+      "log_index": 148,
+      "order_uid": "0xb8d7f2b053ce3ce02468153cb2fd40c3c68cf8405e7f8aa6adb8eec6de5870678bc0fe84022542e1611ff252090028df741ad670610ba4ad"
+    },
+    {
+      "block": 12963827,
+      "chain_tx_hash": "0x0143df0301e2b14420109dd63073450e71a1277f585d9680cedbe9a632860097",
+      "kind": "settlement_missing",
+      "log_index": 159,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12966557,
+      "chain_tx_hash": "0xb464d5a3656313bbaac37e28c72688b81ba98a5f842d2253176dde90cf9c459a",
+      "kind": "trade_missing",
+      "log_index": 89,
+      "order_uid": "0x2db4cbc4cf1ac954673be6ce21001b3dfd74d1872bd15e5ad3e9a025d2fa8505e0b3700e0aadcb18ed8d4bff648bc99896a18ad1610c34d4"
+    },
+    {
+      "block": 12966557,
+      "chain_tx_hash": "0xb464d5a3656313bbaac37e28c72688b81ba98a5f842d2253176dde90cf9c459a",
+      "kind": "settlement_missing",
+      "log_index": 98,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12970857,
+      "chain_tx_hash": "0x60b883f87343eab6d1fbe36728f47832e324894f0417af12471346ef408f2fab",
+      "kind": "trade_missing",
+      "log_index": 121,
+      "order_uid": "0xe0ee59fc2b311ce6bd8b63c48f3d0a09bee1fc43d1bcd980f5c6c21240b25567e2a4dfc3cab6dcdb198c83066b93110d62d95f09610d1434"
+    },
+    {
+      "block": 12970857,
+      "chain_tx_hash": "0x60b883f87343eab6d1fbe36728f47832e324894f0417af12471346ef408f2fab",
+      "kind": "settlement_missing",
+      "log_index": 134,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971427,
+      "chain_tx_hash": "0xf208ee7a77dff4fa7743676cac9cc9dfcc527c0bcd4e73661b1ee218b6ac4131",
+      "kind": "trade_missing",
+      "log_index": 46,
+      "order_uid": "0xe51bdf66364220a949431b82b4a6398ec90714b69ee2abfe7c933bcd6f10e2ad1f5b740436fc5935622e92aa3b46818906f416e9610d2cb2"
+    },
+    {
+      "block": 12971427,
+      "chain_tx_hash": "0xf208ee7a77dff4fa7743676cac9cc9dfcc527c0bcd4e73661b1ee218b6ac4131",
+      "kind": "settlement_missing",
+      "log_index": 50,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971480,
+      "chain_tx_hash": "0x03f2fde53094150b609821f1ebd17f6d0e473e9ac33f5eafc2b8e6cadf1dd5c8",
+      "kind": "trade_missing",
+      "log_index": 263,
+      "order_uid": "0xcac9bb7c029d145e396f4932a132af7b4b99e5820ae9328ef72a89a8e9102d43262d23a2d916f6cf08e0235315aa51e22d142d0b610d3599"
+    },
+    {
+      "block": 12971480,
+      "chain_tx_hash": "0x03f2fde53094150b609821f1ebd17f6d0e473e9ac33f5eafc2b8e6cadf1dd5c8",
+      "kind": "settlement_missing",
+      "log_index": 275,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971506,
+      "chain_tx_hash": "0x68f5d6961d2ae4d856f990f377c90509671f564004129579094b213757b1d377",
+      "kind": "trade_missing",
+      "log_index": 160,
+      "order_uid": "0xe72a219c40f46b18f235c43c4ec1143ee77ec3078279c42522f92c2ccae62a3d1f5b740436fc5935622e92aa3b46818906f416e9610d3025"
+    },
+    {
+      "block": 12971506,
+      "chain_tx_hash": "0x68f5d6961d2ae4d856f990f377c90509671f564004129579094b213757b1d377",
+      "kind": "settlement_missing",
+      "log_index": 173,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971590,
+      "chain_tx_hash": "0xa262c16496c6dc9b3a89d5b9c009539fc8f1440e793cb4e678073a15610c236d",
+      "kind": "trade_missing",
+      "log_index": 67,
+      "order_uid": "0x2e03600a5d0cec047c5e821db91f196658c9b0c86182b2a903df0d1a17016dce20f7687368167c56559b8ab56cc5182f6695a40e610d3af6"
+    },
+    {
+      "block": 12971590,
+      "chain_tx_hash": "0xa262c16496c6dc9b3a89d5b9c009539fc8f1440e793cb4e678073a15610c236d",
+      "kind": "trade_missing",
+      "log_index": 68,
+      "order_uid": "0x92dec91ace20df8126db55168ba69dd788b31785208359b796ab5d058e921ea0574206e63e9e8ea91121d1267c4aae20184305dd610d3af5"
+    },
+    {
+      "block": 12971590,
+      "chain_tx_hash": "0xa262c16496c6dc9b3a89d5b9c009539fc8f1440e793cb4e678073a15610c236d",
+      "kind": "settlement_missing",
+      "log_index": 85,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971599,
+      "chain_tx_hash": "0xe74edfe07cafcf4fcd87421e203d924cf0a7cce20cbb04f425f09f16717fdb8d",
+      "kind": "trade_missing",
+      "log_index": 379,
+      "order_uid": "0xfa4dc4e19e26a918419c116d14d99c68c3f68c9fd2080c4fc9a44aac02681c83262d23a2d916f6cf08e0235315aa51e22d142d0b610d3b8a"
+    },
+    {
+      "block": 12971599,
+      "chain_tx_hash": "0xe74edfe07cafcf4fcd87421e203d924cf0a7cce20cbb04f425f09f16717fdb8d",
+      "kind": "settlement_missing",
+      "log_index": 393,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971605,
+      "chain_tx_hash": "0x72b5911f9d1fcd15c20803336cfa390559a39f4a8dc7db8f236bc9ae8d4d620e",
+      "kind": "trade_missing",
+      "log_index": 164,
+      "order_uid": "0x9bce5ee8e36e5d5427c937343531111d620323eff0c1ada364cb425afea18fa6262d23a2d916f6cf08e0235315aa51e22d142d0b610d3b9f"
+    },
+    {
+      "block": 12971605,
+      "chain_tx_hash": "0x72b5911f9d1fcd15c20803336cfa390559a39f4a8dc7db8f236bc9ae8d4d620e",
+      "kind": "settlement_missing",
+      "log_index": 172,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971613,
+      "chain_tx_hash": "0x8ac042010243cf1208151df372f2121ee7e1cbc7694ba0192acbdbb0eee4edb9",
+      "kind": "trade_missing",
+      "log_index": 242,
+      "order_uid": "0x29193917fdb71ed6f31a4165fcac8ec938d362d2ef8a7f9f85ef563bfbdf58df262d23a2d916f6cf08e0235315aa51e22d142d0b610d3bf0"
+    },
+    {
+      "block": 12971613,
+      "chain_tx_hash": "0x8ac042010243cf1208151df372f2121ee7e1cbc7694ba0192acbdbb0eee4edb9",
+      "kind": "settlement_missing",
+      "log_index": 251,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971619,
+      "chain_tx_hash": "0x1ac3e519cb2019fb854254f1cd7e3e08e73d1d85cb95004c61e10389892e0052",
+      "kind": "trade_missing",
+      "log_index": 69,
+      "order_uid": "0x0ef7f2ba0b98c61e9ccbeebb201b39748b9f0abeb7b10c85b16028979dd85e98262d23a2d916f6cf08e0235315aa51e22d142d0b610d3bdd"
+    },
+    {
+      "block": 12971619,
+      "chain_tx_hash": "0x1ac3e519cb2019fb854254f1cd7e3e08e73d1d85cb95004c61e10389892e0052",
+      "kind": "settlement_missing",
+      "log_index": 77,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971621,
+      "chain_tx_hash": "0x0d7cdd9d87fb8def9ff24bebfc0f0ddb483c6999d7cdf576debc0130bf39754e",
+      "kind": "trade_missing",
+      "log_index": 236,
+      "order_uid": "0x8b9d025be5ad79fb23175528567e78ded838f047890d78d645c8323561f109c4262d23a2d916f6cf08e0235315aa51e22d142d0b610d3c00"
+    },
+    {
+      "block": 12971621,
+      "chain_tx_hash": "0x0d7cdd9d87fb8def9ff24bebfc0f0ddb483c6999d7cdf576debc0130bf39754e",
+      "kind": "settlement_missing",
+      "log_index": 244,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971625,
+      "chain_tx_hash": "0x791f68ccd0e7ff1815161dfb1b7c68ed8fea1c2bcdf5cd9b2c61781ebdf41e14",
+      "kind": "trade_missing",
+      "log_index": 105,
+      "order_uid": "0xc435be806b8951ef1e898f6050f20014cf4da28f7015e1c83e7f8d72f68c5c99262d23a2d916f6cf08e0235315aa51e22d142d0b610d3c97"
+    },
+    {
+      "block": 12971625,
+      "chain_tx_hash": "0x791f68ccd0e7ff1815161dfb1b7c68ed8fea1c2bcdf5cd9b2c61781ebdf41e14",
+      "kind": "settlement_missing",
+      "log_index": 115,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971632,
+      "chain_tx_hash": "0xb7e1b25a6b154235971f139cceba44af18139aa33e97395f3938c82802c6e5a0",
+      "kind": "trade_missing",
+      "log_index": 195,
+      "order_uid": "0x34fc95101bec7ac91cb62adb39d497de3f0c88ca52ba5d65a4ebae6de50b501de2a4dfc3cab6dcdb198c83066b93110d62d95f09610d3cb5"
+    },
+    {
+      "block": 12971632,
+      "chain_tx_hash": "0xb7e1b25a6b154235971f139cceba44af18139aa33e97395f3938c82802c6e5a0",
+      "kind": "trade_missing",
+      "log_index": 196,
+      "order_uid": "0xa5b1253ab502280e14c5301cd91eda46f47d6578c857ac4f4c94707dcd151bf2262d23a2d916f6cf08e0235315aa51e22d142d0b610d3ccc"
+    },
+    {
+      "block": 12971632,
+      "chain_tx_hash": "0xb7e1b25a6b154235971f139cceba44af18139aa33e97395f3938c82802c6e5a0",
+      "kind": "settlement_missing",
+      "log_index": 220,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971643,
+      "chain_tx_hash": "0xd9953e043cbb5e3e269c7b9d82260fa39215f37260b9bb14876ba98d148dd53b",
+      "kind": "trade_missing",
+      "log_index": 118,
+      "order_uid": "0x9b973110bede391c59fea3ba9500957ac8e333f8a48fa9d41b0067d036977d8ead80e94634c9615175bab3f5fb7a738c12a09de2610d3d57"
+    },
+    {
+      "block": 12971643,
+      "chain_tx_hash": "0xd9953e043cbb5e3e269c7b9d82260fa39215f37260b9bb14876ba98d148dd53b",
+      "kind": "settlement_missing",
+      "log_index": 126,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971647,
+      "chain_tx_hash": "0x8fad74fd70eab5256d3a1f3f75b126714453d60ad91f2072d93115c5999ddd1a",
+      "kind": "trade_missing",
+      "log_index": 234,
+      "order_uid": "0xb324b1a462ef5b7c2bed7d2f7e20dd802cf70c4e7d103d1ba6bdfa81ef90b9c8ce3696f3b57db19e5ebe014aa2d5636e87f9f22d610d3d4f"
+    },
+    {
+      "block": 12971647,
+      "chain_tx_hash": "0x8fad74fd70eab5256d3a1f3f75b126714453d60ad91f2072d93115c5999ddd1a",
+      "kind": "settlement_missing",
+      "log_index": 242,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971650,
+      "chain_tx_hash": "0x10d352138b4953b5357bc722d5ef5d01f2589081edee73aea4e3f0c593a82c3d",
+      "kind": "trade_missing",
+      "log_index": 346,
+      "order_uid": "0x7800ee642da24d4b51100ac2840556fa91f048ab1fdd37c56da685f11cf9331a262d23a2d916f6cf08e0235315aa51e22d142d0b610d3dd2"
+    },
+    {
+      "block": 12971650,
+      "chain_tx_hash": "0x10d352138b4953b5357bc722d5ef5d01f2589081edee73aea4e3f0c593a82c3d",
+      "kind": "settlement_missing",
+      "log_index": 367,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971655,
+      "chain_tx_hash": "0xe116d2c960f924103759219adad9069e5c480bb43532a31a6f9fb553eeb1de7a",
+      "kind": "trade_missing",
+      "log_index": 357,
+      "order_uid": "0xab0d5778e5dc65eb6191f3a3674b1a676181c197163aebf7b30c2a43b5607925262d23a2d916f6cf08e0235315aa51e22d142d0b610d3e0b"
+    },
+    {
+      "block": 12971655,
+      "chain_tx_hash": "0xe116d2c960f924103759219adad9069e5c480bb43532a31a6f9fb553eeb1de7a",
+      "kind": "settlement_missing",
+      "log_index": 368,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971660,
+      "chain_tx_hash": "0x97baad3edac36480fc976090620a1efe14c5bb86dd395606a8b10c58ff2f2ec2",
+      "kind": "trade_missing",
+      "log_index": 84,
+      "order_uid": "0xf5c296b9d7bfd1a22395be8efde5ca2267ad1ee71ac4f2e95491f8f77f25357808d303ac41327258492b1ff8540a81f4b08d3689610d3e2a"
+    },
+    {
+      "block": 12971660,
+      "chain_tx_hash": "0x97baad3edac36480fc976090620a1efe14c5bb86dd395606a8b10c58ff2f2ec2",
+      "kind": "settlement_missing",
+      "log_index": 97,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971664,
+      "chain_tx_hash": "0x327a84e6c82702ea9f24d20a740cc7c1926d011e0d30168158b1e0f86ddaf92b",
+      "kind": "trade_missing",
+      "log_index": 132,
+      "order_uid": "0x829a1fd1231aa333b2fefa5d4129877a20b141d8c6341a1dfeb1baed8fb83393262d23a2d916f6cf08e0235315aa51e22d142d0b610d3e7f"
+    },
+    {
+      "block": 12971664,
+      "chain_tx_hash": "0x327a84e6c82702ea9f24d20a740cc7c1926d011e0d30168158b1e0f86ddaf92b",
+      "kind": "settlement_missing",
+      "log_index": 143,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971666,
+      "chain_tx_hash": "0x45d734b34954f16d371374ee4b3af8289da1632a62c3974d34f29d811b5c2ce1",
+      "kind": "trade_missing",
+      "log_index": 319,
+      "order_uid": "0x670581f81d45c409be7f2594bd123a62858b1e9d7bed4df6f083869022fda181e0b3700e0aadcb18ed8d4bff648bc99896a18ad1610d3e2a"
+    },
+    {
+      "block": 12971666,
+      "chain_tx_hash": "0x45d734b34954f16d371374ee4b3af8289da1632a62c3974d34f29d811b5c2ce1",
+      "kind": "trade_missing",
+      "log_index": 320,
+      "order_uid": "0xe42b1b08f28941f3ce8a96c9bdc410b084e1fc18389f4bb45f09c606df8a4445262d23a2d916f6cf08e0235315aa51e22d142d0b610d3e48"
+    },
+    {
+      "block": 12971666,
+      "chain_tx_hash": "0x45d734b34954f16d371374ee4b3af8289da1632a62c3974d34f29d811b5c2ce1",
+      "kind": "settlement_missing",
+      "log_index": 330,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971668,
+      "chain_tx_hash": "0x94b95d1be273b4a81cd5671c8907b8052003884fa9d2dd7e34c646ff4eec1025",
+      "kind": "trade_missing",
+      "log_index": 515,
+      "order_uid": "0x57993dbbbee5d462c620cb9dd08b79253829dda89e720c5f118d64668d2efe17e2a4dfc3cab6dcdb198c83066b93110d62d95f09610d3e2d"
+    },
+    {
+      "block": 12971668,
+      "chain_tx_hash": "0x94b95d1be273b4a81cd5671c8907b8052003884fa9d2dd7e34c646ff4eec1025",
+      "kind": "trade_missing",
+      "log_index": 516,
+      "order_uid": "0x964d79cc0d70cd941fff74fbfa9cbaadc7bdcb5b2df9e1c6e081aac2785da100ca011d01a4b75a36afb5e2b69e0ba8f01c6b500e610d3e2a"
+    },
+    {
+      "block": 12971668,
+      "chain_tx_hash": "0x94b95d1be273b4a81cd5671c8907b8052003884fa9d2dd7e34c646ff4eec1025",
+      "kind": "settlement_missing",
+      "log_index": 546,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971673,
+      "chain_tx_hash": "0x50baaa4e68bb51cfdab73cd6c1daee5439165744aa779c426f217ac9cd2c3288",
+      "kind": "trade_missing",
+      "log_index": 169,
+      "order_uid": "0xba0478e95c212c2458497152ee0ec5f028a9642f6dc15cc256a07cd5411c5c00ce3696f3b57db19e5ebe014aa2d5636e87f9f22d610d3e48"
+    },
+    {
+      "block": 12971673,
+      "chain_tx_hash": "0x50baaa4e68bb51cfdab73cd6c1daee5439165744aa779c426f217ac9cd2c3288",
+      "kind": "trade_missing",
+      "log_index": 170,
+      "order_uid": "0xa4856b64c23dd8f0fb05060e52d5cf88f9a35bda318cb69b4feea54694b05729262d23a2d916f6cf08e0235315aa51e22d142d0b610d3e93"
+    },
+    {
+      "block": 12971673,
+      "chain_tx_hash": "0x50baaa4e68bb51cfdab73cd6c1daee5439165744aa779c426f217ac9cd2c3288",
+      "kind": "trade_missing",
+      "log_index": 171,
+      "order_uid": "0x36c4ce3f10dd531b3a484b76b0f636da2e14dabdad191f74b1b907cebc4f41b3e0b3700e0aadcb18ed8d4bff648bc99896a18ad1610d3e65"
+    },
+    {
+      "block": 12971673,
+      "chain_tx_hash": "0x50baaa4e68bb51cfdab73cd6c1daee5439165744aa779c426f217ac9cd2c3288",
+      "kind": "trade_missing",
+      "log_index": 172,
+      "order_uid": "0x01407f98a11111ccf20eb1efcd3cf342c481dcfb82fef9504b31b5805660684a424a46612794dbb8000194937834250dc723ffa5610d3e29"
+    },
+    {
+      "block": 12971673,
+      "chain_tx_hash": "0x50baaa4e68bb51cfdab73cd6c1daee5439165744aa779c426f217ac9cd2c3288",
+      "kind": "trade_missing",
+      "log_index": 173,
+      "order_uid": "0x8cd77c07578bb3572e74851bfd31178de2f4d355ec379983d22de23a79f7e89f262d23a2d916f6cf08e0235315aa51e22d142d0b610d3df9"
+    },
+    {
+      "block": 12971673,
+      "chain_tx_hash": "0x50baaa4e68bb51cfdab73cd6c1daee5439165744aa779c426f217ac9cd2c3288",
+      "kind": "settlement_missing",
+      "log_index": 203,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971676,
+      "chain_tx_hash": "0xf5471e07605039a3b2e50080d3ed29a7e952b33b7c705a8898857c7653d6403a",
+      "kind": "trade_missing",
+      "log_index": 127,
+      "order_uid": "0x1d1050d5437cfbedca0c1211fb6d2745752728c9fbb9bf5ad823014080474f04262d23a2d916f6cf08e0235315aa51e22d142d0b610d3f58"
+    },
+    {
+      "block": 12971676,
+      "chain_tx_hash": "0xf5471e07605039a3b2e50080d3ed29a7e952b33b7c705a8898857c7653d6403a",
+      "kind": "settlement_missing",
+      "log_index": 135,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971679,
+      "chain_tx_hash": "0xfd3bbd4d467b44185151d991ead7525bb88b6c02a6d2a366f73d37f9422ab401",
+      "kind": "trade_missing",
+      "log_index": 92,
+      "order_uid": "0xeb8b86d5ef4ab714616b96bb0d75eaf2d27f8ccc2a402d040b8171865effd9dfa00c99f5f955552742f1089ded88abdc74e67bac610d396b"
+    },
+    {
+      "block": 12971679,
+      "chain_tx_hash": "0xfd3bbd4d467b44185151d991ead7525bb88b6c02a6d2a366f73d37f9422ab401",
+      "kind": "settlement_missing",
+      "log_index": 99,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971684,
+      "chain_tx_hash": "0xe9db06ccb577f9a71cd5dd5a86e84df0e5ec43abd9a6e48d2b60e64912e54153",
+      "kind": "trade_missing",
+      "log_index": 189,
+      "order_uid": "0x64a6a6ebc6930fe31351640c8cdd5f865ca0577541b82769c2d5bcb3ff599922262d23a2d916f6cf08e0235315aa51e22d142d0b610d3f9a"
+    },
+    {
+      "block": 12971684,
+      "chain_tx_hash": "0xe9db06ccb577f9a71cd5dd5a86e84df0e5ec43abd9a6e48d2b60e64912e54153",
+      "kind": "settlement_missing",
+      "log_index": 197,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971685,
+      "chain_tx_hash": "0xec35b71458c23c335a502697257e4f1d9455458571c61d3b05e2941132c67dca",
+      "kind": "trade_missing",
+      "log_index": 191,
+      "order_uid": "0x65ecbd5e612c7c1c6c2e2947cce18ece70ec9951810c5d553cde53b72b783301a00c99f5f955552742f1089ded88abdc74e67bac610d39de"
+    },
+    {
+      "block": 12971685,
+      "chain_tx_hash": "0xec35b71458c23c335a502697257e4f1d9455458571c61d3b05e2941132c67dca",
+      "kind": "trade_missing",
+      "log_index": 192,
+      "order_uid": "0xf6f8ebb68dc8c4248d3d40399ea2cd250aba7e397fa445e85a73d6ee07fce3bcad80e94634c9615175bab3f5fb7a738c12a09de2610d3ea9"
+    },
+    {
+      "block": 12971685,
+      "chain_tx_hash": "0xec35b71458c23c335a502697257e4f1d9455458571c61d3b05e2941132c67dca",
+      "kind": "settlement_missing",
+      "log_index": 207,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971701,
+      "chain_tx_hash": "0x3f61c8d4a9b7be73317c17b1ee9e112d3644527c289c68f8e8e83f91fccba422",
+      "kind": "trade_missing",
+      "log_index": 139,
+      "order_uid": "0x1b661d4662bc908a62d51b2cf56f01704094a366204a852d9f51d8aba9c23fc6262d23a2d916f6cf08e0235315aa51e22d142d0b610d416b"
+    },
+    {
+      "block": 12971701,
+      "chain_tx_hash": "0x3f61c8d4a9b7be73317c17b1ee9e112d3644527c289c68f8e8e83f91fccba422",
+      "kind": "trade_missing",
+      "log_index": 140,
+      "order_uid": "0x1f335744fc45d87e3436866497861ec43f30db23489b8a31e8f7d12c582423b556eb62e08fadbd1280fa57656c3ea456864bd192610d414e"
+    },
+    {
+      "block": 12971701,
+      "chain_tx_hash": "0x3f61c8d4a9b7be73317c17b1ee9e112d3644527c289c68f8e8e83f91fccba422",
+      "kind": "settlement_missing",
+      "log_index": 158,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971717,
+      "chain_tx_hash": "0x4e222a961f50aa2e78c655f9876fce5b5d5c9af9935ea27189a676e2916c259f",
+      "kind": "trade_missing",
+      "log_index": 133,
+      "order_uid": "0xd85149734a9b69a4f6144bf2cc22dbb66c18d1cd2d924b4e19871d005ceda4d8e2a4dfc3cab6dcdb198c83066b93110d62d95f09610d4226"
+    },
+    {
+      "block": 12971717,
+      "chain_tx_hash": "0x4e222a961f50aa2e78c655f9876fce5b5d5c9af9935ea27189a676e2916c259f",
+      "kind": "settlement_missing",
+      "log_index": 144,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971723,
+      "chain_tx_hash": "0x92e2334802e96098e1feb62840b46d107d28750e85f23f078fdeb29e7d50443e",
+      "kind": "trade_missing",
+      "log_index": 19,
+      "order_uid": "0x32fdda13435eee8d27f571970af3ccd964504d474dfa1d5506c9ad6651446d6f262d23a2d916f6cf08e0235315aa51e22d142d0b610d4222"
+    },
+    {
+      "block": 12971723,
+      "chain_tx_hash": "0x92e2334802e96098e1feb62840b46d107d28750e85f23f078fdeb29e7d50443e",
+      "kind": "trade_missing",
+      "log_index": 20,
+      "order_uid": "0xc3ab94b4c33d28467829366258d184d6a5777c38065549528c6a4589bbf1b90ce0b3700e0aadcb18ed8d4bff648bc99896a18ad1610d421e"
+    },
+    {
+      "block": 12971723,
+      "chain_tx_hash": "0x92e2334802e96098e1feb62840b46d107d28750e85f23f078fdeb29e7d50443e",
+      "kind": "trade_missing",
+      "log_index": 21,
+      "order_uid": "0x29611f6231c137339d9cc303efa266280e258036e5c9bba27605143822a07c4308d303ac41327258492b1ff8540a81f4b08d3689610d4222"
+    },
+    {
+      "block": 12971723,
+      "chain_tx_hash": "0x92e2334802e96098e1feb62840b46d107d28750e85f23f078fdeb29e7d50443e",
+      "kind": "settlement_missing",
+      "log_index": 45,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971725,
+      "chain_tx_hash": "0x1b5127bd9fe2edc45d9b5316fc2e35e7c633e4cd3bfb0bf8cac9155f770d0912",
+      "kind": "trade_missing",
+      "log_index": 310,
+      "order_uid": "0x828876f8e10a6dc9d3e6be9537f1895fcd79a23d075f62f96b47b72b1def43cd424a46612794dbb8000194937834250dc723ffa5610d4294"
+    },
+    {
+      "block": 12971725,
+      "chain_tx_hash": "0x1b5127bd9fe2edc45d9b5316fc2e35e7c633e4cd3bfb0bf8cac9155f770d0912",
+      "kind": "settlement_missing",
+      "log_index": 325,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971728,
+      "chain_tx_hash": "0xa8df8b5dfd6fc77fe11729bc26fd7cf649aa6e1db0e602755e9b2d7d355b9850",
+      "kind": "trade_missing",
+      "log_index": 114,
+      "order_uid": "0x287e06e56075fbacfd3c39cb0cd191e724e2bc15889d31b99bfd610a31cf2aba56eb62e08fadbd1280fa57656c3ea456864bd192610d42cb"
+    },
+    {
+      "block": 12971728,
+      "chain_tx_hash": "0xa8df8b5dfd6fc77fe11729bc26fd7cf649aa6e1db0e602755e9b2d7d355b9850",
+      "kind": "settlement_missing",
+      "log_index": 122,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12971905,
+      "chain_tx_hash": "0xd9c86d76cddd03300ba727a3d823f4c35a4f3e05c7647eace7988ef7bd21a715",
+      "kind": "trade_missing",
+      "log_index": 19,
+      "order_uid": "0xe6df47eb45e8ad02a5d0702868764b0dbf60e90c11898e50bac0da295b0c897daadb7cc8587ca5ae3e5c98b9e78f6024953c0bd0610d4c84"
+    },
+    {
+      "block": 12971905,
+      "chain_tx_hash": "0xd9c86d76cddd03300ba727a3d823f4c35a4f3e05c7647eace7988ef7bd21a715",
+      "kind": "settlement_missing",
+      "log_index": 30,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12972443,
+      "chain_tx_hash": "0x996f218cc6f3e6d51aec4517e89d7675ca33b24b01769ae9cd7d71a9f9898e38",
+      "kind": "trade_missing",
+      "log_index": 77,
+      "order_uid": "0xecf14b8335705c3cecfc6bcdd4ebd3f1878ea8458c003dea55de96bb888e0a4a262d23a2d916f6cf08e0235315aa51e22d142d0b610d682f"
+    },
+    {
+      "block": 12972443,
+      "chain_tx_hash": "0x996f218cc6f3e6d51aec4517e89d7675ca33b24b01769ae9cd7d71a9f9898e38",
+      "kind": "settlement_missing",
+      "log_index": 89,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12972450,
+      "chain_tx_hash": "0x0dcd5178a00c56dd4dba3fe9b228b15447e726be684670d5450ecbb595240456",
+      "kind": "trade_missing",
+      "log_index": 213,
+      "order_uid": "0x6d09f6adb63de1351a93fee174d6af24f5a068348a9c77f83f17fcfc45cb97a8262d23a2d916f6cf08e0235315aa51e22d142d0b610d6865"
+    },
+    {
+      "block": 12972450,
+      "chain_tx_hash": "0x0dcd5178a00c56dd4dba3fe9b228b15447e726be684670d5450ecbb595240456",
+      "kind": "settlement_missing",
+      "log_index": 220,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12973473,
+      "chain_tx_hash": "0x41abc10f6ff19acafe03b2352bc4cd6ab3cbee6f1b10d02e34c37f75d55cf2bc",
+      "kind": "trade_missing",
+      "log_index": 51,
+      "order_uid": "0x5b6c2ba22c83320caceaf512dc21a3574edd50fed30ba664ba9b8d43eb85c8c08d99f8b2710e6a3b94d9bf465a98e5273069acbd610d9e68"
+    },
+    {
+      "block": 12973473,
+      "chain_tx_hash": "0x41abc10f6ff19acafe03b2352bc4cd6ab3cbee6f1b10d02e34c37f75d55cf2bc",
+      "kind": "settlement_missing",
+      "log_index": 54,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12973482,
+      "chain_tx_hash": "0x93aef2c8ebc950b3d8b2a2aa37b916ef4dc57530f9592ccb52e4686b5741941c",
+      "kind": "trade_missing",
+      "log_index": 192,
+      "order_uid": "0x97f748602a0462fb22863d9c7819a515a2f714e0564e4292362c18dc32739d9f8d99f8b2710e6a3b94d9bf465a98e5273069acbd610d9efd"
+    },
+    {
+      "block": 12973482,
+      "chain_tx_hash": "0x93aef2c8ebc950b3d8b2a2aa37b916ef4dc57530f9592ccb52e4686b5741941c",
+      "kind": "settlement_missing",
+      "log_index": 200,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12973530,
+      "chain_tx_hash": "0xcbcb9867e40eb5cd717592696360cbdd97a2be9cb507dad05f54f006c283be3a",
+      "kind": "trade_missing",
+      "log_index": 345,
+      "order_uid": "0xe7c6c1d6bc1e0d093013efc14c372376846b6c12c375755ed03c86233003ac5e8d99f8b2710e6a3b94d9bf465a98e5273069acbd610da18c"
+    },
+    {
+      "block": 12973530,
+      "chain_tx_hash": "0xcbcb9867e40eb5cd717592696360cbdd97a2be9cb507dad05f54f006c283be3a",
+      "kind": "settlement_missing",
+      "log_index": 353,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12973678,
+      "chain_tx_hash": "0xbea1e1e7dd0df5c63fddeeb926081a57cd8e573e5ac8c7f661741103dc538542",
+      "kind": "trade_missing",
+      "log_index": 110,
+      "order_uid": "0x01da565e7eb49de7c8a5834d5db6b7bb10771c2ce057754417c991fead5e9bc2833552c0b6151549e860239045deccfac4c40ca2610da99f"
+    },
+    {
+      "block": 12973678,
+      "chain_tx_hash": "0xbea1e1e7dd0df5c63fddeeb926081a57cd8e573e5ac8c7f661741103dc538542",
+      "kind": "settlement_missing",
+      "log_index": 125,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12973686,
+      "chain_tx_hash": "0x5ee8349eaec7bb3e279bcfd011a1aa22f5b827b2f390a8a7be686cd232e4b697",
+      "kind": "trade_missing",
+      "log_index": 20,
+      "order_uid": "0x23d515d10dd4ff13c22905a481d3b5d0be84ffe2204f96497e2ea7a3c36c69a0833552c0b6151549e860239045deccfac4c40ca2610daa33"
+    },
+    {
+      "block": 12973686,
+      "chain_tx_hash": "0x5ee8349eaec7bb3e279bcfd011a1aa22f5b827b2f390a8a7be686cd232e4b697",
+      "kind": "settlement_missing",
+      "log_index": 41,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12973744,
+      "chain_tx_hash": "0x7f5ebc652c5ee6c1d95976f26b331bf7b3065679c0bf5970c7fe049044b8d490",
+      "kind": "trade_missing",
+      "log_index": 333,
+      "order_uid": "0x642bf3d0750445ff5ee41f9f4b97a3ea768885522be1be5ccc1c372fc0fcd4d7a0be1259f6a11f57209c80c626e06f3bd4291b93610dacf0"
+    },
+    {
+      "block": 12973744,
+      "chain_tx_hash": "0x7f5ebc652c5ee6c1d95976f26b331bf7b3065679c0bf5970c7fe049044b8d490",
+      "kind": "settlement_missing",
+      "log_index": 340,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12973754,
+      "chain_tx_hash": "0x1744e4deae2ac1497920dfd6e9cd0e98aaca06d70b8a9a670652be1c8ae1c752",
+      "kind": "trade_missing",
+      "log_index": 316,
+      "order_uid": "0x00a63c269af523a8844fc4ae706b22cb69d001dc3be93d9bf438f9f3aa8d8b25a0be1259f6a11f57209c80c626e06f3bd4291b93610dad6e"
+    },
+    {
+      "block": 12973754,
+      "chain_tx_hash": "0x1744e4deae2ac1497920dfd6e9cd0e98aaca06d70b8a9a670652be1c8ae1c752",
+      "kind": "settlement_missing",
+      "log_index": 324,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12989065,
+      "chain_tx_hash": "0x32acb84d44fb1026915a84549bb4a9904f0797c79435df457b943468a210566b",
+      "kind": "trade_missing",
+      "log_index": 166,
+      "order_uid": "0x2ecf8a3deb88e411535642239a25e42d2e9c9ff31f0d98b63f0d550e5639f03942eed6182e4f3e37d3ae08a0d2a04c258ee0ae876110c55c"
+    },
+    {
+      "block": 12989065,
+      "chain_tx_hash": "0x32acb84d44fb1026915a84549bb4a9904f0797c79435df457b943468a210566b",
+      "kind": "settlement_missing",
+      "log_index": 178,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12989105,
+      "chain_tx_hash": "0x04da16708c57cca0fef23622d9a49da38dd85e4304f991532e8a615ad764e25c",
+      "kind": "trade_missing",
+      "log_index": 122,
+      "order_uid": "0x570e660d08a91c83f5e4b5b886946ab0fef7083396c88a4fe5b01118cf0f1cc942eed6182e4f3e37d3ae08a0d2a04c258ee0ae876110c7b7"
+    },
+    {
+      "block": 12989105,
+      "chain_tx_hash": "0x04da16708c57cca0fef23622d9a49da38dd85e4304f991532e8a615ad764e25c",
+      "kind": "settlement_missing",
+      "log_index": 132,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12991287,
+      "chain_tx_hash": "0x357b75c1a1513f66c2781c7fb9e41a3674e3658b0afced1978b5c8eff8030d60",
+      "kind": "trade_missing",
+      "log_index": 219,
+      "order_uid": "0xecccd0995e61fc68266f25146485a613d6006f643897a98834f74f6391be49388bc0fe84022542e1611ff252090028df741ad6706111374d"
+    },
+    {
+      "block": 12991287,
+      "chain_tx_hash": "0x357b75c1a1513f66c2781c7fb9e41a3674e3658b0afced1978b5c8eff8030d60",
+      "kind": "settlement_missing",
+      "log_index": 229,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12991347,
+      "chain_tx_hash": "0x9a72dbe45f1d65d48cb3fcfa2a43e11b690263db9924bbedaa2b5e3cca5b7532",
+      "kind": "trade_missing",
+      "log_index": 85,
+      "order_uid": "0x4b9ef5d30f94d290dd8bc7b5ec769ecb82ce763504ac6c80e800f51f3a201ddd8bc0fe84022542e1611ff252090028df741ad67061113a29"
+    },
+    {
+      "block": 12991347,
+      "chain_tx_hash": "0x9a72dbe45f1d65d48cb3fcfa2a43e11b690263db9924bbedaa2b5e3cca5b7532",
+      "kind": "settlement_missing",
+      "log_index": 95,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12991443,
+      "chain_tx_hash": "0xa48d19677465b201896cbc97ea09e52a31a571a752648b8b2a25307b803a3627",
+      "kind": "trade_missing",
+      "log_index": 239,
+      "order_uid": "0x1b06b5757584608d778683a35cad2f0bcf419a76bf7c18f52e14bfbf9afc75a7449e8424e765a04b6b10e10c13ef941a9bf0d48a61113fec"
+    },
+    {
+      "block": 12991443,
+      "chain_tx_hash": "0xa48d19677465b201896cbc97ea09e52a31a571a752648b8b2a25307b803a3627",
+      "kind": "settlement_missing",
+      "log_index": 253,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12993211,
+      "chain_tx_hash": "0xac59f952830f52ddda14adc878d0c588af84f255fa02f1e47a73119842c93aae",
+      "kind": "trade_missing",
+      "log_index": 71,
+      "order_uid": "0xf032369b3d5ff86a13e70925e67cfd40db8b02c775d4f1f3f8dd877cdb74663542eed6182e4f3e37d3ae08a0d2a04c258ee0ae8761119b5b"
+    },
+    {
+      "block": 12993211,
+      "chain_tx_hash": "0xac59f952830f52ddda14adc878d0c588af84f255fa02f1e47a73119842c93aae",
+      "kind": "settlement_missing",
+      "log_index": 93,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995648,
+      "chain_tx_hash": "0x8765d3565029ff050b0f7907ba71054e9a2bc1cc0a61dd8797fd239652f6fe98",
+      "kind": "trade_missing",
+      "log_index": 298,
+      "order_uid": "0x3da775792932545965b8b7f8bda1896a8d03b93e2321e3c229680adfe5474727d3f6b90dfbfa94c78c34a442afd6d68f29f8308961121a85"
+    },
+    {
+      "block": 12995648,
+      "chain_tx_hash": "0x8765d3565029ff050b0f7907ba71054e9a2bc1cc0a61dd8797fd239652f6fe98",
+      "kind": "settlement_missing",
+      "log_index": 306,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995718,
+      "chain_tx_hash": "0xac4af123207e95baa9172d554594b2bce1cb2e2bc2f1bfa07f0c4609f429ed38",
+      "kind": "trade_missing",
+      "log_index": 128,
+      "order_uid": "0xa6a6cc65015db04cfb9724ea34fc4b214b6042ac7ec94d622ff9dc96eee90086d3f6b90dfbfa94c78c34a442afd6d68f29f8308961121e3e"
+    },
+    {
+      "block": 12995718,
+      "chain_tx_hash": "0xac4af123207e95baa9172d554594b2bce1cb2e2bc2f1bfa07f0c4609f429ed38",
+      "kind": "settlement_missing",
+      "log_index": 138,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995730,
+      "chain_tx_hash": "0x05e41d853986df661ebb686b26cbd3c50529b9c6fea52085429ee4a6a0e95721",
+      "kind": "trade_missing",
+      "log_index": 286,
+      "order_uid": "0xb64f4272819e5752a953d7f31c288e6ccb20b25c33735f57f5a661ce5ebec846d3f6b90dfbfa94c78c34a442afd6d68f29f8308961121edd"
+    },
+    {
+      "block": 12995730,
+      "chain_tx_hash": "0x05e41d853986df661ebb686b26cbd3c50529b9c6fea52085429ee4a6a0e95721",
+      "kind": "settlement_missing",
+      "log_index": 294,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995739,
+      "chain_tx_hash": "0x7b3e93a4d0a23decbf314d22659edb2ff5d1ccc36e269258169402743dac4d87",
+      "kind": "trade_missing",
+      "log_index": 373,
+      "order_uid": "0xb1a21e4ae78321bb3c3ea29399a72ee2b256a52ea4199466f39737a9eb580ba9d3f6b90dfbfa94c78c34a442afd6d68f29f8308961121f29"
+    },
+    {
+      "block": 12995739,
+      "chain_tx_hash": "0x7b3e93a4d0a23decbf314d22659edb2ff5d1ccc36e269258169402743dac4d87",
+      "kind": "settlement_missing",
+      "log_index": 381,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995745,
+      "chain_tx_hash": "0x8f52782fb45e264926169792ad53ce3eb1ed570c9da757c38a954187a17fe8d5",
+      "kind": "trade_missing",
+      "log_index": 119,
+      "order_uid": "0xf83bfd286fa2d1451dce0f9b400330918692db32965f84bd692c646edf4f0a17d3f6b90dfbfa94c78c34a442afd6d68f29f8308961121f86"
+    },
+    {
+      "block": 12995745,
+      "chain_tx_hash": "0x8f52782fb45e264926169792ad53ce3eb1ed570c9da757c38a954187a17fe8d5",
+      "kind": "settlement_missing",
+      "log_index": 127,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995765,
+      "chain_tx_hash": "0x65ea451b5c2b25d542cd391ac83ea81a6bbcc9470a372a57f194029fe0b89921",
+      "kind": "trade_missing",
+      "log_index": 317,
+      "order_uid": "0xac43e562dcf07afb7a404294c47c15f6bcb7d9d65145603368185f562600b77ceab9c108128f50f3f6a08354a7788c4d3670af28611220ae"
+    },
+    {
+      "block": 12995765,
+      "chain_tx_hash": "0x65ea451b5c2b25d542cd391ac83ea81a6bbcc9470a372a57f194029fe0b89921",
+      "kind": "settlement_missing",
+      "log_index": 325,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995773,
+      "chain_tx_hash": "0x401019c8894e641454457647a3f6c0400f2536b1e789c4b9f38638f2d1937ea1",
+      "kind": "trade_missing",
+      "log_index": 97,
+      "order_uid": "0xa2c5c7e4f6263af475f2fda10cec11989092e9101eeb395b0cadaefa639d5552eab9c108128f50f3f6a08354a7788c4d3670af2861122102"
+    },
+    {
+      "block": 12995773,
+      "chain_tx_hash": "0x401019c8894e641454457647a3f6c0400f2536b1e789c4b9f38638f2d1937ea1",
+      "kind": "settlement_missing",
+      "log_index": 105,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995786,
+      "chain_tx_hash": "0xdc76e27e2a4ec7d9737c1af3ea465141d3724c36ff68bc72dd48887b45a77124",
+      "kind": "trade_missing",
+      "log_index": 116,
+      "order_uid": "0x9586ec0663d0c4e1ce47cfb238f913228931e0f649d1474e54fae826f5c697e5eab9c108128f50f3f6a08354a7788c4d3670af28611221a0"
+    },
+    {
+      "block": 12995786,
+      "chain_tx_hash": "0xdc76e27e2a4ec7d9737c1af3ea465141d3724c36ff68bc72dd48887b45a77124",
+      "kind": "settlement_missing",
+      "log_index": 124,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995797,
+      "chain_tx_hash": "0x0746e1aa433336dc2c3e96ae0d409090fe6fde997252a9314664bb7389ba2036",
+      "kind": "trade_missing",
+      "log_index": 175,
+      "order_uid": "0x706d513fb53fa8560bf4871552ce119581711afa95c6107c232998b3d1c7ebddeab9c108128f50f3f6a08354a7788c4d3670af28611221e8"
+    },
+    {
+      "block": 12995797,
+      "chain_tx_hash": "0x0746e1aa433336dc2c3e96ae0d409090fe6fde997252a9314664bb7389ba2036",
+      "kind": "settlement_missing",
+      "log_index": 183,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995804,
+      "chain_tx_hash": "0x0612fb53f5afb2c3906f335cf3abce5aa7fb8de0b32511b5a3439b0ae0bd63a8",
+      "kind": "trade_missing",
+      "log_index": 133,
+      "order_uid": "0xe7fd1a2b4e93b39b8ddd89de242f0dba93694752e1b0578dec9118df772534b2eab9c108128f50f3f6a08354a7788c4d3670af2861122260"
+    },
+    {
+      "block": 12995804,
+      "chain_tx_hash": "0x0612fb53f5afb2c3906f335cf3abce5aa7fb8de0b32511b5a3439b0ae0bd63a8",
+      "kind": "settlement_missing",
+      "log_index": 141,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995811,
+      "chain_tx_hash": "0x624f9614b4dc86e569dc17a5fd99043854cd1351b73ec3b309e7b49af4538351",
+      "kind": "trade_missing",
+      "log_index": 44,
+      "order_uid": "0xea6e179b78baad28be2d806b11b4687164840f27f9afa3dcf8b95bbb8530b5208f094108cd7499a917356cb21e9153fbcf0c372061122301"
+    },
+    {
+      "block": 12995811,
+      "chain_tx_hash": "0x624f9614b4dc86e569dc17a5fd99043854cd1351b73ec3b309e7b49af4538351",
+      "kind": "settlement_missing",
+      "log_index": 52,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995818,
+      "chain_tx_hash": "0xa12364f3e29249fc48e688373dd76e583e6b39697ce43a40b47209d5cd49d2fe",
+      "kind": "trade_missing",
+      "log_index": 142,
+      "order_uid": "0x06e38ad8d37d9bdcd848bb15c686727d6067e4bb867c6d3c9d969b811dcd0e1a8f094108cd7499a917356cb21e9153fbcf0c372061122359"
+    },
+    {
+      "block": 12995818,
+      "chain_tx_hash": "0xa12364f3e29249fc48e688373dd76e583e6b39697ce43a40b47209d5cd49d2fe",
+      "kind": "settlement_missing",
+      "log_index": 150,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995838,
+      "chain_tx_hash": "0x12662554f7e6c016fa2a7a4fac1ece672d8f955fc6dbccb297b70b9a876de538",
+      "kind": "trade_missing",
+      "log_index": 66,
+      "order_uid": "0xe17cab7683c38116d75c1cb7ff6a01a847231148e2b6465f0c13faae32c1d4338f094108cd7499a917356cb21e9153fbcf0c37206112243a"
+    },
+    {
+      "block": 12995838,
+      "chain_tx_hash": "0x12662554f7e6c016fa2a7a4fac1ece672d8f955fc6dbccb297b70b9a876de538",
+      "kind": "settlement_missing",
+      "log_index": 74,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995847,
+      "chain_tx_hash": "0x4bb3508357803bf8952f49f802f4ec7ca733475b7d25d368e8ec2d308ae3dccf",
+      "kind": "trade_missing",
+      "log_index": 134,
+      "order_uid": "0x4421392de4daa8f1cfb16f0e29b44589503b46e8e634035363f7551412b4edf88f094108cd7499a917356cb21e9153fbcf0c37206112248c"
+    },
+    {
+      "block": 12995847,
+      "chain_tx_hash": "0x4bb3508357803bf8952f49f802f4ec7ca733475b7d25d368e8ec2d308ae3dccf",
+      "kind": "settlement_missing",
+      "log_index": 142,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995851,
+      "chain_tx_hash": "0x215db0abba4c68f77e99b1a85f47b0eae1a0524dc27af0712209c69f6751334c",
+      "kind": "trade_missing",
+      "log_index": 259,
+      "order_uid": "0x735370468d03388089689889858bba5b1e070b052f3f16f7b2ec0fd2a5cea3b88f094108cd7499a917356cb21e9153fbcf0c3720611224ee"
+    },
+    {
+      "block": 12995851,
+      "chain_tx_hash": "0x215db0abba4c68f77e99b1a85f47b0eae1a0524dc27af0712209c69f6751334c",
+      "kind": "settlement_missing",
+      "log_index": 267,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995862,
+      "chain_tx_hash": "0xb703a31424c3a2894ae7fb7fb9c896c048e5bf9049042c1544a144510c06c51e",
+      "kind": "trade_missing",
+      "log_index": 104,
+      "order_uid": "0xcc83dc163d8422ed9caaffd0f66fa52a28a84aad0faa44073dc3d683c140553021274b5482d0cbd50952e64f7da215b70d243a79611225a5"
+    },
+    {
+      "block": 12995862,
+      "chain_tx_hash": "0xb703a31424c3a2894ae7fb7fb9c896c048e5bf9049042c1544a144510c06c51e",
+      "kind": "settlement_missing",
+      "log_index": 112,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995880,
+      "chain_tx_hash": "0x6ac4b92ee63e6b68e2bec40a67daffb67f12319fbca129789c700118914f0f4e",
+      "kind": "trade_missing",
+      "log_index": 37,
+      "order_uid": "0x431d0256453ca825a46e4b6f67ac994df84f43d1b8a9501eba9ae635995feb3521274b5482d0cbd50952e64f7da215b70d243a7961122674"
+    },
+    {
+      "block": 12995880,
+      "chain_tx_hash": "0x6ac4b92ee63e6b68e2bec40a67daffb67f12319fbca129789c700118914f0f4e",
+      "kind": "settlement_missing",
+      "log_index": 45,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995886,
+      "chain_tx_hash": "0x3f3e326506d851871fbf53a23771e12f1a99fd36176193cf5c4108995435bb7a",
+      "kind": "trade_missing",
+      "log_index": 65,
+      "order_uid": "0x3b9eb5ea2220f7a6634b1bb7902058fd9d5965b9c69de371a0e49e20aa89b9c721274b5482d0cbd50952e64f7da215b70d243a79611226e6"
+    },
+    {
+      "block": 12995886,
+      "chain_tx_hash": "0x3f3e326506d851871fbf53a23771e12f1a99fd36176193cf5c4108995435bb7a",
+      "kind": "settlement_missing",
+      "log_index": 73,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995893,
+      "chain_tx_hash": "0xae16c37a9f3796aaff5400a84ed0be2e3d96590a293405136cd93b40a0841767",
+      "kind": "trade_missing",
+      "log_index": 60,
+      "order_uid": "0x57d81ea15ed55011c9d7cf4a713f09d519efef9d564fb123246cd49be21ac99c21274b5482d0cbd50952e64f7da215b70d243a7961122717"
+    },
+    {
+      "block": 12995893,
+      "chain_tx_hash": "0xae16c37a9f3796aaff5400a84ed0be2e3d96590a293405136cd93b40a0841767",
+      "kind": "settlement_missing",
+      "log_index": 68,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995898,
+      "chain_tx_hash": "0x54488494e41931e5a9bc1e90161c8b7f873929e669a46df437ee92b6544c506c",
+      "kind": "trade_missing",
+      "log_index": 31,
+      "order_uid": "0xa71c99361b0a94356a7f75795a8efc9cb2abadad06d9df0fcbc4f8ee5848fb4a21274b5482d0cbd50952e64f7da215b70d243a796112276e"
+    },
+    {
+      "block": 12995898,
+      "chain_tx_hash": "0x54488494e41931e5a9bc1e90161c8b7f873929e669a46df437ee92b6544c506c",
+      "kind": "settlement_missing",
+      "log_index": 39,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995906,
+      "chain_tx_hash": "0x98e4d29f1180189c3375c4f739206abd51efe78da644cdc7cb3d44dc55995e29",
+      "kind": "trade_missing",
+      "log_index": 262,
+      "order_uid": "0xb6846dd8d14bdf6b3665efd899f1e4d6b5086fa36def3f1e5bb4281cec344f5737bdb00356932226900e266e9cec7829fba05331611227e1"
+    },
+    {
+      "block": 12995906,
+      "chain_tx_hash": "0x98e4d29f1180189c3375c4f739206abd51efe78da644cdc7cb3d44dc55995e29",
+      "kind": "settlement_missing",
+      "log_index": 270,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995918,
+      "chain_tx_hash": "0x2322893825bc87692fabfcd5ad934a02bcd2e394182cc9c2080bdf2f6b0e1add",
+      "kind": "trade_missing",
+      "log_index": 14,
+      "order_uid": "0xe1ebc64c7f20a261cab92f9fcb7802cb53dc7a06bda2162b40844cbd5569f9e037bdb00356932226900e266e9cec7829fba053316112289a"
+    },
+    {
+      "block": 12995918,
+      "chain_tx_hash": "0x2322893825bc87692fabfcd5ad934a02bcd2e394182cc9c2080bdf2f6b0e1add",
+      "kind": "settlement_missing",
+      "log_index": 22,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995929,
+      "chain_tx_hash": "0x1608bf71e2e87c279fb166fdaa2abcedd43a9e8cee0c3329e7c54e1102739633",
+      "kind": "trade_missing",
+      "log_index": 81,
+      "order_uid": "0xcc458b7766053b1af96b0e35b7ea3dc0c7fbb4e1fd933d430d1981b7c10dd63137bdb00356932226900e266e9cec7829fba05331611228f8"
+    },
+    {
+      "block": 12995929,
+      "chain_tx_hash": "0x1608bf71e2e87c279fb166fdaa2abcedd43a9e8cee0c3329e7c54e1102739633",
+      "kind": "settlement_missing",
+      "log_index": 89,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995933,
+      "chain_tx_hash": "0xa91fd9cf1f9f5aafc7b45dd00c5c67b1ac03a39734033194dc935cb47da28bb3",
+      "kind": "trade_missing",
+      "log_index": 179,
+      "order_uid": "0x41c3fc80d690ecb920065c512a9abfe5a307dc4115078708b012d329f1b0af0737bdb00356932226900e266e9cec7829fba053316112295b"
+    },
+    {
+      "block": 12995933,
+      "chain_tx_hash": "0xa91fd9cf1f9f5aafc7b45dd00c5c67b1ac03a39734033194dc935cb47da28bb3",
+      "kind": "settlement_missing",
+      "log_index": 182,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12995937,
+      "chain_tx_hash": "0xd41199e06049079315d3887ad8c47a6530823e568c0b02d7b9421125e28c3596",
+      "kind": "trade_missing",
+      "log_index": 122,
+      "order_uid": "0x83216d9f5139ef4cba8c38b9fe288381eaed0c27c28343b4768ede7aa36e03b637bdb00356932226900e266e9cec7829fba05331611229c5"
+    },
+    {
+      "block": 12995937,
+      "chain_tx_hash": "0xd41199e06049079315d3887ad8c47a6530823e568c0b02d7b9421125e28c3596",
+      "kind": "settlement_missing",
+      "log_index": 130,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12996201,
+      "chain_tx_hash": "0x4f14e41d96b8612323191f965de76c9c1facb21be86db1c4ec31a8b1e0157e4f",
+      "kind": "trade_missing",
+      "log_index": 272,
+      "order_uid": "0x665f1914782a2d474f3614033f335e36e60cf7c88c72d060cc7858469d5852968bc0fe84022542e1611ff252090028df741ad67061123a41"
+    },
+    {
+      "block": 12996201,
+      "chain_tx_hash": "0x4f14e41d96b8612323191f965de76c9c1facb21be86db1c4ec31a8b1e0157e4f",
+      "kind": "settlement_missing",
+      "log_index": 276,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12996221,
+      "chain_tx_hash": "0x67bd3753f347e89cfa4439ae1e168c6a5e28715f0fd6007967b103852181e4a4",
+      "kind": "trade_missing",
+      "log_index": 61,
+      "order_uid": "0x65279b902865afaa65bc4780fb6d342d54d0073b7f24cf6015e8eb2a20f2c3e58bc0fe84022542e1611ff252090028df741ad67061123b24"
+    },
+    {
+      "block": 12996221,
+      "chain_tx_hash": "0x67bd3753f347e89cfa4439ae1e168c6a5e28715f0fd6007967b103852181e4a4",
+      "kind": "settlement_missing",
+      "log_index": 69,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12997065,
+      "chain_tx_hash": "0x11f1b00267d36bc9cd735fb77382f399191ae10665783264769eddcfd04dc122",
+      "kind": "trade_missing",
+      "log_index": 150,
+      "order_uid": "0x8c64096d657dfb562f7a44b7b49c72651fea80b1e89e7bbdad75eae74f8c859c0d41f544b18b779389081833791c24ae5075b88861126683"
+    },
+    {
+      "block": 12997065,
+      "chain_tx_hash": "0x11f1b00267d36bc9cd735fb77382f399191ae10665783264769eddcfd04dc122",
+      "kind": "settlement_missing",
+      "log_index": 174,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12997138,
+      "chain_tx_hash": "0x403d9d91f97354dd48c3dad52a78bff7e209a4779d86157d1de0275be0e16b63",
+      "kind": "trade_missing",
+      "log_index": 7,
+      "order_uid": "0x65f2ecaf52c0b8633a443755ca2fa3969fd72d83ab420056a497c45a9a2d56408bc0fe84022542e1611ff252090028df741ad67061126a37"
+    },
+    {
+      "block": 12997138,
+      "chain_tx_hash": "0x403d9d91f97354dd48c3dad52a78bff7e209a4779d86157d1de0275be0e16b63",
+      "kind": "settlement_missing",
+      "log_index": 16,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12997152,
+      "chain_tx_hash": "0x30b70360122809c2d09f3eec8936220720fab2ecf15af4baabedc765163a4cb1",
+      "kind": "trade_missing",
+      "log_index": 243,
+      "order_uid": "0xd594c4b6c012ce016d66099ffa1d90483298f9c25ae5e20bb9a0e4d6f390fa878bc0fe84022542e1611ff252090028df741ad67061126ad7"
+    },
+    {
+      "block": 12997152,
+      "chain_tx_hash": "0x30b70360122809c2d09f3eec8936220720fab2ecf15af4baabedc765163a4cb1",
+      "kind": "settlement_missing",
+      "log_index": 246,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 12998328,
+      "chain_tx_hash": "0x41a478669085acbbe2b089e8fa6c530fb6fee0a6911b4154943b93fe3f9c1478",
+      "kind": "trade_missing",
+      "log_index": 197,
+      "order_uid": "0x6e78528aadda92cf4387b4e0e7cb8f2ed9e176c5ec005ab911bd42d21d92e88c1f5b740436fc5935622e92aa3b46818906f416e961129f60"
+    },
+    {
+      "block": 12998328,
+      "chain_tx_hash": "0x41a478669085acbbe2b089e8fa6c530fb6fee0a6911b4154943b93fe3f9c1478",
+      "kind": "settlement_missing",
+      "log_index": 205,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13001513,
+      "chain_tx_hash": "0xe8b4f482a7a6b1e7bec2b1d294739fdb592e7479f16ea7e88906042587548247",
+      "kind": "trade_missing",
+      "log_index": 83,
+      "order_uid": "0xc9611333a132e0031e06f9bb9bd9ce2153c9d74d166aa9472a859288f758ef9e42eed6182e4f3e37d3ae08a0d2a04c258ee0ae8761134c02"
+    },
+    {
+      "block": 13001513,
+      "chain_tx_hash": "0xe8b4f482a7a6b1e7bec2b1d294739fdb592e7479f16ea7e88906042587548247",
+      "kind": "settlement_missing",
+      "log_index": 111,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13002340,
+      "chain_tx_hash": "0x56ea2fd15cf8bc275bfa53f721735e30434e1d388e582ad5e03d2b3537efd55a",
+      "kind": "trade_missing",
+      "log_index": 78,
+      "order_uid": "0xa7f471d68581daebcdfce03645e649b2ba9c5c8f2c21361a68d39149536ba4d642eed6182e4f3e37d3ae08a0d2a04c258ee0ae876113778a"
+    },
+    {
+      "block": 13002340,
+      "chain_tx_hash": "0x56ea2fd15cf8bc275bfa53f721735e30434e1d388e582ad5e03d2b3537efd55a",
+      "kind": "settlement_missing",
+      "log_index": 107,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13002344,
+      "chain_tx_hash": "0xd380136311c77c58e4ea89279811ef1d98278a351f92f820fa130fae2f38b1ff",
+      "kind": "trade_missing",
+      "log_index": 153,
+      "order_uid": "0xdcaf86ba7db306733dc353dff0adf15598243c45f30a0f6eca6d145dc91be59642eed6182e4f3e37d3ae08a0d2a04c258ee0ae87611377cf"
+    },
+    {
+      "block": 13002344,
+      "chain_tx_hash": "0xd380136311c77c58e4ea89279811ef1d98278a351f92f820fa130fae2f38b1ff",
+      "kind": "settlement_missing",
+      "log_index": 168,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13002788,
+      "chain_tx_hash": "0x1e5ca28752e9e7afaebfd7c0b4bfb4351e5d9aa32b011f4aa15622b7fd7bc919",
+      "kind": "trade_missing",
+      "log_index": 57,
+      "order_uid": "0x535226b3f1665ab86d1303345fc0f5bbb68729752f7ab555605e065c8a1172ee42eed6182e4f3e37d3ae08a0d2a04c258ee0ae8761139008"
+    },
+    {
+      "block": 13002788,
+      "chain_tx_hash": "0x1e5ca28752e9e7afaebfd7c0b4bfb4351e5d9aa32b011f4aa15622b7fd7bc919",
+      "kind": "settlement_missing",
+      "log_index": 76,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13002897,
+      "chain_tx_hash": "0xf0bf67de6e8a1e36c56c52674c2aeb79a2b1ecc2c70a3d0d7414540ccb459900",
+      "kind": "trade_missing",
+      "log_index": 59,
+      "order_uid": "0x847658eee5184a81ec79a2fda65b55d759c41db0f37566ac84171fb4aa4886438bc0fe84022542e1611ff252090028df741ad6706113956e"
+    },
+    {
+      "block": 13002897,
+      "chain_tx_hash": "0xf0bf67de6e8a1e36c56c52674c2aeb79a2b1ecc2c70a3d0d7414540ccb459900",
+      "kind": "settlement_missing",
+      "log_index": 63,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13002901,
+      "chain_tx_hash": "0x5a5c2d90fac22fee5f9dca988d78ddf87d21c994155d0a71174476f4d330c236",
+      "kind": "trade_missing",
+      "log_index": 175,
+      "order_uid": "0xc6dedaea11671de249bab35a4bff129431877a5d60490c69f2a49129d11edef78bc0fe84022542e1611ff252090028df741ad670611395ab"
+    },
+    {
+      "block": 13002901,
+      "chain_tx_hash": "0x5a5c2d90fac22fee5f9dca988d78ddf87d21c994155d0a71174476f4d330c236",
+      "kind": "settlement_missing",
+      "log_index": 183,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13002962,
+      "chain_tx_hash": "0x773c62fb1ffec3fb1a8c2c2c1badf0be553c7c76ced6f7d0ad15a10b2e32a726",
+      "kind": "trade_missing",
+      "log_index": 148,
+      "order_uid": "0x23f18df7cf8c6c129a21f586443085ab823dcb209c211d1809d7f00343ac2cae8bc0fe84022542e1611ff252090028df741ad67061139998"
+    },
+    {
+      "block": 13002962,
+      "chain_tx_hash": "0x773c62fb1ffec3fb1a8c2c2c1badf0be553c7c76ced6f7d0ad15a10b2e32a726",
+      "kind": "settlement_missing",
+      "log_index": 156,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13003043,
+      "chain_tx_hash": "0x7e5f0d6c36873277b724514fd63b2cee11f0fc9799e6cc6e3571f0423b789843",
+      "kind": "trade_missing",
+      "log_index": 35,
+      "order_uid": "0x2df21e88992af62d1169019e0097072e13dcdb7a54438b2e3031a92c1ef5615698f214f18955bb66f6f0135bb7776707136c1ad861139e0a"
+    },
+    {
+      "block": 13003043,
+      "chain_tx_hash": "0x7e5f0d6c36873277b724514fd63b2cee11f0fc9799e6cc6e3571f0423b789843",
+      "kind": "settlement_missing",
+      "log_index": 38,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13003047,
+      "chain_tx_hash": "0x26eb457fd3f32b0500e82d58b337d6b8a38adbc34919fe56029d4a843bae8975",
+      "kind": "trade_missing",
+      "log_index": 10,
+      "order_uid": "0x860e687794b16fb63d6097798086f81671592574adfeb8d289bc6a2799911895424a46612794dbb8000194937834250dc723ffa561139e36"
+    },
+    {
+      "block": 13003047,
+      "chain_tx_hash": "0x26eb457fd3f32b0500e82d58b337d6b8a38adbc34919fe56029d4a843bae8975",
+      "kind": "settlement_missing",
+      "log_index": 13,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13003118,
+      "chain_tx_hash": "0xe7546632561be5739ebcf529dfb22332ccc33bf19ac29deaf1f50095430bfe14",
+      "kind": "trade_missing",
+      "log_index": 188,
+      "order_uid": "0x1f13a36fda7a677c53711b860f5af27459c956c58cdd2d692003091100bcc8848bc0fe84022542e1611ff252090028df741ad6706113a250"
+    },
+    {
+      "block": 13003118,
+      "chain_tx_hash": "0xe7546632561be5739ebcf529dfb22332ccc33bf19ac29deaf1f50095430bfe14",
+      "kind": "settlement_missing",
+      "log_index": 196,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13003190,
+      "chain_tx_hash": "0x6eed04a7e1c68196388b2f008cb98256fc1db2f9f92e9ea730a0e94c28726c33",
+      "kind": "trade_missing",
+      "log_index": 169,
+      "order_uid": "0x8f42dbb1747132b149107182c2f94c843a1cd252fc6023f8943a618cca8acfb2424a46612794dbb8000194937834250dc723ffa56113a632"
+    },
+    {
+      "block": 13003190,
+      "chain_tx_hash": "0x6eed04a7e1c68196388b2f008cb98256fc1db2f9f92e9ea730a0e94c28726c33",
+      "kind": "settlement_missing",
+      "log_index": 177,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13003246,
+      "chain_tx_hash": "0xd8e43293b587ce6b633190aa58254406253156ebf64165666dcb0108e69b56cc",
+      "kind": "trade_missing",
+      "log_index": 115,
+      "order_uid": "0x1fed6fa7c730c0b2ee5d07fdd1b1376c24fb4f6ab46743e7756b68f2ecfd76071f5b740436fc5935622e92aa3b46818906f416e96113a2f8"
+    },
+    {
+      "block": 13003246,
+      "chain_tx_hash": "0xd8e43293b587ce6b633190aa58254406253156ebf64165666dcb0108e69b56cc",
+      "kind": "trade_missing",
+      "log_index": 116,
+      "order_uid": "0x851c81c925766a8484efd6c0acc213a01130f1ec47c7b033045ccbdaec7289bf1f5b740436fc5935622e92aa3b46818906f416e96113a2d7"
+    },
+    {
+      "block": 13003246,
+      "chain_tx_hash": "0xd8e43293b587ce6b633190aa58254406253156ebf64165666dcb0108e69b56cc",
+      "kind": "settlement_missing",
+      "log_index": 126,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13003264,
+      "chain_tx_hash": "0x7cf10f8f32b51cd4219f907757d030963421a8bebd162cde6a06d818bdd98926",
+      "kind": "trade_missing",
+      "log_index": 138,
+      "order_uid": "0x33508ce98c4c3d82722f7cc3223bfe51fe7d9c85cdb4e23ef56f0b1761e680b11f5b740436fc5935622e92aa3b46818906f416e96113a3d1"
+    },
+    {
+      "block": 13003264,
+      "chain_tx_hash": "0x7cf10f8f32b51cd4219f907757d030963421a8bebd162cde6a06d818bdd98926",
+      "kind": "settlement_missing",
+      "log_index": 141,
+      "solver": "0x6c2999b6b1fad608ecea71b926d68ee6c62beef8"
+    },
+    {
+      "block": 13093752,
+      "chain_tx_hash": "0x1674f39dc7c40d47fadc0e2e82c0198c172d971564c91f11a7014aa836d18550",
+      "kind": "settlement_missing",
+      "log_index": 424,
+      "solver": "0x0798540ee03a8c2e68cef19c56d1faa86271d5cf"
+    },
+    {
+      "block": 13093849,
+      "chain_tx_hash": "0x3fa10e864f5e8ae8f2e6d2281f8f6f05f4222545950d8f3fd84149aca01ceda2",
+      "kind": "settlement_missing",
+      "log_index": 437,
+      "solver": "0x0798540ee03a8c2e68cef19c56d1faa86271d5cf"
+    },
+    {
+      "block": 13093899,
+      "chain_tx_hash": "0x80e7f396cfae99e5612f3db3c3defb49829b7d04d3f3549346ab034fb2df375e",
+      "kind": "settlement_missing",
+      "log_index": 474,
+      "solver": "0x0798540ee03a8c2e68cef19c56d1faa86271d5cf"
+    },
+    {
+      "block": 13093954,
+      "chain_tx_hash": "0x46c976fdda7b85bc15db240c98403662699b39ba639052c0177b7b02261c2e8a",
+      "kind": "settlement_missing",
+      "log_index": 585,
+      "solver": "0x0798540ee03a8c2e68cef19c56d1faa86271d5cf"
+    },
+    {
+      "block": 13094675,
+      "chain_tx_hash": "0x56e2359151d46934ba4e790ddd69cbde74e48facdad4e7db08c7d13c969acfbd",
+      "kind": "settlement_missing",
+      "log_index": 47,
+      "solver": "0x0798540ee03a8c2e68cef19c56d1faa86271d5cf"
+    },
+    {
+      "block": 13095034,
+      "chain_tx_hash": "0x6fd9cbb2e582206ea0daa3f658734a47a661990570706c63a9c68dd0abfc71b3",
+      "kind": "settlement_missing",
+      "log_index": 264,
+      "solver": "0x0798540ee03a8c2e68cef19c56d1faa86271d5cf"
+    },
+    {
+      "block": 13621398,
+      "kind": "trade_misplaced",
+      "log_index": 17,
+      "order_uid": "0xc63389b7a520f414c28535bb67313f44db452947f2ca35e9651facf7460d6082b52bcc47404d7860e58ac67436156cb20b8ebd8b61928c2c"
+    },
+    {
+      "block": 13621398,
+      "kind": "trade_misplaced",
+      "log_index": 18,
+      "order_uid": "0x9347a3b2f830e8246a1844e792ffd7c8b9cc8dc558b552b4d1eb5325aec31a75f46d2ca4f56923a10cb153e1d11fa9e155f665e4619290f7"
+    },
+    {
+      "block": 13621398,
+      "kind": "trade_misplaced",
+      "log_index": 19,
+      "order_uid": "0x241f95d79afd7a6331eed16360e27a25ce263f963a3a7db513a48fa63e0a2f91a99f8656271bd54871639d7b1d20912263cc68e061928b00"
+    },
+    {
+      "block": 13621398,
+      "kind": "trade_misplaced",
+      "log_index": 20,
+      "order_uid": "0xab3cadc9b6885408488f9fb718863ca6f3cb40c59de13ae5aa21143ae75f7046239eec9ec218f71cef5cc14d88b142ed4ff4411061928e59"
+    },
+    {
+      "block": 13621398,
+      "kind": "trade_misplaced",
+      "log_index": 21,
+      "order_uid": "0xfab235c009ed0010197edf5e0e4fb9529ca4ef54b04c268562fbf21eccfd6aa0e826c57c314a951e5594ccdd5ed0c4c2e86e5eb861928feb"
+    },
+    {
+      "block": 13621398,
+      "db_tx_hash": "0x9b5143c33a00b67be3ccced8aec1039a997e2dd96467c90eeb44744269aef601",
+      "kind": "settlement_not_on_chain",
+      "log_index": 48,
+      "solver": "0xf2d21ad3c88170d4ae52bbbeba80cb6078d276f4"
+    },
+    {
+      "block": 15540116,
+      "chain_tx_hash": "0x99b8fb583202a8d0bdb18e9b16721364c08fc0424bd87b0f86dfbf0e1b5840c2",
+      "kind": "trade_missing",
+      "log_index": 231,
+      "order_uid": "0x6b945248104671a10b5d9a965bc3888ff85d345989b361038c515a2d073ca31e4127143a866bf5d8ad2afb6de8e63164b8ad5bf663235178"
+    },
+    {
+      "block": 15540116,
+      "chain_tx_hash": "0x99b8fb583202a8d0bdb18e9b16721364c08fc0424bd87b0f86dfbf0e1b5840c2",
+      "kind": "settlement_missing",
+      "log_index": 253,
+      "solver": "0xb20b86c4e6deeb432a22d773a221898bbbd03036"
+    },
+    {
+      "block": 15543469,
+      "chain_tx_hash": "0xd55a430f961b1a86759bd7ad73cb53ad23d1103c3e8e8424b111f31df32133c2",
+      "kind": "trade_missing",
+      "log_index": 224,
+      "order_uid": "0xe6982c3423c664adcfd24292b3bf09fa3a048c0952db27ca4590b90d39ae6a719272227568d59326a9be3a2bebbc79c5eb2aff4a6323f1a4"
+    },
+    {
+      "block": 15543469,
+      "chain_tx_hash": "0xd55a430f961b1a86759bd7ad73cb53ad23d1103c3e8e8424b111f31df32133c2",
+      "kind": "settlement_missing",
+      "log_index": 234,
+      "solver": "0x7a0a8890d71a4834285efdc1d18bb3828e765c6a"
+    },
+    {
+      "block": 15547446,
+      "chain_tx_hash": "0xcf3741bae69b00fd8b950e5d13bfe346dafc25adf8986c2b6db7a9649958fd01",
+      "kind": "trade_missing",
+      "log_index": 279,
+      "order_uid": "0x04ecdac70e132355e01c3824ac51110f16aff14ccc1452fefd6fb528176462b9dcfbb599bf4c53c4c99138f96f888d891e2e8a4d6324aebe"
+    },
+    {
+      "block": 15547446,
+      "chain_tx_hash": "0xcf3741bae69b00fd8b950e5d13bfe346dafc25adf8986c2b6db7a9649958fd01",
+      "kind": "settlement_missing",
+      "log_index": 288,
+      "solver": "0xc9ec550bea1c64d779124b23a26292cc223327b6"
+    },
+    {
+      "block": 15558181,
+      "chain_tx_hash": "0x5932040574a77f227a538f87acc8b5f1fbdb330b233830723794900ee55d1286",
+      "kind": "trade_missing",
+      "log_index": 109,
+      "order_uid": "0x662aa552674f502a8c8b4632b2826ef828e8f19b7652b857b3767a99fccbbb41196e750e53e4694ee3559fa02497125b08c3d41d6326ab26"
+    },
+    {
+      "block": 15558181,
+      "chain_tx_hash": "0x5932040574a77f227a538f87acc8b5f1fbdb330b233830723794900ee55d1286",
+      "kind": "settlement_missing",
+      "log_index": 123,
+      "solver": "0x149d0f9282333681ee41d30589824b2798e9fb47"
+    },
+    {
+      "block": 15567886,
+      "chain_tx_hash": "0xa48dabb157eeaa9240f51a46364a3246536733c92120bb64cdba48dca76ea547",
+      "kind": "trade_missing",
+      "log_index": 473,
+      "order_uid": "0xe3536c00e973beba0cc468a38963f0f3046f746f590dea9c51690bee99e23e3afb62df8935504b3f1c2b13b10aa9d8ee67e3469063287691"
+    },
+    {
+      "block": 15567886,
+      "chain_tx_hash": "0xa48dabb157eeaa9240f51a46364a3246536733c92120bb64cdba48dca76ea547",
+      "kind": "settlement_missing",
+      "log_index": 496,
+      "solver": "0xb20b86c4e6deeb432a22d773a221898bbbd03036"
+    },
+    {
+      "block": 18587957,
+      "kind": "trade_misplaced",
+      "log_index": 23,
+      "order_uid": "0x91ad9e6fcd16aafd8426f0661623b63350aa730f4fb5184119394e00b675d618433922a2191888baa36376b5d78071bae3ef73716556b73a"
+    },
+    {
+      "block": 19390630,
+      "chain_tx_hash": "0x230cc6616de08a6a3830466d371951daa4293bb4609f1d97cf269c3d9093707e",
+      "kind": "trade_missing",
+      "log_index": 27,
+      "order_uid": "0x8e9239595c9561fb10df04d79a5f297348354726756ead190e8c31e26f6a23cea38ac89a9eceb2e00b5b05568f36815f6d9286dc65eb13c3"
+    },
+    {
+      "block": 19390630,
+      "chain_tx_hash": "0x230cc6616de08a6a3830466d371951daa4293bb4609f1d97cf269c3d9093707e",
+      "kind": "settlement_missing",
+      "log_index": 40,
+      "solver": "0x0ddcb0769a3591230caa80f85469240b71442089"
+    },
+    {
+      "block": 19420203,
+      "chain_tx_hash": "0x80176478aa6edca5941f2b93c2e336b894764808a16e122943dbdef785e7523b",
+      "kind": "trade_missing",
+      "log_index": 32,
+      "order_uid": "0xa823d84b5f13cebdf082148cb075d91ef48e405a8910cd6d05f7a793d553460f5ae4425625bddeaed52a6907868b44c71538d33265f08a18"
+    },
+    {
+      "block": 19420203,
+      "chain_tx_hash": "0x80176478aa6edca5941f2b93c2e336b894764808a16e122943dbdef785e7523b",
+      "kind": "settlement_missing",
+      "log_index": 40,
+      "solver": "0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99"
+    },
+    {
+      "block": 19421712,
+      "chain_tx_hash": "0x04b8f69c0fc91096119ea47fdf6dabab4fa21429574c8f67bd0255184757d132",
+      "kind": "trade_missing",
+      "log_index": 112,
+      "order_uid": "0x9c1a83f8ca1b1bf590e1bf1133e7203b0b07ded837b2956d50013056070f4397c054298cebf96def4381ad0dcf41c1069736d48065f0d0e4"
+    },
+    {
+      "block": 19421712,
+      "chain_tx_hash": "0x04b8f69c0fc91096119ea47fdf6dabab4fa21429574c8f67bd0255184757d132",
+      "kind": "trade_missing",
+      "log_index": 113,
+      "order_uid": "0x8342133b1f6d5940bd94a2ff4e41480fee10a12981456825c96b317f4a2d7b1840a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19421712,
+      "chain_tx_hash": "0x04b8f69c0fc91096119ea47fdf6dabab4fa21429574c8f67bd0255184757d132",
+      "kind": "settlement_missing",
+      "log_index": 129,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19426927,
+      "chain_tx_hash": "0xcd158bad4d6edfb8cf136816f1845127d00eeef42f20ce6aa49144c2400636ea",
+      "kind": "trade_missing",
+      "log_index": 127,
+      "order_uid": "0x9d51a7434028cec1f50c8d01ad0b4911d536d67184a879c845dd269239060b8840a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19426927,
+      "chain_tx_hash": "0xcd158bad4d6edfb8cf136816f1845127d00eeef42f20ce6aa49144c2400636ea",
+      "kind": "trade_missing",
+      "log_index": 128,
+      "order_uid": "0x21d4d5399313b61fe0ddbc0363dde2467e21f6a815418f32cadebe4f5046326440a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19426927,
+      "chain_tx_hash": "0xcd158bad4d6edfb8cf136816f1845127d00eeef42f20ce6aa49144c2400636ea",
+      "kind": "settlement_missing",
+      "log_index": 150,
+      "solver": "0x0ddcb0769a3591230caa80f85469240b71442089"
+    },
+    {
+      "block": 19426952,
+      "chain_tx_hash": "0xe25877b4d2b1c52d825a183b871a603bbc9719819ec94afa3c22a0e68c538c0d",
+      "kind": "trade_missing",
+      "log_index": 32,
+      "order_uid": "0x1b3fa8c5a0a0b4f435004b1d0c92d30f9b056210e4331a994687a5dc3a73bc4565b2bcff6412ba7958223361aa18d72b7510833765f1c8a8"
+    },
+    {
+      "block": 19426952,
+      "chain_tx_hash": "0xe25877b4d2b1c52d825a183b871a603bbc9719819ec94afa3c22a0e68c538c0d",
+      "kind": "settlement_missing",
+      "log_index": 39,
+      "solver": "0x9b7e7f21d98f21c0354035798c40e9040e25787f"
+    },
+    {
+      "block": 19427584,
+      "chain_tx_hash": "0xcdcfb576725f3926648f0a3214d33381ea6c9cf41aa79ea38a663ee8ef3564c6",
+      "kind": "trade_missing",
+      "log_index": 25,
+      "order_uid": "0x171261cf75b94ef56fa8d3f6e867a6ab91b9e474b4ae25bdadd46e0ffa81fe141ea4e64a8d8d8ba7d5cfa5b346be072522073c9565f1e6f6"
+    },
+    {
+      "block": 19427584,
+      "chain_tx_hash": "0xcdcfb576725f3926648f0a3214d33381ea6c9cf41aa79ea38a663ee8ef3564c6",
+      "kind": "trade_missing",
+      "log_index": 26,
+      "order_uid": "0xc209124d5714c9e896a3a3d3db194b3bcac8d0c9c8e565992d34d6525efc8beb39a8b5c9a2ba08aa48efee856cb217654129c99f65f1e6f5"
+    },
+    {
+      "block": 19427584,
+      "chain_tx_hash": "0xcdcfb576725f3926648f0a3214d33381ea6c9cf41aa79ea38a663ee8ef3564c6",
+      "kind": "settlement_missing",
+      "log_index": 48,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19427598,
+      "chain_tx_hash": "0x1a97dd1632ba84a2edba649938bde0f89d882c7b4431d65acae3ac56a809124f",
+      "kind": "trade_missing",
+      "log_index": 9,
+      "order_uid": "0x5786a05f08524202eb4b4b321959a5ced235046d88ee0f279310358d89da5d1e00ff6b7d26407a46af2b631b4fa452a036d027e565f1e78f"
+    },
+    {
+      "block": 19427598,
+      "chain_tx_hash": "0x1a97dd1632ba84a2edba649938bde0f89d882c7b4431d65acae3ac56a809124f",
+      "kind": "settlement_missing",
+      "log_index": 20,
+      "solver": "0x9b7e7f21d98f21c0354035798c40e9040e25787f"
+    },
+    {
+      "block": 19428518,
+      "chain_tx_hash": "0x217d44d5ccf7a3e4f4c7ab111f89fb52fe9be1724c0692ae0ce6985ec6c8cadb",
+      "kind": "trade_missing",
+      "log_index": 123,
+      "order_uid": "0xf0d4a8644511d39d763ebb846f89464120916cfa975ae2ef40dcb59787a1be3d40a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19428518,
+      "chain_tx_hash": "0x217d44d5ccf7a3e4f4c7ab111f89fb52fe9be1724c0692ae0ce6985ec6c8cadb",
+      "kind": "settlement_missing",
+      "log_index": 126,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19428579,
+      "chain_tx_hash": "0xcc54310ec50c0cd88b0e2462286c65d765f8a7876081a61a903eed2f9f715b2c",
+      "kind": "trade_missing",
+      "log_index": 36,
+      "order_uid": "0xf937287fe5d46bff476c2c0947ff17c81abaab1a75ebe0d65e66e5ec614be06801019cd3e62b46029e787d1b5485ca164365ca7765f2165f"
+    },
+    {
+      "block": 19428579,
+      "chain_tx_hash": "0xcc54310ec50c0cd88b0e2462286c65d765f8a7876081a61a903eed2f9f715b2c",
+      "kind": "settlement_missing",
+      "log_index": 46,
+      "solver": "0x4fc4a61a3b99a1ad4a61b03f3752ca12b4a17646"
+    },
+    {
+      "block": 19428653,
+      "chain_tx_hash": "0x63bc19ae53154c3713aeb59f477f2e9104df4a317499f75cb2f4506d5437a37a",
+      "kind": "trade_missing",
+      "log_index": 108,
+      "order_uid": "0x000055c12d9eaa4831ad9a47f441df0ca2c82716e81970ca4cbe66be72bd86088dacb50e1172535fdd88bf3b66142bdc3181a4ef65f219dc"
+    },
+    {
+      "block": 19428653,
+      "chain_tx_hash": "0x63bc19ae53154c3713aeb59f477f2e9104df4a317499f75cb2f4506d5437a37a",
+      "kind": "settlement_missing",
+      "log_index": 124,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19428677,
+      "chain_tx_hash": "0xc7c50b01ff9bdb1b9003a219a26fd7bb32a6b222db054d0432217a433a7753c9",
+      "kind": "trade_missing",
+      "log_index": 66,
+      "order_uid": "0x968380fc9917f1e8df3227c519efc2c766231809207b65bb41ae81ca803650eb6e72cc4d5d794fa840d986727c8911affae5c63a65f21b0f"
+    },
+    {
+      "block": 19428677,
+      "chain_tx_hash": "0xc7c50b01ff9bdb1b9003a219a26fd7bb32a6b222db054d0432217a433a7753c9",
+      "kind": "settlement_missing",
+      "log_index": 79,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19428695,
+      "chain_tx_hash": "0x4418d5a8b98be7a226d0239ec03bc96274ffa47b007056e62d5b601755625821",
+      "kind": "trade_missing",
+      "log_index": 19,
+      "order_uid": "0x9cf232ff6f223493c0e13651f79df2f7b2ee470e710cfa352a99c98a689a14e16712b7f12d9d335a15b0cddeee7a061ee522bda065f21bd2"
+    },
+    {
+      "block": 19428695,
+      "chain_tx_hash": "0x4418d5a8b98be7a226d0239ec03bc96274ffa47b007056e62d5b601755625821",
+      "kind": "settlement_missing",
+      "log_index": 30,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19428716,
+      "chain_tx_hash": "0x8f7b2a8f91639b30603dc04b627da1b9f848bfaeaa4bf0075e4ab881aaae2318",
+      "kind": "trade_missing",
+      "log_index": 41,
+      "order_uid": "0x2b789916f9cb9da457267f2dbb9254cab9dba141c1760c5430fa3ab18293fc96e5c3f63f8621b75fb6c4148180e265a75f5d299565f21cea"
+    },
+    {
+      "block": 19428716,
+      "chain_tx_hash": "0x8f7b2a8f91639b30603dc04b627da1b9f848bfaeaa4bf0075e4ab881aaae2318",
+      "kind": "settlement_missing",
+      "log_index": 51,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19428753,
+      "chain_tx_hash": "0xb4ab83352aad5203c2e84e76fbb9969897e47b5fb70dd199d7249fe00a0def1f",
+      "kind": "trade_missing",
+      "log_index": 33,
+      "order_uid": "0xc561411a24aed9b6ee955ff0753577a5d2bdbd4f4643c962fa4737eb3c00ed947ca545ebc6153765330f37749e1c1a362f63f05e65f21e9d"
+    },
+    {
+      "block": 19428753,
+      "chain_tx_hash": "0xb4ab83352aad5203c2e84e76fbb9969897e47b5fb70dd199d7249fe00a0def1f",
+      "kind": "settlement_missing",
+      "log_index": 43,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19429796,
+      "chain_tx_hash": "0x577014c9272b400781ab21ef97a30d085f55e325f6445261be41472a843608e1",
+      "kind": "trade_missing",
+      "log_index": 62,
+      "order_uid": "0x864732ef7c1e5b7b092bf75f51d145a0c166488244f57c1aec97dbc1d4acd4ab7e4d08b9e0222bbc8d8edb532c658d49cf2a12af65f2502b"
+    },
+    {
+      "block": 19429796,
+      "chain_tx_hash": "0x577014c9272b400781ab21ef97a30d085f55e325f6445261be41472a843608e1",
+      "kind": "trade_missing",
+      "log_index": 63,
+      "order_uid": "0x8f07d6205e389985ceaf4e9db3dc57fe29e79d2f768a3d65791f1ced3f60af56e75ed6f453c602bd696ce27af11565edc9b46b0d65f25037"
+    },
+    {
+      "block": 19429796,
+      "chain_tx_hash": "0x577014c9272b400781ab21ef97a30d085f55e325f6445261be41472a843608e1",
+      "kind": "trade_missing",
+      "log_index": 64,
+      "order_uid": "0x0bf6e87bf0efe672c0cd3021fcaea2eb90ac95039866e69ed0f4d0714ae73cffa7918db8eca1a399cc9c4702990df05631b4252365f25021"
+    },
+    {
+      "block": 19429796,
+      "chain_tx_hash": "0x577014c9272b400781ab21ef97a30d085f55e325f6445261be41472a843608e1",
+      "kind": "settlement_missing",
+      "log_index": 81,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19430457,
+      "chain_tx_hash": "0xe692f204e445ac41d6f150c515931488f7518cef7b77e6c03c75c398a9d4ff10",
+      "kind": "trade_missing",
+      "log_index": 42,
+      "order_uid": "0x219847ae47151ddce26d8557cabd3f065dbb967c8d8d5d830a3c23267e26406ecfaba3994c45aa03e479000300801ae35b39c38865f26b0f"
+    },
+    {
+      "block": 19430457,
+      "chain_tx_hash": "0xe692f204e445ac41d6f150c515931488f7518cef7b77e6c03c75c398a9d4ff10",
+      "kind": "settlement_missing",
+      "log_index": 53,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19441153,
+      "chain_tx_hash": "0x1d681e09214d6be6b0e5be02e35a9a5c149c27ca20956613e011a4c9a0698cb8",
+      "kind": "trade_missing",
+      "log_index": 5,
+      "order_uid": "0x4a838c94046217c4541b5a5811004de1ad868bde51a8de790d794a2c7966944a86d9dc0fc8bc5ad48373eeefaff4826a081db11465f46b9c"
+    },
+    {
+      "block": 19441153,
+      "chain_tx_hash": "0x1d681e09214d6be6b0e5be02e35a9a5c149c27ca20956613e011a4c9a0698cb8",
+      "kind": "settlement_missing",
+      "log_index": 13,
+      "solver": "0x4fc4a61a3b99a1ad4a61b03f3752ca12b4a17646"
+    },
+    {
+      "block": 19441364,
+      "chain_tx_hash": "0x6e7235038d728a256fff3a7321e687675c9b3950e20a4257c901d3b7f64638a5",
+      "kind": "trade_missing",
+      "log_index": 88,
+      "order_uid": "0xcfa37835d51c7486cb36f298f262d9b2f4262c9b1bbff79a6618139aadba96e5a42803d8b171b58b60f972e3dedb1e5cfca94aa965f475b9"
+    },
+    {
+      "block": 19441364,
+      "chain_tx_hash": "0x6e7235038d728a256fff3a7321e687675c9b3950e20a4257c901d3b7f64638a5",
+      "kind": "settlement_missing",
+      "log_index": 105,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19441738,
+      "chain_tx_hash": "0xebd18d73fc9933d94d2e1c7626021acfa191c7204184e6a6f49fb71ade5bc6f1",
+      "kind": "trade_missing",
+      "log_index": 115,
+      "order_uid": "0x8a7c2c58c4174f27492618db8392135e494b4754b8387c0ee7f9fb85caac0308d002cc83faf1d78e3ec11d59cd70cb0126abff8765f4aa9c"
+    },
+    {
+      "block": 19441738,
+      "chain_tx_hash": "0xebd18d73fc9933d94d2e1c7626021acfa191c7204184e6a6f49fb71ade5bc6f1",
+      "kind": "settlement_missing",
+      "log_index": 134,
+      "solver": "0x0ddcb0769a3591230caa80f85469240b71442089"
+    },
+    {
+      "block": 19442237,
+      "chain_tx_hash": "0xe6251a07ec7b5a5aaf930444d042eae69d79199d6828c75d36ba5473e8c197ee",
+      "kind": "trade_missing",
+      "log_index": 69,
+      "order_uid": "0x3f7806fddda94387dc72fc001c9dc3def9b67edece4d9672920407ab68e4ceda45eaf9309cdfefc0e029007e677046e313935f4165f49efd"
+    },
+    {
+      "block": 19442237,
+      "chain_tx_hash": "0xe6251a07ec7b5a5aaf930444d042eae69d79199d6828c75d36ba5473e8c197ee",
+      "kind": "settlement_missing",
+      "log_index": 89,
+      "solver": "0x08924194cedd747dc85025b2b30a98d3ae1ce21d"
+    },
+    {
+      "block": 19442460,
+      "chain_tx_hash": "0x269c119d63566af269eb66abdbf708a2f30fb3f6d651546d81f74e1a8b615825",
+      "kind": "trade_missing",
+      "log_index": 36,
+      "order_uid": "0x6ed0cdd5f3781b9b7a85043c4d13a754ae21f72268f70b889afc3da26bc1fe9740a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19442460,
+      "chain_tx_hash": "0x269c119d63566af269eb66abdbf708a2f30fb3f6d651546d81f74e1a8b615825",
+      "kind": "settlement_missing",
+      "log_index": 45,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19442651,
+      "chain_tx_hash": "0x26c3a0573ad43845fd5959e49569fb2c6d9c24a05ad209decb070aee341056bc",
+      "kind": "trade_missing",
+      "log_index": 90,
+      "order_uid": "0x68442e2e28375d2780486a4f2f3a6389d21c179563291a55979865e70675eefe84b73ffd1c664c82e4a98291a352e837acd182f965f4b236"
+    },
+    {
+      "block": 19442651,
+      "chain_tx_hash": "0x26c3a0573ad43845fd5959e49569fb2c6d9c24a05ad209decb070aee341056bc",
+      "kind": "trade_missing",
+      "log_index": 91,
+      "order_uid": "0x818e5a5ea2dd3d9df0f94e0b887f1f7aca652a8935d4601d0d916786ed290b1b4515957daf1c5a1cd2e24d000e909a0ff6be197565f4b286"
+    },
+    {
+      "block": 19442651,
+      "chain_tx_hash": "0x26c3a0573ad43845fd5959e49569fb2c6d9c24a05ad209decb070aee341056bc",
+      "kind": "settlement_missing",
+      "log_index": 110,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19442715,
+      "chain_tx_hash": "0xd6fff8bc22a5db63974404582b761be766d714f8dda198f1f5e353025cf353fd",
+      "kind": "trade_missing",
+      "log_index": 64,
+      "order_uid": "0x247af78ab8e596e73b155c4af47dd80965b91de7b70d0d3589f96c13aa774243b3729c6d8924863327c35aa396073120eb76686f65f4b590"
+    },
+    {
+      "block": 19442715,
+      "chain_tx_hash": "0xd6fff8bc22a5db63974404582b761be766d714f8dda198f1f5e353025cf353fd",
+      "kind": "settlement_missing",
+      "log_index": 79,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19442744,
+      "chain_tx_hash": "0x9a8ddaa81ab7c4d7590b655d360701cd285438ea5288a0e1fdb12c66f93f869e",
+      "kind": "trade_missing",
+      "log_index": 15,
+      "order_uid": "0xbcfcf4ba43f4bf9487dde54dfd0e890484ba6a4f7a5a7c3f11c14fffed9e413b8b096af1a5279242908347dfe7229c4fba8d807065f4b6ed"
+    },
+    {
+      "block": 19442744,
+      "chain_tx_hash": "0x9a8ddaa81ab7c4d7590b655d360701cd285438ea5288a0e1fdb12c66f93f869e",
+      "kind": "trade_missing",
+      "log_index": 16,
+      "order_uid": "0xec9847b60e63a22d87839fca016be1f5670ae5dba0ff41b5c4d4d2880c678865ed9376094ce37635827e0cfddc23bfbb6d78846965fde7d4"
+    },
+    {
+      "block": 19442744,
+      "chain_tx_hash": "0x9a8ddaa81ab7c4d7590b655d360701cd285438ea5288a0e1fdb12c66f93f869e",
+      "kind": "settlement_missing",
+      "log_index": 60,
+      "solver": "0x0ddcb0769a3591230caa80f85469240b71442089"
+    },
+    {
+      "block": 19442811,
+      "chain_tx_hash": "0x638a90993230f242f984d4a61b3ddcd60d7420d2479f6ceefe3d7e9d3b90b616",
+      "kind": "trade_missing",
+      "log_index": 58,
+      "order_uid": "0x1b6ef03abd99df3e7fb42ad9a7a7069f539b770513d7acbaa2205155b0ea1a1daa67a665c7d343ca65ae86608714741d3825711d65f4ba59"
+    },
+    {
+      "block": 19442811,
+      "chain_tx_hash": "0x638a90993230f242f984d4a61b3ddcd60d7420d2479f6ceefe3d7e9d3b90b616",
+      "kind": "trade_missing",
+      "log_index": 59,
+      "order_uid": "0x47bfa3954771e3f0db4946e10ebe8f9262ca73c85627abed925033e725e7e9068b096af1a5279242908347dfe7229c4fba8d807065f4ba52"
+    },
+    {
+      "block": 19442811,
+      "chain_tx_hash": "0x638a90993230f242f984d4a61b3ddcd60d7420d2479f6ceefe3d7e9d3b90b616",
+      "kind": "settlement_missing",
+      "log_index": 78,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19443151,
+      "chain_tx_hash": "0x1799981bf5660e6a5375802c3cd1e1ce8ad81e9470b9de85bfbff697b2f2efee",
+      "kind": "trade_missing",
+      "log_index": 319,
+      "order_uid": "0x2ce9f6dcc06c47458807e09bb1d17cc433088dbabea5c2966dbf84b6be26ec55c4a2c786e541b2c87b54d7630bcb625cf7fcded665f4ca1d"
+    },
+    {
+      "block": 19443151,
+      "chain_tx_hash": "0x1799981bf5660e6a5375802c3cd1e1ce8ad81e9470b9de85bfbff697b2f2efee",
+      "kind": "trade_missing",
+      "log_index": 320,
+      "order_uid": "0x7bd42c7a9969469a95f9ccd9cba5cdae8d9f0d69f42717282904df4ef6df1b8c490f171b923cfbaa24d171d617a33b907dc1663a65f4ca3a"
+    },
+    {
+      "block": 19443151,
+      "chain_tx_hash": "0x1799981bf5660e6a5375802c3cd1e1ce8ad81e9470b9de85bfbff697b2f2efee",
+      "kind": "settlement_missing",
+      "log_index": 338,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19443154,
+      "chain_tx_hash": "0xc5d52f59a4a894d7f5c1a44a26a481184b5a1e3fec25abbbd3229bb1e6bc72c7",
+      "kind": "trade_missing",
+      "log_index": 20,
+      "order_uid": "0xe1b4103707b1693a9948bd864c30058e1316aa84c7081b82a61db7b5cac803ce549ca8526e4628f612da56549fb2ee2f4bfc650565f4ca5b"
+    },
+    {
+      "block": 19443154,
+      "chain_tx_hash": "0xc5d52f59a4a894d7f5c1a44a26a481184b5a1e3fec25abbbd3229bb1e6bc72c7",
+      "kind": "settlement_missing",
+      "log_index": 30,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19443186,
+      "chain_tx_hash": "0xa88baf5d3ce5e3a1dcb39ecc61cdaa251b8391cf3132ebc832ea2d3da9874a2a",
+      "kind": "trade_missing",
+      "log_index": 32,
+      "order_uid": "0x13c9afaae64ab65d834241cf775f29fa70b47a5f2e0d2d7deb30c9453ab3ea4f6513ab379379aa68e27d0e682c8e2548f8ede2f365f4cc27"
+    },
+    {
+      "block": 19443186,
+      "chain_tx_hash": "0xa88baf5d3ce5e3a1dcb39ecc61cdaa251b8391cf3132ebc832ea2d3da9874a2a",
+      "kind": "settlement_missing",
+      "log_index": 45,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19443193,
+      "chain_tx_hash": "0x29ade2dfffa0413b697e0cc69e89de14a6bd92d5c16cf984b2e7b72705e5ab82",
+      "kind": "trade_missing",
+      "log_index": 94,
+      "order_uid": "0x74b3aeb6048ede1291325f3a43cea1cf8442e09d93dc8e51ab6c7b48a7a4e04b40a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19443193,
+      "chain_tx_hash": "0x29ade2dfffa0413b697e0cc69e89de14a6bd92d5c16cf984b2e7b72705e5ab82",
+      "kind": "settlement_missing",
+      "log_index": 103,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19443376,
+      "chain_tx_hash": "0xc6f5054ad4ed8a750620ff8045962a46b5a547761ca63d6787018647aa12e55d",
+      "kind": "trade_missing",
+      "log_index": 16,
+      "order_uid": "0x812087dfce2a9a5591a40360384e864dd3e244157ba5d3941f3ce0aa08c6a77ed113e00039d6fc9536b2c7c796efe019b4b1973965f4d501"
+    },
+    {
+      "block": 19443376,
+      "chain_tx_hash": "0xc6f5054ad4ed8a750620ff8045962a46b5a547761ca63d6787018647aa12e55d",
+      "kind": "settlement_missing",
+      "log_index": 26,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19444271,
+      "chain_tx_hash": "0xc2329ce42aa1246b5b180e0639584df7f33937bb17a4b8cbb31a69e4107a9d11",
+      "kind": "trade_missing",
+      "log_index": 94,
+      "order_uid": "0xedabed9c05b7b9199f692957b82f8ec6193f23ae0fe7b8852980b8d53c79129a40a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19444271,
+      "chain_tx_hash": "0xc2329ce42aa1246b5b180e0639584df7f33937bb17a4b8cbb31a69e4107a9d11",
+      "kind": "trade_missing",
+      "log_index": 95,
+      "order_uid": "0x528b3d760dc2a817d57084833b3bcbf551432444cc0750bddd9bda3abd71717340a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19444271,
+      "chain_tx_hash": "0xc2329ce42aa1246b5b180e0639584df7f33937bb17a4b8cbb31a69e4107a9d11",
+      "kind": "settlement_missing",
+      "log_index": 104,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19444498,
+      "chain_tx_hash": "0x57907998d5eb430fe60e663e03eda7b1a524e97ad4ee70631ec1e0dbea9be2c2",
+      "kind": "trade_missing",
+      "log_index": 38,
+      "order_uid": "0xb01d70a3c35625efdd632c980ffbc3b3f5c17b46530f9000a745f2b7ee71d25346cba1e9b1e5db32da28428f2fb85587bcb785e765f50aa8"
+    },
+    {
+      "block": 19444498,
+      "chain_tx_hash": "0x57907998d5eb430fe60e663e03eda7b1a524e97ad4ee70631ec1e0dbea9be2c2",
+      "kind": "settlement_missing",
+      "log_index": 41,
+      "solver": "0x9b7e7f21d98f21c0354035798c40e9040e25787f"
+    },
+    {
+      "block": 19445153,
+      "chain_tx_hash": "0xd0fe42004efcbe8c2b5c1147da469455de9b5ee639d23463c87423f67aabee3b",
+      "kind": "trade_missing",
+      "log_index": 22,
+      "order_uid": "0xf0840d8738afb64a76485e2813a7acb9579d2e9b727132749d15ddc5212ec361f62f78a3b018a88dda80c8ca5cce2d670733a9bd65f5298c"
+    },
+    {
+      "block": 19445153,
+      "chain_tx_hash": "0xd0fe42004efcbe8c2b5c1147da469455de9b5ee639d23463c87423f67aabee3b",
+      "kind": "trade_missing",
+      "log_index": 23,
+      "order_uid": "0x26148517439d3309994cf0a5669f91aba365f7f35252b486a73730332648f5d84ade4b6b9de57cc8656a18e020c425226cb7c2c965f5296f"
+    },
+    {
+      "block": 19445153,
+      "chain_tx_hash": "0xd0fe42004efcbe8c2b5c1147da469455de9b5ee639d23463c87423f67aabee3b",
+      "kind": "trade_missing",
+      "log_index": 24,
+      "order_uid": "0x603ae33438d224178f2140f11faf5e329d64f507ed5de62792eae32c108c810b1fe62e218d5564e15e0cdc955a7a2b3b95166bb165f5298e"
+    },
+    {
+      "block": 19445153,
+      "chain_tx_hash": "0xd0fe42004efcbe8c2b5c1147da469455de9b5ee639d23463c87423f67aabee3b",
+      "kind": "trade_missing",
+      "log_index": 25,
+      "order_uid": "0x8f2285c4be54d1531e28901f9a58005928e443ffd0985355b199bdedcef456b974f7c70f64c77ffdb42e314ef3acc72f168585a865f529ba"
+    },
+    {
+      "block": 19445153,
+      "chain_tx_hash": "0xd0fe42004efcbe8c2b5c1147da469455de9b5ee639d23463c87423f67aabee3b",
+      "kind": "settlement_missing",
+      "log_index": 59,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19445366,
+      "chain_tx_hash": "0x2c2a262daf67810b3e6cce61fb5816067f826b10aedfc759014229e91e1b8164",
+      "kind": "trade_missing",
+      "log_index": 28,
+      "order_uid": "0xeaebb55361e11bce9006122006522ccb053019ab469984dec1ef80c10c7a5c9740a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19445366,
+      "chain_tx_hash": "0x2c2a262daf67810b3e6cce61fb5816067f826b10aedfc759014229e91e1b8164",
+      "kind": "settlement_missing",
+      "log_index": 35,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19445373,
+      "chain_tx_hash": "0xce39b268f9b614961f2337e2b761f2c6c52fbf7e801cdfe439d296ab495baa3e",
+      "kind": "trade_missing",
+      "log_index": 18,
+      "order_uid": "0x95b6c28695a5b4ea0616ea23346082d49d6abb3e1f224eedac3e9f9b0aeeb8704ade4b6b9de57cc8656a18e020c425226cb7c2c965f533f3"
+    },
+    {
+      "block": 19445373,
+      "chain_tx_hash": "0xce39b268f9b614961f2337e2b761f2c6c52fbf7e801cdfe439d296ab495baa3e",
+      "kind": "settlement_missing",
+      "log_index": 32,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19445436,
+      "chain_tx_hash": "0xbd6536d9ccc688287beac7a0e0f53ee1b966a34fd7c735359535886cd390be07",
+      "kind": "trade_missing",
+      "log_index": 31,
+      "order_uid": "0xa347c2013e2290e4ebb66a6cf0946546b4b80f5b2a7ef9aadf87de432fe9f17140a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19445436,
+      "chain_tx_hash": "0xbd6536d9ccc688287beac7a0e0f53ee1b966a34fd7c735359535886cd390be07",
+      "kind": "settlement_missing",
+      "log_index": 42,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19445583,
+      "chain_tx_hash": "0x8bc9d79b8ae6f025388d3f6147a5be81f913a3d4102e7b2861e136f0d968509c",
+      "kind": "trade_missing",
+      "log_index": 2,
+      "order_uid": "0x58a01b9c5999abb26fc8b34560fb1043a9911d88a407779167d67c68be1dadc744d10ad975c3b6b921badf9882e4c281a45c4ed365f53e03"
+    },
+    {
+      "block": 19445583,
+      "chain_tx_hash": "0x8bc9d79b8ae6f025388d3f6147a5be81f913a3d4102e7b2861e136f0d968509c",
+      "kind": "settlement_missing",
+      "log_index": 14,
+      "solver": "0xc9f2e6ea1637e499406986ac50ddc92401ce1f58"
+    },
+    {
+      "block": 19445586,
+      "chain_tx_hash": "0xe8658e4409b641885963ddd08334f09fa6f5ed5fcc3d68502c33a4560a85a1b4",
+      "kind": "trade_missing",
+      "log_index": 30,
+      "order_uid": "0xda8c55555c99878642661e66878ce49a3b970e4eb435423bb4721d367a870c6340a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19445586,
+      "chain_tx_hash": "0xe8658e4409b641885963ddd08334f09fa6f5ed5fcc3d68502c33a4560a85a1b4",
+      "kind": "settlement_missing",
+      "log_index": 37,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19445593,
+      "chain_tx_hash": "0x23bc18ced00a9a1f94954d1d6002b870a878984cc80917d95e8e005d26b974f9",
+      "kind": "trade_missing",
+      "log_index": 99,
+      "order_uid": "0xb27c2e9c42c4eb323b62dc8f9ebced7eb58190798bdc19f4b8155e48e4200ee9cdef05257f551f69f7af6f6f85e56fe3f17718d065f53e4c"
+    },
+    {
+      "block": 19445593,
+      "chain_tx_hash": "0x23bc18ced00a9a1f94954d1d6002b870a878984cc80917d95e8e005d26b974f9",
+      "kind": "settlement_missing",
+      "log_index": 106,
+      "solver": "0x9b7e7f21d98f21c0354035798c40e9040e25787f"
+    },
+    {
+      "block": 19445637,
+      "chain_tx_hash": "0x87254786a892d26a45b1a3b72e9c2199429fdf0c2586193860429c1e3ff3f851",
+      "kind": "trade_missing",
+      "log_index": 32,
+      "order_uid": "0xe69f2b4f538e9577f2c03f7c68763f41131cac8328a12cb394cc8c133a323c8d40a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19445637,
+      "chain_tx_hash": "0x87254786a892d26a45b1a3b72e9c2199429fdf0c2586193860429c1e3ff3f851",
+      "kind": "trade_missing",
+      "log_index": 33,
+      "order_uid": "0xd07f1d4fb0a71234b69943f42c51b460eda981fdf7abc3629178735970ab8d4b91a6606b7e522ec53f9f7f289be3f32fc464ca2b65f53efb"
+    },
+    {
+      "block": 19445637,
+      "chain_tx_hash": "0x87254786a892d26a45b1a3b72e9c2199429fdf0c2586193860429c1e3ff3f851",
+      "kind": "trade_missing",
+      "log_index": 34,
+      "order_uid": "0x5edf0ca7df20dd1a31175c6cab39b4f52328e7ea3784b6a501b103d59cfde68e88e399d855118cc0b2b8f0da50a8306e5318eba865f5407c"
+    },
+    {
+      "block": 19445637,
+      "chain_tx_hash": "0x87254786a892d26a45b1a3b72e9c2199429fdf0c2586193860429c1e3ff3f851",
+      "kind": "trade_missing",
+      "log_index": 35,
+      "order_uid": "0x2f3ce06d349727705d62f01fe4901b9d337da83c26eea981daf87a5a595296ef8c85486118e4d4c39af9d1f4bb71b15ff67410a065f54077"
+    },
+    {
+      "block": 19445637,
+      "chain_tx_hash": "0x87254786a892d26a45b1a3b72e9c2199429fdf0c2586193860429c1e3ff3f851",
+      "kind": "settlement_missing",
+      "log_index": 81,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19445747,
+      "chain_tx_hash": "0x56d467ec5e40701720c7cd92a0d862416fad6b5708e76c8471d278c7b461391d",
+      "kind": "trade_missing",
+      "log_index": 27,
+      "order_uid": "0x7932afd512ca51f93eecd6d87a0f439acd36268ea49e3b7da35645de1ec4996167611cd8f1e3ccd3586883eb7d95544e37f235cd65f545b7"
+    },
+    {
+      "block": 19445747,
+      "chain_tx_hash": "0x56d467ec5e40701720c7cd92a0d862416fad6b5708e76c8471d278c7b461391d",
+      "kind": "trade_missing",
+      "log_index": 28,
+      "order_uid": "0xf74fe23108bada6f5bfeb70e24e9242c7011f6dcfb1d17521afd05e41b87107984b73ffd1c664c82e4a98291a352e837acd182f965f5458a"
+    },
+    {
+      "block": 19445747,
+      "chain_tx_hash": "0x56d467ec5e40701720c7cd92a0d862416fad6b5708e76c8471d278c7b461391d",
+      "kind": "settlement_missing",
+      "log_index": 54,
+      "solver": "0xd1508a211d98bb81195dc1f9533edcdf68adf036"
+    },
+    {
+      "block": 19445909,
+      "chain_tx_hash": "0x520fca9a7ccd821fe8fa987186637d829fbe25257749bfda271069104d35903e",
+      "kind": "trade_missing",
+      "log_index": 28,
+      "order_uid": "0x2d3bcee662be48898408b5038cdedd6a39f154296dc797ccb1a7d4b9e46a069b2425f7f9e92e8b8709162f244146f4915aff3d2f65f54d97"
+    },
+    {
+      "block": 19445909,
+      "chain_tx_hash": "0x520fca9a7ccd821fe8fa987186637d829fbe25257749bfda271069104d35903e",
+      "kind": "settlement_missing",
+      "log_index": 41,
+      "solver": "0x6f799f4bf6c1c56fb8d890e9e0fff2934b0de157"
+    },
+    {
+      "block": 19445925,
+      "chain_tx_hash": "0x65c37bb736f2ca6254ae3a213e68ff0b2602bb3e2ae9be32ef9bb2fb339196c9",
+      "kind": "trade_missing",
+      "log_index": 19,
+      "order_uid": "0xac612ace79a9bf5632dee1668c1a2ec23a0e6e0e00ee23c269a50d741b80630c614100a0467073d2790d5efa82fb3a423e8d2e4c65fe6540"
+    },
+    {
+      "block": 19445925,
+      "chain_tx_hash": "0x65c37bb736f2ca6254ae3a213e68ff0b2602bb3e2ae9be32ef9bb2fb339196c9",
+      "kind": "trade_missing",
+      "log_index": 20,
+      "order_uid": "0x06716fa6e6256b1fb48bfa74ed229444bd43a2bfa19c053a7c49375b3c05e12451e4fd59889dddff1fda10b20c9cb24c6bbccb1e65f549c8"
+    },
+    {
+      "block": 19445925,
+      "chain_tx_hash": "0x65c37bb736f2ca6254ae3a213e68ff0b2602bb3e2ae9be32ef9bb2fb339196c9",
+      "kind": "settlement_missing",
+      "log_index": 41,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19446383,
+      "chain_tx_hash": "0x3759175728e0744ef68a14e750682822065192dc8ca6f3db27aff3aff8bb20fa",
+      "kind": "trade_missing",
+      "log_index": 64,
+      "order_uid": "0x4279e7846232dad356a55865c7f4be8f6a41202b4170a5ff19ade299fe1350a651e4fd59889dddff1fda10b20c9cb24c6bbccb1e65f55f82"
+    },
+    {
+      "block": 19446383,
+      "chain_tx_hash": "0x3759175728e0744ef68a14e750682822065192dc8ca6f3db27aff3aff8bb20fa",
+      "kind": "trade_missing",
+      "log_index": 65,
+      "order_uid": "0xbd10a6c88d4ecef455d675af49f97096a66d20ebe129deaae9dde13368b2a8d8b4a455bbc01c32f60ebc208fcb6c664dfba0e47565f56419"
+    },
+    {
+      "block": 19446383,
+      "chain_tx_hash": "0x3759175728e0744ef68a14e750682822065192dc8ca6f3db27aff3aff8bb20fa",
+      "kind": "settlement_missing",
+      "log_index": 82,
+      "solver": "0xc74b656bd2ebe313d26d1ac02bcf95b137d1c857"
+    },
+    {
+      "block": 19446578,
+      "chain_tx_hash": "0xf25993f2526edae910596fe4ccec6eb0891ac364df28d4c177db357f0cf026e1",
+      "kind": "trade_missing",
+      "log_index": 17,
+      "order_uid": "0xadfb04f2c08910db4e9b6ec498f61ec2722c7fd3a03fde945da02df64d77b07d40a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19446578,
+      "chain_tx_hash": "0xf25993f2526edae910596fe4ccec6eb0891ac364df28d4c177db357f0cf026e1",
+      "kind": "settlement_missing",
+      "log_index": 26,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19446599,
+      "chain_tx_hash": "0x547a5c6a70f6c6216ecfd6886d2e4ac030f71c948abcaf8e764051ab63a187de",
+      "kind": "trade_missing",
+      "log_index": 18,
+      "order_uid": "0xdd543d2762592c98b8344a16e798f9175fd83b6441be7aebf615c8fed9fb06a840a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19446599,
+      "chain_tx_hash": "0x547a5c6a70f6c6216ecfd6886d2e4ac030f71c948abcaf8e764051ab63a187de",
+      "kind": "settlement_missing",
+      "log_index": 25,
+      "solver": "0xc9f2e6ea1637e499406986ac50ddc92401ce1f58"
+    },
+    {
+      "block": 19446724,
+      "chain_tx_hash": "0xae58bb79fd8c91b8f49423ff98c127044f04f88133cc1e08baf4d791bd1bdcec",
+      "kind": "trade_missing",
+      "log_index": 35,
+      "order_uid": "0x1745b67f2be4da4aa6abd740e00808565912e7683ddfaa72ed542a5b3721b37f5fc79e21ceca2aa0f7a0aac71ef3ddde8f004e9e65f57466"
+    },
+    {
+      "block": 19446724,
+      "chain_tx_hash": "0xae58bb79fd8c91b8f49423ff98c127044f04f88133cc1e08baf4d791bd1bdcec",
+      "kind": "settlement_missing",
+      "log_index": 52,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19446798,
+      "chain_tx_hash": "0x15c1f2ba21f8868506b0615d48b152d92065715df358f62b144522dbe88b40e7",
+      "kind": "trade_missing",
+      "log_index": 39,
+      "order_uid": "0x8e28c36d8b829bbe91bec06ab1bc1854d88912e72710f387ba44661e2e55e44061329adc9362b5906a6e098ac01616a70fe5708065f577e7"
+    },
+    {
+      "block": 19446798,
+      "chain_tx_hash": "0x15c1f2ba21f8868506b0615d48b152d92065715df358f62b144522dbe88b40e7",
+      "kind": "settlement_missing",
+      "log_index": 65,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19446801,
+      "chain_tx_hash": "0x565b9b8a0355456fb5bfc0d1e301a05210c374d2e32edcf7bed6affc2d77111b",
+      "kind": "trade_missing",
+      "log_index": 57,
+      "order_uid": "0x586e1b42e0f8acb625b0f0bd6ed227e8271abcfc06b799db34c6482379890f1579848e79a0589f1d5a209214b50811bc2daa8faa65f57829"
+    },
+    {
+      "block": 19446801,
+      "chain_tx_hash": "0x565b9b8a0355456fb5bfc0d1e301a05210c374d2e32edcf7bed6affc2d77111b",
+      "kind": "settlement_missing",
+      "log_index": 67,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19446853,
+      "chain_tx_hash": "0xc19d4cf09253091fc880e38dc5cc74a7dff7a78e5fa7872bd1308e846df8f770",
+      "kind": "trade_missing",
+      "log_index": 101,
+      "order_uid": "0xd2b0a116c84679265a69c77cd0289efe1f230fa5ed7d90084c65776d09b84cd741cb760b173b9de2be42fe6f265fac438cb71ad165f57a8c"
+    },
+    {
+      "block": 19446853,
+      "chain_tx_hash": "0xc19d4cf09253091fc880e38dc5cc74a7dff7a78e5fa7872bd1308e846df8f770",
+      "kind": "settlement_missing",
+      "log_index": 104,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19446859,
+      "chain_tx_hash": "0x8517bb4891345e7efcb99353a2c944f94423a6e16ad8ee85609abfaa1170ca99",
+      "kind": "trade_missing",
+      "log_index": 19,
+      "order_uid": "0xbc84f6c0cc3cb84d8c1dae8df29721268645ddda322a0faf8d06539167da281640a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19446859,
+      "chain_tx_hash": "0x8517bb4891345e7efcb99353a2c944f94423a6e16ad8ee85609abfaa1170ca99",
+      "kind": "trade_missing",
+      "log_index": 20,
+      "order_uid": "0x89384ed68a76bc4a1952895b9e5f2598bfbf098315811ff18f178addba57b1f2bed63b9733f4393a587df91188412dab7e28a3aa65f57ada"
+    },
+    {
+      "block": 19446859,
+      "chain_tx_hash": "0x8517bb4891345e7efcb99353a2c944f94423a6e16ad8ee85609abfaa1170ca99",
+      "kind": "trade_missing",
+      "log_index": 21,
+      "order_uid": "0xe5b0e9de0cd9d9268b44ac0ff1a456f0849ce583e9dad751305d6876ffc88a4b6780ac060fdcba20ae02a6197c84bdc70cf8716b65f57ad6"
+    },
+    {
+      "block": 19446859,
+      "chain_tx_hash": "0x8517bb4891345e7efcb99353a2c944f94423a6e16ad8ee85609abfaa1170ca99",
+      "kind": "settlement_missing",
+      "log_index": 43,
+      "solver": "0x0ddcb0769a3591230caa80f85469240b71442089"
+    },
+    {
+      "block": 19446879,
+      "chain_tx_hash": "0x60ee86458ab1004a89d6f1c2719e2acaf1f0dfe04532905f222fc4c41bb639c7",
+      "kind": "trade_missing",
+      "log_index": 51,
+      "order_uid": "0x3566a9c3cb01e206f1170d9b2d8ebe1c51903e2b91b7807b2d26db0f42d82f7d84b73ffd1c664c82e4a98291a352e837acd182f965f57b8a"
+    },
+    {
+      "block": 19446879,
+      "chain_tx_hash": "0x60ee86458ab1004a89d6f1c2719e2acaf1f0dfe04532905f222fc4c41bb639c7",
+      "kind": "settlement_missing",
+      "log_index": 62,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19446899,
+      "chain_tx_hash": "0x3ab0ac2c3e17c473f2111eac49a15b6a84f7f92662719190a4892a7fe87686dd",
+      "kind": "trade_missing",
+      "log_index": 35,
+      "order_uid": "0x7d4fc06f0fe2c0ffc3c9c1715c1c2c6b3f7b0ae5fc0304dac035cad66d9d1fe9ff82820b61bc079a2387de0d6e93a19ce96fc27965f576b2"
+    },
+    {
+      "block": 19446899,
+      "chain_tx_hash": "0x3ab0ac2c3e17c473f2111eac49a15b6a84f7f92662719190a4892a7fe87686dd",
+      "kind": "trade_missing",
+      "log_index": 36,
+      "order_uid": "0x6c05b1410aeca01cd6790e81910e963944775011768263e86cf622fe09b6f83c40a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19446899,
+      "chain_tx_hash": "0x3ab0ac2c3e17c473f2111eac49a15b6a84f7f92662719190a4892a7fe87686dd",
+      "kind": "settlement_missing",
+      "log_index": 54,
+      "solver": "0xb9332b6301e5983272c30dd5b48a4e3b1664511b"
+    },
+    {
+      "block": 19448257,
+      "chain_tx_hash": "0x0cb8b87f5019841e36e15598a8b747c962cf035db3c03f414471ecd9c4de3e94",
+      "kind": "trade_missing",
+      "log_index": 69,
+      "order_uid": "0x41da2526fab5efc4cc21a5024726806bbaedb7e02cbca4840206ea31147e731865a41afb09375d54539a630b751ee00ab303f22965f5bd41"
+    },
+    {
+      "block": 19448257,
+      "chain_tx_hash": "0x0cb8b87f5019841e36e15598a8b747c962cf035db3c03f414471ecd9c4de3e94",
+      "kind": "trade_missing",
+      "log_index": 70,
+      "order_uid": "0xf088f1da31fe0ea64e8ad3629432f576b7dd5adbba9d0f41fb4949a0cbf4fe1850c99df886dc3b0f66b7cdd0aa7e5976915e314465fe4d53"
+    },
+    {
+      "block": 19448257,
+      "chain_tx_hash": "0x0cb8b87f5019841e36e15598a8b747c962cf035db3c03f414471ecd9c4de3e94",
+      "kind": "settlement_missing",
+      "log_index": 88,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19450237,
+      "chain_tx_hash": "0xa6a06a0295ba41c388f37fe76e79ae6e72f818491a74896c416b1f65c92fbcdc",
+      "kind": "trade_missing",
+      "log_index": 105,
+      "order_uid": "0x80e716e2a2d86b98da6058566298973cc2d27fd8a0d61c6537e33658d2173a9c493e50fd50adb88ae5814f3351e3d807ccddb60465f61b25"
+    },
+    {
+      "block": 19450237,
+      "chain_tx_hash": "0xa6a06a0295ba41c388f37fe76e79ae6e72f818491a74896c416b1f65c92fbcdc",
+      "kind": "settlement_missing",
+      "log_index": 116,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19451297,
+      "chain_tx_hash": "0x74f86918a801b10f6e0f3cbe275fc8683f887324a5fdb92454b710216803e2c0",
+      "kind": "trade_missing",
+      "log_index": 3,
+      "order_uid": "0xf480f64f92ef74886b49b90b57fef6076626e2c45ce8d542e54d248e2222a878f862c0e523be3a8c97d3a587ed60e613613c946765f64d99"
+    },
+    {
+      "block": 19451297,
+      "chain_tx_hash": "0x74f86918a801b10f6e0f3cbe275fc8683f887324a5fdb92454b710216803e2c0",
+      "kind": "settlement_missing",
+      "log_index": 14,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19453240,
+      "chain_tx_hash": "0x7294f0d5937521e6d7c9cea2ea64d916c4a5c5ec42f979275ede783a4ad4f646",
+      "kind": "trade_missing",
+      "log_index": 89,
+      "order_uid": "0xdfa82438fd23a9c685af4c10f204bc8dbcaab85f360eebc930eba122efde52b831d3243cfb54b34fc9c73e1cb1137124bd6b13e165f6a415"
+    },
+    {
+      "block": 19453240,
+      "chain_tx_hash": "0x7294f0d5937521e6d7c9cea2ea64d916c4a5c5ec42f979275ede783a4ad4f646",
+      "kind": "settlement_missing",
+      "log_index": 102,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19453321,
+      "chain_tx_hash": "0xd3f5dcc4389fb40b71a678b2e803123c73d00e3463397b11686f8a70c02a077e",
+      "kind": "trade_missing",
+      "log_index": 58,
+      "order_uid": "0x218035085452b293a1264f526a9c293afd4941ecf598a875d9bebceae4784b29a953199f569b65977b649c428df7883cb2378e1365f6acd5"
+    },
+    {
+      "block": 19453321,
+      "chain_tx_hash": "0xd3f5dcc4389fb40b71a678b2e803123c73d00e3463397b11686f8a70c02a077e",
+      "kind": "settlement_missing",
+      "log_index": 71,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19453481,
+      "chain_tx_hash": "0x063b77fd6434504fa233653674c21dffcd2fbf9981a4851d317b447e896a3828",
+      "kind": "trade_missing",
+      "log_index": 7,
+      "order_uid": "0x4371eacbf5a0822c29d87bd1c6c0878358bea885450880acaa0307e9a0bbcc4c0013cefc104698bb40d574e2ae6c822d5d52cff365f6afad"
+    },
+    {
+      "block": 19453481,
+      "chain_tx_hash": "0x063b77fd6434504fa233653674c21dffcd2fbf9981a4851d317b447e896a3828",
+      "kind": "settlement_missing",
+      "log_index": 14,
+      "solver": "0x9b7e7f21d98f21c0354035798c40e9040e25787f"
+    },
+    {
+      "block": 19454144,
+      "chain_tx_hash": "0xd4f26679548a9ed1bdc4ab0dbf855fdfcb786e45ebb456909a32a2c2e4022d51",
+      "kind": "trade_missing",
+      "log_index": 78,
+      "order_uid": "0xf899e3680bdafe4c5ad032c2432a48ba4257d06e0e281dd188112732437736a50d25fd5623f51fbedd9d868bdf085e16fd32c44665f6d4b0"
+    },
+    {
+      "block": 19454144,
+      "chain_tx_hash": "0xd4f26679548a9ed1bdc4ab0dbf855fdfcb786e45ebb456909a32a2c2e4022d51",
+      "kind": "settlement_missing",
+      "log_index": 82,
+      "solver": "0x4339889fd9dfca20a423fba011e9dff1c856caeb"
+    },
+    {
+      "block": 19454619,
+      "chain_tx_hash": "0xd28a93ccf048ef9b5c4a4992bd67e9762e1eedbf9a689c6db6d64dd0038f93ed",
+      "kind": "trade_missing",
+      "log_index": 126,
+      "order_uid": "0x47cd11754ecd0009a9f58cbd93bc6ce70c48d0e8e8468b66331f68867a9306ed40a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19454619,
+      "chain_tx_hash": "0xd28a93ccf048ef9b5c4a4992bd67e9762e1eedbf9a689c6db6d64dd0038f93ed",
+      "kind": "settlement_missing",
+      "log_index": 135,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19455893,
+      "chain_tx_hash": "0x5de5b2a4e00d10821bbcab723b7d8ba3afffb1e14c0bcb8174ce3769a7336cd5",
+      "kind": "trade_missing",
+      "log_index": 97,
+      "order_uid": "0x8a08c31f0d6b986efe8a401210c0937e6af7df5016ceb9fb621c9b9f90be6ef15dbd32d50535fa044eb05610591f70b29a859f6965f7279e"
+    },
+    {
+      "block": 19455893,
+      "chain_tx_hash": "0x5de5b2a4e00d10821bbcab723b7d8ba3afffb1e14c0bcb8174ce3769a7336cd5",
+      "kind": "settlement_missing",
+      "log_index": 105,
+      "solver": "0x4fc4a61a3b99a1ad4a61b03f3752ca12b4a17646"
+    },
+    {
+      "block": 19456248,
+      "chain_tx_hash": "0x46401441119aaa86fb2cbffe62c335cff463fddec1648769fa39a34e7c674639",
+      "kind": "trade_missing",
+      "log_index": 55,
+      "order_uid": "0x31209e12884414eb9956c4ea95dc0775d5b21d983ba25210beea8deca4dd49ad753e4ed4f24a743c944e2f4b85dee1994bc26e0c66005d57"
+    },
+    {
+      "block": 19456248,
+      "chain_tx_hash": "0x46401441119aaa86fb2cbffe62c335cff463fddec1648769fa39a34e7c674639",
+      "kind": "settlement_missing",
+      "log_index": 69,
+      "solver": "0xc9f2e6ea1637e499406986ac50ddc92401ce1f58"
+    },
+    {
+      "block": 19457002,
+      "chain_tx_hash": "0x1317b5c7203072f9c07c2353706866d63402fc4a3f2e38a97f22d0176b3eba4c",
+      "kind": "trade_missing",
+      "log_index": 235,
+      "order_uid": "0x2f1e68e0a5ad27cfac8aed91b3272082f6b27cae72dfb7452c33230136aff88851e4fd59889dddff1fda10b20c9cb24c6bbccb1e65f7569e"
+    },
+    {
+      "block": 19457002,
+      "chain_tx_hash": "0x1317b5c7203072f9c07c2353706866d63402fc4a3f2e38a97f22d0176b3eba4c",
+      "kind": "settlement_missing",
+      "log_index": 243,
+      "solver": "0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99"
+    },
+    {
+      "block": 19457306,
+      "chain_tx_hash": "0xd7b46e66b9e6be49d09edda6b649cfc5bcc15fa40030be2cb89ea56f40732b14",
+      "kind": "trade_missing",
+      "log_index": 4,
+      "order_uid": "0xbd726abc210e3d131f1e3539cd4c0fb15d7e5421c80c3737761c14c9e21e0a8474f7c70f64c77ffdb42e314ef3acc72f168585a865f77184"
+    },
+    {
+      "block": 19457306,
+      "chain_tx_hash": "0xd7b46e66b9e6be49d09edda6b649cfc5bcc15fa40030be2cb89ea56f40732b14",
+      "kind": "settlement_missing",
+      "log_index": 13,
+      "solver": "0xc9f2e6ea1637e499406986ac50ddc92401ce1f58"
+    },
+    {
+      "block": 19458007,
+      "chain_tx_hash": "0x44724df4b901ca1ef9640f6b1278c65627a9a3d495eab1fcf05590dea0affc33",
+      "kind": "trade_missing",
+      "log_index": 91,
+      "order_uid": "0x9feaf22ab60bebd2e22a3a3fe0418ed416a6e3278d622e978066e2fffb2bb83b93774b153f8514d26f22af5059015e645fd1264065f78be0"
+    },
+    {
+      "block": 19458007,
+      "chain_tx_hash": "0x44724df4b901ca1ef9640f6b1278c65627a9a3d495eab1fcf05590dea0affc33",
+      "kind": "settlement_missing",
+      "log_index": 115,
+      "solver": "0x0ddcb0769a3591230caa80f85469240b71442089"
+    },
+    {
+      "block": 19458360,
+      "chain_tx_hash": "0x020699ad41c2d161cd29d58d4c2675a5b32b52e95bac04d72813bb8264d5e56e",
+      "kind": "trade_missing",
+      "log_index": 71,
+      "order_uid": "0x1f8f69da47e6bb2810bb12104c147ec89451c93d1a45580e2c66c1fc992325112d983d97b5f887d18713510d4998c8cbba5550ed65f79cb1"
+    },
+    {
+      "block": 19458360,
+      "chain_tx_hash": "0x020699ad41c2d161cd29d58d4c2675a5b32b52e95bac04d72813bb8264d5e56e",
+      "kind": "trade_missing",
+      "log_index": 72,
+      "order_uid": "0x7c45a71334cba5cff28b9c99e247b5cfea043cd9fda7711228f436835a1db38a3f69bcdf3a61b3c84dc956a5cbdac34ccb369d3965f79c88"
+    },
+    {
+      "block": 19458360,
+      "chain_tx_hash": "0x020699ad41c2d161cd29d58d4c2675a5b32b52e95bac04d72813bb8264d5e56e",
+      "kind": "settlement_missing",
+      "log_index": 118,
+      "solver": "0x0ddcb0769a3591230caa80f85469240b71442089"
+    },
+    {
+      "block": 19458816,
+      "chain_tx_hash": "0x11b78f6eff5e2938322775e005bb80514cd8cddf1b7f8c658dab2f98d09d457d",
+      "kind": "trade_missing",
+      "log_index": 99,
+      "order_uid": "0xe0feaa968b464702c0bbf7a96026acb57792e458b387ffccbcf88b152d646a9f2e7296ebc57fcf7c0b112d2a46062017be2b179265f7b269"
+    },
+    {
+      "block": 19458816,
+      "chain_tx_hash": "0x11b78f6eff5e2938322775e005bb80514cd8cddf1b7f8c658dab2f98d09d457d",
+      "kind": "settlement_missing",
+      "log_index": 112,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19460329,
+      "chain_tx_hash": "0x2b42232e7572db6afc8c04cbc6bb4a3616771e6d9b517e3ca0f2373cc8264d11",
+      "kind": "trade_missing",
+      "log_index": 8,
+      "order_uid": "0x76ebae67508307cc0b3a9bc48aa873ff9da7dacd54f3ebfe2ac7610c1370109e8096840ed02438d817f7a0037c59e1e51e54d6aa661acb7a"
+    },
+    {
+      "block": 19460329,
+      "chain_tx_hash": "0x2b42232e7572db6afc8c04cbc6bb4a3616771e6d9b517e3ca0f2373cc8264d11",
+      "kind": "settlement_missing",
+      "log_index": 15,
+      "solver": "0xc9f2e6ea1637e499406986ac50ddc92401ce1f58"
+    },
+    {
+      "block": 19460515,
+      "chain_tx_hash": "0xf9d149c1fd804c9f11212030a0cff94f5f4a2f260ed4987eaedcff59fab71532",
+      "kind": "trade_missing",
+      "log_index": 54,
+      "order_uid": "0x346654f77d4ea6f95fa1aad732589c044ae3652140dc909fc0ea7e744a6f4fb940a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19460515,
+      "chain_tx_hash": "0xf9d149c1fd804c9f11212030a0cff94f5f4a2f260ed4987eaedcff59fab71532",
+      "kind": "settlement_missing",
+      "log_index": 57,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19460785,
+      "chain_tx_hash": "0xa18016312bbfa30f38b9f7c47fd97682b5e1fdb6acb9f3815852aaf35440e20e",
+      "kind": "trade_missing",
+      "log_index": 145,
+      "order_uid": "0x7782626d1938abc092c1388d9a099b60befa26a6fb8ee8c5a55bded388845322ca81dbbbb9389a5387f0acad4d018756a04d7f2c6601424d"
+    },
+    {
+      "block": 19460785,
+      "chain_tx_hash": "0xa18016312bbfa30f38b9f7c47fd97682b5e1fdb6acb9f3815852aaf35440e20e",
+      "kind": "settlement_missing",
+      "log_index": 165,
+      "solver": "0xc74b656bd2ebe313d26d1ac02bcf95b137d1c857"
+    },
+    {
+      "block": 19460997,
+      "chain_tx_hash": "0xeb5b09de8232ea0e73c7046d553c379f91674cd23b25725c7f9132553cc3c229",
+      "kind": "trade_missing",
+      "log_index": 60,
+      "order_uid": "0xd0bdddfb46a1a06d28b94000554ca2d4733d28bd9e6dc646bd7d73b3d7203ab3e44d27d26df64de74474e86c0c22cebacdfcc67d65f819be"
+    },
+    {
+      "block": 19460997,
+      "chain_tx_hash": "0xeb5b09de8232ea0e73c7046d553c379f91674cd23b25725c7f9132553cc3c229",
+      "kind": "settlement_missing",
+      "log_index": 70,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19466057,
+      "chain_tx_hash": "0xd3cbe3ca0874330bc5b2d4c6d2b6ea2afd3213c0dc3328321a1694ec6ad2b82a",
+      "kind": "trade_missing",
+      "log_index": 41,
+      "order_uid": "0xf366e72e0af2ed4b33521a46e97da572ba13926fc6d0fc84529fef4e1ae367c9f569e3920aa165c5a42dc88f6ef5cf986810fd8965f909e8"
+    },
+    {
+      "block": 19466057,
+      "chain_tx_hash": "0xd3cbe3ca0874330bc5b2d4c6d2b6ea2afd3213c0dc3328321a1694ec6ad2b82a",
+      "kind": "settlement_missing",
+      "log_index": 65,
+      "solver": "0xc9f2e6ea1637e499406986ac50ddc92401ce1f58"
+    },
+    {
+      "block": 19466405,
+      "chain_tx_hash": "0x549d4e6355c478a3defae9bd5e601a1e7e39f993ab3c53348d1886ed6db051f4",
+      "kind": "trade_missing",
+      "log_index": 47,
+      "order_uid": "0xf01db8c81ced07a4f303d0fa2349446c918b3c87a4e7edf23f09c8ef68c935470bc1e03582a6e20bc1d8c408774e3afb6652933665f91a9e"
+    },
+    {
+      "block": 19466405,
+      "chain_tx_hash": "0x549d4e6355c478a3defae9bd5e601a1e7e39f993ab3c53348d1886ed6db051f4",
+      "kind": "settlement_missing",
+      "log_index": 54,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19466458,
+      "chain_tx_hash": "0xaed7632eff51afa21e606a27794720e40591776ec59960a76abfd1ee1ae47bc7",
+      "kind": "trade_missing",
+      "log_index": 65,
+      "order_uid": "0x8bb0dd770aab8354838c1d6545cbbadcb274999b569a76dba50888144b5f014e5cdf90c671ae18d0ae906390197ce24575710fce65f91d17"
+    },
+    {
+      "block": 19466458,
+      "chain_tx_hash": "0xaed7632eff51afa21e606a27794720e40591776ec59960a76abfd1ee1ae47bc7",
+      "kind": "settlement_missing",
+      "log_index": 73,
+      "solver": "0x4fc4a61a3b99a1ad4a61b03f3752ca12b4a17646"
+    },
+    {
+      "block": 19468307,
+      "chain_tx_hash": "0x0192891aadee308486f46cfe3652edd494554b23356e954a53ed75d54156487f",
+      "kind": "trade_missing",
+      "log_index": 100,
+      "order_uid": "0x191963fa14076120f9db47c8637a53e9b29d8dfc22d53f51123ef5073ffcae63bcae268bd3e99a75cd7296d691b91e70a1bac5e865f974ad"
+    },
+    {
+      "block": 19468307,
+      "chain_tx_hash": "0x0192891aadee308486f46cfe3652edd494554b23356e954a53ed75d54156487f",
+      "kind": "settlement_missing",
+      "log_index": 124,
+      "solver": "0xd1508a211d98bb81195dc1f9533edcdf68adf036"
+    },
+    {
+      "block": 19468853,
+      "chain_tx_hash": "0x2f2bf04af0a6e46f1c27371b26399e524640134f4913e66f9c01bcaf90113524",
+      "kind": "trade_missing",
+      "log_index": 79,
+      "order_uid": "0x68953a1e8a1cec7a030e01ceb3c3bfd1e1e7f99928673039d5cff101682940afab61660f93dffca32e3f526b20dad35332080a1265f98df2"
+    },
+    {
+      "block": 19468853,
+      "chain_tx_hash": "0x2f2bf04af0a6e46f1c27371b26399e524640134f4913e66f9c01bcaf90113524",
+      "kind": "settlement_missing",
+      "log_index": 93,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19469602,
+      "chain_tx_hash": "0x457be19e57a35272736e3336b4eb9ec9703f779f3d42d0a499c1b30e6ae15b50",
+      "kind": "trade_missing",
+      "log_index": 18,
+      "order_uid": "0x829d5caff041124063e6262d695a78c348720e7010157fdd329c0b9d91d9be415db2d2a055466e0c5d4cf09869cf2e2cfc47b15765f9b157"
+    },
+    {
+      "block": 19469602,
+      "chain_tx_hash": "0x457be19e57a35272736e3336b4eb9ec9703f779f3d42d0a499c1b30e6ae15b50",
+      "kind": "settlement_missing",
+      "log_index": 25,
+      "solver": "0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99"
+    },
+    {
+      "block": 19470249,
+      "chain_tx_hash": "0xa75504d1471e609e34579a1305245316c7cd49fc2779016f7832fc6a4d5cb2e7",
+      "kind": "trade_missing",
+      "log_index": 409,
+      "order_uid": "0x5022ced07ab772770a68fd20f36ac325832bdae37054ab00fda83aa726768a48b4509b16c4b3111e78160b58d14747d8efc6b51e65f9d0aa"
+    },
+    {
+      "block": 19470249,
+      "chain_tx_hash": "0xa75504d1471e609e34579a1305245316c7cd49fc2779016f7832fc6a4d5cb2e7",
+      "kind": "trade_missing",
+      "log_index": 410,
+      "order_uid": "0x6218aa0e35e2c9e0f9b84c4871a89a2cc375607f13fd25d61c2dacf26731824b40a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19470249,
+      "chain_tx_hash": "0xa75504d1471e609e34579a1305245316c7cd49fc2779016f7832fc6a4d5cb2e7",
+      "kind": "settlement_missing",
+      "log_index": 425,
+      "solver": "0xbf54079c9bc879ae4dd6bc79bce11d3988fd9c2b"
+    },
+    {
+      "block": 19505802,
+      "chain_tx_hash": "0x97e1fcf42de557be83b0f240f3d2bd85351d6665687e608a21dbe6ecfce9ce51",
+      "kind": "trade_missing",
+      "log_index": 22,
+      "order_uid": "0x39cee8da8b7ba8feeee354331a5265be0629813cd10045dbde423a8e907260031bb49c26a005cba9639c11706cb9bce7dcfdf24b66006537"
+    },
+    {
+      "block": 19505802,
+      "chain_tx_hash": "0x97e1fcf42de557be83b0f240f3d2bd85351d6665687e608a21dbe6ecfce9ce51",
+      "kind": "settlement_missing",
+      "log_index": 39,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    },
+    {
+      "block": 19530078,
+      "chain_tx_hash": "0x5d9847a7703d67e1657c8108d60a0166764ecfa473925c891a576c64b99b4205",
+      "kind": "trade_missing",
+      "log_index": 121,
+      "order_uid": "0x365a63e126692ffe89305c93664d447cf715dadb94106919751fbc6d863a58d740a50cf069e992aa4536211b23f286ef88752187ffffffff"
+    },
+    {
+      "block": 19530078,
+      "chain_tx_hash": "0x5d9847a7703d67e1657c8108d60a0166764ecfa473925c891a576c64b99b4205",
+      "kind": "settlement_missing",
+      "log_index": 128,
+      "solver": "0x4fc4a61a3b99a1ad4a61b03f3752ca12b4a17646"
+    },
+    {
+      "block": 19530313,
+      "chain_tx_hash": "0xfbb97ea63850e6e5116f9c14506f7b94e0225aee721d61ac20a0dad26e9e888f",
+      "kind": "trade_missing",
+      "log_index": 41,
+      "order_uid": "0x6420863032d2b71934733e4d895df358ed1668a7572258785aad40d23ec1118ff9d7adfb5bc41283d67db9d71add65162e242f626604fcaa"
+    },
+    {
+      "block": 19530313,
+      "chain_tx_hash": "0xfbb97ea63850e6e5116f9c14506f7b94e0225aee721d61ac20a0dad26e9e888f",
+      "kind": "settlement_missing",
+      "log_index": 56,
+      "solver": "0x16c473448e770ff647c69cbe19e28528877fba1b"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "blocks_scanned": 13384912,
+  "chain_id": 57073,
+  "contracts": [
+    "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+  ],
+  "from": 36884486,
+  "mismatches": [],
+  "network": "ink",
+  "rpc": "https://ink-mainnet.g.alchemy.com",
+  "scanned_through": 50269397,
+  "summary": {
+    "by_kind": {},
+    "mismatch_blocks": 0,
+    "total": 0
+  },
+  "to": 50269397,
+  "truncated": false
+}

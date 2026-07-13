@@ -1,0 +1,90 @@
+{
+  "environment": "staging",
+  "network": "bnb",
+  "chain_id": 56,
+  "contracts": [
+    "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+  ],
+  "rpc": [
+    "https://bnb-mainnet.g.alchemy.com"
+  ],
+  "from": 60889161,
+  "to": 109174718,
+  "scanned_through": 69574160,
+  "blocks_scanned": 8685000,
+  "truncated": true,
+  "summary": {
+    "by_kind": {},
+    "mismatch_blocks": 0,
+    "total": 0
+  },
+  "source_reports": [
+    {
+      "file": "bnb-20260711T000552Z.json",
+      "in_sqlite": true,
+      "chain_id": 56,
+      "from": 60889161,
+      "to": 109174718,
+      "scanned_through": 69574160,
+      "truncated": true,
+      "mismatches_in_file": 0,
+      "mismatches_added": 0,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 8,
+          "created_at": "2026-07-11T00:05:52.139442+00:00",
+          "from_block": 60889161,
+          "to_block": 109174718,
+          "mismatches": 0,
+          "truncated": true
+        }
+      ]
+    },
+    {
+      "file": "bnb-20260711T102925Z.json",
+      "in_sqlite": true,
+      "chain_id": 56,
+      "from": 69574161,
+      "to": 109174718,
+      "scanned_through": null,
+      "truncated": true,
+      "mismatches_in_file": 0,
+      "mismatches_added": 0,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 19,
+          "created_at": "2026-07-11T10:29:25.021521+00:00",
+          "from_block": 69574161,
+          "to_block": 109174718,
+          "mismatches": 0,
+          "truncated": true
+        }
+      ]
+    },
+    {
+      "file": "bnb-20260711T160628Z.json",
+      "in_sqlite": true,
+      "chain_id": 56,
+      "from": 69574161,
+      "to": 109174718,
+      "scanned_through": null,
+      "truncated": true,
+      "mismatches_in_file": 0,
+      "mismatches_added": 0,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 34,
+          "created_at": "2026-07-11T16:06:28.620562+00:00",
+          "from_block": 69574161,
+          "to_block": 109174718,
+          "mismatches": 0,
+          "truncated": true
+        }
+      ]
+    }
+  ],
+  "mismatches": []
+}

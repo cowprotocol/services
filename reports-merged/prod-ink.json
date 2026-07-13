@@ -1,0 +1,90 @@
+{
+  "environment": "prod",
+  "network": "ink",
+  "chain_id": 57073,
+  "contracts": [
+    "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+  ],
+  "rpc": [
+    "https://ink-mainnet.g.alchemy.com"
+  ],
+  "from": 36884486,
+  "to": 50294043,
+  "scanned_through": 50294043,
+  "blocks_scanned": 13409558,
+  "truncated": false,
+  "summary": {
+    "by_kind": {},
+    "mismatch_blocks": 0,
+    "total": 0
+  },
+  "source_reports": [
+    {
+      "file": "ink-20260711T111103Z.json",
+      "in_sqlite": true,
+      "chain_id": 57073,
+      "from": 36884486,
+      "to": 50269397,
+      "scanned_through": 50269397,
+      "truncated": false,
+      "mismatches_in_file": 0,
+      "mismatches_added": 0,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 23,
+          "created_at": "2026-07-11T11:11:03.848386+00:00",
+          "from_block": 36884486,
+          "to_block": 50269397,
+          "mismatches": 0,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "file": "ink-20260711T171719Z.json",
+      "in_sqlite": true,
+      "chain_id": 57073,
+      "from": 50269398,
+      "to": 50289956,
+      "scanned_through": 50289956,
+      "truncated": false,
+      "mismatches_in_file": 0,
+      "mismatches_added": 0,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 37,
+          "created_at": "2026-07-11T17:17:19.581297+00:00",
+          "from_block": 50269398,
+          "to_block": 50289956,
+          "mismatches": 0,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "file": "ink-20260711T175737Z.json",
+      "in_sqlite": true,
+      "chain_id": 57073,
+      "from": 50289957,
+      "to": 50294043,
+      "scanned_through": 50294043,
+      "truncated": false,
+      "mismatches_in_file": 0,
+      "mismatches_added": 0,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 41,
+          "created_at": "2026-07-11T17:57:37.810492+00:00",
+          "from_block": 50289957,
+          "to_block": 50294043,
+          "mismatches": 0,
+          "truncated": false
+        }
+      ]
+    }
+  ],
+  "mismatches": []
+}

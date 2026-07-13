@@ -1,0 +1,21 @@
+{
+  "blocks_scanned": 5218,
+  "chain_id": 100,
+  "contracts": [
+    "0x4E608b7Da83f8E9213F554BDAA77C72e125529d0:-15309608",
+    "0x3328f5f2cEcAF00a2443082B657CedEAf70bfAEf:14846022-17739439",
+    "0x9008D19f58AAbD9eD0D60971565AA8510560ab41:16465100-"
+  ],
+  "from": 47148514,
+  "mismatches": [],
+  "network": "gnosis",
+  "rpc": "https://gnosis-mainnet.g.alchemy.com",
+  "scanned_through": 47153731,
+  "summary": {
+    "by_kind": {},
+    "mismatch_blocks": 0,
+    "total": 0
+  },
+  "to": 47153731,
+  "truncated": false
+}

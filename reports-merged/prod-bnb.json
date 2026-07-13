@@ -1,0 +1,78 @@
+{
+  "environment": "prod",
+  "network": "bnb",
+  "chain_id": 56,
+  "contracts": [
+    "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+  ],
+  "rpc": [
+    "https://bnb-mainnet.g.alchemy.com"
+  ],
+  "from": 60919609,
+  "to": 109432015,
+  "scanned_through": 69569608,
+  "blocks_scanned": 8650000,
+  "truncated": true,
+  "summary": {
+    "by_kind": {
+      "settlement_solver_mismatch": 1
+    },
+    "mismatch_blocks": 1,
+    "total": 1
+  },
+  "source_reports": [
+    {
+      "file": "bnb-20260711T140001Z.json",
+      "in_sqlite": true,
+      "chain_id": 56,
+      "from": 60919609,
+      "to": 109375230,
+      "scanned_through": 69569608,
+      "truncated": true,
+      "mismatches_in_file": 1,
+      "mismatches_added": 1,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 30,
+          "created_at": "2026-07-11T14:00:01.241846+00:00",
+          "from_block": 60919609,
+          "to_block": 109375230,
+          "mismatches": 1,
+          "truncated": true
+        }
+      ]
+    },
+    {
+      "file": "bnb-20260711T210217Z.json",
+      "in_sqlite": true,
+      "chain_id": 56,
+      "from": 69569609,
+      "to": 109432015,
+      "scanned_through": null,
+      "truncated": true,
+      "mismatches_in_file": 0,
+      "mismatches_added": 0,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 46,
+          "created_at": "2026-07-11T21:02:17.492173+00:00",
+          "from_block": 69569609,
+          "to_block": 109432015,
+          "mismatches": 0,
+          "truncated": true
+        }
+      ]
+    }
+  ],
+  "mismatches": [
+    {
+      "block": 69558423,
+      "chain_solver": "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+      "db_solver": "0x6f9a7afe6446abfa91f0954c3cd1677b87247fef",
+      "kind": "settlement_solver_mismatch",
+      "log_index": 976
+    }
+  ]
+}

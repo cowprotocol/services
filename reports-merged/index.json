@@ -1,0 +1,194 @@
+[
+  {
+    "environment": "prod",
+    "network": "arbitrum-one",
+    "output": "prod-arbitrum-one.json",
+    "source_files": 3,
+    "total_mismatches": 30432,
+    "mismatch_blocks": 30008
+  },
+  {
+    "environment": "prod",
+    "network": "avalanche",
+    "output": "prod-avalanche.json",
+    "source_files": 2,
+    "total_mismatches": 6350,
+    "mismatch_blocks": 6310
+  },
+  {
+    "environment": "prod",
+    "network": "base",
+    "output": "prod-base.json",
+    "source_files": 2,
+    "total_mismatches": 17973,
+    "mismatch_blocks": 17776
+  },
+  {
+    "environment": "prod",
+    "network": "bnb",
+    "output": "prod-bnb.json",
+    "source_files": 2,
+    "total_mismatches": 1,
+    "mismatch_blocks": 1
+  },
+  {
+    "environment": "prod",
+    "network": "gnosis",
+    "output": "prod-gnosis.json",
+    "source_files": 2,
+    "total_mismatches": 1010,
+    "mismatch_blocks": 619
+  },
+  {
+    "environment": "prod",
+    "network": "ink",
+    "output": "prod-ink.json",
+    "source_files": 3,
+    "total_mismatches": 0,
+    "mismatch_blocks": 0
+  },
+  {
+    "environment": "prod",
+    "network": "linea",
+    "output": "prod-linea.json",
+    "source_files": 1,
+    "total_mismatches": 400,
+    "mismatch_blocks": 400
+  },
+  {
+    "environment": "prod",
+    "network": "mainnet",
+    "output": "prod-mainnet.json",
+    "source_files": 1,
+    "total_mismatches": 419,
+    "mismatch_blocks": 192
+  },
+  {
+    "environment": "prod",
+    "network": "plasma",
+    "output": "prod-plasma.json",
+    "source_files": 2,
+    "total_mismatches": 0,
+    "mismatch_blocks": 0
+  },
+  {
+    "environment": "prod",
+    "network": "polygon",
+    "output": "prod-polygon.json",
+    "source_files": 3,
+    "total_mismatches": 25424,
+    "mismatch_blocks": 25349
+  },
+  {
+    "environment": "prod",
+    "network": "sepolia",
+    "output": "prod-sepolia.json",
+    "source_files": 1,
+    "total_mismatches": 5,
+    "mismatch_blocks": 2
+  },
+  {
+    "environment": "staging",
+    "network": "arbitrum-one",
+    "output": "staging-arbitrum-one.json",
+    "source_files": 5,
+    "total_mismatches": 116755,
+    "mismatch_blocks": 50176
+  },
+  {
+    "environment": "staging",
+    "network": "avalanche",
+    "output": "staging-avalanche.json",
+    "source_files": 2,
+    "total_mismatches": 25664,
+    "mismatch_blocks": 13034
+  },
+  {
+    "environment": "staging",
+    "network": "base",
+    "output": "staging-base.json",
+    "source_files": 3,
+    "total_mismatches": 66831,
+    "mismatch_blocks": 30581
+  },
+  {
+    "environment": "staging",
+    "network": "bnb",
+    "output": "staging-bnb.json",
+    "source_files": 3,
+    "total_mismatches": 0,
+    "mismatch_blocks": 0
+  },
+  {
+    "environment": "staging",
+    "network": "gnosis",
+    "output": "staging-gnosis.json",
+    "source_files": 3,
+    "total_mismatches": 65643,
+    "mismatch_blocks": 30232
+  },
+  {
+    "environment": "staging",
+    "network": "ink",
+    "output": "staging-ink.json",
+    "source_files": 1,
+    "total_mismatches": 5705,
+    "mismatch_blocks": 5689
+  },
+  {
+    "environment": "staging",
+    "network": "linea",
+    "output": "staging-linea.json",
+    "source_files": 1,
+    "total_mismatches": 317,
+    "mismatch_blocks": 159
+  },
+  {
+    "environment": "staging",
+    "network": "mainnet",
+    "output": "staging-mainnet.json",
+    "source_files": 3,
+    "total_mismatches": 87558,
+    "mismatch_blocks": 33225
+  },
+  {
+    "environment": "staging",
+    "network": "plasma",
+    "output": "staging-plasma.json",
+    "source_files": 1,
+    "total_mismatches": 1378,
+    "mismatch_blocks": 699
+  },
+  {
+    "environment": "staging",
+    "network": "polygon",
+    "output": "staging-polygon.json",
+    "source_files": 3,
+    "total_mismatches": 44961,
+    "mismatch_blocks": 22542
+  },
+  {
+    "environment": "staging",
+    "network": "sepolia",
+    "output": "staging-sepolia.json",
+    "source_files": 1,
+    "total_mismatches": 8637,
+    "mismatch_blocks": 4245
+  },
+  {
+    "environment": "unknown",
+    "network": "gnosis",
+    "output": "unknown-gnosis.json",
+    "source_files": 1,
+    "total_mismatches": 1010,
+    "mismatch_blocks": 619
+  },
+  {
+    "environment": "unknown",
+    "network": "ink",
+    "output": "unknown-ink.json",
+    "source_files": 2,
+    "total_mismatches": 11465,
+    "mismatch_blocks": 5689
+  }
+]

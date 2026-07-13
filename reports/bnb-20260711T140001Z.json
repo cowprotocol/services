@@ -1,0 +1,29 @@
+{
+  "blocks_scanned": 8650000,
+  "chain_id": 56,
+  "contracts": [
+    "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+  ],
+  "from": 60919609,
+  "mismatches": [
+    {
+      "block": 69558423,
+      "chain_solver": "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+      "db_solver": "0x6f9a7afe6446abfa91f0954c3cd1677b87247fef",
+      "kind": "settlement_solver_mismatch",
+      "log_index": 976
+    }
+  ],
+  "network": "bnb",
+  "rpc": "https://bnb-mainnet.g.alchemy.com",
+  "scanned_through": 69569608,
+  "summary": {
+    "by_kind": {
+      "settlement_solver_mismatch": 1
+    },
+    "mismatch_blocks": 1,
+    "total": 1
+  },
+  "to": 109375230,
+  "truncated": true
+}

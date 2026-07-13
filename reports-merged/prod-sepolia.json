@@ -1,0 +1,85 @@
+{
+  "environment": "prod",
+  "network": "sepolia",
+  "chain_id": 11155111,
+  "contracts": [
+    "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+  ],
+  "rpc": [
+    "https://eth-sepolia.g.alchemy.com"
+  ],
+  "from": 4879269,
+  "to": 11249561,
+  "scanned_through": 11249561,
+  "blocks_scanned": 6370293,
+  "truncated": false,
+  "summary": {
+    "by_kind": {
+      "settlement_missing": 2,
+      "trade_missing": 3
+    },
+    "mismatch_blocks": 2,
+    "total": 5
+  },
+  "source_reports": [
+    {
+      "file": "sepolia-20260711T110651Z.json",
+      "in_sqlite": true,
+      "chain_id": 11155111,
+      "from": 4879269,
+      "to": 11249561,
+      "scanned_through": 11249561,
+      "truncated": false,
+      "mismatches_in_file": 5,
+      "mismatches_added": 5,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 22,
+          "created_at": "2026-07-11T11:06:51.440882+00:00",
+          "from_block": 4879269,
+          "to_block": 11249561,
+          "mismatches": 5,
+          "truncated": false
+        }
+      ]
+    }
+  ],
+  "mismatches": [
+    {
+      "block": 5484284,
+      "chain_tx_hash": "0x84ed21ff3af372a8160c2f8ed94e4e80ec8800314baf4f537aa90f5592e17a5f",
+      "kind": "trade_missing",
+      "log_index": 72,
+      "order_uid": "0x538211d20724c0248a01f1b43a7e90e6a817141617ed6cb4628562de18c4fb138fd41a9dd6a89603b8875b27b508cfb307a42b5265f302e0"
+    },
+    {
+      "block": 5484284,
+      "chain_tx_hash": "0x84ed21ff3af372a8160c2f8ed94e4e80ec8800314baf4f537aa90f5592e17a5f",
+      "kind": "trade_missing",
+      "log_index": 73,
+      "order_uid": "0xf5b126188f4646508aeef30b9ec344e59f44c2e62862d79768a912209a20ea8f8fd41a9dd6a89603b8875b27b508cfb307a42b5265f302e0"
+    },
+    {
+      "block": 5484284,
+      "chain_tx_hash": "0x84ed21ff3af372a8160c2f8ed94e4e80ec8800314baf4f537aa90f5592e17a5f",
+      "kind": "settlement_missing",
+      "log_index": 88,
+      "solver": "0xe40cbca4d703642778b40e1e866ebfec1e619872"
+    },
+    {
+      "block": 5498898,
+      "chain_tx_hash": "0x4059b71626badbd5474442c4b4eaf609f65026dce21f6425eb03e5d8e7b7f0fe",
+      "kind": "trade_missing",
+      "log_index": 346,
+      "order_uid": "0x46fcfed6a82de112aea4d0016b8d94e86bc57a1cfcd9e0602dbbc8fa828c5ef60b7795e18767259cc253a2df471db34c72b49516ffffffff"
+    },
+    {
+      "block": 5498898,
+      "chain_tx_hash": "0x4059b71626badbd5474442c4b4eaf609f65026dce21f6425eb03e5d8e7b7f0fe",
+      "kind": "settlement_missing",
+      "log_index": 354,
+      "solver": "0xe40cbca4d703642778b40e1e866ebfec1e619872"
+    }
+  ]
+}

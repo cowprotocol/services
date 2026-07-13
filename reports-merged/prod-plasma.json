@@ -1,0 +1,68 @@
+{
+  "environment": "prod",
+  "network": "plasma",
+  "chain_id": 9745,
+  "contracts": [
+    "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+  ],
+  "rpc": [
+    "https://plasma-mainnet.g.alchemy.com"
+  ],
+  "from": 8371835,
+  "to": 26849772,
+  "scanned_through": 26849772,
+  "blocks_scanned": 18477938,
+  "truncated": false,
+  "summary": {
+    "by_kind": {},
+    "mismatch_blocks": 0,
+    "total": 0
+  },
+  "source_reports": [
+    {
+      "file": "plasma-20260711T112049Z.json",
+      "in_sqlite": true,
+      "chain_id": 9745,
+      "from": 8371835,
+      "to": 26824579,
+      "scanned_through": 26824579,
+      "truncated": false,
+      "mismatches_in_file": 0,
+      "mismatches_added": 0,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 25,
+          "created_at": "2026-07-11T11:20:49.715763+00:00",
+          "from_block": 8371835,
+          "to_block": 26824579,
+          "mismatches": 0,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "file": "plasma-20260711T171723Z.json",
+      "in_sqlite": true,
+      "chain_id": 9745,
+      "from": 26824580,
+      "to": 26849772,
+      "scanned_through": 26849772,
+      "truncated": false,
+      "mismatches_in_file": 0,
+      "mismatches_added": 0,
+      "mismatches_duplicate": 0,
+      "verify_runs": [
+        {
+          "run_id": 38,
+          "created_at": "2026-07-11T17:17:23.369840+00:00",
+          "from_block": 26824580,
+          "to_block": 26849772,
+          "mismatches": 0,
+          "truncated": false
+        }
+      ]
+    }
+  ],
+  "mismatches": []
+}
