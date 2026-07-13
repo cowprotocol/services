@@ -64,15 +64,9 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 /// auction still find its settlement.
 const MAX_CONCURRENT_AUCTIONS: usize = 5;
 
-/// How long an EIP-7702 submission account is benched after it fails to
-/// broadcast for an account-specific reason (no gas for the tx, a stuck nonce,
-/// a pending tx that can't be replaced). While benched, the account is held out
-/// of the selection pool, so the driver stops assigning settlements to a stuck
-/// lane until it recovers. The account is retried automatically once the
-/// cooldown elapses; a still-broken account is simply re-benched after a single
-/// failed attempt.
-// ponytail: a fixed cooldown is enough; lift to driver config only if operators
-// need per-network tuning.
+/// How long a submission account sits out of the pool after an
+/// account-specific failure (no gas, stuck nonce). It rejoins once the
+/// cooldown elapses and is re-benched if it fails again.
 const UNHEALTHY_ACCOUNT_COOLDOWN: Duration = Duration::from_secs(30);
 
 /// An ongoing competition. There is one competition going on per solver at any
