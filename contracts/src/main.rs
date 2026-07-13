@@ -494,23 +494,6 @@ fn build_module() -> Module {
             INK => "0x4200000000000000000000000000000000000006",
         ]))
         .add_submodule(
-            Submodule::new("cow_amm")
-                .add_contract(Contract::new("CowAmm"))
-                .add_contract(Contract::new("CowAmmConstantProductFactory").with_networks(
-                    networks![
-                        MAINNET => ("0x40664207e3375FB4b733d4743CE9b159331fd034", 19861952),
-                        GNOSIS => ("0xdb1cba3a87f2db53b6e1e6af48e28ed877592ec0", 33874317),
-                        SEPOLIA => ("0xb808e8183e3a72d196457d127c7fd4befa0d7fd3", 5874562),
-                    ],
-                ))
-                .add_contract(Contract::new("CowAmmLegacyHelper").with_networks(networks![
-                    MAINNET => ("0x3705ceee5eaa561e3157cf92641ce28c45a3999c", 20332745),
-                    GNOSIS => ("0xd9ec06b001957498ab1bc716145515d1d0e30ffb", 35026999),
-                ]))
-                .add_contract(Contract::new("CowAmmUniswapV2PriceOracle"))
-                .add_contract(Contract::new("CowAmmFactoryGetter")),
-        )
-        .add_submodule(
             Submodule::new("test")
                 .add_contract(Contract::new("GasHog"))
                 .add_contract(Contract::new("Counter"))

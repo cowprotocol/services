@@ -1424,7 +1424,6 @@ dependencies = [
  "configs",
  "const-hex",
  "contracts",
- "cow-amm",
  "dashmap 6.1.0",
  "database",
  "derive_more 1.0.0",
@@ -2961,11 +2960,6 @@ dependencies = [
  "cow-contract-baoswaprouter",
  "cow-contract-chainalysisoracle",
  "cow-contract-counter",
- "cow-contract-cowamm",
- "cow-contract-cowammconstantproductfactory",
- "cow-contract-cowammfactorygetter",
- "cow-contract-cowammlegacyhelper",
- "cow-contract-cowammuniswapv2priceoracle",
  "cow-contract-cowprotocoltoken",
  "cow-contract-cowswapethflow",
  "cow-contract-cowswaponchainorders",
@@ -3102,34 +3096,6 @@ dependencies = [
  "libc",
  "num_cpus",
  "winapi",
-]
-
-[[package]]
-name = "cow-amm"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-primitives",
- "alloy-provider",
- "alloy-rpc-types",
- "alloy-sol-types",
- "anyhow",
- "app-data",
- "async-trait",
- "const-hex",
- "contracts",
- "database",
- "ethrpc",
- "event-indexing",
- "futures",
- "model",
- "observe",
- "prometheus",
- "prometheus-metric-storage",
- "signature-validator",
- "sqlx",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -3420,61 +3386,6 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-counter"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-primitives",
- "alloy-provider",
- "alloy-sol-types",
- "anyhow",
-]
-
-[[package]]
-name = "cow-contract-cowamm"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-primitives",
- "alloy-provider",
- "alloy-sol-types",
- "anyhow",
-]
-
-[[package]]
-name = "cow-contract-cowammconstantproductfactory"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-primitives",
- "alloy-provider",
- "alloy-sol-types",
- "anyhow",
-]
-
-[[package]]
-name = "cow-contract-cowammfactorygetter"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-primitives",
- "alloy-provider",
- "alloy-sol-types",
- "anyhow",
-]
-
-[[package]]
-name = "cow-contract-cowammlegacyhelper"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-primitives",
- "alloy-provider",
- "alloy-sol-types",
- "anyhow",
-]
-
-[[package]]
-name = "cow-contract-cowammuniswapv2priceoracle"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",
@@ -4467,7 +4378,6 @@ dependencies = [
  "configs",
  "const-hex",
  "contracts",
- "cow-amm",
  "dashmap 6.1.0",
  "derive_more 1.0.0",
  "eth-domain-types",
@@ -4547,7 +4457,6 @@ dependencies = [
  "configs",
  "const-hex",
  "contracts",
- "cow-amm",
  "database",
  "driver",
  "eth-domain-types",
