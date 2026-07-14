@@ -4,8 +4,10 @@ use {
     sqlx::{Executor, PgConnection, PgPool, postgres::PgPoolOptions},
     std::{
         num::{NonZeroU32, NonZeroUsize},
+        sync::Arc,
         time::Duration,
     },
+    tokio::sync::Notify,
     tracing::Instrument,
 };
 
@@ -104,6 +106,18 @@ impl Postgres {
 
         Ok(())
     }
+
+    /// Performs a `gin_clean_pending_list` over the `competition_auctions_order_uids_gin` index.
+    pub async fn gin_clean_pending_list(&self) -> std::result::Result<(), sqlx::Error> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["gin_clean_pending_competition_auctions"])
+            .start_timer();
+        let mut ex = self.pool.acquire().await?;
+        ex.execute("SELECT gin_clean_pending_list('competition_auctions_order_uids_gin')")
+            .await
+            .map(|_| ())
+    }
 }
 
 async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
@@ -180,6 +194,18 @@ async fn update_large_tables_stats(db: Postgres) -> ! {
         }
         tokio::time::sleep(Duration::from_secs(60 * 60)).await;
     }
+}
+
+/// Kicks off a start that runs [`Postgres::gin_clean_pending_list`] for every notification.
+pub fn start_gin_clean_maintenance_task(db: Postgres, notify: Arc<Notify>) {
+    tokio::spawn(async move {
+        loop {
+            notify.notified().await;
+            if let Err(err) = db.gin_clean_pending_list().await {
+                tracing::warn!(%err, "failed to perform gin_list_update");
+            }
+        }
+    });
 }
 
 #[cfg(test)]

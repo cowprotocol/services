@@ -18,8 +18,7 @@ use {
     event_indexing::maintenance::Maintaining,
     futures::{FutureExt, StreamExt},
     prometheus::{
-        HistogramVec,
-        IntCounterVec,
+        HistogramVec, IntCounterVec,
         core::{AtomicU64, GenericGauge},
     },
     std::{

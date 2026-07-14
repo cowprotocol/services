@@ -5,9 +5,7 @@ use {
             self,
             auction::Id,
             competition::{
-                self,
-                Solution,
-                Unscored,
+                self, Solution, Unscored,
                 winner_selection::{self, Ranking},
             },
             settlement::{ExecutionEnded, ExecutionStarted},
@@ -33,11 +31,7 @@ use {
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
+        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
     },
     num::ToPrimitive,
     rand::seq::SliceRandom,
@@ -116,6 +110,8 @@ pub struct RunLoop {
     winner_selection: winner_selection::Arbitrator,
     /// Notifier that wakes the main loop on new blocks or orders
     wake_notify: Arc<tokio::sync::Notify>,
+    /// Notifier that wakes "watchers" on auction end
+    on_auction_end: Arc<tokio::sync::Notify>,
 }
 
 impl RunLoop {
@@ -129,6 +125,7 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
         maintenance: MaintenanceSync,
+        on_auction_end: Arc<tokio::sync::Notify>,
     ) -> Self {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
@@ -151,6 +148,7 @@ impl RunLoop {
             maintenance,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify,
+            on_auction_end,
         }
     }
 
@@ -201,7 +199,8 @@ impl RunLoop {
                 self_arc
                     .single_run(auction)
                     .instrument(tracing::info_span!("auction", auction_id))
-                    .await
+                    .await;
+                self_arc.on_auction_end.notify_waiters();
             }
         }
         leader_lock_tracker.release().await;
