@@ -1,13 +1,14 @@
 name: Playground operation check
 
 on:
+  # Opt-in only: this is an expensive (~30 min, full workspace compile) smoke
+  # test of the local dev stack, not a production path. It runs on demand and
+  # when the playground itself changes, instead of on a daily schedule.
   workflow_dispatch:
-  schedule:
-    # Run this job once per day
-    - cron: "0 0 * * *"
   pull_request:
     paths:
       - "playground/**"
+      - ".github/workflows/playground-check.yaml"
 
 jobs:
   playground-check:
@@ -58,14 +59,16 @@ jobs:
           docker compose -f ${{ matrix.compose-file }} up -d explorer
           docker compose -f ${{ matrix.compose-file }} up -d
 
-      - name: Wait for orderbook to be ready
+      - name: Wait for services to be ready
         # The fork variant compiles the workspace inside the containers after
-        # `up -d` returns, which takes far longer than the validation script's
-        # built-in 2 minute retry window.
+        # `up -d` returns (can take several minutes). `--wait` blocks on the
+        # orderbook and autopilot healthchecks, so the validation script never
+        # runs before the autopilot's eth-flow event indexer is live — otherwise
+        # the on-chain order is placed into a block the indexer never scans and
+        # stays stuck in "indexing" forever.
         working-directory: playground
         run: |
-          timeout 3600 bash -c \
-            'until curl -sf -m 5 http://localhost:8080/api/v1/version > /dev/null; do sleep 30; done'
+          docker compose -f ${{ matrix.compose-file }} up -d --wait --wait-timeout 3600 orderbook autopilot
 
       - name: Execute validation script
         id: test_script
