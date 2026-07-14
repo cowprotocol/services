@@ -60,15 +60,20 @@ jobs:
           docker compose -f ${{ matrix.compose-file }} up -d
 
       - name: Wait for services to be ready
-        # The fork variant compiles the workspace inside the containers after
-        # `up -d` returns (can take several minutes). `--wait` blocks on the
-        # orderbook and autopilot healthchecks, so the validation script never
-        # runs before the autopilot's eth-flow event indexer is live — otherwise
-        # the on-chain order is placed into a block the indexer never scans and
-        # stays stuck in "indexing" forever.
+        # The fork variant compiles the whole workspace inside the containers
+        # after `up -d` returns, so this can take many minutes. Wait for BOTH the
+        # orderbook API and the autopilot: the autopilot's /startup probe only
+        # returns 200 once its run loop is live and the eth-flow event indexer has
+        # a start block, so the smoke test can't place an on-chain order before
+        # the indexer would see it — the cause of the flaky "stuck in indexing"
+        # timeouts. (`docker compose up --wait` is unusable here: it aborts as
+        # soon as the one-shot db-migrations container exits, even with code 0.)
         working-directory: playground
         run: |
-          docker compose -f ${{ matrix.compose-file }} up -d --wait --wait-timeout 3600 orderbook autopilot
+          timeout 3600 bash -c '
+            until curl -sf -m 5 http://localhost:8080/api/v1/version > /dev/null; do sleep 15; done
+            until curl -sf -m 5 http://localhost:9589/startup > /dev/null; do sleep 15; done
+          '
 
       - name: Execute validation script
         id: test_script

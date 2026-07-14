@@ -105,15 +105,6 @@ services:
       - 8080:80 # API
       - 9586:9586 # metrics
       - 6669:6669 # tokio console
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:80/api/v1/version || exit 1"]
-      interval: 5s
-      timeout: 4s
-      retries: 12
-      # localdev compiles the whole workspace on first startup (all services
-      # share one mounted target dir, so builds serialize) — allow generous time
-      # before the container is considered unhealthy.
-      start_period: 1800s
 
   autopilot:
     build:
@@ -148,18 +139,6 @@ services:
     ports:
       - 9589:9589 # metrics
       - 6670:6669 # tokio console
-    healthcheck:
-      # /startup flips to 200 once the run loop is live and the eth-flow event
-      # indexer has captured its start block. Gating order creation on this
-      # avoids placing an order the indexer would never scan (skip-event-sync).
-      test: ["CMD-SHELL", "curl -sf http://localhost:9589/startup || exit 1"]
-      interval: 5s
-      timeout: 4s
-      retries: 12
-      # localdev compiles the whole workspace on first startup (all services
-      # share one mounted target dir, so builds serialize) — allow generous time
-      # before the container is considered unhealthy.
-      start_period: 1800s
 
   driver:
     build:
