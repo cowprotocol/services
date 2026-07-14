@@ -98,7 +98,7 @@ max-order-age = "1m"
 
 # [[liquidity.uniswap-v3]] # Uniswap V3 configuration (pool-indexer as data source)
 # preset = "uniswap-v3"
-# indexer-config = { pool-indexer = { url = "http://pool-indexer/", wait-until-timeout = "5m" } }
+# indexer-config = { pool-indexer = { url = "http://pool-indexer/" } }
 # max_pools_to_initialize = 100
 
 # [[liquidity.uniswap-v3]] # Custom Uniswap V3 configuration

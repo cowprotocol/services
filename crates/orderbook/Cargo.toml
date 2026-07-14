@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "GPL-3.0-or-later"
-build = "build.rs"
 
 [lib]
 doctest = false
@@ -36,6 +35,7 @@ contracts = { workspace = true }
 database = { workspace = true }
 eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
+event-bus-dto = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
@@ -78,10 +78,6 @@ mockall = { workspace = true }
 shared = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-
-[build-dependencies]
-anyhow = { workspace = true }
-vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
 e2e = []

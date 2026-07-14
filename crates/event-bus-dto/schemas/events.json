@@ -138,5 +138,265 @@
     ],
     "title": "Envelope",
     "type": "object"
+  },
+  "quoteComputed": {
+    "$defs": {
+      "QuoteComputedEvent": {
+        "description": "Emitted once the orderbook has finished computing a quote (\"finished\ncomputing quote\"). Its main job is correlation: the envelope's `requestId`\nties it back to the [`crate::QuoteRequestedEvent`] and the per-estimator\n[`crate::PriceEstimateEvent`]s of the same request, while `quoteId` links\nforward to the resulting order via the `quotes` table.",
+        "properties": {
+          "appCode": {
+            "description": "`appCode` from the order's app-data document, if present.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quoteId": {
+            "description": "Database id of the stored quote. Absent for `fast` quotes, which are\nnot persisted.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "verified": {
+            "description": "Whether the quote was verified by simulation.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verified"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "JSON envelope wrapping every event published to the bus. Consumers can\nrely on `version` to evolve their parsers, on `timestamp` for ordering,\nand on `requestId` to correlate events emitted while serving a single\ninbound request (e.g. all the price estimates and the resulting quote of\none quote request share the same `requestId`).",
+    "properties": {
+      "body": {
+        "$ref": "#/$defs/QuoteComputedEvent"
+      },
+      "requestId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timestamp": {
+        "description": "RFC3339 timestamp (millisecond precision, UTC) of when the event was\npublished.",
+        "format": "date-time",
+        "type": "string"
+      },
+      "version": {
+        "const": "v1",
+        "type": "string"
+      }
+    },
+    "required": [
+      "version",
+      "timestamp",
+      "body"
+    ],
+    "title": "Envelope",
+    "type": "object"
+  },
+  "quoteRequested": {
+    "$defs": {
+      "OrderKind": {
+        "enum": [
+          "sell",
+          "buy"
+        ],
+        "type": "string"
+      },
+      "PriceQuality": {
+        "enum": [
+          "fast",
+          "optimal",
+          "verified"
+        ],
+        "type": "string"
+      },
+      "QueryFields": {
+        "properties": {
+          "buyToken": {
+            "description": "Hex-encoded buy token address.",
+            "type": "string"
+          },
+          "inAmount": {
+            "description": "Decimal-encoded input amount (interpretation depends on `kind`).",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/OrderKind"
+          },
+          "sellToken": {
+            "description": "Hex-encoded sell token address.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sellToken",
+          "buyToken",
+          "inAmount",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "QuoteRequestedEvent": {
+        "description": "Emitted for a validated quote request, just before price estimation runs.\nCarries the request context that partner and quote analysis care about —\nnotably the `appCode` and the token symbols — which are not present on the\nper-estimator [`crate::PriceEstimateEvent`].",
+        "properties": {
+          "appCode": {
+            "description": "`appCode` from the order's app-data document, if present.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "buyTokenSymbol": {
+            "description": "Symbol of the buy token, if known.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from": {
+            "description": "Caller address (hex-encoded, including the `0x` prefix).",
+            "type": "string"
+          },
+          "priceQuality": {
+            "$ref": "#/$defs/PriceQuality"
+          },
+          "query": {
+            "$ref": "#/$defs/QueryFields"
+          },
+          "sellTokenSymbol": {
+            "description": "Symbol of the sell token, if known.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "query",
+          "from",
+          "priceQuality"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "JSON envelope wrapping every event published to the bus. Consumers can\nrely on `version` to evolve their parsers, on `timestamp` for ordering,\nand on `requestId` to correlate events emitted while serving a single\ninbound request (e.g. all the price estimates and the resulting quote of\none quote request share the same `requestId`).",
+    "properties": {
+      "body": {
+        "$ref": "#/$defs/QuoteRequestedEvent"
+      },
+      "requestId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timestamp": {
+        "description": "RFC3339 timestamp (millisecond precision, UTC) of when the event was\npublished.",
+        "format": "date-time",
+        "type": "string"
+      },
+      "version": {
+        "const": "v1",
+        "type": "string"
+      }
+    },
+    "required": [
+      "version",
+      "timestamp",
+      "body"
+    ],
+    "title": "Envelope",
+    "type": "object"
+  },
+  "winningPriceEstimate": {
+    "$defs": {
+      "OrderKind": {
+        "enum": [
+          "sell",
+          "buy"
+        ],
+        "type": "string"
+      },
+      "QueryFields": {
+        "properties": {
+          "buyToken": {
+            "description": "Hex-encoded buy token address.",
+            "type": "string"
+          },
+          "inAmount": {
+            "description": "Decimal-encoded input amount (interpretation depends on `kind`).",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/OrderKind"
+          },
+          "sellToken": {
+            "description": "Hex-encoded sell token address.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sellToken",
+          "buyToken",
+          "inAmount",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "WinningPriceEstimateEvent": {
+        "description": "Emitted once price-estimate competition has picked the winning estimate that\nbecomes the official quote. Its job is correlation: among the\n[`crate::PriceEstimateEvent`]s emitted for the same request (one per\ncompeting estimator, all sharing the envelope `requestId`), the winning one\nis the one whose `estimator` matches this event.\n\nExactly one is emitted per quote competition.",
+        "properties": {
+          "estimator": {
+            "description": "Name of the estimator whose price estimate won the competition.",
+            "type": "string"
+          },
+          "query": {
+            "$ref": "#/$defs/QueryFields"
+          }
+        },
+        "required": [
+          "query",
+          "estimator"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "JSON envelope wrapping every event published to the bus. Consumers can\nrely on `version` to evolve their parsers, on `timestamp` for ordering,\nand on `requestId` to correlate events emitted while serving a single\ninbound request (e.g. all the price estimates and the resulting quote of\none quote request share the same `requestId`).",
+    "properties": {
+      "body": {
+        "$ref": "#/$defs/WinningPriceEstimateEvent"
+      },
+      "requestId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timestamp": {
+        "description": "RFC3339 timestamp (millisecond precision, UTC) of when the event was\npublished.",
+        "format": "date-time",
+        "type": "string"
+      },
+      "version": {
+        "const": "v1",
+        "type": "string"
+      }
+    },
+    "required": [
+      "version",
+      "timestamp",
+      "body"
+    ],
+    "title": "Envelope",
+    "type": "object"
   }
 }

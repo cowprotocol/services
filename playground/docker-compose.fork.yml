@@ -45,6 +45,11 @@ services:
       - postgres:/var/lib/postgresql/data
     ports:
       - 5432:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   adminer:
     image: adminer
@@ -52,7 +57,8 @@ services:
     ports:
       - 8082:8080
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   db-migrations:
     build:
@@ -63,7 +69,8 @@ services:
     environment:
       - FLYWAY_URL=jdbc:postgresql://db/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   orderbook:
     build:
@@ -73,6 +80,7 @@ services:
     # explicit tag so the localdev and prebuilt compose variants never reuse
     # each other's images (default tags collide on project + service name)
     image: playground-orderbook:localdev
+    pull_policy: build
     restart: always
     command:
       [
@@ -104,6 +112,7 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     image: playground-autopilot:localdev
+    pull_policy: build
     restart: always
     command:
       [
@@ -137,6 +146,7 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     image: playground-driver:localdev
+    pull_policy: build
     restart: always
     command:
       [
@@ -170,6 +180,7 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     image: playground-baseline:localdev
+    pull_policy: build
     restart: always
     command:
       [

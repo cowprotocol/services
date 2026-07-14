@@ -10,6 +10,7 @@ use {
     std::{
         convert::Infallible,
         io::{BufWriter, Write},
+        time::Duration,
     },
     tee_writer::TeeWriter,
     timed_writer::Timed,
@@ -23,9 +24,21 @@ const CHUNK_SIZE: usize = 64 * 1024;
 /// the serializer produces the next; more only raises the memory ceiling.
 const CHANNEL_CAPACITY: usize = 2;
 
+/// Timing measurements captured while streaming a request body, delivered once
+/// serialization finishes. The caller decides what to do with them (e.g. expose
+/// the serialization overhead as a metric for real auctions but not quotes).
+pub struct Measurements {
+    /// Wall-clock serialization cost, isolated from the time spent blocked
+    /// writing to the sinks (solver transfer + gzip).
+    pub serialize: Duration,
+    /// Total wall-clock of the streaming task: serialization plus the time
+    /// spent blocked writing to the sinks (solver transfer + gzip).
+    pub total: Duration,
+}
+
 /// Serializes `value` to JSON on a blocking thread, streaming it into the
 /// returned reqwest body. Backpressure from the body channel caps memory.
-pub fn stream_body<T>(value: T) -> reqwest::Body
+pub fn stream_body<T>(value: T) -> (reqwest::Body, oneshot::Receiver<Measurements>)
 where
     T: serde::Serialize + Send + 'static,
 {
@@ -33,26 +46,34 @@ where
 }
 
 /// Like [`stream_body`], but also gzips the same serialization in one pass. The
-/// receiver yields the compressed bytes once serialization finishes.
-pub fn stream_body_and_gzip<T>(value: T) -> (reqwest::Body, oneshot::Receiver<Bytes>)
+/// first receiver yields the compressed bytes once serialization finishes.
+pub fn stream_body_and_gzip<T>(
+    value: T,
+) -> (
+    reqwest::Body,
+    oneshot::Receiver<Bytes>,
+    oneshot::Receiver<Measurements>,
+)
 where
     T: serde::Serialize + Send + 'static,
 {
     let (gzip, compressed) = GzipCapture::new();
-    let body = stream_into(value, gzip);
-    (body, compressed)
+    let (body, measurements) = stream_into(value, gzip);
+    (body, compressed, measurements)
 }
 
 /// Serializes `value` into a tee of the body channel and `secondary` on a
 /// blocking thread, then finalizes each sink. Serialization always runs to
 /// completion even if the request receiver drops, so the secondary sink (the
-/// gzip archive) is captured regardless of the request outcome.
-fn stream_into<T, S>(value: T, secondary: S) -> reqwest::Body
+/// gzip archive) is captured regardless of the request outcome. The returned
+/// receiver reports the timing [`Measurements`] once serialization finishes.
+fn stream_into<T, S>(value: T, secondary: S) -> (reqwest::Body, oneshot::Receiver<Measurements>)
 where
     T: serde::Serialize + Send + 'static,
     S: Write + Finalize + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<Bytes>(CHANNEL_CAPACITY);
+    let (measurements_tx, measurements_rx) = oneshot::channel();
     // E2E measurement of the body transfer time (includes serialization)
     let stream = Measured::new(ReceiverStream::new(rx)).map(Ok::<_, Infallible>);
     let body = reqwest::Body::wrap_stream(stream);
@@ -83,16 +104,13 @@ where
                 return;
             }
         };
-        // Measure before `finalize` so the gzip finish cost stays out of the metric.
-        let serialize = start.elapsed().saturating_sub(timed.elapsed());
-        observe::metrics::metrics().record_auction_overhead(
-            serialize,
-            "driver",
-            "serialize_request",
-        );
+        // Measure before `finalize` so the gzip finish cost stays out of the metrics.
+        let total = start.elapsed();
+        let serialize = total.saturating_sub(timed.elapsed());
+        let _ = measurements_tx.send(Measurements { serialize, total });
         timed.into_inner().finalize();
     });
-    body
+    (body, measurements_rx)
 }
 
 /// A [`Write`] that sends each block to the body channel, blocking when it's
@@ -209,7 +227,7 @@ mod tests {
         let value = json!({ "a": 1, "b": [1, 2, 3], "c": "hello" });
         // Keep `body` alive: dropping its receiver would abort serialization
         // before the gzip is captured.
-        let (_body, gzip_rx) = stream_body_and_gzip(value.clone());
+        let (_body, gzip_rx, _measurements) = stream_body_and_gzip(value.clone());
 
         let compressed = gzip_rx.await.unwrap();
         let mut decoded = Vec::new();
@@ -222,7 +240,7 @@ mod tests {
     #[tokio::test]
     async fn gzip_captured_even_if_request_body_dropped() {
         let value = json!({ "a": 1, "b": [1, 2, 3], "c": "hello" });
-        let (body, gzip_rx) = stream_body_and_gzip(value.clone());
+        let (body, gzip_rx, _measurements) = stream_body_and_gzip(value.clone());
         // The solver connection going away mid-stream must not skip the archive.
         drop(body);
 
@@ -232,5 +250,14 @@ mod tests {
             .read_to_end(&mut decoded)
             .unwrap();
         assert_eq!(decoded, serde_json::to_vec(&value).unwrap());
+    }
+
+    #[tokio::test]
+    async fn reports_measurements_once_serialization_finishes() {
+        let value = json!({ "a": 1, "b": [1, 2, 3], "c": "hello" });
+        // Keep `body` alive so serialization runs to completion.
+        let (_body, measurements) = stream_body(value);
+        // The receiver resolves, confirming the caller can pick up the timings.
+        measurements.await.unwrap();
     }
 }

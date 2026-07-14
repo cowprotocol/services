@@ -2,7 +2,7 @@ use {
     self::contracts::Contracts,
     crate::{boundary, domain},
     alloy::{
-        providers::{Provider, ext::DebugApi},
+        providers::Provider,
         rpc::types::{
             TransactionReceipt,
             trace::geth::{GethDebugBuiltInTracerType, GethDebugTracingOptions, GethTrace},
@@ -12,6 +12,8 @@ use {
     chain::Chain,
     eth_domain_types as eth,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    futures::TryFutureExt as _,
+    serde::Deserialize,
     thiserror::Error,
     url::Url,
 };
@@ -114,13 +116,13 @@ impl Ethereum {
         hash: eth::TxId,
     ) -> Result<domain::blockchain::Transaction, Error> {
         let (receipt, traces): (Option<TransactionReceipt>, GethTrace) = tokio::try_join!(
-            self.web3.provider.get_transaction_receipt(hash.0),
+            self.web3
+                .provider
+                .get_transaction_receipt(hash.0)
+                .map_err(Error::Alloy),
             // Use unbuffered transport for the Debug API since not all providers support
             // batched debug calls.
-            self.unbuffered_web3.provider.debug_trace_transaction(
-                hash.0,
-                GethDebugTracingOptions::new_tracer(GethDebugBuiltInTracerType::CallTracer),
-            )
+            fetch_debug_trace(&self.unbuffered_web3.provider, hash)
         )?;
 
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
@@ -140,6 +142,26 @@ impl Ethereum {
         into_domain(receipt, traces, block.header.timestamp)
             .map_err(Error::IncompleteTransactionData)
     }
+}
+
+/// Fetches the debug traces for the given transaction while bypassing serde's
+/// default recursion limit. This is needed to support transactions with
+/// exceptionally deep call stacks. (e.g.
+/// <https://dashboard.tenderly.co/tx/0x5200aab12fbe4e0aef019748bf0f79266155fbbea00557bf1071fa2859e7eb9b>)
+async fn fetch_debug_trace(provider: &impl Provider, hash: eth::TxId) -> Result<GethTrace, Error> {
+    let params = serde_json::value::to_raw_value(&(
+        hash.0,
+        GethDebugTracingOptions::new_tracer(GethDebugBuiltInTracerType::CallTracer),
+    ))
+    .expect("serialization of known-good types");
+
+    let raw = provider
+        .raw_request_dyn("debug_traceTransaction".into(), &params)
+        .await?;
+
+    let mut de = serde_json::Deserializer::from_str(raw.get());
+    de.disable_recursion_limit();
+    GethTrace::deserialize(&mut de).map_err(Error::DeserializationFailed)
 }
 
 fn into_domain(
@@ -176,4 +198,6 @@ pub enum Error {
     TransactionNotFound,
     #[error("unsupported chain")]
     UnsupportedChain,
+    #[error("failed to deserialize tx: {0:?}")]
+    DeserializationFailed(#[from] serde_json::Error),
 }

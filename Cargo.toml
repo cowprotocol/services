@@ -1,7 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
-exclude = ["contracts/"]
+members = [
+  "contracts/generated/contracts-facade",
+  "contracts/generated/contracts-generated/*",
+  "crates/*",
+]
 
 [workspace.dependencies]
 account-balances = { path = "crates/account-balances" }
@@ -114,7 +117,7 @@ schemars = { version = "1.2", features = ["chrono04"] }
 scopeguard = "1.2.0"
 serde = { version = "1.0.203", features = ["derive"] }
 serde-ext = { path = "crates/serde-ext" }
-serde_json = "1.0.117"
+serde_json = { version = "1.0.117", features = ["raw_value", "unbounded_depth"] }
 serde_with = "3.8.1"
 sha2 = "0.10"
 shared = { path = "crates/shared" }
@@ -150,10 +153,12 @@ tracing-opentelemetry = "0.33.0"
 tracing-serde = "0.2"
 tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
-vergen = "8"
 winner-selection = { path = "crates/winner-selection" }
 yellowstone-grpc-client = "13.1.0"
 yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tokio_unstable)"] }

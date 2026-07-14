@@ -1,5 +1,5 @@
 use {
-    super::{CompetitionEstimator, PriceRanking, compare_error},
+    super::{CompetitionEstimator, EstimatorIndex, PriceRanking, compare_error},
     crate::{
         Estimate,
         PriceEstimateResult,
@@ -10,11 +10,10 @@ use {
     },
     alloy::primitives::{Address, U256},
     anyhow::Context as _,
-    event_bus_dto::price_estimate::{
-        EstimateResult,
-        OrderKind as DtoOrderKind,
-        PriceEstimateEvent,
-        QueryFields,
+    event_bus_dto::{
+        price_estimate::{EstimateResult, PriceEstimateEvent},
+        query::{OrderKind as DtoOrderKind, QueryFields},
+        winning_price_estimate::WinningPriceEstimateEvent,
     },
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
@@ -86,6 +85,15 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 })
                 .with_context(|| "all price estimates were unreasonable (0 gas or 0 out_amount)")
                 .map_err(PriceEstimationError::EstimatorInternal)?;
+
+            if winner.1.is_ok() {
+                let EstimatorIndex(stage_index, estimator_index) = winner.0;
+                let (name, _) = &self.stages[stage_index][estimator_index];
+                emit_winning_price_estimate_event(name, &query);
+            }
+            // the winner.is_ok check is repeated inside report_winner
+            // but due to the return, the simplest way to handle this is keep it here
+            // TODO: clean this up
             self.report_winner(&query, query.kind, winner)
         }
         .boxed()
@@ -185,6 +193,25 @@ impl RankingContext {
     }
 }
 
+fn query_fields(query: &Query) -> QueryFields {
+    QueryFields {
+        sell_token: query.sell_token.to_string(),
+        buy_token: query.buy_token.to_string(),
+        in_amount: query.in_amount.to_string(),
+        kind: match query.kind {
+            OrderKind::Sell => DtoOrderKind::Sell,
+            OrderKind::Buy => DtoOrderKind::Buy,
+        },
+    }
+}
+
+fn emit_winning_price_estimate_event(estimator_name: &str, query: &Query) {
+    observe::event_bus::publish_event(WinningPriceEstimateEvent {
+        query: query_fields(query),
+        estimator: estimator_name.to_owned(),
+    });
+}
+
 fn emit_quote_event(
     estimator_name: &str,
     query: &Query,
@@ -192,15 +219,7 @@ fn emit_quote_event(
     elapsed: Duration,
 ) {
     let event = PriceEstimateEvent {
-        query: QueryFields {
-            sell_token: query.sell_token.to_string(),
-            buy_token: query.buy_token.to_string(),
-            in_amount: query.in_amount.to_string(),
-            kind: match query.kind {
-                OrderKind::Sell => DtoOrderKind::Sell,
-                OrderKind::Buy => DtoOrderKind::Buy,
-            },
-        },
+        query: query_fields(query),
         from: query.verification.from.to_string(),
         // even though as_millis returns u128 timeout and elapsed are not expected to even surpass
         // JSON's 53bit limit as u53::MAX would roughly be half a milion years, furthermore,
