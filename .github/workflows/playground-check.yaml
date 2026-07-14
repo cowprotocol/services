@@ -60,18 +60,22 @@ jobs:
           docker compose -f ${{ matrix.compose-file }} up -d
 
       - name: Wait for services to be ready
-        # The fork variant compiles the whole workspace inside the containers
-        # after `up -d` returns, so this can take many minutes. Wait for BOTH the
-        # orderbook API and the autopilot: the autopilot's /startup probe only
-        # returns 200 once its run loop is live and the eth-flow event indexer has
-        # a start block, so the smoke test can't place an on-chain order before
-        # the indexer would see it — the cause of the flaky "stuck in indexing"
-        # timeouts. (`docker compose up --wait` is unusable here: it aborts as
-        # soon as the one-shot db-migrations container exits, even with code 0.)
+        # The fork variant compiles the whole workspace in-container after
+        # `up -d`, one service at a time (shared target dir), so services become
+        # ready in a staggered order over many minutes. Wait for everything the
+        # smoke test needs, or it starts against a half-ready stack and fails:
+        #  - native_price 200: the orderbook + driver + baseline solver (pricing
+        #    path) are all up; the baseline solver is usually the last to build,
+        #    and until it is the orderbook returns 404 here.
+        #  - autopilot /startup 200: the run loop is live and the eth-flow event
+        #    indexer has a start block, so the on-chain order can't be placed
+        #    before the indexer would see it (the "stuck in indexing" race).
+        # (`docker compose up --wait` is unusable here: it aborts as soon as the
+        # one-shot db-migrations container exits, even with code 0.)
         working-directory: playground
         run: |
           timeout 3600 bash -c '
-            until curl -sf -m 5 http://localhost:8080/api/v1/version > /dev/null; do sleep 15; done
+            until curl -sf -m 5 http://localhost:8080/api/v1/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/native_price > /dev/null; do sleep 15; done
             until curl -sf -m 5 http://localhost:9589/startup > /dev/null; do sleep 15; done
           '
 
