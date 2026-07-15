@@ -5,9 +5,7 @@ use {
             self,
             auction::Id,
             competition::{
-                self,
-                Solution,
-                Unscored,
+                self, Solution, Unscored,
                 winner_selection::{self, Ranking},
             },
             settlement::{ExecutionEnded, ExecutionStarted},
@@ -33,11 +31,7 @@ use {
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
+        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
     },
     num::ToPrimitive,
     rand::seq::SliceRandom,
@@ -201,7 +195,7 @@ impl RunLoop {
                 self_arc
                     .single_run(auction)
                     .instrument(tracing::info_span!("auction", auction_id))
-                    .await;
+                    .await
             }
         }
         leader_lock_tracker.release().await;
