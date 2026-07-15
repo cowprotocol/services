@@ -64,18 +64,19 @@ jobs:
           docker compose -f ${{ matrix.compose-file }} up -d
 
       - name: Wait for services to be ready
-        # The fork variant compiles the whole workspace in-container after
-        # `up -d`, one service at a time (shared target dir), so services become
-        # ready in a staggered order over many minutes. Wait for everything the
-        # smoke test needs, or it starts against a half-ready stack and fails:
-        #  - native_price 200: the orderbook + driver + baseline solver (pricing
-        #    path) are all up; the baseline solver is usually the last to build,
-        #    and until it is the orderbook returns 404 here.
-        #  - autopilot /startup 200: the run loop is live and the eth-flow event
-        #    indexer has a start block, so the on-chain order can't be placed
-        #    before the indexer would see it (the "stuck in indexing" race).
-        # (`docker compose up --wait` is unusable here: it aborts as soon as the
-        # one-shot db-migrations container exits, even with code 0.)
+        # On the fork variant every service compiles inside its container after
+        # `up -d` returns, one at a time (they share a target dir), so they come
+        # up staggered over several minutes. Start the smoke test too early and
+        # it runs against a half-built stack, so wait for the two things it needs:
+        #   native_price 200  the orderbook + driver + baseline solver can price
+        #                     (the solver builds last; until then this 404s)
+        #   /startup 200      the autopilot run loop is live and its eth-flow
+        #                     indexer has a start block (otherwise the order is
+        #                     placed before indexing starts and gets stuck)
+        # `docker compose up --wait` does not help here: the app services have no
+        # healthchecks, so it only waits for "running" (cargo-watch launched),
+        # not for them to serve. Tried it on the fork variant and the smoke test
+        # still failed against a stack that was still compiling.
         working-directory: playground
         run: |
           timeout 3600 bash -c '
