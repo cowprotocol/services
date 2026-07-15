@@ -8,22 +8,25 @@ use {
         sol_types::SolEvent,
     },
     contracts::CoWSwapEthFlow::CoWSwapEthFlow,
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
     event_indexing::event_handler::AlloyEventRetrieving,
 };
 
 pub struct EthFlowRefundRetriever {
-    web3: Web3,
+    provider: AlloyProvider,
     addresses: Vec<Address>,
 }
 
 impl EthFlowRefundRetriever {
-    pub fn new(web3: Web3, addresses: Vec<Address>) -> Self {
+    pub fn new(provider: AlloyProvider, addresses: Vec<Address>) -> Self {
         assert!(
             !addresses.is_empty(),
             "EthFlowRefundRetriever must have at least one address to listen to."
         );
-        Self { web3, addresses }
+        Self {
+            provider,
+            addresses,
+        }
     }
 }
 
@@ -31,7 +34,7 @@ impl AlloyEventRetrieving for EthFlowRefundRetriever {
     type Event = CoWSwapEthFlow::CoWSwapEthFlowEvents;
 
     fn provider(&self) -> &alloy::providers::DynProvider {
-        &self.web3.provider
+        &self.provider
     }
 
     fn filter(&self) -> alloy::rpc::types::Filter {

@@ -12,7 +12,7 @@ use {
     alloy_primitives::{Address, B256, U256},
     alloy_rpc_types::state::AccountOverride,
     alloy_sol_types::sol,
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
     std::iter,
 };
 
@@ -119,12 +119,15 @@ fn pack_user_state(balance: U256, additional_data: U256) -> B256 {
 /// underlying)` pair. Accepts the token iff the pool registers it as the
 /// aToken for its declared underlying — rogue contracts implementing the
 /// aToken selectors aren't enough.
-pub async fn probe_aave_token(web3: &Web3, token: Address) -> Option<(Address, Address)> {
-    let a_token = IAaveV3AToken::new(token, web3.provider.clone());
+pub async fn probe_aave_token(
+    provider: &AlloyProvider,
+    token: Address,
+) -> Option<(Address, Address)> {
+    let a_token = IAaveV3AToken::new(token, provider.clone());
     let underlying_call = a_token.UNDERLYING_ASSET_ADDRESS();
     let pool_call = a_token.POOL();
     let (underlying, pool) = tokio::try_join!(underlying_call.call(), pool_call.call()).ok()?;
-    let reserve = IAaveV3Pool::new(pool, web3.provider.clone())
+    let reserve = IAaveV3Pool::new(pool, provider.clone())
         .getReserveData(underlying)
         .call()
         .await
@@ -137,14 +140,14 @@ pub async fn probe_aave_token(web3: &Web3, token: Address) -> Option<(Address, A
 /// slot (`USER_STATE_SLOT`) shared by all Aave v3 aTokens. Returns `None`
 /// if we can't reach the pool or the math overflows.
 pub async fn build_override(
-    web3: &Web3,
+    provider: &AlloyProvider,
     a_token: Address,
     pool: Address,
     underlying: Address,
     holder: Address,
     amount: U256,
 ) -> Option<(Address, AccountOverride)> {
-    let Ok(index) = IAaveV3Pool::new(pool, web3.provider.clone())
+    let Ok(index) = IAaveV3Pool::new(pool, provider.clone())
         .getReserveNormalizedIncome(underlying)
         .call()
         .await
@@ -197,6 +200,7 @@ mod tests {
         alloy_primitives::{address, b256, hex},
         alloy_provider::mock::Asserter,
         alloy_sol_types::SolValue,
+        ethrpc::Web3,
     };
 
     fn encode_address(addr: Address) -> String {
@@ -300,7 +304,7 @@ mod tests {
     async fn probe_aave_token_rejects_when_underlying_call_reverts() {
         let token = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
         let web3 = Web3::with_asserter(probe_asserter(None, None, None));
-        assert_eq!(probe_aave_token(&web3, token).await, None);
+        assert_eq!(probe_aave_token(&web3.provider, token).await, None);
     }
 
     /// The probe bails if the claimed pool doesn't respond to
@@ -313,7 +317,7 @@ mod tests {
         let pool = address!("2222222222222222222222222222222222222222");
         let underlying = address!("3333333333333333333333333333333333333333");
         let web3 = Web3::with_asserter(probe_asserter(Some(underlying), Some(pool), None));
-        assert_eq!(probe_aave_token(&web3, token).await, None);
+        assert_eq!(probe_aave_token(&web3.provider, token).await, None);
     }
 
     /// A rogue contract that impersonates the aToken interface and points
@@ -331,7 +335,7 @@ mod tests {
             // Pool agrees on the pair but names the *real* aToken, not the rogue.
             Some(real_a_token),
         ));
-        assert_eq!(probe_aave_token(&web3, rogue).await, None);
+        assert_eq!(probe_aave_token(&web3.provider, rogue).await, None);
     }
 
     #[tokio::test]
@@ -351,7 +355,7 @@ mod tests {
             target_contract: a_token,
             pool,
             underlying,
-            web3,
+            provider: web3.provider,
         };
 
         let (addr, override_) = strategy

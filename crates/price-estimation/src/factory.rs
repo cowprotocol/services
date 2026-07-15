@@ -21,7 +21,7 @@ use {
     bad_tokens::list_based::DenyListedTokens,
     configs::price_estimation::PriceEstimation,
     contracts::{GPv2Settlement, WETH9},
-    ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
+    ethrpc::{AlloyProvider, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::GasPriceEstimating,
     http_client::HttpClientFactory,
     number::nonzero::NonZeroU256,
@@ -41,8 +41,8 @@ struct EstimatorEntry {
 
 /// Network options needed for creating price estimators.
 pub struct Network {
-    pub web3: Web3,
-    pub simulation_web3: Option<Web3>,
+    pub provider: AlloyProvider,
+    pub simulation_provider: Option<AlloyProvider>,
     pub chain: chain::Chain,
     pub native_token: Address,
     pub settlement: Address,
@@ -102,12 +102,12 @@ impl<'a> PriceEstimatorFactory<'a> {
         network: &Network,
         components: &Components,
     ) -> Result<(Option<SettlementSimulator>, Option<Arc<dyn tenderly::Api>>)> {
-        let Some(web3) = network.simulation_web3.clone() else {
+        let Some(provider) = network.simulation_provider.clone() else {
             return Ok((None, None));
         };
-        let web3 = web3.labeled("simulator");
+        let provider = provider.labeled("simulator");
 
-        let balance_overrides = args.balance_overrides.init(web3.clone());
+        let balance_overrides = args.balance_overrides.init(provider.clone());
 
         let tenderly = args.tenderly.as_ref().map(|config| {
             Arc::new(tenderly::TenderlyApi::new_instrumented(
@@ -118,7 +118,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             )) as Arc<dyn tenderly::Api>
         });
         let settlement_contract =
-            GPv2Settlement::GPv2Settlement::new(network.settlement, web3.provider.clone());
+            GPv2Settlement::GPv2Settlement::new(network.settlement, provider.clone());
         let simulator = SettlementSimulator::new(
             settlement_contract,
             network.flash_loan_router,
@@ -443,7 +443,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             .expect("failed to build native price estimator");
         let inner = if eip4626 {
             Box::new(InstrumentedPriceEstimator::new(
-                native::Eip4626::new(inner, self.network.web3.provider.clone()),
+                native::Eip4626::new(inner, self.network.provider.clone()),
                 "Eip4626".to_string(),
             ))
         } else {

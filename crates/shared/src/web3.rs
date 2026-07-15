@@ -73,3 +73,11 @@ pub fn web3(args: &Arguments, url: &Url, name: impl ToString) -> Web3 {
     let label = name.to_string();
     ethrpc::web3(args.ethrpc(), url, Some(&label))
 }
+
+/// Create an [`ethrpc::AlloyProvider`] with a regular wallet and a label for
+/// observability. Intended for read-only components that never sign, so they
+/// can hold a plain provider instead of a [`Web3`].
+pub fn provider(args: &Arguments, url: &Url, name: impl ToString) -> ethrpc::AlloyProvider {
+    let label = name.to_string();
+    ethrpc::provider(args.ethrpc(), url, Some(&label))
+}

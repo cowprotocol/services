@@ -31,7 +31,7 @@ use {
     clap::Parser,
     configs::autopilot::{Configuration, solver::Account},
     contracts::{GPv2Settlement, WETH9},
-    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
+    ethrpc::{AlloyProvider, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
     http_client::HttpClientFactory,
     model::DomainSeparator,
@@ -82,7 +82,7 @@ impl Liveness {
     }
 }
 
-/// Creates Web3 transport based on the given config.
+/// Creates an RPC connection based on the given config.
 #[instrument(skip_all)]
 async fn ethrpc(url: &Url, ethrpc_args: &shared::web3::Arguments) -> infra::blockchain::Rpc {
     infra::blockchain::Rpc::new(url, ethrpc_args)
@@ -90,7 +90,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::web3::Arguments) -> infra::bloc
         .expect("connect ethereum RPC")
 }
 
-/// Creates unbuffered Web3 transport.
+/// Creates an unbuffered RPC connection.
 async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
     ethrpc(
         url,
@@ -105,16 +105,16 @@ async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
 
 #[instrument(skip_all)]
 async fn ethereum(
-    web3: Web3,
-    unbuffered_web3: Web3,
+    provider: AlloyProvider,
+    unbuffered_provider: AlloyProvider,
     chain: &Chain,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     current_block_args: &shared::current_block::Arguments,
 ) -> infra::Ethereum {
     infra::Ethereum::new(
-        web3,
-        unbuffered_web3,
+        provider,
+        unbuffered_provider,
         chain,
         url,
         contracts,
@@ -199,15 +199,14 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
 
     let http_factory = HttpClientFactory::from(config.http_client);
     let ethrpc_args = shared::web3::Arguments::from(&config.shared.ethrpc);
-    let web3 = shared::web3::web3(&ethrpc_args, &config.shared.node_url, "base");
-    let simulation_web3 = config
+    let provider = shared::web3::provider(&ethrpc_args, &config.shared.node_url, "base");
+    let simulation_provider = config
         .shared
         .simulation_node_url
         .as_ref()
-        .map(|node_url| shared::web3::web3(&ethrpc_args, node_url, "simulation"));
+        .map(|node_url| shared::web3::provider(&ethrpc_args, node_url, "simulation"));
 
-    let chain_id = web3
-        .provider
+    let chain_id = provider
         .get_chain_id()
         .instrument(info_span!("chain_id"))
         .await
@@ -222,7 +221,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let unbuffered_ethrpc = unbuffered_ethrpc(&config.shared.node_url).await;
     let ethrpc = ethrpc(&config.shared.node_url, &ethrpc_args).await;
     let chain = ethrpc.chain();
-    let web3 = ethrpc.web3().clone();
+    let provider = ethrpc.provider().clone();
     let url = ethrpc.url().clone();
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: config.shared.contracts.settlement,
@@ -234,8 +233,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     };
     let current_block_args = shared::current_block::Arguments::from(&config.shared.current_block);
     let eth = ethereum(
-        web3.clone(),
-        unbuffered_ethrpc.web3().clone(),
+        provider.clone(),
+        unbuffered_ethrpc.provider().clone(),
         &chain,
         url,
         contracts.clone(),
@@ -253,10 +252,13 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
-    let balance_overrider = config.price_estimation.balance_overrides.init(web3.clone());
+    let balance_overrider = config
+        .price_estimation
+        .balance_overrides
+        .init(provider.clone());
 
     let balance_fetcher = account_balances::cached(
-        &web3,
+        &provider,
         BalanceSimulator::new(
             eth.contracts().settlement().clone(),
             eth.contracts().balances().clone(),
@@ -275,7 +277,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let gas_price_estimator = Arc::new(
         gas_price_estimation::create_priority_estimator(
             http_factory.create(),
-            &web3.provider,
+            &provider,
             &gas_estimators,
             eth.current_block(),
         )
@@ -286,10 +288,10 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let deny_listed_tokens = DenyListedTokens::new(config.unsupported_tokens.clone());
 
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
-        web3: web3.clone(),
+        provider: provider.clone(),
     })));
     let block_retriever = Arc::new(BlockRetriever {
-        provider: web3.provider.clone(),
+        provider: provider.clone(),
         block_stream: eth.current_block().clone(),
     });
 
@@ -297,8 +299,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         &config.price_estimation,
         &config.native_price_estimation.shared,
         factory::Network {
-            web3: web3.clone(),
-            simulation_web3,
+            provider: provider.clone(),
+            simulation_provider,
             chain,
             settlement: *eth.contracts().settlement().address(),
             native_token: *eth.contracts().weth().address(),
@@ -387,7 +389,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
 
     let skip_event_sync_start = if config.ethflow.skip_event_sync {
         Some(
-            block_number_to_block_number_hash(&web3.provider, BlockNumberOrTag::Latest)
+            block_number_to_block_number_hash(&provider, BlockNumberOrTag::Latest)
                 .await
                 .expect("Failed to fetch latest block"),
         )
@@ -415,7 +417,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
-            web3.provider.clone(),
+            provider.clone(),
             *eth.contracts().settlement().address(),
         ),
         boundary::events::settlement::Indexer::new(
@@ -426,14 +428,16 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         skip_event_sync_start,
     );
 
-    let archive_node_web3 = config
+    let archive_node_provider = config
         .cow_amm
         .archive_node_url
         .as_ref()
-        .map_or(web3.clone(), |url| boundary::web3_client(url, &ethrpc_args));
+        .map_or(provider.clone(), |url| {
+            boundary::provider(url, &ethrpc_args)
+        });
 
     let mut cow_amm_registry = cow_amm::Registry::new(Arc::new(BlockRetriever {
-        provider: archive_node_web3.provider,
+        provider: archive_node_provider,
         block_stream: eth.current_block().clone(),
     }));
     for cow_amm_config in &config.cow_amm.contracts {
@@ -565,7 +569,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
             &skip_event_sync_start,
             config.ethflow.indexing_start,
-            &web3,
+            &provider,
             chain_id,
             db_write.clone(),
         )
@@ -574,7 +578,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), config.ethflow.contracts.clone()),
+            EthFlowRefundRetriever::new(provider.clone(), config.ethflow.contracts.clone()),
             db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -586,7 +590,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
             db_write.clone(),
-            web3.clone(),
+            provider.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
@@ -597,7 +601,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         let ethflow_start_block = determine_ethflow_indexing_start(
             &skip_event_sync_start,
             config.ethflow.indexing_start,
-            &web3,
+            &provider,
             chain_id,
             &db_write,
         )
@@ -606,7 +610,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), config.ethflow.contracts),
+            CoWSwapOnchainOrdersContract::new(provider.clone(), config.ethflow.contracts),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
@@ -696,14 +700,13 @@ async fn shadow_mode(config: Configuration) -> ! {
         .collect();
 
     let ethrpc_args = shared::web3::Arguments::from(&config.shared.ethrpc);
-    let web3 = shared::web3::web3(&ethrpc_args, &config.shared.node_url, "base");
-    let weth = WETH9::Instance::deployed(&web3.provider)
+    let provider = shared::web3::provider(&ethrpc_args, &config.shared.node_url, "base");
+    let weth = WETH9::Instance::deployed(&provider)
         .await
         .expect("couldn't find deployed WETH contract");
 
     let trusted_tokens = {
-        let chain_id = web3
-            .provider
+        let chain_id = provider
             .get_chain_id()
             .await
             .expect("Could not get chainId");
@@ -734,7 +737,7 @@ async fn shadow_mode(config: Configuration) -> ! {
 
     let current_block_args = shared::current_block::Arguments::from(&config.shared.current_block);
     let current_block = current_block_args
-        .stream(config.shared.node_url, web3.provider.clone())
+        .stream(config.shared.node_url, provider.clone())
         .await
         .expect("couldn't initialize current block stream");
 

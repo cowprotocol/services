@@ -478,7 +478,7 @@ async fn trace_based_balance_detection(web3: Web3) {
         test_account: Address,
         test_balance: U256,
     ) {
-        let balance_overrides = StateOverrides::new(web3.clone());
+        let balance_overrides = StateOverrides::new(web3.provider.clone());
 
         let override_result = balance_overrides
             .balance_override(BalanceOverrideRequest {
@@ -553,7 +553,7 @@ async fn aave_atoken_quote_verification(web3: Web3) {
     let a_eth_weth = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
     let spardose = address!("0000000000000000000000000000000000020000");
 
-    let balance_overrides = StateOverrides::new(web3.clone());
+    let balance_overrides = StateOverrides::new(web3.provider.clone());
 
     let amount = 5u64.eth(); // 5 aEthWETH
 

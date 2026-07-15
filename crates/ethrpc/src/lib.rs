@@ -3,7 +3,13 @@ pub mod block_stream;
 #[cfg(any(test, feature = "test-util"))]
 pub mod mock;
 
-use {crate::alloy::MutWallet, alloy_provider::DynProvider, reqwest::Url, std::time::Duration};
+use {
+    crate::alloy::MutWallet,
+    alloy_network::EthereumWallet,
+    alloy_provider::DynProvider,
+    reqwest::Url,
+    std::time::Duration,
+};
 
 pub const MAX_BATCH_SIZE: usize = 100;
 
@@ -75,6 +81,23 @@ pub fn web3(args: Config, url: &Url, label: Option<&str>) -> Web3 {
     Web3 {
         provider: alloy,
         wallet,
+    }
+}
+
+/// Create an [`AlloyProvider`] with a regular (static) wallet and an optional
+/// label for observability.
+///
+/// Unlike [`web3`], this does not wrap the provider in a [`Web3`] and does not
+/// use a mutable [`MutWallet`]. It is intended for components that only make
+/// read-only calls and never register signers after construction.
+pub fn provider(args: Config, url: &Url, label: Option<&str>) -> AlloyProvider {
+    let wallet = EthereumWallet::default();
+    match (
+        args.ethrpc_max_batch_size,
+        args.ethrpc_max_concurrent_requests,
+    ) {
+        (0 | 1, 0) => alloy::unbuffered_provider_with_wallet(url.as_str(), label, wallet),
+        _ => alloy::provider_with_wallet(url.as_str(), args, label, wallet),
     }
 }
 

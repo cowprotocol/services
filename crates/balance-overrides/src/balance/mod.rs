@@ -14,7 +14,7 @@ use {
     alloy_sol_types::SolCall,
     alloy_transport::TransportErrorKind,
     contracts::ERC20,
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
     moka::sync::Cache,
     std::{collections::HashMap, iter, time::Duration},
 };
@@ -110,8 +110,8 @@ pub struct BalanceOverrideRequest {
 /// `{ bool isFrozen; uint248 balance }` in one slot, so the balance is the high
 /// 248 bits and `shift_bits == 8`. It is `0` for the common unpacked case.
 ///
-/// The `AaveV3AToken` variant owns a cloned `Web3` handle, so it computes its
-/// override without an external web3 reference threaded through.
+/// The `AaveV3AToken` variant owns a cloned provider handle, so it computes its
+/// override without an external provider reference threaded through.
 #[derive(Clone, Debug)]
 pub(crate) enum Strategy {
     SolidityMapping {
@@ -132,7 +132,7 @@ pub(crate) enum Strategy {
         target_contract: Address,
         pool: Address,
         underlying: Address,
-        web3: Web3,
+        provider: AlloyProvider,
     },
     NativeEth,
 }
@@ -171,10 +171,10 @@ impl Strategy {
                 target_contract,
                 pool,
                 underlying,
-                web3,
+                provider,
             } => {
                 return match aave::build_override(
-                    web3,
+                    provider,
                     *target_contract,
                     *pool,
                     *underlying,
@@ -235,9 +235,9 @@ impl Strategy {
     }
 }
 
-/// Compare by addresses only; `web3` is intentionally excluded since two
+/// Compare by addresses only; `provider` is intentionally excluded since two
 /// strategies for the same token/pool/underlying are semantically equivalent
-/// regardless of which web3 handle they carry.
+/// regardless of which provider handle they carry.
 impl PartialEq for Strategy {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -299,11 +299,11 @@ impl Eq for Strategy {}
 
 /// Heuristic balance override detector with integrated caching.
 ///
-/// Owns the Web3 handle, detection parameters, and the per-token strategy
-/// cache. `AaveV3AToken` strategies in the cache carry a cloned `Web3` handle
+/// Owns the provider handle, detection parameters, and the per-token strategy
+/// cache. `AaveV3AToken` strategies in the cache carry a cloned provider handle
 /// so they can compute overrides without any external dependency.
 pub(crate) struct Detector {
-    web3: Web3,
+    provider: AlloyProvider,
     probing_depth: u8,
     verification_timeout: Duration,
     pub(crate) cache: Cache<(Address, Option<Address>), Option<Strategy>>,
@@ -311,13 +311,13 @@ pub(crate) struct Detector {
 
 impl Detector {
     pub fn new(
-        web3: Web3,
+        provider: AlloyProvider,
         probing_depth: u8,
         verification_timeout: Duration,
         cache_size: u64,
     ) -> Self {
         Self {
-            web3,
+            provider,
             probing_depth,
             verification_timeout,
             cache: Cache::builder().max_capacity(cache_size).build(),
@@ -383,12 +383,12 @@ impl Detector {
         // will fall through to the generic trace-based path, which only
         // ever returns non-Aave strategies; such a fork needs an explicit
         // hardcoded config entry.
-        if let Some((pool, underlying)) = aave::probe_aave_token(&self.web3, token).await {
+        if let Some((pool, underlying)) = aave::probe_aave_token(&self.provider, token).await {
             let candidate = Strategy::AaveV3AToken {
                 target_contract: token,
                 pool,
                 underlying,
-                web3: self.web3.clone(),
+                provider: self.provider.clone(),
             };
             if let Ok(resolved) = self.verify_strategy(token, holder, candidate).await {
                 tracing::debug!(?token, "detected Aave v3 aToken");
@@ -410,7 +410,6 @@ impl Detector {
         };
 
         let trace = self
-            .web3
             .provider
             .debug_trace_call(
                 call_request,
@@ -519,7 +518,7 @@ impl Detector {
             return Err(DetectionError::NotFound);
         }
 
-        let balance = ERC20::Instance::new(token, self.web3.provider.clone())
+        let balance = ERC20::Instance::new(token, self.provider.clone())
             .balanceOf(holder)
             .state(overrides)
             .call()
@@ -580,6 +579,7 @@ mod tests {
         crate::detector::DEFAULT_VERIFICATION_TIMEOUT,
         alloy_primitives::address,
         contracts::WETH9,
+        ethrpc::Web3,
     };
 
     #[test]
@@ -778,7 +778,12 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_mainnet() {
-        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
+        let detector = Detector::new(
+            Web3::new_from_env().provider,
+            60,
+            DEFAULT_VERIFICATION_TIMEOUT,
+            100,
+        );
 
         let storage = detector
             .detect(
@@ -831,7 +836,12 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_arbitrum() {
-        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
+        let detector = Detector::new(
+            Web3::new_from_env().provider,
+            60,
+            DEFAULT_VERIFICATION_TIMEOUT,
+            100,
+        );
 
         let storage = detector
             .detect(
@@ -859,7 +869,12 @@ mod tests {
     #[tokio::test]
     async fn detects_packed_balance_slot_avalanche() {
         let ausd = address!("00000000efe302beaa2b3e6e1b18d08d69a9012a");
-        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
+        let detector = Detector::new(
+            Web3::new_from_env().provider,
+            60,
+            DEFAULT_VERIFICATION_TIMEOUT,
+            100,
+        );
 
         let strategy = detector
             .detect(ausd, Address::with_last_byte(1))
@@ -884,7 +899,7 @@ mod tests {
     async fn detects_native_eth() {
         let web3 = Web3::new_from_env();
         let weth = WETH9::Instance::deployed(&web3.provider).await.unwrap();
-        let detector = Detector::new(web3.clone(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
+        let detector = Detector::new(web3.provider.clone(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
 
         let user = Address::random();
         let amount = U256::MAX / U256::from(2);

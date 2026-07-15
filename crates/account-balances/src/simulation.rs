@@ -8,23 +8,23 @@ use {
     alloy_primitives::{Address, U256},
     anyhow::Result,
     contracts::ERC20,
-    ethrpc::{Web3, alloy::ProviderLabelingExt},
+    ethrpc::{AlloyProvider, alloy::ProviderLabelingExt},
     futures::future,
     model::order::SellTokenSource,
     tracing::instrument,
 };
 
 pub struct Balances {
-    web3: Web3,
+    provider: AlloyProvider,
     balance_simulator: BalanceSimulator,
 }
 
 impl Balances {
-    pub fn new(web3: &Web3, balance_simulator: BalanceSimulator) -> Self {
-        let web3 = web3.labeled("balanceFetching");
+    pub fn new(provider: &AlloyProvider, balance_simulator: BalanceSimulator) -> Self {
+        let provider = provider.labeled("balanceFetching");
 
         Self {
-            web3,
+            provider,
             balance_simulator,
         }
     }
@@ -84,7 +84,7 @@ impl BalanceFetching for Balances {
             .iter()
             .map(|query| async {
                 if query.interactions.is_empty() {
-                    let token = ERC20::Instance::new(query.token, self.web3.provider.clone());
+                    let token = ERC20::Instance::new(query.token, self.provider.clone());
                     self.tradable_balance_simple(query, &token).await
                 } else {
                     self.tradable_balance_simulated(query).await
@@ -140,7 +140,7 @@ impl BalanceFetching for Balances {
         if source != SellTokenSource::Erc20 {
             anyhow::bail!("unsupported sell token source: {:?}", source);
         }
-        let token = ERC20::Instance::new(token, self.web3.provider.clone());
+        let token = ERC20::Instance::new(token, self.provider.clone());
         Ok(token.allowance(owner, self.vault_relayer()).call().await?)
     }
 }
@@ -170,7 +170,7 @@ mod tests {
             web3.provider.clone(),
         );
         let balances = Balances::new(
-            &web3,
+            &web3.provider,
             BalanceSimulator::new(
                 settlement,
                 balances,

@@ -11,7 +11,7 @@ use {
     anyhow::bail,
     chain::Chain,
     eth_domain_types as eth,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::{AlloyProvider, block_stream::CurrentBlockWatcher},
     futures::TryFutureExt as _,
     serde::Deserialize,
     thiserror::Error,
@@ -22,7 +22,7 @@ pub mod contracts;
 
 /// An Ethereum RPC connection.
 pub struct Rpc {
-    web3: Web3,
+    provider: AlloyProvider,
     chain: Chain,
     url: Url,
 }
@@ -31,12 +31,12 @@ impl Rpc {
     /// Instantiate an RPC client to an Ethereum (or Ethereum-compatible) node
     /// at the specifed URL.
     pub async fn new(url: &url::Url, ethrpc_args: &shared::web3::Arguments) -> Result<Self, Error> {
-        let web3 = boundary::web3_client(url, ethrpc_args);
-        let chain = Chain::try_from(web3.provider.get_chain_id().await?)
-            .map_err(|_| Error::UnsupportedChain)?;
+        let provider = boundary::provider(url, ethrpc_args);
+        let chain =
+            Chain::try_from(provider.get_chain_id().await?).map_err(|_| Error::UnsupportedChain)?;
 
         Ok(Self {
-            web3,
+            provider,
             chain,
             url: url.clone(),
         })
@@ -47,9 +47,9 @@ impl Rpc {
         self.chain
     }
 
-    /// Returns a reference to the underlying web3 client.
-    pub fn web3(&self) -> &Web3 {
-        &self.web3
+    /// Returns a reference to the underlying provider.
+    pub fn provider(&self) -> &AlloyProvider {
+        &self.provider
     }
 
     /// Returns a reference to the underlying RPC URL.
@@ -61,8 +61,8 @@ impl Rpc {
 /// The Ethereum blockchain.
 #[derive(Clone)]
 pub struct Ethereum {
-    web3: Web3,
-    unbuffered_web3: Web3,
+    provider: AlloyProvider,
+    unbuffered_provider: AlloyProvider,
     chain: Chain,
     current_block: CurrentBlockWatcher,
     contracts: Contracts,
@@ -76,22 +76,22 @@ impl Ethereum {
     /// Since this type is essential for the program this method will panic on
     /// any initialization error.
     pub async fn new(
-        web3: Web3,
-        unbuffered_web3: Web3,
+        provider: AlloyProvider,
+        unbuffered_provider: AlloyProvider,
         chain: &Chain,
         url: Url,
         addresses: contracts::Addresses,
         current_block_args: &shared::current_block::Arguments,
     ) -> Self {
-        let contracts = Contracts::new(&web3, chain, addresses).await;
+        let contracts = Contracts::new(&provider, chain, addresses).await;
 
         Self {
             current_block: current_block_args
-                .stream(url, unbuffered_web3.provider.clone())
+                .stream(url, unbuffered_provider.clone())
                 .await
                 .expect("couldn't initialize current block stream"),
-            web3,
-            unbuffered_web3,
+            provider,
+            unbuffered_provider,
             chain: *chain,
             contracts,
         }
@@ -116,13 +116,12 @@ impl Ethereum {
         hash: eth::TxId,
     ) -> Result<domain::blockchain::Transaction, Error> {
         let (receipt, traces): (Option<TransactionReceipt>, GethTrace) = tokio::try_join!(
-            self.web3
-                .provider
+            self.provider
                 .get_transaction_receipt(hash.0)
                 .map_err(Error::Alloy),
             // Use unbuffered transport for the Debug API since not all providers support
             // batched debug calls.
-            fetch_debug_trace(&self.unbuffered_web3.provider, hash)
+            fetch_debug_trace(&self.unbuffered_provider, hash)
         )?;
 
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
@@ -133,7 +132,6 @@ impl Ethereum {
                     "missing block_hash"
                 )))?;
         let block = self
-            .web3
             .provider
             .get_block_by_hash(block_hash)
             .await?

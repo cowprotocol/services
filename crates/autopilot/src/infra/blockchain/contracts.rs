@@ -11,7 +11,7 @@ use {
         support::Balances,
     },
     eth_domain_types as eth,
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
 };
 
 #[derive(Debug, Clone)]
@@ -42,13 +42,13 @@ pub struct Addresses {
 }
 
 impl Contracts {
-    pub async fn new(web3: &Web3, chain: &Chain, addresses: Addresses) -> Self {
+    pub async fn new(provider: &AlloyProvider, chain: &Chain, addresses: Addresses) -> Self {
         let settlement = GPv2Settlement::Instance::new(
             addresses
                 .settlement
                 .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.provider.clone(),
+            provider.clone(),
         );
 
         let signatures = contracts::support::Signatures::Instance::new(
@@ -56,7 +56,7 @@ impl Contracts {
                 .signatures
                 .or_else(|| contracts::support::Signatures::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.provider.clone(),
+            provider.clone(),
         );
 
         let weth = WETH9::Instance::new(
@@ -64,7 +64,7 @@ impl Contracts {
                 .weth
                 .or_else(|| WETH9::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.provider.clone(),
+            provider.clone(),
         );
 
         let balances = Balances::Instance::new(
@@ -72,7 +72,7 @@ impl Contracts {
                 .balances
                 .or_else(|| Balances::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.provider.clone(),
+            provider.clone(),
         );
 
         let trampoline = HooksTrampoline::Instance::new(
@@ -80,7 +80,7 @@ impl Contracts {
                 .trampoline
                 .or_else(|| HooksTrampoline::deployment_address(&chain.id()))
                 .unwrap(),
-            web3.provider.clone(),
+            provider.clone(),
         );
 
         let flashloan_router = addresses
@@ -88,9 +88,7 @@ impl Contracts {
             .or_else(|| FlashLoanRouter::deployment_address(&chain.id()))
             .unwrap();
 
-        let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
-            .await
-            .ok();
+        let chainalysis_oracle = ChainalysisOracle::Instance::deployed(provider).await.ok();
 
         let settlement_domain_separator = eth::DomainSeparator(
             settlement
@@ -107,7 +105,7 @@ impl Contracts {
                 .call()
                 .await
                 .expect("authenticator address"),
-            web3.provider.clone(),
+            provider.clone(),
         );
 
         Self {

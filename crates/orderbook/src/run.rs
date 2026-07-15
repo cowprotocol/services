@@ -151,7 +151,10 @@ pub async fn run(config: Configuration) {
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
-    let balance_overrider = config.price_estimation.balance_overrides.init(web3.clone());
+    let balance_overrider = config
+        .price_estimation
+        .balance_overrides
+        .init(web3.provider.clone());
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
@@ -198,7 +201,7 @@ pub async fn run(config: Configuration) {
     };
 
     let balance_fetcher = account_balances::fetcher(
-        &web3,
+        &web3.provider,
         BalanceSimulator::new(
             settlement_contract.clone(),
             balances_contract.clone(),
@@ -233,15 +236,15 @@ pub async fn run(config: Configuration) {
     ));
 
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
-        web3: web3.clone(),
+        provider: web3.provider.clone(),
     })));
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &config.price_estimation,
         &config.native_price_estimation.shared,
         factory::Network {
-            web3: web3.clone(),
-            simulation_web3,
+            provider: web3.provider.clone(),
+            simulation_provider: simulation_web3.map(|web3| web3.provider),
             chain,
             settlement: *settlement_contract.address(),
             native_token: *native_token.address(),

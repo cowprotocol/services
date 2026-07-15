@@ -20,7 +20,6 @@ use {
     },
     ethrpc::{
         AlloyProvider,
-        Web3,
         block_stream::{BlockNumberHash, block_number_to_block_number_hash},
     },
     hex_literal::hex,
@@ -163,7 +162,7 @@ async fn settlement_deployment_block_number_hash(
 pub async fn determine_ethflow_indexing_start(
     skip_event_sync_start: &Option<BlockNumberHash>,
     ethflow_indexing_start: Option<u64>,
-    web3: &Web3,
+    provider: &AlloyProvider,
     chain_id: u64,
     db: &crate::database::Postgres,
 ) -> BlockNumberHash {
@@ -173,7 +172,7 @@ pub async fn determine_ethflow_indexing_start(
 
     find_indexing_start_block(
         &db.pool,
-        web3,
+        provider,
         crate::database::onchain_order_events::INDEX_NAME,
         ethflow_indexing_start,
         Some(chain_id),
@@ -195,7 +194,7 @@ pub async fn determine_ethflow_indexing_start(
 /// 2. Otherwise, use `ethflow_indexing_start` if it is provided.
 /// 3. Fallback to the settlement deployment block number if no other options
 ///    are available.
-/// 4. Finally, try fetching the block using the provided `web3` instance to
+/// 4. Finally, try fetching the block using the provided `provider` instance to
 ///    ensure the node is able to continue indexing.
 ///
 /// # Panics
@@ -205,7 +204,7 @@ pub async fn determine_ethflow_indexing_start(
 pub async fn determine_ethflow_refund_indexing_start(
     skip_event_sync_start: &Option<BlockNumberHash>,
     ethflow_indexing_start: Option<u64>,
-    web3: &Web3,
+    provider: &AlloyProvider,
     chain_id: u64,
     db: crate::database::Postgres,
 ) -> BlockNumberHash {
@@ -215,7 +214,7 @@ pub async fn determine_ethflow_refund_indexing_start(
 
     let ethflow_refund_indexing_start = find_indexing_start_block(
         &db.pool,
-        web3,
+        provider,
         crate::database::ethflow_events::event_storing::INDEX_NAME,
         ethflow_indexing_start,
         None,
@@ -224,7 +223,7 @@ pub async fn determine_ethflow_refund_indexing_start(
     .expect("Should be able to find last indexed refund block");
     let settlement_contract_indexing_start = find_indexing_start_block(
         &db.pool,
-        web3,
+        provider,
         crate::boundary::events::settlement::INDEX_NAME,
         None,
         Some(chain_id),
@@ -251,7 +250,7 @@ pub async fn determine_ethflow_refund_indexing_start(
 ///    indexing.
 async fn find_indexing_start_block(
     db: &PgPool,
-    web3: &Web3,
+    provider: &AlloyProvider,
     index_name: &str,
     fallback_start_block: Option<u64>,
     settlement_fallback_chain_id: Option<u64>,
@@ -262,7 +261,7 @@ async fn find_indexing_start_block(
 
     if last_indexed_block > 0 {
         return block_number_to_block_number_hash(
-            &web3.provider,
+            provider,
             BlockNumberOrTag::Number(last_indexed_block),
         )
         .await
@@ -270,16 +269,13 @@ async fn find_indexing_start_block(
         .context("failed to fetch block");
     }
     if let Some(start_block) = fallback_start_block {
-        return block_number_to_block_number_hash(
-            &web3.provider,
-            BlockNumberOrTag::Number(start_block),
-        )
-        .await
-        .map(Some)
-        .context("failed to fetch fallback indexing start block");
+        return block_number_to_block_number_hash(provider, BlockNumberOrTag::Number(start_block))
+            .await
+            .map(Some)
+            .context("failed to fetch fallback indexing start block");
     }
     if let Some(chain_id) = settlement_fallback_chain_id {
-        return settlement_deployment_block_number_hash(&web3.provider, chain_id)
+        return settlement_deployment_block_number_hash(provider, chain_id)
             .await
             .map(Some)
             .context("failed to fetch settlement deployment block");

@@ -9,8 +9,9 @@
 //! trait to conveniently create a new `Provider` with an additional
 //! [`LabelingLayer`].
 use {
-    crate::{Web3, alloy::RpcClientRandomIdExt},
+    crate::{AlloyProvider, Web3, alloy::RpcClientRandomIdExt},
     alloy_json_rpc::{RequestPacket, ResponsePacket, SerializedRequest},
+    alloy_network::EthereumWallet,
     alloy_provider::{Provider, ProviderBuilder},
     alloy_rpc_client::RpcClient,
     alloy_transport::TransportError,
@@ -170,6 +171,31 @@ impl ProviderLabelingExt for Web3 {
             provider: alloy,
             wallet: self.wallet.clone(),
         }
+    }
+}
+
+impl ProviderLabelingExt for AlloyProvider {
+    /// Unlike the [`Web3`] implementation, this **drops any wallet/signer** the
+    /// source provider carried and installs a fresh empty [`EthereumWallet`]:
+    /// a bare [`AlloyProvider`] does not expose its wallet, so it cannot be
+    /// preserved. This is fine for the current callers, which only use labeled
+    /// providers for read-only `eth_call`/simulation paths (they set `.from`
+    /// explicitly and never sign). Do NOT call `.labeled()` on a signer-bearing
+    /// [`AlloyProvider`] and then expect to sign with it — keep a [`Web3`] for
+    /// that.
+    fn labeled<S: ToString>(&self, label: S) -> Self {
+        let is_local = self.client().is_local();
+        let transport = self.client().transport().clone();
+        let transport_with_label = LabelingLayer {
+            label: label.to_string(),
+        }
+        .layer(transport);
+        let client = RpcClient::with_random_id(transport_with_label, is_local);
+        ProviderBuilder::new()
+            .wallet(EthereumWallet::default())
+            .with_simple_nonce_management()
+            .connect_client(client)
+            .erased()
     }
 }
 

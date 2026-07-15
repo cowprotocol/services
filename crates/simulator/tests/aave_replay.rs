@@ -154,7 +154,7 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
     let hooks_trampoline = contracts::HooksTrampoline::deployment_address(&chain_id)
         .expect("HooksTrampoline deployment address");
 
-    let balance_overrider = Arc::new(balance_overrides::StateOverrides::new(web3));
+    let balance_overrider = Arc::new(balance_overrides::StateOverrides::new(web3.provider));
     let block_stream = ethrpc::block_stream::mock_single_block(Default::default());
 
     let simulator = SettlementSimulator::new(
@@ -265,7 +265,7 @@ async fn build_naturally_failing_replay_simulation(
     let hooks_trampoline = contracts::HooksTrampoline::deployment_address(&chain_id)
         .expect("HooksTrampoline deployment address");
 
-    let balance_overrider = Arc::new(balance_overrides::StateOverrides::new(web3));
+    let balance_overrider = Arc::new(balance_overrides::StateOverrides::new(web3.provider));
     let block_stream = ethrpc::block_stream::mock_single_block(Default::default());
 
     let simulator = SettlementSimulator::new(

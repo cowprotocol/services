@@ -24,7 +24,7 @@ pub use {
 };
 use {
     crate::domain,
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
     std::{collections::HashMap, sync::Arc},
     url::Url,
 };
@@ -32,9 +32,9 @@ use {
 pub mod events;
 pub mod order;
 
-/// Builds a web3 client based on the ethrpc args config.
-pub fn web3_client(ethrpc: &Url, ethrpc_args: &shared::web3::Arguments) -> Web3 {
-    shared::web3::web3(ethrpc_args, ethrpc, "base")
+/// Builds a provider based on the ethrpc args config.
+pub fn provider(ethrpc: &Url, ethrpc_args: &shared::web3::Arguments) -> AlloyProvider {
+    shared::web3::provider(ethrpc_args, ethrpc, "base")
 }
 
 pub struct SolvableOrders {

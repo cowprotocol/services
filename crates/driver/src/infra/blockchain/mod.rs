@@ -133,7 +133,7 @@ impl Ethereum {
         let contracts = Contracts::new(&web3, chain, addresses)
             .await
             .expect("could not initialize important smart contracts");
-        let state_overrider = Arc::new(StateOverrides::new(web3.clone()));
+        let state_overrider = Arc::new(StateOverrides::new(web3.provider.clone()));
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),

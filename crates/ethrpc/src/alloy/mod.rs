@@ -7,6 +7,7 @@ mod wallet;
 
 use {
     crate::{AlloyProvider, Config},
+    alloy_network::EthereumWallet,
     alloy_provider::{Provider, ProviderBuilder},
     alloy_rpc_client::{ClientBuilder, RpcClient},
     buffering::BatchCallLayer,
@@ -86,6 +87,39 @@ pub fn provider(url: &str, config: Config, label: Option<&str>) -> (AlloyProvide
         .erased();
 
     (provider, wallet)
+}
+
+/// Like [`provider`], but installs a regular (static) [`EthereumWallet`]
+/// instead of a [`MutWallet`]. Intended for components that only make read-only
+/// calls and never need to register signers after construction, so they can
+/// hold a plain [`AlloyProvider`] instead of a [`Web3`](crate::Web3).
+pub fn provider_with_wallet(
+    url: &str,
+    config: Config,
+    label: Option<&str>,
+    wallet: EthereumWallet,
+) -> AlloyProvider {
+    let rpc = rpc(url, config, label);
+    ProviderBuilder::new()
+        .wallet(wallet)
+        .with_simple_nonce_management()
+        .connect_client(rpc)
+        .erased()
+}
+
+/// Like [`unbuffered_provider`], but installs a regular (static)
+/// [`EthereumWallet`] instead of a [`MutWallet`]. See [`provider_with_wallet`].
+pub fn unbuffered_provider_with_wallet(
+    url: &str,
+    label: Option<&str>,
+    wallet: EthereumWallet,
+) -> AlloyProvider {
+    let rpc = unbuffered_rpc(url, label);
+    ProviderBuilder::new()
+        .wallet(wallet)
+        .with_simple_nonce_management()
+        .connect_client(rpc)
+        .erased()
 }
 
 /// Extension to simplify using random IDs when instantiating [`RpcClient`].
