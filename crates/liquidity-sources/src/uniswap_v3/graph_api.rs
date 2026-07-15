@@ -5,7 +5,7 @@ use {
     crate::{
         json_map,
         subgraph::{ContainsId, SubgraphClient},
-        uniswap_v3::{BlockTarget, V3PoolDataSource},
+        uniswap_v3::V3PoolDataSource,
     },
     alloy::primitives::{Address, U256},
     anyhow::Result,
@@ -168,15 +168,6 @@ impl UniV3SubgraphClient {
             .saturating_sub(MAX_REORG_BLOCK_COUNT))
     }
 
-    /// The subgraph queries by concrete block, so `Latest` resolves to the
-    /// safe head.
-    async fn resolve_block(&self, target: BlockTarget) -> Result<u64> {
-        match target {
-            BlockTarget::Latest => self.get_safe_block().await,
-            BlockTarget::Number(n) => Ok(n),
-        }
-    }
-
     fn all_pools_query(include_ticks_filter: bool) -> String {
         let tick_filter = if include_ticks_filter {
             r#"ticks_: { liquidityNet_not: "0" }"#
@@ -247,8 +238,7 @@ impl UniV3SubgraphClient {
 impl V3PoolDataSource for UniV3SubgraphClient {
     /// The subgraph supports historical queries, so every returned pool is
     /// consistently anchored at `target_block`.
-    async fn get_registered_pools(&self, target_block: BlockTarget) -> Result<RegisteredPools> {
-        let target_block = self.resolve_block(target_block).await?;
+    async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
         let variables = json_map! {
             "block" => target_block,
         };
@@ -268,12 +258,8 @@ impl V3PoolDataSource for UniV3SubgraphClient {
     async fn get_pools_with_ticks_by_ids(
         &self,
         ids: &[Address],
-        target_block: BlockTarget,
+        target_block: u64,
     ) -> Result<PoolsWithTicks> {
-        if ids.is_empty() {
-            return Ok(PoolsWithTicks::default());
-        }
-        let target_block = self.resolve_block(target_block).await?;
         let (pools, ticks) = futures::try_join!(
             self.get_pools_by_pool_ids(ids, target_block),
             self.get_ticks_by_pools_ids(ids, target_block)
