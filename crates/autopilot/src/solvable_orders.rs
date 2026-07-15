@@ -418,21 +418,23 @@ impl SolvableOrdersCache {
                 .context("min_order_validity_period is not u32")?;
 
         // only build future while holding the lock but execute outside of lock
-        let lock = self.cache.lock().await;
-        let fetch_orders = match &*lock {
-            // Only use incremental query after cache already got initialized
-            // because it's not optimized for very long durations.
-            Some(cache) => self
-                .persistence
-                .solvable_orders_after(
-                    cache.solvable_orders.orders.clone(),
-                    cache.solvable_orders.quotes.clone(),
-                    cache.solvable_orders.fetched_from_db,
-                    cache.solvable_orders.latest_settlement_block,
-                    min_valid_to,
-                )
-                .boxed(),
-            None => self.persistence.all_solvable_orders(min_valid_to).boxed(),
+        let fetch_orders = {
+            let lock = self.cache.lock().await;
+            match &*lock {
+                // Only use incremental query after cache already got initialized
+                // because it's not optimized for very long durations.
+                Some(cache) => self
+                    .persistence
+                    .solvable_orders_after(
+                        cache.solvable_orders.orders.clone(),
+                        cache.solvable_orders.quotes.clone(),
+                        cache.solvable_orders.fetched_from_db,
+                        cache.solvable_orders.latest_settlement_block,
+                        min_valid_to,
+                    )
+                    .boxed(),
+                None => self.persistence.all_solvable_orders(min_valid_to).boxed(),
+            }
         };
 
         let mut orders = fetch_orders.await?;
