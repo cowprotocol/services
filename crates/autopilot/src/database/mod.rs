@@ -107,7 +107,8 @@ impl Postgres {
         Ok(())
     }
 
-    /// Performs a `gin_clean_pending_list` over the `competition_auctions_order_uids_gin` index.
+    /// Performs a `gin_clean_pending_list` over the
+    /// `competition_auctions_order_uids_gin` index.
     pub async fn gin_clean_pending_list(&self) -> std::result::Result<(), sqlx::Error> {
         let _timer = Metrics::get()
             .database_queries
@@ -196,7 +197,8 @@ async fn update_large_tables_stats(db: Postgres) -> ! {
     }
 }
 
-/// Kicks off a start that runs [`Postgres::gin_clean_pending_list`] for every notification.
+/// Kicks off a start that runs [`Postgres::gin_clean_pending_list`] for every
+/// notification.
 pub fn start_gin_clean_maintenance_task(db: Postgres, notify: Arc<Notify>) {
     tokio::spawn(async move {
         loop {
