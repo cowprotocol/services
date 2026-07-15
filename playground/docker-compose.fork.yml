@@ -100,11 +100,23 @@ services:
     volumes:
       - ../:/src
     depends_on:
-      - db-migrations
+      db-migrations:
+        condition: service_completed_successfully
     ports:
       - 8080:80 # API
       - 9586:9586 # metrics
       - 6669:6669 # tokio console
+    # Fork services compile inside their container after startup (they share a
+    # target dir, so builds serialize), so "running" is not the same as ready.
+    # These healthchecks make `docker compose up --wait` block until each one
+    # actually serves. start_period is generous to cover the serialized compile.
+    healthcheck:
+      # ready == can price, which also needs the driver and baseline solver up
+      test: ["CMD-SHELL", "curl -sf http://localhost/api/v1/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/native_price || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 2700s
 
   autopilot:
     build:
@@ -139,6 +151,14 @@ services:
     ports:
       - 9589:9589 # metrics
       - 6670:6669 # tokio console
+    healthcheck:
+      # /startup flips to 200 only once the run loop is live and the eth-flow
+      # event indexer has a start block
+      test: ["CMD-SHELL", "curl -sf http://localhost:9589/startup || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 2700s
 
   driver:
     build:
@@ -172,6 +192,12 @@ services:
     depends_on:
       chain:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 2700s
 
   # baseline (solver engine)
   baseline:
@@ -202,6 +228,12 @@ services:
     ports:
       - 9001:80 # API & metrics
       - 6672:6669 # tokio console
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 2700s
 
   frontend:
     build:

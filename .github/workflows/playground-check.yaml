@@ -23,7 +23,10 @@ jobs:
           - docker-compose.fork.yml
           - docker-compose.non-interactive.yml
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Healthy runs finish well under this (~22 min for the fork variant). The cap
+    # is only a backstop so a stuck stack (e.g. a failed in-container compile)
+    # fails fast instead of hanging; the readiness wait below fails even sooner.
+    timeout-minutes: 60
     env:
       FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
     steps:
@@ -55,34 +58,18 @@ jobs:
           sed -i -e 's/ETH_RPC_URL=.*/ETH_RPC_URL=$FORK_URL_MAINNET/g' playground/.env
           cat playground/.env
 
-      - name: Start docker containers
+      - name: Start docker containers and wait for readiness
         id: containers
         working-directory: playground
         run: |
           # firstly start explorer container to workaround yarn cache problem
           docker compose -f ${{ matrix.compose-file }} up -d explorer
-          docker compose -f ${{ matrix.compose-file }} up -d
-
-      - name: Wait for services to be ready
-        # On the fork variant every service compiles inside its container after
-        # `up -d` returns, one at a time (they share a target dir), so they come
-        # up staggered over several minutes. Start the smoke test too early and
-        # it runs against a half-built stack, so wait for the two things it needs:
-        #   native_price 200  the orderbook + driver + baseline solver can price
-        #                     (the solver builds last; until then this 404s)
-        #   /startup 200      the autopilot run loop is live and its eth-flow
-        #                     indexer has a start block (otherwise the order is
-        #                     placed before indexing starts and gets stuck)
-        # `docker compose up --wait` does not help here: the app services have no
-        # healthchecks, so it only waits for "running" (cargo-watch launched),
-        # not for them to serve. Tried it on the fork variant and the smoke test
-        # still failed against a stack that was still compiling.
-        working-directory: playground
-        run: |
-          timeout 3600 bash -c '
-            until curl -sf -m 5 http://localhost:8080/api/v1/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/native_price > /dev/null; do sleep 15; done
-            until curl -sf -m 5 http://localhost:9589/startup > /dev/null; do sleep 15; done
-          '
+          # --wait blocks until every service is healthy (see the healthchecks in
+          # the compose file), so the smoke test never runs against a half-built
+          # stack. The fork variant compiles in-container first (~20 min), so the
+          # timeout is generous; it matches the healthchecks' start_period so a
+          # slow build is never marked unhealthy before it comes up.
+          docker compose -f ${{ matrix.compose-file }} up -d --wait --wait-timeout 2700
 
       - name: Execute validation script
         id: test_script

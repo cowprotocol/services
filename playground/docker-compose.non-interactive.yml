@@ -93,7 +93,8 @@ services:
     volumes:
       - ./configs/orderbook.toml:/orderbook.toml
     depends_on:
-      - db-migrations
+      db-migrations:
+        condition: service_completed_successfully
     ports:
       - 8080:80 # API
       - 9586:9586 # metrics
