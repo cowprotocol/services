@@ -204,7 +204,7 @@ pub fn start_gin_clean_maintenance_task(db: Postgres, notify: Arc<Notify>) {
         loop {
             notify.notified().await;
             if let Err(err) = db.gin_clean_pending_list().await {
-                tracing::warn!(%err, "failed to perform gin_list_update");
+                tracing::warn!(%err, "failed to run gin_clean_pending_list");
             }
         }
     });
