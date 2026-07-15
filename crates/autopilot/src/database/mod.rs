@@ -4,10 +4,8 @@ use {
     sqlx::{Executor, PgConnection, PgPool, postgres::PgPoolOptions},
     std::{
         num::{NonZeroU32, NonZeroUsize},
-        sync::Arc,
         time::Duration,
     },
-    tokio::sync::Notify,
     tracing::Instrument,
 };
 
@@ -195,19 +193,6 @@ async fn update_large_tables_stats(db: Postgres) -> ! {
         }
         tokio::time::sleep(Duration::from_secs(60 * 60)).await;
     }
-}
-
-/// Kicks off a start that runs [`Postgres::gin_clean_pending_list`] for every
-/// notification.
-pub fn start_gin_clean_maintenance_task(db: Postgres, notify: Arc<Notify>) {
-    tokio::spawn(async move {
-        loop {
-            notify.notified().await;
-            if let Err(err) = db.gin_clean_pending_list().await {
-                tracing::warn!(%err, "failed to run gin_clean_pending_list");
-            }
-        }
-    });
 }
 
 #[cfg(test)]

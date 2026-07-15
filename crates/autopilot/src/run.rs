@@ -51,7 +51,6 @@ use {
         time::{Duration, Instant},
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    tokio::sync::Notify,
     tracing::{Instrument, info_span, instrument},
     url::Url,
 };
@@ -641,9 +640,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let awaiter = maintenance
         .spawn_maintenance_task(eth.current_block().clone(), config.max_maintenance_timeout);
 
-    let on_auction_end = Arc::new(Notify::new());
-    crate::database::start_gin_clean_maintenance_task(db_write.clone(), on_auction_end.clone());
-
     let run = RunLoop::new(
         run_loop_config,
         eth,
@@ -656,7 +652,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             startup,
         },
         awaiter,
-        on_auction_end,
     );
     run.run_forever(shutdown_controller).await;
 

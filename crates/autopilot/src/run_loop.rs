@@ -116,8 +116,6 @@ pub struct RunLoop {
     winner_selection: winner_selection::Arbitrator,
     /// Notifier that wakes the main loop on new blocks or orders
     wake_notify: Arc<tokio::sync::Notify>,
-    /// Notifier that wakes "watchers" on auction end
-    on_auction_end: Arc<tokio::sync::Notify>,
 }
 
 impl RunLoop {
@@ -131,7 +129,6 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
         maintenance: MaintenanceSync,
-        on_auction_end: Arc<tokio::sync::Notify>,
     ) -> Self {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
@@ -154,7 +151,6 @@ impl RunLoop {
             maintenance,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify,
-            on_auction_end,
         }
     }
 
@@ -206,7 +202,6 @@ impl RunLoop {
                     .single_run(auction)
                     .instrument(tracing::info_span!("auction", auction_id))
                     .await;
-                self_arc.on_auction_end.notify_waiters();
             }
         }
         leader_lock_tracker.release().await;
