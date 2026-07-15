@@ -1,10 +1,14 @@
 name: Playground operation check
 
 on:
-  # Opt-in only: this is an expensive (~30 min, full workspace compile) smoke
-  # test of the local dev stack, not a production path. It runs on demand and
-  # when the playground itself changes, instead of on a daily schedule.
+  # Expensive (~30 min, full workspace compile) smoke test of the local dev
+  # stack, so it does not run on every PR. Runs daily (the schedule surfaces
+  # breakage even when nobody touches the playground), on demand, and when the
+  # playground itself changes.
   workflow_dispatch:
+  schedule:
+    # Run this job once per day
+    - cron: "0 0 * * *"
   pull_request:
     paths:
       - "playground/**"
