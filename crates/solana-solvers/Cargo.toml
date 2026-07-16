@@ -2,8 +2,8 @@
 name = "solana-solvers"
 version = "0.1.0"
 edition = "2024"
-license = "GPL-3.0-or-later"
 description = "Solana solver engines for CoW Protocol (Jupiter dex-wrapper)"
+license = "GPL-3.0-or-later"
 
 [lib]
 name = "solana_solvers"
