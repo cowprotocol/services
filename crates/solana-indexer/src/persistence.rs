@@ -139,7 +139,7 @@ async fn advance_watermark(conn: &mut PgConnection, slot: u64) -> Result<(), Per
          EXCLUDED.last_indexed_slot > solana.indexer_state.last_indexed_slot",
     )
     .bind(WATERMARK_ROW_ID)
-    .bind(slot as i64)
+    .bind(slot.cast_signed())
     .execute(&mut *conn)
     .await
     .map_err(map_err)?;
@@ -189,10 +189,10 @@ async fn write_settlement_event(
                  solution_uid, commitment) VALUES ($1, $2, $3, $4, NULL, 'confirmed') ON CONFLICT \
                  (tx_signature) DO NOTHING",
             )
-            .bind(slot.0 as i64)
+            .bind(slot.0.cast_signed())
             .bind(&tx_sig)
             .bind(solver.to_bytes().to_vec())
-            .bind(auction_id as i64)
+            .bind(auction_id.cast_signed())
             .execute(&mut *conn)
             .await
             .map_err(map_err)?;
@@ -209,7 +209,8 @@ async fn write_settlement_event(
                      ON CONFLICT DO NOTHING",
                 )
                 .bind(&tx_sig)
-                .bind(index as i32) // placeholder: real instruction_index not carried yet
+                // placeholder: the real instruction_index is not carried yet
+                .bind(i32::try_from(index).unwrap_or_default())
                 .bind(&order_uid)
                 .bind(&sell)
                 .bind(&buy)
