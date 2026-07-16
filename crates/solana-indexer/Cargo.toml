@@ -27,6 +27,7 @@ settlement-interface = {
 }
 solana-client = { workspace = true }
 solana-sdk = { workspace = true }
+sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
 tracing = { workspace = true }
