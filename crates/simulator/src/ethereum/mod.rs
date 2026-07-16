@@ -134,9 +134,6 @@ impl Ethereum {
             _ => tx,
         };
 
-        // `None` omits the RPC param entirely (byte-identical to today).
-        // Requires a node supporting eth_estimateGas state overrides
-        // (geth >=1.13, reth, nethermind, recent erigon, anvil).
         let estimated_gas = self
             .web3
             .provider
