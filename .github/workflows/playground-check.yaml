@@ -2,10 +2,8 @@ name: Playground operation check
 
 on:
   workflow_dispatch:
-  # Expensive (~30 min, full workspace compile) smoke test, so it does not run on
-  # every PR. The daily run catches config or parameter drift that was never
-  # applied to the playground, even when nobody touches the playground directory.
   schedule:
+    # Run this job once per day
     - cron: "0 0 * * *"
   pull_request:
     paths:
@@ -21,9 +19,9 @@ jobs:
           - docker-compose.fork.yml
           - docker-compose.non-interactive.yml
     runs-on: ubuntu-latest
-    # Healthy runs finish well under this (~22 min for the fork variant). The cap
-    # is only a backstop so a stuck stack (e.g. a failed in-container compile)
-    # fails fast instead of hanging; the readiness wait below fails even sooner.
+    # Healthy runs finish well under this (~22 min for the fork variant). If the job
+    # is taking close to this cap, it's likely going to fail, in which case it's
+    # better to fail fast instead of hanging.
     timeout-minutes: 60
     env:
       FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
@@ -62,11 +60,8 @@ jobs:
         run: |
           # firstly start explorer container to workaround yarn cache problem
           docker compose -f ${{ matrix.compose-file }} up -d explorer
-          # --wait blocks until every service is healthy (see the healthchecks in
-          # the compose file), so the smoke test never runs against a half-built
-          # stack. The fork variant compiles in-container first (~20 min), so the
-          # timeout is generous; it matches the healthchecks' start_period so a
-          # slow build is never marked unhealthy before it comes up.
+          # --wait blocks on the healthchecks before the test runs. Fork builds
+          # the services in-container (~20 min), so the timeout matches start_period.
           docker compose -f ${{ matrix.compose-file }} up -d --wait --wait-timeout 2700
 
       - name: Execute validation script

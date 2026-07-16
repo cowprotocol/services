@@ -111,7 +111,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      # long start_period: fork services compile in-container after start
+      # start_period is long because fork builds in-container after start
       start_period: 2700s
 
   autopilot:
@@ -148,8 +148,7 @@ services:
       - 9589:9589 # metrics
       - 6670:6669 # tokio console
     healthcheck:
-      # /startup flips to 200 only once the run loop is live and the eth-flow
-      # event indexer has a start block
+      # /startup returns 200 only after the run loop is up and the eth-flow indexer has a start block
       test: ["CMD-SHELL", "curl -sf http://localhost:9589/startup || exit 1"]
       interval: 10s
       timeout: 5s
