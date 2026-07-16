@@ -352,7 +352,7 @@
         "type": "object"
       },
       "WinningPriceEstimateEvent": {
-        "description": "Emitted once price-estimate competition has picked the winning estimate that\nbecomes the official quote. Its job is correlation: among the\n[`crate::PriceEstimateEvent`]s emitted for the same request (one per\ncompeting estimator, all sharing the envelope `requestId`), the winning one\nis the one whose `estimator` matches this event.\n\nExactly one is emitted per quote competition.",
+        "description": "Emitted once price-estimate competition has picked the winning estimate that\nbecomes the official quote. Its job is correlation: among the\n[`crate::PriceEstimateEvent`]s emitted for the same request (one per\ncompeting estimator, all sharing the envelope `requestId`), the winning one\nis the one whose `estimator` matches this event.\n\nAt most one is emitted per quote competition (because all may have errored\nin which case there's effectively no winner).",
         "properties": {
           "estimator": {
             "description": "Name of the estimator whose price estimate won the competition.",
