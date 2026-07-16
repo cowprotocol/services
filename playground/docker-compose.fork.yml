@@ -106,16 +106,12 @@ services:
       - 8080:80 # API
       - 9586:9586 # metrics
       - 6669:6669 # tokio console
-    # Fork services compile inside their container after startup (they share a
-    # target dir, so builds serialize), so "running" is not the same as ready.
-    # These healthchecks make `docker compose up --wait` block until each one
-    # actually serves. start_period is generous to cover the serialized compile.
     healthcheck:
-      # ready == can price, which also needs the driver and baseline solver up
-      test: ["CMD-SHELL", "curl -sf http://localhost/api/v1/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/native_price || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost/api/v1/ready || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+      # long start_period: fork services compile in-container after start
       start_period: 2700s
 
   autopilot:

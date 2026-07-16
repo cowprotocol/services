@@ -1,13 +1,11 @@
 name: Playground operation check
 
 on:
-  # Expensive (~30 min, full workspace compile) smoke test of the local dev
-  # stack, so it does not run on every PR. Runs daily (the schedule surfaces
-  # breakage even when nobody touches the playground), on demand, and when the
-  # playground itself changes.
   workflow_dispatch:
+  # Expensive (~30 min, full workspace compile) smoke test, so it does not run on
+  # every PR. The daily run catches config or parameter drift that was never
+  # applied to the playground, even when nobody touches the playground directory.
   schedule:
-    # Run this job once per day
     - cron: "0 0 * * *"
   pull_request:
     paths:
