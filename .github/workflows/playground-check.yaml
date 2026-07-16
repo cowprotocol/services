@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - "playground/**"
+      - ".github/workflows/playground-check.yaml"
 
 jobs:
   playground-check:
@@ -18,7 +19,10 @@ jobs:
           - docker-compose.fork.yml
           - docker-compose.non-interactive.yml
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Healthy runs finish well under this (~22 min for the fork variant). If the job
+    # is taking close to this cap, it's likely going to fail, in which case it's
+    # better to fail fast instead of hanging.
+    timeout-minutes: 60
     env:
       FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
     steps:
@@ -50,22 +54,15 @@ jobs:
           sed -i -e 's/ETH_RPC_URL=.*/ETH_RPC_URL=$FORK_URL_MAINNET/g' playground/.env
           cat playground/.env
 
-      - name: Start docker containers
+      - name: Start docker containers and wait for readiness
         id: containers
         working-directory: playground
         run: |
           # firstly start explorer container to workaround yarn cache problem
           docker compose -f ${{ matrix.compose-file }} up -d explorer
-          docker compose -f ${{ matrix.compose-file }} up -d
-
-      - name: Wait for orderbook to be ready
-        # The fork variant compiles the workspace inside the containers after
-        # `up -d` returns, which takes far longer than the validation script's
-        # built-in 2 minute retry window.
-        working-directory: playground
-        run: |
-          timeout 3600 bash -c \
-            'until curl -sf -m 5 http://localhost:8080/api/v1/version > /dev/null; do sleep 30; done'
+          # --wait blocks on the healthchecks before the test runs. Fork builds
+          # the services in-container (~20 min), so the timeout matches start_period.
+          docker compose -f ${{ matrix.compose-file }} up -d --wait --wait-timeout 2700
 
       - name: Execute validation script
         id: test_script
