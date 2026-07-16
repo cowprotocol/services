@@ -7,7 +7,7 @@
 endpoint = "https://api.jup.ag"
 # API key from the Jupiter developer portal (or Triton). Omit only for lite-api.
 api-key = "your-jupiter-api-key"
-# Slippage tolerance encoded into each quote request, as a percent.
-slippage = "0.5"
+# Slippage tolerance in basis points, sent to Jupiter as slippageBps. 50 = 0.5%.
+slippage-bps = 50
 # Buy orders quote via Jupiter ExactOut, which is route-limited. Off by default.
 enable-buy-orders = false

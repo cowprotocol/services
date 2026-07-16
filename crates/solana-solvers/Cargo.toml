@@ -14,17 +14,14 @@ name = "solana-solvers"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = { workspace = true }
 axum = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 observe = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread", "signal"] }
 toml = { workspace = true }
-tower = { workspace = true }
-tower-http = { workspace = true, features = ["limit", "trace"] }
+tower-http = { workspace = true, features = ["limit"] }
 tracing = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 

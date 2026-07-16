@@ -24,8 +24,9 @@ pub struct JupiterConfig {
     #[serde(default)]
     pub api_key: Option<String>,
 
-    /// Slippage tolerance encoded into each quote request, as a percent string.
-    pub slippage: String,
+    /// Slippage tolerance in basis points, sent to Jupiter as `slippageBps`.
+    /// 50 = 0.5%.
+    pub slippage_bps: u16,
 
     /// Whether buy orders (Jupiter `ExactOut`) are served. Off by default.
     #[serde(default)]
@@ -53,7 +54,7 @@ mod tests {
         let config: Config =
             toml::from_str(include_str!("../config/example.jupiter.toml")).unwrap();
         assert_eq!(config.dex.endpoint.as_str(), "https://api.jup.ag/");
-        assert_eq!(config.dex.slippage, "0.5");
+        assert_eq!(config.dex.slippage_bps, 50);
         assert!(!config.dex.enable_buy_orders);
         assert!(config.dex.api_key.is_some());
     }
@@ -63,7 +64,7 @@ mod tests {
         let toml = r#"
 [dex]
 endpoint = "https://api.jup.ag"
-slippage = "0.5"
+slippage-bps = 50
 bogus = true
 "#;
         assert!(toml::from_str::<Config>(toml).is_err());
