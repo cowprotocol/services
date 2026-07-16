@@ -716,7 +716,8 @@ mod tests {
                 trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
-                    ..Default::default()
+                    from: Default::default(),
+                    calls: Default::default(),
                 },
                 ..Default::default()
             },
@@ -823,7 +824,8 @@ mod tests {
                 trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
-                    ..Default::default()
+                    from: Default::default(),
+                    calls: Default::default(),
                 },
                 ..Default::default()
             },
@@ -963,7 +965,8 @@ mod tests {
                 trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
-                    ..Default::default()
+                    from: Default::default(),
+                    calls: Default::default(),
                 },
                 ..Default::default()
             },
@@ -1136,7 +1139,8 @@ mod tests {
                 trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
-                    ..Default::default()
+                    from: Default::default(),
+                    calls: Default::default(),
                 },
                 ..Default::default()
             },
@@ -1314,7 +1318,8 @@ mod tests {
                 trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
-                    ..Default::default()
+                    from: Default::default(),
+                    calls: Default::default(),
                 },
                 ..Default::default()
             },
@@ -1539,7 +1544,8 @@ mod tests {
                 trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
-                    ..Default::default()
+                    from: Default::default(),
+                    calls: Default::default(),
                 },
                 ..Default::default()
             },
