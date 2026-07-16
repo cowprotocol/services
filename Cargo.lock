@@ -10832,6 +10832,7 @@ dependencies = [
  "anyhow",
  "axum 0.8.8",
  "clap",
+ "observe",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -10840,7 +10841,6 @@ dependencies = [
  "tower 0.5.3",
  "tower-http",
  "tracing",
- "tracing-subscriber",
  "url",
 ]
 

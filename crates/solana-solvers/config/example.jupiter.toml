@@ -1,13 +1,13 @@
 # Example Jupiter solver configuration.
+# Run with: solana-solvers jupiter --config <this file>
 
-[dex.jupiter]
-# Base URL of the swap API. Public Jupiter by default; point at Triton's
-# hosted Metis (and set api-key) to hedge against public rate limits.
+[dex]
+# Jupiter swap API base URL. Use api.jup.ag with an api-key, or a Triton-hosted
+# Metis endpoint. The keyless lite-api.jup.ag also works but is rate-limited.
 endpoint = "https://api.jup.ag"
+# API key from the Jupiter developer portal (or Triton). Omit only for lite-api.
+api-key = "your-jupiter-api-key"
 # Slippage tolerance encoded into each quote request, as a percent.
 slippage = "0.5"
 # Buy orders quote via Jupiter ExactOut, which is route-limited. Off by default.
 enable-buy-orders = false
-# Compute-unit estimate used when a quote response carries none.
-cu-default = 200000
-# api-key = "..."   # required only for Triton's hosted Metis

@@ -1,40 +1,57 @@
-//! Binary entry: parse args, load config, serve the `/solve` API.
+//! Binary entry: parse args, initialize observability, dispatch to the engine.
 
+#[cfg(unix)]
+use tokio::signal::unix::{self, SignalKind};
 use {
-    crate::{api::Api, config},
+    crate::{
+        api::Api,
+        cli::{Args, Command},
+        config,
+    },
     clap::Parser,
-    std::{net::SocketAddr, path::PathBuf},
 };
 
-/// Command-line arguments.
-#[derive(Parser, Debug)]
-#[clap(name = "solana-solvers")]
-pub struct Args {
-    /// Path to the TOML configuration file.
-    #[clap(long, env = "SOLANA_SOLVERS_CONFIG")]
-    pub config: PathBuf,
-
-    /// Socket address the HTTP API binds to.
-    #[clap(long, env = "SOLANA_SOLVERS_BIND", default_value = "0.0.0.0:7900")]
-    pub bind: SocketAddr,
-}
-
-/// Parse args and run the solver engine until shutdown.
+/// Parse args and run the selected solver engine until shutdown.
 pub async fn start(args: impl IntoIterator<Item = String>) {
+    observe::panic_hook::install();
     let args = Args::parse_from(args);
-    tracing_subscriber::fmt::init();
-    tracing::info!(?args, "starting solana-solvers");
 
-    let config = config::load(&args.config).await;
-    let api = Api {
-        addr: args.bind,
-        config,
-    };
-    if let Err(err) = api.serve(shutdown_signal()).await {
-        tracing::error!(?err, "server error");
+    let obs_config = observe::Config::new(
+        &args.log,
+        Some(tracing::Level::ERROR),
+        args.use_json_logs,
+        None,
+    );
+    observe::tracing::init::initialize_reentrant(&obs_config);
+    tracing::info!(version = %observe::version::git_version(), "running solana-solvers with {args:#?}");
+
+    match args.command {
+        Command::Jupiter { config: path } => {
+            let config = config::load(&path).await;
+            let api = Api {
+                addr: args.addr,
+                config,
+            };
+            if let Err(err) = api.serve(shutdown_signal()).await {
+                tracing::error!(?err, "server error");
+            }
+        }
     }
 }
 
+#[cfg(unix)]
 async fn shutdown_signal() {
-    let _ = tokio::signal::ctrl_c().await;
+    // Kubernetes sends SIGTERM; locally SIGINT (ctrl-c) is most common.
+    let mut interrupt = unix::signal(SignalKind::interrupt()).expect("install SIGINT handler");
+    let mut terminate = unix::signal(SignalKind::terminate()).expect("install SIGTERM handler");
+    tokio::select! {
+        _ = interrupt.recv() => (),
+        _ = terminate.recv() => (),
+    };
+}
+
+#[cfg(windows)]
+async fn shutdown_signal() {
+    // Signal handling is not supported on Windows.
+    std::future::pending().await
 }

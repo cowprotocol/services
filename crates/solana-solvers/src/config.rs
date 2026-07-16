@@ -1,44 +1,35 @@
 //! Solver-engine configuration.
-//!
-//! Mirrors the `crates/solvers` config shape: a `[dex]` table with a
-//! per-aggregator sub-table. Jupiter is the only backend at MVP.
 
 use {serde::Deserialize, std::path::Path, url::Url};
 
-/// Top-level configuration.
+/// Jupiter solver configuration.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
-    pub dex: DexConfig,
+    pub dex: JupiterConfig,
 }
 
-/// The `[dex]` table. One sub-table per aggregator backend.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct DexConfig {
-    pub jupiter: JupiterConfig,
-}
-
-/// The `[dex.jupiter]` sub-table.
+/// The `[dex]` table for the Jupiter backend. The subcommand selects the
+/// engine, so there is no per-aggregator sub-table.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct JupiterConfig {
-    /// Base URL of the Jupiter (or Triton-hosted) swap API.
+    /// Base URL of the Jupiter swap API (`api.jup.ag`) or a Triton-hosted Metis
+    /// endpoint.
     pub endpoint: Url,
 
-    /// API key. `None` for the public API, set for Triton's hosted Metis.
+    /// API key for the Jupiter API. Required for `api.jup.ag` (issued by the
+    /// Jupiter developer portal) and for Triton. Omit only for the keyless
+    /// `lite-api.jup.ag` endpoint.
     #[serde(default)]
     pub api_key: Option<String>,
 
-    /// Slippage tolerance encoded into the quote request, as a percent string.
+    /// Slippage tolerance encoded into each quote request, as a percent string.
     pub slippage: String,
 
     /// Whether buy orders (Jupiter `ExactOut`) are served. Off by default.
     #[serde(default)]
     pub enable_buy_orders: bool,
-
-    /// Default compute-unit estimate used when a quote response carries none.
-    pub cu_default: u32,
 }
 
 /// Load and parse the TOML config file.
@@ -61,20 +52,18 @@ mod tests {
     fn parses_example_config() {
         let config: Config =
             toml::from_str(include_str!("../config/example.jupiter.toml")).unwrap();
-        assert_eq!(config.dex.jupiter.endpoint.as_str(), "https://api.jup.ag/");
-        assert_eq!(config.dex.jupiter.slippage, "0.5");
-        assert!(!config.dex.jupiter.enable_buy_orders);
-        assert_eq!(config.dex.jupiter.cu_default, 200_000);
-        assert!(config.dex.jupiter.api_key.is_none());
+        assert_eq!(config.dex.endpoint.as_str(), "https://api.jup.ag/");
+        assert_eq!(config.dex.slippage, "0.5");
+        assert!(!config.dex.enable_buy_orders);
+        assert!(config.dex.api_key.is_some());
     }
 
     #[test]
     fn rejects_unknown_keys() {
         let toml = r#"
-[dex.jupiter]
+[dex]
 endpoint = "https://api.jup.ag"
 slippage = "0.5"
-cu-default = 200000
 bogus = true
 "#;
         assert!(toml::from_str::<Config>(toml).is_err());
