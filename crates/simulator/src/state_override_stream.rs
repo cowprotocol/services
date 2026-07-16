@@ -126,8 +126,8 @@ struct Frame {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct VenueUpdate {
-    #[serde(rename = "stateOverride", alias = "state_override")]
     state_override: StateOverride,
 }
 
