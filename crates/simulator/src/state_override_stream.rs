@@ -115,13 +115,9 @@ impl OverrideResult {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 #[serde(rename_all = "camelCase")]
 struct Frame {
-    slot: Option<u64>,
     block_number: Option<u64>,
-    #[serde(default)]
-    timestamp: Option<u128>,
     // Venue keys are addresses flattened alongside the metadata fields above;
     // unknown non-address keys (e.g. future schema additions) are skipped by
     // the address parse inside the deserializer.
@@ -155,9 +151,9 @@ where
             A: serde::de::MapAccess<'de>,
         {
             let mut out = BTreeMap::new();
-            while let Some(key) = map.next_key::<String>()? {
+            while let Some(key) = map.next_key::<&str>()? {
                 let Ok(address) = key.parse::<Address>() else {
-                    let _: serde_json::Value = map.next_value()?;
+                    map.next_value::<serde::de::IgnoredAny>()?;
                     continue;
                 };
                 out.insert(address, map.next_value::<VenueUpdate>()?);
@@ -304,9 +300,7 @@ mod tests {
         let mut venues = BTreeMap::new();
         venues.insert(venue, VenueUpdate { state_override });
         Frame {
-            slot: None,
             block_number: None,
-            timestamp: None,
             venues,
         }
     }
@@ -519,7 +513,6 @@ mod tests {
     fn parses_real_titan_frames() {
         let fermi: Frame = serde_json::from_str(FERMI_FRAME).unwrap();
         assert_eq!(fermi.block_number, Some(25475333));
-        assert_eq!(fermi.slot, Some(14711587));
         assert_eq!(fermi.venues.len(), 1);
 
         let mut overrides = StateOverride::default();
