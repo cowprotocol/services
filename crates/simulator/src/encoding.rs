@@ -499,13 +499,10 @@ pub(crate) async fn finish_simulation_builder(
         && let Some(stream) = builder.simulator.0.simulation_overrides.as_ref()
         && let Some(state_overrides) = stream.current()
     {
-        for (account, state) in state_overrides.iter() {
+        for (account, state) in state_overrides {
             builder
                 .account_override_requests
-                .push(AccountOverrideRequest::Custom {
-                    account: *account,
-                    state: state.clone(),
-                });
+                .push(AccountOverrideRequest::Custom { account, state });
         }
     }
 
