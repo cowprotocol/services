@@ -22,6 +22,7 @@ use {
     tracing::{debug, warn},
 };
 
+/// State overrides delivered some point in time.
 #[derive(Clone)]
 struct Snapshot {
     overrides: StateOverride,
@@ -65,52 +66,8 @@ impl SimulationOverrides {
             Metrics::get().record_override_result(OverrideResult::Stale);
             return None;
         }
-        Metrics::get().record_override_result(OverrideResult::Applied);
+        Metrics::get().record_override_result(OverrideResult::Fresh);
         Some(snapshot.overrides.clone())
-    }
-}
-
-#[derive(prometheus_metric_storage::MetricStorage)]
-struct Metrics {
-    /// Total state-override frames received from the websocket.
-    frames_received: IntCounter,
-    /// Frames that failed to parse.
-    parse_failures: IntCounter,
-    /// Reconnect attempts.
-    reconnects: IntCounter,
-    /// Cross-venue override conflicts (no longer incremented; latest frame
-    /// wins per account via insert, but kept for metric stability).
-    merge_conflicts: IntCounter,
-    /// Accounts in the merged state-override snapshot.
-    venue_count: IntGauge,
-    /// Gas simulations by whether overrides were applied.
-    #[metric(labels("result"))]
-    simulations_with_overrides: IntCounterVec,
-}
-
-impl Metrics {
-    fn get() -> &'static Metrics {
-        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
-    }
-
-    fn record_override_result(&self, result: OverrideResult) {
-        self.simulations_with_overrides
-            .with_label_values(&[result.as_str()])
-            .inc();
-    }
-}
-
-enum OverrideResult {
-    Applied,
-    Stale,
-}
-
-impl OverrideResult {
-    const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Applied => "applied",
-            Self::Stale => "stale",
-        }
     }
 }
 
@@ -165,6 +122,8 @@ where
     deserializer.deserialize_map(Vis)
 }
 
+/// Spawns a new background task that streams state override updates
+/// into the return [`SimulationOverrides`] instance.
 pub fn spawn(cfg: &Config, current_block: CurrentBlockWatcher) -> SimulationOverrides {
     let (sender, receiver) = watch::channel(Snapshot {
         overrides: StateOverride::default(),
@@ -251,11 +210,58 @@ fn apply_frame(overrides: &mut StateOverride, frame: Frame) {
 
 fn publish(overrides: &StateOverride, block_number: u64, sender: &watch::Sender<Snapshot>) {
     Metrics::get().venue_count.set(overrides.len() as i64);
-    let _ = sender.send(Snapshot {
+    let snapshot = Snapshot {
         overrides: overrides.clone(),
         block_number,
         received_at: Some(Instant::now()),
-    });
+    };
+    if let Err(err) = sender.send(snapshot) {
+        tracing::warn!(?err, "receiver of state override updates dropped");
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Total state-override frames received from the websocket.
+    frames_received: IntCounter,
+    /// Frames that failed to parse.
+    parse_failures: IntCounter,
+    /// Reconnect attempts.
+    reconnects: IntCounter,
+    /// Cross-venue override conflicts (no longer incremented; latest frame
+    /// wins per account via insert, but kept for metric stability).
+    merge_conflicts: IntCounter,
+    /// Accounts in the merged state-override snapshot.
+    venue_count: IntGauge,
+    /// Gas simulations by whether overrides were applied.
+    #[metric(labels("result"))]
+    simulations_with_overrides: IntCounterVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Metrics {
+        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+    }
+
+    fn record_override_result(&self, result: OverrideResult) {
+        self.simulations_with_overrides
+            .with_label_values(&[result.as_str()])
+            .inc();
+    }
+}
+
+enum OverrideResult {
+    Fresh,
+    Stale,
+}
+
+impl OverrideResult {
+    const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Fresh => "fresh",
+            Self::Stale => "stale",
+        }
+    }
 }
 
 #[cfg(test)]

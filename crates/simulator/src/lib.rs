@@ -8,6 +8,7 @@ mod utils;
 
 use {
     crate::state_override_stream::SimulationOverrides,
+    alloy_primitives::Address,
     eth_domain_types::{self as eth, AccessList, Tx},
     http_client::HttpClientFactory,
     observe::future::Measure,
@@ -76,16 +77,28 @@ impl Simulator {
         self.simulation_overrides = Some(overrides);
     }
 
-    /// Simulate the access list needed by a transaction. If the transaction
-    /// already has an access list, the returned access list will be a
-    /// superset of the existing one.
-    pub async fn access_list(&self, tx: &Tx) -> Result<AccessList, Error> {
+    /// Computes access list for sending native eth to the given receiver.
+    /// This access list may be needed to make sending ETH to smart contract
+    /// wallets possible.
+    pub async fn access_list_for_eth_transfer(
+        &self,
+        from: Address,
+        to: Address,
+    ) -> Result<AccessList, Error> {
+        let tx = eth::Tx {
+            from,
+            to,
+            value: 1.into(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
         if self.disable_access_lists {
-            return Ok(tx.access_list.clone());
+            return Ok(Default::default());
         }
         let block = self.eth.current_block().borrow().number.into();
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
+                // function assumes `from` has the needed ETH so no state overrides are needed
                 tenderly
                     .simulate(tx.clone(), block, None, tenderly::GenerateAccessList::Yes)
                     .await

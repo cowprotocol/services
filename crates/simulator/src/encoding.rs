@@ -491,10 +491,14 @@ pub(crate) async fn finish_simulation_builder(
         None => return Err(BuildError::NoSolver),
     };
 
-    // Streamed overrides are appended as Custom requests so
-    // build_final_state_overrides' merge arbitrates against the verifier's own.
-    // Only latest-block simulations get overrides; historical-block sims replay
-    // against a pinned block whose pAMM state is not the live stream's.
+    // We only apply the latest state override of propAMMs when simulating
+    // on the tip of the chain. When simulating on any older blocks we don't
+    // have historic data. Block builders might not update the propAMM state
+    // if nobody uses it in a block so it's theoretically possible that the
+    // propAMM state when simulated on historic blocks is slightly different
+    // from what you would have gotten if you actually traded with the propAMM
+    // on that block but we can't do anything about it and most likely the
+    // price is close enough to not affect the simulation.
     if matches!(builder.block, Block::Latest)
         && let Some(stream) = builder.simulator.0.simulation_overrides.as_ref()
         && let Some(state_overrides) = stream.current()

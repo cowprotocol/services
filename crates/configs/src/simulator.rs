@@ -33,15 +33,13 @@ pub struct Config {
 
     /// Optional background websocket stream of eth_call-style state override
     /// sets, applied on top of latest state during settlement gas estimation.
-    /// When absent, no stream task is spawned and behavior is unchanged.
     #[serde(default)]
     pub state_override_stream: Option<StateOverrideStream>,
 }
 
 /// Configuration for a background websocket stream delivering eth_call-style
-/// state override sets (the standard Ethereum State Override Set wire format),
-/// so live-quote venues (e.g. pAMMs) simulate against current in-memory state
-/// rather than stale previous-block state.
+/// state overrides, so live-quote venues (e.g. pAMMs) simulate against current
+/// in-memory state rather than stale previous-block state.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct StateOverrideStream {
