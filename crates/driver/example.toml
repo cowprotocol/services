@@ -111,3 +111,10 @@ max-order-age = "1m"
 # base-url = "https://api.liquorice.tech/"
 # api-key = "..."
 # http_timeout = "10s"
+
+# Optional background websocket stream of # eth_call-style state overrides,
+# so live-quote venues (e.g. pAMMs) simulate against current in-memory state.
+# When absent, no stream task is spawned and behavior is unchanged.
+# [simulator.state-override-stream]
+# ws-url = "wss://eu.rpc.titanbuilder.xyz/ws/pamm_quote_stream"
+# max-age = "5s" # ignore the snapshot if the last frame is older than this

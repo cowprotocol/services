@@ -4552,6 +4552,7 @@ dependencies = [
  "axum 0.8.8",
  "balance-overrides",
  "bigdecimal",
+ "chain",
  "chrono",
  "clap",
  "configs",
@@ -4563,6 +4564,7 @@ dependencies = [
  "eth-domain-types",
  "ethrpc",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "itertools 0.14.0",
  "liquidity-sources",
@@ -9344,6 +9346,7 @@ dependencies = [
  "testlib",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-tungstenite",
  "tracing",
  "url",
 ]
