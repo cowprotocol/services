@@ -18,9 +18,8 @@ pub struct JupiterConfig {
     /// endpoint.
     pub endpoint: Url,
 
-    /// API key for the Jupiter API. Required for `api.jup.ag` (issued by the
-    /// Jupiter developer portal) and for Triton. Omit only for the keyless
-    /// `lite-api.jup.ag` endpoint.
+    /// API key from the Jupiter developer portal (or Triton). Requests work
+    /// without one but are heavily rate-limited, so set it for production.
     #[serde(default)]
     pub api_key: Option<String>,
 
