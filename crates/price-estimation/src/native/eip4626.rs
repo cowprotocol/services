@@ -53,10 +53,9 @@ use {
 /// - per-atom factor: `1_100_000 / 10^18 == 1.1e-12`
 /// - if USDC's native price is `x`, then ynUSDx's is `x * 1.1e-12`
 ///
-/// Tokens that don't classify as usable vaults — `asset()` reverts, or it
-/// succeeds but a method the pricing relies on (`decimals()`,
-/// `convertToAssets()`) reverts — are remembered in a negative cache so
-/// subsequent requests skip the RPC and go straight to the inner estimator.
+/// Tokens that don't classify as usable vaults are remembered in a negative
+/// cache so subsequent requests skip the RPC and go straight to the inner
+/// estimator.
 pub struct Eip4626 {
     inner: Box<dyn NativePriceEstimating>,
     provider: AlloyProvider,
@@ -133,7 +132,7 @@ impl Eip4626 {
             return Ok(None);
         };
 
-        //  Some tokens expose `asset()` yet revert here (e.g. a partial EIP-4626
+        // Some tokens expose `asset()` yet revert here (e.g. a partial EIP-4626
         // implementation). Treat those as plain ERC-20s.
         let Some(assets) = self.fetch_conversion_data(token, vault_decimals).await? else {
             self.mark_non_vault(token);
