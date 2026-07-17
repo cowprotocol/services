@@ -53,13 +53,15 @@ use {
 /// - per-atom factor: `1_100_000 / 10^18 == 1.1e-12`
 /// - if USDC's native price is `x`, then ynUSDx's is `x * 1.1e-12`
 ///
-/// Tokens whose `asset()` call reverts are remembered in a negative cache so
+/// Tokens that don't classify as usable vaults — `asset()` reverts, or it
+/// succeeds but a method the pricing relies on (`decimals()`,
+/// `convertToAssets()`) reverts — are remembered in a negative cache so
 /// subsequent requests skip the RPC and go straight to the inner estimator.
 pub struct Eip4626 {
     inner: Box<dyn NativePriceEstimating>,
     provider: AlloyProvider,
-    /// Addresses that are known *not* to be EIP-4626 vaults (i.e. `asset()`
-    /// reverted). Checked before making any RPC calls.
+    /// Addresses that are known *not* to be (usable) EIP-4626 vaults. Checked
+    /// before making any RPC calls.
     non_vault_tokens: DashSet<Address>,
 }
 
@@ -126,17 +128,31 @@ impl Eip4626 {
         }
 
         let Some((asset, vault_decimals)) = self.fetch_vault_info(token).await? else {
-            self.non_vault_tokens.insert(token);
-            metrics::non_vault_cache_size(self.non_vault_tokens.len());
+            self.mark_non_vault(token);
             tracing::debug!(%token, "eip4626: classified as non-vault");
             return Ok(None);
         };
-        let assets = self.fetch_conversion_data(token, vault_decimals).await?;
+
+        //  Some tokens expose `asset()` yet revert here (e.g. a partial EIP-4626
+        // implementation). Treat those as plain ERC-20s.
+        let Some(assets) = self.fetch_conversion_data(token, vault_decimals).await? else {
+            self.mark_non_vault(token);
+            tracing::debug!(%token, "eip4626: convertToAssets() reverts, classified as non-vault");
+            return Ok(None);
+        };
+
         let rate = conversion_rate(assets, vault_decimals)
             .context("conversion rate is not representable as f64")
             .map_err(PriceEstimationError::EstimatorInternal)?;
         tracing::debug!(%token, %asset, rate, "eip4626: unwrapped vault layer");
         Ok(Some((asset, rate)))
+    }
+
+    /// Records `token` in the negative cache so subsequent requests skip the
+    /// RPC probing and delegate straight to the inner estimator.
+    fn mark_non_vault(&self, token: Address) {
+        self.non_vault_tokens.insert(token);
+        metrics::non_vault_cache_size(self.non_vault_tokens.len());
     }
 
     /// Fetches the vault's underlying asset address and vault token decimals.
@@ -178,11 +194,18 @@ impl Eip4626 {
 
     /// Fetches `convertToAssets(10^vault_decimals)` — how many atomic units of
     /// the underlying asset correspond to one full vault token.
+    ///
+    /// Returns:
+    /// - `Ok(Some(assets))` on success.
+    /// - `Ok(None)` when `convertToAssets()` reverts. The caller must not treat
+    ///   it as a vault.
+    /// - `Err` on transient transport failures, so they retry instead of
+    ///   pinning the token as non-vault.
     async fn fetch_conversion_data(
         &self,
         token: Address,
         vault_decimals: u8,
-    ) -> Result<U256, PriceEstimationError> {
+    ) -> Result<Option<U256>, PriceEstimationError> {
         let one_token = U256::from(10u64)
             .checked_pow(U256::from(vault_decimals))
             .ok_or_else(|| {
@@ -192,15 +215,13 @@ impl Eip4626 {
             })?;
 
         let vault = IERC4626::IERC4626::new(token, &self.provider);
-        vault
-            .convertToAssets(one_token)
-            .call()
-            .await
-            .map_err(|err| {
-                PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                    "failed to call convertToAssets() on {token}: {err}"
-                ))
-            })
+        match vault.convertToAssets(one_token).call().await {
+            Ok(assets) => Ok(Some(assets)),
+            Err(err) if err.is_contract_revert() => Ok(None),
+            Err(err) => Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                "failed to call convertToAssets() on {token}: {err}"
+            ))),
+        }
     }
 }
 
@@ -256,7 +277,7 @@ mod tests {
     use {
         super::*,
         crate::{HEALTHY_PRICE_ESTIMATION_TIME, native::MockNativePriceEstimating},
-        alloy::providers::mock::Asserter,
+        alloy::{providers::mock::Asserter, sol_types::SolCall},
         std::borrow::Cow,
     };
 
@@ -373,5 +394,35 @@ mod tests {
             .estimate(token, HEALTHY_PRICE_ESTIMATION_TIME)
             .await;
         assert_eq!(result.unwrap(), expected_price);
+    }
+
+    #[tokio::test]
+    async fn reverting_convert_to_assets_is_treated_as_non_vault() {
+        let token = Address::repeat_byte(0x11);
+        let underlying = Address::repeat_byte(0x22);
+        let expected_price = 1.5;
+
+        let mut inner = MockNativePriceEstimating::new();
+        inner
+            .expect_estimate_native_price()
+            .withf(move |t, _| *t == token)
+            .returning(move |_, _| Box::pin(async move { Ok(expected_price) }));
+
+        let asserter = Asserter::new();
+        asserter.push_success(&IERC4626::IERC4626::assetCall::abi_encode_returns(
+            &underlying,
+        ));
+        asserter.push_success(&ERC20::ERC20::decimalsCall::abi_encode_returns(&6u8));
+        asserter.push_failure_msg("execution reverted");
+        let web3 = ethrpc::Web3::with_asserter(asserter);
+
+        let estimator = Eip4626::new(Box::new(inner), web3.provider);
+
+        let result = estimator
+            .estimate(token, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert_eq!(result.unwrap(), expected_price);
+        // The failed classification is cached so we don't re-probe on-chain.
+        assert!(estimator.non_vault_tokens.contains(&token));
     }
 }
