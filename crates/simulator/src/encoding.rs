@@ -490,6 +490,26 @@ pub(crate) async fn finish_simulation_builder(
         }
         None => return Err(BuildError::NoSolver),
     };
+
+    // We only apply the latest state override of propAMMs when simulating
+    // on the tip of the chain. When simulating on any older blocks we don't
+    // have historic data. Block builders might not update the propAMM state
+    // if nobody uses it in a block so it's theoretically possible that the
+    // propAMM state when simulated on historic blocks is slightly different
+    // from what you would have gotten if you actually traded with the propAMM
+    // on that block but we can't do anything about it and most likely the
+    // price is close enough to not affect the simulation.
+    if matches!(builder.block, Block::Latest)
+        && let Some(stream) = builder.simulator.0.simulation_overrides.as_ref()
+        && let Some(state_overrides) = stream.current()
+    {
+        for (account, state) in state_overrides {
+            builder
+                .account_override_requests
+                .push(AccountOverrideRequest::Custom { account, state });
+        }
+    }
+
     let (state_overrides, state_override_errors) = build_final_state_overrides(
         builder.account_override_requests,
         builder.simulator.0.state_overrides.as_ref(),
