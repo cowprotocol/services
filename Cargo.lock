@@ -10829,6 +10829,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-solvers"
+version = "0.1.0"
+dependencies = [
+ "axum 0.8.8",
+ "clap",
+ "observe",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tower-http",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "solana-stable-layout"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
