@@ -1,8 +1,7 @@
 //! HTTP API for the solver engine.
 //!
-//! Serves the `/solve` contract the driver calls. At this stage the handler is
-//! a scaffold: it accepts any auction and returns no solutions. Real quoting
-//! and solution assembly land in later PRs.
+//! Serves the `/solve` contract the driver calls. The handler is a scaffold: it
+//! accepts any auction and returns no solutions.
 
 use {
     crate::config::Config,
@@ -49,10 +48,8 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// Scaffold `/solve`: accept any auction, return no solutions. The real solve
-/// loop wraps each order's Jupiter quote into a single-order solution (later
-/// PRs); until then the driver wiring can be exercised end to end against an
-/// empty result.
+/// Scaffold `/solve`: accepts any auction and returns no solutions, so the
+/// driver wiring can be exercised against an empty result.
 async fn solve(State(_config): State<Arc<Config>>, Json(_auction): Json<Value>) -> Json<Value> {
     Json(json!({ "solutions": [] }))
 }

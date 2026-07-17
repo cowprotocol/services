@@ -34,6 +34,5 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
-    // Baseline (self-indexed on-chain liquidity) lands when the driver's
-    // liquidity module unfreezes.
+    // TODO: add a baseline engine subcommand.
 }
