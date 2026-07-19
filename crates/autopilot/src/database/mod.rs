@@ -104,6 +104,19 @@ impl Postgres {
 
         Ok(())
     }
+
+    /// Performs a `gin_clean_pending_list` over the
+    /// `competition_auctions_order_uids_gin` index.
+    pub async fn gin_clean_pending_list(&self) -> std::result::Result<(), sqlx::Error> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["gin_clean_pending_competition_auctions"])
+            .start_timer();
+        let mut ex = self.pool.acquire().await?;
+        ex.execute("SELECT gin_clean_pending_list('competition_auctions_order_uids_gin')")
+            .await
+            .map(|_| ())
+    }
 }
 
 async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {

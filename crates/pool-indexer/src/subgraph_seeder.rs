@@ -22,7 +22,7 @@ use {
     serde_json::{Value, json},
     sqlx::PgPool,
     std::time::Duration,
-    tracing::{info, instrument},
+    tracing::{info, instrument, warn},
     url::Url,
 };
 
@@ -451,11 +451,19 @@ fn parse_seeded_pool_state(
         return Ok(None);
     }
 
+    // The subgraph's derived `liquidity` can be negative or exceed `u128`, so it
+    // doesn't always parse. Clamp to 0 like the live indexer so the pool keeps a
+    // state row (and stays visible) with its correct on-chain price and tick.
+    let liquidity = pool.liquidity.parse::<u128>().unwrap_or_else(|_| {
+        warn!(pool = %pool.id, liquidity = %pool.liquidity, "clamping unparseable liquidity to 0");
+        0
+    });
+
     Ok(Some(PoolStateData {
         pool_address: address,
         block_number: snapshot_block,
         sqrt_price_x96: pool.sqrt_price.parse::<U160>().context("parse sqrtPrice")?,
-        liquidity: pool.liquidity.parse().context("parse liquidity")?,
+        liquidity,
         tick: tick.parse().context("parse tick")?,
     }))
 }

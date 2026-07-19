@@ -1,11 +1,22 @@
 use {
-    super::{Decoder, build_account_keys, relevant_instructions},
+    super::{
+        Decoder,
+        PLACEHOLDER_AMOUNT_RECEIVED,
+        PLACEHOLDER_AUCTION_ID,
+        ResolvedOrder,
+        build_account_keys,
+        decode_settlement,
+        relevant_instructions,
+    },
     crate::{
         persistence::Persistence,
         types::{
             Signature,
             channel::StreamUpdate,
+            events::{SettlementEvent, TradeDelta},
+            order::OrderUid,
             slot::Slot,
+            tx::TxContext,
             wire::{
                 CompiledInstruction,
                 InnerInstruction,
@@ -18,6 +29,11 @@ use {
         },
     },
     bytes::Bytes,
+    settlement_interface::{
+        Pubkey as InterfacePubkey,
+        SettlementInstruction,
+        data::intent::{EncodedOrderIntent, OrderIntent, OrderKind},
+    },
     solana_sdk::pubkey::Pubkey,
     tokio::sync::mpsc::Sender,
 };
@@ -261,6 +277,10 @@ fn stream_tx(slot: Slot, signature: Signature, settlement: Pubkey) -> StreamUpda
     }
 }
 
+/// Verifies the run loop drains buffered updates and returns Ok when the sender
+/// drops. It does not assert the decoded event yet: decode output is dropped
+/// until the persistence adapter lands, at which point this test should assert
+/// the emitted event.
 #[tokio::test]
 async fn run_drains_transactions_until_the_sender_drops() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
@@ -273,4 +293,148 @@ async fn run_drains_transactions_until_the_sender_drops() {
     drop(sender);
 
     assert!(decoder.run().await.is_ok());
+}
+
+/// A crafted `CreateOrder` decodes to `OrderCreated` with the real UID (the
+/// hash of the encoded intent), the intent's owner, and the `created_by`
+/// account resolved from the instruction's account list. The account-list owner
+/// differs from the intent owner, so this also pins that the event owner comes
+/// from the intent data, not the accounts.
+#[test]
+fn create_order_decodes_to_order_created() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let created_by = pubkey(12);
+    // Account list: [settlement(0), owner(1), created_by(2), order_pda(3),
+    // system(4)].
+    let account_keys = vec![settlement, pubkey(11), created_by, pubkey(13), pubkey(14)];
+
+    // Build the encoded intent through the interface's public API so the test
+    // hashes it independently of the decoder.
+    let intent = OrderIntent {
+        owner: InterfacePubkey::new_from_array([0x11; 32]),
+        buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
+        sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        sell_amount: 1_000,
+        buy_amount: 2_000,
+        valid_to: 42,
+        kind: OrderKind::Sell,
+        partially_fillable: false,
+        app_data: [0x44; 32],
+    };
+    let encoded = EncodedOrderIntent::from(&intent);
+    let intent_bytes: [u8; EncodedOrderIntent::SIZE] = (&encoded).into();
+    let mut data = vec![SettlementInstruction::CreateOrder.discriminator()];
+    data.extend_from_slice(&intent_bytes);
+
+    // CreateOrder accounts: [owner, created_by, order_pda, system].
+    let tx = tx_info(
+        account_keys,
+        vec![],
+        vec![],
+        vec![compiled(0, vec![1, 2, 3, 4], data)],
+        vec![],
+    );
+
+    let ctx = TxContext {
+        slot: Slot(5),
+        signature: signature(6),
+        account_keys: build_account_keys(&tx),
+        post_token_balances: vec![],
+    };
+    let instructions = relevant_instructions(&tx, &settlement, &solflow);
+    let events = decode_settlement(&instructions, &ctx, |_| None);
+
+    assert_eq!(
+        events,
+        vec![SettlementEvent::OrderCreated {
+            order_uid: OrderUid(intent.uid().to_bytes()),
+            owner: Pubkey::new_from_array([0x11; 32]),
+            created_by,
+        }]
+    );
+}
+
+/// A crafted `BeginSettle` + `FinalizeSettle` pair decodes to one
+/// `SettlementFinalized`: the real summed sell amount and the resolved order
+/// UID (via the injected map), with the auction id and buy-side amount left at
+/// their documented placeholders and the solver read as the fee payer.
+#[test]
+fn begin_and_finalize_settle_decode_to_settlement_finalized() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let solver = pubkey(10);
+    let order_pda = pubkey(20);
+    // Account list:
+    // [solver(0), settlement(1), sysvar(2), state(3), token(4), order_pda(5),
+    //  sell(6), dest0(7), dest1(8)].
+    let account_keys = vec![
+        solver,
+        settlement,
+        pubkey(22),
+        pubkey(23),
+        pubkey(24),
+        order_pda,
+        pubkey(26),
+        pubkey(27),
+        pubkey(28),
+    ];
+
+    // BeginSettle body: finalize index 1, one order, bump 0xAA, two transfers of
+    // 300 and 700 (sum 1000 = the sell-side amount withdrawn).
+    let mut begin_data = vec![SettlementInstruction::BeginSettle.discriminator()];
+    begin_data.extend_from_slice(&1u16.to_be_bytes());
+    begin_data.push(1);
+    begin_data.push(0xAA);
+    begin_data.push(2);
+    begin_data.extend_from_slice(&300u64.to_be_bytes());
+    begin_data.extend_from_slice(&700u64.to_be_bytes());
+
+    // FinalizeSettle body: begin index 0.
+    let mut finalize_data = vec![SettlementInstruction::FinalizeSettle.discriminator()];
+    finalize_data.extend_from_slice(&0u16.to_be_bytes());
+
+    let tx = tx_info(
+        account_keys,
+        vec![],
+        vec![],
+        vec![
+            // BeginSettle @ 0: sysvar, state, token, order_pda, sell, dest0, dest1.
+            compiled(1, vec![2, 3, 4, 5, 6, 7, 8], begin_data),
+            // FinalizeSettle @ 1: sysvar only.
+            compiled(1, vec![2], finalize_data),
+        ],
+        vec![],
+    );
+
+    let expected_uid = OrderUid([0x55; 32]);
+    let resolve_order = |pda: &Pubkey| {
+        (*pda == order_pda).then_some(ResolvedOrder {
+            order_uid: expected_uid,
+            order_fulfilled: true,
+        })
+    };
+
+    let ctx = TxContext {
+        slot: Slot(5),
+        signature: signature(6),
+        account_keys: build_account_keys(&tx),
+        post_token_balances: vec![],
+    };
+    let instructions = relevant_instructions(&tx, &settlement, &solflow);
+    let events = decode_settlement(&instructions, &ctx, resolve_order);
+
+    assert_eq!(
+        events,
+        vec![SettlementEvent::SettlementFinalized {
+            auction_id: PLACEHOLDER_AUCTION_ID,
+            solver,
+            tx_signature: signature(6),
+            slot: Slot(5),
+            trades: vec![TradeDelta {
+                order_uid: expected_uid,
+                amount_withdrawn_delta: 1_000,
+                amount_received_delta: PLACEHOLDER_AMOUNT_RECEIVED,
+                order_fulfilled: true,
+            }],
+        }]
+    );
 }

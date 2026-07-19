@@ -1,0 +1,29 @@
+[package]
+name = "solana-solvers"
+version = "0.1.0"
+edition = "2024"
+description = "Solana solver engines for CoW Protocol (Jupiter dex-wrapper)"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "solana_solvers"
+path = "src/lib.rs"
+
+[[bin]]
+name = "solana-solvers"
+path = "src/main.rs"
+
+[dependencies]
+axum = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+observe = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread", "signal"] }
+toml = { workspace = true }
+tower-http = { workspace = true, features = ["limit"] }
+tracing = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+
+[lints]
+workspace = true
