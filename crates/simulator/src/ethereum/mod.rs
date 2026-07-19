@@ -2,7 +2,7 @@ use {
     crate::ethereum::contracts::Contracts,
     alloy_primitives::U256,
     alloy_provider::{Provider, network::TransactionBuilder},
-    alloy_rpc_types::TransactionRequest,
+    alloy_rpc_types::{TransactionRequest, state::StateOverride},
     anyhow::{Result, anyhow},
     chain::Chain,
     eth_domain_types::AccessList,
@@ -120,7 +120,11 @@ impl Ethereum {
             .into())
     }
 
-    pub async fn estimate_gas<T>(&self, tx: T) -> Result<eth_domain_types::Gas, Error>
+    pub async fn estimate_gas<T>(
+        &self,
+        tx: T,
+        overrides: Option<StateOverride>,
+    ) -> Result<eth_domain_types::Gas, Error>
     where
         T: Into<TransactionRequest>,
     {
@@ -134,6 +138,7 @@ impl Ethereum {
             .web3
             .provider
             .estimate_gas(tx)
+            .overrides_opt(overrides)
             .pending()
             .await
             .map_err(Error::Rpc)?

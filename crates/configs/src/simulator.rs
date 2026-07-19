@@ -30,6 +30,29 @@ pub struct Config {
     /// - tenderly (using TenderlyConfig)
     #[serde(default)]
     pub kind: SimulatorKind,
+
+    /// Optional background websocket stream of eth_call-style state override
+    /// sets, applied on top of latest state during settlement gas estimation.
+    #[serde(default)]
+    pub state_override_stream: Option<StateOverrideStream>,
+}
+
+/// Configuration for a background websocket stream delivering eth_call-style
+/// state overrides, so live-quote venues (e.g. pAMMs) simulate against current
+/// in-memory state rather than stale previous-block state.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct StateOverrideStream {
+    /// Websocket URL pushing JSON frames of eth_call-style state overrides.
+    pub ws_url: Url,
+
+    /// Ignore the snapshot if the last frame is older than this.
+    #[serde(with = "humantime_serde", default = "default_override_max_age")]
+    pub max_age: Duration,
+}
+
+const fn default_override_max_age() -> Duration {
+    Duration::from_secs(5)
 }
 
 fn default_ethrpc_batch_delay() -> Duration {
@@ -206,5 +229,45 @@ mod tests {
             }
             _ => panic!("Config should be of type Tenderly"),
         };
+    }
+
+    #[test]
+    fn deserialize_state_override_stream_absent_by_default() {
+        let config: Config = toml::from_str("").unwrap();
+        assert!(config.state_override_stream.is_none());
+    }
+
+    #[test]
+    fn deserialize_state_override_stream_with_defaults() {
+        let toml = r#"
+        [state-override-stream]
+        ws-url = "wss://example.com/stream"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let stream = config.state_override_stream.unwrap();
+        assert_eq!(stream.ws_url.as_str(), "wss://example.com/stream");
+        assert_eq!(stream.max_age, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn deserialize_state_override_stream_full() {
+        let toml = r#"
+        [state-override-stream]
+        ws-url = "wss://example.com/stream"
+        max-age = "5s"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let stream = config.state_override_stream.unwrap();
+        assert_eq!(stream.max_age, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn deserialize_state_override_stream_rejects_unknown_fields() {
+        let toml = r#"
+        [state-override-stream]
+        ws-url = "wss://example.com/stream"
+        bogus = true
+        "#;
+        assert!(toml::from_str::<Config>(toml).is_err());
     }
 }
