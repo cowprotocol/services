@@ -399,6 +399,16 @@ impl Persistence {
         )
         .await?;
 
+        // Inserting into `competition_auctions` grows the pending list of its GIN
+        // index, which periodically causes DB latency spikes. Clean it right
+        // where the need originates, without blocking auction post-processing.
+        let postgres = self.postgres.clone();
+        tokio::spawn(async move {
+            if let Err(err) = postgres.gin_clean_pending_list().await {
+                tracing::warn!(?err, "failed to clean gin pending list");
+            }
+        });
+
         Ok(())
     }
 
