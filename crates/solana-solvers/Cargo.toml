@@ -15,10 +15,15 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { workspace = true }
+base64 = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 observe = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
+solana-sdk = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread", "signal"] }
 toml = { workspace = true }
 tower-http = { workspace = true, features = ["limit"] }

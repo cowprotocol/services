@@ -6,6 +6,7 @@
 pub mod api;
 mod cli;
 pub mod config;
+pub mod dex;
 mod run;
 
 pub use run::start;
