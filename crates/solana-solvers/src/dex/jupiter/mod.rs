@@ -1,7 +1,7 @@
 //! Jupiter swap-API adapter.
 //!
-//! v1 `/quote` + `/swap-instructions` (ExactIn). Triton is a base-URL and key
-//! swap behind the same adapter.
+//! v1 `/quote` + `/swap-instructions` (ExactIn for sells, ExactOut for buys).
+//! Triton is a base-URL and key swap behind the same adapter.
 
 mod dto;
 
@@ -14,12 +14,29 @@ use {
 const QUOTE_PATH: &str = "swap/v1/quote";
 const SWAP_INSTRUCTIONS_PATH: &str = "swap/v1/swap-instructions";
 
+/// Jupiter's quote direction, rendered as the `swapMode` query value.
+#[derive(Clone, Copy)]
+enum SwapMode {
+    ExactIn,
+    ExactOut,
+}
+
+impl SwapMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            SwapMode::ExactIn => "ExactIn",
+            SwapMode::ExactOut => "ExactOut",
+        }
+    }
+}
+
 /// Adapter over the Jupiter swap API.
 pub struct Jupiter {
     client: reqwest::Client,
     endpoint: reqwest::Url,
     api_key: Option<String>,
     slippage_bps: u16,
+    enable_buy_orders: bool,
 }
 
 impl Jupiter {
@@ -29,17 +46,19 @@ impl Jupiter {
             endpoint: config.endpoint.clone(),
             api_key: config.api_key.clone(),
             slippage_bps: config.slippage_bps,
+            enable_buy_orders: config.enable_buy_orders,
         })
     }
 
     /// Quote `order` for the settlement signer `taker` and return the swap to
     /// run inside the settlement transaction.
     pub async fn swap(&self, order: &Order, taker: &Pubkey) -> Result<Swap, Error> {
-        // Buy orders (ExactOut) aren't served here.
-        if order.side == Side::Buy {
-            return Err(Error::OrderNotSupported);
-        }
-        let quote = self.quote(order, "ExactIn").await?;
+        let swap_mode = match order.side {
+            Side::Sell => SwapMode::ExactIn,
+            Side::Buy if self.enable_buy_orders => SwapMode::ExactOut,
+            Side::Buy => return Err(Error::OrderNotSupported),
+        };
+        let quote = self.quote(order, swap_mode).await?;
         let in_amount = amount_field(&quote, "inAmount")?;
         let out_amount = amount_field(&quote, "outAmount")?;
         self.swap_instructions(&quote, taker, &order.buy_destination)
@@ -49,7 +68,7 @@ impl Jupiter {
 
     /// `GET /swap/v1/quote`. Kept opaque and passed back verbatim to
     /// `/swap-instructions`, we only read the amounts.
-    async fn quote(&self, order: &Order, swap_mode: &str) -> Result<serde_json::Value, Error> {
+    async fn quote(&self, order: &Order, swap_mode: SwapMode) -> Result<serde_json::Value, Error> {
         let mut url = self
             .endpoint
             .join(QUOTE_PATH)
@@ -58,7 +77,7 @@ impl Jupiter {
             .append_pair("inputMint", &order.sell_mint.to_string())
             .append_pair("outputMint", &order.buy_mint.to_string())
             .append_pair("amount", &order.amount.to_string())
-            .append_pair("swapMode", swap_mode)
+            .append_pair("swapMode", swap_mode.as_str())
             .append_pair("slippageBps", &self.slippage_bps.to_string());
         self.send(self.with_key(self.client.get(url))).await
     }
@@ -150,32 +169,29 @@ mod tests {
     const USDC: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
     const WSOL: &str = "So11111111111111111111111111111111111111112";
 
-    fn config() -> JupiterConfig {
+    fn config(enable_buy_orders: bool) -> JupiterConfig {
         JupiterConfig {
             endpoint: "https://api.jup.ag".parse().unwrap(),
             api_key: std::env::var("JUPITER_API_KEY").ok(),
             slippage_bps: 50,
+            enable_buy_orders,
         }
     }
 
-    fn sell_order() -> Order {
+    fn order(side: Side) -> Order {
         Order {
             sell_mint: Pubkey::from_str(USDC).unwrap(),
             buy_mint: Pubkey::from_str(WSOL).unwrap(),
             buy_destination: Pubkey::from_str(WSOL).unwrap(),
             amount: 1_000_000,
-            side: Side::Sell,
+            side,
         }
     }
 
     #[tokio::test]
-    async fn buy_unsupported() {
-        let jupiter = Jupiter::new(&config()).unwrap();
-        let order = Order {
-            side: Side::Buy,
-            ..sell_order()
-        };
-        let result = jupiter.swap(&order, &Pubkey::new_unique()).await;
+    async fn buy_disabled() {
+        let jupiter = Jupiter::new(&config(false)).unwrap();
+        let result = jupiter.swap(&order(Side::Buy), &Pubkey::new_unique()).await;
         assert!(matches!(result, Err(Error::OrderNotSupported)));
     }
 
@@ -184,15 +200,31 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn jupiter_live_sell() {
-        let jupiter = Jupiter::new(&config()).unwrap();
+        let jupiter = Jupiter::new(&config(false)).unwrap();
         // Any valid pubkey works for building instructions, the swap only runs
         // for real once the driver supplies its settlement signer.
         let swap = jupiter
-            .swap(&sell_order(), &Pubkey::from_str(WSOL).unwrap())
+            .swap(&order(Side::Sell), &Pubkey::from_str(WSOL).unwrap())
             .await
             .unwrap();
         assert_eq!(swap.in_amount, 1_000_000);
         assert!(swap.out_amount > 0);
+        assert!(!swap.instructions.is_empty());
+    }
+
+    /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
+    /// for headroom.
+    #[tokio::test]
+    #[ignore]
+    async fn jupiter_live_buy() {
+        let jupiter = Jupiter::new(&config(true)).unwrap();
+        // ExactOut: the swap delivers exactly the order's `amount` of buy mint.
+        let swap = jupiter
+            .swap(&order(Side::Buy), &Pubkey::from_str(WSOL).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(swap.out_amount, 1_000_000);
+        assert!(swap.in_amount > 0);
         assert!(!swap.instructions.is_empty());
     }
 }

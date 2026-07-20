@@ -25,6 +25,10 @@ pub struct JupiterConfig {
     /// Slippage tolerance in basis points, sent to Jupiter as `slippageBps`.
     /// 50 = 0.5%.
     pub slippage_bps: u16,
+
+    /// Serve buy orders via ExactOut swaps. Off by default.
+    #[serde(default)]
+    pub enable_buy_orders: bool,
 }
 
 /// Load and parse the TOML config file.
@@ -50,6 +54,7 @@ mod tests {
         assert_eq!(config.dex.endpoint.as_str(), "https://api.jup.ag/");
         assert_eq!(config.dex.slippage_bps, 50);
         assert!(config.dex.api_key.is_some());
+        assert!(!config.dex.enable_buy_orders);
     }
 
     #[test]
