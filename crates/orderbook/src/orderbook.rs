@@ -553,7 +553,7 @@ impl Orderbook {
                         }),
                     });
                     dto::order::SolutionInclusion {
-                        solver: solution.solver,
+                        solver: solution.solver_address,
                         executed_amounts,
                     }
                 })

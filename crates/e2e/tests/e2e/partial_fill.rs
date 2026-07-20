@@ -123,6 +123,6 @@ async fn test(web3: Web3) {
         panic!("last status of order was not traded");
     };
     assert_eq!(solutions.len(), 1);
-    assert_eq!(solutions[0].solver, "test_solver");
+    assert_eq!(solutions[0].solver, solver.address().to_string());
     assert!(solutions[0].executed_amounts.is_some());
 }
