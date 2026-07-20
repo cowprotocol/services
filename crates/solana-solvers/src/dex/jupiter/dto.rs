@@ -14,8 +14,7 @@ use {
     std::str::FromStr,
 };
 
-/// Body of the `/swap-instructions` request. `Pubkey`'s default serialization
-/// is a byte array, so the pubkeys serialize via their base58 `Display`.
+/// Body of the `/swap-instructions` request.
 #[serde_as]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
