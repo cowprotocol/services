@@ -265,31 +265,6 @@ impl Mempools {
             "submitting settlement tx"
         );
 
-        // Proactively check the signer can cover the gas before broadcasting, so an
-        // underfunded account falls back to another one without a wasted submission
-        // (issue #4541). A failed balance lookup is not authoritative, so proceed
-        // and let the node decide.
-        let required_balance = settlement
-            .gas
-            .required_balance(eth::U256::from(final_gas_price.max_fee_per_gas));
-        match self.ethereum.balance(signer).await {
-            Ok(balance) if balance < required_balance => {
-                tracing::warn!(
-                    ?signer,
-                    ?balance,
-                    ?required_balance,
-                    "submission account balance too low for gas, falling back"
-                );
-                return Err(Error::SubmitterUnusable(AccountFailure::InsufficientFunds));
-            }
-            Ok(_) => {}
-            Err(err) => tracing::warn!(
-                ?signer,
-                ?err,
-                "could not check submission account balance before submitting"
-            ),
-        }
-
         let hash = mempool
             .submit(
                 tx.clone(),
