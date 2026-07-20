@@ -286,6 +286,12 @@ impl PoolIndexerClient {
 
 #[async_trait]
 impl V3PoolDataSource for PoolIndexerClient {
+    /// The indexer serves at-head from its own DB, so an on-demand fetch is
+    /// cheap enough for the quote path.
+    fn serves_on_demand(&self) -> bool {
+        true
+    }
+
     async fn get_registered_pools(&self, target_block: BlockTarget) -> Result<RegisteredPools> {
         self.wait_until(target_block).await?;
         // The indexer can advance between pages, so each pool carries the

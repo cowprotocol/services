@@ -298,6 +298,23 @@ impl PoolsCheckpointHandler {
             .collect())
     }
 
+    /// Fetches the given missing pools at the source's head, but only when the
+    /// source can serve that cheaply ([`V3PoolDataSource::serves_on_demand`],
+    /// i.e. the indexer). For the subgraph this is a no-op: the misses are
+    /// already recorded for the maintenance run, and a synchronous at-head
+    /// fetch there does a safe-block lookup + paginated pool/tick queries
+    /// per pair and would stall quotes on a cold cache. A fetch failure
+    /// yields fewer pools rather than failing the whole quote.
+    async fn fetch_missing_on_demand(&self, missing: &[Address]) -> Vec<(Address, Arc<PoolInfo>)> {
+        if missing.is_empty() || !self.source.serves_on_demand() {
+            return Vec::new();
+        }
+        self.fetch_pools(missing, BlockTarget::Latest)
+            .await
+            .inspect_err(|err| tracing::debug!(?err, "on-demand pool fetch failed"))
+            .unwrap_or_default()
+    }
+
     /// Fetches the pools flagged missing by `get` at the checkpoint block and
     /// caches them. Runs from periodic maintenance.
     async fn update_missing_pools(&self) -> Result<()> {
@@ -465,21 +482,13 @@ impl PoolFetching for UniswapV3PoolFetcher {
         }
 
         // The warm cache only holds the top pools by raw liquidity, so many
-        // registered pairs are absent. Fetch the missing ones at the source's
-        // latest block rather than the checkpoint block: the checkpoint tracks
-        // latest-minus-reorg and can sit ahead of the finalized head the indexer
-        // serves, so waiting on it would hang the quote. They come back current,
-        // so merge after the replay instead of replaying them. A fetch failure
-        // just yields fewer pools rather than failing the whole quote.
-        if !missing.is_empty() {
-            let fetched = self
-                .checkpoint
-                .fetch_pools(&missing, BlockTarget::Latest)
-                .await
-                .inspect_err(|err| tracing::debug!(?err, "on-demand pool fetch failed"))
-                .unwrap_or_default();
-            checkpoint.extend(fetched);
-        }
+        // registered pairs are absent. When the source can serve them cheaply
+        // (the indexer), fetch the misses at its head — not the checkpoint block,
+        // which tracks latest-minus-reorg and can sit ahead of the indexer's
+        // served head, so waiting on it would hang the quote. They come back
+        // current, so merge after the replay instead of replaying them. For the
+        // subgraph this is a no-op and the misses wait for the maintenance run.
+        checkpoint.extend(self.checkpoint.fetch_missing_on_demand(&missing).await);
 
         // return only pools which current liquidity is positive
         Ok(checkpoint
@@ -809,6 +818,7 @@ mod tests {
     struct StubSource {
         with_ticks: HashMap<Address, PoolData>,
         served_block: u64,
+        serves_on_demand: bool,
     }
 
     impl StubSource {
@@ -816,12 +826,17 @@ mod tests {
             Self {
                 with_ticks: pools.into_iter().map(|p| (p.id, p)).collect(),
                 served_block: u64::MAX,
+                serves_on_demand: true,
             }
         }
     }
 
     #[async_trait::async_trait]
     impl V3PoolDataSource for StubSource {
+        fn serves_on_demand(&self) -> bool {
+            self.serves_on_demand
+        }
+
         async fn get_registered_pools(
             &self,
             _target_block: BlockTarget,
@@ -947,6 +962,32 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    /// The on-demand fetch runs only for sources that can serve it cheaply: an
+    /// indexer-capable source resolves the miss, a subgraph-capable one returns
+    /// nothing (the miss is left for the maintenance run).
+    #[tokio::test]
+    async fn fetch_missing_on_demand_gated_by_capability() {
+        let token0 = Address::with_last_byte(1);
+        let token1 = Address::with_last_byte(2);
+        let pool = Address::with_last_byte(9);
+        let checkpoint = || PoolsCheckpoint {
+            pools: HashMap::new(),
+            block_number: 100,
+            missing_pools: HashSet::new(),
+        };
+
+        let indexer = handler(
+            StubSource::new([pool_with_ticks(pool, token0, token1)]),
+            checkpoint(),
+        );
+        assert_eq!(indexer.fetch_missing_on_demand(&[pool]).await.len(), 1);
+
+        let mut subgraph_src = StubSource::new([pool_with_ticks(pool, token0, token1)]);
+        subgraph_src.serves_on_demand = false;
+        let subgraph = handler(subgraph_src, checkpoint());
+        assert!(subgraph.fetch_missing_on_demand(&[pool]).await.is_empty());
     }
 
     /// Unknown pairs have no registered pools, so `get` reports block 0 with
