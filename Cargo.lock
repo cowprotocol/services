@@ -10833,10 +10833,14 @@ name = "solana-solvers"
 version = "0.1.0"
 dependencies = [
  "axum 0.8.8",
+ "base64 0.22.1",
  "clap",
  "observe",
+ "reqwest 0.13.4",
  "serde",
  "serde_json",
+ "solana-sdk",
+ "thiserror 1.0.69",
  "tokio",
  "toml",
  "tower-http",
