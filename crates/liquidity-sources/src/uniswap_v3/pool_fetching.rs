@@ -298,6 +298,23 @@ impl PoolsCheckpointHandler {
             .collect())
     }
 
+    /// Fetches `missing` at the source's head. Gated on
+    /// [`V3PoolDataSource::fetch_on_demand`], so it is a no-op for the
+    /// subgraph; those misses wait for the maintenance run instead. It
+    /// fetches at the head, not the checkpoint block: the checkpoint can
+    /// sit ahead of the indexer's served head, so waiting on it would hang
+    /// the quote. A failed fetch yields fewer pools rather than failing the
+    /// whole quote.
+    async fn fetch_missing_on_demand(&self, missing: &[Address]) -> Vec<(Address, Arc<PoolInfo>)> {
+        if missing.is_empty() || !self.source.fetch_on_demand() {
+            return Vec::new();
+        }
+        self.fetch_pools(missing, BlockTarget::Latest)
+            .await
+            .inspect_err(|err| tracing::debug!(?err, "on-demand pool fetch failed"))
+            .unwrap_or_default()
+    }
+
     /// Fetches the pools flagged missing by `get` at the checkpoint block and
     /// caches them. Runs from periodic maintenance.
     async fn update_missing_pools(&self) -> Result<()> {
@@ -464,22 +481,10 @@ impl PoolFetching for UniswapV3PoolFetcher {
             append_events(&mut checkpoint, events);
         }
 
-        // The warm cache only holds the top pools by raw liquidity, so many
-        // registered pairs are absent. Fetch the missing ones at the source's
-        // latest block rather than the checkpoint block: the checkpoint tracks
-        // latest-minus-reorg and can sit ahead of the finalized head the indexer
-        // serves, so waiting on it would hang the quote. They come back current,
-        // so merge after the replay instead of replaying them. A fetch failure
-        // just yields fewer pools rather than failing the whole quote.
-        if !missing.is_empty() {
-            let fetched = self
-                .checkpoint
-                .fetch_pools(&missing, BlockTarget::Latest)
-                .await
-                .inspect_err(|err| tracing::debug!(?err, "on-demand pool fetch failed"))
-                .unwrap_or_default();
-            checkpoint.extend(fetched);
-        }
+        // The warm cache holds only the top pools by liquidity, so many
+        // registered pairs are absent. Resolve those misses on-demand and merge
+        // them after the replay; they come back current, so they aren't replayed.
+        checkpoint.extend(self.checkpoint.fetch_missing_on_demand(&missing).await);
 
         // return only pools which current liquidity is positive
         Ok(checkpoint

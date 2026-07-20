@@ -42,6 +42,14 @@ pub trait V3PoolDataSource: Send + Sync + 'static {
         ids: &[Address],
         target_block: BlockTarget,
     ) -> Result<PoolsWithTicks>;
+
+    /// Whether a single at-head fetch is cheap enough for the quote path. True
+    /// for the indexer (a DB read); false for the subgraph, whose at-head fetch
+    /// does a safe-block lookup plus paginated pool/tick queries and would
+    /// stall quotes on a cold cache.
+    fn fetch_on_demand(&self) -> bool {
+        false
+    }
 }
 
 /// Which block a [`V3PoolDataSource`] anchors its snapshot to.
