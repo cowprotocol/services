@@ -6,6 +6,7 @@ use {
     crate::dex::Swap,
     base64::prelude::*,
     serde::{Deserialize, Serialize},
+    serde_with::serde_as,
     solana_sdk::{
         instruction::{AccountMeta, Instruction},
         pubkey::Pubkey,
@@ -13,14 +14,16 @@ use {
     std::str::FromStr,
 };
 
-/// Body of the `/swap-instructions` request.
+/// Body of the `/swap-instructions` request. `Pubkey`'s default serialization
+/// is a byte array, so the pubkeys serialize via their base58 `Display`.
+#[serde_as]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SwapInstructionsRequest<'a> {
     quote_response: &'a serde_json::Value,
-    #[serde(serialize_with = "as_base58")]
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     user_public_key: Pubkey,
-    #[serde(serialize_with = "as_base58")]
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     destination_token_account: Pubkey,
     wrap_and_unwrap_sol: bool,
     skip_user_accounts_rpc_calls: bool,
@@ -42,12 +45,6 @@ impl<'a> SwapInstructionsRequest<'a> {
             skip_user_accounts_rpc_calls: true,
         }
     }
-}
-
-/// Serialize a `Pubkey` as its base58 string. Jupiter expects strings, and
-/// `Pubkey`'s default serialization is a byte array.
-fn as_base58<S: serde::Serializer>(pubkey: &Pubkey, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&pubkey.to_string())
 }
 
 /// The parts of the `/swap-instructions` response we need to build a [`Swap`].

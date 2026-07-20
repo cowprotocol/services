@@ -10839,6 +10839,7 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serde_json",
+ "serde_with",
  "solana-sdk",
  "thiserror 1.0.69",
  "tokio",
