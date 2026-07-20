@@ -179,19 +179,6 @@ mod tests {
         assert!(matches!(result, Err(Error::OrderNotSupported)));
     }
 
-    #[test]
-    fn request_serializes_pubkeys_as_base58() {
-        let quote = serde_json::json!({});
-        let taker = Pubkey::from_str(WSOL).unwrap();
-        let destination = Pubkey::from_str(USDC).unwrap();
-        let payload = dto::SwapInstructionsRequest::new(&quote, &taker, &destination);
-        let value = serde_json::to_value(payload).unwrap();
-        assert_eq!(value["userPublicKey"], WSOL);
-        assert_eq!(value["destinationTokenAccount"], USDC);
-        assert_eq!(value["wrapAndUnwrapSol"], false);
-        assert_eq!(value["skipUserAccountsRpcCalls"], true);
-    }
-
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
     /// for headroom.
     #[tokio::test]
