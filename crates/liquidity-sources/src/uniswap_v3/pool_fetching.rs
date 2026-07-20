@@ -1,5 +1,6 @@
 use {
     super::{
+        BlockTarget,
         V3PoolDataSource,
         event_fetching::{RecentEventsCache, UniswapV3PoolEventFetcher},
         graph_api::{PoolData, Token},
@@ -20,6 +21,7 @@ use {
         event_handler::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
         maintenance::Maintaining,
     },
+    itertools::{Either, Itertools},
     model::TokenPair,
     num::rational::Ratio,
     number::serialization::HexOrDecimalU256,
@@ -132,6 +134,18 @@ struct PoolsCheckpointHandler {
     pools_checkpoint: Mutex<PoolsCheckpoint>,
 }
 
+/// What `get` finds for a set of token pairs against the checkpoint.
+#[derive(Default)]
+struct CachedPools {
+    /// Pools already present in the checkpoint cache.
+    pools: HashMap<Address, Arc<PoolInfo>>,
+    /// Registered pools not yet cached; fetched at the current block on the
+    /// quote path and folded into the cache by the next maintenance run.
+    missing: Vec<Address>,
+    /// Block the cached pools are anchored at (0 if no pools are registered).
+    block_number: u64,
+}
+
 impl PoolsCheckpointHandler {
     /// Fetches the list of existing UniswapV3 pools and their metadata (without
     /// state/ticks). Then fetches state/ticks for the deepest pools
@@ -154,7 +168,9 @@ impl PoolsCheckpointHandler {
             .await
             .context("read finalized block for snapshot target_block")?
             .number;
-        let mut registered_pools = source.get_registered_pools(target_block).await?;
+        let mut registered_pools = source
+            .get_registered_pools(BlockTarget::Number(target_block))
+            .await?;
         tracing::debug!(
             target_block,
             block = %registered_pools.fetched_block_number,
@@ -196,7 +212,10 @@ impl PoolsCheckpointHandler {
             .take(max_pools_to_initialize_cache)
             .collect::<Vec<_>>();
         let pools_with_ticks = source
-            .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)
+            .get_pools_with_ticks_by_ids(
+                &pool_ids,
+                BlockTarget::Number(registered_pools.fetched_block_number),
+            )
             .await?;
         let pools = pools_with_ticks
             .pools
@@ -222,81 +241,87 @@ impl PoolsCheckpointHandler {
         })
     }
 
-    /// For a given list of token pairs, fetches the pools for the ones that
-    /// exist in the checkpoint. For the ones that don't exist, flag as
-    /// missing and expect to exist after the next maintenance run.
-    fn get(&self, token_pairs: &HashSet<TokenPair>) -> (HashMap<Address, Arc<PoolInfo>>, u64) {
+    /// Returns cached pools for the pairs, plus the ids of any that exist but
+    /// aren't cached yet. Misses are recorded for the next maintenance run.
+    fn get(&self, token_pairs: &HashSet<TokenPair>) -> CachedPools {
         let mut pool_ids = token_pairs
             .iter()
             .filter_map(|pair| self.pools_by_token_pair.get(pair))
             .flatten()
             .peekable();
 
-        tracing::trace!("get checkpoint for pool_ids: {:?}", pool_ids);
-
         match pool_ids.peek() {
             Some(_) => {
                 let mut pools_checkpoint = self.pools_checkpoint.lock().unwrap();
-                let mut existing_pools = HashMap::<Address, Arc<PoolInfo>>::default();
-                let missing_pools = pool_ids
-                    .filter(|pool_id| match pools_checkpoint.pools.get(*pool_id) {
-                        Some(entry) => {
-                            existing_pools.insert(**pool_id, entry.clone());
-                            false
-                        }
-                        None => true,
-                    })
-                    .collect::<Vec<_>>();
+                let (pools, missing): (HashMap<Address, Arc<PoolInfo>>, Vec<Address>) = pool_ids
+                    .partition_map(|pool_id| match pools_checkpoint.pools.get(pool_id) {
+                        Some(entry) => Either::Left((*pool_id, entry.clone())),
+                        None => Either::Right(*pool_id),
+                    });
 
-                tracing::trace!(
-                    "cache hit: {:?}, cache miss: {:?}",
-                    existing_pools.keys(),
-                    missing_pools
-                );
-                pools_checkpoint.missing_pools.extend(missing_pools);
-                (existing_pools, pools_checkpoint.block_number)
+                tracing::trace!("cache hit: {:?}, cache miss: {:?}", pools.keys(), missing);
+                pools_checkpoint.missing_pools.extend(&missing);
+                CachedPools {
+                    pools,
+                    missing,
+                    block_number: pools_checkpoint.block_number,
+                }
             }
-            None => Default::default(),
+            None => CachedPools::default(),
         }
     }
 
-    /// Fetches state/ticks for missing pools and moves them from
-    /// `missing_pools` to `pools`
-    async fn update_missing_pools(&self) -> Result<()> {
-        let (missing_pools, block_number) = {
-            let checkpoint = self.pools_checkpoint.lock().unwrap();
-            if checkpoint.missing_pools.is_empty() {
-                return Ok(());
-            }
-            (checkpoint.missing_pools.clone(), checkpoint.block_number)
-        };
-        tracing::debug!("currently missing pools are {:?}", missing_pools);
-
-        let pool_ids = missing_pools.into_iter().collect::<Vec<_>>();
-        let start = std::time::Instant::now();
+    /// Fetches and converts the given pools from the source at `target_block`,
+    /// skipping any that can't be converted yet (e.g. missing ticks).
+    async fn fetch_pools(
+        &self,
+        pool_ids: &[Address],
+        target_block: BlockTarget,
+    ) -> Result<Vec<(Address, Arc<PoolInfo>)>> {
         let pools_with_ticks = self
             .source
-            .get_pools_with_ticks_by_ids(&pool_ids, block_number)
-            .await;
-        tracing::debug!(
-            requested_pools = pool_ids.len(),
-            time = ?start.elapsed(),
-            request_successful = pools_with_ticks.is_ok(),
-            "fetched pool ticks"
-        );
-        let pools_with_ticks = pools_with_ticks?;
+            .get_pools_with_ticks_by_ids(pool_ids, target_block)
+            .await?;
+        Ok(pools_with_ticks
+            .pools
+            .into_iter()
+            .filter_map(|pool| {
+                let id = pool.id;
+                match PoolInfo::try_from(pool) {
+                    Ok(info) => Some((id, Arc::new(info))),
+                    Err(err) => {
+                        tracing::debug!(?id, ?err, "skipping pool missing tick data");
+                        None
+                    }
+                }
+            })
+            .collect())
+    }
 
-        let mut checkpoint = self.pools_checkpoint.lock().unwrap();
-        for pool in pools_with_ticks.pools {
-            checkpoint.missing_pools.remove(&pool.id);
-            checkpoint.pools.insert(pool.id, Arc::new(pool.try_into()?));
+    /// Fetches the pools flagged missing by `get` at the checkpoint block and
+    /// caches them. Runs from periodic maintenance.
+    async fn update_missing_pools(&self) -> Result<()> {
+        // Clone out and drop the lock before the async fetch.
+        let (missing, block_number) = {
+            let checkpoint = self.pools_checkpoint.lock().unwrap();
+            (checkpoint.missing_pools.clone(), checkpoint.block_number)
+        };
+        if missing.is_empty() {
+            return Ok(());
         }
 
-        tracing::debug!("number of cached pools is {}", checkpoint.pools.len());
+        let fetched = self
+            .fetch_pools(&Vec::from_iter(missing), BlockTarget::Number(block_number))
+            .await?;
+        let mut checkpoint = self.pools_checkpoint.lock().unwrap();
+        for (id, info) in fetched {
+            checkpoint.missing_pools.remove(&id);
+            checkpoint.pools.insert(id, info);
+        }
         if !checkpoint.missing_pools.is_empty() {
             tracing::warn!(
-                "not all missing pools updated: {:?}",
-                checkpoint.missing_pools
+                remaining = checkpoint.missing_pools.len(),
+                "not all missing pools updated"
             );
         }
         Ok(())
@@ -422,12 +447,38 @@ impl PoolFetching for UniswapV3PoolFetcher {
 
         // this is the only place where this function uses checkpoint - no data racing
         // between maintenance
-        let (mut checkpoint, checkpoint_block_number) = self.checkpoint.get(token_pairs);
+        let CachedPools {
+            pools: mut checkpoint,
+            missing,
+            block_number: checkpoint_block_number,
+        } = self.checkpoint.get(token_pairs);
+
+        // No pools registered for these pairs: nothing to fetch or replay.
+        if checkpoint.is_empty() && missing.is_empty() {
+            return Ok(Vec::new());
+        }
 
         if block_number > checkpoint_block_number {
             let block_range = RangeInclusive::try_new(checkpoint_block_number + 1, block_number)?;
             let events = self.events.lock().await.store().get_events(block_range);
             append_events(&mut checkpoint, events);
+        }
+
+        // The warm cache only holds the top pools by raw liquidity, so many
+        // registered pairs are absent. Fetch the missing ones at the source's
+        // latest block rather than the checkpoint block: the checkpoint tracks
+        // latest-minus-reorg and can sit ahead of the finalized head the indexer
+        // serves, so waiting on it would hang the quote. They come back current,
+        // so merge after the replay instead of replaying them. A fetch failure
+        // just yields fewer pools rather than failing the whole quote.
+        if !missing.is_empty() {
+            let fetched = self
+                .checkpoint
+                .fetch_pools(&missing, BlockTarget::Latest)
+                .await
+                .inspect_err(|err| tracing::debug!(?err, "on-demand pool fetch failed"))
+                .unwrap_or_default();
+            checkpoint.extend(fetched);
         }
 
         // return only pools which current liquidity is positive
@@ -748,5 +799,205 @@ mod tests {
                 (110_000, -66666i128)
             ])
         );
+    }
+
+    /// Serves a fixed set of pools (with ticks) from
+    /// `get_pools_with_ticks_by_ids` so the on-demand fetch path can be
+    /// exercised without a real source. `served_block` models the indexer's
+    /// head: a request for a higher `target_block` fails, mirroring the real
+    /// client's `wait_until` blocking on a block the indexer hasn't reached.
+    struct StubSource {
+        with_ticks: HashMap<Address, PoolData>,
+        served_block: u64,
+    }
+
+    impl StubSource {
+        fn new(pools: impl IntoIterator<Item = PoolData>) -> Self {
+            Self {
+                with_ticks: pools.into_iter().map(|p| (p.id, p)).collect(),
+                served_block: u64::MAX,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl V3PoolDataSource for StubSource {
+        async fn get_registered_pools(
+            &self,
+            _target_block: BlockTarget,
+        ) -> Result<crate::uniswap_v3::graph_api::RegisteredPools> {
+            Ok(Default::default())
+        }
+
+        async fn get_pools_with_ticks_by_ids(
+            &self,
+            ids: &[Address],
+            target_block: BlockTarget,
+        ) -> Result<crate::uniswap_v3::graph_api::PoolsWithTicks> {
+            let target_block = match target_block {
+                BlockTarget::Latest => self.served_block,
+                BlockTarget::Number(n) => n,
+            };
+            anyhow::ensure!(
+                target_block <= self.served_block,
+                "indexer at {} hasn't reached target block {target_block}",
+                self.served_block,
+            );
+            let pools = ids
+                .iter()
+                .filter_map(|id| self.with_ticks.get(id).cloned())
+                .collect();
+            Ok(crate::uniswap_v3::graph_api::PoolsWithTicks {
+                fetched_block_number: self.served_block,
+                pools,
+            })
+        }
+    }
+
+    fn pool_with_ticks(id: Address, token0: Address, token1: Address) -> PoolData {
+        PoolData {
+            id,
+            token0: Token {
+                id: token0,
+                decimals: 6,
+            },
+            token1: Token {
+                id: token1,
+                decimals: 18,
+            },
+            fee_tier: U256::from(3000),
+            liquidity: U256::from(1_000_000u64),
+            sqrt_price: U256::from(1u64),
+            tick: 0,
+            ticks: Some(vec![crate::uniswap_v3::graph_api::TickData {
+                tick_idx: -100,
+                liquidity_net: 1_000,
+                pool_address: id,
+            }]),
+            block_number: 100,
+        }
+    }
+
+    fn handler(source: StubSource, checkpoint: PoolsCheckpoint) -> PoolsCheckpointHandler {
+        PoolsCheckpointHandler {
+            source: Arc::new(source),
+            pools_by_token_pair: HashMap::new(),
+            pools_checkpoint: Mutex::new(checkpoint),
+        }
+    }
+
+    /// A pool registered for a pair but absent from the warm cache is returned
+    /// in `missing` (not `pools`), so the fetch path knows to resolve it.
+    #[test]
+    fn get_flags_registered_uncached_pool_as_missing() {
+        let token0 = Address::with_last_byte(1);
+        let token1 = Address::with_last_byte(2);
+        let pair = TokenPair::new(token0, token1).unwrap();
+        let pool = Address::with_last_byte(9);
+
+        let mut handler = handler(
+            StubSource::new([]),
+            PoolsCheckpoint {
+                pools: HashMap::new(),
+                block_number: 100,
+                missing_pools: HashSet::new(),
+            },
+        );
+        handler.pools_by_token_pair = HashMap::from([(pair, vec![pool])]);
+
+        let CachedPools { pools, missing, .. } = handler.get(&HashSet::from([pair]));
+        assert!(pools.is_empty());
+        assert_eq!(missing, vec![pool]);
+    }
+
+    /// The on-demand path must not block on the checkpoint block (which can sit
+    /// persistently ahead of the indexer's served block); it fetches at the
+    /// indexer's latest block. A source that errors for any block above its
+    /// head still yields the pool via a `BlockTarget::Latest` fetch.
+    #[tokio::test]
+    async fn on_demand_does_not_wait_for_future_block() {
+        let token0 = Address::with_last_byte(1);
+        let token1 = Address::with_last_byte(2);
+        let pool = Address::with_last_byte(9);
+
+        let mut source = StubSource::new([pool_with_ticks(pool, token0, token1)]);
+        source.served_block = 50; // indexer behind the checkpoint below
+
+        let handler = handler(
+            source,
+            PoolsCheckpoint {
+                pools: HashMap::new(),
+                block_number: 100, // checkpoint ahead of the indexer
+                missing_pools: HashSet::new(),
+            },
+        );
+
+        // Latest serves at-head, so it succeeds despite served_block < checkpoint.
+        let fetched = handler
+            .fetch_pools(&[pool], BlockTarget::Latest)
+            .await
+            .unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0].0, pool);
+
+        // Fetching at the checkpoint block would fail (indexer hasn't reached it).
+        assert!(
+            handler
+                .fetch_pools(&[pool], BlockTarget::Number(100))
+                .await
+                .is_err()
+        );
+    }
+
+    /// Unknown pairs have no registered pools, so `get` reports block 0 with
+    /// nothing cached or missing — the signal `fetch` uses to skip the replay.
+    #[test]
+    fn get_reports_zero_block_for_unknown_pairs() {
+        let handler = handler(
+            StubSource::new([]),
+            PoolsCheckpoint {
+                pools: HashMap::new(),
+                block_number: 100,
+                missing_pools: HashSet::new(),
+            },
+        );
+        let pair = TokenPair::new(Address::with_last_byte(1), Address::with_last_byte(2)).unwrap();
+        let CachedPools {
+            pools,
+            missing,
+            block_number,
+        } = handler.get(&HashSet::from([pair]));
+        assert!(pools.is_empty());
+        assert!(missing.is_empty());
+        assert_eq!(block_number, 0);
+    }
+
+    /// A pool that can't be converted (e.g. ticks not yet available) is skipped
+    /// rather than failing the whole batch; the convertible pool is returned.
+    #[tokio::test]
+    async fn fetch_pools_skips_unconvertible_pool() {
+        let token0 = Address::with_last_byte(1);
+        let token1 = Address::with_last_byte(2);
+        let good = Address::with_last_byte(9);
+        let bad = Address::with_last_byte(10);
+
+        let mut bad_pool = pool_with_ticks(bad, token0, token1);
+        bad_pool.ticks = None; // PoolInfo::try_from fails on missing ticks
+
+        let handler = handler(
+            StubSource::new([pool_with_ticks(good, token0, token1), bad_pool]),
+            PoolsCheckpoint {
+                pools: HashMap::new(),
+                block_number: 100,
+                missing_pools: HashSet::new(),
+            },
+        );
+
+        let fetched = handler
+            .fetch_pools(&[good, bad], BlockTarget::Latest)
+            .await
+            .unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0].0, good);
     }
 }
