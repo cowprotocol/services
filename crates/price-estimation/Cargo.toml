@@ -10,6 +10,7 @@ alloy = { workspace = true, features = ["providers", "rpc", "rpc-types", "sol-ty
 anyhow = { workspace = true }
 app-data = { workspace = true }
 arc-swap = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
 bad-tokens = { workspace = true }
 balance-overrides = { workspace = true }

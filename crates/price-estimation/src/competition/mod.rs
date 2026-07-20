@@ -1,15 +1,9 @@
 use {
     super::{QuoteVerificationMode, native::NativePriceEstimating},
-    crate::{
-        PriceEstimateResult,
-        PriceEstimating,
-        PriceEstimationError,
-        Query,
-        StreamingPriceEstimating,
-    },
+    crate::PriceEstimationError,
     futures::{
         future::{BoxFuture, FutureExt},
-        stream::{BoxStream, FuturesUnordered, StreamExt},
+        stream::{FuturesUnordered, StreamExt},
     },
     gas_price_estimation::GasPriceEstimating,
     model::order::OrderKind,
@@ -171,20 +165,6 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
                 .inc();
         }
         result
-    }
-}
-
-impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
-    /// Runs every estimator concurrently across all stages and yields each
-    /// result as it arrives. No ranking, no early return. The caller stops
-    /// by dropping the stream.
-    fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
-        self.stages
-            .iter()
-            .flatten()
-            .map(|(_name, estimator)| estimator.estimate(query.clone()))
-            .collect::<FuturesUnordered<_>>()
-            .boxed()
     }
 }
 
@@ -686,14 +666,16 @@ mod tests {
         assert_eq!(amounts, vec![U256::from(1u64), U256::from(2u64)]);
     }
 
+    /// A transient error is held back, not forwarded: once a later solver
+    /// returns a usable quote, the client sees only the quote, never the error.
     #[tokio::test]
-    async fn estimate_stream_passes_through_errors() {
+    async fn estimate_stream_suppresses_errors_when_a_quote_arrives() {
         let ok = {
             let mut m = MockPriceEstimating::new();
             m.expect_estimate().times(1).returning(|_| {
                 async {
-                    // Resolve after the error so the error is yielded first. This
-                    // proves an error does not abort the remaining results.
+                    // Resolve after the error to prove the earlier error is
+                    // dropped rather than forwarded ahead of the quote.
                     sleep(Duration::from_millis(10)).await;
                     Ok(Estimate {
                         out_amount: U256::from(1u64),
@@ -723,9 +705,96 @@ mod tests {
 
         let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
 
-        assert_eq!(results.len(), 2);
-        assert!(results[0].is_err());
-        assert!(results[1].is_ok());
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].as_ref().unwrap().out_amount, U256::from(1u64));
+    }
+
+    /// When every estimator fails, nothing is forwarded until the stream ends,
+    /// then it emits the single highest-priority error — exactly what the
+    /// one-shot `estimate` returns for the same query.
+    #[tokio::test]
+    async fn estimate_stream_ends_with_highest_priority_error_when_all_fail() {
+        fn failing(err: PriceEstimationError) -> Arc<dyn PriceEstimating> {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate()
+                .times(1)
+                .return_once(move |_| async move { Err(err) }.boxed());
+            Arc::new(m)
+        }
+
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![vec![
+                (
+                    "low".to_owned(),
+                    failing(PriceEstimationError::ProtocolInternal(anyhow!("boom"))),
+                ),
+                (
+                    "high".to_owned(),
+                    failing(PriceEstimationError::RateLimited),
+                ),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
+
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
+
+        assert_eq!(results.len(), 1);
+        assert!(matches!(results[0], Err(PriceEstimationError::RateLimited)));
+    }
+
+    /// Best-so-far: a result is forwarded only when it beats every quote
+    /// already sent, so the client sees a monotonically improving series. A
+    /// later, worse quote is dropped rather than emitted.
+    #[tokio::test]
+    async fn estimate_stream_only_forwards_improving_quotes() {
+        fn estimator(delay: Duration, out_amount: u64) -> Arc<dyn PriceEstimating> {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(move |_| {
+                async move {
+                    sleep(delay).await;
+                    Ok(Estimate {
+                        out_amount: U256::from(out_amount),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            Arc::new(m)
+        }
+
+        // Staggered delays make the arrival order deterministic.
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![vec![
+                ("first".to_owned(), estimator(Duration::from_millis(0), 100)),
+                (
+                    "second".to_owned(),
+                    estimator(Duration::from_millis(10), 200),
+                ),
+                (
+                    "third".to_owned(),
+                    estimator(Duration::from_millis(20), 150),
+                ),
+                (
+                    "fourth".to_owned(),
+                    estimator(Duration::from_millis(30), 250),
+                ),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
+
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
+
+        let amounts: Vec<_> = results
+            .iter()
+            .map(|r| r.as_ref().unwrap().out_amount)
+            .collect();
+        // 100 (first, becomes best) -> 200 (improves) -> 150 (worse, dropped)
+        // -> 250 (improves).
+        assert_eq!(
+            amounts,
+            vec![U256::from(100u64), U256::from(200u64), U256::from(250u64)]
+        );
     }
 
     #[test]

@@ -7,6 +7,7 @@ use {
         PriceEstimationError,
         Query,
         QuoteVerificationMode,
+        StreamingPriceEstimating,
     },
     alloy::primitives::{Address, U256},
     anyhow::Context as _,
@@ -15,7 +16,10 @@ use {
         query::{OrderKind as DtoOrderKind, QueryFields},
         winning_price_estimate::WinningPriceEstimateEvent,
     },
-    futures::future::{BoxFuture, FutureExt, TryFutureExt},
+    futures::{
+        future::{BoxFuture, FutureExt, TryFutureExt},
+        stream::{BoxStream, FuturesUnordered, StreamExt},
+    },
     model::order::OrderKind,
     std::{
         cmp::Ordering,
@@ -95,6 +99,91 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
             // but due to the return, the simplest way to handle this is keep it here
             // TODO: clean this up
             self.report_winner(&query, query.kind, winner)
+        }
+        .boxed()
+    }
+}
+
+impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
+    /// Runs every estimator concurrently across all stages and forwards a quote
+    /// only when it beats the best one already sent, so the caller sees a
+    /// monotonically improving series and never a regression. The first
+    /// successful quote goes out as soon as the fastest solver answers. The
+    /// caller stops by dropping the stream.
+    ///
+    /// Errors are not forwarded as they arrive. If no quote is ever produced,
+    /// the stream ends with the single error the one-shot [`Self::estimate`]
+    /// would return for the same query: the highest-priority estimator error,
+    /// or the "unreasonable estimates" error when every quote had 0 gas or 0
+    /// out_amount.
+    fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
+        let out_token = match query.kind {
+            OrderKind::Buy => query.sell_token,
+            OrderKind::Sell => query.buy_token,
+        };
+        let prefer_verified = !matches!(self.verification_mode, QuoteVerificationMode::Unverified);
+
+        async_stream::stream! {
+            // Fetch the ranking context once, up front, mirroring `estimate`.
+            // Without it we cannot rank, so fail the whole stream like the
+            // one-shot path does on a context error.
+            let context = match self.ranking.provide_context(out_token, query.timeout).await {
+                Ok(context) => context,
+                Err(err) => {
+                    yield Err(err);
+                    return;
+                }
+            };
+
+            let is_reasonable = |r: &PriceEstimateResult| {
+                r.as_ref().is_ok_and(|e| e.gas > 0 && !e.out_amount.is_zero())
+            };
+
+            let mut estimates = self
+                .stages
+                .iter()
+                .flatten()
+                .map(|(_name, estimator)| estimator.estimate(query.clone()))
+                .collect::<FuturesUnordered<_>>();
+
+            // Every result is kept so that, if no quote is ever forwarded, the
+            // terminal error can be picked exactly the way `estimate` does.
+            let mut results = Vec::new();
+            let mut best: Option<Estimate> = None;
+            while let Some(result) = estimates.next().await {
+                if is_reasonable(&result) {
+                    let beats_best = match &best {
+                        None => true,
+                        Some(best) => compare_quote_result(
+                            &query,
+                            &result,
+                            &Ok(best.clone()),
+                            &context,
+                            prefer_verified,
+                        )
+                        .is_gt(),
+                    };
+                    if beats_best {
+                        let estimate =
+                            result.as_ref().expect("is_reasonable implies Ok").clone();
+                        best = Some(estimate.clone());
+                        yield Ok(estimate);
+                    }
+                }
+                results.push(result);
+            }
+
+            if best.is_none() {
+                yield results
+                    .into_iter()
+                    .filter(|r| r.is_err() || is_reasonable(r))
+                    .max_by(|a, b| compare_quote_result(&query, a, b, &context, prefer_verified))
+                    .unwrap_or_else(|| {
+                        Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                            "all price estimates were unreasonable (0 gas or 0 out_amount)"
+                        )))
+                    });
+            }
         }
         .boxed()
     }
