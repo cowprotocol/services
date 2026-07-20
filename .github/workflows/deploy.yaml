@@ -107,6 +107,7 @@ jobs:
             org.opencontainers.image.licenses=GPL-3.0-or-later
 
       - name: Services image build
+        id: build_services
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
@@ -132,6 +133,7 @@ jobs:
             org.opencontainers.image.licenses=GPL-3.0-or-later
 
       - name: Migration image build
+        id: build_migration
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
@@ -140,6 +142,42 @@ jobs:
           push: true
           tags: ${{ steps.meta_migration.outputs.tags }}
           labels: ${{ steps.meta_migration.outputs.labels }}
+
+      - name: Published images summary
+        env:
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          SERVICES_IMAGE: ghcr.io/${{ github.repository }}
+          SERVICES_TAGS: ${{ steps.meta_services.outputs.tags }}
+          SERVICES_DIGEST: ${{ steps.build_services.outputs.digest }}
+          MIGRATION_IMAGE: ghcr.io/${{ github.repository }}-migration
+          MIGRATION_TAGS: ${{ steps.meta_migration.outputs.tags }}
+          MIGRATION_DIGEST: ${{ steps.build_migration.outputs.digest }}
+        run: |
+          summary() {
+            local image="$1" digest="$2" tags="$3"
+            # The package name is the last path segment of the image reference,
+            # and repo-linked GHCR packages live at <repo>/pkgs/container/<name>.
+            local url="$SERVER_URL/$REPOSITORY/pkgs/container/${image##*/}"
+            echo "### [\`$image\`]($url)"
+            echo ""
+            if [ -n "$digest" ]; then
+              echo "**Digest:** \`$digest\`"
+              echo ""
+            fi
+            echo "**Tags:**"
+            echo ""
+            echo '```text'
+            echo "$tags"
+            echo '```'
+            echo ""
+          }
+          {
+            echo "## 📦 Published container images"
+            echo ""
+            summary "$SERVICES_IMAGE" "$SERVICES_DIGEST" "$SERVICES_TAGS"
+            summary "$MIGRATION_IMAGE" "$MIGRATION_DIGEST" "$MIGRATION_TAGS"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: cowprotocol/autodeploy-action@73f1163f19a584cdc34e29aa84d630d7e6a45432 # v3
         if: ${{ github.ref == 'refs/heads/main' }}
