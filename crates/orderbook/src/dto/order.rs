@@ -90,7 +90,7 @@ pub struct ExecutedAmounts {
 #[serde(rename_all = "camelCase")]
 pub struct SolutionInclusion {
     /// The name or identifier of the solver.
-    pub solver: String,
+    pub solver: Address,
     /// The executed amounts for the order as proposed by the solver, included
     /// if the solution was for the desired order, or omitted otherwise.
     pub executed_amounts: Option<ExecutedAmounts>,
