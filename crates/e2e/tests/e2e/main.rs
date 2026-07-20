@@ -41,6 +41,7 @@ mod refunder;
 mod replace_order;
 mod smart_contract_orders;
 mod solver_competition;
+mod state_override;
 mod submission;
 mod token_metadata;
 mod tracking_insufficient_funds;
