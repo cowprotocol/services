@@ -74,16 +74,8 @@ impl Jupiter {
             .endpoint
             .join(SWAP_INSTRUCTIONS_PATH)
             .map_err(|_| Error::RequestBuildFailed)?;
-        let body = serde_json::json!({
-            "quoteResponse": quote,
-            "userPublicKey": taker.to_string(),
-            // Send the swap output to the order's destination account.
-            "destinationTokenAccount": destination.to_string(),
-            // SOL wrapping is handled outside the swap.
-            "wrapAndUnwrapSol": false,
-            "skipUserAccountsRpcCalls": true,
-        });
-        let body = serde_json::to_string(&body).map_err(|_| Error::RequestBuildFailed)?;
+        let payload = dto::SwapInstructionsRequest::new(quote, taker, destination);
+        let body = serde_json::to_string(&payload).map_err(|_| Error::RequestBuildFailed)?;
         let request = self.with_key(
             self.client
                 .post(url)
@@ -107,15 +99,20 @@ impl Jupiter {
         let response = request.send().await?;
         let status = response.status();
         let body = response.text().await?;
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            return Err(Error::RateLimited);
+        if status.is_success() {
+            return serde_json::from_str(&body)
+                .map_err(|err| Error::BadResponse(format!("response body: {err}")));
         }
-        // Jupiter answers an unroutable pair with a 4xx error body, not an empty
-        // 200, so any non-success is "no swap for this order".
-        if !status.is_success() {
-            return Err(Error::NotFound);
+        match status {
+            reqwest::StatusCode::TOO_MANY_REQUESTS => Err(Error::RateLimited),
+            // Jupiter returns 400 with an error body when it can't route the order.
+            reqwest::StatusCode::BAD_REQUEST => Err(Error::NotFound),
+            // Auth or server errors: carry the status and body so the cause shows.
+            _ => Err(Error::Api {
+                status: status.as_u16(),
+                body,
+            }),
         }
-        serde_json::from_str(&body).map_err(|_| Error::BadResponse)
     }
 }
 
@@ -124,7 +121,7 @@ fn amount_field(quote: &serde_json::Value, field: &str) -> Result<u64, Error> {
         .get(field)
         .and_then(serde_json::Value::as_str)
         .and_then(|amount| amount.parse().ok())
-        .ok_or(Error::BadResponse)
+        .ok_or_else(|| Error::BadResponse(format!("missing or non-numeric {field}")))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -137,8 +134,10 @@ pub enum Error {
     OrderNotSupported,
     #[error("rate limited")]
     RateLimited,
-    #[error("malformed response from the swap API")]
-    BadResponse,
+    #[error("jupiter api error {status}: {body}")]
+    Api { status: u16, body: String },
+    #[error("malformed swap response: {0}")]
+    BadResponse(String),
     #[error(transparent)]
     Http(#[from] reqwest::Error),
 }
@@ -178,6 +177,19 @@ mod tests {
         };
         let result = jupiter.swap(&order, &Pubkey::new_unique()).await;
         assert!(matches!(result, Err(Error::OrderNotSupported)));
+    }
+
+    #[test]
+    fn request_serializes_pubkeys_as_base58() {
+        let quote = serde_json::json!({});
+        let taker = Pubkey::from_str(WSOL).unwrap();
+        let destination = Pubkey::from_str(USDC).unwrap();
+        let payload = dto::SwapInstructionsRequest::new(&quote, &taker, &destination);
+        let value = serde_json::to_value(payload).unwrap();
+        assert_eq!(value["userPublicKey"], WSOL);
+        assert_eq!(value["destinationTokenAccount"], USDC);
+        assert_eq!(value["wrapAndUnwrapSol"], false);
+        assert_eq!(value["skipUserAccountsRpcCalls"], true);
     }
 
     #[test]

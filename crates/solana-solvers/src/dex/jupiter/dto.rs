@@ -1,17 +1,55 @@
-//! DTO for Jupiter's `/swap-instructions` response, converted to Solana
-//! instructions. Field names follow Jupiter's camelCase JSON.
+//! DTOs for Jupiter's `/swap-instructions` request and response, converting to
+//! and from Solana instructions. Field names follow Jupiter's camelCase JSON.
 
 use {
     super::Error,
     crate::dex::Swap,
     base64::prelude::*,
-    serde::Deserialize,
+    serde::{Deserialize, Serialize},
     solana_sdk::{
         instruction::{AccountMeta, Instruction},
         pubkey::Pubkey,
     },
     std::str::FromStr,
 };
+
+/// Body of the `/swap-instructions` request. `Pubkey` serializes to its base58
+/// string in JSON, so no manual conversion.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SwapInstructionsRequest<'a> {
+    quote_response: &'a serde_json::Value,
+    #[serde(serialize_with = "as_base58")]
+    user_public_key: Pubkey,
+    #[serde(serialize_with = "as_base58")]
+    destination_token_account: Pubkey,
+    wrap_and_unwrap_sol: bool,
+    skip_user_accounts_rpc_calls: bool,
+}
+
+impl<'a> SwapInstructionsRequest<'a> {
+    /// The swap rides inside the settlement tx, so SOL wrapping is left off and
+    /// Jupiter skips its account RPC probes.
+    pub fn new(
+        quote_response: &'a serde_json::Value,
+        taker: &Pubkey,
+        destination: &Pubkey,
+    ) -> Self {
+        Self {
+            quote_response,
+            user_public_key: *taker,
+            destination_token_account: *destination,
+            wrap_and_unwrap_sol: false,
+            skip_user_accounts_rpc_calls: true,
+        }
+    }
+}
+
+/// Serialize a `Pubkey` as its base58 string. Jupiter expects strings, and
+/// `Pubkey`'s default serialization is a byte array.
+fn as_base58<S: serde::Serializer>(pubkey: &Pubkey, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&pubkey.to_string())
+}
 
 /// The parts of the `/swap-instructions` response we need to build a [`Swap`].
 /// Amounts come from the `/quote` response.
@@ -42,7 +80,10 @@ impl SwapInstructionsResponse {
         let address_lookup_tables = self
             .address_lookup_table_addresses
             .iter()
-            .map(|address| Pubkey::from_str(address).map_err(|_| Error::BadResponse))
+            .map(|address| {
+                Pubkey::from_str(address)
+                    .map_err(|err| Error::BadResponse(format!("lookup table address: {err}")))
+            })
             .collect::<Result<_, _>>()?;
         Ok(Swap {
             in_amount,
@@ -63,7 +104,8 @@ struct JupInstruction {
 
 impl JupInstruction {
     fn into_instruction(self) -> Result<Instruction, Error> {
-        let program_id = Pubkey::from_str(&self.program_id).map_err(|_| Error::BadResponse)?;
+        let program_id = Pubkey::from_str(&self.program_id)
+            .map_err(|err| Error::BadResponse(format!("program id: {err}")))?;
         let accounts = self
             .accounts
             .into_iter()
@@ -71,7 +113,7 @@ impl JupInstruction {
             .collect::<Result<_, _>>()?;
         let data = BASE64_STANDARD
             .decode(&self.data)
-            .map_err(|_| Error::BadResponse)?;
+            .map_err(|err| Error::BadResponse(format!("instruction data: {err}")))?;
         Ok(Instruction {
             program_id,
             accounts,
@@ -91,7 +133,8 @@ struct JupAccount {
 impl JupAccount {
     fn into_meta(self) -> Result<AccountMeta, Error> {
         Ok(AccountMeta {
-            pubkey: Pubkey::from_str(&self.pubkey).map_err(|_| Error::BadResponse)?,
+            pubkey: Pubkey::from_str(&self.pubkey)
+                .map_err(|err| Error::BadResponse(format!("account pubkey: {err}")))?,
             is_signer: self.is_signer,
             is_writable: self.is_writable,
         })
