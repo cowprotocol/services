@@ -13,8 +13,7 @@ use {
     std::str::FromStr,
 };
 
-/// Body of the `/swap-instructions` request. `Pubkey` serializes to its base58
-/// string in JSON, so no manual conversion.
+/// Body of the `/swap-instructions` request.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SwapInstructionsRequest<'a> {
