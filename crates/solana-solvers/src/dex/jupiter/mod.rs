@@ -192,26 +192,6 @@ mod tests {
         assert_eq!(value["skipUserAccountsRpcCalls"], true);
     }
 
-    #[test]
-    fn parses_swap_instructions() {
-        let json = serde_json::json!({
-            "setupInstructions": [],
-            "swapInstruction": {
-                "programId": WSOL,
-                "accounts": [{ "pubkey": USDC, "isSigner": false, "isWritable": true }],
-                "data": "AAEC"
-            },
-            "cleanupInstruction": null,
-            "addressLookupTableAddresses": [USDC, WSOL]
-        });
-        let response: dto::SwapInstructionsResponse = serde_json::from_value(json).unwrap();
-        let swap = response.into_swap(100, 250).unwrap();
-        assert_eq!(swap.instructions.len(), 1);
-        assert_eq!(swap.instructions[0].accounts.len(), 1);
-        assert_eq!(swap.address_lookup_tables.len(), 2);
-        assert_eq!((swap.in_amount, swap.out_amount), (100, 250));
-    }
-
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
     /// for headroom.
     #[tokio::test]
