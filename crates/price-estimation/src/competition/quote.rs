@@ -10,7 +10,6 @@ use {
         StreamingPriceEstimating,
     },
     alloy::primitives::{Address, U256},
-    anyhow::Context as _,
     event_bus_dto::{
         price_estimate::{EstimateResult, PriceEstimateEvent},
         query::{OrderKind as DtoOrderKind, QueryFields},
@@ -41,13 +40,6 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
             };
             let get_context = self.ranking.provide_context(out_token, query.timeout);
 
-            // Filter out obviously wrong estimates:
-            // - 0 gas cost would lead to us paying huge subsidies
-            // - 0 out_amount means the quote is useless
-            let is_reasonable = |r: &PriceEstimateResult| {
-                r.as_ref()
-                    .is_ok_and(|r| r.gas > 0 && !r.out_amount.is_zero())
-            };
             let get_results = self
                 .produce_results(query.clone(), is_reasonable, |context| {
                     // Call estimate() eagerly so its side-effects still happen
@@ -79,16 +71,9 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 .into_iter()
                 .filter(|(_index, r)| r.is_err() || is_reasonable(r))
                 .max_by(|a, b| {
-                    compare_quote_result(
-                        &query,
-                        &a.1,
-                        &b.1,
-                        &context,
-                        !matches!(self.verification_mode, QuoteVerificationMode::Unverified),
-                    )
+                    compare_quote_result(&query, &a.1, &b.1, &context, self.verification_mode)
                 })
-                .with_context(|| "all price estimates were unreasonable (0 gas or 0 out_amount)")
-                .map_err(PriceEstimationError::EstimatorInternal)?;
+                .ok_or_else(unreasonable_estimates_error)?;
 
             if winner.1.is_ok() {
                 let EstimatorIndex(stage_index, estimator_index) = winner.0;
@@ -121,8 +106,6 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
             OrderKind::Buy => query.sell_token,
             OrderKind::Sell => query.buy_token,
         };
-        let prefer_verified = !matches!(self.verification_mode, QuoteVerificationMode::Unverified);
-
         async_stream::stream! {
             // Fetch the ranking context once, up front, mirroring `estimate`.
             // Without it we cannot rank, so fail the whole stream like the
@@ -133,10 +116,6 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                     yield Err(err);
                     return;
                 }
-            };
-
-            let is_reasonable = |r: &PriceEstimateResult| {
-                r.as_ref().is_ok_and(|e| e.gas > 0 && !e.out_amount.is_zero())
             };
 
             let mut estimates = self
@@ -159,7 +138,7 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                             &result,
                             &Ok(best.clone()),
                             &context,
-                            prefer_verified,
+                            self.verification_mode,
                         )
                         .is_gt(),
                     };
@@ -177,16 +156,24 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                 yield results
                     .into_iter()
                     .filter(|r| r.is_err() || is_reasonable(r))
-                    .max_by(|a, b| compare_quote_result(&query, a, b, &context, prefer_verified))
-                    .unwrap_or_else(|| {
-                        Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                            "all price estimates were unreasonable (0 gas or 0 out_amount)"
-                        )))
-                    });
+                    .max_by(|a, b| compare_quote_result(&query, a, b, &context, self.verification_mode))
+                    .unwrap_or_else(|| Err(unreasonable_estimates_error()));
             }
         }
         .boxed()
     }
+}
+
+fn is_reasonable(result: &PriceEstimateResult) -> bool {
+    result
+        .as_ref()
+        .is_ok_and(|estimate| estimate.gas > 0 && !estimate.out_amount.is_zero())
+}
+
+fn unreasonable_estimates_error() -> PriceEstimationError {
+    PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+        "all price estimates were unreasonable (0 gas or 0 out_amount)"
+    ))
 }
 
 fn compare_quote_result(
@@ -194,11 +181,12 @@ fn compare_quote_result(
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
     context: &RankingContext,
-    prefer_verified_estimates: bool,
+    verification_mode: QuoteVerificationMode,
 ) -> Ordering {
+    let prefer_verified = !matches!(verification_mode, QuoteVerificationMode::Unverified);
     match (a, b) {
         (Ok(a), Ok(b)) => {
-            match (prefer_verified_estimates, a.verified, b.verified) {
+            match (prefer_verified, a.verified, b.verified) {
                 // prefer verified over unverified quotes
                 (true, true, false) => Ordering::Greater,
                 (true, false, true) => Ordering::Less,
