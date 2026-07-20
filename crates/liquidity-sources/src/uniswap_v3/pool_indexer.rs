@@ -12,6 +12,7 @@
 
 use {
     crate::uniswap_v3::{
+        BlockTarget,
         V3PoolDataSource,
         graph_api::{PoolData, PoolsWithTicks, RegisteredPools, TickData, Token},
     },
@@ -214,10 +215,15 @@ impl PoolIndexerClient {
     /// Polls `/pools?limit=1` every [`WAIT_UNTIL_POLL_INTERVAL`] until the
     /// envelope reports `block_number >= target_block`. Returns
     /// immediately if already there; bails after [`WAIT_UNTIL_TIMEOUT`].
+    /// [`BlockTarget::Latest`] serves at-head without waiting.
     ///
     /// `503` is treated as "still bootstrapping" and the loop keeps
     /// polling. Other non-2xx statuses propagate as errors.
-    async fn wait_until(&self, target_block: u64) -> Result<()> {
+    async fn wait_until(&self, target_block: BlockTarget) -> Result<()> {
+        let target_block = match target_block {
+            BlockTarget::Latest => return Ok(()),
+            BlockTarget::Number(n) => n,
+        };
         let deadline = std::time::Instant::now() + WAIT_UNTIL_TIMEOUT;
         let mut last_observed: Option<u64> = None;
         let mut interval = tokio::time::interval(WAIT_UNTIL_POLL_INTERVAL);
@@ -280,7 +286,7 @@ impl PoolIndexerClient {
 
 #[async_trait]
 impl V3PoolDataSource for PoolIndexerClient {
-    async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
+    async fn get_registered_pools(&self, target_block: BlockTarget) -> Result<RegisteredPools> {
         self.wait_until(target_block).await?;
         // The indexer can advance between pages, so each pool carries the
         // block of the page it arrived in. The envelope's
@@ -321,15 +327,12 @@ impl V3PoolDataSource for PoolIndexerClient {
     async fn get_pools_with_ticks_by_ids(
         &self,
         ids: &[Address],
-        target_block: u64,
+        target_block: BlockTarget,
     ) -> Result<PoolsWithTicks> {
         self.wait_until(target_block).await?;
 
         if ids.is_empty() {
-            return Ok(PoolsWithTicks {
-                fetched_block_number: target_block,
-                pools: Vec::new(),
-            });
+            return Ok(PoolsWithTicks::default());
         }
 
         let mut out: Vec<PoolData> = Vec::with_capacity(ids.len());
