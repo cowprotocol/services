@@ -3,7 +3,7 @@ use {
     axum::http::Request,
     opentelemetry::{global, trace::TraceContextExt},
     opentelemetry_http::HeaderExtractor,
-    tracing::{Span, field, info, info_span},
+    tracing::{Span, field, info_span, trace},
     tracing_opentelemetry::OpenTelemetrySpanExt,
 };
 
@@ -31,7 +31,7 @@ pub fn make_span<B>(request: &Request<B>) -> Span {
     }
     {
         let _span = span.enter();
-        info!(uri = %request.uri(), method = %request.method(), "HTTP request");
+        trace!(uri = %request.uri(), method = %request.method(), "HTTP request");
     }
 
     span
