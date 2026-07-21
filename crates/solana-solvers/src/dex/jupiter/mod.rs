@@ -198,8 +198,7 @@ mod tests {
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
-    /// for headroom. Run with `--nocapture` to see the assembled solution
-    /// JSON.
+    /// for headroom.
     #[tokio::test]
     #[ignore]
     async fn jupiter_live_sell() {
@@ -215,7 +214,8 @@ mod tests {
         assert!(swap.out_amount > 0);
         assert!(!swap.instructions.is_empty());
 
-        // End to end: the live swap assembles into a valid solution.
+        // End to end: the live swap assembles into a valid solution that
+        // serializes.
         let solution = crate::domain::solution::Solution::single(
             0,
             crate::domain::order::OrderUid([1; 32]),
@@ -223,7 +223,9 @@ mod tests {
             swap,
         )
         .unwrap();
-        println!("{}", serde_json::to_string_pretty(&solution).unwrap());
+        assert_eq!(solution.trades.len(), 1);
+        assert!(!solution.interactions.is_empty());
+        serde_json::to_string(&solution).unwrap();
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
