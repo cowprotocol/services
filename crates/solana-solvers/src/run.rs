@@ -7,8 +7,10 @@ use {
         api::Api,
         cli::{Args, Command},
         config,
+        dex,
     },
     clap::Parser,
+    std::sync::Arc,
 };
 
 /// Parse args and run the selected solver engine until shutdown.
@@ -28,9 +30,11 @@ pub async fn start(args: impl IntoIterator<Item = String>) {
     match args.command {
         Command::Jupiter { config: path } => {
             let config = config::load(&path).await;
+            let jupiter = dex::jupiter::Jupiter::new(&config.dex)
+                .unwrap_or_else(|err| panic!("build jupiter dex: {err}"));
             let api = Api {
                 addr: args.addr,
-                config,
+                dex: Arc::new(dex::Dex::Jupiter(jupiter)),
             };
             if let Err(err) = api.serve(shutdown_signal()).await {
                 tracing::error!(?err, "server error");

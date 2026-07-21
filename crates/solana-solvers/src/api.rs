@@ -1,10 +1,12 @@
 //! HTTP API for the solver engine.
 //!
-//! Serves the `/solve` contract the driver calls. The handler is a scaffold: it
-//! accepts any auction and returns no solutions.
+//! Serves the `/solve` contract the driver calls.
 
 use {
-    crate::config::Config,
+    crate::{
+        dex::Dex,
+        domain::{auction::Auction, solver},
+    },
     axum::{
         Json,
         Router,
@@ -20,7 +22,7 @@ const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 pub struct Api {
     pub addr: SocketAddr,
-    pub config: Config,
+    pub dex: Arc<Dex>,
 }
 
 impl Api {
@@ -32,7 +34,7 @@ impl Api {
         let app = Router::new()
             .route("/healthz", get(healthz))
             .route("/solve", post(solve))
-            .with_state(Arc::new(self.config))
+            .with_state(self.dex)
             .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
             .layer(axum::extract::DefaultBodyLimit::disable());
 
@@ -48,8 +50,8 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// Scaffold `/solve`: accepts any auction and returns no solutions, so the
-/// driver wiring can be exercised against an empty result.
-async fn solve(State(_config): State<Arc<Config>>, Json(_auction): Json<Value>) -> Json<Value> {
-    Json(json!({ "solutions": [] }))
+/// Quote every order in the auction and return the single-order solutions.
+async fn solve(State(dex): State<Arc<Dex>>, Json(auction): Json<Auction>) -> Json<Value> {
+    let solutions = solver::solve(dex.as_ref(), &auction).await;
+    Json(json!({ "solutions": solutions }))
 }

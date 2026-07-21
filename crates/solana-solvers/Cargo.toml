@@ -18,6 +18,7 @@ axum = { workspace = true }
 base64 = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 const-hex = { workspace = true }
+futures = { workspace = true }
 observe = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
