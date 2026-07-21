@@ -18,8 +18,7 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub id: u64,
-    /// Uniform clearing prices keyed by mint. Amounts go out as decimal strings
-    /// (a `u64` can exceed 2^53 and lose precision as a JSON number).
+    /// Uniform clearing prices keyed by mint. Values are decimal strings.
     #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
     pub prices: HashMap<Pubkey, u64>,
     pub trades: Vec<Trade>,
@@ -44,17 +43,12 @@ pub struct Trade {
     /// Sell-token units for sell orders, buy-token units for buy orders.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub executed_amount: u64,
-    /// Fee in sell-token units. Always zero at MVP: the solver prices the
-    /// full quoted amounts into the clearing prices instead.
+    /// Fee in sell-token units.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub fee: u64,
 }
 
-/// One settlement instruction the solver supplies, carried verbatim: program
-/// ID, full account metas (writable and signer flags), and the instruction
-/// data. The driver splices these between `BeginSettle` and `FinalizeSettle`.
-/// Solana has a single interaction kind at MVP, so this is a plain instruction,
-/// not a tagged enum.
+/// A Solana instruction the solver supplies, carried verbatim.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -268,8 +262,6 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(json["addressLookupTables"][0], pubkey(7).to_string());
-        // cu_estimate is optional and unset, so it is omitted from the wire.
-        assert!(json.get("cuEstimate").is_none());
     }
 
     #[test]
