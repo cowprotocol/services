@@ -958,8 +958,7 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
     let (error_code, error_message) = services
         .create_order(&replacement)
         .await
-        .err()
-        .expect("replacing an actively-bid-on order must be rejected");
+        .expect_err("replacing an actively-bid-on order must be rejected");
     assert_eq!(error_code, StatusCode::BAD_REQUEST, "body: {error_message}");
     assert!(
         error_message.contains("OldOrderActivelyBidOn"),
