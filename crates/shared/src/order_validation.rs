@@ -386,6 +386,9 @@ pub struct OrderValidator {
     app_data_validator: Validator,
     max_gas_per_order: u64,
     same_tokens_policy: SameTokensPolicy,
+    /// When set, orders providing both the full app-data and an `appDataHash`
+    /// are accepted even if the document does not hash to the provided hash.
+    skip_app_data_hash_verification: bool,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -473,7 +476,17 @@ impl OrderValidator {
             app_data_validator,
             max_gas_per_order,
             same_tokens_policy,
+            skip_app_data_hash_verification: false,
         }
+    }
+
+    /// Configures whether orders that provide both the full app-data and an
+    /// `appDataHash` should be accepted even when the document does not hash to
+    /// the provided hash. The provided hash is still used as the order's
+    /// app-data hash so the order signature keeps verifying.
+    pub fn with_skip_app_data_hash_verification(mut self, skip: bool) -> Self {
+        self.skip_app_data_hash_verification = skip;
+        self
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
@@ -728,12 +741,28 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Both { full, expected } => {
                 let validated = validate(full)?;
                 if validated.hash != *expected {
-                    return Err(AppDataValidationError::Mismatch {
-                        provided: *expected,
-                        actual: validated.hash,
-                    });
+                    if !self.skip_app_data_hash_verification {
+                        return Err(AppDataValidationError::Mismatch {
+                            provided: *expected,
+                            actual: validated.hash,
+                        });
+                    }
+                    tracing::warn!(
+                        provided = ?expected,
+                        actual = ?validated.hash,
+                        "accepting app data with mismatched hash: hash verification disabled",
+                    );
+                    // Keep the user-provided `expected` hash so the order
+                    // signature (signed over `expected`) still verifies, while
+                    // retaining the validated document for simulation/storage.
+                    ValidatedAppData {
+                        hash: *expected,
+                        document: validated.document,
+                        protocol: validated.protocol,
+                    }
+                } else {
+                    validated
                 }
-                validated
             }
             OrderCreationAppData::Hash { hash } => {
                 // Eventually we're not going to accept orders that set only a
@@ -1335,6 +1364,81 @@ mod tests {
             )
             .unwrap();
         assert!(!reparsed.interactions.pre.is_empty());
+    }
+
+    fn app_data_only_validator() -> OrderValidator {
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::from_set(Default::default())),
+            OrderValidPeriodConfiguration::any(),
+            false,
+            DenyListedTokens::default(),
+            HooksTrampoline::Instance::new(
+                Address::repeat_byte(0xcf),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(MockOrderQuoting::new()),
+            Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
+            None,
+            Arc::new(limit_order_counter),
+            0,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+        )
+    }
+
+    #[test]
+    fn app_data_hash_mismatch_is_rejected_by_default() {
+        let validator = app_data_only_validator();
+        let result = validator.validate_app_data(
+            &OrderCreationAppData::Both {
+                full: r#"{"version":"1.1.0","appCode":"test"}"#.to_string(),
+                expected: AppDataHash([0x11; 32]),
+            },
+            &None,
+        );
+        assert!(matches!(
+            result,
+            Err(AppDataValidationError::Mismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn app_data_hash_mismatch_is_accepted_when_verification_disabled() {
+        let validator = app_data_only_validator().with_skip_app_data_hash_verification(true);
+        let full = r#"{"version":"1.1.0","appCode":"test"}"#.to_string();
+        let expected = AppDataHash([0x11; 32]);
+        let app_data = validator
+            .validate_app_data(
+                &OrderCreationAppData::Both {
+                    full: full.clone(),
+                    expected,
+                },
+                &None,
+            )
+            .unwrap();
+        // The user-provided hash is kept (so the signature keeps verifying)...
+        assert_eq!(app_data.inner.hash, expected);
+        // ...while the full document is retained for storage/simulation.
+        assert_eq!(app_data.inner.document, full);
+    }
+
+    #[test]
+    fn app_data_matching_hash_still_accepted_when_verification_disabled() {
+        let validator = app_data_only_validator().with_skip_app_data_hash_verification(true);
+        let full = r#"{"version":"1.1.0","appCode":"test"}"#.to_string();
+        let expected = OrderCreationAppData::Full { full: full.clone() }.hash();
+        let app_data = validator
+            .validate_app_data(&OrderCreationAppData::Both { full, expected }, &None)
+            .unwrap();
+        assert_eq!(app_data.inner.hash, expected);
     }
 
     #[tokio::test]

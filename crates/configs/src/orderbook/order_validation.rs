@@ -75,6 +75,14 @@ pub struct OrderValidationConfig {
     /// Policy for orders where the buy and sell tokens are equal.
     #[serde(default)]
     pub same_tokens_policy: SameTokensPolicy,
+
+    /// When enabled, orders that provide both the full app-data document and an
+    /// `appDataHash` are accepted even if the document does not hash to the
+    /// provided hash. The provided hash is still used as the order's app-data
+    /// hash (so the order signature keeps verifying); only the mismatch
+    /// rejection is skipped.
+    #[serde(default)]
+    pub skip_app_data_hash_verification: bool,
 }
 
 impl Default for OrderValidationConfig {
@@ -86,6 +94,7 @@ impl Default for OrderValidationConfig {
             max_limit_orders_per_user: default_max_limit_orders_per_user(),
             max_gas_per_order: default_max_gas_per_order(),
             same_tokens_policy: Default::default(),
+            skip_app_data_hash_verification: false,
         }
     }
 }
@@ -103,6 +112,7 @@ mod tests {
             config.max_limit_order_validity_period,
             Duration::from_secs(31_536_000)
         );
+        assert!(!config.skip_app_data_hash_verification);
     }
 
     #[test]
@@ -114,6 +124,7 @@ mod tests {
         max-limit-orders-per-user = 10
         max-gas-per-order = 5000000
         same-tokens-policy = "allow-sell"
+        skip-app-data-hash-verification = true
         "#;
         let config: OrderValidationConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
@@ -125,6 +136,7 @@ mod tests {
         assert_eq!(config.max_limit_orders_per_user, 10);
         assert_eq!(config.max_gas_per_order, 5_000_000);
         assert_eq!(config.same_tokens_policy, SameTokensPolicy::AllowSell);
+        assert!(config.skip_app_data_hash_verification);
     }
 
     #[test]
@@ -136,6 +148,7 @@ mod tests {
             max_limit_orders_per_user: 5,
             max_gas_per_order: 5_000_000,
             same_tokens_policy: SameTokensPolicy::AllowSell,
+            skip_app_data_hash_verification: true,
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -159,5 +172,9 @@ mod tests {
         );
         assert_eq!(config.max_gas_per_order, deserialized.max_gas_per_order);
         assert_eq!(config.same_tokens_policy, deserialized.same_tokens_policy);
+        assert_eq!(
+            config.skip_app_data_hash_verification,
+            deserialized.skip_app_data_hash_verification
+        );
     }
 }
