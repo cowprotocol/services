@@ -198,20 +198,32 @@ mod tests {
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
-    /// for headroom.
+    /// for headroom. Run with `--nocapture` to see the assembled solution
+    /// JSON.
     #[tokio::test]
     #[ignore]
     async fn jupiter_live_sell() {
         let jupiter = Jupiter::new(&config(false)).unwrap();
         // Any valid pubkey works for building instructions, the swap only runs
         // for real once the driver supplies its settlement signer.
+        let sell = order(Side::Sell);
         let swap = jupiter
-            .swap(&order(Side::Sell), &Pubkey::from_str(WSOL).unwrap())
+            .swap(&sell, &Pubkey::from_str(WSOL).unwrap())
             .await
             .unwrap();
         assert_eq!(swap.in_amount, 1_000_000);
         assert!(swap.out_amount > 0);
         assert!(!swap.instructions.is_empty());
+
+        // End to end: the live swap assembles into a valid solution.
+        let solution = crate::domain::solution::Solution::single(
+            0,
+            crate::domain::order::OrderUid([1; 32]),
+            &sell,
+            swap,
+        )
+        .unwrap();
+        println!("{}", serde_json::to_string_pretty(&solution).unwrap());
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
