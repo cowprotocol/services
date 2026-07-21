@@ -120,7 +120,7 @@ impl Solution {
             }],
             interactions: swap
                 .instructions
-                .iter()
+                .into_iter()
                 .map(Instruction::from_sdk)
                 .collect(),
             cu_estimate: None,
@@ -130,19 +130,19 @@ impl Solution {
 }
 
 impl Instruction {
-    fn from_sdk(instruction: &SolInstruction) -> Self {
+    fn from_sdk(instruction: SolInstruction) -> Self {
         Self {
             program_id: instruction.program_id,
             accounts: instruction
                 .accounts
-                .iter()
+                .into_iter()
                 .map(|meta| AccountMeta {
                     pubkey: meta.pubkey,
                     is_signer: meta.is_signer,
                     is_writable: meta.is_writable,
                 })
                 .collect(),
-            instruction_data: instruction.data.clone(),
+            instruction_data: instruction.data,
         }
     }
 }
