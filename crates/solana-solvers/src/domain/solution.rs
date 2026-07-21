@@ -7,7 +7,7 @@ use {
     base64::prelude::*,
     serde::Serialize,
     serde_with::serde_as,
-    solana_sdk::{instruction::Instruction, pubkey::Pubkey},
+    solana_sdk::{instruction::Instruction as SolInstruction, pubkey::Pubkey},
     std::collections::HashMap,
 };
 
@@ -22,7 +22,7 @@ pub struct Solution {
     #[serde_as(as = "HashMap<serde_with::DisplayFromStr, _>")]
     pub prices: HashMap<Pubkey, u64>,
     pub trades: Vec<Trade>,
-    pub interactions: Vec<Interaction>,
+    pub interactions: Vec<Instruction>,
     /// The solver's estimate of total settlement compute units. Optional and
     /// left unset here: the driver sizes the CU limit from simulating the whole
     /// settlement transaction, which this solver never sees, so it has no total
@@ -48,21 +48,15 @@ pub struct Trade {
     pub fee: u64,
 }
 
-/// A solver-supplied settlement interaction. Only `custom` exists: the EVM
-/// DTO's other interaction kinds aren't produced on Solana, so the type
-/// carries just this one.
-#[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum Interaction {
-    Custom(CustomInteraction),
-}
-
-/// The aggregator's instruction carried verbatim: program ID, full account
-/// metas (writable and signer flags), and the instruction data.
+/// One settlement instruction the solver supplies, carried verbatim: program
+/// ID, full account metas (writable and signer flags), and the instruction
+/// data. The driver splices these between `BeginSettle` and `FinalizeSettle`.
+/// Solana has a single interaction kind at MVP, so this is a plain instruction,
+/// not a tagged enum.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CustomInteraction {
+pub struct Instruction {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub program_id: Pubkey,
     pub accounts: Vec<AccountMeta>,
@@ -99,7 +93,7 @@ impl Solution {
     /// Clearing prices derive from the quoted amounts: the sell mint is
     /// priced at the swap's output amount and the buy mint at its input
     /// amount, so `executed × price` matches on both sides. The swap's
-    /// instructions are carried verbatim as `custom` interactions, and its
+    /// instructions are carried verbatim as interactions, and its
     /// address lookup tables travel along so the driver can build the v0
     /// transaction the instructions assume.
     pub fn single(
@@ -129,16 +123,20 @@ impl Solution {
                 executed_amount,
                 fee: 0,
             }],
-            interactions: swap.instructions.iter().map(Interaction::custom).collect(),
+            interactions: swap
+                .instructions
+                .iter()
+                .map(Instruction::from_sdk)
+                .collect(),
             cu_estimate: None,
             address_lookup_tables: swap.address_lookup_tables,
         })
     }
 }
 
-impl Interaction {
-    fn custom(instruction: &Instruction) -> Self {
-        Self::Custom(CustomInteraction {
+impl Instruction {
+    fn from_sdk(instruction: &SolInstruction) -> Self {
+        Self {
             program_id: instruction.program_id,
             accounts: instruction
                 .accounts
@@ -150,7 +148,7 @@ impl Interaction {
                 })
                 .collect(),
             instruction_data: instruction.data.clone(),
-        })
+        }
     }
 }
 
@@ -180,7 +178,7 @@ mod tests {
         dex::Swap {
             in_amount: 1_000,
             out_amount: 2_000,
-            instructions: vec![Instruction {
+            instructions: vec![SolInstruction {
                 program_id: pubkey(9),
                 accounts: vec![SdkAccountMeta {
                     pubkey: pubkey(4),
@@ -210,12 +208,12 @@ mod tests {
         assert_eq!(solution.address_lookup_tables, vec![pubkey(7)]);
 
         // The instruction is carried verbatim, flags included.
-        let Interaction::Custom(custom) = &solution.interactions[0];
-        assert_eq!(custom.program_id, pubkey(9));
-        assert_eq!(custom.accounts[0].pubkey, pubkey(4));
-        assert!(custom.accounts[0].is_signer);
-        assert!(!custom.accounts[0].is_writable);
-        assert_eq!(custom.instruction_data, vec![0xde, 0xad]);
+        let interaction = &solution.interactions[0];
+        assert_eq!(interaction.program_id, pubkey(9));
+        assert_eq!(interaction.accounts[0].pubkey, pubkey(4));
+        assert!(interaction.accounts[0].is_signer);
+        assert!(!interaction.accounts[0].is_writable);
+        assert_eq!(interaction.instruction_data, vec![0xde, 0xad]);
     }
 
     #[test]
@@ -260,7 +258,6 @@ mod tests {
             format!("0x{}", "08".repeat(32))
         );
         assert_eq!(json["trades"][0]["executedAmount"], 1_000);
-        assert_eq!(json["interactions"][0]["kind"], "custom");
         assert_eq!(json["interactions"][0]["programId"], pubkey(9).to_string());
         assert_eq!(
             json["interactions"][0]["instructionData"],
