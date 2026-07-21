@@ -11,8 +11,8 @@ use {
     std::collections::HashMap,
 };
 
-/// A single-order solution in the driver DTO. Trades fulfill auction orders
-/// only, with no JIT.
+/// A solution in the driver's `/solve` DTO. Trades fulfill auction orders, with
+/// no JIT.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,8 +23,7 @@ pub struct Solution {
     pub prices: HashMap<Pubkey, u64>,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Instruction>,
-    /// Solver's estimate of total settlement compute units. Unset: the driver
-    /// sizes the real CU limit from its own simulation.
+    /// Optional solver estimate of total settlement compute units.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cu_estimate: Option<u64>,
     /// The address lookup tables the interactions assume, carried through so
@@ -56,7 +55,7 @@ pub struct Instruction {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub program_id: Pubkey,
     pub accounts: Vec<AccountMeta>,
-    /// Base64, matching the aggregator wire encoding.
+    /// Base64-encoded instruction data.
     #[serde(serialize_with = "serialize_base64")]
     pub instruction_data: Vec<u8>,
 }
