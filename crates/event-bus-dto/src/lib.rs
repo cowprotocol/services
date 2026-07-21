@@ -12,13 +12,17 @@
 pub mod envelope;
 pub mod price_estimate;
 pub mod query;
+pub mod quote_computed;
 pub mod quote_requested;
+pub mod winning_price_estimate;
 
 pub use {
     envelope::{ENVELOPE_VERSION, Envelope},
     price_estimate::PriceEstimateEvent,
     query::{OrderKind, QueryFields},
+    quote_computed::QuoteComputedEvent,
     quote_requested::QuoteRequestedEvent,
+    winning_price_estimate::WinningPriceEstimateEvent,
 };
 use {schemars::JsonSchema, serde::Serialize};
 
@@ -29,19 +33,27 @@ pub trait Event: Serialize + JsonSchema {
     const SUBJECT: &'static str;
 }
 
+/// Pairs each event's NATS subject with the JSON schema of its full
+/// [`Envelope`]-wrapped wire format. Listing an event type here is all that's
+/// needed to include it in [`schemas`].
+macro_rules! event_schemas {
+    ($($event:ty),+ $(,)?) => {
+        vec![$((
+            <$event as Event>::SUBJECT,
+            schemars::schema_for!(Envelope<$event>),
+        )),+]
+    };
+}
+
 /// One entry per known event type, mapping the NATS subject to the JSON schema
 /// of the full [`Envelope`]-wrapped wire format consumers receive. Drives the
 /// CLI and any other place that needs to enumerate the full set of events
 /// (e.g. tests that pin the wire format).
 pub fn schemas() -> Vec<(&'static str, schemars::Schema)> {
-    vec![
-        (
-            PriceEstimateEvent::SUBJECT,
-            schemars::schema_for!(Envelope<PriceEstimateEvent>),
-        ),
-        (
-            QuoteRequestedEvent::SUBJECT,
-            schemars::schema_for!(Envelope<QuoteRequestedEvent>),
-        ),
+    event_schemas![
+        PriceEstimateEvent,
+        QuoteRequestedEvent,
+        QuoteComputedEvent,
+        WinningPriceEstimateEvent
     ]
 }

@@ -392,16 +392,38 @@ impl Solver {
             .archives_enabled()
             .then(|| auction.id())
             .flatten();
-        let body: reqwest::Body = match archive_id {
+        let (body, measurements) = match archive_id {
             // Stream the request body while capturing a gzipped copy for S3, so
             // neither the request nor the archive holds the full JSON at once.
             Some(id) => {
-                let (body, compressed) = streaming::stream_body_and_gzip(auction_dto);
+                let (body, compressed, measurements) = streaming::stream_body_and_gzip(auction_dto);
                 self.persistence.archive_auction_gzipped(id, compressed);
-                body
+                (body, measurements)
             }
             None => streaming::stream_body(auction_dto),
         };
+
+        // Record the serialization overhead for real auctions only; quotes go
+        // through the same streaming path but would skew the metric. The stream
+        // reports the timing once serialization finishes, independently of
+        // whether the auction was archived.
+        if auction.id().is_some() {
+            let solver = self.config.name.clone();
+            tokio::spawn(async move {
+                if let Ok(measurements) = measurements.await {
+                    observe::metrics::metrics().record_auction_overhead(
+                        measurements.serialize,
+                        "driver",
+                        "serialize_request",
+                    );
+                    super::observe::serialized_solve_request(
+                        &solver,
+                        measurements.serialize,
+                        measurements.total,
+                    );
+                }
+            });
+        }
 
         let timeout = match auction.deadline(self.timeouts()).solvers().remaining() {
             Ok(timeout) => timeout,

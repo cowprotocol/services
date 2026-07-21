@@ -6,6 +6,7 @@ use {
     configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
     event_bus_dto::{
         query::{OrderKind as DtoOrderKind, QueryFields},
+        quote_computed::QuoteComputedEvent,
         quote_requested::{PriceQuality as DtoPriceQuality, QuoteRequestedEvent},
     },
     futures::stream::{BoxStream, StreamExt},
@@ -119,6 +120,9 @@ impl QuoteHandler {
         request: &OrderQuoteRequest,
     ) -> Result<OrderQuoteResponse, OrderQuoteError> {
         let (params, valid_to) = self.build_quote_params(request).await?;
+        // Captured before `params` is consumed below; the document isn't
+        // available on the response.
+        let app_code = ::app_data::app_code(params.verification.app_data.as_bytes());
 
         let quote = match request.price_quality {
             PriceQuality::Optimal | PriceQuality::Verified => {
@@ -149,6 +153,11 @@ impl QuoteHandler {
 
         let response = build_order_quote_response(request, &quote, &adjusted, quote.id, valid_to)?;
         tracing::debug!(?response, "finished computing quote");
+        observe::event_bus::publish_event(QuoteComputedEvent {
+            quote_id: response.id,
+            app_code,
+            verified: response.verified,
+        });
         Ok(response)
     }
 
@@ -157,13 +166,19 @@ impl QuoteHandler {
         request: &OrderQuoteRequest,
     ) -> Result<BoxStream<'static, Result<OrderQuoteResponse, OrderQuoteError>>, OrderQuoteError>
     {
-        let (params, valid_to) = self.build_quote_params(request).await?;
-
+        // Resolve the streaming quoter before `build_quote_params` so a
+        // misconfigured endpoint fails fast without emitting a `quoteRequested`
+        // event that could never be followed by a `quoteComputed`.
         let streaming = self.streaming_quoter.clone().ok_or_else(|| {
             OrderQuoteError::CalculateQuote(
                 anyhow::anyhow!("streaming quoter not configured").into(),
             )
         })?;
+
+        let (params, valid_to) = self.build_quote_params(request).await?;
+        // Captured before `params` is consumed below; the document isn't
+        // available on the response.
+        let app_code = ::app_data::app_code(params.verification.app_data.as_bytes());
 
         let inner = streaming.calculate_quote_stream(params).await?;
 
@@ -198,6 +213,14 @@ impl QuoteHandler {
                 match response {
                     Ok(response) => {
                         any_ok = true;
+                        // One event per streamed quote so streaming requests get a
+                        // `quoteComputed` counterpart to their `quoteRequested`, just
+                        // like the one-shot endpoint.
+                        observe::event_bus::publish_event(QuoteComputedEvent {
+                            quote_id: response.id,
+                            app_code: app_code.clone(),
+                            verified: response.verified,
+                        });
                         yield Ok(response);
                     }
                     Err(err) => tracing::debug!(%err, "dropping unconvertible streamed quote"),

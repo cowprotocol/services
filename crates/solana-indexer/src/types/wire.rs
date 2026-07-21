@@ -21,6 +21,7 @@ pub use yellowstone_grpc_proto::{
     },
     solana::storage::confirmed_block::{
         CompiledInstruction,
+        InnerInstruction,
         InnerInstructions,
         Message,
         TokenBalance,
