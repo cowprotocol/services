@@ -427,6 +427,7 @@ fn build_module() -> Module {
         ]))
         .add_contract(Contract::new("Solver7702Delegate"))
         .add_contract(Contract::new("ICowWrapper"))
+        .add_contract(Contract::new("ICowAuthWrapper"))
         .add_contract(Contract::new("ChainalysisOracle").with_networks(networks![
             MAINNET => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
             ARBITRUM_ONE => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",

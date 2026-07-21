@@ -2992,6 +2992,7 @@ dependencies = [
  "cow-contract-gpv2settlement",
  "cow-contract-honeyswaprouter",
  "cow-contract-hookstrampoline",
+ "cow-contract-icowauthwrapper",
  "cow-contract-icowwrapper",
  "cow-contract-ierc4626",
  "cow-contract-iswaprpair",
@@ -3661,6 +3662,17 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-hookstrampoline"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-icowauthwrapper"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",

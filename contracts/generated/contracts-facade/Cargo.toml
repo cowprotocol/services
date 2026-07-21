@@ -77,6 +77,7 @@ cow-contract-gpv2allowlistauthentication = { path = "../contracts-generated/gpv2
 cow-contract-gpv2settlement = { path = "../contracts-generated/gpv2settlement" }
 cow-contract-honeyswaprouter = { path = "../contracts-generated/honeyswaprouter" }
 cow-contract-hookstrampoline = { path = "../contracts-generated/hookstrampoline" }
+cow-contract-icowauthwrapper = { path = "../contracts-generated/icowauthwrapper" }
 cow-contract-icowwrapper = { path = "../contracts-generated/icowwrapper" }
 cow-contract-ierc4626 = { path = "../contracts-generated/ierc4626" }
 cow-contract-iswaprpair = { path = "../contracts-generated/iswaprpair" }

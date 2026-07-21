@@ -1,0 +1,23 @@
+{
+  "abi": [
+    {
+      "type": "function",
+      "name": "computeOrderAppData",
+      "inputs": [
+        {
+          "name": "wrapperData",
+          "type": "bytes",
+          "internalType": "bytes"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "stateMutability": "view"
+    }
+  ]
+}

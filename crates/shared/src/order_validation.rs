@@ -16,7 +16,7 @@ use {
     async_trait::async_trait,
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
-    contracts::{HooksTrampoline, WETH9},
+    contracts::{HooksTrampoline, ICowAuthWrapper, WETH9},
     futures::future::OptionFuture,
     model::{
         DomainSeparator,
@@ -191,7 +191,7 @@ pub trait OrderValidating: Send + Sync {
     /// This validates an order's app-data and returns the parsed
     /// `ProtocolAppData` value along with the corresponding rendered
     /// interactions that were specified in the `app_data`.
-    fn validate_app_data(
+    async fn validate_app_data(
         &self,
         app_data: &OrderCreationAppData,
         full_app_data_override: &Option<String>,
@@ -439,6 +439,36 @@ pub struct OrderAppData {
 }
 
 impl OrderValidator {
+    /// Returns whether one of the order's wrappers is an auth wrapper whose `WrapperAndAppData`
+    /// envelope hash equals `expected` — i.e. the order's on-chain appData is the envelope this
+    /// wrapper commits to (`hashStruct(WrapperAndAppData)`) rather than `keccak256(full_app_data)`.
+    ///
+    /// The envelope depends on the wrapper's EIP-712 param encoding, which we cannot reproduce
+    /// generically off-chain, so we ask the wrapper contract to recompute it via its
+    /// `computeOrderAppData` view. A plain (non-auth) wrapper has no such method, so the call
+    /// reverts and that wrapper is skipped. Any RPC/decode error is treated as "no match", so the
+    /// order falls through to the standard `AppDataHashMismatch` rejection (fail-closed).
+    async fn wrapper_envelope_matches(
+        &self,
+        wrappers: &[app_data::WrapperCall],
+        expected: AppDataHash,
+    ) -> bool {
+        let provider = self.native_token.provider();
+        let expected = B256::from(expected.0);
+        for wrapper in wrappers {
+            let instance = ICowAuthWrapper::Instance::new(wrapper.address, provider.clone());
+            match instance
+                .computeOrderAppData(wrapper.data.clone().into())
+                .call()
+                .await
+            {
+                Ok(envelope) if envelope == expected => return true,
+                _ => continue,
+            }
+        }
+        false
+    }
+
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         native_token: WETH9::Instance,
@@ -711,7 +741,7 @@ impl OrderValidating for OrderValidator {
     ///   will be compared against the hash.
     /// * The app data the override will be ignored unless the provided app data
     ///   is a hash.
-    fn validate_app_data(
+    async fn validate_app_data(
         &self,
         app_data: &OrderCreationAppData,
         full_app_data_override: &Option<String>,
@@ -727,13 +757,30 @@ impl OrderValidating for OrderValidator {
         let app_data = match app_data {
             OrderCreationAppData::Both { full, expected } => {
                 let validated = validate(full)?;
-                if validated.hash != *expected {
+                if validated.hash == *expected {
+                    validated
+                } else if !validated.protocol.wrappers.is_empty()
+                    && self
+                        .wrapper_envelope_matches(&validated.protocol.wrappers, *expected)
+                        .await
+                {
+                    // An auth wrapper (e.g. `CowAuthWrapper`) sets the order's on-chain appData to
+                    // the `WrapperAndAppData` envelope hash rather than `keccak256(full)`. We could
+                    // not reproduce that hash locally (it depends on the wrapper's EIP-712 param
+                    // encoding), so we asked the wrapper contract to recompute it and it matched
+                    // `expected`. Keep `expected` as the stored hash so the order is settled with the
+                    // exact appData the user signed (see the settlement/`tload` binding on-chain).
+                    ValidatedAppData {
+                        hash: *expected,
+                        document: validated.document,
+                        protocol: validated.protocol,
+                    }
+                } else {
                     return Err(AppDataValidationError::Mismatch {
                         provided: *expected,
                         actual: validated.hash,
                     });
                 }
-                validated
             }
             OrderCreationAppData::Hash { hash } => {
                 // Eventually we're not going to accept orders that set only a
@@ -778,7 +825,9 @@ impl OrderValidating for OrderValidator {
     ) -> Result<(Order, Option<Quote>), ValidationError> {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
-        let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
+        let app_data = self
+            .validate_app_data(&order.app_data, &full_app_data_override)
+            .await?;
         let app_data_signer = app_data.inner.protocol.signer;
 
         let owner = order.verify_owner(domain_separator, app_data_signer)?;
@@ -1257,6 +1306,7 @@ mod tests {
             primitives::{Address, U160, U256, address, b256},
             providers::{Provider, ProviderBuilder, mock::Asserter},
             signers::local::PrivateKeySigner,
+            sol_types::SolCall,
         },
         futures::FutureExt,
         maplit::hashset,
@@ -1272,8 +1322,8 @@ mod tests {
 
     const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);
 
-    #[test]
-    fn hash_app_data_keeps_full_document_for_simulation() {
+    #[tokio::test]
+    async fn hash_app_data_keeps_full_document_for_simulation() {
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
@@ -1317,6 +1367,7 @@ mod tests {
                 },
                 &Some(full.to_string()),
             )
+            .await
             .unwrap();
 
         // The `Hash` branch used to hardcode the document to `"{}"`, which made
@@ -1333,8 +1384,119 @@ mod tests {
                 },
                 &None,
             )
+            .await
             .unwrap();
         assert!(!reparsed.interactions.pre.is_empty());
+    }
+
+    /// Builds an `OrderValidator` whose `native_token` (and therefore the provider used by
+    /// `wrapper_envelope_matches`) is backed by the supplied mock `asserter`.
+    fn validator_with_mocked_provider(asserter: &Asserter) -> OrderValidator {
+        let native_token = WETH9::Instance::new(
+            Address::repeat_byte(0xef),
+            ProviderBuilder::new()
+                .connect_mocked_client(asserter.clone())
+                .erased(),
+        );
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::from_set(Default::default())),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
+            false,
+            DenyListedTokens::default(),
+            HooksTrampoline::Instance::new(
+                Address::repeat_byte(0xcf),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(MockOrderQuoting::new()),
+            Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
+            None,
+            Arc::new(limit_order_counter),
+            0,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+        )
+    }
+
+    // A `Both` app-data whose `expected` is the `WrapperAndAppData` envelope (not `keccak256(full)`)
+    // is accepted when the order's auth wrapper recomputes the same envelope, and the envelope is
+    // kept as the stored appData (so the order settles with the value the user signed).
+    #[tokio::test]
+    async fn wrapper_order_appdata_validated_via_getter() {
+        let asserter = Asserter::new();
+        let validator = validator_with_mocked_provider(&asserter);
+
+        let full = r#"{"version":"1.1.0","appCode":"test","metadata":{"wrappers":[{"address":"0x00000000000000000000000000000000000000aa","data":"0xdeadbeef"}]}}"#;
+        let expected = AppDataHash([0x11; 32]);
+
+        // The wrapper contract recomputes the envelope and it matches `expected`.
+        asserter.push_success(
+            &ICowAuthWrapper::ICowAuthWrapper::computeOrderAppDataCall::abi_encode_returns(&B256::from(
+                expected.0,
+            )),
+        );
+
+        let validated = validator
+            .validate_app_data(
+                &OrderCreationAppData::Both {
+                    full: full.to_string(),
+                    expected,
+                },
+                &None,
+            )
+            .await
+            .unwrap();
+
+        // Accepted, and the stored appData is the signed envelope, not `keccak256(full)`.
+        assert_eq!(validated.inner.hash, expected);
+        assert_ne!(validated.inner.hash, hash_app_data_as(full));
+    }
+
+    // If the wrapper recomputes a *different* envelope, the order is rejected as a mismatch.
+    #[tokio::test]
+    async fn wrapper_order_appdata_rejected_on_envelope_mismatch() {
+        let asserter = Asserter::new();
+        let validator = validator_with_mocked_provider(&asserter);
+
+        let full = r#"{"version":"1.1.0","appCode":"test","metadata":{"wrappers":[{"address":"0x00000000000000000000000000000000000000aa","data":"0xdeadbeef"}]}}"#;
+        let expected = AppDataHash([0x11; 32]);
+
+        // Wrapper returns some other envelope hash.
+        asserter.push_success(
+            &ICowAuthWrapper::ICowAuthWrapper::computeOrderAppDataCall::abi_encode_returns(&B256::from(
+                [0x22; 32],
+            )),
+        );
+
+        let result = validator
+            .validate_app_data(
+                &OrderCreationAppData::Both {
+                    full: full.to_string(),
+                    expected,
+                },
+                &None,
+            )
+            .await;
+
+        // `OrderAppData` isn't `Debug`, so match on the result rather than `unwrap_err()`.
+        assert!(matches!(
+            result,
+            Err(AppDataValidationError::Mismatch { .. })
+        ));
+    }
+
+    fn hash_app_data_as(full: &str) -> AppDataHash {
+        AppDataHash(app_data::hash_full_app_data(full.as_bytes()))
     }
 
     #[tokio::test]

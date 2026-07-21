@@ -46,6 +46,7 @@ pub use {
     cow_contract_gpv2settlement as GPv2Settlement,
     cow_contract_honeyswaprouter as HoneyswapRouter,
     cow_contract_hookstrampoline as HooksTrampoline,
+    cow_contract_icowauthwrapper as ICowAuthWrapper,
     cow_contract_icowwrapper as ICowWrapper,
     cow_contract_ierc4626 as IERC4626,
     cow_contract_iswaprpair as ISwaprPair,

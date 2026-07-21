@@ -263,7 +263,8 @@ impl QuoteHandler {
 
         let app_data = self
             .order_validator
-            .validate_app_data(&request.app_data, &full_app_data_override)?;
+            .validate_app_data(&request.app_data, &full_app_data_override)
+            .await?;
 
         let order = PreOrderData::from(request);
         // Capture valid_to once so the value validated here is the exact value
