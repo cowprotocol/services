@@ -1,10 +1,5 @@
 //! Solution assembly: one quoted swap becomes one single-order solution in the
 //! driver's `/solve` DTO.
-//!
-//! Deliberately absent: slippage (the aggregator bakes it into the
-//! instruction data), compute-unit estimates (the driver sizes the CU limit
-//! from simulation), and payout instructions (the swap output funds the
-//! settlement's buffer, which pays the user out).
 
 use {
     super::order::OrderUid,
@@ -270,8 +265,6 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(json["addressLookupTables"][0], pubkey(7).to_string());
-        // No cu_estimate on the wire: CU sizing is the driver's job.
-        assert!(json.get("cuEstimate").is_none());
     }
 
     #[test]

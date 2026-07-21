@@ -78,6 +78,8 @@ impl Jupiter {
             .append_pair("outputMint", &order.buy_mint.to_string())
             .append_pair("amount", &order.amount.to_string())
             .append_pair("swapMode", swap_mode.as_str())
+            // Jupiter bakes the resulting bounds into the returned instruction
+            // data; nothing downstream re-applies slippage.
             .append_pair("slippageBps", &self.slippage_bps.to_string());
         self.send(self.with_key(self.client.get(url))).await
     }

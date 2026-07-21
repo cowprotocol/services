@@ -48,6 +48,11 @@ impl<'a> SwapInstructionsRequest<'a> {
 
 /// The parts of the `/swap-instructions` response we need to build a [`Swap`].
 /// Amounts come from the `/quote` response.
+///
+/// The response's `computeBudgetInstructions` are deliberately not read: the
+/// driver emits its own ComputeBudget instructions sized by simulating the
+/// full settlement transaction, and a transaction with two of them is
+/// rejected by the runtime.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SwapInstructionsResponse {
