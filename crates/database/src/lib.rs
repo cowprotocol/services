@@ -113,6 +113,36 @@ pub type AppId = ByteArray<32>;
 pub type TransactionHash = ByteArray<32>;
 pub type OrderUid = ByteArray<56>;
 
+/// Returns references to the elements of `items`, keeping only the **last**
+/// occurrence of each key while preserving the original relative order.
+///
+/// A batched `INSERT ... ON CONFLICT (...) DO UPDATE` statement errors with
+/// "ON CONFLICT DO UPDATE command cannot affect row a second time" if the same
+/// conflict key appears more than once in the same statement. The single-row
+/// loops these batches replace were immune to this (a later row simply
+/// overwrote an earlier one), so we reproduce that "last write wins" semantics
+/// by de-duplicating before building the batch.
+pub(crate) fn dedup_keep_last<T, K, F>(items: &[T], mut key: F) -> Vec<&T>
+where
+    F: FnMut(&T) -> K,
+    K: std::hash::Hash + Eq,
+{
+    let mut seen = std::collections::HashSet::with_capacity(items.len());
+    let mut keep = vec![false; items.len()];
+    // Walk backwards so the first key we see for a given value is its last
+    // occurrence.
+    for (i, item) in items.iter().enumerate().rev() {
+        if seen.insert(key(item)) {
+            keep[i] = true;
+        }
+    }
+    items
+        .iter()
+        .zip(keep)
+        .filter_map(|(item, keep)| keep.then_some(item))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use {

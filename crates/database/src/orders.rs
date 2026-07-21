@@ -4,8 +4,9 @@ use {
         AppId,
         OrderUid,
         TransactionHash,
+        dedup_keep_last,
         onchain_broadcasted_orders::OnchainOrderPlacementError,
-        order_events::{OrderEvent, OrderEventLabel, insert_order_event},
+        order_events::{OrderEventLabel, insert_order_events_with_timestamps},
     },
     futures::stream::BoxStream,
     sqlx::{
@@ -16,6 +17,7 @@ use {
             chrono::{DateTime, Utc},
         },
     },
+    std::collections::HashSet,
     tracing::instrument,
 };
 
@@ -101,27 +103,88 @@ pub struct Order {
     pub class: OrderClass,
 }
 
+/// Number of orders per batched `INSERT`. Each row binds ~24 parameters, so
+/// this keeps a chunk well under Postgres' 65535 bind-parameter limit.
+const ORDER_INSERT_BATCH_SIZE: usize = 1000;
+
 #[instrument(skip_all)]
 pub async fn insert_orders_and_ignore_conflicts(
     ex: &mut PgConnection,
     orders: &[Order],
 ) -> Result<(), sqlx::Error> {
-    for order in orders {
-        let inserted = insert_order_and_ignore_conflicts(ex, order).await?;
-        // Only insert order_event if the order was actually inserted
-        if inserted {
-            insert_order_event(
-                ex,
-                &OrderEvent {
-                    label: OrderEventLabel::Created,
-                    timestamp: order.creation_timestamp,
-                    order_uid: order.uid,
-                    reason: None,
-                },
-            )
-            .await?;
-        }
+    if orders.is_empty() {
+        return Ok(());
     }
+
+    // Insert all orders in one (chunked) statement; `RETURNING uid` reports the
+    // rows that were actually inserted (i.e. did not hit `ON CONFLICT`),
+    // replacing the previous per-row `rows_affected` check.
+    let mut inserted = HashSet::with_capacity(orders.len());
+    for chunk in orders.chunks(ORDER_INSERT_BATCH_SIZE) {
+        let mut builder = QueryBuilder::new(
+            "INSERT INTO orders (uid, owner, creation_timestamp, sell_token, buy_token, receiver, \
+             sell_amount, buy_amount, valid_to, app_data, fee_amount, kind, partially_fillable, \
+             signature, signing_scheme, settlement_contract, sell_token_balance, \
+             buy_token_balance, cancellation_timestamp, class, true_valid_to) ",
+        );
+        builder.push_values(chunk, |mut builder, order| {
+            builder
+                .push_bind(order.uid)
+                .push_bind(order.owner)
+                .push_bind(order.creation_timestamp)
+                .push_bind(order.sell_token)
+                .push_bind(order.buy_token)
+                .push_bind(order.receiver)
+                .push_bind(order.sell_amount.clone())
+                .push_bind(order.buy_amount.clone())
+                .push_bind(order.valid_to)
+                .push_bind(order.app_data)
+                .push_bind(order.fee_amount.clone())
+                .push_bind(order.kind)
+                .push_bind(order.partially_fillable)
+                .push_bind(order.signature.clone())
+                .push_bind(order.signing_scheme)
+                .push_bind(order.settlement_contract)
+                .push_bind(order.sell_token_balance)
+                .push_bind(order.buy_token_balance)
+                .push_bind(order.cancellation_timestamp)
+                .push_bind(order.class);
+            // Ethflow orders are inserted with valid_to = u32::MAX; their true
+            // validity lives in the ethflow_orders table. If such a row already
+            // exists, take the smaller of the two valid_to values. Mirrors the
+            // per-row CASE in `INSERT_ORDER_QUERY`.
+            builder
+                .push("CASE WHEN ")
+                .push_bind_unseparated(order.valid_to)
+                .push_unseparated(
+                    " = 4294967295 THEN COALESCE((SELECT valid_to FROM ethflow_orders WHERE uid = ",
+                )
+                .push_bind_unseparated(order.uid)
+                .push_unseparated("), ")
+                .push_bind_unseparated(order.valid_to)
+                .push_unseparated(") ELSE ")
+                .push_bind_unseparated(order.valid_to)
+                .push_unseparated(" END");
+        });
+        builder.push(" ON CONFLICT (uid) DO NOTHING RETURNING uid");
+
+        let uids: Vec<OrderUid> = builder.build_query_scalar().fetch_all(&mut *ex).await?;
+        inserted.extend(uids);
+    }
+
+    // Emit exactly one "created" event per actually-inserted order, using the
+    // first occurrence's timestamp. `INSERT ... ON CONFLICT DO NOTHING` keeps the
+    // first row when a uid appears more than once in a batch (the ethflow reorg
+    // re-indexing case), so `inserted` holds each uid once; draining it while we
+    // scan `orders` in order keeps that first occurrence and avoids emitting a
+    // duplicate event for the repeated row.
+    let created_events: Vec<(OrderUid, DateTime<Utc>)> = orders
+        .iter()
+        .filter(|order| inserted.remove(&order.uid))
+        .map(|order| (order.uid, order.creation_timestamp))
+        .collect();
+    insert_order_events_with_timestamps(ex, &created_events, OrderEventLabel::Created, None)
+        .await?;
     Ok(())
 }
 
@@ -237,7 +300,7 @@ pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
 }
 
 /// Time during the `settle()` call when an interaction should be executed.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "ExecutionTime")]
 #[sqlx(rename_all = "lowercase")]
 pub enum ExecutionTime {
@@ -306,8 +369,30 @@ pub async fn insert_or_overwrite_interactions(
     ex: &mut PgConnection,
     uid_and_interaction: &[(OrderUid, Interaction)],
 ) -> Result<(), sqlx::Error> {
-    for (order_uid, interaction) in uid_and_interaction.iter() {
-        insert_or_overwrite_interaction(ex, interaction, order_uid).await?;
+    const BATCH_SIZE: usize = 5000;
+    // Keep the last entry per (order, index, execution) so the batched upsert
+    // never targets the same interaction twice in one statement.
+    let entries = dedup_keep_last(uid_and_interaction, |(uid, interaction)| {
+        (*uid, interaction.index, interaction.execution)
+    });
+    for chunk in entries.chunks(BATCH_SIZE) {
+        let mut builder = QueryBuilder::new(
+            "INSERT INTO interactions (order_uid, index, target, value, data, execution) ",
+        );
+        builder.push_values(chunk, |mut builder, (order_uid, interaction)| {
+            builder
+                .push_bind(order_uid)
+                .push_bind(interaction.index)
+                .push_bind(interaction.target)
+                .push_bind(interaction.value.clone())
+                .push_bind(interaction.data.clone())
+                .push_bind(interaction.execution);
+        });
+        builder.push(
+            " ON CONFLICT (order_uid, index, execution) DO UPDATE SET target = EXCLUDED.target, \
+             value = EXCLUDED.value, data = EXCLUDED.data",
+        );
+        builder.build().execute(&mut *ex).await?;
     }
     Ok(())
 }
@@ -360,8 +445,36 @@ pub struct Quote {
 
 #[instrument(skip_all)]
 pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
-    for quote in quotes {
-        insert_quote_and_update_on_conflict(ex, quote).await?;
+    const BATCH_SIZE: usize = 5000;
+    // Keep the last quote per order so the batched upsert never targets the same
+    // order twice in one statement.
+    let quotes = dedup_keep_last(quotes, |quote| quote.order_uid);
+    for chunk in quotes.chunks(BATCH_SIZE) {
+        let mut builder = QueryBuilder::new(
+            "INSERT INTO order_quotes (order_uid, gas_amount, gas_price, sell_token_price, \
+             sell_amount, buy_amount, solver, verified, metadata) ",
+        );
+        builder.push_values(chunk, |mut builder, quote| {
+            builder
+                .push_bind(quote.order_uid)
+                .push_bind(quote.gas_amount)
+                .push_bind(quote.gas_price)
+                .push_bind(quote.sell_token_price)
+                .push_bind(quote.sell_amount.clone())
+                .push_bind(quote.buy_amount.clone())
+                .push_bind(quote.solver)
+                .push_bind(quote.verified)
+                .push_bind(quote.metadata.clone());
+        });
+        // Note: `solver` is intentionally not overwritten on conflict, matching
+        // the previous single-row behaviour.
+        builder.push(
+            " ON CONFLICT (order_uid) DO UPDATE SET gas_amount = EXCLUDED.gas_amount, gas_price = \
+             EXCLUDED.gas_price, sell_token_price = EXCLUDED.sell_token_price, sell_amount = \
+             EXCLUDED.sell_amount, buy_amount = EXCLUDED.buy_amount, verified = \
+             EXCLUDED.verified, metadata = EXCLUDED.metadata",
+        );
+        builder.build().execute(&mut *ex).await?;
     }
     Ok(())
 }
@@ -1113,6 +1226,249 @@ mod tests {
             .bind(execution)
             .fetch_all(ex)
             .await
+    }
+
+    async fn count_events(ex: &mut PgConnection, uid: OrderUid) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM order_events WHERE order_uid = $1")
+            .bind(uid)
+            .fetch_one(ex)
+            .await
+            .unwrap()
+    }
+
+    async fn true_valid_to(ex: &mut PgConnection, uid: OrderUid) -> i64 {
+        sqlx::query_scalar("SELECT true_valid_to FROM orders WHERE uid = $1")
+            .bind(uid)
+            .fetch_one(ex)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_quotes_batches_and_dedups() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let quote = |uid, solver, buy: i64| Quote {
+            order_uid: uid,
+            gas_amount: 1.,
+            gas_price: 2.,
+            sell_token_price: 3.,
+            sell_amount: BigDecimal::from(10),
+            buy_amount: BigDecimal::from(buy),
+            solver,
+            verified: true,
+            metadata: Default::default(),
+        };
+        let uid1 = ByteArray([1; 56]);
+        let uid2 = ByteArray([2; 56]);
+        let solver1 = ByteArray([9; 20]);
+        let solver2 = ByteArray([8; 20]);
+
+        // Empty input is a no-op.
+        insert_quotes(&mut db, &[]).await.unwrap();
+
+        // `uid2` appears twice in one batch: the last occurrence must win and the
+        // statement must not error with "cannot affect row a second time".
+        insert_quotes(
+            &mut db,
+            &[
+                quote(uid1, solver1, 100),
+                quote(uid2, solver1, 200),
+                quote(uid2, solver2, 999),
+            ],
+        )
+        .await
+        .unwrap();
+        let q2 = read_quote(&mut db, &uid2).await.unwrap().unwrap();
+        assert_eq!(q2.buy_amount, BigDecimal::from(999));
+        assert_eq!(q2.solver, solver2);
+
+        // Re-inserting `uid1` updates the mutable fields but must NOT overwrite
+        // `solver` (matching the original single-row conflict clause).
+        insert_quotes(&mut db, &[quote(uid1, solver2, 500)])
+            .await
+            .unwrap();
+        let q1 = read_quote(&mut db, &uid1).await.unwrap().unwrap();
+        assert_eq!(q1.buy_amount, BigDecimal::from(500));
+        assert_eq!(q1.solver, solver1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_or_overwrite_interactions_batches_and_dedups() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_order(&mut db, &order).await.unwrap();
+
+        let interaction = |index, data: Vec<u8>| Interaction {
+            target: ByteArray([1; 20]),
+            value: BigDecimal::from(0),
+            data,
+            index,
+            execution: ExecutionTime::Pre,
+        };
+        // (order, 0, Pre) appears twice in one batch: the last one must win.
+        insert_or_overwrite_interactions(
+            &mut db,
+            &[
+                (order.uid, interaction(0, vec![1])),
+                (order.uid, interaction(1, vec![2])),
+                (order.uid, interaction(0, vec![3])),
+            ],
+        )
+        .await
+        .unwrap();
+
+        let pre = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
+            .await
+            .unwrap();
+        assert_eq!(pre.len(), 2);
+        assert_eq!(pre[0].index, 0);
+        assert_eq!(pre[0].data, vec![3]);
+        assert_eq!(pre[1].index, 1);
+        assert_eq!(pre[1].data, vec![2]);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_orders_batch_events_and_true_valid_to() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        // Empty input is a no-op.
+        insert_orders_and_ignore_conflicts(&mut db, &[])
+            .await
+            .unwrap();
+
+        // Two distinct, non-ethflow orders inserted in one batch.
+        let o1 = Order {
+            uid: ByteArray([1; 56]),
+            valid_to: 111,
+            creation_timestamp: Utc.timestamp_opt(1000, 0).unwrap(),
+            ..Default::default()
+        };
+        let o2 = Order {
+            uid: ByteArray([2; 56]),
+            valid_to: 222,
+            creation_timestamp: Utc.timestamp_opt(2000, 0).unwrap(),
+            ..Default::default()
+        };
+        insert_orders_and_ignore_conflicts(&mut db, &[o1.clone(), o2.clone()])
+            .await
+            .unwrap();
+        // For non-ethflow orders true_valid_to mirrors valid_to.
+        assert_eq!(true_valid_to(&mut db, o1.uid).await, 111);
+        assert_eq!(true_valid_to(&mut db, o2.uid).await, 222);
+        // Exactly one "created" event per inserted order, carrying its timestamp.
+        assert_eq!(count_events(&mut db, o1.uid).await, 1);
+        assert_eq!(count_events(&mut db, o2.uid).await, 1);
+        let ts: chrono::DateTime<Utc> =
+            sqlx::query_scalar("SELECT timestamp FROM order_events WHERE order_uid = $1")
+                .bind(o1.uid)
+                .fetch_one(&mut *db)
+                .await
+                .unwrap();
+        assert_eq!(ts, o1.creation_timestamp);
+
+        // Re-inserting o1 (conflict, not inserted) alongside a brand new o3: only
+        // o3 gets a "created" event; o1 gets no duplicate.
+        let o3 = Order {
+            uid: ByteArray([3; 56]),
+            valid_to: 333,
+            ..Default::default()
+        };
+        insert_orders_and_ignore_conflicts(&mut db, &[o1.clone(), o3.clone()])
+            .await
+            .unwrap();
+        assert_eq!(count_events(&mut db, o1.uid).await, 1);
+        assert_eq!(count_events(&mut db, o3.uid).await, 1);
+
+        // Ethflow order (valid_to = u32::MAX) WITH a matching ethflow_orders row:
+        // true_valid_to must resolve to the ethflow validity via the CASE.
+        let uid4 = ByteArray([4; 56]);
+        insert_or_overwrite_ethflow_order(
+            &mut db,
+            &EthOrderPlacement {
+                uid: uid4,
+                valid_to: 777,
+            },
+        )
+        .await
+        .unwrap();
+        let o4 = Order {
+            uid: uid4,
+            valid_to: u32::MAX as i64,
+            ..Default::default()
+        };
+        insert_orders_and_ignore_conflicts(&mut db, &[o4])
+            .await
+            .unwrap();
+        assert_eq!(true_valid_to(&mut db, uid4).await, 777);
+
+        // Ethflow order (valid_to = u32::MAX) WITHOUT an ethflow_orders row:
+        // true_valid_to stays u32::MAX (COALESCE falls back to valid_to).
+        let o5 = Order {
+            uid: ByteArray([5; 56]),
+            valid_to: u32::MAX as i64,
+            ..Default::default()
+        };
+        insert_orders_and_ignore_conflicts(&mut db, &[o5])
+            .await
+            .unwrap();
+        assert_eq!(
+            true_valid_to(&mut db, ByteArray([5; 56])).await,
+            u32::MAX as i64
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_orders_batch_dedups_created_events() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        // The same uid appears twice in ONE batch with different timestamps (the
+        // ethflow reorg re-indexing case). `ON CONFLICT DO NOTHING` keeps the
+        // first row, and exactly one "created" event must be emitted, carrying
+        // the first occurrence's timestamp — matching the old per-row loop.
+        let uid = ByteArray([1; 56]);
+        let o1 = Order {
+            uid,
+            valid_to: 100,
+            creation_timestamp: Utc.timestamp_opt(1000, 0).unwrap(),
+            ..Default::default()
+        };
+        let o2 = Order {
+            uid,
+            valid_to: 200,
+            creation_timestamp: Utc.timestamp_opt(2000, 0).unwrap(),
+            ..Default::default()
+        };
+        insert_orders_and_ignore_conflicts(&mut db, &[o1.clone(), o2.clone()])
+            .await
+            .unwrap();
+
+        assert_eq!(count_events(&mut db, uid).await, 1);
+
+        let stored = read_order(&mut db, &uid).await.unwrap().unwrap();
+        assert_eq!(stored.valid_to, 100);
+        assert_eq!(stored.creation_timestamp, o1.creation_timestamp);
+
+        let ts: chrono::DateTime<Utc> =
+            sqlx::query_scalar("SELECT timestamp FROM order_events WHERE order_uid = $1")
+                .bind(uid)
+                .fetch_one(&mut *db)
+                .await
+                .unwrap();
+        assert_eq!(ts, o1.creation_timestamp);
     }
 
     #[tokio::test]

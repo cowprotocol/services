@@ -2,11 +2,13 @@ use {
     crate::{
         OrderUid,
         PgTransaction,
+        dedup_keep_last,
         events::EventIndex,
-        order_events::{OrderEvent, OrderEventLabel, insert_order_event},
+        order_events::{OrderEventLabel, insert_order_events},
     },
     chrono::Utc,
-    sqlx::{Executor, PgConnection},
+    sqlx::{Executor, PgConnection, QueryBuilder},
+    std::ops::DerefMut,
     tracing::instrument,
 };
 
@@ -22,21 +24,42 @@ pub async fn insert_onchain_invalidations(
     ex: &mut PgTransaction<'_>,
     events: &[(EventIndex, OrderUid)],
 ) -> Result<(), sqlx::Error> {
-    for (index, event) in events {
-        insert_onchain_invalidation(ex, index, event).await?;
-        insert_order_event(
-            ex,
-            &OrderEvent {
-                label: OrderEventLabel::Cancelled,
-                // It would be more correct to use the timestamp of the event's block, but passing
-                // this is more involved, and now() should be good enough.
-                timestamp: Utc::now(),
-                order_uid: *event,
-                reason: None,
-            },
-        )
-        .await?;
+    const BATCH_SIZE: usize = 5000;
+    // Keep the last invalidation per uid so the batched upsert never targets the
+    // same order twice in one statement.
+    let events = dedup_keep_last(events, |(_, uid)| *uid);
+    for chunk in events.chunks(BATCH_SIZE) {
+        let mut builder = QueryBuilder::new(
+            "INSERT INTO onchain_order_invalidations (block_number, log_index, uid) ",
+        );
+        builder.push_values(chunk, |mut builder, (index, uid)| {
+            builder
+                .push_bind(index.block_number)
+                .push_bind(index.log_index)
+                .push_bind(uid);
+        });
+        builder.push(
+            " ON CONFLICT (uid) DO UPDATE SET block_number = EXCLUDED.block_number, log_index = \
+             EXCLUDED.log_index",
+        );
+        builder.build().execute(ex.deref_mut()).await?;
     }
+
+    // Record a "cancelled" order event for every invalidated order in one shot.
+    // `insert_order_events` binds a single `unnest` array (no bind-parameter
+    // limit to worry about) and already skips orders whose latest event is
+    // already `Cancelled`, matching the previous per-row `insert_order_event`.
+    let uids: Vec<OrderUid> = events.iter().map(|(_, uid)| *uid).collect();
+    insert_order_events(
+        ex,
+        &uids,
+        // It would be more correct to use the timestamp of the event's block, but passing
+        // this is more involved, and now() should be good enough.
+        Utc::now(),
+        OrderEventLabel::Cancelled,
+        None,
+    )
+    .await?;
     Ok(())
 }
 
@@ -186,5 +209,48 @@ mod tests {
             log_index: event_index_2.log_index,
         };
         assert_eq!(expected_row, row);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_onchain_invalidations_dedups_and_emits_events() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let uid1: OrderUid = ByteArray([1; 56]);
+        let uid2: OrderUid = ByteArray([2; 56]);
+        let ev = |block, log| EventIndex {
+            block_number: block,
+            log_index: log,
+        };
+
+        // `uid1` appears twice in one batch; the last occurrence must win and the
+        // statement must not error with "cannot affect row a second time".
+        insert_onchain_invalidations(
+            &mut db,
+            &[(ev(1, 0), uid1), (ev(2, 0), uid2), (ev(5, 1), uid1)],
+        )
+        .await
+        .unwrap();
+
+        let row = read_onchain_invalidation(&mut db, &uid1)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.block_number, 5);
+        assert_eq!(row.log_index, 1);
+
+        // Exactly one "cancelled" order event per distinct invalidated order.
+        for uid in [uid1, uid2] {
+            let count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM order_events WHERE order_uid = $1 AND label = 'cancelled'",
+            )
+            .bind(uid)
+            .fetch_one(&mut *db)
+            .await
+            .unwrap();
+            assert_eq!(count, 1);
+        }
     }
 }

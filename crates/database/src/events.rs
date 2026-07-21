@@ -1,8 +1,13 @@
 use {
     crate::{Address, OrderUid, PgTransaction, TransactionHash},
-    sqlx::{Executor, PgConnection, types::BigDecimal},
+    sqlx::{Executor, PgConnection, QueryBuilder, types::BigDecimal},
     tracing::instrument,
 };
+
+/// Maximum number of rows inserted per batched `INSERT` statement. Keeps the
+/// number of bind parameters comfortably below Postgres' hard limit of 65535
+/// (the widest event table below has 6 columns, i.e. 30000 parameters here).
+const INSERT_BATCH_SIZE: usize = 5000;
 
 #[derive(Clone, Debug)]
 pub enum Event {
@@ -74,38 +79,117 @@ pub async fn append(
     ex: &mut PgTransaction<'_>,
     events: &[(EventIndex, Event)],
 ) -> Result<(), sqlx::Error> {
-    // TODO: there might be a more efficient way to do this like execute_many or
-    // COPY but my tests show that even if we sleep during the transaction it
-    // does not block other connections from using the database, so it's not
-    // high priority.
+    // Group by event type so each table is written with a single (chunked)
+    // multi-row `INSERT` instead of one round-trip per event. A settlement
+    // typically emits one `Settlement` and many `Trade` events, so batching the
+    // trades is the biggest win. All four tables have `PRIMARY KEY
+    // (block_number, log_index)` and a log maps to exactly one event, so no two
+    // rows in a single batch can share the conflict key; `ON CONFLICT DO
+    // NOTHING` is preserved unchanged.
+    let mut trades = Vec::new();
+    let mut invalidations = Vec::new();
+    let mut settlements = Vec::new();
+    let mut presignatures = Vec::new();
     for (index, event) in events {
         match event {
-            Event::Trade(event) => insert_trade(ex, index, event).await?,
-            Event::Invalidation(event) => insert_invalidation(ex, index, event).await?,
-            Event::Settlement(event) => insert_settlement(ex, index, event).await?,
-            Event::PreSignature(event) => insert_presignature(ex, index, event).await?,
+            Event::Trade(event) => trades.push((index, event)),
+            Event::Invalidation(event) => invalidations.push((index, event)),
+            Event::Settlement(event) => settlements.push((index, event)),
+            Event::PreSignature(event) => presignatures.push((index, event)),
         };
+    }
+
+    insert_trades(ex, &trades).await?;
+    insert_invalidations(ex, &invalidations).await?;
+    insert_settlements(ex, &settlements).await?;
+    insert_presignatures(ex, &presignatures).await?;
+    Ok(())
+}
+
+async fn insert_trades(
+    ex: &mut PgConnection,
+    trades: &[(&EventIndex, &Trade)],
+) -> Result<(), sqlx::Error> {
+    // `chunks` never yields an empty slice, so an empty input inserts nothing.
+    for chunk in trades.chunks(INSERT_BATCH_SIZE) {
+        let mut builder = QueryBuilder::new(
+            "INSERT INTO trades (block_number, log_index, order_uid, sell_amount, buy_amount, \
+             fee_amount) ",
+        );
+        builder.push_values(chunk, |mut builder, (index, event)| {
+            builder
+                .push_bind(index.block_number)
+                .push_bind(index.log_index)
+                .push_bind(event.order_uid)
+                .push_bind(event.sell_amount_including_fee.clone())
+                .push_bind(event.buy_amount.clone())
+                .push_bind(event.fee_amount.clone());
+        });
+        builder.push(" ON CONFLICT DO NOTHING");
+        builder.build().execute(&mut *ex).await?;
     }
     Ok(())
 }
 
-#[instrument(skip_all)]
-async fn insert_invalidation(
+async fn insert_invalidations(
     ex: &mut PgConnection,
-    index: &EventIndex,
-    event: &Invalidation,
+    invalidations: &[(&EventIndex, &Invalidation)],
 ) -> Result<(), sqlx::Error> {
-    // We use ON CONFLICT so that multiple updates running at the same do not error
-    // because of events already existing. This can happen when multiple
-    // orderbook apis run in HPA. See #444 .
-    const QUERY: &str = "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES \
-                         ($1, $2, $3) ON CONFLICT DO NOTHING;";
-    sqlx::query(QUERY)
-        .bind(index.block_number)
-        .bind(index.log_index)
-        .bind(event.order_uid)
-        .execute(ex)
-        .await?;
+    for chunk in invalidations.chunks(INSERT_BATCH_SIZE) {
+        let mut builder =
+            QueryBuilder::new("INSERT INTO invalidations (block_number, log_index, order_uid) ");
+        builder.push_values(chunk, |mut builder, (index, event)| {
+            builder
+                .push_bind(index.block_number)
+                .push_bind(index.log_index)
+                .push_bind(event.order_uid);
+        });
+        builder.push(" ON CONFLICT DO NOTHING");
+        builder.build().execute(&mut *ex).await?;
+    }
+    Ok(())
+}
+
+async fn insert_settlements(
+    ex: &mut PgConnection,
+    settlements: &[(&EventIndex, &Settlement)],
+) -> Result<(), sqlx::Error> {
+    for chunk in settlements.chunks(INSERT_BATCH_SIZE) {
+        let mut builder = QueryBuilder::new(
+            "INSERT INTO settlements (tx_hash, block_number, log_index, solver) ",
+        );
+        builder.push_values(chunk, |mut builder, (index, event)| {
+            builder
+                .push_bind(event.transaction_hash)
+                .push_bind(index.block_number)
+                .push_bind(index.log_index)
+                .push_bind(event.solver);
+        });
+        builder.push(" ON CONFLICT DO NOTHING");
+        builder.build().execute(&mut *ex).await?;
+    }
+    Ok(())
+}
+
+async fn insert_presignatures(
+    ex: &mut PgConnection,
+    presignatures: &[(&EventIndex, &PreSignature)],
+) -> Result<(), sqlx::Error> {
+    for chunk in presignatures.chunks(INSERT_BATCH_SIZE) {
+        let mut builder = QueryBuilder::new(
+            "INSERT INTO presignature_events (block_number, log_index, owner, order_uid, signed) ",
+        );
+        builder.push_values(chunk, |mut builder, (index, event)| {
+            builder
+                .push_bind(index.block_number)
+                .push_bind(index.log_index)
+                .push_bind(event.owner)
+                .push_bind(event.order_uid)
+                .push_bind(event.signed);
+        });
+        builder.push(" ON CONFLICT DO NOTHING");
+        builder.build().execute(&mut *ex).await?;
+    }
     Ok(())
 }
 
@@ -150,22 +234,85 @@ pub async fn insert_settlement(
     Ok(())
 }
 
-#[instrument(skip_all)]
-async fn insert_presignature(
-    ex: &mut PgConnection,
-    index: &EventIndex,
-    event: &PreSignature,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "\
-        INSERT INTO presignature_events (block_number, log_index, owner, order_uid, signed) VALUES \
-                         ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING;";
-    sqlx::query(QUERY)
-        .bind(index.block_number)
-        .bind(index.log_index)
-        .bind(event.owner)
-        .bind(event.order_uid)
-        .bind(event.signed)
-        .execute(ex)
-        .await?;
-    Ok(())
+#[cfg(test)]
+mod tests {
+    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
+
+    async fn count(ex: &mut PgConnection, table: &str) -> i64 {
+        sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(ex)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_append_batches_all_event_types() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let ev = |block: i64, log: i64| EventIndex {
+            block_number: block,
+            log_index: log,
+        };
+        let events = vec![
+            (
+                ev(1, 0),
+                Event::Settlement(Settlement {
+                    solver: ByteArray([1; 20]),
+                    transaction_hash: ByteArray([2; 32]),
+                }),
+            ),
+            (
+                ev(1, 1),
+                Event::Trade(Trade {
+                    order_uid: ByteArray([3; 56]),
+                    sell_amount_including_fee: BigDecimal::from(10),
+                    buy_amount: BigDecimal::from(20),
+                    fee_amount: BigDecimal::from(1),
+                }),
+            ),
+            (
+                ev(1, 2),
+                Event::Trade(Trade {
+                    order_uid: ByteArray([4; 56]),
+                    sell_amount_including_fee: BigDecimal::from(30),
+                    buy_amount: BigDecimal::from(40),
+                    fee_amount: BigDecimal::from(2),
+                }),
+            ),
+            (
+                ev(1, 3),
+                Event::Invalidation(Invalidation {
+                    order_uid: ByteArray([5; 56]),
+                }),
+            ),
+            (
+                ev(1, 4),
+                Event::PreSignature(PreSignature {
+                    owner: ByteArray([6; 20]),
+                    order_uid: ByteArray([7; 56]),
+                    signed: true,
+                }),
+            ),
+        ];
+
+        // Empty input is a no-op.
+        append(&mut db, &[]).await.unwrap();
+
+        append(&mut db, &events).await.unwrap();
+        assert_eq!(count(&mut db, "trades").await, 2);
+        assert_eq!(count(&mut db, "settlements").await, 1);
+        assert_eq!(count(&mut db, "invalidations").await, 1);
+        assert_eq!(count(&mut db, "presignature_events").await, 1);
+
+        // Re-appending the same events is a no-op thanks to `ON CONFLICT DO
+        // NOTHING` on the (block_number, log_index) primary key.
+        append(&mut db, &events).await.unwrap();
+        assert_eq!(count(&mut db, "trades").await, 2);
+        assert_eq!(count(&mut db, "settlements").await, 1);
+        assert_eq!(count(&mut db, "invalidations").await, 1);
+        assert_eq!(count(&mut db, "presignature_events").await, 1);
+    }
 }

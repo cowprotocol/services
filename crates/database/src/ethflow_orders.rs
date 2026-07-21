@@ -1,9 +1,13 @@
 use {
-    crate::{OrderUid, PgTransaction, TransactionHash},
-    sqlx::{Executor, PgConnection},
-    std::time::Duration,
+    crate::{OrderUid, PgTransaction, TransactionHash, dedup_keep_last},
+    sqlx::{Executor, PgConnection, QueryBuilder},
+    std::{ops::DerefMut, time::Duration},
     tracing::instrument,
 };
+
+/// Maximum number of rows per batched `INSERT`, keeping bind parameters well
+/// under Postgres' 65535 limit.
+const INSERT_BATCH_SIZE: usize = 5000;
 
 #[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
 pub struct EthOrderPlacement {
@@ -16,8 +20,35 @@ pub async fn insert_or_overwrite_orders(
     ex: &mut PgTransaction<'_>,
     events: &[EthOrderPlacement],
 ) -> Result<(), sqlx::Error> {
-    for event in events {
-        insert_or_overwrite_ethflow_order(ex, event).await?;
+    // Keep only the last placement per uid so that neither the batched upsert nor
+    // the `true_valid_to` update below targets the same order twice in a single
+    // statement (which would abort the statement).
+    let events = dedup_keep_last(events, |event| event.uid);
+    for chunk in events.chunks(INSERT_BATCH_SIZE) {
+        let mut builder = QueryBuilder::new("INSERT INTO ethflow_orders (uid, valid_to) ");
+        builder.push_values(chunk, |mut builder, event| {
+            builder.push_bind(event.uid).push_bind(event.valid_to);
+        });
+        builder.push(" ON CONFLICT (uid) DO UPDATE SET valid_to = EXCLUDED.valid_to");
+        builder.build().execute(ex.deref_mut()).await?;
+
+        // Update true_valid_to for orders already in the database, mirroring the
+        // per-row UPDATE the loop used to run. Ethflow orders are inserted with
+        // valid_to = u32::MAX and the true validity is contained in the
+        // EthOrderPlacement.
+        let uids: Vec<OrderUid> = chunk.iter().map(|event| event.uid).collect();
+        let valid_tos: Vec<i64> = chunk.iter().map(|event| event.valid_to).collect();
+        const UPDATE_TRUE_VALID_TO_QUERY: &str = r#"
+            UPDATE orders
+            SET true_valid_to = data.valid_to
+            FROM unnest($1::bytea[], $2::bigint[]) AS data(uid, valid_to)
+            WHERE orders.uid = data.uid
+        "#;
+        sqlx::query(UPDATE_TRUE_VALID_TO_QUERY)
+            .bind(&uids)
+            .bind(&valid_tos)
+            .execute(ex.deref_mut())
+            .await?;
     }
     Ok(())
 }
@@ -100,8 +131,24 @@ pub async fn insert_refund_tx_hashes(
     ex: &mut PgTransaction<'_>,
     refunds: &[Refund],
 ) -> Result<(), sqlx::Error> {
-    for refund in refunds.iter() {
-        insert_refund_tx_hash(ex, refund).await?;
+    // Collapse repeated refunds for the same order (keeping the last, matching
+    // the previous row-by-row overwrite) so a single batched statement never
+    // targets the same `order_uid` twice.
+    let refunds = dedup_keep_last(refunds, |refund| refund.order_uid);
+    for chunk in refunds.chunks(INSERT_BATCH_SIZE) {
+        let mut builder =
+            QueryBuilder::new("INSERT INTO ethflow_refunds (order_uid, block_number, tx_hash) ");
+        builder.push_values(chunk, |mut builder, refund| {
+            builder
+                .push_bind(refund.order_uid)
+                .push_bind(i64::try_from(refund.block_number).unwrap_or(i64::MAX))
+                .push_bind(refund.tx_hash);
+        });
+        builder.push(
+            " ON CONFLICT (order_uid) DO UPDATE SET block_number = EXCLUDED.block_number, tx_hash \
+             = EXCLUDED.tx_hash",
+        );
+        builder.build().execute(ex.deref_mut()).await?;
     }
     Ok(())
 }
@@ -233,6 +280,82 @@ mod tests {
             order_uid,
             ..Default::default()
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_refund_tx_hashes_dedups_within_batch() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let uid = ByteArray([1; 56]);
+        insert_or_overwrite_orders(&mut db, &[EthOrderPlacement { uid, valid_to: 1 }])
+            .await
+            .unwrap();
+
+        // Two refunds for the same order in one batch: the last one must win
+        // (and the batch must not error with "cannot affect row a second time").
+        insert_refund_tx_hashes(
+            &mut db,
+            &[
+                Refund {
+                    order_uid: uid,
+                    tx_hash: ByteArray([1; 32]),
+                    block_number: 1,
+                },
+                Refund {
+                    order_uid: uid,
+                    tx_hash: ByteArray([2; 32]),
+                    block_number: 2,
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        let order = read_order(&mut db, &uid).await.unwrap().unwrap();
+        assert_eq!(order.refund_tx, Some(ByteArray([2; 32])));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_or_overwrite_orders_updates_true_valid_to_batched() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        // An order inserted with valid_to = u32::MAX (as ethflow orders are).
+        let uid = ByteArray([7; 56]);
+        let order = Order {
+            uid,
+            valid_to: u32::MAX as i64,
+            ..Default::default()
+        };
+        insert_order(&mut db, &order).await.unwrap();
+
+        // Same uid twice in one batch; the last true validity must win and the
+        // batched `UPDATE orders ... FROM unnest(...)` must propagate it.
+        insert_or_overwrite_orders(
+            &mut db,
+            &[
+                EthOrderPlacement { uid, valid_to: 500 },
+                EthOrderPlacement { uid, valid_to: 600 },
+            ],
+        )
+        .await
+        .unwrap();
+
+        let ethflow_order = read_order(&mut db, &uid).await.unwrap().unwrap();
+        assert_eq!(ethflow_order.valid_to, 600);
+
+        let true_valid_to: i64 =
+            sqlx::query_scalar("SELECT true_valid_to FROM orders WHERE uid = $1")
+                .bind(uid)
+                .fetch_one(&mut *db)
+                .await
+                .unwrap();
+        assert_eq!(true_valid_to, 600);
     }
 
     #[tokio::test]

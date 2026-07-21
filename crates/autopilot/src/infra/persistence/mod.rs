@@ -18,7 +18,7 @@ use {
         events::EventIndex,
         leader_pg_lock::LeaderLock,
         order_events::{OrderEventLabel, OrderFilterReason},
-        order_execution::Asset,
+        order_execution::{Asset, OrderExecutionRecord},
         orders::{
             BuyTokenDestination as DbBuyTokenDestination,
             SellTokenSource as DbSellTokenSource,
@@ -808,27 +808,27 @@ impl Persistence {
             )
             .await;
 
-            for (order, order_fee) in fee_breakdown {
-                database::order_execution::save(
-                    &mut ex,
-                    &ByteArray(order.0),
+            let order_executions = fee_breakdown
+                .into_iter()
+                .map(|(order, order_fee)| OrderExecutionRecord {
+                    order_uid: ByteArray(order.0),
                     auction_id,
                     block_number,
-                    Asset {
+                    executed_fee: Asset {
                         token: ByteArray(order_fee.total.token.into_array()),
                         amount: u256_to_big_decimal(&order_fee.total.amount.0),
                     },
-                    &order_fee
+                    protocol_fees: order_fee
                         .protocol
                         .into_iter()
                         .map(|executed| Asset {
                             token: ByteArray(executed.fee.token.into_array()),
                             amount: u256_to_big_decimal(&executed.fee.amount.0),
                         })
-                        .collect::<Vec<_>>(),
-                )
-                .await?;
-            }
+                        .collect(),
+                })
+                .collect::<Vec<_>>();
+            database::order_execution::save_batch(&mut ex, &order_executions).await?;
 
             if !jit_orders.is_empty() {
                 // each jit order should have a corresponding trade event, try to find them

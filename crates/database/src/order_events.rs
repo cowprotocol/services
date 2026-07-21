@@ -107,6 +107,9 @@ pub async fn insert_order_events(
     label: OrderEventLabel,
     reason: Option<OrderFilterReason>,
 ) -> Result<(), sqlx::Error> {
+    if orders.is_empty() {
+        return Ok(());
+    }
     const QUERY: &str = r#"
     WITH latest_events AS (
         SELECT DISTINCT ON (order_uid) order_uid, label, reason
@@ -129,6 +132,53 @@ pub async fn insert_order_events(
     sqlx::query(QUERY)
         .bind(orders)
         .bind(timestamp)
+        .bind(label)
+        .bind(reason)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+/// Like [`insert_order_events`] but lets every order carry its own timestamp.
+///
+/// Used when creating events for a batch of orders that were placed at
+/// different times (e.g. on-chain orders indexed across several blocks). Like
+/// the single-timestamp variant it inserts one event per order, skipping any
+/// order whose most recent event already has the same label and reason.
+pub async fn insert_order_events_with_timestamps(
+    ex: &mut PgConnection,
+    events: &[(OrderUid, DateTime<Utc>)],
+    label: OrderEventLabel,
+    reason: Option<OrderFilterReason>,
+) -> Result<(), sqlx::Error> {
+    if events.is_empty() {
+        return Ok(());
+    }
+    let (order_uids, timestamps): (Vec<OrderUid>, Vec<DateTime<Utc>>) =
+        events.iter().copied().unzip();
+
+    const QUERY: &str = r#"
+    WITH latest_events AS (
+        SELECT DISTINCT ON (order_uid) order_uid, label, reason
+        FROM order_events
+        WHERE order_uid = ANY($1)
+        ORDER BY order_uid, timestamp DESC
+    ),
+    incoming AS (
+        SELECT t.order_uid, t.timestamp, $3 AS label, $4 AS reason
+        FROM unnest($1::bytea[], $2::timestamptz[]) AS t(order_uid, timestamp)
+    )
+    INSERT INTO order_events (order_uid, timestamp, label, reason)
+    SELECT DISTINCT i.order_uid, i.timestamp, i.label, i.reason
+    FROM incoming i
+    LEFT JOIN latest_events le ON le.order_uid = i.order_uid
+    WHERE le.label IS DISTINCT FROM i.label
+       OR le.reason IS DISTINCT FROM i.reason
+    "#;
+
+    sqlx::query(QUERY)
+        .bind(&order_uids)
+        .bind(&timestamps)
         .bind(label)
         .bind(reason)
         .execute(ex)

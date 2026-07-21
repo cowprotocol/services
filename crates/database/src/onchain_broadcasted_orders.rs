@@ -1,7 +1,8 @@
 use {
     super::events::EventIndex,
-    crate::{Address, OrderUid, PgTransaction},
-    sqlx::{Executor, PgConnection},
+    crate::{Address, OrderUid, PgTransaction, dedup_keep_last},
+    sqlx::{Executor, PgConnection, QueryBuilder},
+    std::ops::DerefMut,
     tracing::instrument,
 };
 
@@ -69,8 +70,31 @@ pub async fn append(
     ex: &mut PgTransaction<'_>,
     events: &[(EventIndex, OnchainOrderPlacement)],
 ) -> Result<(), sqlx::Error> {
-    for (index, event) in events {
-        insert_onchain_order(ex, index, event).await?;
+    const BATCH_SIZE: usize = 5000;
+    // Keep the last placement per uid so the batched upsert never targets the
+    // same order twice (the previous loop let a later row overwrite an earlier
+    // one via the per-row `ON CONFLICT`).
+    let events = dedup_keep_last(events, |(_, event)| event.order_uid);
+    for chunk in events.chunks(BATCH_SIZE) {
+        let mut builder = QueryBuilder::new(
+            "INSERT INTO onchain_placed_orders (uid, sender, is_reorged, placement_error, \
+             block_number, log_index) ",
+        );
+        builder.push_values(chunk, |mut builder, (index, event)| {
+            builder
+                .push_bind(event.order_uid)
+                .push_bind(event.sender)
+                .push_bind(false)
+                .push_bind(&event.placement_error)
+                .push_bind(index.block_number)
+                .push_bind(index.log_index);
+        });
+        builder.push(
+            " ON CONFLICT (uid) DO UPDATE SET is_reorged = false, sender = EXCLUDED.sender, \
+             placement_error = EXCLUDED.placement_error, block_number = EXCLUDED.block_number, \
+             log_index = EXCLUDED.log_index",
+        );
+        builder.build().execute(ex.deref_mut()).await?;
     }
     Ok(())
 }
