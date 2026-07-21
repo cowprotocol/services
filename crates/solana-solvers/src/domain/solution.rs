@@ -42,9 +42,9 @@ pub struct Trade {
     pub fee: u64,
 }
 
-/// A solver-supplied settlement interaction. Only `custom` exists: the
-/// dormant liquidity variant of the EVM DTO is never emitted on Solana, so
-/// the type does not carry it.
+/// A solver-supplied settlement interaction. Only `custom` exists: the EVM
+/// DTO's other interaction kinds aren't produced on Solana, so the type
+/// carries just this one.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Interaction {
