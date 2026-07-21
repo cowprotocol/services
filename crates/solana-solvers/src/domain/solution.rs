@@ -7,6 +7,7 @@
 //! settlement's buffer, which pays the user out).
 
 use {
+    super::order::OrderUid,
     crate::dex,
     base64::prelude::*,
     serde::Serialize,
@@ -38,8 +39,7 @@ pub struct Solution {
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     /// The order's 32-byte intent hash.
-    #[serde(serialize_with = "serialize_hex")]
-    pub order_uid: [u8; 32],
+    pub order_uid: OrderUid,
     /// Sell-token units for sell orders, buy-token units for buy orders.
     pub executed_amount: u64,
     /// Fee in sell-token units. Always zero at MVP: the solver prices the
@@ -103,7 +103,7 @@ impl Solution {
     /// transaction the instructions assume.
     pub fn single(
         id: u64,
-        order_uid: [u8; 32],
+        order_uid: OrderUid,
         order: &dex::Order,
         swap: dex::Swap,
     ) -> Result<Self, Error> {
@@ -156,10 +156,6 @@ fn serialize_base64<S: serde::Serializer>(data: &[u8], serializer: S) -> Result<
     serializer.serialize_str(&BASE64_STANDARD.encode(data))
 }
 
-fn serialize_hex<S: serde::Serializer>(data: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&data.map(|byte| format!("{byte:02x}")).concat())
-}
-
 #[cfg(test)]
 mod tests {
     use {super::*, solana_sdk::instruction::AccountMeta as SdkAccountMeta, std::str::FromStr};
@@ -198,7 +194,7 @@ mod tests {
     #[test]
     fn sell_swap_maps_to_single_order_solution() {
         let order = order(dex::Side::Sell);
-        let solution = Solution::single(42, [8; 32], &order, swap()).unwrap();
+        let solution = Solution::single(42, OrderUid([8; 32]), &order, swap()).unwrap();
 
         assert_eq!(solution.id, 42);
         // Clearing prices: sell mint priced at the output amount, buy mint at
@@ -206,7 +202,7 @@ mod tests {
         assert_eq!(solution.prices[&order.sell_mint], 2_000);
         assert_eq!(solution.prices[&order.buy_mint], 1_000);
         assert_eq!(solution.trades.len(), 1);
-        assert_eq!(solution.trades[0].order_uid, [8; 32]);
+        assert_eq!(solution.trades[0].order_uid, OrderUid([8; 32]));
         assert_eq!(solution.trades[0].executed_amount, 1_000);
         assert_eq!(solution.trades[0].fee, 0);
         assert_eq!(solution.address_lookup_tables, vec![pubkey(7)]);
@@ -222,7 +218,8 @@ mod tests {
 
     #[test]
     fn buy_swap_executes_in_buy_token_units() {
-        let solution = Solution::single(0, [0; 32], &order(dex::Side::Buy), swap()).unwrap();
+        let solution =
+            Solution::single(0, OrderUid([0; 32]), &order(dex::Side::Buy), swap()).unwrap();
         assert_eq!(solution.trades[0].executed_amount, 2_000);
     }
 
@@ -231,7 +228,7 @@ mod tests {
         let mut order = order(dex::Side::Sell);
         order.buy_mint = order.sell_mint;
         assert_eq!(
-            Solution::single(0, [0; 32], &order, swap()).unwrap_err(),
+            Solution::single(0, OrderUid([0; 32]), &order, swap()).unwrap_err(),
             Error::SameMint
         );
     }
@@ -241,21 +238,25 @@ mod tests {
         let mut swap = swap();
         swap.out_amount = 0;
         assert_eq!(
-            Solution::single(0, [0; 32], &order(dex::Side::Sell), swap).unwrap_err(),
+            Solution::single(0, OrderUid([0; 32]), &order(dex::Side::Sell), swap).unwrap_err(),
             Error::ZeroAmount
         );
     }
 
     #[test]
     fn wire_format_is_stable() {
-        let solution = Solution::single(1, [8; 32], &order(dex::Side::Sell), swap()).unwrap();
+        let solution =
+            Solution::single(1, OrderUid([8; 32]), &order(dex::Side::Sell), swap()).unwrap();
         let json = serde_json::to_value(&solution).unwrap();
 
         assert_eq!(
             json["prices"][pubkey(1).to_string()],
             serde_json::json!(2_000)
         );
-        assert_eq!(json["trades"][0]["orderUid"], "08".repeat(32));
+        assert_eq!(
+            json["trades"][0]["orderUid"],
+            format!("0x{}", "08".repeat(32))
+        );
         assert_eq!(json["trades"][0]["executedAmount"], 1_000);
         assert_eq!(json["interactions"][0]["kind"], "custom");
         assert_eq!(json["interactions"][0]["programId"], pubkey(9).to_string());
