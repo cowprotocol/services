@@ -18,15 +18,14 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub id: u64,
-    /// Uniform clearing prices keyed by mint.
-    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, _>")]
+    /// Uniform clearing prices keyed by mint. Amounts go out as decimal strings
+    /// (a `u64` can exceed 2^53 and lose precision as a JSON number).
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
     pub prices: HashMap<Pubkey, u64>,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Instruction>,
-    /// The solver's estimate of total settlement compute units. Optional and
-    /// left unset here: the driver sizes the CU limit from simulating the whole
-    /// settlement transaction, which this solver never sees, so it has no total
-    /// to report. Mirrors the EVM solution's optional `gas`.
+    /// Solver's estimate of total settlement compute units. Unset: the driver
+    /// sizes the real CU limit from its own simulation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cu_estimate: Option<u64>,
     /// The address lookup tables the interactions assume, carried through so
@@ -36,15 +35,18 @@ pub struct Solution {
 }
 
 /// A fulfillment of one auction order.
+#[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     /// The order's 32-byte intent hash.
     pub order_uid: OrderUid,
     /// Sell-token units for sell orders, buy-token units for buy orders.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub executed_amount: u64,
     /// Fee in sell-token units. Always zero at MVP: the solver prices the
     /// full quoted amounts into the clearing prices instead.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub fee: u64,
 }
 
@@ -249,15 +251,12 @@ mod tests {
             Solution::single(1, OrderUid([8; 32]), &order(dex::Side::Sell), swap()).unwrap();
         let json = serde_json::to_value(&solution).unwrap();
 
-        assert_eq!(
-            json["prices"][pubkey(1).to_string()],
-            serde_json::json!(2_000)
-        );
+        assert_eq!(json["prices"][pubkey(1).to_string()], "2000");
         assert_eq!(
             json["trades"][0]["orderUid"],
             format!("0x{}", "08".repeat(32))
         );
-        assert_eq!(json["trades"][0]["executedAmount"], 1_000);
+        assert_eq!(json["trades"][0]["executedAmount"], "1000");
         assert_eq!(json["interactions"][0]["programId"], pubkey(9).to_string());
         assert_eq!(
             json["interactions"][0]["instructionData"],
