@@ -23,6 +23,12 @@ pub struct Solution {
     pub prices: HashMap<Pubkey, u64>,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
+    /// The solver's estimate of total settlement compute units. Optional and
+    /// left unset here: the driver sizes the CU limit from simulating the whole
+    /// settlement transaction, which this solver never sees, so it has no total
+    /// to report. Mirrors the EVM solution's optional `gas`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cu_estimate: Option<u64>,
     /// The address lookup tables the interactions assume, carried through so
     /// the driver can build the v0 transaction around them.
     #[serde_as(as = "Vec<serde_with::DisplayFromStr>")]
@@ -124,6 +130,7 @@ impl Solution {
                 fee: 0,
             }],
             interactions: swap.instructions.iter().map(Interaction::custom).collect(),
+            cu_estimate: None,
             address_lookup_tables: swap.address_lookup_tables,
         })
     }
@@ -265,6 +272,8 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(json["addressLookupTables"][0], pubkey(7).to_string());
+        // cu_estimate is optional and unset, so it is omitted from the wire.
+        assert!(json.get("cuEstimate").is_none());
     }
 
     #[test]
