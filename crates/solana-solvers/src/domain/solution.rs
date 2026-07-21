@@ -1,16 +1,10 @@
 //! Solution assembly: one quoted swap becomes one single-order solution in the
 //! driver's `/solve` DTO.
 //!
-//! The solver controls only the `interactions` array. Slippage is already
-//! baked into the instruction data by the aggregator and the driver applies
-//! none to `custom` interactions, so nothing is re-applied here. Compute
-//! budget sizing is the driver's job (it derives the CU limit from
-//! simulation), so the solution carries no compute-unit estimate and the
-//! aggregator's compute-budget instructions are never included. The buy side
-//! is funded by the swap output landing in the settlement's per-token buffer
-//! (the adapter's `destination_token_account`), and `FinalizeSettle` pushes
-//! each order's amount to the user, so the solver emits no transfer or credit
-//! interaction.
+//! Deliberately absent: slippage (the aggregator bakes it into the
+//! instruction data), compute-unit estimates (the driver sizes the CU limit
+//! from simulation), and payout instructions (the swap output funds the
+//! settlement's buffer, which pays the user out).
 
 use {
     crate::dex,
