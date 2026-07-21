@@ -76,3 +76,15 @@ jobs:
         env:
           TAG: ${{ steps.tag_version.outputs.tag }}
 
+  notify-failure:
+    needs: [bump-version-and-release]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify weekly release failure
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
+        with:
+          webhook: ${{ secrets.ALERTS_PROD_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "❌ *Weekly release creation failed!* (cowprotocol/services)\nThe release tag / GitHub release was not created — investigate before the next prod deploy.\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
