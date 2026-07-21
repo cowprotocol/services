@@ -1,5 +1,5 @@
 //! Solution assembly: one quoted swap becomes one single-order solution in the
-//! driver's `/solve` DTO (driver spec §2).
+//! driver's `/solve` DTO.
 //!
 //! The solver controls only the `interactions` array. Slippage is already
 //! baked into the instruction data by the aggregator and the driver applies
@@ -54,8 +54,8 @@ pub struct Trade {
 }
 
 /// A solver-supplied settlement interaction. Only `custom` exists: the
-/// dormant liquidity variant of the EVM DTO is never emitted on Solana
-/// (jupiter-solver spec §3.1), so the type does not carry it.
+/// dormant liquidity variant of the EVM DTO is never emitted on Solana, so
+/// the type does not carry it.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Interaction {
