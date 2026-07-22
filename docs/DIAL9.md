@@ -11,23 +11,33 @@ Support is currently wired into the **autopilot** only.
 
 ## Building
 
-dial9 relies on Tokio's unstable runtime hooks, so it must be built with
-`--cfg tokio_unstable`. To keep normal builds (and `just clippy`, which uses
-`--all-features`) unaffected, the dependency lives behind a `cfg(tokio_unstable)`
-target table and a `dial9` cargo feature. Both are required:
+dial9 relies on Tokio's unstable runtime hooks, which require the **whole
+workspace** to be compiled with `--cfg tokio_unstable`. On this branch that flag
+(plus `-C force-frame-pointers=yes` for good CPU-profiling stacks) is set for
+**every** build in [`.cargo/config.toml`](../.cargo/config.toml), and dial9 is an
+unconditional dependency of the autopilot. So there is no cargo feature to pass
+and nothing for CI to line up — a normal build produces a dial9 binary:
 
 ```sh
-RUSTFLAGS="--cfg tokio_unstable -C force-frame-pointers=yes" \
-  cargo build --release -p autopilot --features dial9
+cargo build --release -p autopilot     # or just push/deploy; CI needs no extra flags
 ```
 
-- `--cfg tokio_unstable` — required; without it the `dial9` feature is a no-op
-  and the crate is never compiled.
-- `-C force-frame-pointers=yes` — optional but recommended; produces better CPU
-  profiling stacks (the `cpu-profiling` feature is enabled).
+Two subtleties worth knowing:
 
-In CI, trigger the **deploy** workflow (`workflow_dispatch`) and pick the `dial9`
-predefined feature — the workflow sets the correct `RUSTFLAGS` automatically.
+- The flags live under `target.'cfg(all())'` (matches every target), **not**
+  `[build] rustflags`. `[build] rustflags` sits at a lower precedence and is
+  silently *replaced* — not merged — by any `target.<triple>.rustflags` that
+  matches the host (e.g. a global wild-linker config on an aarch64 dev box),
+  which would drop `--cfg tokio_unstable`. `target.<cfg>` flags are *joined* with
+  matching `target.<triple>` flags, so this coexists with such setups.
+- A `RUSTFLAGS` env var would still **override** (not merge with) these — don't
+  set one for the build, or you'll drop the cfg and dial9 won't compile.
+
+Verify a built binary actually contains dial9 (0 means it was **not** compiled in):
+
+```sh
+grep -c -a -i dial9 <path-to-autopilot>
+```
 
 ## Enabling at runtime
 

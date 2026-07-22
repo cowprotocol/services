@@ -36,6 +36,10 @@ cow-amm = { workspace = true }
 dashmap = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
+# Post-hoc Tokio runtime telemetry. Unconditional: `.cargo/config.toml` builds the
+# whole workspace with `--cfg tokio_unstable`, which dial9 requires. Not gated
+# behind a feature/target-cfg so it can never be silently dropped from the build.
+dial9-tokio-telemetry = { workspace = true, features = ["cpu-profiling", "worker-s3"] }
 eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
@@ -89,16 +93,7 @@ shared = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
-# dial9 only compiles with Tokio's unstable runtime hooks. Keeping the dependency
-# behind this cfg means a plain `--features dial9` (without the cfg) is a no-op
-# and the crate is never built unless RUSTFLAGS="--cfg tokio_unstable" is set.
-[target.'cfg(tokio_unstable)'.dependencies]
-dial9-tokio-telemetry = { workspace = true, features = ["cpu-profiling", "worker-s3"], optional = true }
-
 [features]
-# Post-hoc Tokio runtime telemetry uploaded to S3. Only takes effect together
-# with `--cfg tokio_unstable`; see the target table above.
-dial9 = ["dep:dial9-tokio-telemetry"]
 mimalloc-allocator = ["dep:mimalloc"]
 test-util = ["configs/test-util", "dep:tempfile", "price-estimation/test-util"]
 tokio-console = ["observe/tokio-console"]

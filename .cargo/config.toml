@@ -1,2 +1,15 @@
+# dial9 requires Tokio's unstable runtime hooks; its CPU profiling wants frame
+# pointers. Set here so EVERY build compiles dial9 in — no reliance on passing
+# RUSTFLAGS/--features through CI.
+#
+# Uses target.'cfg(all())' (matches every target), NOT [build] rustflags: the
+# latter sits at a LOWER precedence and is silently *replaced* — not merged — by
+# any `target.<triple>.rustflags` that matches the host (e.g. a global wild-linker
+# config), dropping these flags. `target.<cfg>` flags are JOINED with matching
+# `target.<triple>` flags, so this coexists with such setups.
+# NOTE: a RUSTFLAGS env var would still OVERRIDE (not merge with) these.
+[target.'cfg(all())']
+rustflags = ["--cfg", "tokio_unstable", "-C", "force-frame-pointers=yes"]
+
 [profile.release]
 debug = 1

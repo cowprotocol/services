@@ -12,7 +12,6 @@ on:
           - 'None'
           - 'mimalloc-allocator'
           - 'tokio-console'
-          - 'dial9'
         default: 'None'
         required: false
       custom_features:
@@ -63,21 +62,11 @@ jobs:
             CARGO_FEATURES="--features $FEATURES"
           fi
 
-          # Both tokio-console and dial9 depend on Tokio's unstable runtime hooks.
-          RUSTFLAGS=""
-          if echo "$FEATURES" | grep -qE "tokio-console|dial9"; then
-            RUSTFLAGS="--cfg tokio_unstable"
-          fi
-          # dial9's cpu-profiling produces better stacks with frame pointers.
-          if echo "$FEATURES" | grep -q "dial9"; then
-            RUSTFLAGS="$RUSTFLAGS -C force-frame-pointers=yes"
-          fi
-          if [ -n "$RUSTFLAGS" ]; then
+          if echo "$FEATURES" | grep -q "tokio-console"; then
             # Export to GITHUB_ENV so rust-cache picks it up in its cache-key hash
-            # (it hashes all RUST* env vars). Without this, unstable-runtime and
-            # normal builds share the same cache bucket despite having incompatible
-            # artifacts.
-            echo "RUSTFLAGS=$RUSTFLAGS" >> $GITHUB_ENV
+            # (it hashes all RUST* env vars). Without this, tokio-console and normal
+            # builds share the same cache bucket despite having incompatible artifacts.
+            echo "RUSTFLAGS=--cfg tokio_unstable" >> $GITHUB_ENV
           fi
 
           echo "cargo_features=$CARGO_FEATURES" >> $GITHUB_OUTPUT
