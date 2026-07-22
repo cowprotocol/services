@@ -36,6 +36,13 @@ pub struct ProtocolAppData {
     pub flashloan: Option<Flashloan>,
     #[serde(default)]
     pub wrappers: Vec<WrapperCall>,
+    /// Opt into out-of-competition ("fast path") execution.
+    #[serde(default)]
+    pub enable_fast_path: bool,
+    /// Earliest time (unix seconds) the order may enter a batch auction.
+    /// Honored if set; the backend picks one for fast-path orders when it
+    /// is not.
+    pub valid_from: Option<u32>,
 }
 
 /// Contains information to hint at how a solver could make
@@ -549,6 +556,8 @@ impl From<BackendAppData> for ProtocolAppData {
             replaced_order: None,
             partner_fee: PartnerFees::default(),
             flashloan: None,
+            enable_fast_path: false,
+            valid_from: None,
         }
     }
 }
@@ -568,6 +577,25 @@ mod tests {
     #[test]
     fn empty_is_valid() {
         assert_app_data!(EMPTY, ProtocolAppData::default());
+    }
+
+    #[test]
+    fn fast_path() {
+        assert_app_data!(
+            r#"{ "metadata": { "enableFastPath": true } }"#,
+            ProtocolAppData {
+                enable_fast_path: true,
+                ..Default::default()
+            },
+        );
+        assert_app_data!(
+            r#"{ "metadata": { "enableFastPath": true, "validFrom": 1700000000 } }"#,
+            ProtocolAppData {
+                enable_fast_path: true,
+                valid_from: Some(1_700_000_000),
+                ..Default::default()
+            },
+        );
     }
 
     #[test]
