@@ -350,14 +350,11 @@ async fn partial_access_list_for(
     if !trade.order().buys_eth() || !trade.order().pays_to_contract(eth).await? {
         return Ok(None);
     }
-    let tx = eth::Tx {
-        from: solution.solver().address(),
-        to: trade.order().receiver(),
-        value: 1.into(),
-        input: Default::default(),
-        access_list: Default::default(),
-    };
-    Ok(Some(RequiredAccessList(simulator.access_list(&tx).await?)))
+    Ok(Some(RequiredAccessList(
+        simulator
+            .access_list_for_eth_transfer(solution.solver().address(), trade.order().receiver())
+            .await?,
+    )))
 }
 
 /// Should the interactions be internalized?

@@ -1674,7 +1674,7 @@ components:
             properties:
               solver:
                 type: string
-                description: Name of the solver.
+                description: The on-chain address of the solver.
               executedAmounts:
                 $ref: "#/components/schemas/ExecutedAmounts"
             required:

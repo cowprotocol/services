@@ -66,6 +66,7 @@ Contains all auctions for which a valid solver competition exists.
 Indexes:
 - PRIMARY KEY: btree(`id`)
 - competition_auction_deadline: btree(`deadline`)
+- competition_auctions_order_uids_gin: gin(`order_uids`)
 
 ### ethflow\_orders
 
@@ -485,18 +486,6 @@ Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
 - trade\_order\_uid: btree (`order_uid`, `block_number`, `log_index`)
 - trades_covering: btree(`order_uid`) INCLUDE (`buy_amount`, `sell_amount`, `fee_amount`)
-
-### surplus\_capturing\_jit\_order\_owners
-
-Stores all surplus capturing jit order owners that are part of an auction. JIT orders settled for addresses which were not part of a given auction will not count towards surplus.
-
- Column     | Type    | Nullable | Details
-------------|---------|----------|--------
-auction\_id | bigint  | not null | which auction this order was part of
-owners      | bytea[] | not null | surplus capturing jit order owner included in the auction
-
-Indexes:
-- PRIMARY KEY: btree(`auction_id`)
 
 ### jit\_orders
 

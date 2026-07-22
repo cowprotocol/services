@@ -88,7 +88,7 @@ jobs:
             -p autopilot -p driver -p orderbook -p refunder -p solvers -p pool-indexer \
             ${{ steps.features.outputs.cargo_features }}
 
-      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -96,7 +96,7 @@ jobs:
 
       - name: Services image metadata
         id: meta_services
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -107,7 +107,7 @@ jobs:
             org.opencontainers.image.licenses=GPL-3.0-or-later
 
       - name: Services image build
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: Dockerfile.deploy-ci
@@ -121,7 +121,7 @@ jobs:
 
       - name: Migration image metadata
         id: meta_migration
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}-migration
           tags: |
@@ -132,7 +132,7 @@ jobs:
             org.opencontainers.image.licenses=GPL-3.0-or-later
 
       - name: Migration image build
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: Dockerfile.deploy-ci
@@ -151,15 +151,17 @@ jobs:
           token: ${{ secrets.AUTODEPLOY_TOKEN }}
           timeout: 600000 # 10 minutes
 
+      # Temporarily disabled while the automated-trades deploy setup is reworked
+      # (cowprotocol/automated-trade#36). Re-enable once the new job is in place.
       # After the new version is rolled out to the k8s cluster, ask the
       # infrastructure repo to run an automated test trade on every network
       # to verify the deployment end-to-end.
-      - name: "📣 Dispatch automated trades to infrastructure repo"
-        if: ${{ github.ref == 'refs/heads/main' }}
-        uses: peter-evans/repository-dispatch@428de239af282baa9ed57c8003ca2082586703c3 # v4.0.1
-        with:
-          token: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
-          repository: cowprotocol/infrastructure
-          event-type: run-automated-trades
-          client-payload: |-
-            {"ref":"${{ github.ref }}","sha":"${{ github.sha }}","source":"services-deploy"}
+      # - name: "📣 Dispatch automated trades to infrastructure repo"
+      #   if: ${{ github.ref == 'refs/heads/main' }}
+      #   uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
+      #   with:
+      #     token: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
+      #     repository: cowprotocol/infrastructure
+      #     event-type: run-automated-trades
+      #     client-payload: |-
+      #       {"ref":"${{ github.ref }}","sha":"${{ github.sha }}","source":"services-deploy"}
