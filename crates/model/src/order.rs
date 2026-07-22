@@ -712,9 +712,11 @@ pub struct OrderMetadata {
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_fee: U256,
     pub executed_fee_token: Address,
-    /// Estimated network gas cost (in native token wei) of executing this
-    /// order, derived from its quote (`gas_amount * gas_price`). `None` when
-    /// the order has no stored quote.
+    /// On-chain gas cost (in native token wei) attributed to this order: its
+    /// share of the settlement transaction(s)' gas cost, split equally across
+    /// all trades in each settlement and summed across the order's fills.
+    /// `None` for orders settled before this data was recorded, or not yet
+    /// settled.
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gas_cost: Option<U256>,
