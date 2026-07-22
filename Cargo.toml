@@ -58,6 +58,9 @@ cow-amm = { path = "crates/cow-amm" }
 dashmap = "6.1.0"
 database = { path = "crates/database" }
 derive_more = { version = "1.0.0", features = ["full"] }
+# Post-hoc Tokio runtime telemetry ("flight recorder"). Only compiled into the
+# autopilot when built with `--cfg tokio_unstable` (see crates/autopilot).
+dial9-tokio-telemetry = "0.3.15"
 driver = { path = "crates/driver" }
 eth-domain-types = { path = "crates/eth-domain-types" }
 ethrpc = { path = "crates/ethrpc" }
