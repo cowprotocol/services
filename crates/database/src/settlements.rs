@@ -91,7 +91,7 @@ WHERE block_number = $3 AND log_index = $4
 }
 
 /// Stores the actual gas cost (read from the transaction receipt) of a settled
-/// transaction. See migration `V111`.
+/// transaction. See migration `V115`.
 #[instrument(skip_all)]
 pub async fn update_settlement_gas(
     ex: &mut PgConnection,

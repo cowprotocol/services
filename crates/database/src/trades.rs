@@ -20,7 +20,7 @@ pub struct TradesQueryRow {
     pub auction_id: Option<AuctionId>,
     /// This trade's share of the settlement transaction's gas cost in native
     /// token wei (`gas_used * effective_gas_price / trades_in_settlement`).
-    /// `NULL` for settlements observed before gas was persisted (see V111).
+    /// `NULL` for settlements observed before gas was persisted (see V115).
     pub gas_cost: Option<BigDecimal>,
 }
 
@@ -29,7 +29,7 @@ pub struct TradesQueryRow {
 /// divided equally across all trades settled in the same transaction. Expects
 /// the settlement row to be aliased `s`; selected as the column `gas_cost`,
 /// which is `NULL` for settlements whose gas was not persisted (see migration
-/// V111). Shared by [`trades`] and [`order_gas_costs`] so the two cannot drift.
+/// V115). Shared by [`trades`] and [`order_gas_costs`] so the two cannot drift.
 const GAS_COST_EXPR: &str = r#"FLOOR(
             (s.gas_used * s.effective_gas_price)
             / NULLIF((
@@ -177,7 +177,7 @@ FROM page"#,
 /// Returns, per order, the total on-chain gas cost (native token wei)
 /// attributed to the order across all of its trades. Each trade contributes its
 /// share of its settlement's gas cost (see [`GAS_COST_EXPR`]). Orders whose
-/// settlements have no persisted gas (see V111) are absent from the result.
+/// settlements have no persisted gas (see V115) are absent from the result.
 #[instrument(skip_all)]
 pub async fn order_gas_costs(
     ex: &mut PgConnection,
