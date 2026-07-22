@@ -8,7 +8,6 @@ use {
     serde::Serialize,
     serde_with::serde_as,
     solana_sdk::{instruction::Instruction as SolInstruction, pubkey::Pubkey},
-    std::collections::HashMap,
 };
 
 /// A solution in the driver's `/solve` DTO. Trades fulfill auction orders, with
@@ -18,10 +17,6 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub id: u64,
-    /// Uniform clearing prices keyed by token mint (an SPL token's on-chain
-    /// address). Values are decimal strings.
-    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
-    pub prices: HashMap<Pubkey, u64>,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Instruction>,
     /// Optional solver estimate of total settlement compute units.
@@ -74,11 +69,10 @@ pub struct AccountMeta {
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error {
-    /// Sell and buy mint coincide, so a uniform clearing-price map (one price
-    /// per mint) cannot represent the trade.
+    /// Sell and buy mint coincide, which is not a real trade.
     #[error("sell and buy mint are the same")]
     SameMint,
-    /// A clearing price of zero would make the trade worthless downstream.
+    /// A zero quoted amount means the swap fills nothing.
     #[error("quoted amount is zero")]
     ZeroAmount,
 }
@@ -86,12 +80,9 @@ pub enum Error {
 impl Solution {
     /// Wraps one quoted swap into a single-order solution.
     ///
-    /// Clearing prices derive from the quoted amounts: the sell mint is
-    /// priced at the swap's output amount and the buy mint at its input
-    /// amount, so `executed × price` matches on both sides. The swap's
-    /// instructions are carried verbatim as interactions, and its
-    /// address lookup tables travel along so the driver can build the v0
-    /// transaction the instructions assume.
+    /// The swap's instructions are carried verbatim as interactions, and
+    /// its address lookup tables travel along so the driver can build the
+    /// v0 transaction the instructions assume.
     pub fn single(
         id: u64,
         order_uid: OrderUid,
@@ -110,10 +101,6 @@ impl Solution {
         };
         Ok(Self {
             id,
-            prices: HashMap::from([
-                (order.sell_mint, swap.out_amount),
-                (order.buy_mint, swap.in_amount),
-            ]),
             trades: vec![Trade {
                 order_uid,
                 executed_amount,
@@ -195,10 +182,6 @@ mod tests {
         let solution = Solution::single(42, ORDER_UID, &order, swap()).unwrap();
 
         assert_eq!(solution.id, 42);
-        // Clearing prices: sell mint priced at the output amount, buy mint at
-        // the input amount, so executed × price matches on both sides.
-        assert_eq!(solution.prices[&order.sell_mint], 2_000);
-        assert_eq!(solution.prices[&order.buy_mint], 1_000);
         assert_eq!(solution.trades.len(), 1);
         assert_eq!(solution.trades[0].order_uid, ORDER_UID);
         assert_eq!(solution.trades[0].executed_amount, 1_000);
@@ -249,10 +232,6 @@ mod tests {
             json,
             serde_json::json!({
                 "id": 1,
-                "prices": {
-                    pubkey(1).to_string(): "2000",
-                    pubkey(2).to_string(): "1000",
-                },
                 "trades": [{
                     "orderUid": format!("0x{}", "08".repeat(32)),
                     "executedAmount": "1000",
