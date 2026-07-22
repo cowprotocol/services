@@ -129,7 +129,7 @@ mod tests {
             OrderEventsCleanerConfig::new(Duration::from_millis(50), Duration::from_millis(200));
         let cleaner = OrderEventsCleaner::new(config, db.clone());
 
-        tokio::task::spawn(cleaner.run_forever());
+        dial9_tokio_telemetry::spawn(cleaner.run_forever());
 
         // delete `order_a` after the initialization
         time::sleep(Duration::from_millis(20)).await;

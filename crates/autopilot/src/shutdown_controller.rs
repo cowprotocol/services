@@ -8,7 +8,7 @@ impl ShutdownController {
     /// Creates a new Control which reacts to sigint/sigterm from the OS
     pub fn new_shutdown_on_signal() -> Self {
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        tokio::spawn(Self::wait_for_signal(ShutdownSignal(sender)));
+        dial9_tokio_telemetry::spawn(Self::wait_for_signal(ShutdownSignal(sender)));
         Self { shutdown: receiver }
     }
 

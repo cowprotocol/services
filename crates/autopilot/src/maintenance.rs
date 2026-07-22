@@ -131,7 +131,7 @@ impl Maintenance {
         let (full_tx, full_rx) = watch::channel(blocks.borrow().number);
         let (partial_tx, partial_rx) = watch::channel(blocks.borrow().number);
 
-        tokio::task::spawn(async move {
+        dial9_tokio_telemetry::spawn(async move {
             let mut stream = into_stream(blocks);
             loop {
                 let block = stream

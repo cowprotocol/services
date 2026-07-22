@@ -213,7 +213,7 @@ impl RunLoop {
         current_block: ethrpc::block_stream::CurrentBlockWatcher,
         notify: Arc<tokio::sync::Notify>,
     ) {
-        tokio::spawn(async move {
+        dial9_tokio_telemetry::spawn(async move {
             loop {
                 ethrpc::block_stream::next_block(&current_block).await;
                 tracing::debug!("received new block");
@@ -461,7 +461,7 @@ impl RunLoop {
         }
         .instrument(tracing::Span::current());
 
-        tokio::spawn(settle_fut);
+        dial9_tokio_telemetry::spawn(settle_fut);
     }
 
     #[instrument(skip_all)]
@@ -680,7 +680,7 @@ impl RunLoop {
             let driver = driver.clone();
             let eth = self.eth.clone();
             let timeout = request.time_until_deadline();
-            let mut handle = tokio::task::spawn(
+            let mut handle = dial9_tokio_telemetry::spawn(
                 async move {
                     let fetch_response = driver.solve(request);
                     let check_allowed = eth
@@ -798,7 +798,7 @@ impl RunLoop {
         deadline_block: u64,
     ) {
         let persistence = self.persistence.clone();
-        tokio::spawn(async move {
+        dial9_tokio_telemetry::spawn(async move {
             let execution_started = ExecutionStarted {
                 auction_id,
                 solver,
@@ -835,7 +835,7 @@ impl RunLoop {
             Err(SettleError::Other(err)) => format!("driver failed: {err}"),
         };
 
-        tokio::spawn(async move {
+        dial9_tokio_telemetry::spawn(async move {
             let execution_ended = ExecutionEnded {
                 auction_id,
                 solver,

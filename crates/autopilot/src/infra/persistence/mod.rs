@@ -81,7 +81,7 @@ impl Persistence {
     /// recent auction.
     fn spawn_db_upload_task(db: Arc<Postgres>) -> mpsc::UnboundedSender<AuctionUpload> {
         let (sender, mut receiver) = mpsc::unbounded_channel::<AuctionUpload>();
-        tokio::task::spawn(async move {
+        dial9_tokio_telemetry::spawn(async move {
             while let Some(upload) = receiver.recv().await {
                 if let Err(err) = db
                     .replace_current_auction(upload.auction_id, upload.auction_data)
@@ -103,7 +103,7 @@ impl Persistence {
     /// PostgreSQL and notifies via the provided Notify.
     pub fn spawn_order_listener(&self, notify: Arc<tokio::sync::Notify>) {
         let pool = self.postgres.pool.clone();
-        tokio::spawn(async move {
+        dial9_tokio_telemetry::spawn(async move {
             loop {
                 let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
                     Ok(listener) => listener,
@@ -175,7 +175,7 @@ impl Persistence {
             return;
         };
         let auction = auction.clone();
-        tokio::task::spawn(async move {
+        dial9_tokio_telemetry::spawn(async move {
             let auction_dto = dto::auction::from_domain(auction);
             match s3.upload(id.to_string(), auction_dto).await {
                 Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
@@ -290,7 +290,7 @@ impl Persistence {
         F: (Fn(I::Item) -> domain::OrderUid) + Send + 'static,
     {
         let db = self.postgres.clone();
-        tokio::spawn(
+        dial9_tokio_telemetry::spawn(
             async move {
                 let order_uids = items.into_iter().map(convert).collect();
                 match db.pool.acquire().await {
@@ -403,7 +403,7 @@ impl Persistence {
         // index, which periodically causes DB latency spikes. Clean it right
         // where the need originates, without blocking auction post-processing.
         let postgres = self.postgres.clone();
-        tokio::spawn(async move {
+        dial9_tokio_telemetry::spawn(async move {
             if let Err(err) = postgres.gin_clean_pending_list().await {
                 tracing::warn!(?err, "failed to clean gin pending list");
             }

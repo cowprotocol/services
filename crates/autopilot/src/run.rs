@@ -512,7 +512,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let startup = Arc::new(Some(AtomicBool::new(false)));
 
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
-    let api_task = tokio::spawn(infra::api::serve(
+    let api_task = dial9_tokio_telemetry::spawn(infra::api::serve(
         config.api_address,
         api_native_price_estimator,
         config.price_estimation.quote_timeout,
@@ -535,7 +535,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         db_write.clone(),
     );
 
-    tokio::task::spawn(
+    dial9_tokio_telemetry::spawn(
         order_events_cleaner
             .run_forever()
             .instrument(tracing::info_span!("order_events_cleaner")),

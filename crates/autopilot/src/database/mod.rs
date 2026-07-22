@@ -55,7 +55,7 @@ impl Postgres {
     }
 
     fn start_db_metrics_job(pool: PgPool) {
-        tokio::spawn(async move {
+        dial9_tokio_telemetry::spawn(async move {
             let mut ticker = tokio::time::interval(Duration::from_secs(5));
             loop {
                 ticker.tick().await;
@@ -169,9 +169,9 @@ impl Metrics {
 pub fn run_database_metrics_work(db: Postgres) {
     let span = tracing::info_span!("database_metrics");
     // Spawn the task for updating large table statistics
-    tokio::spawn(update_large_tables_stats(db.clone()).instrument(span.clone()));
+    dial9_tokio_telemetry::spawn(update_large_tables_stats(db.clone()).instrument(span.clone()));
     // Spawn the task for database metrics
-    tokio::task::spawn(database_metrics(db).instrument(span));
+    dial9_tokio_telemetry::spawn(database_metrics(db).instrument(span));
 }
 
 async fn database_metrics(db: Postgres) -> ! {
