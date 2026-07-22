@@ -1404,12 +1404,9 @@ components:
           nullable: false
         gasCost:
           description: >
-            Actual on-chain gas cost attributed to this order, in native token
-            wei. Computed as the order's share of the gas cost
-            (`gas_used * effective_gas_price`) of the settlement transaction(s)
-            that executed it, split equally across all trades settled in the same
-            transaction, and summed across the order's fills. `null` for orders
-            settled before this data started being recorded, or not yet settled.
+            Estimated gas cost attributed to this order, in native token wei.
+            `null` if the order is not yet settled or its gas cost was not
+            recorded.
           allOf:
             - $ref: "#/components/schemas/BigUint"
           nullable: true
@@ -1787,11 +1784,8 @@ components:
             $ref: "#/components/schemas/ExecutedProtocolFee"
         gasCost:
           description: >
-            Actual on-chain gas cost attributed to this trade, in native token
-            wei. Computed as this trade's share of the settlement transaction's
-            gas cost (`gas_used * effective_gas_price`), split equally across all
-            trades settled in the same transaction. `null` for trades settled
-            before this data started being recorded.
+            Estimated gas cost attributed to this trade, in native token wei.
+            `null` if its gas cost was not recorded.
           allOf:
             - $ref: "#/components/schemas/BigUint"
           nullable: true
