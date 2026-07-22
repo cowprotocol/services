@@ -72,6 +72,7 @@ impl ExternalTradeFinder {
                 amount: query.in_amount.get(),
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
+                fast_path: query.fast_path,
             };
             let block_dependent = query.block_dependent;
             let id = observe::tracing::distributed::request_id::from_current_span();
@@ -389,6 +390,8 @@ pub mod dto {
         pub amount: U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
+        #[serde(default)]
+        pub fast_path: bool,
     }
 
     #[serde_as]

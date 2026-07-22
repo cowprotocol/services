@@ -1157,6 +1157,7 @@ async fn get_or_create_quote(
                 verification: quote_search_parameters.verification.clone(),
                 signing_scheme: quote_search_parameters.signing_scheme,
                 additional_gas: quote_search_parameters.additional_gas,
+                fast_path: false,
                 timeout: None, // let &dyn OrderQuoting chose default
             };
 
@@ -2807,6 +2808,7 @@ mod tests {
                 verification,
                 signing_scheme: QuoteSigningScheme::Eip712,
                 additional_gas: 0,
+                fast_path: false,
                 timeout: None,
             }))
             .returning({

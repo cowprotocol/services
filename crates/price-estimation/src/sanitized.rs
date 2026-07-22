@@ -214,6 +214,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -236,6 +237,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -258,6 +260,7 @@ mod tests {
                     in_amount: NonZeroU256::MAX,
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
@@ -275,6 +278,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -298,6 +302,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -318,6 +323,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -338,6 +344,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -359,6 +366,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -380,6 +388,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
@@ -396,6 +405,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
@@ -523,6 +533,7 @@ mod tests {
                     in_amount: Default::default(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -542,6 +553,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {

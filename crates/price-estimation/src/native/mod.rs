@@ -95,6 +95,7 @@ impl NativePriceEstimator {
             kind: OrderKind::Buy,
             verification: Default::default(),
             block_dependent: false,
+            fast_path: false,
             timeout,
         }
     }

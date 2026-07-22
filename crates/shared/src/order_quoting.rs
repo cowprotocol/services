@@ -40,6 +40,9 @@ pub struct QuoteParameters {
     pub verification: Verification,
     pub signing_scheme: QuoteSigningScheme,
     pub additional_gas: u64,
+    /// Whether this quote is intended for fast-path (out-of-competition)
+    /// execution.
+    pub fast_path: bool,
     pub timeout: Option<std::time::Duration>,
 }
 
@@ -63,6 +66,7 @@ impl QuoteParameters {
             in_amount,
             kind,
             block_dependent: true,
+            fast_path: self.fast_path,
             timeout,
         }
     }
@@ -927,6 +931,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -948,6 +953,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
@@ -1070,6 +1076,7 @@ mod tests {
                 verification_gas_limit: 1,
             },
             additional_gas: 2,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1091,6 +1098,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
@@ -1208,6 +1216,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1229,6 +1238,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: true,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
@@ -1347,6 +1357,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1421,6 +1432,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1953,6 +1965,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             verification: Default::default(),
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let estimate = price_estimation::Estimate {
@@ -2000,6 +2013,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             verification: Default::default(),
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let estimate = price_estimation::Estimate {
@@ -2058,6 +2072,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             verification: Default::default(),
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         }
     }
@@ -2239,6 +2254,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             verification: Default::default(),
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = alloy::eips::eip1559::Eip1559Estimation {
@@ -2298,6 +2314,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             verification: Default::default(),
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = alloy::eips::eip1559::Eip1559Estimation {

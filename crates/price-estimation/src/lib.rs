@@ -158,6 +158,9 @@ pub struct Query {
     /// used to answer the query.
     #[serde(skip_serializing)]
     pub block_dependent: bool,
+    /// Whether this quote is intended for fast-path (out-of-competition)
+    /// execution; propagated to the driver.
+    pub fast_path: bool,
     pub timeout: Duration,
 }
 

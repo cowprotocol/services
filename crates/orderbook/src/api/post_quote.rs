@@ -135,6 +135,7 @@ mod tests {
                     onchain_order: false
                 },
                 price_quality: PriceQuality::Optimal,
+                fast_path: false,
                 timeout: Default::default(),
             }
         );
