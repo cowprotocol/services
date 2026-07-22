@@ -18,7 +18,8 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub id: u64,
-    /// Uniform clearing prices keyed by mint. Values are decimal strings.
+    /// Uniform clearing prices keyed by token mint (an SPL token's on-chain
+    /// address). Values are decimal strings.
     #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
     pub prices: HashMap<Pubkey, u64>,
     pub trades: Vec<Trade>,
@@ -155,6 +156,8 @@ fn serialize_base64<S: serde::Serializer>(data: &[u8], serializer: S) -> Result<
 mod tests {
     use {super::*, solana_sdk::instruction::AccountMeta as SdkAccountMeta, std::str::FromStr};
 
+    const ORDER_UID: OrderUid = OrderUid([8; 32]);
+
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
     }
@@ -189,7 +192,7 @@ mod tests {
     #[test]
     fn sell_swap_maps_to_single_order_solution() {
         let order = order(dex::Side::Sell);
-        let solution = Solution::single(42, OrderUid([8; 32]), &order, swap()).unwrap();
+        let solution = Solution::single(42, ORDER_UID, &order, swap()).unwrap();
 
         assert_eq!(solution.id, 42);
         // Clearing prices: sell mint priced at the output amount, buy mint at
@@ -197,7 +200,7 @@ mod tests {
         assert_eq!(solution.prices[&order.sell_mint], 2_000);
         assert_eq!(solution.prices[&order.buy_mint], 1_000);
         assert_eq!(solution.trades.len(), 1);
-        assert_eq!(solution.trades[0].order_uid, OrderUid([8; 32]));
+        assert_eq!(solution.trades[0].order_uid, ORDER_UID);
         assert_eq!(solution.trades[0].executed_amount, 1_000);
         assert_eq!(solution.trades[0].fee, 0);
         assert_eq!(solution.address_lookup_tables, vec![pubkey(7)]);
@@ -213,8 +216,7 @@ mod tests {
 
     #[test]
     fn buy_swap_executes_in_buy_token_units() {
-        let solution =
-            Solution::single(0, OrderUid([0; 32]), &order(dex::Side::Buy), swap()).unwrap();
+        let solution = Solution::single(0, ORDER_UID, &order(dex::Side::Buy), swap()).unwrap();
         assert_eq!(solution.trades[0].executed_amount, 2_000);
     }
 
@@ -223,7 +225,7 @@ mod tests {
         let mut order = order(dex::Side::Sell);
         order.buy_mint = order.sell_mint;
         assert_eq!(
-            Solution::single(0, OrderUid([0; 32]), &order, swap()).unwrap_err(),
+            Solution::single(0, ORDER_UID, &order, swap()).unwrap_err(),
             Error::SameMint
         );
     }
@@ -233,34 +235,41 @@ mod tests {
         let mut swap = swap();
         swap.out_amount = 0;
         assert_eq!(
-            Solution::single(0, OrderUid([0; 32]), &order(dex::Side::Sell), swap).unwrap_err(),
+            Solution::single(0, ORDER_UID, &order(dex::Side::Sell), swap).unwrap_err(),
             Error::ZeroAmount
         );
     }
 
     #[test]
     fn wire_format_is_stable() {
-        let solution =
-            Solution::single(1, OrderUid([8; 32]), &order(dex::Side::Sell), swap()).unwrap();
+        let solution = Solution::single(1, ORDER_UID, &order(dex::Side::Sell), swap()).unwrap();
         let json = serde_json::to_value(&solution).unwrap();
 
-        assert_eq!(json["prices"][pubkey(1).to_string()], "2000");
         assert_eq!(
-            json["trades"][0]["orderUid"],
-            format!("0x{}", "08".repeat(32))
+            json,
+            serde_json::json!({
+                "id": 1,
+                "prices": {
+                    pubkey(1).to_string(): "2000",
+                    pubkey(2).to_string(): "1000",
+                },
+                "trades": [{
+                    "orderUid": format!("0x{}", "08".repeat(32)),
+                    "executedAmount": "1000",
+                    "fee": "0",
+                }],
+                "interactions": [{
+                    "programId": pubkey(9).to_string(),
+                    "accounts": [{
+                        "pubkey": pubkey(4).to_string(),
+                        "isSigner": true,
+                        "isWritable": false,
+                    }],
+                    "instructionData": BASE64_STANDARD.encode([0xde, 0xad]),
+                }],
+                "addressLookupTables": [pubkey(7).to_string()],
+            })
         );
-        assert_eq!(json["trades"][0]["executedAmount"], "1000");
-        assert_eq!(json["interactions"][0]["programId"], pubkey(9).to_string());
-        assert_eq!(
-            json["interactions"][0]["instructionData"],
-            BASE64_STANDARD.encode([0xde, 0xad])
-        );
-        assert!(
-            json["interactions"][0]["accounts"][0]["isSigner"]
-                .as_bool()
-                .unwrap()
-        );
-        assert_eq!(json["addressLookupTables"][0], pubkey(7).to_string());
     }
 
     #[test]

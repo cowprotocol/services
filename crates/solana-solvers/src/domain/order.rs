@@ -9,12 +9,8 @@ pub struct OrderUid(pub [u8; 32]);
 
 impl fmt::Display for OrderUid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut bytes = [0u8; 2 + 32 * 2];
-        bytes[..2].copy_from_slice(b"0x");
-        // Unwrap: the destination length always matches the input.
-        const_hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
-        // Unwrap: hex output is always valid UTF-8.
-        f.write_str(std::str::from_utf8(&bytes).unwrap())
+        let mut buffer = const_hex::Buffer::<32, true>::new();
+        f.write_str(buffer.format(&self.0))
     }
 }
 
