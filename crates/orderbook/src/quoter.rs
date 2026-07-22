@@ -389,6 +389,7 @@ fn build_order_quote_response(
         id,
         verified: quote.data.verified,
         protocol_fee_bps: adjusted.protocol_fee_bps.clone(),
+        supports_fast_path: quote.data.supports_fast_path,
     })
 }
 
@@ -527,6 +528,7 @@ mod tests {
                 quote_kind: database::quotes::QuoteKind::Standard,
                 solver: Default::default(),
                 verified: false,
+                supports_fast_path: false,
                 metadata: Default::default(),
             },
             sell_amount,

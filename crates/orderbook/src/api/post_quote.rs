@@ -284,6 +284,7 @@ mod tests {
             id: Some(0),
             verified: false,
             protocol_fee_bps: Some("2".to_string()),
+            supports_fast_path: false,
         };
         let response = (StatusCode::OK, Json(order_quote_response.clone())).into_response();
         assert_eq!(response.status(), StatusCode::OK);

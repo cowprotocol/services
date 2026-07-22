@@ -192,6 +192,9 @@ pub struct Estimate {
     pub solver: Address,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
+    /// Whether the quoting solver supports fast-path (out-of-competition)
+    /// execution for this order.
+    pub supports_fast_path: bool,
     /// Data associated with this estimation.
     #[debug(ignore)]
     pub execution: QuoteExecution,

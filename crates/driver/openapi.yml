@@ -442,7 +442,6 @@ components:
       required:
         - clearingPrices
         - solver
-        - supportsFastPath
     DateTime:
       description: An ISO 8601 UTC date time string.
       type: string

@@ -154,6 +154,7 @@ mod tests {
                     gas: 0,
                     solver: Address::repeat_byte(1),
                     verified: false,
+                    supports_fast_path: false,
                     execution: Default::default(),
                 })
             }

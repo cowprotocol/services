@@ -170,6 +170,7 @@ impl From<dto::LegacyQuote> for LegacyTrade {
                 .collect(),
             solver: quote.solver,
             tx_origin: quote.tx_origin,
+            supports_fast_path: quote.supports_fast_path,
         }
     }
 }
@@ -200,6 +201,7 @@ impl From<dto::Quote> for Trade {
             solver: quote.solver,
             tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders,
+            supports_fast_path: quote.supports_fast_path,
         }
     }
 }
@@ -347,6 +349,7 @@ impl TradeFinding for ExternalTradeFinder {
                 .map_err(TradeError::Other)?,
             gas_estimate,
             solver: trade.solver(),
+            supports_fast_path: trade.supports_fast_path(),
             execution: QuoteExecution {
                 interactions: map_interactions_data(trade.interactions()),
                 pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -407,6 +410,8 @@ pub mod dto {
         pub gas: Option<u64>,
         #[serde(default)]
         pub tx_origin: Option<Address>,
+        #[serde(default)]
+        pub supports_fast_path: bool,
     }
 
     #[serde_as]
@@ -424,6 +429,8 @@ pub mod dto {
         pub tx_origin: Option<Address>,
         #[serde(default)]
         pub jit_orders: Vec<JitOrder>,
+        #[serde(default)]
+        pub supports_fast_path: bool,
     }
 
     #[serde_as]

@@ -362,6 +362,10 @@ pub struct OrderQuoteResponse {
     /// Protocol fee in basis points (e.g., "2" for 0.02%)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol_fee_bps: Option<String>,
+    /// Whether the quoting solver supports fast-path (out-of-competition)
+    /// execution for this order.
+    #[serde(default)]
+    pub supports_fast_path: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
