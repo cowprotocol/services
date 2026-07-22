@@ -3,7 +3,7 @@ use {
     axum::http::Request,
     opentelemetry::{global, trace::TraceContextExt},
     opentelemetry_http::HeaderExtractor,
-    tracing::{Span, field, info, info_span},
+    tracing::{Span, field, info_span, trace},
     tracing_opentelemetry::OpenTelemetrySpanExt,
 };
 
@@ -27,11 +27,11 @@ pub fn make_span<B>(request: &Request<B>) -> Span {
 
     let span = info_span!(SPAN_NAME, request_id = request_id, trace_id = field::Empty);
     if let Err(err) = span.set_parent(parent_context) {
-        tracing::debug!(?err, "failed to set request parent span");
+        tracing::trace!(?err, "failed to set request parent span");
     }
     {
         let _span = span.enter();
-        info!(uri = %request.uri(), method = %request.method(), "HTTP request");
+        trace!(uri = %request.uri(), method = %request.method(), "HTTP request");
     }
 
     span
