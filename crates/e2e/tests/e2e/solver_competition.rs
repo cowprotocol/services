@@ -658,14 +658,6 @@ async fn store_filtered_solutions(web3: Web3) {
 /// bid on **only** by a non-winning (filtered) solution must still count as
 /// actively bid on and therefore be non-replaceable.
 ///
-/// This pins the observable endpoint behaviour across the solver_competition
-/// v1 -> v2 refactor. Both the old path (`load_latest_competitions`, which
-/// flattened the orders of every solution in the JSON blob) and the new path
-/// (`recent_solution_order_uids`, which reads `proposed_trade_executions`)
-/// consider *all* solutions, not just winners. The assertions here never
-/// reference the internal query, so they must hold identically before and
-/// after the refactor.
-///
 /// The setup mirrors `store_filtered_solutions`: the good solver wins with a
 /// solution for `order_win`, while the bad solver bundles `order_win` and
 /// `order_loser` into a single solution that gets filtered out during the
