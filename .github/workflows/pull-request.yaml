@@ -157,7 +157,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1.8.0
+      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
@@ -193,7 +193,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1.8.0
+      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
         with:
           # the latest version introduced a bug caused forked node tests to fail
           # only switch back to latest stable version after it was fixed in anvil
@@ -226,7 +226,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1.8.0
+      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
@@ -293,7 +293,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1.8.0
+      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
