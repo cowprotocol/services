@@ -286,13 +286,14 @@ impl Persistence {
         reason: Option<OrderFilterReason>,
     ) where
         I: IntoIterator + Send + 'static,
+        I::IntoIter: Send,
         I::Item: Send,
         F: (Fn(I::Item) -> domain::OrderUid) + Send + 'static,
     {
         let db = self.postgres.clone();
         tokio::spawn(
             async move {
-                let order_uids = items.into_iter().map(convert).collect();
+                let order_uids = items.into_iter().map(convert);
                 match db.pool.acquire().await {
                     Ok(mut tx) => {
                         store_order_events(&mut tx, order_uids, label, reason, Utc::now()).await;
@@ -801,7 +802,7 @@ impl Persistence {
 
             store_order_events(
                 &mut ex,
-                fee_breakdown.keys().cloned().collect(),
+                fee_breakdown.keys().cloned(),
                 OrderEventLabel::Traded,
                 None,
                 Utc::now(),
