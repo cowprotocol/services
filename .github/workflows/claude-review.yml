@@ -47,15 +47,16 @@ jobs:
       id-token: write
       actions: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Full history lets the action compute an accurate diff vs the base
           # branch instead of just the latest commit.
           fetch-depth: 0
 
-      - uses: anthropics/claude-code-action@558b1d6cab4085c7753fe402c10bef0fbb92ac7a # v1.0.165
+      - id: claude
+        uses: anthropics/claude-code-action@558b1d6cab4085c7753fe402c10bef0fbb92ac7a # v1.0.165
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           trigger_phrase: "@claude"
           track_progress: true
           claude_args: |
@@ -65,3 +66,26 @@ jobs:
           prompt: |
             Review this PR. Post each issue as an INLINE comment on the exact file and
             line using the create_inline_comment tool. Follow the pr-review skill if available.
+
+      # The action exits 0 even when the model/API errors ("is_error": true in
+      # the execution file), so CI goes green and no review is posted. Re-surface
+      # that as a failed step + PR comment. (Upstream has no fail_on_error input.)
+      - name: Fail if Claude errored
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXEC_FILE: ${{ steps.claude.outputs.execution_file }}
+          CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          is_error=$(jq -r 'map(select(.type == "result")) | last | .is_error // false' "$EXEC_FILE" 2>/dev/null || echo false)
+          if [ "$CLAUDE_OUTCOME" != "failure" ] && [ "$is_error" != "true" ]; then
+            echo "Claude review completed without error."
+            exit 0
+          fi
+          msg="⚠️ **Claude PR review failed to run** (\`is_error=true\`, no review posted — usually an Anthropic API/auth/credit error). See the [workflow run]($RUN_URL) for details, or check [Claude status](https://status.claude.com/)."
+          echo "::error::Claude PR review failed to run — see $RUN_URL"
+          # ponytail: one comment per failed run; make it a sticky find-or-update comment if the noise matters.
+          gh pr comment "$PR_NUMBER" --body "$msg" || echo "Could not post PR comment"
+          exit 1
