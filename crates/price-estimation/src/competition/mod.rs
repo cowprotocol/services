@@ -159,10 +159,10 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         &self,
         query: &Q,
         kind: OrderKind,
-        (index, result): ResultWithIndex<R>,
-    ) -> Result<R, PriceEstimationError> {
+        (index, result): &ResultWithIndex<R>,
+    ) {
         let EstimatorIndex(stage_index, estimator_index) = index;
-        let (name, _estimator) = &self.stages[stage_index][estimator_index];
+        let (name, _estimator) = &self.stages[*stage_index][*estimator_index];
         tracing::debug!(?query, ?result, estimator = name, "winning price estimate");
         if result.is_ok() {
             metrics()
@@ -170,7 +170,6 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
                 .with_label_values(&[name.as_str(), kind.label()])
                 .inc();
         }
-        result
     }
 }
 

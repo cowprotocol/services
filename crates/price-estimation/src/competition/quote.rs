@@ -1,15 +1,16 @@
 use {
     super::{CompetitionEstimator, EstimatorIndex, PriceRanking, compare_error},
     crate::{
+        CompetitionPriceEstimating,
         Estimate,
         PriceEstimateResult,
         PriceEstimating,
         PriceEstimationError,
         Query,
         QuoteVerificationMode,
+        RankedEstimates,
     },
     alloy::primitives::{Address, U256},
-    anyhow::Context as _,
     event_bus_dto::{
         price_estimate::{EstimateResult, PriceEstimateEvent},
         query::{OrderKind as DtoOrderKind, QueryFields},
@@ -25,9 +26,12 @@ use {
     tracing::instrument,
 };
 
-impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
+impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
     #[instrument(skip_all)]
-    fn estimate(&self, mut query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
+    fn estimates(
+        &self,
+        mut query: Arc<Query>,
+    ) -> BoxFuture<'_, Result<RankedEstimates, PriceEstimationError>> {
         Arc::make_mut(&mut query).timeout /= self.stages.len() as u32;
 
         async move {
@@ -44,6 +48,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 r.as_ref()
                     .is_ok_and(|r| r.gas > 0 && !r.out_amount.is_zero())
             };
+
             let get_results = self
                 .produce_results(query.clone(), is_reasonable, |context| {
                     // Call estimate() eagerly so its side-effects still happen
@@ -69,34 +74,41 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 })
                 .map(Result::Ok);
 
-            let (context, results) = futures::try_join!(get_context, get_results)?;
+            let (context, mut results) = futures::try_join!(get_context, get_results)?;
 
-            let winner = results
-                .into_iter()
-                .filter(|(_index, r)| r.is_err() || is_reasonable(r))
-                .max_by(|a, b| {
-                    compare_quote_result(
-                        &query,
-                        &a.1,
-                        &b.1,
-                        &context,
-                        !matches!(self.verification_mode, QuoteVerificationMode::Unverified),
-                    )
-                })
-                .with_context(|| "all price estimates were unreasonable (0 gas or 0 out_amount)")
-                .map_err(PriceEstimationError::EstimatorInternal)?;
+            let prefer_verified =
+                !matches!(self.verification_mode, QuoteVerificationMode::Unverified);
+            results.sort_by(|(_, a), (_, b)| {
+                compare_quote_result(&query, a, b, &context, prefer_verified).reverse()
+            });
 
-            if winner.1.is_ok() {
-                let EstimatorIndex(stage_index, estimator_index) = winner.0;
-                let (name, _) = &self.stages[stage_index][estimator_index];
-                emit_winning_price_estimate_event(name, &query);
+            // Keep all errors, but drop unreasonable Ok results.
+            results.retain(|(_, r)| r.is_err() || is_reasonable(r));
+            let mut results = results.into_iter();
+            let Some(winner) = results.next() else {
+                return Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                    "all price estimates were unreasonable (0 gas or 0 out_amount)"
+                )));
+            };
+
+            self.report_winner(&query, query.kind, &winner);
+            match winner {
+                (_, Err(err)) => Err(err),
+                (EstimatorIndex(stage_index, estimator_index), Ok(quote)) => {
+                    let (name, _) = &self.stages[stage_index][estimator_index];
+                    emit_winning_price_estimate_event(name, &query);
+                    let rest = results.filter_map(|(_, r)| r.ok());
+                    Ok(RankedEstimates::new(quote, rest))
+                }
             }
-            // the winner.is_ok check is repeated inside report_winner
-            // but due to the return, the simplest way to handle this is keep it here
-            // TODO: clean this up
-            self.report_winner(&query, query.kind, winner)
         }
         .boxed()
+    }
+}
+
+impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
+    fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
+        async move { self.estimates(query).await.map(|r| r.into_best()) }.boxed()
     }
 }
 
