@@ -4,9 +4,10 @@
 //! By default writes to `schemas/events.json` inside the crate. Pass an
 //! alternative path as the first argument to override.
 
-use std::{collections::BTreeMap, path::PathBuf};
-
-use clap::Parser;
+use {
+    clap::Parser,
+    std::{collections::BTreeMap, path::PathBuf},
+};
 
 #[derive(Parser)]
 struct CliArguments {
