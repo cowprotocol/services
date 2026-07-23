@@ -232,6 +232,7 @@ pub trait StreamingPriceEstimating: Send + Sync + 'static {
 
 /// All estimates returned by a [`CompetitionPriceEstimating`] call, ordered
 /// best to worst. Guaranteed to be non-empty.
+#[derive(Debug)]
 pub struct RankedEstimates {
     values: Vec<Estimate>,
 }
@@ -252,8 +253,8 @@ impl RankedEstimates {
     }
 
     /// Returns all estimates ordered best to worst.
-    pub fn into_all_bids(self) -> impl Iterator<Item = Estimate> {
-        self.values.into_iter()
+    pub fn into_vec(self) -> Vec<Estimate> {
+        self.values
     }
 }
 
