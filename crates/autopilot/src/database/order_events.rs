@@ -31,7 +31,11 @@ pub async fn store_order_events(
     let insert = async move {
         let mut ex = ex.begin().await?;
         let mut order_uids = order_uids.into_iter().map(|o| ByteArray(o.0));
-        let mut chunk = Vec::with_capacity(INSERT_CHUNK_SIZE);
+        let capacity = match order_uids.size_hint().1 {
+            Some(hint) => std::cmp::min(hint, INSERT_CHUNK_SIZE),
+            None => INSERT_CHUNK_SIZE,
+        };
+        let mut chunk = Vec::with_capacity(capacity);
         let mut count = 0;
         loop {
             chunk.clear();
