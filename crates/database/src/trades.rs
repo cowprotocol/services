@@ -29,8 +29,8 @@ pub struct TradesQueryRow {
 /// divided equally across all trades settled in the same transaction. Expects
 /// the settlement row to be aliased `s`; selected as the column `gas_cost`,
 /// which is `NULL` for settlements whose gas was not persisted (see migration
-/// V115). Shared by [`trades`] and [`order_gas_costs`] so the two cannot drift.
-const GAS_COST_EXPR: &str = r#"FLOOR(
+/// V115). Shared by [`trades`] and [`ORDER_GAS_COST`] so they cannot drift.
+pub(crate) const GAS_COST_EXPR: &str = r#"FLOOR(
             (s.gas_used * s.effective_gas_price)
             / NULLIF((
                 SELECT COUNT(*)
@@ -45,6 +45,37 @@ const GAS_COST_EXPR: &str = r#"FLOOR(
                 ), -1)
             ), 0)
         ) AS gas_cost"#;
+
+/// Scalar subquery yielding a single order's total on-chain gas cost (native
+/// token wei) summed across all of its fills, or `NULL` when none of its
+/// settlements have persisted gas (see V115). Correlates on the order alias
+/// `o`, so it can be embedded in the `orders`/`jit_orders` order-detail queries
+/// to fetch the gas cost in the same round-trip. Reuses [`GAS_COST_EXPR`].
+pub(crate) const ORDER_GAS_COST: &str = const_format::concatcp!(
+    r#"(
+    SELECT FLOOR(SUM(settlement.gas_cost))
+    FROM trades t
+    JOIN LATERAL (
+        SELECT "#,
+    GAS_COST_EXPR,
+    r#"
+        FROM settlements s
+        WHERE s.block_number = t.block_number
+        AND   s.log_index > t.log_index
+        ORDER BY s.log_index ASC
+        LIMIT 1
+    ) AS settlement ON true
+    WHERE settlement.gas_cost IS NOT NULL
+    AND   t.order_uid = o.uid
+)"#,
+);
+
+/// [`ORDER_GAS_COST`] rendered as a trailing select-list column named
+/// `gas_cost` (comma-prefixed), ready to splice onto an order-detail `SELECT`
+/// clause that exposes the order alias `o`. Kept out of the shared `SELECT`
+/// fragments so only the queries that need the gas cost pay for it.
+pub(crate) const ORDER_GAS_COST_COLUMN: &str =
+    const_format::concatcp!(", ", ORDER_GAS_COST, " AS gas_cost");
 
 pub fn trades<'a>(
     ex: &'a mut PgConnection,
@@ -174,41 +205,6 @@ FROM page"#,
         .instrument(info_span!("trades"))
 }
 
-/// Returns, per order, the total on-chain gas cost (native token wei)
-/// attributed to the order across all of its trades. Each trade contributes its
-/// share of its settlement's gas cost (see [`GAS_COST_EXPR`]). Orders whose
-/// settlements have no persisted gas (see V115) are absent from the result.
-#[instrument(skip_all)]
-pub async fn order_gas_costs(
-    ex: &mut PgConnection,
-    order_uids: &[OrderUid],
-) -> Result<Vec<(OrderUid, BigDecimal)>, sqlx::Error> {
-    if order_uids.is_empty() {
-        return Ok(vec![]);
-    }
-
-    const QUERY: &str = const_format::concatcp!(
-        r#"
-SELECT t.order_uid, FLOOR(SUM(settlement.gas_cost)) AS gas_cost
-FROM trades t
-JOIN LATERAL (
-    SELECT "#,
-        GAS_COST_EXPR,
-        r#"
-    FROM settlements s
-    WHERE s.block_number = t.block_number
-    AND   s.log_index > t.log_index
-    ORDER BY s.log_index ASC
-    LIMIT 1
-) AS settlement ON true
-WHERE settlement.gas_cost IS NOT NULL
-AND t.order_uid = ANY($1)
-GROUP BY t.order_uid"#,
-    );
-
-    sqlx::query_as(QUERY).bind(order_uids).fetch_all(ex).await
-}
-
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct TradeEvent {
     pub block_number: i64,
@@ -281,6 +277,7 @@ mod tests {
             onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
             orders::Order,
         },
+        bigdecimal::ToPrimitive,
         sqlx::Connection,
     };
 
@@ -832,6 +829,135 @@ mod tests {
                 order_uid: trade_b.order_uid,
             }]
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_gas_cost_attribution() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        // 1 user with 4 orders.
+        let mut users_and_orders = generate_owners_and_order_ids(&[4]).await;
+        let (owner, orders) = users_and_orders
+            .pop()
+            .expect("users_and_orders should have 1 element");
+        let order_a = orders[0];
+        let order_b = orders[1];
+        let order_c = orders[2];
+        let order_d = orders[3];
+
+        let index = |block: i64, log: i64| EventIndex {
+            block_number: block,
+            log_index: log,
+        };
+
+        // Block 0 holds two settlements in different transactions. Trades before
+        // each settlement event belong to it.
+        //
+        //   log 0: trade (order_a)  ┐
+        //   log 1: trade (order_b)  ┴─ settled by A
+        //   log 2: settlement A     -> gas_used * price = 100 * 10 = 1000
+        //   log 3: trade (order_a)  ┐
+        //   log 4: trade (order_c)  ┴─ settled by B
+        //   log 5: settlement B     -> gas_used * price = 300 * 10 = 3000
+        add_order_and_trade(&mut db, owner, order_a, index(0, 0), None, None).await;
+        add_order_and_trade(&mut db, owner, order_b, index(0, 1), None, None).await;
+        let settlement_a = add_settlement(
+            &mut db,
+            index(0, 2),
+            Default::default(),
+            ByteArray([1; 32]),
+            1,
+        )
+        .await;
+        crate::settlements::update_settlement_gas(
+            &mut db,
+            0,
+            2,
+            BigDecimal::from(100),
+            BigDecimal::from(10),
+        )
+        .await
+        .unwrap();
+        // order_a fills a second time, in settlement B.
+        add_trade(&mut db, owner, order_a, index(0, 3), None, None).await;
+        add_order_and_trade(&mut db, owner, order_c, index(0, 4), None, None).await;
+        let settlement_b = add_settlement(
+            &mut db,
+            index(0, 5),
+            Default::default(),
+            ByteArray([2; 32]),
+            2,
+        )
+        .await;
+        crate::settlements::update_settlement_gas(
+            &mut db,
+            0,
+            5,
+            BigDecimal::from(300),
+            BigDecimal::from(10),
+        )
+        .await
+        .unwrap();
+
+        // A settlement whose gas was never recorded (e.g. observed before V115)
+        // contributes no gas cost.
+        add_order_and_trade(&mut db, owner, order_d, index(1, 0), None, None).await;
+        let settlement_c = add_settlement(
+            &mut db,
+            index(1, 1),
+            Default::default(),
+            ByteArray([3; 32]),
+            3,
+        )
+        .await;
+
+        // Each trade gets an equal share of its settlement's gas cost.
+        let mut rows = trades(&mut db, None, None, 0, 1000)
+            .into_inner()
+            .await
+            .unwrap();
+        rows.sort_by_key(|row| (row.block_number, row.log_index));
+        let gas = |row: &TradesQueryRow| row.gas_cost.as_ref().and_then(|cost| cost.to_u64());
+
+        assert_eq!(rows.len(), 5);
+        // Settlement A: 1000 / 2 trades = 500 each.
+        assert_eq!(rows[0].order_uid, order_a);
+        assert_eq!(gas(&rows[0]), Some(500));
+        assert_eq!(rows[0].tx_hash, Some(settlement_a.transaction_hash));
+        assert_eq!(rows[1].order_uid, order_b);
+        assert_eq!(gas(&rows[1]), Some(500));
+        assert_eq!(rows[1].tx_hash, Some(settlement_a.transaction_hash));
+        // Settlement B: 3000 / 2 trades = 1500 each.
+        assert_eq!(rows[2].order_uid, order_a);
+        assert_eq!(gas(&rows[2]), Some(1500));
+        assert_eq!(rows[2].tx_hash, Some(settlement_b.transaction_hash));
+        assert_eq!(rows[3].order_uid, order_c);
+        assert_eq!(gas(&rows[3]), Some(1500));
+        assert_eq!(rows[3].tx_hash, Some(settlement_b.transaction_hash));
+        // Settlement C: gas not recorded -> no share, but still resolves its tx.
+        assert_eq!(rows[4].order_uid, order_d);
+        assert_eq!(gas(&rows[4]), None);
+        assert_eq!(rows[4].tx_hash, Some(settlement_c.transaction_hash));
+
+        // The order-detail query attributes the same cost per order, summed
+        // across the order's fills (see `crate::trades::ORDER_GAS_COST`).
+        async fn order_gas(ex: &mut PgConnection, uid: &OrderUid) -> Option<u64> {
+            crate::orders::single_full_order_with_quote(ex, uid)
+                .await
+                .unwrap()
+                .unwrap()
+                .full_order
+                .gas_cost
+                .and_then(|cost| cost.to_u64())
+        }
+        assert_eq!(order_gas(&mut db, &order_a).await, Some(2000)); // 500 + 1500
+        assert_eq!(order_gas(&mut db, &order_b).await, Some(500));
+        assert_eq!(order_gas(&mut db, &order_c).await, Some(1500));
+        // order_d's only settlement has no recorded gas.
+        assert_eq!(order_gas(&mut db, &order_d).await, None);
     }
 
     #[tokio::test]

@@ -50,7 +50,7 @@ use {
         order_validation::{Amounts, LimitOrderCounting, is_order_outside_market_price},
     },
     sqlx::{Connection, PgConnection, types::BigDecimal},
-    std::{collections::HashMap, convert::TryInto},
+    std::convert::TryInto,
 };
 
 #[cfg_attr(test, mockall::automock)]
@@ -297,27 +297,22 @@ impl OrderStoring for Postgres {
 
         let mut ex = self.pool.acquire().await?;
 
-        let mut order =
-            match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
-                Some(order_with_quote) => {
-                    let (order, quote) = order_with_quote.into_order_and_quote();
-                    Some(full_order_with_quote_into_model_order(
-                        order,
-                        quote.as_ref(),
-                    ))
-                }
-                None => {
-                    // try to find the order in the JIT orders table
-                    database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0))
-                        .await?
-                        .map(full_order_into_model_order)
-                }
+        let order = match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
+            Some(order_with_quote) => {
+                let (order, quote) = order_with_quote.into_order_and_quote();
+                Some(full_order_with_quote_into_model_order(
+                    order,
+                    quote.as_ref(),
+                ))
             }
-            .transpose()?;
-
-        if let Some(order) = order.as_mut() {
-            order.metadata.gas_cost = attributed_gas_cost(&mut ex, uid).await?;
+            None => {
+                // try to find the order in the JIT orders table
+                database::jit_orders::get_by_id(&mut ex, &ByteArray(uid.0))
+                    .await?
+                    .map(full_order_into_model_order)
+            }
         }
+        .transpose()?;
 
         Ok(order)
     }
@@ -344,24 +339,13 @@ impl OrderStoring for Postgres {
             database::jit_orders::get_many_by_uid(&mut ex_jit_orders, &uids)
         )?;
 
-        let gas_costs = database::trades::order_gas_costs(&mut ex_orders, &uids)
-            .await?
-            .into_iter()
-            .filter_map(|(uid, gas_cost)| big_decimal_to_u256(&gas_cost).map(|cost| (uid, cost)))
-            .collect::<HashMap<_, _>>();
-        let gas_cost = |uid: &OrderUid| gas_costs.get(&ByteArray(uid.0)).copied();
-
         Ok(orders
             .into_iter()
             .map(|order| {
                 let (order, quote) = order.into_order_and_quote();
                 let uid = OrderUid(order.uid.0);
-                let result = full_order_with_quote_into_model_order(order, quote.as_ref())
-                    .map(|mut order| {
-                        order.metadata.gas_cost = gas_cost(&uid);
-                        order
-                    })
-                    .map_err(|err| {
+                let result =
+                    full_order_with_quote_into_model_order(order, quote.as_ref()).map_err(|err| {
                         tracing::warn!(?err, "Error converting into model order");
                         err.context("Error converting into model order")
                     });
@@ -369,15 +353,10 @@ impl OrderStoring for Postgres {
             })
             .chain(jit_orders.into_iter().map(|order| {
                 let uid = OrderUid(order.uid.0);
-                let result = full_order_into_model_order(order)
-                    .map(|mut order| {
-                        order.metadata.gas_cost = gas_cost(&uid);
-                        order
-                    })
-                    .map_err(|err| {
-                        tracing::warn!(?err, "Error converting Jit order into model order");
-                        err.context("Error converting Jit order into model order")
-                    });
+                let result = full_order_into_model_order(order).map_err(|err| {
+                    tracing::warn!(?err, "Error converting Jit order into model order");
+                    err.context("Error converting Jit order into model order")
+                });
                 (uid, result)
             }))
             .collect())
@@ -586,19 +565,6 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
     full_order_with_quote_into_model_order(order, None)
 }
 
-/// Total on-chain gas cost (native token wei) attributed to a single order
-/// across all of its trades. See [`database::trades::order_gas_costs`].
-async fn attributed_gas_cost(
-    ex: &mut PgConnection,
-    uid: &OrderUid,
-) -> Result<Option<alloy::primitives::U256>> {
-    Ok(database::trades::order_gas_costs(ex, &[ByteArray(uid.0)])
-        .await?
-        .into_iter()
-        .next()
-        .and_then(|(_, gas_cost)| big_decimal_to_u256(&gas_cost)))
-}
-
 /// If quote is provided, then it is used to extract quote metadata field value.
 fn full_order_with_quote_into_model_order(
     order: FullOrder,
@@ -646,10 +612,7 @@ fn full_order_with_quote_into_model_order(
         executed_fee: big_decimal_to_u256(&order.executed_fee)
             .context("executed fee is not a valid u256")?,
         executed_fee_token: Address::new(order.executed_fee_token.0),
-        // Filled in by the caller (see `single_order` / `many_orders`) from the
-        // on-chain settlement gas cost; left unset on read paths that don't
-        // attribute gas.
-        gas_cost: None,
+        gas_cost: order.gas_cost.as_ref().and_then(big_decimal_to_u256),
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
@@ -773,6 +736,7 @@ mod tests {
             executed_fee: Default::default(),
             executed_fee_token: ByteArray([1; 20]), // TODO surplus token
             full_app_data: Default::default(),
+            gas_cost: None,
         };
 
         // Open - sell (filled - 0%)
