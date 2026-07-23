@@ -29,28 +29,28 @@ pub struct TradesQueryRow {
 /// divided equally across all trades settled in the same transaction. Expects
 /// the settlement row to be aliased `s`; selected as the column `gas_cost`,
 /// which is `NULL` for settlements whose gas was not persisted (see migration
-/// V115). Shared by [`trades`] and [`ORDER_GAS_COST`] so they cannot drift.
+/// V115).
 pub(crate) const GAS_COST_EXPR: &str = r#"FLOOR(
-            (s.gas_used * s.effective_gas_price)
-            / NULLIF((
-                SELECT COUNT(*)
-                FROM trades tc
-                WHERE tc.block_number = s.block_number
-                AND   tc.log_index < s.log_index
-                AND   tc.log_index > COALESCE((
-                    SELECT MAX(sp.log_index)
-                    FROM settlements sp
-                    WHERE sp.block_number = s.block_number
-                    AND   sp.log_index < s.log_index
-                ), -1)
-            ), 0)
-        ) AS gas_cost"#;
+    (s.gas_used * s.effective_gas_price)
+    / NULLIF((
+        SELECT COUNT(*)
+        FROM trades tc
+        WHERE tc.block_number = s.block_number
+        AND   tc.log_index < s.log_index
+        AND   tc.log_index > COALESCE((
+            SELECT MAX(sp.log_index)
+            FROM settlements sp
+            WHERE sp.block_number = s.block_number
+            AND   sp.log_index < s.log_index
+        ), -1)
+    ), 0)
+) AS gas_cost"#;
 
 /// Scalar subquery yielding a single order's total on-chain gas cost (native
 /// token wei) summed across all of its fills, or `NULL` when none of its
 /// settlements have persisted gas (see V115). Correlates on the order alias
 /// `o`, so it can be embedded in the `orders`/`jit_orders` order-detail queries
-/// to fetch the gas cost in the same round-trip. Reuses [`GAS_COST_EXPR`].
+/// to fetch the gas cost in the same round-trip.
 pub(crate) const ORDER_GAS_COST: &str = const_format::concatcp!(
     r#"(
     SELECT FLOOR(SUM(settlement.gas_cost))
@@ -70,10 +70,8 @@ pub(crate) const ORDER_GAS_COST: &str = const_format::concatcp!(
 )"#,
 );
 
-/// [`ORDER_GAS_COST`] rendered as a trailing select-list column named
-/// `gas_cost` (comma-prefixed), ready to splice onto an order-detail `SELECT`
-/// clause that exposes the order alias `o`. Kept out of the shared `SELECT`
-/// fragments so only the queries that need the gas cost pay for it.
+/// Kept out of the shared `SELECT` fragments so only the queries that need the
+/// gas cost pay for it.
 pub(crate) const ORDER_GAS_COST_COLUMN: &str =
     const_format::concatcp!(", ", ORDER_GAS_COST, " AS gas_cost");
 
@@ -95,30 +93,6 @@ SELECT
     o.owner,
     o.buy_token,
     o.sell_token"#;
-
-    // Resolves the settlement that included each returned trade (the first
-    // settlement event in the same block after the trade) and computes that
-    // trade's share of the settlement's on-chain gas cost. Joined onto the
-    // already-paginated `page` CTE rather than inside the UNION branches, so the
-    // settlement lookup and the (relatively expensive) gas computation run only
-    // for the rows actually returned instead of for every candidate row across
-    // all three branches.
-    const GAS_JOIN: &str = const_format::concatcp!(
-        r#"
-LEFT OUTER JOIN LATERAL (
-    SELECT
-        s.tx_hash,
-        s.auction_id,
-        "#,
-        GAS_COST_EXPR,
-        r#"
-    FROM settlements s
-    WHERE s.block_number = page.block_number
-    AND   s.log_index > page.log_index
-    ORDER BY s.log_index ASC
-    LIMIT 1
-) AS settlement ON true"#,
-    );
 
     const QUERY: &str = const_format::concatcp!(
         "WITH page AS (",
@@ -192,7 +166,22 @@ SELECT
     settlement.auction_id,
     settlement.gas_cost
 FROM page"#,
-        GAS_JOIN,
+        // Joined onto the paginated `page` CTE (not the UNION branches) so gas
+        // is computed only for the returned rows.
+        r#"
+LEFT OUTER JOIN LATERAL (
+    SELECT
+        s.tx_hash,
+        s.auction_id,
+        "#,
+        GAS_COST_EXPR,
+        r#"
+    FROM settlements s
+    WHERE s.block_number = page.block_number
+    AND   s.log_index > page.log_index
+    ORDER BY s.log_index ASC
+    LIMIT 1
+) AS settlement ON true"#,
         " ORDER BY page.block_number DESC, page.log_index DESC",
     );
 
