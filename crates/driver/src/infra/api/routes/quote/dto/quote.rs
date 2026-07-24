@@ -43,6 +43,7 @@ pub struct Quote {
     #[serde(skip_serializing_if = "Option::is_none")]
     tx_origin: Option<eth::Address>,
     jit_orders: Vec<JitOrder>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     supports_fast_path: bool,
 }
 
