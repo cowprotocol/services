@@ -1,8 +1,10 @@
 //! Solve loop: quote each auction order and assemble single-order solutions.
 
 use {
-    super::{auction::Auction, solution::Solution},
-    crate::dex::{self, Dex},
+    crate::{
+        dex::{self, Dex},
+        dto::{auction::Auction, solution::Solution},
+    },
     futures::future::join_all,
     solana_sdk::pubkey::Pubkey,
     std::future::Future,
@@ -39,7 +41,7 @@ pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
         let dex_order = order.to_dex_order();
         async move {
             let swap = quoter.quote(&dex_order, &auction.taker).await.ok()?;
-            Solution::single(index as u64, order.uid, &dex_order, swap).ok()
+            Solution::new(index as u64, order.uid, &dex_order, swap).ok()
         }
     });
     join_all(candidates).await.into_iter().flatten().collect()
@@ -51,7 +53,7 @@ mod tests {
         super::*,
         crate::{
             config::JupiterConfig,
-            domain::{auction, order::OrderUid},
+            dto::{auction, order::OrderUid},
         },
         std::str::FromStr,
     };

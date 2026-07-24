@@ -38,9 +38,6 @@ pub struct Trade {
     /// Sell-token units for sell orders, buy-token units for buy orders.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub executed_amount: u64,
-    /// Fee in sell-token units.
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    pub fee: u64,
 }
 
 /// A Solana instruction the solver supplies, carried verbatim.
@@ -83,7 +80,7 @@ impl Solution {
     /// The swap's instructions are carried verbatim as interactions, and
     /// its address lookup tables travel along so the driver can build the
     /// v0 transaction the instructions assume.
-    pub fn single(
+    pub fn new(
         id: u64,
         order_uid: OrderUid,
         order: &dex::Order,
@@ -104,7 +101,6 @@ impl Solution {
             trades: vec![Trade {
                 order_uid,
                 executed_amount,
-                fee: 0,
             }],
             interactions: swap
                 .instructions
@@ -179,13 +175,12 @@ mod tests {
     #[test]
     fn sell_swap_maps_to_single_order_solution() {
         let order = order(dex::Side::Sell);
-        let solution = Solution::single(42, ORDER_UID, &order, swap()).unwrap();
+        let solution = Solution::new(42, ORDER_UID, &order, swap()).unwrap();
 
         assert_eq!(solution.id, 42);
         assert_eq!(solution.trades.len(), 1);
         assert_eq!(solution.trades[0].order_uid, ORDER_UID);
         assert_eq!(solution.trades[0].executed_amount, 1_000);
-        assert_eq!(solution.trades[0].fee, 0);
         assert_eq!(solution.address_lookup_tables, vec![pubkey(7)]);
 
         // The instruction is carried verbatim, flags included.
@@ -199,7 +194,7 @@ mod tests {
 
     #[test]
     fn buy_swap_executes_in_buy_token_units() {
-        let solution = Solution::single(0, ORDER_UID, &order(dex::Side::Buy), swap()).unwrap();
+        let solution = Solution::new(0, ORDER_UID, &order(dex::Side::Buy), swap()).unwrap();
         assert_eq!(solution.trades[0].executed_amount, 2_000);
     }
 
@@ -208,7 +203,7 @@ mod tests {
         let mut order = order(dex::Side::Sell);
         order.buy_mint = order.sell_mint;
         assert_eq!(
-            Solution::single(0, ORDER_UID, &order, swap()).unwrap_err(),
+            Solution::new(0, ORDER_UID, &order, swap()).unwrap_err(),
             Error::SameMint
         );
     }
@@ -218,14 +213,14 @@ mod tests {
         let mut swap = swap();
         swap.out_amount = 0;
         assert_eq!(
-            Solution::single(0, ORDER_UID, &order(dex::Side::Sell), swap).unwrap_err(),
+            Solution::new(0, ORDER_UID, &order(dex::Side::Sell), swap).unwrap_err(),
             Error::ZeroAmount
         );
     }
 
     #[test]
     fn wire_format_is_stable() {
-        let solution = Solution::single(1, ORDER_UID, &order(dex::Side::Sell), swap()).unwrap();
+        let solution = Solution::new(1, ORDER_UID, &order(dex::Side::Sell), swap()).unwrap();
         let json = serde_json::to_value(&solution).unwrap();
 
         assert_eq!(
@@ -235,7 +230,6 @@ mod tests {
                 "trades": [{
                     "orderUid": format!("0x{}", "08".repeat(32)),
                     "executedAmount": "1000",
-                    "fee": "0",
                 }],
                 "interactions": [{
                     "programId": pubkey(9).to_string(),

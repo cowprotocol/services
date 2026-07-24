@@ -1,7 +1,4 @@
-//! Domain types and the solve loop: parse the auction, quote each order, and
-//! assemble the solutions the driver consumes.
+//! Domain logic: the solve loop that quotes each auction order and assembles
+//! the solutions the driver consumes.
 
-pub mod auction;
-pub mod order;
-pub mod solution;
 pub mod solver;

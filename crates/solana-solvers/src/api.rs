@@ -3,10 +3,7 @@
 //! Serves the `/solve` contract the driver calls.
 
 use {
-    crate::{
-        dex::Dex,
-        domain::{auction::Auction, solver},
-    },
+    crate::{dex::Dex, domain::solver, dto::auction::Auction},
     axum::{
         Json,
         Router,

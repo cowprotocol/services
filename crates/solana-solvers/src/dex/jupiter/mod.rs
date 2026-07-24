@@ -216,9 +216,9 @@ mod tests {
 
         // End to end: the live swap assembles into a valid solution that
         // serializes.
-        let solution = crate::domain::solution::Solution::single(
+        let solution = crate::dto::solution::Solution::new(
             0,
-            crate::domain::order::OrderUid([1; 32]),
+            crate::dto::order::OrderUid([1; 32]),
             &sell,
             swap,
         )
