@@ -39,7 +39,7 @@ pub struct ProtocolAppData {
     /// Opt into out-of-competition ("fast path") execution.
     #[serde(default)]
     pub enable_fast_path: bool,
-    /// Earliest time (unix seconds) the order may enter a batch auction.
+    /// Earliest time (UNIX timestamp) the order may enter a batch auction.
     /// Honored if set; the backend picks one for fast-path orders when it
     /// is not.
     pub valid_from: Option<u32>,
