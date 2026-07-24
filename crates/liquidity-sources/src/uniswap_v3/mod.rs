@@ -27,20 +27,37 @@ use {
 /// the indexer's actual block can be later than `target_block`.
 #[async_trait]
 pub trait V3PoolDataSource: Send + Sync + 'static {
-    /// Fetch the full set of pools the source knows about as of a block at or
-    /// after `target_block`. `PoolData::ticks` is always `None` here — callers
-    /// needing ticks must use [`Self::get_pools_with_ticks_by_ids`] separately.
-    /// The split lets a cheap "what pools exist?" lookup skip the expensive
-    /// tick fetch.
-    async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools>;
+    /// Fetch the full set of pools the source knows about as of `target_block`.
+    /// `PoolData::ticks` is always `None` here — callers needing ticks must use
+    /// [`Self::get_pools_with_ticks_by_ids`] separately. The split lets a cheap
+    /// "what pools exist?" lookup skip the expensive tick fetch.
+    async fn get_registered_pools(&self, target_block: BlockTarget) -> Result<RegisteredPools>;
 
-    /// Fetch pools + their active ticks for the given pool addresses as of a
-    /// block at or after `target_block`. The returned `fetched_block_number` is
-    /// the actual snapshot block (`>= target_block`); callers should use it as
-    /// the event-replay anchor.
+    /// Fetch pools + their active ticks for the given pool addresses as of
+    /// `target_block`. The returned `fetched_block_number` is the actual
+    /// snapshot block (`>=` a requested [`BlockTarget::Number`]); callers
+    /// should use it as the event-replay anchor.
     async fn get_pools_with_ticks_by_ids(
         &self,
         ids: &[Address],
-        target_block: u64,
+        target_block: BlockTarget,
     ) -> Result<PoolsWithTicks>;
+
+    /// Whether a single at-head fetch is cheap enough for the quote path. True
+    /// for the indexer (a DB read); false for the subgraph, whose at-head fetch
+    /// does a safe-block lookup plus paginated pool/tick queries and would
+    /// stall quotes on a cold cache.
+    fn fetch_on_demand(&self) -> bool {
+        false
+    }
+}
+
+/// Which block a [`V3PoolDataSource`] anchors its snapshot to.
+#[derive(Clone, Copy, Debug)]
+pub enum BlockTarget {
+    /// The latest block the source can serve: the subgraph resolves this to its
+    /// safe head, the indexer serves at-head without waiting.
+    Latest,
+    /// A specific block; the source returns data at or after it.
+    Number(u64),
 }
