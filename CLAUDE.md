@@ -128,6 +128,7 @@ configs/        # Configuration files
 - Uses workspace dependencies for consistency
 - Tokio-console support: **Only available in playground environment** (set `TOKIO_CONSOLE=true` to activate when running in playground)
 - Production builds do **not** include tokio-console overhead
+- dial9 runtime telemetry (post-hoc Tokio flight recorder, autopilot only): always compiled in — `.cargo/config.toml` builds the whole workspace with `--cfg tokio_unstable` and dial9 is an unconditional autopilot dep. Inert at runtime unless `DIAL9_ENABLED=true`; uploads traces to S3.
 - Runtime log filter changes via UNIX socket at `/tmp/log_filter_override_<program_name>_<pid>.sock`
 - Memory allocator: Uses jemalloc by default with built-in heap profiling support (enable at runtime via MALLOC_CONF environment variable). Can optionally use mimalloc via `--features mimalloc-allocator`
 

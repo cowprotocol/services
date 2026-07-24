@@ -17,8 +17,12 @@ RUN rustup install stable && rustup default stable
 
 # Copy and Build Code
 COPY . .
+# An empty RUSTFLAGS env var OVERRIDES (does not merge with) the rustflags in
+# .cargo/config.toml (--cfg tokio_unstable, required by dial9), so only export it
+# when a non-empty value was passed; otherwise fall through to the config file.
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 RUSTFLAGS="${RUSTFLAGS}" cargo build --release \
+    if [ -n "${RUSTFLAGS}" ]; then export RUSTFLAGS="${RUSTFLAGS}"; else unset RUSTFLAGS; fi && \
+    CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release \
     -p autopilot -p driver -p orderbook -p refunder -p solvers -p pool-indexer \
     ${CARGO_BUILD_FEATURES} && \
     cp target/release/autopilot / && \

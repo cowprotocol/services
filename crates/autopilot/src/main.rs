@@ -6,7 +6,12 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-#[tokio::main]
+fn dial9_config() -> dial9_tokio_telemetry::Dial9Config {
+    dial9_tokio_telemetry::Dial9Config::from_env()
+}
+
+#[dial9_tokio_telemetry::main(config = dial9_config)]
 async fn main() {
-    autopilot::start(std::env::args()).await;
+    let args: Vec<String> = std::env::args().collect();
+    autopilot::start(args.into_iter()).await;
 }
