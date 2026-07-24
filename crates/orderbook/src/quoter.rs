@@ -192,7 +192,7 @@ impl QuoteHandler {
             while let Some(item) = inner.next().await {
                 let quote = match item {
                     Ok(quote) => quote,
-                    // The inner stream now yields terminal errors.
+                    // The inner stream only yields terminal errors.
                     Err(err) => {
                         yield Err(OrderQuoteError::CalculateQuote(err));
                         return;
