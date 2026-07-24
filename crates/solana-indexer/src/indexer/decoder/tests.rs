@@ -287,7 +287,7 @@ async fn run_drains_transactions_until_the_sender_drops() {
     assert!(decoder.run().await.is_ok());
 }
 
-/// A crafted `CreateOrder` decodes to `OrderCreated` with the real UID (the
+/// A crafted `CreateOrder` decodes to `OrderCreated` with the UID (the
 /// hash of the encoded intent), the intent's owner, and the `created_by`
 /// account resolved from the instruction's account list. The account-list owner
 /// differs from the intent owner, so this also pins that the event owner comes
@@ -347,10 +347,10 @@ fn create_order_decodes_to_order_created() {
 }
 
 /// A crafted `BeginSettle` + `FinalizeSettle` pair decodes to one
-/// `SettlementFinalized`: the real auction id read from the begin wire, the
-/// summed sell amount, the buy-side push amount matched to the order by
-/// destination, and the resolved order UID (via the injected map), with the
-/// solver read as the fee payer.
+/// `SettlementFinalized`: the auction id read from the begin wire, the summed
+/// sell amount, the buy-side push amount paired to its order by position
+/// (order `i` is paid by push `i`), the order UID from the injected resolver,
+/// and the solver read as the fee payer.
 #[test]
 fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));

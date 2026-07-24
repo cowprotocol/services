@@ -203,7 +203,7 @@ fn decode_settlement(
             SettlementInstruction::BeginSettle | SettlementInstruction::FinalizeSettle => {
                 Ok(Vec::new())
             }
-            // No domain event yet.
+            // No domain event.
             SettlementInstruction::ReclaimOrder => Ok(Vec::new()),
         };
         match decoded {
