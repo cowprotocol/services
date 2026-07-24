@@ -9082,7 +9082,7 @@ dependencies = [
 [[package]]
 name = "settlement-interface"
 version = "0.1.0"
-source = "git+https://github.com/cowprotocol/solana-programs?rev=4e0bd7eaed7c237a327705425be2a4a50a8b4a3a#4e0bd7eaed7c237a327705425be2a4a50a8b4a3a"
+source = "git+https://github.com/cowprotocol/solana-programs?branch=make-parsing-generic-on-accounts#172927c9e00b588d29796a134700ffc7a79d0e8c"
 dependencies = [
  "arrayref",
  "derive_more 1.0.0",

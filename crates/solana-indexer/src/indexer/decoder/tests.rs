@@ -1,13 +1,5 @@
 use {
-    super::{
-        Decoder,
-        PLACEHOLDER_AMOUNT_RECEIVED,
-        PLACEHOLDER_AUCTION_ID,
-        ResolvedOrder,
-        build_account_keys,
-        decode_settlement,
-        relevant_instructions,
-    },
+    super::{Decoder, ResolvedOrder, build_account_keys, decode_settlement, relevant_instructions},
     crate::{
         persistence::Persistence,
         types::{
@@ -295,7 +287,7 @@ async fn run_drains_transactions_until_the_sender_drops() {
     assert!(decoder.run().await.is_ok());
 }
 
-/// A crafted `CreateOrder` decodes to `OrderCreated` with the real UID (the
+/// A crafted `CreateOrder` decodes to `OrderCreated` with the UID (the
 /// hash of the encoded intent), the intent's owner, and the `created_by`
 /// account resolved from the instruction's account list. The account-list owner
 /// differs from the intent owner, so this also pins that the event owner comes
@@ -355,9 +347,10 @@ fn create_order_decodes_to_order_created() {
 }
 
 /// A crafted `BeginSettle` + `FinalizeSettle` pair decodes to one
-/// `SettlementFinalized`: the real summed sell amount and the resolved order
-/// UID (via the injected map), with the auction id and buy-side amount left at
-/// their documented placeholders and the solver read as the fee payer.
+/// `SettlementFinalized`: the auction id read from the begin wire, the summed
+/// sell amount, the buy-side push amount paired to its order by position
+/// (order `i` is paid by push `i`), the order UID from the injected resolver,
+/// and the solver read as the fee payer.
 #[test]
 fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
@@ -365,7 +358,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let order_pda = pubkey(20);
     // Account list:
     // [solver(0), settlement(1), sysvar(2), state(3), token(4), order_pda(5),
-    //  sell(6), dest0(7), dest1(8)].
+    //  sell(6), dest0(7), dest1(8), buffer(9)].
     let account_keys = vec![
         solver,
         settlement,
@@ -376,21 +369,28 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         pubkey(26),
         pubkey(27),
         pubkey(28),
+        pubkey(29),
     ];
 
-    // BeginSettle body: finalize index 1, one order, bump 0xAA, two transfers of
-    // 300 and 700 (sum 1000 = the sell-side amount withdrawn).
+    // BeginSettle body: finalize index 1, auction id 4242, one order, bump 0xAA,
+    // two transfers of 300 and 700 (sum 1000 = the sell-side amount withdrawn).
+    // The wire is little-endian, matching the interface's encoder.
     let mut begin_data = vec![SettlementInstruction::BeginSettle.discriminator()];
-    begin_data.extend_from_slice(&1u16.to_be_bytes());
+    begin_data.extend_from_slice(&1u16.to_le_bytes());
+    begin_data.extend_from_slice(&4242i64.to_le_bytes());
     begin_data.push(1);
     begin_data.push(0xAA);
     begin_data.push(2);
-    begin_data.extend_from_slice(&300u64.to_be_bytes());
-    begin_data.extend_from_slice(&700u64.to_be_bytes());
+    begin_data.extend_from_slice(&300u64.to_le_bytes());
+    begin_data.extend_from_slice(&700u64.to_le_bytes());
 
-    // FinalizeSettle body: begin index 0.
+    // FinalizeSettle body: begin index 0, one push of 1234 to dest0 (bump 0xBB).
+    // dest0 is one of the order's begin destinations, so it credits the order's
+    // buy-side receipt.
     let mut finalize_data = vec![SettlementInstruction::FinalizeSettle.discriminator()];
-    finalize_data.extend_from_slice(&0u16.to_be_bytes());
+    finalize_data.extend_from_slice(&0u16.to_le_bytes());
+    finalize_data.push(0xBB);
+    finalize_data.extend_from_slice(&1_234u64.to_le_bytes());
 
     let tx = tx_info(
         account_keys,
@@ -399,8 +399,8 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         vec![
             // BeginSettle @ 0: sysvar, state, token, order_pda, sell, dest0, dest1.
             compiled(1, vec![2, 3, 4, 5, 6, 7, 8], begin_data),
-            // FinalizeSettle @ 1: sysvar only.
-            compiled(1, vec![2], finalize_data),
+            // FinalizeSettle @ 1: sysvar, state, token, buffer (source), dest0.
+            compiled(1, vec![2, 3, 4, 9, 7], finalize_data),
         ],
         vec![],
     );
@@ -425,14 +425,14 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     assert_eq!(
         events,
         vec![SettlementEvent::SettlementFinalized {
-            auction_id: PLACEHOLDER_AUCTION_ID,
+            auction_id: 4242,
             solver,
             tx_signature: signature(6),
             slot: Slot(5),
             trades: vec![TradeDelta {
                 order_uid: expected_uid,
                 amount_withdrawn_delta: 1_000,
-                amount_received_delta: PLACEHOLDER_AMOUNT_RECEIVED,
+                amount_received_delta: 1_234,
                 order_fulfilled: true,
             }],
         }]
