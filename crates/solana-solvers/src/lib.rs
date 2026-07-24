@@ -7,7 +7,7 @@ pub mod api;
 mod cli;
 pub mod config;
 pub mod dex;
-pub mod domain;
+pub mod dto;
 mod run;
 
 pub use run::start;
