@@ -16,7 +16,7 @@ use {
         winning_price_estimate::WinningPriceEstimateEvent,
     },
     futures::{
-        future::{BoxFuture, FutureExt, TryFutureExt},
+        future::{BoxFuture, Either, FutureExt, TryFutureExt},
         stream::{BoxStream, FuturesUnordered, StreamExt},
     },
     model::order::OrderKind,
@@ -91,10 +91,15 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
 
 impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
     /// Runs every estimator concurrently across all stages and forwards a quote
-    /// only when it beats the best one already sent, so the caller sees a
-    /// monotonically improving series and never a regression. The first
-    /// successful quote goes out as soon as the fastest solver answers. The
-    /// caller stops by dropping the stream.
+    /// only when it ranks strictly better than the best one already sent, so
+    /// the client sees a series that improves in *ranking order* and never
+    /// regresses. The first successful quote goes out as soon as the
+    /// fastest solver answers. The caller stops by dropping the stream.
+    ///
+    /// "Better" is the same ranking the one-shot [`Self::estimate`] uses.
+    /// A verified quote outranks an unverified one regardless of `out_amount`,
+    /// so a later verified quote can supersede an earlier unverified one that
+    /// had a higher nominal amount.
     ///
     /// Errors are not forwarded as they arrive. If no quote is ever produced,
     /// the stream ends with the single error the one-shot [`Self::estimate`]
@@ -107,17 +112,10 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
             OrderKind::Sell => query.buy_token,
         };
         async_stream::stream! {
-            // Fetch the ranking context once, up front, mirroring `estimate`.
-            // Without it we cannot rank, so fail the whole stream like the
-            // one-shot path does on a context error.
-            let context = match self.ranking.provide_context(out_token, query.timeout).await {
-                Ok(context) => context,
-                Err(err) => {
-                    yield Err(err);
-                    return;
-                }
-            };
-
+            // Kick off the estimator calls and the ranking-context fetch
+            // concurrently. Building the `FuturesUnordered` does not poll it, so we
+            // drive it alongside the context future via `select` and buffer any
+            // results that arrive until they can be ranked.
             let mut estimates = self
                 .stages
                 .iter()
@@ -128,20 +126,51 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
             // Every result is kept so that, if no quote is ever forwarded, the
             // terminal error can be picked exactly the way `estimate` does.
             let mut results = Vec::new();
+            let mut context_fut = self.ranking.provide_context(out_token, query.timeout).boxed();
+            let context = loop {
+                match futures::future::select(context_fut, estimates.next()).await {
+                    Either::Left((context, _)) => break context,
+                    Either::Right((Some(result), pending_context)) => {
+                        results.push(result);
+                        context_fut = pending_context;
+                    }
+                    // Estimators drained before the context resolved; just wait.
+                    Either::Right((None, pending_context)) => break pending_context.await,
+                }
+            };
+            let context = match context {
+                Ok(context) => context,
+                // Without a ranking context we cannot rank anything, so fail the
+                // whole stream like the one-shot path does on a context error.
+                Err(err) => {
+                    yield Err(err);
+                    return;
+                }
+            };
+
             let mut best: Option<Estimate> = None;
-            while let Some(result) = estimates.next().await {
+            // Replay the results buffered while the context was loading (in
+            // arrival order), then continue draining the live stream.
+            let mut buffered = std::mem::take(&mut results).into_iter();
+            loop {
+                let result = match buffered.next() {
+                    Some(result) => result,
+                    None => match estimates.next().await {
+                        Some(result) => result,
+                        None => break,
+                    },
+                };
                 if is_reasonable(&result) {
-                    let beats_best = match &best {
-                        None => true,
-                        Some(best) => compare_quote_result(
+                    let beats_best = best.as_ref().is_none_or(|best| {
+                        compare_quote_result(
                             &query,
                             &result,
                             &Ok(best.clone()),
                             &context,
                             self.verification_mode,
                         )
-                        .is_gt(),
-                    };
+                        .is_gt()
+                    });
                     if beats_best {
                         let estimate =
                             result.as_ref().expect("is_reasonable implies Ok").clone();
