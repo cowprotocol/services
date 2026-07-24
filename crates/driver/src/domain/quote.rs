@@ -118,6 +118,7 @@ pub struct Order {
     pub amount: order::TargetAmount,
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
+    pub enable_fast_path: bool,
 }
 
 impl Order {
@@ -133,6 +134,11 @@ impl Order {
         tokens: &infra::tokens::Fetcher,
         risk_detector: &risk_detector::Detector,
     ) -> Result<Quote, Error> {
+        if self.enable_fast_path && !solver.fast_path_enabled() {
+            // TODO replace with a more descriptive error
+            return Err(Error::QuotingFailed(QuotingFailed::NoSolutions));
+        }
+
         let liquidity = match solver.liquidity() {
             solver::Liquidity::Fetch => {
                 liquidity
