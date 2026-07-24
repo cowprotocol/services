@@ -662,11 +662,16 @@ impl StreamingQuoting for OrderQuoter {
         let stream = async_stream::stream! {
             let inner = estimator.estimate_stream(trade_query);
             futures::pin_mut!(inner);
+
+            // Errors are only surfaced at the end if no quote ever succeeds.
+            let mut deferred_err: Option<CalculateQuoteError> = None;
+            let mut any_ok = false;
             while let Some(result) = inner.next().await {
                 let estimate = match result {
                     Ok(e) => e,
+                    // An inner error is terminal but less specific than SellAmountDoesNotCoverFee, so it should not mask the latter.
                     Err(err) => {
-                        yield Err(CalculateQuoteError::from((EstimatorKind::Regular, err)));
+                        deferred_err = deferred_err.or(Some(CalculateQuoteError::from((EstimatorKind::Regular, err))));
                         continue;
                     }
                 };
@@ -689,7 +694,8 @@ impl StreamingQuoting for OrderQuoter {
                 {
                     let sell_amount = value.get().saturating_sub(quote.fee_amount);
                     if sell_amount.is_zero() {
-                        yield Err(CalculateQuoteError::SellAmountDoesNotCoverFee {
+                        // SellAmountDoesNotCoverFee is a more actionable error than a generic inner one
+                        deferred_err = Some(CalculateQuoteError::SellAmountDoesNotCoverFee {
                             fee_amount: quote.fee_amount,
                         });
                         continue;
@@ -704,7 +710,12 @@ impl StreamingQuoting for OrderQuoter {
                     Ok(id) => quote.id = Some(id),
                     Err(err) => tracing::error!(?err, "failed to persist streamed quote"),
                 }
+                any_ok = true;
                 yield Ok(quote);
+            }
+            // No quote succeeded: surface the deferred fee error, if any.
+            if !any_ok && let Some(err) = deferred_err {
+                yield Err(err);
             }
         };
 
@@ -2252,64 +2263,102 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn streaming_before_fee_errors_when_fee_exceeds_sell_amount() {
-        // sell_before_fee = 100, gas = 2000, gas_price = 1, sell_token_price = 1.0
-        // fee = ceil((2000 * 1) / 1.0) = 2000
-        // 100 - 2000 saturates to 0 -> SellAmountDoesNotCoverFee
-        let params = QuoteParameters {
-            sell_token: Address::repeat_byte(1),
-            buy_token: Address::repeat_byte(2),
-            side: OrderQuoteSide::Sell {
-                sell_amount: SellAmount::BeforeFee {
-                    value: number::nonzero::NonZeroU256::try_from(100).unwrap(),
+    async fn streaming_defers_fee_error_until_no_quote_succeeds() {
+        // sell_before_fee = 100, gas_price = 1, sell_token_price = 1.0, so
+        // fee = ceil(gas * 1 / 1.0) = gas. A gas of 2000 saturates 100 - 2000 to
+        // 0 -> SellAmountDoesNotCoverFee; a gas of 10 leaves 90 -> a good quote.
+        fn params() -> QuoteParameters {
+            QuoteParameters {
+                sell_token: Address::repeat_byte(1),
+                buy_token: Address::repeat_byte(2),
+                side: OrderQuoteSide::Sell {
+                    sell_amount: SellAmount::BeforeFee {
+                        value: number::nonzero::NonZeroU256::try_from(100).unwrap(),
+                    },
                 },
-            },
-            signing_scheme: QuoteSigningScheme::Eip712,
-            verification: Default::default(),
-            additional_gas: 0,
-            timeout: None,
-        };
+                signing_scheme: QuoteSigningScheme::Eip712,
+                verification: Default::default(),
+                additional_gas: 0,
+                timeout: None,
+            }
+        }
+        fn estimate(gas: u64) -> price_estimation::Estimate {
+            price_estimation::Estimate {
+                out_amount: AlloyU256::from(500),
+                gas,
+                solver: Address::repeat_byte(1),
+                verified: false,
+                execution: Default::default(),
+            }
+        }
         let gas_price = alloy::eips::eip1559::Eip1559Estimation {
             max_fee_per_gas: 1,
             max_priority_fee_per_gas: 0,
         };
         let now = Utc::now();
 
-        let mut native_price_estimator = MockNativePriceEstimating::new();
-        setup_native_price_mock(
-            &mut native_price_estimator,
-            params.sell_token,
-            params.buy_token,
-        );
+        let make = |results: Vec<price_estimation::PriceEstimateResult>| {
+            let params = params();
+            let mut native_price_estimator = MockNativePriceEstimating::new();
+            setup_native_price_mock(
+                &mut native_price_estimator,
+                params.sell_token,
+                params.buy_token,
+            );
+            let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
+            streaming_estimator
+                .expect_estimate_stream()
+                .return_once(move |_| stream::iter(results).boxed());
+            let quoter =
+                make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+            (quoter, params)
+        };
 
-        let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
-        streaming_estimator.expect_estimate_stream().returning(|_| {
-            stream::iter([Ok(price_estimation::Estimate {
-                out_amount: AlloyU256::from(500),
-                gas: 2000,
-                solver: Address::repeat_byte(1),
-                verified: false,
-                execution: Default::default(),
-            })])
-            .boxed()
-        });
+        let assert_sell_amount_error = |err: CalculateQuoteError| {
+            assert!(
+                matches!(
+                    err,
+                    CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount }
+                        if fee_amount == U256::from(2000)
+                ),
+                "expected SellAmountDoesNotCoverFee, got {err:?}",
+            );
+        };
 
-        let quoter =
-            make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        // Only a fee-exceeding estimate: the deferred error surfaces at the end.
+        let (quoter, params) = make(vec![Ok(estimate(2000))]);
         let mut s = quoter
             .calculate_quote_stream(params)
             .await
             .expect("stream setup must succeed");
+        assert_sell_amount_error(s.next().await.expect("error item").unwrap_err());
+        assert!(s.next().await.is_none());
 
-        let err = s.next().await.expect("error item").unwrap_err();
+        // A later quote covers its fee: the deferred error is suppressed and only
+        // the good quote is yielded.
+        let (quoter, params) = make(vec![Ok(estimate(2000)), Ok(estimate(10))]);
+        let mut s = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+        let q = s.next().await.expect("quote").expect("ok");
+        assert_eq!(q.sell_amount, AlloyU256::from(90));
         assert!(
-            matches!(
-                err,
-                CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount }
-                    if fee_amount == U256::from(2000)
-            ),
-            "expected SellAmountDoesNotCoverFee, got {err:?}",
+            s.next().await.is_none(),
+            "the deferred fee error must not be yielded once a quote succeeds",
         );
+
+        // A fee-exceeding quote plus a terminal estimator error: the more
+        // specific SellAmountDoesNotCoverFee must win over the estimator error.
+        let (quoter, params) = make(vec![
+            Ok(estimate(2000)),
+            Err(price_estimation::PriceEstimationError::NoLiquidity),
+        ]);
+        let mut s = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+        assert_sell_amount_error(s.next().await.expect("error item").unwrap_err());
         assert!(s.next().await.is_none());
     }
 }
