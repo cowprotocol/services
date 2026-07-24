@@ -470,22 +470,9 @@ struct ContractsConfig {
     /// Override the default address of the Signatures contract.
     signatures: Option<eth::Address>,
 
-    /// List of all cow amm factories with the corresponding helper contract.
-    #[serde(default)]
-    cow_amms: Vec<CowAmmConfig>,
-
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
     flashloan_router: Option<eth::Address>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct CowAmmConfig {
-    /// CoW AMM factory address.
-    pub factory: eth::Address,
-    /// Which helper contract to use for interfacing with CoW AMMs.
-    pub helper: eth::Address,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

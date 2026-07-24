@@ -599,17 +599,11 @@ impl Competition {
     }
 
     async fn assemble_auction(&self, tasks: &DataFetchingTasks) -> Auction {
-        let (base_auction, cow_amm_orders) =
-            tokio::join!(tasks.auction.clone(), tasks.cow_amm_orders.clone());
+        let base_auction = tasks.auction.clone().await;
 
         let auction = Auction {
             id: base_auction.id,
-            orders: base_auction
-                .orders
-                .iter()
-                .cloned()
-                .chain(cow_amm_orders.iter().cloned())
-                .collect(),
+            orders: base_auction.orders.clone(),
             tokens: base_auction.tokens.clone(),
             gas_price: base_auction.gas_price,
             deadline: base_auction.deadline,
@@ -638,7 +632,7 @@ impl Competition {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
             // the runtime.
-            Self::update_orders(auction, balances, app_data, cow_amm_orders)
+            Self::update_orders(auction, balances, app_data)
         })
         .await;
         self.without_unsupported_orders(auction).await
@@ -668,12 +662,10 @@ impl Competition {
         mut auction: Auction,
         balances: Arc<Balances>,
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
-        cow_amm_orders: Arc<Vec<Order>>,
     ) -> Auction {
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
         let mut balances = balances.as_ref().clone();
-        let cow_amms: HashSet<_> = cow_amm_orders.iter().map(|o| o.uid).collect();
 
         let mut discarded_orders = BTreeMap::<OrderExcludedFromAuctionReason, Vec<Uid>>::new();
 
@@ -686,15 +678,6 @@ impl Competition {
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
         auction.orders.retain_mut(|order| {
-            if cow_amms.contains(&order.uid) {
-                // cow amm orders already get constructed fully initialized
-                // so we don't have to handle them here anymore.
-                // Without this short circuiting logic they would get filtered
-                // out later because we don't bother fetching their balances
-                // for performance reasons.
-                return true;
-            }
-
             // Update order app data if it was fetched.
             if let Some(fetched_app_data) = app_data.get(&order.app_data.hash()) {
                 order.app_data = fetched_app_data.clone().into();

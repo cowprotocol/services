@@ -426,27 +426,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         skip_event_sync_start,
     );
 
-    let archive_node_web3 = config
-        .cow_amm
-        .archive_node_url
-        .as_ref()
-        .map_or(web3.clone(), |url| boundary::web3_client(url, &ethrpc_args));
-
-    let mut cow_amm_registry = cow_amm::Registry::new(Arc::new(BlockRetriever {
-        provider: archive_node_web3.provider,
-        block_stream: eth.current_block().clone(),
-    }));
-    for cow_amm_config in &config.cow_amm.contracts {
-        cow_amm_registry
-            .add_listener(
-                cow_amm_config.index_start,
-                cow_amm_config.factory,
-                cow_amm_config.helper,
-                db_write.pool.clone(),
-            )
-            .await;
-    }
-
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
         api_native_price_estimator.clone(),
@@ -502,7 +481,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             config.shared.enable_sell_equals_buy_volume_fee,
             *eth.contracts().weth().address(),
         ),
-        cow_amm_registry.clone(),
+        config.surplus_capturing_jit_order_owners,
         config.native_price_timeout,
         *eth.contracts().settlement().address(),
         config.disable_order_balance_filter,
@@ -559,7 +538,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         db_write.clone(),
         settlement_observer,
     );
-    maintenance.add_cow_amm_indexer(&cow_amm_registry);
 
     if !config.ethflow.contracts.is_empty() {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(

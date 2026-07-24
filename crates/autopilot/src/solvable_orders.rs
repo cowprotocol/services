@@ -138,7 +138,7 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<NativePriceUpdater>,
     weth: Address,
     protocol_fees: domain::ProtocolFees,
-    cow_amm_registry: cow_amm::Registry,
+    surplus_capturing_jit_order_owners: Vec<Address>,
     native_price_timeout: Duration,
     settlement_contract: Address,
     disable_order_balance_filter: bool,
@@ -163,7 +163,7 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<NativePriceUpdater>,
         weth: Address,
         protocol_fees: domain::ProtocolFees,
-        cow_amm_registry: cow_amm::Registry,
+        surplus_capturing_jit_order_owners: Vec<Address>,
         native_price_timeout: Duration,
         settlement_contract: Address,
         disable_order_balance_filter: bool,
@@ -178,7 +178,7 @@ impl SolvableOrdersCache {
             native_price_estimator,
             weth,
             protocol_fees,
-            cow_amm_registry,
+            surplus_capturing_jit_order_owners,
             native_price_timeout,
             settlement_contract,
             disable_order_balance_filter,
@@ -230,7 +230,7 @@ impl SolvableOrdersCache {
             .map(|order| order.metadata.uid)
             .collect();
 
-        let (balances, orders, cow_amms, in_flight) = {
+        let (balances, orders, in_flight) = {
             let queries = orders
                 .iter()
                 .map(|o| Query::from_order(o))
@@ -238,7 +238,6 @@ impl SolvableOrdersCache {
             tokio::join!(
                 self.fetch_balances(queries),
                 self.filter_invalid_orders(orders, &mut invalid_order_uids),
-                self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
                 self.fetch_in_flight_orders(block),
             )
         };
@@ -271,11 +270,6 @@ impl SolvableOrdersCache {
             orders
         };
 
-        let cow_amm_tokens = cow_amms
-            .iter()
-            .flat_map(|cow_amm| cow_amm.traded_tokens().iter().copied())
-            .collect::<Vec<_>>();
-
         // create auction
         let (orders, removed, mut prices) = self
             .timed_future(
@@ -283,7 +277,6 @@ impl SolvableOrdersCache {
                 get_orders_with_native_prices(
                     orders,
                     &self.native_price_estimator,
-                    cow_amm_tokens,
                     self.native_price_timeout,
                 ),
             )
@@ -304,36 +297,19 @@ impl SolvableOrdersCache {
             self.store_events_by_reason(filtered_order_events, OrderEventLabel::Filtered);
         }
 
-        let in_flight_owners: HashSet<_> = in_flight
+        // Exclude any owner that already has an order in-flight (i.e. won a previous
+        // auction and is being settled on-chain). A surplus-capturing JIT order created
+        // on its behalf could conflict with the settling order, so we drop the owner
+        // from this auction until the in-flight order clears.
+        let in_flight_owners: HashSet<Address> = in_flight
             .iter()
             .map(|uid| domain::OrderUid(uid.0).owner())
             .collect();
-        let surplus_capturing_jit_order_owners: Vec<_> = cow_amms
+        let surplus_capturing_jit_order_owners: Vec<Address> = self
+            .surplus_capturing_jit_order_owners
             .iter()
-            .filter(|cow_amm| {
-                // Orders rebalancing cow amms revert when the cow amm does not have exactly the
-                // state the order was crafted for so having multiple orders in-flight for the
-                // same cow amm is an issue. Additionally an amm can be rebalanced in many
-                // different ways which would all result in different order UIDs so filtering
-                // based on that is not sufficient. That's way we check if there is any order
-                // in-flight for that amm based on the owner of the order (i.e. the cow amm) and
-                // then discard that amm altogether for that auction.
-                if in_flight_owners.contains(cow_amm.address()) {
-                    return false;
-                }
-                cow_amm.traded_tokens().iter().all(|token| {
-                    let price_exist = prices.contains_key(token);
-                    if !price_exist {
-                        tracing::debug!(
-                            cow_amm = ?cow_amm.address(),
-                            ?token,
-                            "omitted from auction due to missing prices"
-                        );
-                    }
-                    price_exist
-                })
-            })
-            .map(|cow_amm| *cow_amm.address())
+            .filter(|owner| !in_flight_owners.contains(*owner))
+            .copied()
             .collect();
         let auction = domain::RawAuctionData {
             block,
@@ -680,7 +656,6 @@ fn filter_dust_orders<'a>(
 async fn get_orders_with_native_prices<'a>(
     orders: Vec<&'a Order>,
     native_price_estimator: &NativePriceUpdater,
-    additional_tokens: impl IntoIterator<Item = Address>,
     timeout: Duration,
 ) -> (
     Vec<&'a Order>,
@@ -690,7 +665,6 @@ async fn get_orders_with_native_prices<'a>(
     let traded_tokens = orders
         .iter()
         .flat_map(|order| [order.data.sell_token, order.data.buy_token])
-        .chain(additional_tokens)
         .collect::<HashSet<_>>();
 
     let prices = get_native_prices(traded_tokens, native_price_estimator, timeout).await;
@@ -827,7 +801,6 @@ mod tests {
         let (filtered_orders, _removed, prices) = get_orders_with_native_prices(
             orders_ref,
             &native_price_estimator,
-            vec![],
             Duration::from_millis(100),
         )
         .await;
@@ -847,7 +820,6 @@ mod tests {
         let token2 = Address::repeat_byte(2);
         let token3 = Address::repeat_byte(3);
         let token4 = Address::repeat_byte(4);
-        let token5 = Address::repeat_byte(5);
 
         let orders = [
             Arc::new(
@@ -904,11 +876,6 @@ mod tests {
             .times(1)
             .withf(move |token, _| *token == token4)
             .returning(|_, _| async { Ok(0.) }.boxed());
-        native_price_estimator
-            .expect_estimate_native_price()
-            .times(1)
-            .withf(move |token, _| *token == token5)
-            .returning(|_, _| async { Ok(5.) }.boxed());
 
         let cache = Cache::new(Duration::from_secs(10), Default::default());
         let caching_estimator = CachingNativePriceEstimator::new(
@@ -927,13 +894,9 @@ mod tests {
         // We'll have no native prices in this call. But set_tokens_to_update
         // will cause the background task to fetch them in the next cycle.
         let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
-        let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
-            orders_ref,
-            &native_price_estimator,
-            vec![token5],
-            Duration::ZERO,
-        )
-        .await;
+        let (alive_orders, _removed_orders, prices) =
+            get_orders_with_native_prices(orders_ref, &native_price_estimator, Duration::ZERO)
+                .await;
         assert!(alive_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -942,13 +905,9 @@ mod tests {
 
         // Now we have all the native prices we want.
         let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
-        let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
-            orders_ref,
-            &native_price_estimator,
-            vec![token5],
-            Duration::ZERO,
-        )
-        .await;
+        let (alive_orders, _removed_orders, prices) =
+            get_orders_with_native_prices(orders_ref, &native_price_estimator, Duration::ZERO)
+                .await;
 
         assert_eq!(alive_orders, [orders[2].as_ref()]);
         assert_eq!(
@@ -956,7 +915,6 @@ mod tests {
             btreemap! {
                 token1 => alloy::primitives::U256::from(2_000_000_000_000_000_000_u128),
                 token3 => alloy::primitives::U256::from(250_000_000_000_000_000_u128),
-                token5 => alloy::primitives::U256::from(5_000_000_000_000_000_000_u128),
             }
         );
     }
@@ -1033,7 +991,6 @@ mod tests {
         let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
             orders_ref,
             &native_price_estimator,
-            vec![],
             Duration::from_secs(10),
         )
         .await;

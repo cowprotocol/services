@@ -348,12 +348,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             weth: config.contracts.weth.map(Into::into),
             balances: config.contracts.balances.map(Into::into),
             signatures: config.contracts.signatures.map(Into::into),
-            cow_amm_helper_by_factory: config
-                .contracts
-                .cow_amms
-                .into_iter()
-                .map(|cfg| (cfg.factory.into(), cfg.helper.into()))
-                .collect(),
             flashloan_router: config.contracts.flashloan_router.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,

@@ -1,7 +1,6 @@
 use {
     crate::{
         autopilot::{
-            cow_amm::CowAmmGroupConfig,
             ethflow::EthflowConfig,
             fee_policy::FeePoliciesConfig,
             native_price::NativePriceConfig,
@@ -25,7 +24,6 @@ use {
     url::Url,
 };
 
-pub mod cow_amm;
 pub mod ethflow;
 pub mod fee_policy;
 pub mod native_price;
@@ -114,9 +112,10 @@ pub struct Configuration {
     #[serde(default = "default_api_address")]
     pub api_address: SocketAddr,
 
-    /// Configuration for CoW AMM indexing and archive node access.
+    /// Allowlist of owner addresses whose JIT orders are allowed to capture
+    /// surplus in the auction.
     #[serde(default)]
-    pub cow_amm: CowAmmGroupConfig,
+    pub surplus_capturing_jit_order_owners: Vec<Address>,
 
     /// Configuration for the autopilot's main auction run loop.
     #[serde(default)]
@@ -217,7 +216,7 @@ impl Configuration {
             shadow: Default::default(),
             metrics_address: default_metrics_address(),
             api_address: default_api_address(),
-            cow_amm: Default::default(),
+            surplus_capturing_jit_order_owners: Default::default(),
             run_loop: TestDefault::test_default(),
             disable_order_balance_filter: false,
             max_maintenance_timeout: default_max_maintenance_timeout(),
@@ -248,7 +247,7 @@ impl Configuration {
             shadow: Default::default(),
             metrics_address: default_metrics_address(),
             api_address: default_api_address(),
-            cow_amm: Default::default(),
+            surplus_capturing_jit_order_owners: Default::default(),
             run_loop: TestDefault::test_default(),
             disable_order_balance_filter: false,
             max_maintenance_timeout: default_max_maintenance_timeout(),
@@ -303,6 +302,7 @@ mod tests {
     fn deserialize_full_configuration() {
         let toml = r#"
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
+        surplus-capturing-jit-order-owners = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         min-order-validity-period = "2m"
         max-auction-age = "10m"
         native-price-timeout = "3s"
@@ -446,6 +446,11 @@ mod tests {
             config.unsupported_tokens[0],
             address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
         );
+        assert_eq!(config.surplus_capturing_jit_order_owners.len(), 1);
+        assert_eq!(
+            config.surplus_capturing_jit_order_owners[0],
+            address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+        );
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
         assert_eq!(config.max_auction_age, Duration::from_secs(600));
         assert_eq!(config.native_price_timeout, Duration::from_secs(3));
@@ -508,6 +513,7 @@ mod tests {
         assert!(config.s3.is_none());
 
         assert!(config.unsupported_tokens.is_empty());
+        assert!(config.surplus_capturing_jit_order_owners.is_empty());
         assert_eq!(config.min_order_validity_period, Duration::from_secs(60));
         assert_eq!(config.max_auction_age, Duration::from_secs(300));
         assert_eq!(config.native_price_timeout, Duration::ZERO);
