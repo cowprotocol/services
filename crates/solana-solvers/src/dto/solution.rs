@@ -38,9 +38,6 @@ pub struct Trade {
     /// Sell-token units for sell orders, buy-token units for buy orders.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub executed_amount: u64,
-    /// Fee in sell-token units.
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    pub fee: u64,
 }
 
 /// A Solana instruction the solver supplies, carried verbatim.
@@ -104,7 +101,6 @@ impl Solution {
             trades: vec![Trade {
                 order_uid,
                 executed_amount,
-                fee: 0,
             }],
             interactions: swap
                 .instructions
@@ -185,7 +181,6 @@ mod tests {
         assert_eq!(solution.trades.len(), 1);
         assert_eq!(solution.trades[0].order_uid, ORDER_UID);
         assert_eq!(solution.trades[0].executed_amount, 1_000);
-        assert_eq!(solution.trades[0].fee, 0);
         assert_eq!(solution.address_lookup_tables, vec![pubkey(7)]);
 
         // The instruction is carried verbatim, flags included.
@@ -235,7 +230,6 @@ mod tests {
                 "trades": [{
                     "orderUid": format!("0x{}", "08".repeat(32)),
                     "executedAmount": "1000",
-                    "fee": "0",
                 }],
                 "interactions": [{
                     "programId": pubkey(9).to_string(),
