@@ -16,7 +16,7 @@ use {
         winning_price_estimate::WinningPriceEstimateEvent,
     },
     futures::{
-        future::{BoxFuture, Either, FutureExt, TryFutureExt},
+        future::{BoxFuture, FutureExt, TryFutureExt},
         stream::{BoxStream, FuturesUnordered, StreamExt},
     },
     model::order::OrderKind,
@@ -112,10 +112,6 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
             OrderKind::Sell => query.buy_token,
         };
         async_stream::stream! {
-            // Kick off the estimator calls and the ranking-context fetch
-            // concurrently. Building the `FuturesUnordered` does not poll it, so we
-            // drive it alongside the context future via `select` and buffer any
-            // results that arrive until they can be ranked.
             let mut estimates = self
                 .stages
                 .iter()
@@ -125,20 +121,16 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                 // Only errors and reasonable estimates can be ranked
                 .filter(|r| std::future::ready(r.is_err() || is_reasonable(r)));
 
-            let mut results = Vec::new();
-            let mut context_fut = self.ranking.provide_context(out_token, query.timeout).boxed();
-            let context = loop {
-                match futures::future::select(context_fut, estimates.next()).await {
-                    Either::Left((context, _)) => break context,
-                    Either::Right((Some(result), pending_context)) => {
-                        results.push(result);
-                        context_fut = pending_context;
-                    }
-                    // Estimators drained before the context resolved; just wait.
-                    Either::Right((None, pending_context)) => break pending_context.await,
-                }
-            };
-            let context = match context {
+            let context_fut = self.ranking.provide_context(out_token, query.timeout).shared();
+
+            // Collect estimates concurrently while fetching the ranking context;
+            // they can't be ranked before it resolves.
+            let mut results: Vec<_> = (&mut estimates)
+                .take_until(context_fut.clone())
+                .collect()
+                .await;
+
+            let context = match context_fut.await {
                 Ok(context) => context,
                 // Without a ranking context we cannot rank anything, so fail the
                 // whole stream like the one-shot path does on a context error.
@@ -257,6 +249,7 @@ impl PriceRanking {
     }
 }
 
+#[derive(Clone)]
 struct RankingContext {
     native_price: f64,
     gas_price: f64,
