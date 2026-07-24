@@ -310,6 +310,9 @@ pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote
                         quote::Error::QuotingFailed(quote::QuotingFailed::UnsupportedToken) => {
                             "UnsupportedToken"
                         }
+                        quote::Error::QuotingFailed(quote::QuotingFailed::FastPathNotSupported) => {
+                            "FastPathNotSupported"
+                        }
                         quote::Error::DeadlineExceeded(_) => "DeadlineExceeded",
                         quote::Error::Blockchain(_) => "BlockchainError",
                         quote::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",

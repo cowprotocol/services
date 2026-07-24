@@ -135,8 +135,7 @@ impl Order {
         risk_detector: &risk_detector::Detector,
     ) -> Result<Quote, Error> {
         if self.enable_fast_path && !solver.fast_path_enabled() {
-            // TODO replace with a more descriptive error
-            return Err(Error::QuotingFailed(QuotingFailed::NoSolutions));
+            return Err(Error::QuotingFailed(QuotingFailed::FastPathNotSupported));
         }
 
         let liquidity = match solver.liquidity() {
@@ -399,6 +398,8 @@ pub enum QuotingFailed {
     Math,
     #[error("token is unsupported by this solver")]
     UnsupportedToken,
+    #[error("solver does not support fast path quotes")]
+    FastPathNotSupported,
 }
 
 #[derive(Debug, thiserror::Error)]
