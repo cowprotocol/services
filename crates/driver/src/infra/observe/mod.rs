@@ -406,7 +406,8 @@ pub fn mempool_log(
 }
 
 /// Emit per-mempool race counters with the final, reclassified label
-/// (`Success` / `Revert` / `Expired` / `Other` / `Superseded` / `Disabled`).
+/// (`Success` / `Revert` / `Expired` / `SubmitterUnusable` / `Other` /
+/// `Superseded` / `Disabled`).
 /// Called once per mempool after the race resolves.
 pub fn mempool_submission_result(mempool: &Mempool, label: &str, blocks_passed: Option<u64>) {
     let name = mempool.to_string();
