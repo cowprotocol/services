@@ -354,6 +354,7 @@ mod tests {
                 max_limit_orders_per_user: 5,
                 max_gas_per_order: 6_000_000,
                 same_tokens_policy: SameTokensPolicy::AllowSell,
+                skip_app_data_hash_verification: false,
             },
             ipfs: Some(IpfsConfig {
                 gateway: "https://gateway.pinata.cloud/ipfs/".parse().unwrap(),
