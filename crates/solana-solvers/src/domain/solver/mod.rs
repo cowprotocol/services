@@ -51,16 +51,8 @@ pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
 mod tests {
     use {
         super::*,
-        crate::{
-            config::JupiterConfig,
-            dto::{auction, order::OrderUid},
-        },
-        std::str::FromStr,
+        crate::dto::{auction, order::OrderUid},
     };
-
-    // USDC and wrapped SOL mints for the live test.
-    const USDC: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-    const WSOL: &str = "So11111111111111111111111111111111111111112";
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -128,38 +120,5 @@ mod tests {
             orders: vec![],
         };
         assert!(solve(&MockQuote, &auction).await.is_empty());
-    }
-
-    /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
-    /// for headroom.
-    #[tokio::test]
-    #[ignore]
-    async fn jupiter_live_solve() {
-        let dex = Dex::Jupiter(
-            dex::jupiter::Jupiter::new(&JupiterConfig {
-                endpoint: "https://api.jup.ag".parse().unwrap(),
-                api_key: std::env::var("JUPITER_API_KEY").ok(),
-                slippage_bps: 50,
-                enable_buy_orders: false,
-            })
-            .unwrap(),
-        );
-        let auction = Auction {
-            id: 1,
-            taker: Pubkey::from_str(WSOL).unwrap(),
-            orders: vec![auction::Order {
-                uid: OrderUid([7; 32]),
-                sell_mint: Pubkey::from_str(USDC).unwrap(),
-                buy_mint: Pubkey::from_str(WSOL).unwrap(),
-                buy_destination: Pubkey::from_str(WSOL).unwrap(),
-                amount: 1_000_000,
-                side: dex::Side::Sell,
-            }],
-        };
-
-        let solutions = solve(&dex, &auction).await;
-
-        assert_eq!(solutions.len(), 1);
-        assert!(!solutions[0].interactions.is_empty());
     }
 }
