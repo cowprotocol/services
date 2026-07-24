@@ -271,7 +271,7 @@ impl QuoteHandler {
         let valid_to = order.valid_to;
         self.order_validator.partial_validate(order).await?;
 
-        if request.fast_path {
+        if app_data.inner.protocol.enable_fast_path {
             return Err(OrderQuoteError::AppData(AppDataValidationError::Invalid(
                 anyhow::anyhow!("'enableFastPath' is not yet supported"),
             )));
@@ -307,7 +307,7 @@ impl QuoteHandler {
                 },
                 signing_scheme: request.signing_scheme,
                 additional_gas: app_data.inner.protocol.hooks.gas_limit(),
-                fast_path: request.fast_path,
+                fast_path: app_data.inner.protocol.enable_fast_path,
                 timeout: request.timeout,
             },
             valid_to,
