@@ -121,10 +121,10 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                 .iter()
                 .flatten()
                 .map(|(_name, estimator)| estimator.estimate(query.clone()))
-                .collect::<FuturesUnordered<_>>();
+                .collect::<FuturesUnordered<_>>()
+                // Only errors and reasonable estimates can be ranked
+                .filter(|r| std::future::ready(r.is_err() || is_reasonable(r)));
 
-            // Every result is kept so that, if no quote is ever forwarded, the
-            // terminal error can be picked exactly the way `estimate` does.
             let mut results = Vec::new();
             let mut context_fut = self.ranking.provide_context(out_token, query.timeout).boxed();
             let context = loop {
@@ -148,19 +148,13 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                 }
             };
 
+            // Replay the buffered results (arrival order), then continue draining
+            // the live stream. Every result is kept so that, if no quote is ever
+            // forwarded, the terminal error can be picked as `estimate` does.
             let mut best: Option<Estimate> = None;
-            // Replay the results buffered while the context was loading (in
-            // arrival order), then continue draining the live stream.
-            let mut buffered = std::mem::take(&mut results).into_iter();
-            loop {
-                let result = match buffered.next() {
-                    Some(result) => result,
-                    None => match estimates.next().await {
-                        Some(result) => result,
-                        None => break,
-                    },
-                };
-                if is_reasonable(&result) {
+            let mut stream = futures::stream::iter(std::mem::take(&mut results)).chain(estimates);
+            while let Some(result) = stream.next().await {
+                if let Ok(estimate) = &result {
                     let beats_best = best.as_ref().is_none_or(|best| {
                         compare_quote_result(
                             &query,
@@ -172,10 +166,8 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                         .is_gt()
                     });
                     if beats_best {
-                        let estimate =
-                            result.as_ref().expect("is_reasonable implies Ok").clone();
                         best = Some(estimate.clone());
-                        yield Ok(estimate);
+                        yield Ok(estimate.clone());
                     }
                 }
                 results.push(result);
@@ -184,7 +176,6 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
             if best.is_none() {
                 yield results
                     .into_iter()
-                    .filter(|r| r.is_err() || is_reasonable(r))
                     .max_by(|a, b| compare_quote_result(&query, a, b, &context, self.verification_mode))
                     .unwrap_or_else(|| Err(unreasonable_estimates_error()));
             }
