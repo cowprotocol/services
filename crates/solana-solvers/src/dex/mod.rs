@@ -20,7 +20,8 @@ pub struct Order {
     pub side: Side,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Side {
     Buy,
     Sell,

@@ -1,4 +1,6 @@
-//! Wire DTOs the solver engine emits: the solution the driver consumes.
+//! Wire DTOs: the inbound `/solve` auction the driver posts and the solution
+//! the solver emits back.
 
+pub mod auction;
 pub mod order;
 pub mod solution;
