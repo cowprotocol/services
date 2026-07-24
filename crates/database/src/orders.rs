@@ -99,6 +99,7 @@ pub struct Order {
     pub buy_token_balance: BuyTokenDestination,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     pub class: OrderClass,
+    pub valid_from: Option<i64>,
 }
 
 #[instrument(skip_all)]
@@ -147,7 +148,8 @@ INSERT INTO orders (
     buy_token_balance,
     cancellation_timestamp,
     class,
-    true_valid_to
+    true_valid_to,
+    valid_from
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
@@ -159,7 +161,8 @@ VALUES (
             COALESCE((SELECT valid_to FROM ethflow_orders WHERE uid = $1), $21)
         ELSE
             $21
-    END
+    END,
+    $22
 )
     "#;
 
@@ -204,6 +207,7 @@ async fn insert_order_execute_sqlx(
         .bind(order.class)
         // true_valid_to takes the same value as valid_to when inserting an order
         .bind(order.valid_to)
+        .bind(order.valid_from)
         .execute(ex)
         .await
         .map(|result| result.rows_affected() > 0)
@@ -526,6 +530,7 @@ pub struct FullOrder {
     pub executed_fee: BigDecimal,
     pub executed_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
+    pub valid_from: Option<i64>,
 }
 
 impl FullOrder {
@@ -641,7 +646,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
 COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
-(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
+(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data,
+o.valid_from
 "#;
 
 pub const FROM: &str = "orders o";
@@ -752,6 +758,7 @@ pub fn solvable_orders(
         FROM   orders o
         WHERE  o.cancellation_timestamp IS NULL
             AND o.true_valid_to >= $1
+            AND (o.valid_from IS NULL OR o.valid_from <= EXTRACT(EPOCH FROM NOW())::bigint)
             AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
@@ -810,7 +817,8 @@ pub fn solvable_orders(
         NULL AS onchain_placement_error,
         COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
         COALESCE(fee_agg.executed_fee_token, lo.sell_token) AS executed_fee_token,
-        ad.full_app_data
+        ad.full_app_data,
+        lo.valid_from
     FROM live_orders lo
     LEFT JOIN LATERAL (
         SELECT NOT signed AS unsigned
@@ -859,7 +867,12 @@ pub fn open_orders_by_time_or_uids<'a>(
 WITH selected_orders AS (
     SELECT o.*
     FROM   orders o
-    WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))
+    WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2)
+           -- Pick up orders whose valid_from just crossed NOW() since the last update.
+           OR (o.valid_from IS NOT NULL
+               AND o.valid_from > EXTRACT(EPOCH FROM $1)::bigint
+               AND o.valid_from <= EXTRACT(EPOCH FROM NOW())::bigint))
+      AND (o.valid_from IS NULL OR o.valid_from <= EXTRACT(EPOCH FROM NOW())::bigint)
 ),
 trades_agg AS (
      SELECT t.order_uid,
@@ -917,7 +930,8 @@ SELECT
     opo.onchain_placement_error,
     COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
     COALESCE(fee_agg.executed_fee_token, so.sell_token) AS executed_fee_token,
-    ad.full_app_data
+    ad.full_app_data,
+    so.valid_from
 FROM selected_orders so
 LEFT JOIN LATERAL (
     SELECT NOT signed AS unsigned

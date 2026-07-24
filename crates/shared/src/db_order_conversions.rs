@@ -100,6 +100,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .transpose()
             .context("full app data isn't utf-8")?,
         quote: None,
+        valid_from: order.valid_from.map(|v| v as u32),
     };
     let data = OrderData {
         sell_token: Address::new(order.sell_token.0),

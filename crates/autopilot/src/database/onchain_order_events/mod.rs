@@ -318,7 +318,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             .collect();
         let invalidation_events = get_invalidation_events(events)?;
         let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
-        let (custom_onchain_data, quotes, broadcasted_order_data, orders, tx_hashes) = self
+        let (custom_onchain_data, quotes, broadcasted_order_data, mut orders, tx_hashes) = self
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
 
@@ -359,6 +359,10 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         insert_order_hooks(transaction, &orders, &self.trampoline)
             .await
             .context("failed to insert hooks")?;
+
+        populate_valid_from(transaction, &mut orders)
+            .await
+            .context("failed to populate valid_from")?;
 
         database::orders::insert_orders_and_ignore_conflicts(transaction, orders.as_slice())
             .await
@@ -628,6 +632,7 @@ fn convert_onchain_order_placement(
             true => OrderClass::Limit,
             false => OrderClass::Market,
         },
+        valid_from: None,
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -749,6 +754,22 @@ async fn insert_order_hooks(
     database::orders::insert_or_overwrite_interactions(db, &interactions_to_insert)
         .await
         .context("could not insert interactions for orders")
+}
+
+async fn populate_valid_from(db: &mut PgConnection, orders: &mut [Order]) -> Result<()> {
+    for order in orders {
+        let appdata_json = database::app_data::fetch(db, &order.app_data)
+            .await
+            .context("failed to fetch appdata")?;
+        let Some(appdata_json) = appdata_json else {
+            continue;
+        };
+        let Ok(parsed) = app_data::parse(&appdata_json) else {
+            continue;
+        };
+        order.valid_from = parsed.valid_from.map(|v| v as i64);
+    }
+    Ok(())
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -1025,6 +1046,7 @@ mod test {
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
+            valid_from: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1138,6 +1160,7 @@ mod test {
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
+            valid_from: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);

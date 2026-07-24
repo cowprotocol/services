@@ -731,6 +731,10 @@ pub struct OrderMetadata {
     /// quote data for reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote: Option<OrderQuote>,
+    /// Earliest time (UNIX timestamp seconds) the order may enter a batch
+    /// auction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<u32>,
 }
 
 /// OrderUid is 56 bytes. When hex encoded as 0x prefixes Json string it is 116.

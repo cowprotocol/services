@@ -176,6 +176,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         cancellation_timestamp: None,
+        valid_from: order.metadata.valid_from.map(|v| v as i64),
     };
 
     database::orders::insert_order(ex, &db_order)
@@ -625,6 +626,7 @@ fn full_order_with_quote_into_model_order(
         quote: quote
             .map(|q| order_quote_into_model(q, status))
             .transpose()?,
+        valid_from: order.valid_from.map(|v| v as u32),
     };
     let data = OrderData {
         sell_token: Address::new(order.sell_token.0),
@@ -732,6 +734,7 @@ mod tests {
             executed_fee: Default::default(),
             executed_fee_token: ByteArray([1; 20]), // TODO surplus token
             full_app_data: Default::default(),
+            valid_from: None,
         };
 
         // Open - sell (filled - 0%)

@@ -765,11 +765,6 @@ impl OrderValidating for OrderValidator {
                 "'enableFastPath' is not yet supported"
             )));
         }
-        if app_data.protocol.valid_from.is_some() {
-            return Err(AppDataValidationError::Invalid(anyhow::anyhow!(
-                "'validFrom' is not yet supported"
-            )));
-        }
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
@@ -1040,6 +1035,7 @@ impl OrderValidating for OrderValidator {
                     .map(|q| q.try_to_model_order_quote())
                     .transpose()
                     .map_err(ValidationError::Other)?,
+                valid_from: app_data.inner.protocol.valid_from,
                 ..Default::default()
             },
             signature: order.signature.clone(),
