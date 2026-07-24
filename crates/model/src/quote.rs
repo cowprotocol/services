@@ -390,7 +390,6 @@ mod tests {
                 "signingScheme": "eip712",
                 "timeout": null,
                 "priceQuality": "optimal",
-                "fastPath": false,
             })
         );
     }
