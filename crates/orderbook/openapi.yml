@@ -536,22 +536,21 @@ paths:
         Accepts the same request body as `POST /api/v1/quote`. Instead of
         waiting for all solvers and returning the single best quote, this
         endpoint opens a Server-Sent Events stream and emits quotes as solvers
-        respond. A quote is emitted only when it improves on the best one
-        already sent, so the series improves monotonically and never regresses;
-        the first quote goes out as soon as the fastest solver answers. Solvers
-        without a usable quote, and quotes that do not beat the best already
-        sent, emit no event, so you may receive fewer events than there are
-        solvers. The stream closes when the quote timeout elapses or all solvers
-        have responded. Each emitted quote carries an `id` that can be
-        referenced when placing an order. Clients can use this to show
-        progressive quote updates in real time.
+        respond. A quote is emitted only when it ranks better than the best one
+        already sent; the first goes out as soon as the fastest solver answers.
+        Solvers without a usable quote, and quotes that do not beat the best
+        already sent, emit no event, so you may receive fewer events than there
+        are solvers. The stream closes when the quote timeout elapses or all
+        solvers have responded. Each emitted quote carries an `id` that can be
+        referenced when placing an order.
 
         The `priceQuality` field of the request body is ignored: this endpoint
         always queries all solvers and attempts verification, and each emitted
-        quote carries its own `verified` flag. Individual solver errors are not
-        streamed; if no solver returns a usable quote, a terminal event named
-        `error` is sent with a `PriceEstimationError` body before the stream
-        closes.
+        quote carries its own `verified` flag. A verified quote ranks above an
+        unverified one regardless of amount, so a later quote may report a lower
+        `out_amount`. Individual solver errors are not streamed; if no solver
+        returns a usable quote, a terminal event named `error` is sent with a
+        `PriceEstimationError` body before the stream closes.
       requestBody:
         description: The order parameters to compute quotes for.
         required: true
@@ -563,8 +562,8 @@ paths:
         "200":
           description: >
             A Server-Sent Events stream. Each event's `data` field is a JSON
-            object matching `OrderQuoteResponse`. Events arrive as the best
-            quote improves.
+            object matching `OrderQuoteResponse`. Events arrive as the
+            best-ranked quote improves.
           content:
             text/event-stream:
               schema:

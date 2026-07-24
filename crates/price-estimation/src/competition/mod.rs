@@ -742,19 +742,23 @@ mod tests {
         assert!(matches!(results[0], Err(PriceEstimationError::RateLimited)));
     }
 
-    /// Best-so-far: a result is forwarded only when it beats every quote
-    /// already sent, so the client sees a monotonically improving series. A
-    /// later, worse quote is dropped rather than emitted.
+    /// Best-so-far under `QuoteVerificationMode::Prefer`: a quote is forwarded
+    /// only when it ranks better than the best already sent. Errors are dropped
+    /// mid-stream, and because a verified quote outranks an unverified one
+    /// regardless of `out_amount` (same as the one-shot competition), a later
+    /// verified quote supersedes an earlier, higher unverified one.
     #[tokio::test]
     async fn estimate_stream_only_forwards_improving_quotes() {
-        fn estimator(delay: Duration, out_amount: u64) -> Arc<dyn PriceEstimating> {
+        // Staggered delays make the arrival order deterministic.
+        fn quote(delay_ms: u64, out_amount: u64, verified: bool) -> Arc<dyn PriceEstimating> {
             let mut m = MockPriceEstimating::new();
             m.expect_estimate().times(1).returning(move |_| {
                 async move {
-                    sleep(delay).await;
+                    sleep(Duration::from_millis(delay_ms)).await;
                     Ok(Estimate {
                         out_amount: U256::from(out_amount),
                         gas: 1,
+                        verified,
                         ..Default::default()
                     })
                 }
@@ -763,38 +767,48 @@ mod tests {
             Arc::new(m)
         }
 
-        // Staggered delays make the arrival order deterministic.
-        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+        fn failing(delay_ms: u64) -> Arc<dyn PriceEstimating> {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(move |_| {
+                async move {
+                    sleep(Duration::from_millis(delay_ms)).await;
+                    Err(PriceEstimationError::NoLiquidity)
+                }
+                .boxed()
+            });
+            Arc::new(m)
+        }
+
+        // Arrival order: fast unverified 100, better unverified 200, an error,
+        // then a worse (lower) verified 150.
+        let estimator = CompetitionEstimator::new(
             vec![vec![
-                ("first".to_owned(), estimator(Duration::from_millis(0), 100)),
-                (
-                    "second".to_owned(),
-                    estimator(Duration::from_millis(10), 200),
-                ),
-                (
-                    "third".to_owned(),
-                    estimator(Duration::from_millis(20), 150),
-                ),
-                (
-                    "fourth".to_owned(),
-                    estimator(Duration::from_millis(30), 250),
-                ),
+                ("unverified-fast".to_owned(), quote(0, 100, false)),
+                ("unverified-better".to_owned(), quote(10, 200, false)),
+                ("err".to_owned(), failing(20)),
+                ("verified-worse".to_owned(), quote(30, 150, true)),
             ]],
             PriceRanking::MaxOutAmount,
-        );
+        )
+        .with_verification(QuoteVerificationMode::Prefer);
 
         let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
 
+        assert!(
+            results.iter().all(|r| r.is_ok()),
+            "no error should be yielded"
+        );
         let amounts: Vec<_> = results
             .iter()
             .map(|r| r.as_ref().unwrap().out_amount)
             .collect();
-        // 100 (first, becomes best) -> 200 (improves) -> 150 (worse, dropped)
-        // -> 250 (improves).
+        // 100 (best) -> 200 (improves) -> error (dropped) -> 150 (verified,
+        // supersedes).
         assert_eq!(
             amounts,
-            vec![U256::from(100u64), U256::from(200u64), U256::from(250u64)]
+            vec![U256::from(100u64), U256::from(200u64), U256::from(150u64)]
         );
+        assert!(results.last().unwrap().as_ref().unwrap().verified);
     }
 
     #[test]
