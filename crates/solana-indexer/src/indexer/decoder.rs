@@ -25,7 +25,12 @@ use {
         Pubkey as InterfacePubkey,
         SettlementInstruction,
         data::intent::EncodedOrderIntent,
-        instruction::settle::recover_counterpart,
+        instruction::{
+            InstructionInputParsing,
+            create_buffer::CreateBufferInput,
+            create_order::CreateOrderInput,
+            settle::{BeginSettleInput, FinalizeSettleInput},
+        },
         recover_discriminator,
     },
     solana_sdk::pubkey::Pubkey,
@@ -146,30 +151,6 @@ impl Decoder {
     }
 }
 
-/// Auction id is not carried on the `BeginSettle` wire yet, so every
-/// `SettlementFinalized` uses this fixed placeholder.
-// TODO: not in the BeginSettle wire yet; use the real value once the program
-// emits it.
-const PLACEHOLDER_AUCTION_ID: u64 = 0;
-
-/// The buy-side push amount is not carried on the `FinalizeSettle` wire yet, so
-/// every trade's `amount_received_delta` uses this fixed placeholder.
-// TODO: FinalizeSettle carries no push amount yet; use the real value once it
-// does.
-const PLACEHOLDER_AMOUNT_RECEIVED: u64 = 0;
-
-/// Position of the `created_by` account in a `CreateOrder`'s account list
-/// `[owner (S), created_by (W,S), order_pda (W), system_program (R)]`.
-const CREATE_ORDER_CREATED_BY: usize = 1;
-
-/// Accounts a `BeginSettle` carries before its per-order accounts:
-/// `[instructions_sysvar, state_pda, token_program]`.
-const BEGIN_SETTLE_FIXED_ACCOUNTS: usize = 3;
-
-/// Accounts a `CreateBuffer` carries before its per-buffer `(buffer_pda, mint)`
-/// pairs: `[payer, system_program, token_program]`.
-const CREATE_BUFFER_SHARED_ACCOUNTS: usize = 3;
-
 /// Order fields the `BeginSettle` wire does not carry, looked up per order PDA
 /// through an injected resolver so the decode stays a pure function. A future
 /// PR backs the resolver with the persisted order rows.
@@ -197,7 +178,7 @@ fn decode_settlement(
 
     // Instructions decodable on their own, without tx-level pairing.
     for instruction in instructions {
-        let Ok((discriminator, body)) = recover_discriminator(&instruction.data) else {
+        let Ok((discriminator, _)) = recover_discriminator(&instruction.data) else {
             tracing::debug!(
                 instruction_index = instruction.instruction_index,
                 "settlement instruction with an unknown discriminator, skipping"
@@ -211,7 +192,7 @@ fn decode_settlement(
         // the dead-letter table.
         let decoded = match discriminator {
             SettlementInstruction::CreateOrder => {
-                decode_order_created(instruction, body, &ctx.account_keys).map(|event| vec![event])
+                decode_order_created(instruction, &ctx.account_keys).map(|event| vec![event])
             }
             SettlementInstruction::CreateBuffer => {
                 decode_buffers_created(instruction, &ctx.account_keys)
@@ -222,6 +203,8 @@ fn decode_settlement(
             SettlementInstruction::BeginSettle | SettlementInstruction::FinalizeSettle => {
                 Ok(Vec::new())
             }
+            // No domain event yet.
+            SettlementInstruction::ReclaimOrder => Ok(Vec::new()),
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
@@ -243,62 +226,49 @@ fn decode_settlement(
     events
 }
 
-/// `CreateOrder` -> `OrderCreated`. The instruction data is the encoded order
-/// intent: its hash is the order UID and it carries the owner. `created_by` is
-/// resolved from the instruction's account list.
+/// `CreateOrder` -> `OrderCreated`. The parser recovers the encoded order
+/// intent and the `created_by` account; the intent's hash is the order UID and
+/// it carries the owner.
 fn decode_order_created(
     instruction: &ResolvedInstruction,
-    body: &[u8],
     account_keys: &[Pubkey],
 ) -> Result<SettlementEvent, DecodeError> {
-    let intent_bytes: &[u8; EncodedOrderIntent::SIZE] =
-        body.try_into().map_err(|_| DecodeError::SchemaMismatch)?;
-    let (intent, uid) = EncodedOrderIntent::decode_and_hash(intent_bytes)
+    let mut accounts = instruction_account_keys(instruction, account_keys)?;
+    let input = CreateOrderInput::parse(&instruction.data, &mut accounts)
         .map_err(|_| DecodeError::SchemaMismatch)?;
-    let created_by = resolve_account(instruction, account_keys, CREATE_ORDER_CREATED_BY)
-        .ok_or(DecodeError::SchemaMismatch)?;
+    let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
+        .map_err(|_| DecodeError::SchemaMismatch)?;
     Ok(SettlementEvent::OrderCreated {
         order_uid: OrderUid(uid.to_bytes()),
         owner: to_sdk_pubkey(intent.owner),
-        created_by,
+        created_by: *input.created_by,
     })
 }
 
-/// `CreateBuffer` -> one `BufferCreated` per created buffer. The wire body is
-/// empty; each buffer is a trailing `(buffer_pda, mint)` account pair after the
-/// shared accounts, and the event's token is the buffer's mint.
+/// `CreateBuffer` -> one `BufferCreated` per created buffer. The parser groups
+/// the trailing accounts into `[buffer_pda, mint]` pairs; the event's token is
+/// each pair's mint.
 fn decode_buffers_created(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
 ) -> Result<Vec<SettlementEvent>, DecodeError> {
-    let per_buffer = instruction
-        .accounts
-        .get(CREATE_BUFFER_SHARED_ACCOUNTS..)
-        .ok_or(DecodeError::SchemaMismatch)?;
-    let (pairs, remainder) = per_buffer.as_chunks::<2>();
-    if !remainder.is_empty() || pairs.is_empty() {
-        return Err(DecodeError::SchemaMismatch);
-    }
-    pairs
+    let mut accounts = instruction_account_keys(instruction, account_keys)?;
+    let input = CreateBufferInput::parse(&instruction.data, &mut accounts)
+        .map_err(|_| DecodeError::SchemaMismatch)?;
+    Ok(input
+        .buffers
         .iter()
-        .map(|pair| {
-            // Each pair is `[buffer_pda_index, mint_index]`; the event token is
-            // the buffer's mint.
-            let token = account_keys
-                .get(usize::from(pair[1]))
-                .ok_or(DecodeError::SchemaMismatch)?;
-            Ok(SettlementEvent::BufferCreated { token: *token })
-        })
-        .collect()
+        .map(|pair| SettlementEvent::BufferCreated { token: pair[1] })
+        .collect())
 }
 
 /// Pair each `BeginSettle` with the `FinalizeSettle` it names and emit one
 /// `SettlementFinalized` per pair.
 ///
-/// Pairing is by index: a `BeginSettle` body carries the top-level instruction
-/// index of its `FinalizeSettle` (recovered via [`recover_counterpart`]), which
-/// must match a `FinalizeSettle` present in the same transaction. It is
-/// independent of the two instructions' relative order.
+/// Pairing is by index: a parsed `BeginSettle` carries the top-level
+/// instruction index of its `FinalizeSettle` (`finalize_ix_index`), which must
+/// match a `FinalizeSettle` present in the same transaction. It is independent
+/// of the two instructions' relative order.
 fn decode_settlements_finalized(
     instructions: &[ResolvedInstruction],
     ctx: &TxContext,
@@ -312,57 +282,90 @@ fn decode_settlements_finalized(
 
     let mut events = Vec::new();
     for begin in instructions {
-        let Ok((SettlementInstruction::BeginSettle, body)) = recover_discriminator(&begin.data)
-        else {
+        let Ok((SettlementInstruction::BeginSettle, _)) = recover_discriminator(&begin.data) else {
             continue;
         };
-        // Body: `[finalize_ix_index: u16 BE][n][bump×n][count×n][amount×T]`.
-        // Peel the counterpart index, leaving the per-order pull layout.
-        let Ok((finalize_ix_index, pull_body)) = recover_counterpart(body) else {
-            continue;
+        let mut begin_accounts = match instruction_account_keys(begin, &ctx.account_keys) {
+            Ok(accounts) => accounts,
+            Err(_) => continue,
         };
+        let begin_input = match BeginSettleInput::parse(&begin.data, &mut begin_accounts) {
+            Ok(input) => input,
+            Err(_) => {
+                tracing::warn!(
+                    instruction_index = begin.instruction_index,
+                    "BeginSettle did not match the expected layout, skipping"
+                );
+                continue;
+            }
+        };
+
         // The named `FinalizeSettle` must actually be present in this tx.
-        let paired = instructions.iter().any(|instruction| {
-            instruction.instruction_index == u32::from(finalize_ix_index)
+        let Some(finalize) = instructions.iter().find(|instruction| {
+            instruction.instruction_index == u32::from(begin_input.finalize_ix_index)
                 && matches!(
                     recover_discriminator(&instruction.data),
                     Ok((SettlementInstruction::FinalizeSettle, _))
                 )
-        });
-        if !paired {
+        }) else {
             tracing::debug!(
                 instruction_index = begin.instruction_index,
-                finalize_ix_index,
+                finalize_ix_index = begin_input.finalize_ix_index,
                 "BeginSettle without a paired FinalizeSettle in the tx, skipping"
             );
             continue;
-        }
-
-        let Some(orders) = parse_begin_settle_orders(pull_body) else {
-            tracing::warn!(
-                instruction_index = begin.instruction_index,
-                "BeginSettle body did not match the expected pull layout, skipping"
-            );
-            continue;
         };
+        let mut finalize_accounts = match instruction_account_keys(finalize, &ctx.account_keys) {
+            Ok(accounts) => accounts,
+            Err(_) => continue,
+        };
+        let finalize_input =
+            match FinalizeSettleInput::parse(&finalize.data, &mut finalize_accounts) {
+                Ok(input) => input,
+                Err(_) => {
+                    tracing::warn!(
+                        instruction_index = finalize.instruction_index,
+                        "FinalizeSettle did not match the expected layout, skipping"
+                    );
+                    continue;
+                }
+            };
+        // Orders and finalize pushes are positionally aligned: `BeginSettle`
+        // enforces exactly one push per order, both sorted by order PDA, so order
+        // `i` is paid by push `i`. Collect the push amounts up front so the
+        // finalize borrow ends before the zip below.
+        let received: Vec<u64> = finalize_input
+            .pushes
+            .iter()
+            .map(|push| u64::from_le_bytes(*push.amount))
+            .collect();
 
-        let trades = orders
-            .into_iter()
-            .filter_map(|order| {
-                let order_pda =
-                    resolve_account(begin, &ctx.account_keys, order.order_pda_position)?;
-                let resolved = resolve_order(&order_pda)?;
+        let trades = begin_input
+            .orders
+            .iter()
+            .zip(received)
+            .filter_map(|(order, amount_received_delta)| {
+                let resolved = resolve_order(order.order_pda)?;
+                // Sell-side pull total. Amounts are little-endian `u64`; the
+                // stream is untrusted, so saturate instead of wrapping.
+                let amount_withdrawn_delta = order
+                    .amounts
+                    .iter()
+                    .map(|amount| u64::from_le_bytes(*amount))
+                    .fold(0u64, u64::saturating_add);
                 Some(TradeDelta {
                     order_uid: resolved.order_uid,
-                    amount_withdrawn_delta: order.amount_withdrawn_delta,
-                    amount_received_delta: PLACEHOLDER_AMOUNT_RECEIVED,
+                    amount_withdrawn_delta,
+                    amount_received_delta,
                     order_fulfilled: resolved.order_fulfilled,
                 })
             })
             .collect();
 
         events.push(SettlementEvent::SettlementFinalized {
-            auction_id: PLACEHOLDER_AUCTION_ID,
+            // The wire carries `auction_id` as i64; it is non-negative in
+            // practice.
+            auction_id: begin_input.auction_id as u64,
             solver,
             tx_signature: ctx.signature,
             slot: ctx.slot,
@@ -372,77 +375,23 @@ fn decode_settlements_finalized(
     events
 }
 
-/// One settled order recovered from a `BeginSettle` body: where its order PDA
-/// sits in the instruction's account list, and the sell amount pulled for it.
-struct BeginSettleOrder {
-    /// Position of the order's PDA within the instruction's account list.
-    order_pda_position: usize,
-    /// Sum of the order's pull amounts: the sell-side `amount_withdrawn` delta.
-    amount_withdrawn_delta: u64,
-}
-
-/// Hand-parse a `BeginSettle` body (after the counterpart index) into per-order
-/// pull totals and the account position of each order's PDA.
-//
-// TODO: this duplicates the `BeginSettle` wire layout owned by
-// `settlement_interface` (`[n][bump×n][count×n][amount: u64 BE ×T]`); the
-// interface's own parser is account-coupled, so there is no data-only helper to
-// call yet. Replace this once one exists. The layout also shifts when the
-// program adds `auction_id` to the wire, so this must move in lockstep.
-fn parse_begin_settle_orders(body: &[u8]) -> Option<Vec<BeginSettleOrder>> {
-    let (&order_count, rest) = body.split_first()?;
-    let order_count = usize::from(order_count);
-    // Bumps are on-chain PDA-derivation input the indexer does not need.
-    let (_bumps, rest) = rest.split_at_checked(order_count)?;
-    let (counts, amount_bytes) = rest.split_at_checked(order_count)?;
-    let (amounts, remainder) = amount_bytes.as_chunks::<8>();
-    if !remainder.is_empty() {
-        return None;
-    }
-    // The per-order transfer counts must sum to the number of amounts, so every
-    // destination pairs with exactly one amount.
-    let counts_sum = counts
-        .iter()
-        .map(|&count| usize::from(count))
-        .sum::<usize>();
-    if counts_sum != amounts.len() {
-        return None;
-    }
-
-    let mut orders = Vec::with_capacity(order_count);
-    let mut account_position = BEGIN_SETTLE_FIXED_ACCOUNTS;
-    let mut amount_index = 0usize;
-    for &count in counts {
-        let count = usize::from(count);
-        let mut amount_withdrawn_delta = 0u64;
-        for amount in &amounts[amount_index..amount_index + count] {
-            // On-chain amounts are already u64, so a sum from a single sell
-            // account cannot exceed u64. Guard anyway: the stream is untrusted.
-            amount_withdrawn_delta =
-                amount_withdrawn_delta.checked_add(u64::from_be_bytes(*amount))?;
-        }
-        amount_index += count;
-        orders.push(BeginSettleOrder {
-            order_pda_position: account_position,
-            amount_withdrawn_delta,
-        });
-        // Each order occupies its order PDA, its sell token account, and one
-        // destination per transfer.
-        account_position += 2 + count;
-    }
-    Some(orders)
-}
-
-/// Resolve the account at `position` in the instruction's account list to its
-/// pubkey, returning `None` if the position or the resolved index is out of
-/// range.
-fn resolve_account(
+/// Resolve an instruction's account-list indices to their pubkeys, in order, so
+/// the interface parser can read them positionally. Fails if any index is out
+/// of range against the transaction's account list.
+fn instruction_account_keys(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
-    position: usize,
-) -> Option<Pubkey> {
-    let index = *instruction.accounts.get(position)?;
-    account_keys.get(usize::from(index)).copied()
+) -> Result<Vec<Pubkey>, DecodeError> {
+    instruction
+        .accounts
+        .iter()
+        .map(|&index| {
+            account_keys
+                .get(usize::from(index))
+                .copied()
+                .ok_or(DecodeError::SchemaMismatch)
+        })
+        .collect()
 }
 
 /// Bridge a `settlement_interface` pubkey to the indexer's `solana_sdk` pubkey.
