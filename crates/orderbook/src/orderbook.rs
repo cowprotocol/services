@@ -5,7 +5,7 @@ use {
             trades::{TradeFilter, TradeRetrieving},
         },
         dto::{self, OrderSimulationRequest, OrderSimulationResult},
-        solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
+        solver_competition::LoadSolverCompetitionError,
     },
     alloy::primitives::{Address, B256, keccak256},
     anyhow::{Context, Result, anyhow},
@@ -26,7 +26,6 @@ use {
             SignedOrderCancellations,
         },
         quote::QuoteId,
-        solver_competition::{self, SolverCompetitionAPI},
     },
     observe::metrics::LivenessChecking,
     shared::{
@@ -459,7 +458,11 @@ impl Orderbook {
         }
 
         if self
-            .order_is_actively_bid_on(old_order.metadata.uid)
+            .database
+            .order_is_actively_bid_on(
+                &old_order.metadata.uid,
+                self.active_order_competition_threshold,
+            )
             .await?
         {
             return Err(AddOrderError::InvalidReplacement(
@@ -475,25 +478,6 @@ impl Orderbook {
         Metrics::on_order_operation(&validated_new_order, OrderOperation::Created);
 
         Ok(())
-    }
-
-    async fn order_is_actively_bid_on(&self, order_uid: OrderUid) -> Result<bool> {
-        let latest_competitions = self
-            .database
-            .load_latest_competitions(self.active_order_competition_threshold)
-            .await?;
-
-        let order_is_bid_on = latest_competitions
-            .into_iter()
-            .flat_map(|competition| competition.common.solutions)
-            .flat_map(|solution| solution.orders)
-            .map(|order| match order {
-                solver_competition::Order::Colocated { id, .. } => id,
-                solver_competition::Order::Legacy { id, .. } => id,
-            })
-            .any(|uid| uid == order_uid);
-
-        Ok(order_is_bid_on)
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
@@ -535,22 +519,16 @@ impl Orderbook {
         &self,
         uid: &OrderUid,
     ) -> Result<dto::order::Status, OrderStatusError> {
-        let solutions = |competition: SolverCompetitionAPI| {
-            competition
-                .common
+        let solutions = |response: model::solver_competition_v2::Response| {
+            response
                 .solutions
                 .into_iter()
                 .map(|solution| {
-                    let executed_amounts = solution.orders.iter().find_map(|o| match o {
-                        solver_competition::Order::Legacy { .. } => None,
-                        solver_competition::Order::Colocated {
-                            id,
-                            sell_amount,
-                            buy_amount,
-                        } => (id == uid).then_some(dto::order::ExecutedAmounts {
-                            sell: *sell_amount,
-                            buy: *buy_amount,
-                        }),
+                    let executed_amounts = solution.orders.iter().find_map(|order| {
+                        (order.id == *uid).then_some(dto::order::ExecutedAmounts {
+                            sell: order.sell_amount,
+                            buy: order.buy_amount,
+                        })
                     });
                     dto::order::SolutionInclusion {
                         solver: solution.solver_address,
@@ -561,10 +539,11 @@ impl Orderbook {
         };
 
         let latest_competition = async {
-            let competition =
-                SolverCompetitionStoring::load_latest_competition(&self.database, None)
-                    .await
-                    .map_err(Into::<OrderStatusError>::into)?;
+            let competition = self
+                .database
+                .load_latest_competition(None)
+                .await
+                .map_err(Into::<OrderStatusError>::into)?;
             Ok::<_, OrderStatusError>(solutions(competition))
         };
 
@@ -585,7 +564,7 @@ impl Orderbook {
             Some(Some(tx_hash)) => {
                 let competition = self
                     .database
-                    .load_competition(Identifier::Transaction(tx_hash), None)
+                    .load_competition_by_tx_hash(tx_hash, None)
                     .await?;
                 return Ok(dto::order::Status::Traded(solutions(competition)));
             }

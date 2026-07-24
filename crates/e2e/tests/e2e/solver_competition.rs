@@ -10,9 +10,9 @@ use {
         test_util::TestDefault,
     },
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
-    ethrpc::alloy::CallBuilderExt,
+    ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
-        order::{OrderCreation, OrderKind},
+        order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
@@ -39,6 +39,12 @@ async fn local_node_wrong_solution_submission_address() {
 #[ignore]
 async fn local_node_store_filtered_solutions() {
     run_test(store_filtered_solutions).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_cannot_replace_order_bid_on_by_non_winning_solution() {
+    run_test(cannot_replace_order_bid_on_by_non_winning_solution).await;
 }
 
 async fn solver_competition(web3: Web3) {
@@ -645,5 +651,309 @@ async fn store_filtered_solutions(web3: Web3) {
         solutions.iter().any(|s| !s.filtered_out
             && s.is_winner
             && s.solver.0 == good_solver_account.address().0)
+    );
+}
+
+/// Regression guard for the `order_is_actively_bid_on` check: an order that is
+/// bid on **only** by a non-winning (filtered) solution must still count as
+/// actively bid on and therefore be non-replaceable.
+///
+/// The setup mirrors `store_filtered_solutions`: the good solver wins with a
+/// solution for `order_win`, while the bad solver bundles `order_win` and
+/// `order_loser` into a single solution that gets filtered out during the
+/// combinatorial auction (it cannot beat the good solver's reference on
+/// `order_win`). As a result `order_loser` is bid on exclusively by a
+/// non-winning solution and is never settled. Auto-mining is disabled so
+/// nothing settles and the auction state stays frozen while we probe the
+/// replacement behaviour.
+async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [good_solver_account, bad_solver_account] = onchain.make_solvers(100u64.eth()).await;
+    let [trader] = onchain.make_accounts(100u64.eth()).await;
+    let [token_a, token_b, token_c] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(300_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // Give the settlement contract a ton of the traded tokens so that the mocked
+    // solver solutions can simply give money away to make the trade execute.
+    token_b
+        .mint(*onchain.contracts().gp_settlement.address(), 50u64.eth())
+        .await;
+    token_c
+        .mint(*onchain.contracts().gp_settlement.address(), 50u64.eth())
+        .await;
+
+    // Fund the trader generously so the replacement order comfortably passes
+    // balance/allowance validation while the original orders are still open.
+    token_a.mint(trader.address(), 10u64.eth()).await;
+    token_a
+        .approve(onchain.contracts().allowance, 10u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    let services = Services::new(&onchain).await;
+
+    let good_solver = Mock::new().await;
+    let bad_solver = Mock::new().await;
+
+    let base_tokens = vec![*token_a.address(), *token_b.address(), *token_c.address()];
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                good_solver_account.clone(),
+                *onchain.contracts().weth.address(),
+                base_tokens.clone(),
+                1,
+                true,
+            )
+            .await,
+            SolverEngine {
+                name: "good_solver".into(),
+                account: good_solver_account.clone(),
+                endpoint: good_solver.url.clone(),
+                base_tokens: base_tokens.clone(),
+                merge_solutions: true,
+                haircut_bps: 0,
+                submission_keys: vec![],
+            },
+            SolverEngine {
+                name: "bad_solver".into(),
+                account: bad_solver_account.clone(),
+                endpoint: bad_solver.url.clone(),
+                base_tokens,
+                merge_solutions: true,
+                haircut_bps: 0,
+                submission_keys: vec![],
+            },
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+
+    let config = Configuration::test_no_drivers();
+    services
+        .start_autopilot(
+            None,
+            Configuration {
+                drivers: vec![
+                    Solver::test("good_solver", good_solver_account.address()),
+                    Solver::test("bad_solver", bad_solver_account.address()),
+                ],
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_solver",
+                    "http://localhost:11088/test_solver",
+                )]),
+                run_loop: RunLoopConfig {
+                    max_winners_per_auction: std::num::NonZeroUsize::new(10).unwrap(),
+                    ..config.run_loop
+                },
+                ..config
+            },
+        )
+        .await;
+    services
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_solver",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..configs::orderbook::Configuration::test_default()
+        })
+        .await;
+
+    // The good solver wins this order.
+    let order_win = OrderCreation {
+        sell_token: *token_a.address(),
+        sell_amount: 1u64.eth(),
+        buy_token: *token_b.address(),
+        buy_amount: 1u64.eth(),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+
+    // This order is only ever part of the bad solver's filtered solution.
+    let order_loser = OrderCreation {
+        sell_token: *token_a.address(),
+        sell_amount: 1u64.eth(),
+        buy_token: *token_c.address(),
+        buy_amount: 1u64.eth(),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+
+    let order_win_id = services.create_order(&order_win).await.unwrap();
+    let order_loser_id = services.create_order(&order_loser).await.unwrap();
+
+    // The good solver settles `order_win` at a favourable 3:1 price.
+    good_solver.configure_solution(Some(Solution {
+        id: 0,
+        prices: HashMap::from([
+            (*token_a.address(), 3u64.eth()),
+            (*token_b.address(), 1u64.eth()),
+        ]),
+        trades: vec![solvers_dto::solution::Trade::Fulfillment(
+            solvers_dto::solution::Fulfillment {
+                executed_amount: order_win.sell_amount,
+                fee: Some(U256::ZERO),
+                order: solvers_dto::solution::OrderUid(order_win_id.0),
+            },
+        )],
+        pre_interactions: vec![],
+        interactions: vec![],
+        post_interactions: vec![],
+        gas: None,
+        flashloans: None,
+        wrappers: vec![],
+        gas_fee_override: None,
+    }));
+
+    // The bad solver bundles both orders at a worse 2:1 price. Because it can't
+    // beat the good solver's reference on `order_win`, the whole solution
+    // (including its `order_loser` trade) is filtered out.
+    bad_solver.configure_solution(Some(Solution {
+        id: 0,
+        prices: HashMap::from([
+            (*token_a.address(), 2u64.eth()),
+            (*token_b.address(), 1u64.eth()),
+            (*token_c.address(), 1u64.eth()),
+        ]),
+        trades: vec![
+            solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
+                executed_amount: order_win.sell_amount,
+                fee: Some(U256::ZERO),
+                order: solvers_dto::solution::OrderUid(order_win_id.0),
+            }),
+            solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
+                executed_amount: order_loser.sell_amount,
+                fee: Some(U256::ZERO),
+                order: solvers_dto::solution::OrderUid(order_loser_id.0),
+            }),
+        ],
+        pre_interactions: vec![],
+        interactions: vec![],
+        post_interactions: vec![],
+        gas: None,
+        flashloans: None,
+        wrappers: vec![],
+        gas_fee_override: None,
+    }));
+
+    // Freeze the chain: no settlement is ever mined, so both orders stay open
+    // and `order_loser` remains bid on (in the filtered solution) indefinitely.
+    web3.provider.evm_set_automine(false).await.unwrap();
+
+    // Drive auctions by hand until a competition is stored in which `order_loser`
+    // appears in a non-winning solution. We use the internal (unfiltered)
+    // endpoint because the public one hides competitions before their deadline.
+    tracing::info!("waiting for order_loser to be bid on by a non-winning solution");
+    let latest_auction_id = || async {
+        let mut db = services.db().acquire().await.unwrap();
+        sqlx::query_scalar::<_, i64>("SELECT id FROM competition_auctions ORDER BY id DESC LIMIT 1")
+            .fetch_optional(&mut *db)
+            .await
+            .unwrap()
+    };
+    let loser_bid_on_by_non_winner = || async {
+        onchain.mint_block().await;
+        let Some(auction_id) = latest_auction_id().await else {
+            return false;
+        };
+        match services.get_solver_competition_unfiltered(auction_id).await {
+            Ok(competition) => competition.solutions.iter().any(|solution| {
+                !solution.is_winner
+                    && solution
+                        .orders
+                        .iter()
+                        .any(|order| order.id == order_loser_id)
+            }),
+            Err(_) => false,
+        }
+    };
+    wait_for_condition(TIMEOUT, loser_bid_on_by_non_winner)
+        .await
+        .unwrap();
+
+    // Sanity checks on the scenario: `order_loser` is bid on, exclusively by
+    // non-winning solutions, and was never executed.
+    let auction_id = latest_auction_id().await.unwrap();
+    let competition = services
+        .get_solver_competition_unfiltered(auction_id)
+        .await
+        .unwrap();
+    let loser_solutions: Vec<_> = competition
+        .solutions
+        .iter()
+        .filter(|solution| {
+            solution
+                .orders
+                .iter()
+                .any(|order| order.id == order_loser_id)
+        })
+        .collect();
+    assert!(
+        !loser_solutions.is_empty(),
+        "order_loser should have been bid on"
+    );
+    assert!(
+        loser_solutions.iter().all(|solution| !solution.is_winner),
+        "order_loser must only appear in non-winning solutions"
+    );
+    assert!(
+        services
+            .get_trades(&order_loser_id)
+            .await
+            .unwrap()
+            .is_empty(),
+        "order_loser must not have been executed"
+    );
+
+    // Attempt to replace `order_loser`. Even though it only appeared in a
+    // losing solution, it counts as actively bid on and the replacement must be
+    // rejected.
+    let replacement = OrderCreation {
+        sell_token: *token_a.address(),
+        sell_amount: 1u64.eth(),
+        buy_token: *token_c.address(),
+        buy_amount: 1u64.eth(),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        partially_fillable: false,
+        app_data: OrderCreationAppData::Full {
+            full: format!(
+                r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{order_loser_id}"}}}}}}"#
+            ),
+        },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let (error_code, error_message) = services
+        .create_order(&replacement)
+        .await
+        .expect_err("replacing an actively-bid-on order must be rejected");
+    assert_eq!(error_code, StatusCode::BAD_REQUEST, "body: {error_message}");
+    assert!(
+        error_message.contains("OldOrderActivelyBidOn"),
+        "expected OldOrderActivelyBidOn, got: {error_message}"
     );
 }
