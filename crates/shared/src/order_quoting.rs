@@ -669,7 +669,7 @@ impl StreamingQuoting for OrderQuoter {
             while let Some(result) = inner.next().await {
                 let estimate = match result {
                     Ok(e) => e,
-                    // An inner errors us terminal but less specific than SellAmountDoesNotCoverFee, so it should not mask the latter.
+                    // An inner error is terminal but less specific than SellAmountDoesNotCoverFee, so it should not mask the latter.
                     Err(err) => {
                         deferred_err = deferred_err.or(Some(CalculateQuoteError::from((EstimatorKind::Regular, err))));
                         continue;
