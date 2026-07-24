@@ -189,6 +189,8 @@ pub struct Config {
     /// Use limit orders for quoting
     /// TODO: Remove once all solvers are moved to use limit orders for quoting
     pub quote_using_limit_orders: bool,
+    /// Whether this solver supports fast-path (out-of-competition) execution.
+    pub fast_path_enabled: bool,
     pub merge_solutions: SolutionMerging,
     /// S3 configuration for storing the auctions in the form they are sent to
     /// the solver engine
@@ -321,6 +323,11 @@ impl Solver {
     /// Use limit orders for quoting instead of market orders
     pub fn quote_using_limit_orders(&self) -> bool {
         self.config.quote_using_limit_orders
+    }
+
+    /// Whether this solver supports fast-path (out-of-competition) execution.
+    pub fn fast_path_enabled(&self) -> bool {
+        self.config.fast_path_enabled
     }
 
     pub fn solution_merging(&self) -> SolutionMerging {
@@ -601,6 +608,7 @@ mod tests {
             request_headers: Default::default(),
             fee_handler: FeeHandler::Driver,
             quote_using_limit_orders: false,
+            fast_path_enabled: false,
             merge_solutions: SolutionMerging::Forbidden,
             s3: None,
             solver_native_token: ManageNativeToken {

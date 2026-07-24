@@ -118,6 +118,7 @@ pub struct Order {
     pub amount: order::TargetAmount,
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
+    pub enable_fast_path: bool,
 }
 
 impl Order {
@@ -133,6 +134,10 @@ impl Order {
         tokens: &infra::tokens::Fetcher,
         risk_detector: &risk_detector::Detector,
     ) -> Result<Quote, Error> {
+        if self.enable_fast_path && !solver.fast_path_enabled() {
+            return Err(Error::QuotingFailed(QuotingFailed::FastPathNotSupported));
+        }
+
         let liquidity = match solver.liquidity() {
             solver::Liquidity::Fetch => {
                 liquidity
@@ -393,6 +398,8 @@ pub enum QuotingFailed {
     Math,
     #[error("token is unsupported by this solver")]
     UnsupportedToken,
+    #[error("solver does not support fast path quotes")]
+    FastPathNotSupported,
 }
 
 #[derive(Debug, thiserror::Error)]

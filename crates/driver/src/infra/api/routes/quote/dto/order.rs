@@ -15,6 +15,7 @@ impl Order {
                 Kind::Buy => competition::order::Side::Buy,
             },
             deadline: self.deadline,
+            enable_fast_path: self.enable_fast_path,
         }
     }
 }
@@ -29,6 +30,8 @@ pub struct Order {
     amount: eth::U256,
     kind: Kind,
     deadline: chrono::DateTime<chrono::Utc>,
+    #[serde(default)]
+    enable_fast_path: bool,
 }
 
 #[derive(Debug, Deserialize)]

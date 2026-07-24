@@ -2063,6 +2063,12 @@ components:
               allOf:
                 - $ref: "#/components/schemas/PriceQuality"
               default: verified
+            fastPath:
+              description: >
+                Signals that this quote is intended for fast-path
+                (out-of-competition) execution. Propagated to the solver.
+              type: boolean
+              default: false
             signingScheme:
               allOf:
                 - $ref: "#/components/schemas/SigningScheme"

@@ -158,6 +158,10 @@ pub struct Query {
     /// used to answer the query.
     #[serde(skip_serializing)]
     pub block_dependent: bool,
+    /// Whether this quote is intended for fast-path (out-of-competition)
+    /// execution; propagated to the driver.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub fast_path: bool,
     pub timeout: Duration,
 }
 
@@ -192,6 +196,9 @@ pub struct Estimate {
     pub solver: Address,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
+    /// Whether the quoting solver supports fast-path (out-of-competition)
+    /// execution for this order.
+    pub supports_fast_path: bool,
     /// Data associated with this estimation.
     #[debug(ignore)]
     pub execution: QuoteExecution,

@@ -72,6 +72,7 @@ impl ExternalTradeFinder {
                 amount: query.in_amount.get(),
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
+                fast_path: query.fast_path,
             };
             let block_dependent = query.block_dependent;
             let id = observe::tracing::distributed::request_id::from_current_span();
@@ -110,7 +111,7 @@ impl ExternalTradeFinder {
                         .text()
                         .await
                         .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                    serde_json::from_str::<dto::QuoteKind>(&text)
+                    let result = serde_json::from_str::<dto::QuoteKind>(&text)
                         .map(TradeKind::from)
                         .map_err(|err| {
                             serde_json::from_str::<dto::Error>(&text)
@@ -118,7 +119,18 @@ impl ExternalTradeFinder {
                                 .unwrap_or_else(|_| {
                                     PriceEstimationError::EstimatorInternal(anyhow!(err))
                                 })
-                        })
+                        });
+
+                    if result
+                        .as_ref()
+                        .is_ok_and(|quote| order.fast_path && !quote.supports_fast_path())
+                    {
+                        Err(PriceEstimationError::UnsupportedOrderType(
+                            "solver does not support fast path".to_string(),
+                        ))
+                    } else {
+                        result
+                    }
                 }
                 .await;
 
@@ -170,6 +182,7 @@ impl From<dto::LegacyQuote> for LegacyTrade {
                 .collect(),
             solver: quote.solver,
             tx_origin: quote.tx_origin,
+            supports_fast_path: quote.supports_fast_path,
         }
     }
 }
@@ -200,6 +213,7 @@ impl From<dto::Quote> for Trade {
             solver: quote.solver,
             tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders,
+            supports_fast_path: quote.supports_fast_path,
         }
     }
 }
@@ -347,6 +361,7 @@ impl TradeFinding for ExternalTradeFinder {
                 .map_err(TradeError::Other)?,
             gas_estimate,
             solver: trade.solver(),
+            supports_fast_path: trade.supports_fast_path(),
             execution: QuoteExecution {
                 interactions: map_interactions_data(trade.interactions()),
                 pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -386,6 +401,8 @@ pub mod dto {
         pub amount: U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
+        #[serde(default)]
+        pub fast_path: bool,
     }
 
     #[serde_as]
@@ -407,6 +424,8 @@ pub mod dto {
         pub gas: Option<u64>,
         #[serde(default)]
         pub tx_origin: Option<Address>,
+        #[serde(default)]
+        pub supports_fast_path: bool,
     }
 
     #[serde_as]
@@ -424,6 +443,8 @@ pub mod dto {
         pub tx_origin: Option<Address>,
         #[serde(default)]
         pub jit_orders: Vec<JitOrder>,
+        #[serde(default)]
+        pub supports_fast_path: bool,
     }
 
     #[serde_as]
