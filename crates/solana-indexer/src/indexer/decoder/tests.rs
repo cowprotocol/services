@@ -256,7 +256,7 @@ fn signature(n: u8) -> Signature {
 
 fn test_decoder(settlement: Pubkey, solflow: Pubkey) -> (Decoder, Sender<StreamUpdate>) {
     let (sender, rx) = tokio::sync::mpsc::channel(16);
-    let decoder = Decoder::new(Persistence {}, rx, settlement, solflow);
+    let decoder = Decoder::new(Persistence::stub(), rx, settlement, solflow);
     (decoder, sender)
 }
 

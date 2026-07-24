@@ -9951,6 +9951,7 @@ dependencies = [
  "settlement-interface",
  "solana-client",
  "solana-sdk",
+ "sqlx",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
