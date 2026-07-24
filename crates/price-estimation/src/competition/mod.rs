@@ -159,10 +159,10 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         &self,
         query: &Q,
         kind: OrderKind,
-        (index, result): ResultWithIndex<R>,
-    ) -> Result<R, PriceEstimationError> {
+        (index, result): &ResultWithIndex<R>,
+    ) {
         let EstimatorIndex(stage_index, estimator_index) = index;
-        let (name, _estimator) = &self.stages[stage_index][estimator_index];
+        let (name, _estimator) = &self.stages[*stage_index][*estimator_index];
         tracing::debug!(?query, ?result, estimator = name, "winning price estimate");
         if result.is_ok() {
             metrics()
@@ -170,7 +170,6 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
                 .with_label_values(&[name.as_str(), kind.label()])
                 .inc();
         }
-        result
     }
 }
 
@@ -269,6 +268,7 @@ mod tests {
     use {
         super::*,
         crate::{
+            CompetitionPriceEstimating,
             Estimate,
             HEALTHY_PRICE_ESTIMATION_TIME,
             MockPriceEstimating,
@@ -386,31 +386,39 @@ mod tests {
             PriceRanking::MaxOutAmount,
         );
 
-        let result = priority.estimate(queries[0].clone()).await;
-        assert_eq!(result.as_ref().unwrap(), &estimates[0]);
+        let result = priority
+            .estimates(queries[0].clone())
+            .await
+            .map(|r| r.into_vec());
+        assert_eq!(result.unwrap(), vec![estimates[0].clone()]);
 
-        let result = priority.estimate(queries[1].clone()).await;
-        // buy 2 is better than buy 1
-        assert_eq!(result.as_ref().unwrap(), &estimates[1]);
+        let result = priority
+            .estimates(queries[1].clone())
+            .await
+            .map(|r| r.into_vec());
+        // sell order: higher out_amount wins; both quotes appear in ranked order
+        assert_eq!(result.as_ref().unwrap()[0], estimates[1]);
+        assert_eq!(result.as_ref().unwrap()[1], estimates[0]);
 
-        let result = priority.estimate(queries[2].clone()).await;
-        // pay 1 is better than pay 2
-        assert_eq!(result.as_ref().unwrap(), &estimates[0]);
+        let result = priority
+            .estimates(queries[2].clone())
+            .await
+            .map(|r| r.into_vec());
+        // buy order: lower sell cost wins; both quotes appear in ranked order
+        assert_eq!(result.as_ref().unwrap()[0], estimates[0]);
+        assert_eq!(result.as_ref().unwrap()[1], estimates[1]);
 
-        let result = priority.estimate(queries[3].clone()).await;
         // arbitrarily returns one of equal priority errors
+        let err = priority.estimates(queries[3].clone()).await.unwrap_err();
         assert!(matches!(
-            result.as_ref().unwrap_err(),
+            err,
             PriceEstimationError::ProtocolInternal(err)
                 if err.to_string() == "a" || err.to_string() == "b",
         ));
 
-        let result = priority.estimate(queries[4].clone()).await;
         // unsupported token has higher priority than no liquidity
-        assert!(matches!(
-            result.as_ref().unwrap_err(),
-            PriceEstimationError::UnsupportedToken { .. }
-        ));
+        let err = priority.estimates(queries[4].clone()).await.unwrap_err();
+        assert!(matches!(err, PriceEstimationError::UnsupportedToken { .. }));
     }
 
     #[tokio::test]
@@ -470,8 +478,9 @@ mod tests {
         );
         let racing = racing.with_early_return(1.try_into().unwrap());
 
-        let result = racing.estimate(query).await;
-        assert_eq!(result.as_ref().unwrap(), &estimate(1));
+        // third was cancelled, so only the one good result (second) is returned
+        let result = racing.estimates(query).await.unwrap().into_vec();
+        assert_eq!(result, vec![estimate(1)]);
     }
 
     #[tokio::test]
@@ -547,8 +556,11 @@ mod tests {
         );
         let racing = racing.with_early_return(2.try_into().unwrap());
 
-        let result = racing.estimate(query).await;
-        assert_eq!(result.as_ref().unwrap(), &estimate(3));
+        // sell order: estimate(3) beats estimate(1); second returned Err so only 2 Ok
+        // quotes
+        let result = racing.estimates(query).await.unwrap().into_vec();
+        assert_eq!(result[0], estimate(3));
+        assert_eq!(result[1], estimate(1));
     }
 
     #[tokio::test]
@@ -617,7 +629,8 @@ mod tests {
             verification_mode: QuoteVerificationMode::Unverified,
         };
 
-        racing.estimate(query).await.unwrap();
+        let result = racing.estimates(query).await.unwrap().into_vec();
+        assert_eq!(result, vec![estimate(1), estimate(1)]);
     }
 
     fn make_query() -> Arc<Query> {
