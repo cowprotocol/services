@@ -9,6 +9,7 @@ use {
 };
 
 pub mod buy_eth;
+pub mod deadline;
 pub mod example_config;
 pub mod fees;
 mod flashloan_hints;
