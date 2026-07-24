@@ -160,6 +160,7 @@ pub struct Query {
     pub block_dependent: bool,
     /// Whether this quote is intended for fast-path (out-of-competition)
     /// execution; propagated to the driver.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
     pub timeout: Duration,
 }
