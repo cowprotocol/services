@@ -2129,11 +2129,6 @@ components:
             the volume-based fee policy. Only present when a volume fee is configured.
           type: string
           example: "2"
-        supportsFastPath:
-          description: >
-            Whether the quoting solver supports fast-path (out-of-competition)
-            execution for this order.
-          type: boolean
       required:
         - quote
         - expiration

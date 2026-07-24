@@ -390,7 +390,6 @@ fn build_order_quote_response(
         id,
         verified: quote.data.verified,
         protocol_fee_bps: adjusted.protocol_fee_bps.clone(),
-        supports_fast_path: quote.data.supports_fast_path,
     })
 }
 

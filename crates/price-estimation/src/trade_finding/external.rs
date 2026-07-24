@@ -111,7 +111,7 @@ impl ExternalTradeFinder {
                         .text()
                         .await
                         .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                    serde_json::from_str::<dto::QuoteKind>(&text)
+                    let result = serde_json::from_str::<dto::QuoteKind>(&text)
                         .map(TradeKind::from)
                         .map_err(|err| {
                             serde_json::from_str::<dto::Error>(&text)
@@ -119,7 +119,18 @@ impl ExternalTradeFinder {
                                 .unwrap_or_else(|_| {
                                     PriceEstimationError::EstimatorInternal(anyhow!(err))
                                 })
-                        })
+                        });
+
+                    if result
+                        .as_ref()
+                        .is_ok_and(|quote| order.fast_path && !quote.supports_fast_path())
+                    {
+                        Err(PriceEstimationError::UnsupportedOrderType(
+                            "solver does not support fast path".to_string(),
+                        ))
+                    } else {
+                        result
+                    }
                 }
                 .await;
 
