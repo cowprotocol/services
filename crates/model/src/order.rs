@@ -816,7 +816,8 @@ impl Serialize for OrderUid {
     where
         S: Serializer,
     {
-        serializer.serialize_str(self.to_string().as_str())
+        let mut buffer = const_hex::Buffer::<56, true>::new();
+        serializer.serialize_str(buffer.format(&self.0))
     }
 }
 
