@@ -271,6 +271,17 @@ impl QuoteHandler {
         let valid_to = order.valid_to;
         self.order_validator.partial_validate(order).await?;
 
+        if request.fast_path {
+            return Err(OrderQuoteError::AppData(AppDataValidationError::Invalid(
+                anyhow::anyhow!("'enableFastPath' is not yet supported"),
+            )));
+        }
+        if app_data.inner.protocol.valid_from.is_some() {
+            return Err(OrderQuoteError::AppData(AppDataValidationError::Invalid(
+                anyhow::anyhow!("'validFrom' is not yet supported"),
+            )));
+        }
+
         // Emit only after validation succeeds so we don't announce requests
         // that never reach the estimator (invalid app-data / order data return
         // early above). This is best-effort correlation, not a guarantee: if
