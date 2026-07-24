@@ -1,12 +1,22 @@
 use {
-    crate::domain::{competition, quote},
+    crate::domain::{
+        competition::{
+            self,
+            order::app_data::{APP_DATA_LEN, AppData, AppDataHash},
+        },
+        quote,
+    },
     eth_domain_types as eth,
     serde::Deserialize,
     serde_with::serde_as,
 };
 
 impl Order {
-    pub fn into_domain(self) -> quote::Order {
+    pub fn app_data_hash(&self) -> Option<AppDataHash> {
+        self.app_data.map(AppDataHash::from)
+    }
+
+    pub fn into_domain(self, app_data: AppData) -> quote::Order {
         quote::Order {
             tokens: quote::Tokens::new(self.sell_token.into(), self.buy_token.into()),
             amount: self.amount.into(),
@@ -15,6 +25,7 @@ impl Order {
                 Kind::Buy => competition::order::Side::Buy,
             },
             deadline: self.deadline,
+            app_data,
         }
     }
 }
@@ -29,6 +40,9 @@ pub struct Order {
     amount: eth::U256,
     kind: Kind,
     deadline: chrono::DateTime<chrono::Utc>,
+    #[serde(default)]
+    #[serde_as(as = "Option<serde_ext::Hex>")]
+    app_data: Option<[u8; APP_DATA_LEN]>,
 }
 
 #[derive(Debug, Deserialize)]
