@@ -4,7 +4,7 @@ use {
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, trades::TradesQueryRow},
     model::{fee_policy::ExecutedProtocolFee, order::OrderUid, trade::Trade},
-    number::conversions::big_decimal_to_big_uint,
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
     std::convert::TryInto,
 };
 
@@ -169,6 +169,7 @@ fn trade_from(
     let buy_token = Address::from_slice(&row.buy_token.0);
     let sell_token = Address::from_slice(&row.sell_token.0);
     let tx_hash = row.tx_hash.map(|hash| B256::from_slice(&hash.0));
+    let gas_cost = row.gas_cost.as_ref().and_then(big_decimal_to_u256);
     Ok(Trade {
         block_number,
         log_index,
@@ -181,6 +182,7 @@ fn trade_from(
         sell_token,
         tx_hash,
         executed_protocol_fees,
+        gas_cost,
     })
 }
 

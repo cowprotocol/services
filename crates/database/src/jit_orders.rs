@@ -48,6 +48,7 @@ pub async fn get_by_id(
         const QUERY: &str = const_format::concatcp!(
 "SELECT ",
 SELECT,
+crate::trades::ORDER_GAS_COST_COLUMN,
 " FROM ", FROM,
 " WHERE o.uid = $1 ",
         );
@@ -59,8 +60,14 @@ pub async fn get_many_by_uid<'a>(
     ex: &'a mut PgConnection,
     order_uids: &'a [OrderUid],
 ) -> Result<Vec<orders::FullOrder>, sqlx::Error> {
-    const QUERY: &str =
-        const_format::concatcp!("SELECT ", SELECT, " FROM ", FROM, " WHERE o.uid = ANY($1)");
+    const QUERY: &str = const_format::concatcp!(
+        "SELECT ",
+        SELECT,
+        crate::trades::ORDER_GAS_COST_COLUMN,
+        " FROM ",
+        FROM,
+        " WHERE o.uid = ANY($1)"
+    );
     sqlx::query_as(QUERY).bind(order_uids).fetch_all(ex).await
 }
 
@@ -73,6 +80,7 @@ pub async fn get_by_tx(
         orders::SETTLEMENT_LOG_INDICES,
         "SELECT ",
         SELECT,
+        crate::trades::ORDER_GAS_COST_COLUMN,
         " FROM ",
         FROM,
         " JOIN trades t ON t.order_uid = o.uid",

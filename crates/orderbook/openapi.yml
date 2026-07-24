@@ -1402,6 +1402,14 @@ components:
           allOf:
             - $ref: "#/components/schemas/Address"
           nullable: false
+        gasCost:
+          description: >
+            Estimated gas cost attributed to this order, in native token wei.
+            `null` if the order is not yet settled or its gas cost was not
+            recorded.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+          nullable: true
         fullAppData:
           description: >
             Full `appData`, which the contract-level `appData` is a hash of. See
@@ -1774,6 +1782,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ExecutedProtocolFee"
+        gasCost:
+          description: >
+            Estimated gas cost attributed to this trade, in native token wei.
+            `null` if its gas cost was not recorded.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+          nullable: true
       required:
         - blockNumber
         - logIndex

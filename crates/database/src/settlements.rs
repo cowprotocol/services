@@ -1,5 +1,6 @@
 use {
     crate::{Address, PgTransaction, TransactionHash},
+    bigdecimal::BigDecimal,
     sqlx::{Executor, PgConnection},
     tracing::instrument,
 };
@@ -87,6 +88,31 @@ WHERE block_number = $3 AND log_index = $4
         .execute(ex)
         .await
         .map(|_| ())
+}
+
+/// Stores the actual gas cost (read from the transaction receipt) of a settled
+/// transaction. See migration `V115`.
+#[instrument(skip_all)]
+pub async fn update_settlement_gas(
+    ex: &mut PgConnection,
+    block_number: i64,
+    log_index: i64,
+    gas_used: BigDecimal,
+    effective_gas_price: BigDecimal,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+UPDATE settlements
+SET gas_used = $1, effective_gas_price = $2
+WHERE block_number = $3 AND log_index = $4
+    ;"#;
+    sqlx::query(QUERY)
+        .bind(gas_used)
+        .bind(effective_gas_price)
+        .bind(block_number)
+        .bind(log_index)
+        .execute(ex)
+        .await?;
+    Ok(())
 }
 
 /// Deletes all database data that referenced the deleted settlement events.

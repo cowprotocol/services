@@ -69,13 +69,13 @@ pub fn user_orders<'a>(
         ") ",
         // Phase 2: fetch full rows for the relevant UIDs only
         " (",
-        "  SELECT ", orders::SELECT,
+        "  SELECT ", orders::SELECT, crate::trades::ORDER_GAS_COST_COLUMN,
         "  FROM ", orders::FROM,
         "  WHERE o.uid IN (SELECT uid FROM page_uids)",
         " )",
         " UNION ALL",
         " (",
-        "  SELECT ", jit_orders::SELECT,
+        "  SELECT ", jit_orders::SELECT, crate::trades::ORDER_GAS_COST_COLUMN,
         "  FROM ", jit_orders::FROM,
         "  WHERE o.uid IN (SELECT uid FROM page_uids)",
         // despite already handling duplicates in phase 1 we need to handle
