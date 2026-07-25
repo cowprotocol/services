@@ -32,12 +32,6 @@ impl super::Postgres {
             .with_label_values(&["save_competition"])
             .start_timer();
 
-        // offload CPU intensive work of serializing to a blocking thread so we can
-        // already start with the DB queries in the mean time.
-        let json = tokio::task::spawn_blocking(move || {
-            serde_json::to_string(&competition.competition_table)
-        });
-
         let mut ex = self.pool.begin().await.context("begin")?;
 
         let reference_scores: Vec<_> = competition
@@ -69,14 +63,6 @@ impl super::Postgres {
         )
         .await
         .context("auction_prices::insert")?;
-
-        let json = json
-            .await
-            .context("failed to await blocking task")?
-            .context("failed to serialize solver competition")?;
-        database::solver_competition::save(&mut ex, competition.auction_id, &json)
-            .await
-            .context("solver_competition::save")?;
 
         ex.commit().await.context("commit")
     }
