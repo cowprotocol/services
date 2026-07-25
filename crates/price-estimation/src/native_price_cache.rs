@@ -1,7 +1,16 @@
 use {
     super::PriceEstimationError,
-    crate::native::{NativePriceEstimateResult, NativePriceEstimating, from_normalized_price},
-    alloy::primitives::Address,
+    crate::native::{
+        NativePriceEstimateResult,
+        NativePriceEstimating,
+        from_normalized_price,
+        to_normalized_price,
+    },
+    alloy::primitives::{
+        Address,
+        U256,
+        map::{AddressHashMap, FbBuildHasher},
+    },
     arc_swap::ArcSwap,
     bigdecimal::BigDecimal,
     futures::{FutureExt, StreamExt},
@@ -10,6 +19,7 @@ use {
     request_sharing::{BoxRequestSharing, RequestSharing},
     std::{
         collections::{HashMap, HashSet},
+        hash::BuildHasher,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -169,7 +179,7 @@ impl Cache {
         let mut rng = rand::rng();
         let now = std::time::Instant::now();
 
-        let data = moka::sync::Cache::builder()
+        let data: moka::sync::Cache<Address, CachedResult> = moka::sync::Cache::builder()
             .max_capacity(MAX_CACHE_SIZE)
             .build();
 
@@ -230,11 +240,35 @@ impl Cache {
         (is_recent && entry.is_ready()).then_some(entry)
     }
 
+    /// Snapshot of all currently cached, non-expired, ready prices normalized
+    /// to `U256`. Skips expired entries, entries not yet considered ready, and
+    /// errors.
+    pub fn snapshot(&self) -> AddressHashMap<U256> {
+        let now = Instant::now();
+        let max_age = self.0.max_age;
+        let mut out = AddressHashMap::with_capacity_and_hasher(
+            self.0.data.entry_count() as usize,
+            FbBuildHasher::default(),
+        );
+        for (token, entry) in self.0.data.iter() {
+            let is_recent = now.saturating_duration_since(entry.updated_at) < max_age;
+            if !is_recent || !entry.is_ready() {
+                continue;
+            }
+            if let Ok(price) = entry.result
+                && let Some(u256) = to_normalized_price(price)
+            {
+                out.insert(*token, u256);
+            }
+        }
+        out
+    }
+
     /// Only returns prices that are currently cached.
     fn get_cached_prices(
         &self,
         tokens: &[Address],
-    ) -> HashMap<Address, Result<f64, PriceEstimationError>> {
+    ) -> AddressHashMap<Result<f64, PriceEstimationError>> {
         let now = Instant::now();
         let mut results = HashMap::default();
         for token in tokens {
@@ -286,7 +320,7 @@ struct CachingInner {
     /// safe (e.g. csUSDL => Dai).
     /// The normalization factor handles decimal differences between tokens.
     /// After startup this is a read only value.
-    approximation_tokens: HashMap<Address, ApproximationToken>,
+    approximation_tokens: AddressHashMap<ApproximationToken>,
     quote_timeout: Duration,
     requests_in_flight: BoxRequestSharing<Address, CacheEntry>,
 }
@@ -303,7 +337,7 @@ impl CachingNativePriceEstimator {
             estimator,
             cache,
             concurrent_requests,
-            approximation_tokens,
+            approximation_tokens: approximation_tokens.into_iter().collect(),
             quote_timeout,
             requests_in_flight: RequestSharing::labelled("native_price".to_string()),
         });
@@ -384,7 +418,7 @@ impl CachingNativePriceEstimator {
         &self,
         tokens: &[Address],
         timeout: Duration,
-    ) -> HashMap<Address, NativePriceEstimateResult> {
+    ) -> AddressHashMap<NativePriceEstimateResult> {
         let mut prices = self.0.cache.get_cached_prices(tokens);
         if timeout.is_zero() {
             return prices;
@@ -450,7 +484,8 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
 /// and caching prices.
 pub struct NativePriceUpdater {
     estimator: CachingNativePriceEstimator,
-    tokens_to_update: ArcSwap<HashSet<Address>>,
+    /// tokens are guaranteed to be unique
+    tokens_to_update: ArcSwap<Vec<Address>>,
 }
 
 impl NativePriceUpdater {
@@ -468,7 +503,7 @@ impl NativePriceUpdater {
 
         let updater = Arc::new(Self {
             estimator,
-            tokens_to_update: ArcSwap::new(Arc::new(HashSet::new())),
+            tokens_to_update: ArcSwap::new(Arc::new(Vec::new())),
         });
 
         // Don't keep the updater alive just for the background task
@@ -489,17 +524,34 @@ impl NativePriceUpdater {
         updater
     }
 
+    /// Sync snapshot of all currently cached prices normalized to `U256`.
+    /// Callers can use this to filter orders by native price without paying
+    /// for an async round-trip.
+    pub fn cached_prices(&self) -> AddressHashMap<U256> {
+        self.estimator.cache().snapshot()
+    }
+
     /// Replaces the full set of tokens that should be maintained by the
-    /// background task and fetches their current prices.
-    pub async fn update_tokens_and_fetch_prices(
-        &self,
-        tokens: HashSet<Address>,
-        timeout: Duration,
-    ) -> HashMap<Address, NativePriceEstimateResult> {
+    /// background task without triggering an immediate fetch.
+    pub fn schedule_token_updates<S: BuildHasher>(&self, tokens: HashSet<Address, S>) {
         tracing::trace!(?tokens, "update tokens to maintain");
-        let token_list: Vec<_> = tokens.iter().copied().collect();
-        self.tokens_to_update.store(Arc::new(tokens));
-        self.estimator.fetch_prices(&token_list, timeout).await
+        self.tokens_to_update
+            .store(Arc::new(tokens.into_iter().collect()));
+    }
+
+    /// Replaces the full set of tokens that should be maintained by the
+    /// background task and fetches their current prices. Generic over the
+    /// hasher so callers can pass address-optimised hash sets without a
+    /// rehash round-trip through the default hasher.
+    pub async fn update_tokens_and_fetch_prices<S: BuildHasher>(
+        &self,
+        tokens: HashSet<Address, S>,
+        timeout: Duration,
+    ) -> AddressHashMap<NativePriceEstimateResult> {
+        tracing::trace!(?tokens, "update tokens to maintain");
+        let tokens: Arc<Vec<Address>> = Arc::new(tokens.into_iter().collect());
+        self.tokens_to_update.store(tokens.clone());
+        self.estimator.fetch_prices(&tokens, timeout).await
     }
 
     async fn single_update(&self, prefetch_time: Duration) {
@@ -1038,7 +1090,7 @@ mod tests {
         // Tell the updater about these tokens
         updater
             .update_tokens_and_fetch_prices(
-                [token(0), token(1)].into_iter().collect(),
+                [token(0), token(1)].into_iter().collect::<HashSet<_>>(),
                 Duration::ZERO,
             )
             .await;

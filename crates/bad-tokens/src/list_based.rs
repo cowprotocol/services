@@ -1,6 +1,6 @@
 use {
-    alloy_primitives::Address,
-    std::{collections::HashSet, sync::Arc},
+    alloy_primitives::{Address, map::AddressHashSet},
+    std::sync::Arc,
 };
 
 /// Explicitly deny listed tokens.
@@ -9,7 +9,7 @@ pub struct DenyListedTokens(Arc<Inner>);
 
 #[derive(Default)]
 struct Inner {
-    deny_list: HashSet<Address>,
+    deny_list: AddressHashSet,
 }
 
 impl DenyListedTokens {
