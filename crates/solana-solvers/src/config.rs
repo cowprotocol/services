@@ -9,12 +9,11 @@ pub struct Config {
     pub dex: JupiterConfig,
 }
 
-/// The `[dex]` table for the Jupiter backend. The subcommand selects the
-/// engine, so there is no per-aggregator sub-table.
+/// The `[dex]` table for the Jupiter backend.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct JupiterConfig {
-    /// Base URL of the Jupiter swap API (`api.jup.ag`) or a Triton-hosted Metis
+    /// Base URL of the Jupiter swap API: `api.jup.ag`, or a Triton-hosted
     /// endpoint.
     pub endpoint: Url,
 
@@ -27,7 +26,7 @@ pub struct JupiterConfig {
     /// 50 = 0.5%.
     pub slippage_bps: u16,
 
-    /// Whether buy orders (Jupiter `ExactOut`) are served. Off by default.
+    /// Serve buy orders via ExactOut swaps. Off by default.
     #[serde(default)]
     pub enable_buy_orders: bool,
 }
@@ -54,8 +53,8 @@ mod tests {
             toml::from_str(include_str!("../config/example.jupiter.toml")).unwrap();
         assert_eq!(config.dex.endpoint.as_str(), "https://api.jup.ag/");
         assert_eq!(config.dex.slippage_bps, 50);
-        assert!(!config.dex.enable_buy_orders);
         assert!(config.dex.api_key.is_some());
+        assert!(!config.dex.enable_buy_orders);
     }
 
     #[test]

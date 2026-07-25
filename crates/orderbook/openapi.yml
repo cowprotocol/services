@@ -1663,7 +1663,7 @@ components:
             properties:
               solver:
                 type: string
-                description: Name of the solver.
+                description: The on-chain address of the solver.
               executedAmounts:
                 $ref: "#/components/schemas/ExecutedAmounts"
             required:
@@ -2063,6 +2063,12 @@ components:
               allOf:
                 - $ref: "#/components/schemas/PriceQuality"
               default: verified
+            fastPath:
+              description: >
+                Signals that this quote is intended for fast-path
+                (out-of-competition) execution. Propagated to the solver.
+              type: boolean
+              default: false
             signingScheme:
               allOf:
                 - $ref: "#/components/schemas/SigningScheme"
