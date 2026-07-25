@@ -296,6 +296,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -305,6 +306,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -314,6 +316,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -323,6 +326,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -332,6 +336,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
         ];
@@ -422,6 +427,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Buy,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
@@ -483,6 +489,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
@@ -560,6 +567,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
@@ -628,6 +636,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         })
     }
