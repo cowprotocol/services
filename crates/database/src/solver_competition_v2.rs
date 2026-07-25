@@ -498,6 +498,31 @@ pub async fn fetch_in_flight_orders(
         .await
 }
 
+/// Returns whether the given order uid appears in any solution of the
+/// `latest_competitions_count` most recent competitions.
+pub async fn order_is_in_recent_solutions(
+    ex: &mut PgConnection,
+    order_uid: &OrderUid,
+    latest_competitions_count: i64,
+) -> Result<bool, sqlx::Error> {
+    const QUERY: &str = r#"
+    SELECT EXISTS (
+        SELECT 1
+        FROM proposed_trade_executions pte
+        WHERE pte.order_uid = $1
+        AND pte.auction_id IN (
+            SELECT id FROM competition_auctions ORDER BY id DESC LIMIT $2
+        )
+    );
+    "#;
+
+    sqlx::query_scalar(QUERY)
+        .bind(order_uid)
+        .bind(latest_competitions_count)
+        .fetch_one(ex)
+        .await
+}
+
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct OrderProposedSolution {
     pub auction_id: AuctionId,

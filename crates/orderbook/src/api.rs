@@ -100,7 +100,7 @@ async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Respon
     let response = next.run(req).await;
     let status = response.status().as_u16();
 
-    tracing::info!(
+    tracing::trace!(
         method,
         uri,
         user_agent,
