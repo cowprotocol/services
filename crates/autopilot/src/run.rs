@@ -482,7 +482,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             *eth.contracts().weth().address(),
         ),
         config.surplus_capturing_jit_order_owners,
-        config.native_price_timeout,
         *eth.contracts().settlement().address(),
         config.disable_order_balance_filter,
     );

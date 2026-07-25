@@ -1265,12 +1265,11 @@ mod tests {
         },
         account_balances::MockBalanceFetching,
         alloy::{
-            primitives::{Address, U160, U256, address, b256},
+            primitives::{Address, U160, U256, address, b256, map::AddressHashSet},
             providers::{Provider, ProviderBuilder, mock::Asserter},
             signers::local::PrivateKeySigner,
         },
         futures::FutureExt,
-        maplit::hashset,
         mockall::predicate::{always, eq},
         model::{
             quote::default_verification_gas_limit,
@@ -1357,7 +1356,7 @@ mod tests {
             max_market: Duration::from_secs(100),
             max_limit: Duration::from_secs(200),
         };
-        let banned_users = hashset![Address::from(U160::from(1))];
+        let banned_users = AddressHashSet::from_iter([Address::from(U160::from(1))]);
         let legit_valid_to =
             time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
         let mut limit_order_counter = MockLimitOrderCounting::new();
