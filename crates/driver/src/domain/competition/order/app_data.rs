@@ -3,10 +3,18 @@ use {
     anyhow::Context,
     app_data::AppDataDocument,
     derive_more::From,
+    futures::TryStreamExt,
     moka::future::Cache,
     reqwest::StatusCode,
-    std::{collections::HashMap, sync::Arc, time::Duration},
+    serde_json::error::Category,
+    std::{
+        collections::HashMap,
+        io::{BufReader, Read},
+        sync::Arc,
+        time::Duration,
+    },
     thiserror::Error,
+    tokio_util::io::{StreamReader, SyncIoBridge},
     url::Url,
 };
 
@@ -52,6 +60,34 @@ impl AppDataRetriever {
             .collect()
     }
 
+    /// Parses and validates an app data document read from `reader`. Blocking
+    /// on purpose: it's meant to run on the blocking pool since both the
+    /// reads and the (CPU bound) parsing would otherwise stall the executor.
+    fn load_and_parse_app_data(
+        hash: AppDataHash,
+        reader: impl Read,
+    ) -> Result<Option<Arc<app_data::ValidatedAppData>>, FetchingError> {
+        let document: AppDataDocument =
+            serde_json::from_reader(reader).map_err(|err| match err.classify() {
+                // the body could not be read completely
+                Category::Io => FetchingError::Http(err.to_string()),
+                _ => anyhow::Error::new(err)
+                    .context("invalid app data document")
+                    .into(),
+            })?;
+
+        if document.full_app_data == app_data::EMPTY {
+            return Ok(None);
+        }
+
+        Ok(Some(Arc::new(app_data::ValidatedAppData {
+            hash: app_data::AppDataHash(hash.0.0),
+            protocol: app_data::parse(document.full_app_data.as_bytes())
+                .context("invalid app data json")?,
+            document: document.full_app_data,
+        })))
+    }
+
     /// Retrieves the full app-data for the given `app_data` hash, if it exists.
     /// HTTP requests needed to fetch the data are spawned in background tasks
     /// such that they eventually populate the cache even in case the caller
@@ -72,22 +108,22 @@ impl AppDataRetriever {
                 .base_url
                 .join(&format!("api/v1/app_data/{:?}", app_data.0))?;
             let response = inner.client.get(url).send().await?;
+
             let validated_app_data = match response.status() {
                 StatusCode::NOT_FOUND => None,
                 _ => {
-                    let appdata: AppDataDocument = serde_json::from_str(&response.text().await?)
-                        .context("invalid app data document")?;
-                    match appdata.full_app_data == app_data::EMPTY {
-                        true => None, // empty app data
-                        false => Some(Arc::new(app_data::ValidatedAppData {
-                            hash: app_data::AppDataHash(app_data.0.0),
-                            protocol: app_data::parse(appdata.full_app_data.as_bytes())
-                                .context("invalid app data json")?,
-                            document: appdata.full_app_data,
-                        })),
-                    }
+                    // Bridge the async body stream into a blocking reader so the document
+                    // gets parsed incrementally on the blocking pool instead of buffering
+                    // the entire response in memory first.
+                    let stream = response.bytes_stream().map_err(std::io::Error::other);
+                    let reader = SyncIoBridge::new(StreamReader::new(Box::pin(stream)));
+                    tokio::task::spawn_blocking(move || {
+                        Self::load_and_parse_app_data(app_data, BufReader::new(reader))
+                    })
+                    .await??
                 }
             };
+
             inner
                 .cache
                 .insert(app_data, validated_app_data.clone())
