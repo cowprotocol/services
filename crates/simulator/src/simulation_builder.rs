@@ -92,6 +92,15 @@ impl SettlementSimulator {
         self.0.provider.clone()
     }
 
+    /// Gas price for simulations. Nodes default `eth_call`s without one to 0
+    /// and some sneaky tokens detect that to behave differently than they would
+    /// on-chain. Doubling the base fee leaves headroom in case it moved on
+    /// since we last saw a block; otherwise nodes reject the call for
+    /// having a fee cap below the base fee.
+    pub fn simulation_gas_price(&self) -> u128 {
+        u128::from(self.0.current_block.borrow().base_fee) * 2
+    }
+
     pub fn settlement_address(&self) -> Address {
         *self.0.settlement.address()
     }
