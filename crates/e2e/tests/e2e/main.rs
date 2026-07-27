@@ -35,6 +35,7 @@ mod partially_fillable_pool;
 mod place_order_with_quote;
 mod pool_indexer;
 mod protocol_fee;
+mod quote_fastpath_flags;
 mod quote_verification;
 mod quoting;
 mod refunder;
