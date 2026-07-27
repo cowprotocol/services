@@ -395,6 +395,8 @@ impl RunLoop {
         );
         tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
 
+        self.observe_settle_slot_offset();
+
         for (solution_uid, winner) in ranking.enumerated().filter(|(_, bid)| bid.is_winner()) {
             let (driver, solution) = (winner.driver(), winner.solution());
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
@@ -410,6 +412,27 @@ impl RunLoop {
         }
         tracing::trace!(auction_id = ?auction.id, "settlement execution started");
         observe::unsettled(&ranking, &auction);
+    }
+
+    /// Records how far into the current slot we are when the `/settle`
+    /// requests get sent out. `slot_length - offset` is the headroom we still
+    /// have before the next block is expected to be sealed, so an offset
+    /// approaching (or exceeding) the slot length means we are at risk of
+    /// missing the block we are aiming for.
+    ///
+    /// The offset is measured against the timestamp of the most recently
+    /// observed block, which makes it independent of when we noticed that
+    /// block but dependent on our clock being in sync with the chain.
+    fn observe_settle_slot_offset(&self) {
+        if self.config.sync_solve_deadline_to_blockchain.is_none() {
+            // block production is not predictable enough for this to mean anything
+            return;
+        }
+        let block_timestamp = self.eth.current_block().borrow().timestamp;
+        let offset = Utc::now().timestamp_millis() - (block_timestamp as i64) * 1_000;
+        Metrics::get()
+            .settle_slot_offset
+            .observe(offset as f64 / 1_000.);
     }
 
     /// Starts settlement execution in a background task. The function is async
@@ -1038,6 +1061,12 @@ struct Metrics {
     /// function is started.
     #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
+
+    /// How far into the current slot (in seconds) the `/settle` requests are
+    /// sent out. Subtract from the slot length to get the remaining headroom
+    /// before the next block is expected to be sealed.
+    #[metric(buckets(0, 2, 4, 6, 7, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 13, 14, 16, 24))]
+    settle_slot_offset: prometheus::Histogram,
 
     /// Tracks the size of the `/solve` request body in bytes.
     #[metric(buckets(
