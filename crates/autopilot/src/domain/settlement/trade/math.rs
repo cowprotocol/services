@@ -110,12 +110,14 @@ impl Trade {
     ) -> Result<eth::SellTokenAmount, Error> {
         let fee_in_sell_token = match self.side {
             order::Side::Buy => fee.0,
-            order::Side::Sell => fee
-                .0
-                .checked_mul(self.prices.uniform.buy)
-                .ok_or(error::Math::Overflow)?
-                .checked_div(self.prices.uniform.sell)
-                .ok_or(error::Math::DivisionByZero)?,
+            order::Side::Sell => {
+                if self.prices.uniform.sell.is_zero() {
+                    return Err(error::Math::DivisionByZero.into());
+                }
+                fee.0
+                    .checked_mul_ratio(&self.prices.uniform.buy, &self.prices.uniform.sell)
+                    .ok_or(error::Math::Overflow)?
+            }
         };
         Ok(eth::SellTokenAmount(fee_in_sell_token))
     }
@@ -603,5 +605,46 @@ mod tests {
             )
             .unwrap();
         assert_eq!(surplus.0, eth::U256::from(2415503697089133_u64));
+    }
+
+    /// Same scaled prices, sell side. The fee-to-sell-token conversion
+    /// multiplies the fee by the uniform buy price, which overflowed 256 bits
+    /// exactly like the surplus math.
+    #[test]
+    fn fee_conversion_survives_hugely_scaled_clearing_prices() {
+        let uniform = ClearingPrices {
+            sell: eth::U256::from_str(
+                "1457533905173705573868216339202397616043789250000000000000000",
+            )
+            .unwrap(),
+            buy: eth::U256::from_str(
+                "1457533885739920430673304276561480416152609058094152638608893",
+            )
+            .unwrap(),
+        };
+        let trade = Trade {
+            uid: domain::OrderUid([0; 56]),
+            sell: eth::Asset {
+                amount: eth::U256::from(80502414430363770111_u128).into(),
+                token: eth::Address::default().into(),
+            },
+            buy: eth::Asset {
+                amount: eth::U256::from(80500000000000000000_u128).into(),
+                token: eth::Address::default().into(),
+            },
+            side: order::Side::Sell,
+            executed: order::TargetAmount(eth::U256::from(80500000000000000000_u128)),
+            prices: Prices {
+                uniform,
+                custom: uniform,
+            },
+        };
+
+        let fee = trade
+            .fee_into_sell_token(eth::SurplusTokenAmount(eth::U256::from(
+                1_000_000_000_000_000_000_u128,
+            )))
+            .unwrap();
+        assert_eq!(fee.0, eth::U256::from(999999986666666844_u64));
     }
 }
