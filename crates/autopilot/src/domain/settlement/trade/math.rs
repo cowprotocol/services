@@ -559,15 +559,14 @@ pub mod error {
 mod tests {
     use {super::*, std::str::FromStr};
 
-    /// Regression test for the prod xdai settlement
+    /// The trade from prod xdai settlement
     /// 0xb02d542de9a45dfad68d152cfede1fa0c322b988ecc6be4b398c0f9c6b1048c1
-    /// (auction 16489395). The solver encoded uniform clearing prices of
-    /// magnitude 1e60, making `executed * price` exceed 256 bits. The old
-    /// math overflowed, the whole fee calculation bailed, and the execution
-    /// was persisted with zeroed fees.
-    #[test]
-    fn surplus_survives_hugely_scaled_clearing_prices() {
-        let uniform = ClearingPrices {
+    /// (auction 16489395), whose solver-encoded uniform clearing prices of
+    /// magnitude 1e60 made `amount * price` exceed 256 bits. The old math
+    /// overflowed, the whole fee calculation bailed, and the execution was
+    /// persisted with zeroed fees.
+    fn incident_trade(side: order::Side) -> Trade {
+        let prices = ClearingPrices {
             sell: eth::U256::from_str(
                 "1457533905173705573868216339202397616043789250000000000000000",
             )
@@ -577,7 +576,7 @@ mod tests {
             )
             .unwrap(),
         };
-        let trade = Trade {
+        Trade {
             uid: domain::OrderUid([0; 56]),
             sell: eth::Asset {
                 amount: eth::U256::from(80502414430363770111_u128).into(),
@@ -587,17 +586,21 @@ mod tests {
                 amount: eth::U256::from(80500000000000000000_u128).into(),
                 token: eth::Address::default().into(),
             },
-            side: order::Side::Buy,
+            side,
             executed: order::TargetAmount(eth::U256::from(80500000000000000000_u128)),
             prices: Prices {
-                uniform,
-                custom: uniform,
+                uniform: prices,
+                custom: prices,
             },
-        };
+        }
+    }
 
+    #[test]
+    fn surplus_survives_hugely_scaled_clearing_prices() {
+        let trade = incident_trade(order::Side::Buy);
         let surplus = trade
             .surplus_over(
-                &uniform,
+                &trade.prices.uniform,
                 PriceLimits {
                     sell: trade.sell.amount,
                     buy: trade.buy.amount,
@@ -607,40 +610,11 @@ mod tests {
         assert_eq!(surplus.0, eth::U256::from(2415503697089133_u64));
     }
 
-    /// Same scaled prices, sell side. The fee-to-sell-token conversion
-    /// multiplies the fee by the uniform buy price, which overflowed 256 bits
-    /// exactly like the surplus math.
+    /// Sell side hits the fee-to-sell-token conversion, which multiplies the
+    /// fee by the uniform buy price and overflowed the same way.
     #[test]
     fn fee_conversion_survives_hugely_scaled_clearing_prices() {
-        let uniform = ClearingPrices {
-            sell: eth::U256::from_str(
-                "1457533905173705573868216339202397616043789250000000000000000",
-            )
-            .unwrap(),
-            buy: eth::U256::from_str(
-                "1457533885739920430673304276561480416152609058094152638608893",
-            )
-            .unwrap(),
-        };
-        let trade = Trade {
-            uid: domain::OrderUid([0; 56]),
-            sell: eth::Asset {
-                amount: eth::U256::from(80502414430363770111_u128).into(),
-                token: eth::Address::default().into(),
-            },
-            buy: eth::Asset {
-                amount: eth::U256::from(80500000000000000000_u128).into(),
-                token: eth::Address::default().into(),
-            },
-            side: order::Side::Sell,
-            executed: order::TargetAmount(eth::U256::from(80500000000000000000_u128)),
-            prices: Prices {
-                uniform,
-                custom: uniform,
-            },
-        };
-
-        let fee = trade
+        let fee = incident_trade(order::Side::Sell)
             .fee_into_sell_token(eth::SurplusTokenAmount(eth::U256::from(
                 1_000_000_000_000_000_000_u128,
             )))

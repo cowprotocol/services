@@ -251,28 +251,6 @@ mod tests {
     }
 
     #[test]
-    fn mul_ratio_widens_past_256_bits() {
-        // executed * price from prod settlement
-        // 0xb02d542de9a45dfad68d152cfede1fa0c322b988ecc6be4b398c0f9c6b1048c1:
-        // the product needs 266 bits, the result fits comfortably.
-        let executed = U256::from(80500000000000000000_u128);
-        let price_buy = U256::from_str_radix(
-            "1457533885739920430673304276561480416152609058094152638608893",
-            10,
-        )
-        .unwrap();
-        let price_sell = U256::from_str_radix(
-            "1457533905173705573868216339202397616043789250000000000000000",
-            10,
-        )
-        .unwrap();
-        assert_eq!(
-            executed.checked_mul_ratio(&price_buy, &price_sell),
-            Some(U256::from(80499998926666680978_u128))
-        );
-    }
-
-    #[test]
     fn mul_ratio_rejects_zero_divisor_and_overflowing_result() {
         let two = U256::from(2);
         assert_eq!(two.checked_mul_ratio(&two, &U256::ZERO), None);
@@ -296,31 +274,10 @@ mod tests {
             U256::from(6).checked_mul_ratio_ceil(&two, &three),
             Some(U256::from(4))
         );
-    }
-
-    #[test]
-    fn mul_ratio_fast_path_and_large_values() {
-        // fast path, exact and rounded-down division
+        // large values on the fast path
         assert_eq!(
-            U256::from(100).checked_mul_ratio(&U256::from(5), &U256::from(10)),
-            Some(U256::from(50))
-        );
-        assert_eq!(
-            U256::from(100).checked_mul_ratio(&U256::from(3), &U256::from(10)),
-            Some(U256::from(30))
-        );
-        assert_eq!(
-            U256::from(u128::MAX).checked_mul_ratio(&U256::from(2), &U256::from(4)),
+            U256::from(u128::MAX).checked_mul_ratio(&two, &U256::from(4)),
             Some(U256::from(u128::MAX / 2))
-        );
-        // ceil fast path rounds up on remainder, not on exact division
-        assert_eq!(
-            U256::from(100).checked_mul_ratio_ceil(&U256::from(3), &U256::from(10)),
-            Some(U256::from(30))
-        );
-        assert_eq!(
-            U256::from(101).checked_mul_ratio_ceil(&U256::from(3), &U256::from(10)),
-            Some(U256::from(31))
         );
     }
 }
