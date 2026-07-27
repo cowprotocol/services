@@ -275,6 +275,9 @@ pub enum ValidationError {
     /// reverted or did not return the expected value.
     InvalidEip1271Signature(B256),
     ZeroAmount,
+    /// `valid_from` is at or after `valid_to`, so the order could never be
+    /// valid.
+    InvalidValidFrom,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
     TooMuchGas,
@@ -765,11 +768,6 @@ impl OrderValidating for OrderValidator {
                 "'enableFastPath' is not yet supported"
             )));
         }
-        if app_data.protocol.valid_from.is_some() {
-            return Err(AppDataValidationError::Invalid(anyhow::anyhow!(
-                "'validFrom' is not yet supported"
-            )));
-        }
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
@@ -1023,6 +1021,18 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
+        // A `valid_from` at or after `valid_to` makes the order impossible to ever
+        // be valid. A `valid_from` in the past is allowed: the order is simply
+        // eligible immediately.
+        if app_data
+            .inner
+            .protocol
+            .valid_from
+            .is_some_and(|valid_from| valid_from >= data.valid_to)
+        {
+            return Err(ValidationError::InvalidValidFrom);
+        }
+
         let order = Order {
             metadata: OrderMetadata {
                 owner,
@@ -1040,6 +1050,7 @@ impl OrderValidating for OrderValidator {
                     .map(|q| q.try_to_model_order_quote())
                     .transpose()
                     .map_err(ValidationError::Other)?,
+                valid_from: app_data.inner.protocol.valid_from,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -2171,6 +2182,62 @@ mod tests {
             .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         assert!(matches!(result, Err(ValidationError::ZeroAmount)));
+    }
+
+    #[tokio::test]
+    async fn post_validate_err_invalid_valid_from() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Ok(()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let validator = OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration::any(),
+            false,
+            Default::default(),
+            HooksTrampoline::Instance::new(
+                Address::repeat_byte(0xcf),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
+            None,
+            Arc::new(limit_order_counter),
+            0,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+        );
+        // `validFrom == valid_to` makes the order impossible to ever be valid.
+        let valid_to = time::now_in_epoch_seconds() + 2;
+        let order = OrderCreation {
+            valid_to,
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(0),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: format!(r#"{{"metadata":{{"validFrom":{valid_to}}}}}"#),
+            },
+            ..Default::default()
+        };
+        let result = validator
+            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
+            .await;
+        assert!(matches!(result, Err(ValidationError::InvalidValidFrom)));
     }
 
     #[tokio::test]

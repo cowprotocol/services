@@ -580,6 +580,7 @@ impl Persistence {
                 &mut tx,
                 &updated_order_uids,
                 after_timestamp,
+                started_at.timestamp(),
             )
             .map(|result| match result {
                 Ok(order) => full_order_into_model_order(order)

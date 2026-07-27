@@ -318,7 +318,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             .collect();
         let invalidation_events = get_invalidation_events(events)?;
         let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
-        let (custom_onchain_data, quotes, broadcasted_order_data, orders, tx_hashes) = self
+        let (custom_onchain_data, quotes, broadcasted_order_data, mut orders, tx_hashes) = self
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
 
@@ -356,7 +356,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         .await
         .context("appending quotes for onchain orders failed")?;
 
-        insert_order_hooks(transaction, &orders, &self.trampoline)
+        insert_order_hooks(transaction, &mut orders, &self.trampoline)
             .await
             .context("failed to insert hooks")?;
 
@@ -628,6 +628,9 @@ fn convert_onchain_order_placement(
             true => OrderClass::Limit,
             false => OrderClass::Market,
         },
+        // Backfilled from the order's app-data in `insert_order_hooks` before the
+        // order is persisted; the full app-data isn't available at this point.
+        valid_from: None,
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -680,9 +683,13 @@ fn extract_order_data_from_onchain_order_placement_event(
     Ok((order_data, owner, signing_scheme, order_uid))
 }
 
+/// Populates app-data-derived order fields before the orders are persisted:
+/// backfills each order's `valid_from` and inserts its pre/post hook
+/// interactions. Orders whose app-data is unknown or unparseable are left
+/// as-is.
 async fn insert_order_hooks(
     db: &mut PgConnection,
-    orders: &[Order],
+    orders: &mut [Order],
     trampoline: &HooksTrampoline::Instance,
 ) -> Result<()> {
     let mut interactions_to_insert = vec![];
@@ -703,7 +710,7 @@ async fn insert_order_hooks(
             .to_vec()
     };
 
-    for order in orders {
+    for order in orders.iter_mut() {
         let appdata_json = database::app_data::fetch(db, &order.app_data)
             .await
             .context("failed to fetch appdata")?;
@@ -715,6 +722,8 @@ async fn insert_order_hooks(
             tracing::debug!(appdata = %String::from_utf8_lossy(&appdata_json), "could not parse appdata");
             continue;
         };
+        // Backfill the user-supplied valid_from from the app-data.
+        order.valid_from = parsed.valid_from.map(i64::from);
         if parsed.hooks.pre.is_empty() && parsed.hooks.post.is_empty() {
             continue; // no additional interactions to index
         }
@@ -779,7 +788,7 @@ mod test {
 
     use {
         super::*,
-        alloy::primitives::U256,
+        alloy::{primitives::U256, providers::Provider},
         contracts::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethrpc::Web3,
@@ -1025,6 +1034,7 @@ mod test {
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
+            valid_from: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1138,9 +1148,45 @@ mod test {
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
+            valid_from: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
+    }
+
+    // Onchain orders carry only the app-data hash on-chain; their `valid_from` is
+    // backfilled from the stored app-data document inside `insert_order_hooks`
+    // (the same fetch+parse that indexes hooks).
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_order_hooks_backfills_valid_from() {
+        let db = Postgres::with_defaults().await.unwrap();
+        let mut db = db.pool.begin().await.unwrap();
+        database::clear_DANGER_(&mut db).await.unwrap();
+
+        // App-data with a validFrom and no hooks: the trampoline is never invoked.
+        let app_hash = ByteArray([7u8; 32]);
+        let full_app_data: &[u8] = br#"{"metadata":{"validFrom":1700000000}}"#;
+        database::app_data::insert(&mut db, &app_hash, full_app_data)
+            .await
+            .unwrap();
+
+        let trampoline = HooksTrampoline::Instance::new(
+            Address::from([0xcf; 20]),
+            alloy::providers::ProviderBuilder::new()
+                .connect_mocked_client(alloy::providers::mock::Asserter::new())
+                .erased(),
+        );
+
+        let mut orders = vec![Order {
+            app_data: app_hash,
+            ..Default::default()
+        }];
+        insert_order_hooks(&mut db, &mut orders, &trampoline)
+            .await
+            .unwrap();
+
+        assert_eq!(orders[0].valid_from, Some(1_700_000_000));
     }
 
     #[ignore]
