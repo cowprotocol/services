@@ -69,6 +69,10 @@ impl U256Ext for U256 {
         if div.is_zero() {
             return None;
         }
+        // fast path when the product fits 256 bits
+        if let Some(product) = self.checked_mul(*mul) {
+            return Some(product / div);
+        }
         let product = self.widening_mul(*mul);
         U256::uint_try_from(product / U512::from(*div)).ok()
     }
@@ -76,6 +80,11 @@ impl U256Ext for U256 {
     fn checked_mul_ratio_ceil(&self, mul: &Self, div: &Self) -> Option<Self> {
         if div.is_zero() {
             return None;
+        }
+        // fast path when the product fits 256 bits
+        if let Some(product) = self.checked_mul(*mul) {
+            let (quotient, remainder) = product.div_rem(*div);
+            return quotient.checked_add(U256::from(!remainder.is_zero()));
         }
         let (quotient, remainder) = self.widening_mul(*mul).div_rem(U512::from(*div));
         U256::uint_try_from(quotient)
@@ -286,6 +295,32 @@ mod tests {
         assert_eq!(
             U256::from(6).checked_mul_ratio_ceil(&two, &three),
             Some(U256::from(4))
+        );
+    }
+
+    #[test]
+    fn mul_ratio_fast_path_and_large_values() {
+        // fast path, exact and rounded-down division
+        assert_eq!(
+            U256::from(100).checked_mul_ratio(&U256::from(5), &U256::from(10)),
+            Some(U256::from(50))
+        );
+        assert_eq!(
+            U256::from(100).checked_mul_ratio(&U256::from(3), &U256::from(10)),
+            Some(U256::from(30))
+        );
+        assert_eq!(
+            U256::from(u128::MAX).checked_mul_ratio(&U256::from(2), &U256::from(4)),
+            Some(U256::from(u128::MAX / 2))
+        );
+        // ceil fast path rounds up on remainder, not on exact division
+        assert_eq!(
+            U256::from(100).checked_mul_ratio_ceil(&U256::from(3), &U256::from(10)),
+            Some(U256::from(30))
+        );
+        assert_eq!(
+            U256::from(101).checked_mul_ratio_ceil(&U256::from(3), &U256::from(10)),
+            Some(U256::from(31))
         );
     }
 }
