@@ -1,8 +1,11 @@
 use {
+    crate::ethflow::ExtendedEthFlowOrder,
+    ::alloy::primitives::{Address, U256},
+    contracts::CoWSwapEthFlow,
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
-        order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
+        order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
@@ -56,20 +59,64 @@ async fn valid_from_test(web3: Web3) {
     );
     let uid = services.create_order(&order).await.unwrap();
 
+    order_filled_after_valid_from(&onchain, &services, uid, valid_from).await;
+
+    // Now do the same for an ethflow order to verify that `validFrom` is also
+    // honored when it comes in via the app data attached to an on-chain order.
+    let now = model::time::now_in_epoch_seconds();
+    let ethflow_valid_from = now + 3;
+    let ethflow_app_data = format!(r#"{{"metadata":{{"validFrom":{ethflow_valid_from}}}}}"#);
+    let app_data_hash = services
+        .put_app_data(None, &ethflow_app_data)
+        .await
+        .unwrap();
+    let app_data_hash: [u8; 32] = const_hex::decode(&app_data_hash[2..])
+        .unwrap()
+        .try_into()
+        .unwrap();
+
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+    let ethflow_order = ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
+        buyToken: *token_b.address(),
+        sellAmount: 1u64.eth(),
+        buyAmount: U256::ONE,
+        validTo: now + 3600,
+        partiallyFillable: false,
+        quoteId: 0,
+        feeAmount: U256::ZERO,
+        receiver: Address::from_slice(&[0x43; 20]),
+        appData: app_data_hash.into(),
+    });
+    ethflow_order
+        .mine_order_creation(trader.address(), ethflow_contract)
+        .await;
+    let ethflow_uid = ethflow_order
+        .uid(onchain.contracts(), ethflow_contract)
+        .await;
+
+    order_filled_after_valid_from(&onchain, &services, ethflow_uid, ethflow_valid_from).await;
+}
+
+async fn order_filled_after_valid_from(
+    onchain: &OnchainComponents,
+    services: &Services<'_>,
+    order_uid: OrderUid,
+    valid_from: u32,
+) {
     tokio::time::timeout(TIMEOUT, async {
         loop {
             onchain.mint_block().await;
-            let status = services.get_order(&uid).await.unwrap().metadata.status;
             let now_in_unix = model::time::now_in_epoch_seconds();
+            let Ok(order) = services.get_order(&order_uid).await else {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                continue;
+            };
+            let status = order.metadata.status;
             if now_in_unix < valid_from {
                 assert_eq!(status, OrderStatus::Open);
             } else if now_in_unix > valid_from + 1 {
                 assert_eq!(status, OrderStatus::Fulfilled);
                 break;
-            } else {
-                // during the time [valid_from..=valid_from + 1] we don't assert
-                // anything about the order status so that race conditions don't
-                // cause assertions to fail
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
