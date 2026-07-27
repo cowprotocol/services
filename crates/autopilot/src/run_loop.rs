@@ -395,6 +395,8 @@ impl RunLoop {
         );
         tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
 
+        self.observe_settle_slot_offset();
+
         for (solution_uid, winner) in ranking.enumerated().filter(|(_, bid)| bid.is_winner()) {
             let (driver, solution) = (winner.driver(), winner.solution());
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
@@ -410,6 +412,23 @@ impl RunLoop {
         }
         tracing::trace!(auction_id = ?auction.id, "settlement execution started");
         observe::unsettled(&ranking, &auction);
+    }
+
+    /// Records how long after the most recent block we send out the `/settle`
+    /// requests. Subtracting this from the chain's block time gives the
+    /// headroom left before the next block is expected to be sealed, so an
+    /// offset approaching (or exceeding) the block time means we are at risk of
+    /// missing the block we are aiming for.
+    ///
+    /// The offset is measured against the block's own timestamp rather than
+    /// when we noticed it, so it accounts for propagation delay but relies on
+    /// our clock being in sync with the chain.
+    fn observe_settle_slot_offset(&self) {
+        let block_timestamp = self.eth.current_block().borrow().timestamp;
+        let offset = Utc::now().timestamp_millis() - (block_timestamp as i64) * 1_000;
+        Metrics::get()
+            .settle_slot_offset
+            .observe(offset as f64 / 1_000.);
     }
 
     /// Starts settlement execution in a background task. The function is async
@@ -1038,6 +1057,16 @@ struct Metrics {
     /// function is started.
     #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
+
+    /// How long after the most recent block (in seconds) the `/settle`
+    /// requests are sent out. Subtract from the chain's block time to get the
+    /// remaining headroom before the next block is expected to be sealed.
+    /// Buckets have to cover everything from sub-second L2s to 12s mainnet
+    /// slots.
+    #[metric(buckets(
+        0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 11, 12, 13, 14, 16, 20, 24
+    ))]
+    settle_slot_offset: prometheus::Histogram,
 
     /// Tracks the size of the `/solve` request body in bytes.
     #[metric(buckets(
