@@ -39,19 +39,14 @@ impl Trade {
         match self.side {
             order::Side::Buy => {
                 // scale limit sell to support partially fillable orders
-                if price_limits.buy.0.is_zero() || prices.sell.is_zero() {
-                    return Err(error::Math::DivisionByZero);
-                }
                 let limit_sell = price_limits
                     .sell
                     .0
-                    .checked_mul_ratio(&self.executed.into(), &price_limits.buy.0)
-                    .ok_or(error::Math::Overflow)?;
+                    .checked_mul_ratio(&self.executed.into(), &price_limits.buy.0)?;
                 let sold = self
                     .executed
                     .0
-                    .checked_mul_ratio(&prices.buy, &prices.sell)
-                    .ok_or(error::Math::Overflow)?;
+                    .checked_mul_ratio(&prices.buy, &prices.sell)?;
                 limit_sell.checked_sub(sold).ok_or(error::Math::Negative)
             }
             order::Side::Sell => {
@@ -61,19 +56,14 @@ impl Trade {
                 // traded buy amounts
                 // smallest allowed executed_buy_amount per settlement contract is
                 // executed_sell_amount * ceil(price_limits.buy / price_limits.sell)
-                if price_limits.sell.0.is_zero() || prices.buy.is_zero() {
-                    return Err(error::Math::DivisionByZero);
-                }
                 let limit_buy = self
                     .executed
                     .0
-                    .checked_mul_ratio_ceil(&price_limits.buy.0, &price_limits.sell.0)
-                    .ok_or(error::Math::Overflow)?;
+                    .checked_mul_ratio_ceil(&price_limits.buy.0, &price_limits.sell.0)?;
                 let bought = self
                     .executed
                     .0
-                    .checked_mul_ratio_ceil(&prices.sell, &prices.buy)
-                    .ok_or(error::Math::Overflow)?;
+                    .checked_mul_ratio_ceil(&prices.sell, &prices.buy)?;
                 bought.checked_sub(limit_buy).ok_or(error::Math::Negative)
             }
         }
@@ -110,14 +100,10 @@ impl Trade {
     ) -> Result<eth::SellTokenAmount, Error> {
         let fee_in_sell_token = match self.side {
             order::Side::Buy => fee.0,
-            order::Side::Sell => {
-                if self.prices.uniform.sell.is_zero() {
-                    return Err(error::Math::DivisionByZero.into());
-                }
-                fee.0
-                    .checked_mul_ratio(&self.prices.uniform.buy, &self.prices.uniform.sell)
-                    .ok_or(error::Math::Overflow)?
-            }
+            order::Side::Sell => fee
+                .0
+                .checked_mul_ratio(&self.prices.uniform.buy, &self.prices.uniform.sell)
+                .map_err(error::Math::from)?,
         };
         Ok(eth::SellTokenAmount(fee_in_sell_token))
     }
@@ -187,15 +173,10 @@ impl Trade {
     fn sell_amount(&self) -> Result<eth::TokenAmount, error::Math> {
         Ok(match self.side {
             order::Side::Sell => self.executed.0,
-            order::Side::Buy => {
-                if self.prices.custom.sell.is_zero() {
-                    return Err(error::Math::DivisionByZero);
-                }
-                self.executed
-                    .0
-                    .checked_mul_ratio(&self.prices.custom.buy, &self.prices.custom.sell)
-                    .ok_or(error::Math::Overflow)?
-            }
+            order::Side::Buy => self
+                .executed
+                .0
+                .checked_mul_ratio(&self.prices.custom.buy, &self.prices.custom.sell)?,
         }
         .into())
     }
@@ -207,15 +188,10 @@ impl Trade {
     /// Settlement contract uses `ceil` division for buy amount calculation.
     fn buy_amount(&self) -> Result<eth::TokenAmount, error::Math> {
         Ok(match self.side {
-            order::Side::Sell => {
-                if self.prices.custom.buy.is_zero() {
-                    return Err(error::Math::DivisionByZero);
-                }
-                self.executed
-                    .0
-                    .checked_mul_ratio_ceil(&self.prices.custom.sell, &self.prices.custom.buy)
-                    .ok_or(error::Math::Overflow)?
-            }
+            order::Side::Sell => self
+                .executed
+                .0
+                .checked_mul_ratio_ceil(&self.prices.custom.sell, &self.prices.custom.buy)?,
             order::Side::Buy => self.executed.0,
         }
         .into())
@@ -552,6 +528,15 @@ pub mod error {
         DivisionByZero,
         #[error("negative")]
         Negative,
+    }
+
+    impl From<number::MathError> for Math {
+        fn from(err: number::MathError) -> Self {
+            match err {
+                number::MathError::DivisionByZero => Self::DivisionByZero,
+                number::MathError::Overflow => Self::Overflow,
+            }
+        }
     }
 }
 

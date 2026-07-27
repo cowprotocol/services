@@ -5,6 +5,15 @@ use {
     num::{BigInt, BigRational, BigUint, One},
 };
 
+/// Why a checked arithmetic computation failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum MathError {
+    #[error("division by zero")]
+    DivisionByZero,
+    #[error("result does not fit in 256 bits")]
+    Overflow,
+}
+
 /// Extension trait for U256 to add utility methods.
 pub trait U256Ext: Sized {
     /// Ceiling division: (self + other - 1) / other
@@ -35,14 +44,12 @@ pub trait U256Ext: Sized {
     fn checked_mul_f64(&self, factor: f64) -> Option<Self>;
 
     /// Computes `self * mul / div` rounding down, widening the intermediate
-    /// product to 512 bits so it cannot overflow. Returns `None` if `div` is
-    /// zero or the final result does not fit in 256 bits.
-    fn checked_mul_ratio(&self, mul: &Self, div: &Self) -> Option<Self>;
+    /// product to 512 bits so it cannot overflow.
+    fn checked_mul_ratio(&self, mul: &Self, div: &Self) -> Result<Self, MathError>;
 
     /// Computes `self * mul / div` rounding up, widening the intermediate
-    /// product to 512 bits so it cannot overflow. Returns `None` if `div` is
-    /// zero or the final result does not fit in 256 bits.
-    fn checked_mul_ratio_ceil(&self, mul: &Self, div: &Self) -> Option<Self>;
+    /// product to 512 bits so it cannot overflow.
+    fn checked_mul_ratio_ceil(&self, mul: &Self, div: &Self) -> Result<Self, MathError>;
 
     /// Convert to BigRational.
     fn to_big_rational(&self) -> BigRational;
@@ -65,31 +72,34 @@ impl U256Ext for U256 {
         (!other.is_zero()).then(|| self.div_ceil(*other))
     }
 
-    fn checked_mul_ratio(&self, mul: &Self, div: &Self) -> Option<Self> {
+    fn checked_mul_ratio(&self, mul: &Self, div: &Self) -> Result<Self, MathError> {
         if div.is_zero() {
-            return None;
+            return Err(MathError::DivisionByZero);
         }
         // fast path when the product fits 256 bits
         if let Some(product) = self.checked_mul(*mul) {
-            return Some(product / div);
+            return Ok(product / div);
         }
         let product = self.widening_mul(*mul);
-        U256::uint_try_from(product / U512::from(*div)).ok()
+        U256::uint_try_from(product / U512::from(*div)).map_err(|_| MathError::Overflow)
     }
 
-    fn checked_mul_ratio_ceil(&self, mul: &Self, div: &Self) -> Option<Self> {
+    fn checked_mul_ratio_ceil(&self, mul: &Self, div: &Self) -> Result<Self, MathError> {
         if div.is_zero() {
-            return None;
+            return Err(MathError::DivisionByZero);
         }
         // fast path when the product fits 256 bits
         if let Some(product) = self.checked_mul(*mul) {
             let (quotient, remainder) = product.div_rem(*div);
-            return quotient.checked_add(U256::from(!remainder.is_zero()));
+            return quotient
+                .checked_add(U256::from(!remainder.is_zero()))
+                .ok_or(MathError::Overflow);
         }
         let (quotient, remainder) = self.widening_mul(*mul).div_rem(U512::from(*div));
         U256::uint_try_from(quotient)
-            .ok()?
+            .map_err(|_| MathError::Overflow)?
             .checked_add(U256::from(!remainder.is_zero()))
+            .ok_or(MathError::Overflow)
     }
 
     fn checked_mul_f64(&self, factor: f64) -> Option<Self> {
@@ -253,9 +263,15 @@ mod tests {
     #[test]
     fn mul_ratio_rejects_zero_divisor_and_overflowing_result() {
         let two = U256::from(2);
-        assert_eq!(two.checked_mul_ratio(&two, &U256::ZERO), None);
-        assert_eq!(U256::MAX.checked_mul_ratio(&two, &U256::from(1)), None);
-        assert_eq!(U256::MAX.checked_mul_ratio(&two, &two), Some(U256::MAX));
+        assert_eq!(
+            two.checked_mul_ratio(&two, &U256::ZERO),
+            Err(MathError::DivisionByZero)
+        );
+        assert_eq!(
+            U256::MAX.checked_mul_ratio(&two, &U256::from(1)),
+            Err(MathError::Overflow)
+        );
+        assert_eq!(U256::MAX.checked_mul_ratio(&two, &two), Ok(U256::MAX));
     }
 
     #[test]
@@ -264,20 +280,20 @@ mod tests {
         let three = U256::from(3);
         let two = U256::from(2);
         // 7 * 2 / 3 = 4.67
-        assert_eq!(seven.checked_mul_ratio(&two, &three), Some(U256::from(4)));
+        assert_eq!(seven.checked_mul_ratio(&two, &three), Ok(U256::from(4)));
         assert_eq!(
             seven.checked_mul_ratio_ceil(&two, &three),
-            Some(U256::from(5))
+            Ok(U256::from(5))
         );
         // exact division does not round up
         assert_eq!(
             U256::from(6).checked_mul_ratio_ceil(&two, &three),
-            Some(U256::from(4))
+            Ok(U256::from(4))
         );
         // large values on the fast path
         assert_eq!(
             U256::from(u128::MAX).checked_mul_ratio(&two, &U256::from(4)),
-            Some(U256::from(u128::MAX / 2))
+            Ok(U256::from(u128::MAX / 2))
         );
     }
 }

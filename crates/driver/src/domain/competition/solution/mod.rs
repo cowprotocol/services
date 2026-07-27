@@ -717,6 +717,15 @@ pub mod error {
         Negative,
     }
 
+    impl From<number::MathError> for Math {
+        fn from(err: number::MathError) -> Self {
+            match err {
+                number::MathError::DivisionByZero => Self::DivisionByZero,
+                number::MathError::Overflow => Self::Overflow,
+            }
+        }
+    }
+
     #[derive(Debug, thiserror::Error)]
     pub enum Solution {
         #[error("invalid clearing prices")]
