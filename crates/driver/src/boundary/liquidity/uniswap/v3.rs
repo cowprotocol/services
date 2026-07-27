@@ -114,11 +114,12 @@ async fn init_liquidity(
     config: &infra::liquidity::config::UniswapV3,
 ) -> anyhow::Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
-    let source = build_pool_data_source(eth, config).await?;
+    let (source, fetch_on_demand) = build_pool_data_source(eth, config).await?;
 
     let pool_fetcher = Arc::new(
         UniswapV3PoolFetcher::new(
             source,
+            fetch_on_demand,
             web3.clone(),
             block_retriever,
             config.max_pools_to_initialize,
@@ -140,11 +141,13 @@ async fn init_liquidity(
     ))
 }
 
-/// Picks the V3 pool data source based on the configured pool source variant.
+/// Picks the V3 pool data source based on the configured pool source variant,
+/// paired with whether it can serve cache-miss fetches on-demand on the quote
+/// path (the indexer can; the subgraph can't).
 async fn build_pool_data_source(
     eth: &Ethereum,
     config: &infra::liquidity::config::UniswapV3,
-) -> anyhow::Result<Arc<dyn V3PoolDataSource>> {
+) -> anyhow::Result<(Arc<dyn V3PoolDataSource>, bool)> {
     let http = boundary::liquidity::http_client();
 
     match &config.pool_source {
@@ -153,23 +156,20 @@ async fn build_pool_data_source(
                 url = %indexer.url,
                 "uniswap v3: using pool-indexer as data source",
             );
-            Ok(Arc::new(PoolIndexerClient::new(
-                indexer.url.clone(),
-                eth.chain(),
-                http,
-            )))
+            let client = PoolIndexerClient::new(indexer.url.clone(), eth.chain(), http);
+            let fetch_on_demand = client.fetch_on_demand();
+            Ok((Arc::new(client), fetch_on_demand))
         }
         UniswapV3PoolSource::Subgraph(subgraph) => {
             tracing::info!(url = %subgraph.url, "uniswap v3: using subgraph as data source");
-            Ok(Arc::new(
-                UniV3SubgraphClient::from_subgraph_url(
-                    &subgraph.url,
-                    http,
-                    subgraph.max_pools_per_tick_query,
-                )
-                .await
-                .context("failed to construct UniV3 subgraph client")?,
-            ))
+            let client = UniV3SubgraphClient::from_subgraph_url(
+                &subgraph.url,
+                http,
+                subgraph.max_pools_per_tick_query,
+            )
+            .await
+            .context("failed to construct UniV3 subgraph client")?;
+            Ok((Arc::new(client), false))
         }
     }
 }

@@ -57,6 +57,13 @@ impl PoolIndexerClient {
     fn path(&self, suffix: &str) -> Url {
         url_join(&self.base_url, suffix)
     }
+
+    /// The indexer serves at-head from its own DB, so an on-demand cache-miss
+    /// fetch is cheap enough for the quote path (unlike the subgraph). Read at
+    /// construction to gate `UniswapV3PoolFetcher`'s on-demand fetch.
+    pub fn fetch_on_demand(&self) -> bool {
+        true
+    }
 }
 
 /// Joins `path` onto `url` with exactly one slash between them. Reusing
@@ -286,12 +293,6 @@ impl PoolIndexerClient {
 
 #[async_trait]
 impl V3PoolDataSource for PoolIndexerClient {
-    /// The indexer serves at-head from its own DB, so an on-demand fetch is
-    /// cheap enough for the quote path.
-    fn fetch_on_demand(&self) -> bool {
-        true
-    }
-
     async fn get_registered_pools(&self, target_block: BlockTarget) -> Result<RegisteredPools> {
         self.wait_until(target_block).await?;
         // The indexer can advance between pages, so each pool carries the

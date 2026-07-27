@@ -128,6 +128,9 @@ struct PoolsCheckpoint {
 
 struct PoolsCheckpointHandler {
     source: Arc<dyn V3PoolDataSource>,
+    /// Whether the source can serve cache-miss fetches cheaply on the quote
+    /// path (the indexer). Decided at construction; false for the subgraph.
+    fetch_on_demand: bool,
     /// Address is pool id while TokenPair is a pair or tokens for each pool.
     pools_by_token_pair: HashMap<TokenPair, Vec<Address>>,
     /// Pools state on a specific block number in history considered reorg safe
@@ -160,6 +163,7 @@ impl PoolsCheckpointHandler {
     /// it would apply that event twice.
     pub async fn new(
         source: Arc<dyn V3PoolDataSource>,
+        fetch_on_demand: bool,
         block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize_cache: usize,
     ) -> Result<Self> {
@@ -236,6 +240,7 @@ impl PoolsCheckpointHandler {
 
         Ok(Self {
             source,
+            fetch_on_demand,
             pools_by_token_pair,
             pools_checkpoint,
         })
@@ -298,15 +303,15 @@ impl PoolsCheckpointHandler {
             .collect())
     }
 
-    /// Fetches `missing` at the source's head. Gated on
-    /// [`V3PoolDataSource::fetch_on_demand`], so it is a no-op for the
+    /// Fetches `missing` at the source's head. Gated on `fetch_on_demand` (set
+    /// at construction from the source type), so it is a no-op for the
     /// subgraph; those misses wait for the maintenance run instead. It
     /// fetches at the head, not the checkpoint block: the checkpoint can
     /// sit ahead of the indexer's served head, so waiting on it would hang
     /// the quote. A failed fetch yields fewer pools rather than failing the
     /// whole quote.
     async fn fetch_missing_on_demand(&self, missing: &[Address]) -> Vec<(Address, Arc<PoolInfo>)> {
-        if missing.is_empty() || !self.source.fetch_on_demand() {
+        if missing.is_empty() || !self.fetch_on_demand {
             return Vec::new();
         }
         self.fetch_pools(missing, BlockTarget::Latest)
@@ -358,14 +363,19 @@ pub struct UniswapV3PoolFetcher {
 impl UniswapV3PoolFetcher {
     pub async fn new(
         source: Arc<dyn V3PoolDataSource>,
+        fetch_on_demand: bool,
         web3: Web3,
         block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize: usize,
     ) -> Result<Self> {
         let web3 = web3.labeled("uniswapV3");
-        let checkpoint =
-            PoolsCheckpointHandler::new(source, block_retriever.clone(), max_pools_to_initialize)
-                .await?;
+        let checkpoint = PoolsCheckpointHandler::new(
+            source,
+            fetch_on_demand,
+            block_retriever.clone(),
+            max_pools_to_initialize,
+        )
+        .await?;
 
         let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
         let init_block = block_retriever.block(init_block).await?;
@@ -886,6 +896,7 @@ mod tests {
     fn handler(source: StubSource, checkpoint: PoolsCheckpoint) -> PoolsCheckpointHandler {
         PoolsCheckpointHandler {
             source: Arc::new(source),
+            fetch_on_demand: false,
             pools_by_token_pair: HashMap::new(),
             pools_checkpoint: Mutex::new(checkpoint),
         }
