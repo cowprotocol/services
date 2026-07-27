@@ -106,6 +106,10 @@ impl Settlement {
                             trade = %trade.uid(),
                             "possible incomplete surplus calculation",
                         );
+                        Metrics::get()
+                            .settlement_math_errors
+                            .with_label_values(&["surplus"])
+                            .inc();
                         num::zero()
                     });
             surplus = surplus + trade_surplus;
@@ -118,6 +122,10 @@ impl Settlement {
                         trade = %trade.uid(),
                         "possible incomplete fee calculation",
                     );
+                    Metrics::get()
+                        .settlement_math_errors
+                        .with_label_values(&["fee"])
+                        .inc();
                     num::zero()
                 });
             fee = fee + trade_fee;
@@ -128,6 +136,10 @@ impl Settlement {
                     trade = %trade.uid(),
                     "possible incomplete fee breakdown calculation",
                 );
+                Metrics::get()
+                    .settlement_math_errors
+                    .with_label_values(&["fee_breakdown"])
+                    .inc();
                 trade::FeeBreakdown {
                     total: eth::Asset {
                         token: trade.sell_token(),

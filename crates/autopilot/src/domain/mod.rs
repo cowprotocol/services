@@ -21,6 +21,11 @@ pub struct Metrics {
     /// Tracks settlements that couldn't be matched to the database solutions.
     #[metric(labels("solver_address"))]
     pub inconsistent_settlements: prometheus::IntCounterVec,
+
+    /// Tracks trades whose surplus, fee or fee breakdown calculation failed
+    /// and fell back to zeroed values.
+    #[metric(labels("kind"))]
+    pub settlement_math_errors: prometheus::IntCounterVec,
 }
 
 impl Metrics {
