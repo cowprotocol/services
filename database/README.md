@@ -267,7 +267,8 @@ Column                    | Type                         | Nullable | Details
  sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
- true_valid_to | timestamptz                  | not null | timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
+ true_valid_to            | bigint                       | not null | UNIX timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
+ valid\_from              | bigint                       | nullable | earliest UNIX timestamp where the order may enter regular auctions. if this is NULL the order may be put into auctions immediately.
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)
@@ -281,6 +282,8 @@ Indexes:
 - orders\_true\_valid\_to: btree(`true_valid_to`)
 - orders_owner_covering: btree(`owner`) INCLUDE (`uid`, `kind`, `buy_amount`, `sell_amount`, `fee_amount`, `buy_token`, `sell_token`)
 - orders_owner_class_valid_composite: btree(`owner`, `class`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL
+- `orders_valid_from_idx`: btree(`valid_from`) WHERE valid_from IS NOT NULL
+
 
 ### fee_policies
 
