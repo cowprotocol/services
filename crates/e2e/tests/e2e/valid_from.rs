@@ -1,11 +1,6 @@
 use {
-    ::alloy::providers::ext::AnvilApi,
     e2e::setup::*,
-    ethrpc::{
-        Web3,
-        alloy::{CallBuilderExt, EvmProviderExt},
-        block_stream::timestamp_of_current_block_in_seconds,
-    },
+    ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
@@ -40,10 +35,8 @@ async fn valid_from_test(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    let now = timestamp_of_current_block_in_seconds(&web3.provider)
-        .await
-        .unwrap();
-    let valid_from = now + 30;
+    let now = model::time::now_in_epoch_seconds();
+    let valid_from = now + 3;
 
     let app_data = format!(r#"{{"metadata":{{"validFrom":{valid_from}}}}}"#);
     let order = OrderCreation {
@@ -63,35 +56,24 @@ async fn valid_from_test(web3: Web3) {
     );
     let uid = services.create_order(&order).await.unwrap();
 
-    // The order should not be settled while valid_from is in the future.
-    // Mine a few blocks and confirm it stays Open.
-    for _ in 0..5 {
-        onchain.mint_block().await;
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    let status = services.get_order(&uid).await.unwrap().metadata.status;
-    assert_eq!(
-        status,
-        OrderStatus::Open,
-        "order should not be solvable before valid_from"
-    );
-
-    // Advance blockchain time past valid_from.
-    web3.provider
-        .evm_set_next_block_timestamp(valid_from as u64 + 5)
-        .await
-        .unwrap();
-    web3.provider.evm_mine(None).await.unwrap();
-
-    // Now the order should be settled.
-    wait_for_condition(TIMEOUT, || async {
-        onchain.mint_block().await;
-        services
-            .get_order(&uid)
-            .await
-            .map(|o| o.metadata.status == OrderStatus::Fulfilled)
-            .unwrap_or(false)
+    tokio::time::timeout(TIMEOUT, async {
+        loop {
+            onchain.mint_block().await;
+            let status = services.get_order(&uid).await.unwrap().metadata.status;
+            let now_in_unix = model::time::now_in_epoch_seconds();
+            if now_in_unix < valid_from {
+                assert_eq!(status, OrderStatus::Open);
+            } else if now_in_unix > valid_from + 1 {
+                assert_eq!(status, OrderStatus::Fulfilled);
+                break;
+            } else {
+                // during the time [valid_from..=valid_from + 1] we don't assert
+                // anything about the order status so that race conditions don't
+                // cause assertions to fail
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
     })
     .await
-    .expect("order was not settled after valid_from elapsed");
+    .unwrap();
 }
