@@ -3,6 +3,7 @@
 
 use {
     crate::types::{
+        Signature,
         commitment::{Commitment, UnfinalizedRow},
         errors::PersistenceError,
         events::DecodedEvent,
@@ -27,12 +28,31 @@ impl Persistence {
         events: Vec<DecodedEvent>,
         new_watermark: u64,
     ) -> Result<(), PersistenceError> {
-        todo!()
+        // No-op seam until the Postgres adapter lands. The adapter writes the
+        // events and advances the watermark in one SQL transaction: append rows
+        // as INSERT ON CONFLICT DO NOTHING, the watermark UPDATE guarded with
+        // WHERE slot < $new_watermark.
+        Ok(())
     }
 
     /// Record a slot checkpoint. Rejects downward writes.
     pub(crate) async fn write_watermark(&self, slot: u64) -> Result<(), PersistenceError> {
-        todo!()
+        // No-op seam until the Postgres adapter lands, which adds the monotonic
+        // guard.
+        Ok(())
+    }
+
+    /// Record a transaction whose decode failed so recovery can replay it by
+    /// signature. One row per transaction. `reason` is always "decoder_error"
+    /// at v0.1.
+    pub(crate) async fn write_dead_letter(
+        &self,
+        signature: Signature,
+        slot: Slot,
+        reason: &'static str,
+    ) -> Result<(), PersistenceError> {
+        // No-op seam until the Postgres adapter lands.
+        Ok(())
     }
 
     /// Read persisted watermark for resuming after reconnect.

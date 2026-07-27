@@ -5,7 +5,7 @@ use {
         types::{
             Signature,
             channel::StreamUpdate,
-            events::{SettlementEvent, TradeDelta},
+            events::{DecodedEvent, SettlementEvent, TradeDelta},
             order::OrderUid,
             slot::Slot,
             tx::TxContext,
@@ -16,6 +16,7 @@ use {
                 Message,
                 SubscribeUpdateTransactionInfo,
                 Transaction,
+                TransactionError,
                 TransactionStatusMeta,
             },
         },
@@ -269,10 +270,11 @@ fn stream_tx(slot: Slot, signature: Signature, settlement: Pubkey) -> StreamUpda
     }
 }
 
-/// Verifies the run loop drains buffered updates and returns Ok when the sender
-/// drops. It does not assert the decoded event yet: decode output is dropped
-/// until the persistence adapter lands, at which point this test should assert
-/// the emitted event.
+/// Verifies the run loop drains buffered updates and returns Ok when the
+/// sender drops. Event content is not asserted here: the persistence bodies
+/// are no-ops until the Postgres adapter lands, so nothing is observable
+/// through them. Decode output is asserted directly in
+/// `decode_wraps_settlement_events_as_decoded`.
 #[tokio::test]
 async fn run_drains_transactions_until_the_sender_drops() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
@@ -287,14 +289,13 @@ async fn run_drains_transactions_until_the_sender_drops() {
     assert!(decoder.run().await.is_ok());
 }
 
-/// A crafted `CreateOrder` decodes to `OrderCreated` with the UID (the
-/// hash of the encoded intent), the intent's owner, and the `created_by`
-/// account resolved from the instruction's account list. The account-list owner
-/// differs from the intent owner, so this also pins that the event owner comes
-/// from the intent data, not the accounts.
-#[test]
-fn create_order_decodes_to_order_created() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
+/// Build a `CreateOrder` transaction fixture. Returns the tx, the expected
+/// order UID (the hash of the encoded intent), and the `created_by` account.
+/// The account-list owner (`pubkey(11)`) differs from the intent owner
+/// (`[0x11; 32]`) so callers can pin that the event owner comes from the
+/// intent data, not the accounts.
+fn create_order_tx() -> (SubscribeUpdateTransactionInfo, OrderUid, Pubkey) {
+    let settlement = pubkey(1);
     let created_by = pubkey(12);
     // Account list: [settlement(0), owner(1), created_by(2), order_pda(3),
     // system(4)].
@@ -326,6 +327,18 @@ fn create_order_decodes_to_order_created() {
         vec![compiled(0, vec![1, 2, 3, 4], data)],
         vec![],
     );
+    (tx, OrderUid(intent.uid().to_bytes()), created_by)
+}
+
+/// A crafted `CreateOrder` decodes to `OrderCreated` with the UID (the
+/// hash of the encoded intent), the intent's owner, and the `created_by`
+/// account resolved from the instruction's account list. The account-list owner
+/// differs from the intent owner, so this also pins that the event owner comes
+/// from the intent data, not the accounts.
+#[test]
+fn create_order_decodes_to_order_created() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (tx, expected_uid, created_by) = create_order_tx();
 
     let ctx = TxContext {
         slot: Slot(5),
@@ -334,16 +347,129 @@ fn create_order_decodes_to_order_created() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, &solflow);
-    let events = decode_settlement(&instructions, &ctx, |_| None);
+    let (events, decode_failed) = decode_settlement(&instructions, &ctx, |_| None);
 
+    assert!(!decode_failed);
     assert_eq!(
         events,
         vec![SettlementEvent::OrderCreated {
-            order_uid: OrderUid(intent.uid().to_bytes()),
+            order_uid: expected_uid,
             owner: Pubkey::new_from_array([0x11; 32]),
             created_by,
         }]
     );
+}
+
+/// `decode` wraps settlement events as `DecodedEvent::Settlement` and returns
+/// them for `run` to persist. The wrapped `SettlementEvent` contents are
+/// pinned by `create_order_decodes_to_order_created`.
+#[test]
+fn decode_wraps_settlement_events_as_decoded() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (tx, expected_uid, created_by) = create_order_tx();
+    let (decoder, _sender) = test_decoder(settlement, solflow);
+
+    let (events, decode_failed) = decoder.decode(&tx, Slot(5), signature(6));
+
+    assert!(!decode_failed);
+    assert_eq!(
+        events,
+        vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
+            order_uid: expected_uid,
+            owner: Pubkey::new_from_array([0x11; 32]),
+            created_by,
+        })]
+    );
+}
+
+/// A transaction with `meta.err` set decodes to zero events and no failure
+/// flag: a revert rolls back every account write, so nothing may be emitted,
+/// and a reverted transaction is not a decode failure to dead-letter.
+#[test]
+fn reverted_transaction_decodes_to_no_events() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (mut tx, _, _) = create_order_tx();
+    tx.meta.as_mut().unwrap().err = Some(TransactionError { err: vec![1] });
+    let (decoder, _sender) = test_decoder(settlement, solflow);
+
+    let (events, decode_failed) = decoder.decode(&tx, Slot(5), signature(6));
+
+    assert_eq!(events, vec![]);
+    assert!(!decode_failed);
+}
+
+/// A settlement instruction with an unknown discriminator sets the failure
+/// flag and yields no event, while an instruction that decodes cleanly in the
+/// same transaction still emits its event.
+#[test]
+fn unknown_discriminator_sets_failure_flag_and_keeps_good_events() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (mut tx, expected_uid, created_by) = create_order_tx();
+    // Prepend a settlement instruction whose discriminator byte matches no
+    // known instruction.
+    tx.transaction
+        .as_mut()
+        .unwrap()
+        .message
+        .as_mut()
+        .unwrap()
+        .instructions
+        .insert(0, compiled(0, vec![1], vec![0xFF]));
+
+    let ctx = TxContext {
+        slot: Slot(5),
+        signature: signature(6),
+        account_keys: build_account_keys(&tx),
+        post_token_balances: vec![],
+    };
+    let instructions = relevant_instructions(&tx, &settlement, &solflow);
+    let (events, decode_failed) = decode_settlement(&instructions, &ctx, |_| None);
+
+    assert!(decode_failed);
+    assert_eq!(
+        events,
+        vec![SettlementEvent::OrderCreated {
+            order_uid: expected_uid,
+            owner: Pubkey::new_from_array([0x11; 32]),
+            created_by,
+        }]
+    );
+}
+
+/// A `BeginSettle` whose named `FinalizeSettle` is not present in the
+/// transaction emits no event and sets the failure flag.
+#[test]
+fn unpaired_begin_settle_sets_failure_flag() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    // Account list: [solver(0), settlement(1), sysvar(2), state(3), token(4)].
+    let account_keys = vec![pubkey(10), settlement, pubkey(22), pubkey(23), pubkey(24)];
+
+    // BeginSettle body with zero orders, naming finalize index 1 while the tx
+    // has no instruction 1.
+    let mut begin_data = vec![SettlementInstruction::BeginSettle.discriminator()];
+    begin_data.extend_from_slice(&1u16.to_le_bytes());
+    begin_data.extend_from_slice(&4242i64.to_le_bytes());
+    begin_data.push(0);
+
+    let tx = tx_info(
+        account_keys,
+        vec![],
+        vec![],
+        vec![compiled(1, vec![2, 3, 4], begin_data)],
+        vec![],
+    );
+
+    let ctx = TxContext {
+        slot: Slot(5),
+        signature: signature(6),
+        account_keys: build_account_keys(&tx),
+        post_token_balances: vec![],
+    };
+    let instructions = relevant_instructions(&tx, &settlement, &solflow);
+    let (events, decode_failed) = decode_settlement(&instructions, &ctx, |_| None);
+
+    assert_eq!(events, vec![]);
+    assert!(decode_failed);
 }
 
 /// A crafted `BeginSettle` + `FinalizeSettle` pair decodes to one
@@ -420,8 +546,9 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, &solflow);
-    let events = decode_settlement(&instructions, &ctx, resolve_order);
+    let (events, decode_failed) = decode_settlement(&instructions, &ctx, resolve_order);
 
+    assert!(!decode_failed);
     assert_eq!(
         events,
         vec![SettlementEvent::SettlementFinalized {
