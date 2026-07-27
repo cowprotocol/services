@@ -39,20 +39,19 @@ impl Trade {
         match self.side {
             order::Side::Buy => {
                 // scale limit sell to support partially fillable orders
+                if price_limits.buy.0.is_zero() || prices.sell.is_zero() {
+                    return Err(error::Math::DivisionByZero);
+                }
                 let limit_sell = price_limits
                     .sell
                     .0
-                    .checked_mul(self.executed.into())
-                    .ok_or(error::Math::Overflow)?
-                    .checked_div(price_limits.buy.0)
-                    .ok_or(error::Math::DivisionByZero)?;
+                    .checked_mul_ratio(&self.executed.into(), &price_limits.buy.0)
+                    .ok_or(error::Math::Overflow)?;
                 let sold = self
                     .executed
                     .0
-                    .checked_mul(prices.buy)
-                    .ok_or(error::Math::Overflow)?
-                    .checked_div(prices.sell)
-                    .ok_or(error::Math::DivisionByZero)?;
+                    .checked_mul_ratio(&prices.buy, &prices.sell)
+                    .ok_or(error::Math::Overflow)?;
                 limit_sell.checked_sub(sold).ok_or(error::Math::Negative)
             }
             order::Side::Sell => {
@@ -62,20 +61,19 @@ impl Trade {
                 // traded buy amounts
                 // smallest allowed executed_buy_amount per settlement contract is
                 // executed_sell_amount * ceil(price_limits.buy / price_limits.sell)
+                if price_limits.sell.0.is_zero() || prices.buy.is_zero() {
+                    return Err(error::Math::DivisionByZero);
+                }
                 let limit_buy = self
                     .executed
                     .0
-                    .checked_mul(price_limits.buy.0)
-                    .ok_or(error::Math::Overflow)?
-                    .checked_ceil_div(&price_limits.sell.0)
-                    .ok_or(error::Math::DivisionByZero)?;
+                    .checked_mul_ratio_ceil(&price_limits.buy.0, &price_limits.sell.0)
+                    .ok_or(error::Math::Overflow)?;
                 let bought = self
                     .executed
                     .0
-                    .checked_mul(prices.sell)
-                    .ok_or(error::Math::Overflow)?
-                    .checked_ceil_div(&prices.buy)
-                    .ok_or(error::Math::DivisionByZero)?;
+                    .checked_mul_ratio_ceil(&prices.sell, &prices.buy)
+                    .ok_or(error::Math::Overflow)?;
                 bought.checked_sub(limit_buy).ok_or(error::Math::Negative)
             }
         }
@@ -187,13 +185,15 @@ impl Trade {
     fn sell_amount(&self) -> Result<eth::TokenAmount, error::Math> {
         Ok(match self.side {
             order::Side::Sell => self.executed.0,
-            order::Side::Buy => self
-                .executed
-                .0
-                .checked_mul(self.prices.custom.buy)
-                .ok_or(error::Math::Overflow)?
-                .checked_div(self.prices.custom.sell)
-                .ok_or(error::Math::DivisionByZero)?,
+            order::Side::Buy => {
+                if self.prices.custom.sell.is_zero() {
+                    return Err(error::Math::DivisionByZero);
+                }
+                self.executed
+                    .0
+                    .checked_mul_ratio(&self.prices.custom.buy, &self.prices.custom.sell)
+                    .ok_or(error::Math::Overflow)?
+            }
         }
         .into())
     }
@@ -205,13 +205,15 @@ impl Trade {
     /// Settlement contract uses `ceil` division for buy amount calculation.
     fn buy_amount(&self) -> Result<eth::TokenAmount, error::Math> {
         Ok(match self.side {
-            order::Side::Sell => self
-                .executed
-                .0
-                .checked_mul(self.prices.custom.sell)
-                .ok_or(error::Math::Overflow)?
-                .checked_ceil_div(&self.prices.custom.buy)
-                .ok_or(error::Math::DivisionByZero)?,
+            order::Side::Sell => {
+                if self.prices.custom.buy.is_zero() {
+                    return Err(error::Math::DivisionByZero);
+                }
+                self.executed
+                    .0
+                    .checked_mul_ratio_ceil(&self.prices.custom.sell, &self.prices.custom.buy)
+                    .ok_or(error::Math::Overflow)?
+            }
             order::Side::Buy => self.executed.0,
         }
         .into())
@@ -548,5 +550,58 @@ pub mod error {
         DivisionByZero,
         #[error("negative")]
         Negative,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, std::str::FromStr};
+
+    /// Regression test for the prod xdai settlement
+    /// 0xb02d542de9a45dfad68d152cfede1fa0c322b988ecc6be4b398c0f9c6b1048c1
+    /// (auction 16489395). The solver encoded uniform clearing prices of
+    /// magnitude 1e60, making `executed * price` exceed 256 bits. The old
+    /// math overflowed, the whole fee calculation bailed, and the execution
+    /// was persisted with zeroed fees.
+    #[test]
+    fn surplus_survives_hugely_scaled_clearing_prices() {
+        let uniform = ClearingPrices {
+            sell: eth::U256::from_str(
+                "1457533905173705573868216339202397616043789250000000000000000",
+            )
+            .unwrap(),
+            buy: eth::U256::from_str(
+                "1457533885739920430673304276561480416152609058094152638608893",
+            )
+            .unwrap(),
+        };
+        let trade = Trade {
+            uid: domain::OrderUid([0; 56]),
+            sell: eth::Asset {
+                amount: eth::U256::from(80502414430363770111_u128).into(),
+                token: eth::Address::default().into(),
+            },
+            buy: eth::Asset {
+                amount: eth::U256::from(80500000000000000000_u128).into(),
+                token: eth::Address::default().into(),
+            },
+            side: order::Side::Buy,
+            executed: order::TargetAmount(eth::U256::from(80500000000000000000_u128)),
+            prices: Prices {
+                uniform,
+                custom: uniform,
+            },
+        };
+
+        let surplus = trade
+            .surplus_over(
+                &uniform,
+                PriceLimits {
+                    sell: trade.sell.amount,
+                    buy: trade.buy.amount,
+                },
+            )
+            .unwrap();
+        assert_eq!(surplus.0, eth::U256::from(2415503697089133_u64));
     }
 }
