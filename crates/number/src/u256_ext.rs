@@ -1,7 +1,7 @@
 //! Extension trait for U256 arithmetic operations.
 
 use {
-    alloy_primitives::U256,
+    alloy_primitives::{U256, U512, ruint::UintTryFrom},
     num::{BigInt, BigRational, BigUint, One},
 };
 
@@ -34,6 +34,16 @@ pub trait U256Ext: Sized {
     /// - The intermediate multiplication would overflow U256
     fn checked_mul_f64(&self, factor: f64) -> Option<Self>;
 
+    /// Computes `self * mul / div` rounding down, widening the intermediate
+    /// product to 512 bits so it cannot overflow. Returns `None` if `div` is
+    /// zero or the final result does not fit in 256 bits.
+    fn checked_mul_ratio(&self, mul: &Self, div: &Self) -> Option<Self>;
+
+    /// Computes `self * mul / div` rounding up, widening the intermediate
+    /// product to 512 bits so it cannot overflow. Returns `None` if `div` is
+    /// zero or the final result does not fit in 256 bits.
+    fn checked_mul_ratio_ceil(&self, mul: &Self, div: &Self) -> Option<Self>;
+
     /// Convert to BigRational.
     fn to_big_rational(&self) -> BigRational;
 
@@ -53,6 +63,33 @@ pub trait U256Ext: Sized {
 impl U256Ext for U256 {
     fn checked_ceil_div(&self, other: &Self) -> Option<Self> {
         (!other.is_zero()).then(|| self.div_ceil(*other))
+    }
+
+    fn checked_mul_ratio(&self, mul: &Self, div: &Self) -> Option<Self> {
+        if div.is_zero() {
+            return None;
+        }
+        // fast path when the product fits 256 bits
+        if let Some(product) = self.checked_mul(*mul) {
+            return Some(product / div);
+        }
+        let product = self.widening_mul(*mul);
+        U256::uint_try_from(product / U512::from(*div)).ok()
+    }
+
+    fn checked_mul_ratio_ceil(&self, mul: &Self, div: &Self) -> Option<Self> {
+        if div.is_zero() {
+            return None;
+        }
+        // fast path when the product fits 256 bits
+        if let Some(product) = self.checked_mul(*mul) {
+            let (quotient, remainder) = product.div_rem(*div);
+            return quotient.checked_add(U256::from(!remainder.is_zero()));
+        }
+        let (quotient, remainder) = self.widening_mul(*mul).div_rem(U512::from(*div));
+        U256::uint_try_from(quotient)
+            .ok()?
+            .checked_add(U256::from(!remainder.is_zero()))
     }
 
     fn checked_mul_f64(&self, factor: f64) -> Option<Self> {
@@ -211,5 +248,36 @@ mod tests {
         // Multiplying a large U256 by a large factor should overflow and return None
         let max_u256 = U256::MAX;
         assert_eq!(max_u256.checked_mul_f64(1.1), None);
+    }
+
+    #[test]
+    fn mul_ratio_rejects_zero_divisor_and_overflowing_result() {
+        let two = U256::from(2);
+        assert_eq!(two.checked_mul_ratio(&two, &U256::ZERO), None);
+        assert_eq!(U256::MAX.checked_mul_ratio(&two, &U256::from(1)), None);
+        assert_eq!(U256::MAX.checked_mul_ratio(&two, &two), Some(U256::MAX));
+    }
+
+    #[test]
+    fn mul_ratio_ceil_rounds_up() {
+        let seven = U256::from(7);
+        let three = U256::from(3);
+        let two = U256::from(2);
+        // 7 * 2 / 3 = 4.67
+        assert_eq!(seven.checked_mul_ratio(&two, &three), Some(U256::from(4)));
+        assert_eq!(
+            seven.checked_mul_ratio_ceil(&two, &three),
+            Some(U256::from(5))
+        );
+        // exact division does not round up
+        assert_eq!(
+            U256::from(6).checked_mul_ratio_ceil(&two, &three),
+            Some(U256::from(4))
+        );
+        // large values on the fast path
+        assert_eq!(
+            U256::from(u128::MAX).checked_mul_ratio(&two, &U256::from(4)),
+            Some(U256::from(u128::MAX / 2))
+        );
     }
 }
