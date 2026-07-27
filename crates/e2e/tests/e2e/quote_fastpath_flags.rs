@@ -23,8 +23,7 @@ async fn local_node_quote_fastpath_flags_rejected() {
 }
 
 /// Verifies that the orderbook rejects quotes and orders that use the
-/// not-yet-supported `fast_path` quote flag or `validFrom`/`enableFastPath`
-/// app-data fields.
+/// not-yet-supported `enableFastPath` app-data field.
 async fn quote_fastpath_flags_rejected(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
@@ -77,23 +76,6 @@ async fn quote_fastpath_flags_rejected(web3: Web3) {
         err.1
     );
 
-    // --- quote: validFrom in app data ---
-    let err = services
-        .submit_quote(&OrderQuoteRequest {
-            app_data: OrderCreationAppData::Full {
-                full: r#"{"metadata":{"validFrom":1700000000}}"#.to_string(),
-            },
-            ..base_quote()
-        })
-        .await
-        .unwrap_err();
-    assert_eq!(err.0, StatusCode::BAD_REQUEST);
-    assert!(
-        err.1.contains("validFrom"),
-        "error body should mention validFrom, got: {}",
-        err.1
-    );
-
     // For order tests, validate_app_data fires before signature verification so
     // we just need structurally valid (but cryptographically incorrect) orders.
     let valid_to = model::time::now_in_epoch_seconds() + 300;
@@ -127,18 +109,6 @@ async fn quote_fastpath_flags_rejected(web3: Web3) {
     assert!(
         err.1.contains("enableFastPath"),
         "error body should mention enableFastPath, got: {}",
-        err.1
-    );
-
-    // --- order: validFrom in app data ---
-    let err = services
-        .create_order(&make_order(r#"{"metadata":{"validFrom":1700000000}}"#))
-        .await
-        .unwrap_err();
-    assert_eq!(err.0, StatusCode::BAD_REQUEST);
-    assert!(
-        err.1.contains("validFrom"),
-        "error body should mention validFrom, got: {}",
         err.1
     );
 }
