@@ -86,7 +86,7 @@ impl Decoder {
             // Writing `slot - 1` on every transaction only ever marks fully
             // delivered slots. A redelivery of this slot after a restart is
             // absorbed by idempotent writes.
-            let watermark = u64::from(slot).saturating_sub(1);
+            let watermark = Slot(u64::from(slot).saturating_sub(1));
             if events.is_empty() {
                 self.persistence.write_watermark(watermark).await?;
             } else {

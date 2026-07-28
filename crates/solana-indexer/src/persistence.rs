@@ -19,9 +19,9 @@ use {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Call {
     /// Events plus the watermark they ride with.
-    PersistEvents(Vec<DecodedEvent>, u64),
+    PersistEvents(Vec<DecodedEvent>, Slot),
     /// A watermark advance on a transaction that decoded to no events.
-    Watermark(u64),
+    Watermark(Slot),
     /// A transaction whose decode failed.
     DeadLetter(Signature, Slot, &'static str),
 }
@@ -56,7 +56,7 @@ impl Persistence {
     pub(crate) async fn persist_events(
         &self,
         events: Vec<DecodedEvent>,
-        new_watermark: u64,
+        new_watermark: Slot,
     ) -> Result<(), PersistenceError> {
         // No-op seam until the Postgres adapter lands. The adapter writes the
         // events and advances the watermark in one SQL transaction: append rows
@@ -68,7 +68,7 @@ impl Persistence {
     }
 
     /// Record a slot checkpoint. Rejects downward writes.
-    pub(crate) async fn write_watermark(&self, slot: u64) -> Result<(), PersistenceError> {
+    pub(crate) async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
         // No-op seam until the Postgres adapter lands, which adds the monotonic
         // guard.
         #[cfg(test)]
@@ -92,14 +92,14 @@ impl Persistence {
     }
 
     /// Read persisted watermark for resuming after reconnect.
-    pub(crate) async fn read_watermark(&self) -> Result<Option<u64>, PersistenceError> {
+    pub(crate) async fn read_watermark(&self) -> Result<Option<Slot>, PersistenceError> {
         todo!()
     }
 
     /// Record gaps that fell outside the replay window (write-only in v0.1).
     pub(crate) async fn record_lost_slot_range(
         &self,
-        range: RangeInclusive<u64>,
+        range: RangeInclusive<Slot>,
     ) -> Result<(), PersistenceError> {
         todo!()
     }
@@ -126,7 +126,7 @@ impl Persistence {
     /// (see `get_confirmed_rows`).
     pub(crate) async fn get_aged_rows(
         &self,
-        retention_horizon_slot: u64,
+        retention_horizon_slot: Slot,
     ) -> Result<Vec<UnfinalizedRow>, PersistenceError> {
         todo!()
     }

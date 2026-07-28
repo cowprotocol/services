@@ -609,7 +609,7 @@ async fn ingester_to_decoder_persists_decoded_events() {
                 owner: Pubkey::new_from_array([0x11; 32]),
                 created_by,
             })],
-            41,
+            Slot(41),
         )]
     );
 }
