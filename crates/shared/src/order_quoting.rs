@@ -19,8 +19,9 @@ use {
     number::conversions::big_decimal_to_u256,
     price_estimation::{
         self,
-        PriceEstimating,
+        CompetitionPriceEstimating,
         PriceEstimationError,
+        RankedEstimates,
         StreamingPriceEstimating,
         Verification,
         native::NativePriceEstimating,
@@ -411,7 +412,7 @@ impl Default for Validity {
 
 /// An order quoter implementation that relies
 pub struct OrderQuoter {
-    price_estimator: Arc<dyn PriceEstimating>,
+    price_estimator: Arc<dyn CompetitionPriceEstimating>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     gas_estimator: Arc<dyn GasPriceEstimating>,
     storage: Arc<dyn QuoteStoring>,
@@ -424,7 +425,7 @@ pub struct OrderQuoter {
 
 impl OrderQuoter {
     pub fn new(
-        price_estimator: Arc<dyn PriceEstimating>,
+        price_estimator: Arc<dyn CompetitionPriceEstimating>,
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
         storage: Arc<dyn QuoteStoring>,
@@ -482,8 +483,9 @@ impl OrderQuoter {
                     PriceEstimationError::ProtocolInternal(err)
                 ))),
             self.price_estimator
-                .estimate(trade_query.clone())
-                .map_err(|err| (EstimatorKind::Regular, err).into()),
+                .estimates(trade_query.clone())
+                .map_ok(RankedEstimates::into_best)
+                .map_err(|err| CalculateQuoteError::from((EstimatorKind::Regular, err))),
             self.native_price_estimator
                 .estimate_native_price(parameters.sell_token, trade_query.timeout)
                 .map_err(|err| (EstimatorKind::NativeSell, err).into()),
@@ -895,7 +897,8 @@ mod tests {
         number::nonzero::NonZeroU256,
         price_estimation::{
             HEALTHY_PRICE_ESTIMATION_TIME,
-            MockPriceEstimating,
+            MockCompetitionPriceEstimating,
+            RankedEstimates,
             native::MockNativePriceEstimating,
         },
     };
@@ -950,9 +953,9 @@ mod tests {
             max_priority_fee_per_gas: 1,
         };
 
-        let mut price_estimator = MockPriceEstimating::new();
+        let mut price_estimator = MockCompetitionPriceEstimating::new();
         price_estimator
-            .expect_estimate()
+            .expect_estimates()
             .withf(|q| {
                 **q == price_estimation::Query {
                     verification: Verification {
@@ -970,14 +973,17 @@ mod tests {
             })
             .returning(|_| {
                 async {
-                    Ok(price_estimation::Estimate {
-                        out_amount: U256::from(42),
-                        gas: 3,
-                        solver: Address::repeat_byte(1),
-                        verified: false,
-                        supports_fast_path: false,
-                        execution: Default::default(),
-                    })
+                    Ok(RankedEstimates::new(
+                        price_estimation::Estimate {
+                            out_amount: U256::from(42),
+                            gas: 3,
+                            solver: Address::repeat_byte(1),
+                            verified: false,
+                            supports_fast_path: false,
+                            execution: Default::default(),
+                        },
+                        [],
+                    ))
                 }
                 .boxed()
             });
@@ -1095,9 +1101,9 @@ mod tests {
             max_priority_fee_per_gas: 1,
         };
 
-        let mut price_estimator = MockPriceEstimating::new();
+        let mut price_estimator = MockCompetitionPriceEstimating::new();
         price_estimator
-            .expect_estimate()
+            .expect_estimates()
             .withf(|q| {
                 **q == price_estimation::Query {
                     verification: Verification {
@@ -1115,14 +1121,17 @@ mod tests {
             })
             .returning(|_| {
                 async {
-                    Ok(price_estimation::Estimate {
-                        out_amount: U256::from(42),
-                        gas: 3,
-                        solver: Address::repeat_byte(1),
-                        verified: false,
-                        supports_fast_path: false,
-                        execution: Default::default(),
-                    })
+                    Ok(RankedEstimates::new(
+                        price_estimation::Estimate {
+                            out_amount: U256::from(42),
+                            gas: 3,
+                            solver: Address::repeat_byte(1),
+                            verified: false,
+                            supports_fast_path: false,
+                            execution: Default::default(),
+                        },
+                        [],
+                    ))
                 }
                 .boxed()
             });
@@ -1235,9 +1244,9 @@ mod tests {
             max_priority_fee_per_gas: 1,
         };
 
-        let mut price_estimator = MockPriceEstimating::new();
+        let mut price_estimator = MockCompetitionPriceEstimating::new();
         price_estimator
-            .expect_estimate()
+            .expect_estimates()
             .withf(|q| {
                 **q == price_estimation::Query {
                     verification: Verification {
@@ -1255,14 +1264,17 @@ mod tests {
             })
             .returning(|_| {
                 async {
-                    Ok(price_estimation::Estimate {
-                        out_amount: U256::from(100),
-                        gas: 3,
-                        solver: Address::repeat_byte(1),
-                        verified: false,
-                        supports_fast_path: false,
-                        execution: Default::default(),
-                    })
+                    Ok(RankedEstimates::new(
+                        price_estimation::Estimate {
+                            out_amount: U256::from(100),
+                            gas: 3,
+                            solver: Address::repeat_byte(1),
+                            verified: false,
+                            supports_fast_path: false,
+                            execution: Default::default(),
+                        },
+                        [],
+                    ))
                 }
                 .boxed()
             });
@@ -1376,17 +1388,20 @@ mod tests {
             max_priority_fee_per_gas: 0,
         };
 
-        let mut price_estimator = MockPriceEstimating::new();
-        price_estimator.expect_estimate().returning(|_| {
+        let mut price_estimator = MockCompetitionPriceEstimating::new();
+        price_estimator.expect_estimates().returning(|_| {
             async {
-                Ok(price_estimation::Estimate {
-                    out_amount: U256::from(100),
-                    gas: 200,
-                    solver: Address::repeat_byte(1),
-                    verified: false,
-                    supports_fast_path: false,
-                    execution: Default::default(),
-                })
+                Ok(RankedEstimates::new(
+                    price_estimation::Estimate {
+                        out_amount: U256::from(100),
+                        gas: 200,
+                        solver: Address::repeat_byte(1),
+                        verified: false,
+                        supports_fast_path: false,
+                        execution: Default::default(),
+                    },
+                    [],
+                ))
             }
             .boxed()
         });
@@ -1451,17 +1466,20 @@ mod tests {
             max_priority_fee_per_gas: 0,
         };
 
-        let mut price_estimator = MockPriceEstimating::new();
-        price_estimator.expect_estimate().returning(|_| {
+        let mut price_estimator = MockCompetitionPriceEstimating::new();
+        price_estimator.expect_estimates().returning(|_| {
             async {
-                Ok(price_estimation::Estimate {
-                    out_amount: U256::from(100),
-                    gas: 200,
-                    solver: Address::repeat_byte(1),
-                    verified: false,
-                    supports_fast_path: false,
-                    execution: Default::default(),
-                })
+                Ok(RankedEstimates::new(
+                    price_estimation::Estimate {
+                        out_amount: U256::from(100),
+                        gas: 200,
+                        solver: Address::repeat_byte(1),
+                        verified: false,
+                        supports_fast_path: false,
+                        execution: Default::default(),
+                    },
+                    [],
+                ))
             }
             .boxed()
         });
@@ -1547,7 +1565,7 @@ mod tests {
         });
 
         let quoter = OrderQuoter {
-            price_estimator: Arc::new(MockPriceEstimating::new()),
+            price_estimator: Arc::new(MockCompetitionPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
             storage: Arc::new(storage),
@@ -1632,7 +1650,7 @@ mod tests {
         });
 
         let quoter = OrderQuoter {
-            price_estimator: Arc::new(MockPriceEstimating::new()),
+            price_estimator: Arc::new(MockCompetitionPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
             storage: Arc::new(storage),
@@ -1719,7 +1737,7 @@ mod tests {
             });
 
         let quoter = OrderQuoter {
-            price_estimator: Arc::new(MockPriceEstimating::new()),
+            price_estimator: Arc::new(MockCompetitionPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
             storage: Arc::new(storage),
@@ -1793,7 +1811,7 @@ mod tests {
             });
 
         let quoter = OrderQuoter {
-            price_estimator: Arc::new(MockPriceEstimating::new()),
+            price_estimator: Arc::new(MockCompetitionPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
             storage: Arc::new(storage),
@@ -1824,7 +1842,7 @@ mod tests {
         storage.expect_find().returning(move |_, _| Ok(None));
 
         let quoter = OrderQuoter {
-            price_estimator: Arc::new(MockPriceEstimating::new()),
+            price_estimator: Arc::new(MockCompetitionPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
             storage: Arc::new(storage),
@@ -2059,7 +2077,7 @@ mod tests {
             .returning(move |_| Ok(next_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
 
         OrderQuoter {
-            price_estimator: Arc::new(MockPriceEstimating::new()),
+            price_estimator: Arc::new(MockCompetitionPriceEstimating::new()),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(FakeGasPriceEstimator::new(gas_price)),
             storage: Arc::new(storage),
@@ -2230,7 +2248,7 @@ mod tests {
 
         // Build a quoter without calling with_streaming_estimator.
         let quoter = OrderQuoter {
-            price_estimator: Arc::new(MockPriceEstimating::new()),
+            price_estimator: Arc::new(MockCompetitionPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
             storage: Arc::new(MockQuoteStoring::new()),
