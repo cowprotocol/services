@@ -1,7 +1,8 @@
 use {
     super::{Decoder, ResolvedOrder, build_account_keys, decode_settlement, relevant_instructions},
     crate::{
-        persistence::Persistence,
+        indexer::ingester::{Error as IngesterError, Ingester},
+        persistence::{Call, Persistence},
         types::{
             Signature,
             channel::StreamUpdate,
@@ -14,20 +15,25 @@ use {
                 InnerInstruction,
                 InnerInstructions,
                 Message,
+                SubscribeUpdate,
+                SubscribeUpdateTransaction,
                 SubscribeUpdateTransactionInfo,
                 Transaction,
                 TransactionError,
                 TransactionStatusMeta,
+                UpdateOneof,
             },
         },
     },
     bytes::Bytes,
+    futures::stream,
     settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
         data::intent::{EncodedOrderIntent, OrderIntent, OrderKind},
     },
     solana_sdk::pubkey::Pubkey,
+    std::sync::{Arc, atomic::AtomicU64},
     tokio::sync::mpsc::Sender,
 };
 
@@ -249,8 +255,19 @@ fn signature(n: u8) -> Signature {
 
 fn test_decoder(settlement: Pubkey, solflow: Pubkey) -> (Decoder, Sender<StreamUpdate>) {
     let (sender, rx) = tokio::sync::mpsc::channel(16);
-    let decoder = Decoder::new(Persistence {}, rx, settlement, solflow);
+    let decoder = Decoder::new(Persistence::default(), rx, settlement, solflow);
     (decoder, sender)
+}
+
+/// Wrap a transaction fixture in the proto envelope the ingester reads.
+fn tx_update(slot: u64, info: SubscribeUpdateTransactionInfo) -> SubscribeUpdate {
+    SubscribeUpdate {
+        update_oneof: Some(UpdateOneof::Transaction(SubscribeUpdateTransaction {
+            slot,
+            transaction: Some(info),
+        })),
+        ..Default::default()
+    }
 }
 
 /// A transaction carrying one settlement instruction, so draining it also
@@ -552,5 +569,49 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
                 order_fulfilled: true,
             }],
         }]
+    );
+}
+
+/// Both components as one pipeline: a proto `SubscribeUpdate` carrying a
+/// `CreateOrder` goes into the ingester and comes out of the decoder as a
+/// persisted event. This is the only test spanning the channel, so it pins that
+/// what the ingester forwards is what the decoder can consume, and that the
+/// watermark riding along is the slot before the transaction's own (slot 42
+/// persists at 41).
+#[tokio::test]
+async fn ingester_to_decoder_persists_decoded_events() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (mut info, expected_uid, created_by) = create_order_tx();
+    // The ingester drops transactions without a well-formed signature.
+    info.signature = signature(9).as_ref().to_vec();
+
+    let (sender, receiver) = tokio::sync::mpsc::channel(16);
+    let persistence = Persistence::default();
+    let mut ingester = Ingester::new(
+        stream::iter(vec![Ok(tx_update(42, info))]),
+        sender,
+        Arc::new(AtomicU64::new(0)),
+    );
+    let mut decoder = Decoder::new(persistence.clone(), receiver, settlement, solflow);
+
+    // The ingester forwards the update, then reports the canned stream's end.
+    assert!(matches!(
+        ingester.run().await,
+        Err(IngesterError::StreamEnded)
+    ));
+    // Dropping the ingester closes the channel so the decoder's drain returns.
+    drop(ingester);
+    assert!(decoder.run().await.is_ok());
+
+    assert_eq!(
+        persistence.calls(),
+        vec![Call::PersistEvents(
+            vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
+                order_uid: expected_uid,
+                owner: Pubkey::new_from_array([0x11; 32]),
+                created_by,
+            })],
+            41,
+        )]
     );
 }

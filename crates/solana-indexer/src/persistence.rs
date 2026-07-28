@@ -13,13 +13,43 @@ use {
     std::ops::RangeInclusive,
 };
 
+/// One write the decoder asked for, captured so tests can assert the persist
+/// contract without a database behind it.
+#[cfg(test)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Call {
+    /// Events plus the watermark they ride with.
+    PersistEvents(Vec<DecodedEvent>, u64),
+    /// A watermark advance on a transaction that decoded to no events.
+    Watermark(u64),
+    /// A transaction whose decode failed.
+    DeadLetter(Signature, Slot, &'static str),
+}
+
 /// PostgreSQL persistence. Used by Decoder, Watchdog, and FinalizationWorker.
 ///
 /// Cheap to clone: wraps a shared pool. The method bodies are stubbed until the
 /// Postgres adapter lands.
 // TODO: hold `postgres: Arc<Postgres>` once the adapter is added.
-#[derive(Clone)]
-pub(crate) struct Persistence {}
+#[derive(Clone, Default)]
+pub(crate) struct Persistence {
+    /// Shared with every clone, so a test can read what the decoder wrote after
+    /// handing its own clone to the component.
+    #[cfg(test)]
+    calls: std::sync::Arc<std::sync::Mutex<Vec<Call>>>,
+}
+
+#[cfg(test)]
+impl Persistence {
+    /// The writes this instance received, in order.
+    pub(crate) fn calls(&self) -> Vec<Call> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    fn record(&self, call: Call) {
+        self.calls.lock().unwrap().push(call);
+    }
+}
 
 impl Persistence {
     /// Save decoded events and advance the slot watermark atomically.
@@ -32,6 +62,8 @@ impl Persistence {
         // events and advances the watermark in one SQL transaction: append rows
         // as INSERT ON CONFLICT DO NOTHING, the watermark UPDATE guarded with
         // WHERE slot < $new_watermark.
+        #[cfg(test)]
+        self.record(Call::PersistEvents(events, new_watermark));
         Ok(())
     }
 
@@ -39,6 +71,8 @@ impl Persistence {
     pub(crate) async fn write_watermark(&self, slot: u64) -> Result<(), PersistenceError> {
         // No-op seam until the Postgres adapter lands, which adds the monotonic
         // guard.
+        #[cfg(test)]
+        self.record(Call::Watermark(slot));
         Ok(())
     }
 
@@ -52,6 +86,8 @@ impl Persistence {
         reason: &'static str,
     ) -> Result<(), PersistenceError> {
         // No-op seam until the Postgres adapter lands.
+        #[cfg(test)]
+        self.record(Call::DeadLetter(signature, slot, reason));
         Ok(())
     }
 
