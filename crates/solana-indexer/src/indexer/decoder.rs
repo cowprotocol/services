@@ -412,9 +412,7 @@ fn decode_settlements_finalized(
             .collect();
 
         events.push(SettlementEvent::SettlementFinalized {
-            // The wire carries `auction_id` as i64; it is non-negative in
-            // practice.
-            auction_id: begin_input.auction_id as u64,
+            auction_id: begin_input.auction_id,
             solver,
             tx_signature: ctx.signature,
             slot: ctx.slot,

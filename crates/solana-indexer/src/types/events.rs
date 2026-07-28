@@ -55,7 +55,7 @@ pub(crate) enum SettlementEvent {
     /// A settlement was finalized on-chain.
     SettlementFinalized {
         /// Auction id this settlement belongs to.
-        auction_id: u64,
+        auction_id: i64,
         /// Solver that won the auction.
         solver: Pubkey,
         /// Transaction signature.

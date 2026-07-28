@@ -2,7 +2,10 @@
 //! Recovery-flow types: PDA snapshots and the options struct for
 //! `getSignaturesForAddress` backfills.
 
-use {crate::types::order::OrderUid, solana_sdk::pubkey::Pubkey};
+use {
+    crate::types::{order::OrderUid, slot::Slot},
+    solana_sdk::pubkey::Pubkey,
+};
 
 /// Current on-chain snapshot of an order PDA, read by `getAccountInfo` for
 /// reconciliation.
@@ -24,9 +27,9 @@ pub(crate) struct PdaSnapshot {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct GetSignaturesOpts {
     /// Start slot (inclusive). `None` means "from the tip".
-    pub from_slot: Option<u64>,
+    pub from_slot: Option<Slot>,
     /// End slot (inclusive). `None` means "to the tip".
-    pub to_slot: Option<u64>,
+    pub to_slot: Option<Slot>,
     /// Cap on the number of signatures returned.
     pub limit: Option<usize>,
     /// Optional address filter (used when back-filling both programs
