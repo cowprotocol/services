@@ -360,17 +360,17 @@ fn create_order_decodes_to_order_created() {
     );
 }
 
-/// `decode` wraps settlement events as `DecodedEvent::Settlement` and returns
-/// them for `run` to persist. The wrapped `SettlementEvent` contents are
-/// pinned by `create_order_decodes_to_order_created`.
+/// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run` to
+/// persist, and emits nothing once the same transaction carries `meta.err`: a
+/// revert rolls back every account write, and it is not a decode failure to
+/// dead-letter. One fixture for both, so `meta.err` is the only difference.
 #[test]
-fn decode_wraps_settlement_events_as_decoded() {
+fn decode_wraps_events_and_skips_reverted_transactions() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (tx, expected_uid, created_by) = create_order_tx();
+    let (mut tx, expected_uid, created_by) = create_order_tx();
     let (decoder, _sender) = test_decoder(settlement, solflow);
 
     let (events, decode_failed) = decoder.decode(&tx, Slot(5), signature(6));
-
     assert!(!decode_failed);
     assert_eq!(
         events,
@@ -380,22 +380,11 @@ fn decode_wraps_settlement_events_as_decoded() {
             created_by,
         })]
     );
-}
 
-/// A transaction with `meta.err` set decodes to zero events and no failure
-/// flag: a revert rolls back every account write, so nothing may be emitted,
-/// and a reverted transaction is not a decode failure to dead-letter.
-#[test]
-fn reverted_transaction_decodes_to_no_events() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut tx, _, _) = create_order_tx();
     tx.meta.as_mut().unwrap().err = Some(TransactionError { err: vec![1] });
-    let (decoder, _sender) = test_decoder(settlement, solflow);
-
     let (events, decode_failed) = decoder.decode(&tx, Slot(5), signature(6));
-
-    assert_eq!(events, vec![]);
     assert!(!decode_failed);
+    assert_eq!(events, vec![]);
 }
 
 /// A settlement instruction with an unknown discriminator sets the failure
