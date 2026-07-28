@@ -1460,6 +1460,7 @@ dependencies = [
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.9.4",
+ "rayon",
  "reqwest 0.13.4",
  "rust_decimal",
  "s3",

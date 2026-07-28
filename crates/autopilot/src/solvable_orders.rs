@@ -1,7 +1,10 @@
 use {
     crate::{
         boundary::{self, SolvableOrders},
-        domain::{self, auction::Price},
+        domain::{
+            self,
+            auction::{InvalidPrice, Price, Prices},
+        },
         infra::{self, banned},
     },
     account_balances::{BalanceFetching, Query},
@@ -30,6 +33,7 @@ use {
     },
     price_estimation::{native::to_normalized_price, native_price_cache::NativePriceUpdater},
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
+    rayon::prelude::*,
     shared::remaining_amounts,
     std::{
         collections::{BTreeMap, HashMap, HashSet},
@@ -137,7 +141,7 @@ pub struct SolvableOrdersCache {
     cache: Mutex<Option<Inner>>,
     native_price_estimator: Arc<NativePriceUpdater>,
     weth: Address,
-    protocol_fees: domain::ProtocolFees,
+    protocol_fees: Arc<domain::ProtocolFees>,
     cow_amm_registry: cow_amm::Registry,
     native_price_timeout: Duration,
     settlement_contract: Address,
@@ -149,7 +153,7 @@ type Balances = HashMap<Query, U256>;
 
 struct Inner {
     auction: domain::RawAuctionData,
-    solvable_orders: boundary::SolvableOrders,
+    solvable_orders: Arc<boundary::SolvableOrders>,
 }
 
 impl SolvableOrdersCache {
@@ -177,7 +181,7 @@ impl SolvableOrdersCache {
             cache: Mutex::new(None),
             native_price_estimator,
             weth,
-            protocol_fees,
+            protocol_fees: Arc::new(protocol_fees),
             cow_amm_registry,
             native_price_timeout,
             settlement_contract,
@@ -335,25 +339,25 @@ impl SolvableOrdersCache {
             })
             .map(|cow_amm| *cow_amm.address())
             .collect();
+        let order_uids: Vec<domain::OrderUid> = orders
+            .iter()
+            .map(|order| order.metadata.uid.into())
+            .collect();
+        let db_solvable_orders = Arc::new(db_solvable_orders);
+
+        let (orders, prices) = assemble_auction_data(
+            order_uids,
+            db_solvable_orders.clone(),
+            self.protocol_fees.clone(),
+            surplus_capturing_jit_order_owners.clone(),
+            prices,
+        )
+        .await?;
+
         let auction = domain::RawAuctionData {
             block,
-            orders: tracing::info_span!("assemble_orders").in_scope(|| {
-                orders
-                    .into_iter()
-                    .map(|order| {
-                        let quote = db_solvable_orders
-                            .quotes
-                            .get(&order.metadata.uid.into())
-                            .map(|quote| quote.as_ref().clone());
-                        self.protocol_fees
-                            .apply(order, quote, &surplus_capturing_jit_order_owners)
-                    })
-                    .collect()
-            }),
-            prices: prices
-                .into_iter()
-                .map(|(key, value)| Price::try_new(value.into()).map(|price| (key.into(), price)))
-                .collect::<Result<_, _>>()?,
+            orders,
+            prices,
             surplus_capturing_jit_order_owners,
         };
 
@@ -747,6 +751,73 @@ fn filter_out_in_flight_orders<'a>(
         }
     });
     (orders, removed)
+}
+
+/// Builds the auction's orders and prices. This is pure CPU work, so it runs on
+/// the rayon pool while the caller awaits, leaving the executor free to handle
+/// other tasks in the meantime.
+async fn assemble_auction_data(
+    order_uids: Vec<domain::OrderUid>,
+    solvable_orders: Arc<SolvableOrders>,
+    protocol_fees: Arc<domain::ProtocolFees>,
+    surplus_capturing_jit_order_owners: Vec<Address>,
+    prices: BTreeMap<Address, U256>,
+) -> Result<(Vec<domain::Order>, Prices)> {
+    // Spans are created here so they get parented to the caller's span instead of
+    // whatever happens to be current on the rayon threads.
+    let orders_span = tracing::info_span!("assemble_orders");
+    let prices_span = tracing::info_span!("assemble_prices");
+
+    // Orders and prices are built at the same time so we only wait for the slower
+    // of the two.
+    let (orders, prices) = tokio::task::spawn_blocking(move || {
+        rayon::join(
+            || {
+                orders_span.in_scope(|| {
+                    assemble_orders(
+                        order_uids,
+                        &solvable_orders,
+                        &protocol_fees,
+                        &surplus_capturing_jit_order_owners,
+                    )
+                })
+            },
+            || prices_span.in_scope(|| assemble_prices(prices)),
+        )
+    })
+    .await
+    .context("assemble auction data task failed")?;
+
+    Ok((orders, prices?))
+}
+
+fn assemble_orders(
+    order_uids: Vec<domain::OrderUid>,
+    solvable_orders: &SolvableOrders,
+    protocol_fees: &domain::ProtocolFees,
+    surplus_capturing_jit_order_owners: &[Address],
+) -> Vec<domain::Order> {
+    order_uids
+        .into_par_iter()
+        .map(|uid| {
+            let order = solvable_orders
+                .orders
+                .get(&uid)
+                .expect("uid was taken from these orders");
+            let quote = solvable_orders
+                .quotes
+                .get(&uid)
+                .map(|quote| quote.as_ref().clone());
+            protocol_fees.apply(order, quote, surplus_capturing_jit_order_owners)
+        })
+        .collect()
+}
+
+fn assemble_prices(prices: BTreeMap<Address, U256>) -> Result<Prices, InvalidPrice> {
+    prices
+        .into_par_iter()
+        .map(|(token, price)| Price::try_new(price.into()).map(|price| (token.into(), price)))
+        .collect()
 }
 
 #[cfg(test)]
