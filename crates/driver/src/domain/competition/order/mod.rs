@@ -8,6 +8,7 @@ use {
     derive_more::{From, Into},
     eth_domain_types as eth,
     model::order::{BuyTokenDestination, SellTokenSource},
+    number::u256_ext::U256Ext,
     std::sync::Arc,
 };
 pub use {fees::FeePolicy, signature::Signature};
@@ -177,14 +178,21 @@ impl Order {
         };
         let target = self.target();
 
-        amounts.sell.amount = util::math::mul_ratio(amounts.sell.amount.0, available.0, target.0)
+        amounts.sell.amount = amounts
+            .sell
+            .amount
+            .0
+            .checked_mul_ratio(&available.0, &target.0)
             .unwrap_or_default()
             .into();
 
-        amounts.buy.amount =
-            util::math::mul_ratio_ceil(amounts.buy.amount.0, available.0, target.0)
-                .unwrap_or_default()
-                .into();
+        amounts.buy.amount = amounts
+            .buy
+            .amount
+            .0
+            .checked_mul_ratio_ceil(&available.0, &target.0)
+            .unwrap_or_default()
+            .into();
 
         amounts
     }
