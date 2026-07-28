@@ -396,7 +396,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         fast_price_estimation_results_required: NonZeroUsize,
         native: Arc<dyn NativePriceEstimating>,
         gas: Arc<dyn GasPriceEstimating>,
-    ) -> Result<Arc<dyn PriceEstimating>> {
+    ) -> Result<Arc<CompetitionEstimator<Arc<dyn PriceEstimating>>>> {
         let estimators = self.get_estimators(solvers, |entry| &entry.fast)?;
         Ok(Arc::new(
             self.sanitized_competition(estimators, PriceRanking::BestBangForBuck { native, gas })
