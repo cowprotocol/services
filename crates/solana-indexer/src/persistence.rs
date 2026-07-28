@@ -26,7 +26,7 @@ impl Persistence {
     pub(crate) async fn persist_events(
         &self,
         events: Vec<DecodedEvent>,
-        new_watermark: u64,
+        new_watermark: Slot,
     ) -> Result<(), PersistenceError> {
         // No-op seam until the Postgres adapter lands. The adapter writes the
         // events and advances the watermark in one SQL transaction: append rows
@@ -36,34 +36,37 @@ impl Persistence {
     }
 
     /// Record a slot checkpoint. Rejects downward writes.
-    pub(crate) async fn write_watermark(&self, slot: u64) -> Result<(), PersistenceError> {
+    pub(crate) async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
         // No-op seam until the Postgres adapter lands, which adds the monotonic
         // guard.
         Ok(())
     }
 
     /// Record a transaction whose decode failed so recovery can replay it by
-    /// signature. One row per transaction. `reason` is always "decoder_error"
-    /// at v0.1.
+    /// signature. One row per transaction.
+    ///
+    /// The row's `reason` column is not a parameter: a decoder error is the
+    /// only failure mode that reaches this table (spec §12.2), so the
+    /// adapter writes `'decoder_error'`. A second reason would arrive as a
+    /// typed argument.
     pub(crate) async fn write_dead_letter(
         &self,
         signature: Signature,
         slot: Slot,
-        reason: &'static str,
     ) -> Result<(), PersistenceError> {
         // No-op seam until the Postgres adapter lands.
         Ok(())
     }
 
     /// Read persisted watermark for resuming after reconnect.
-    pub(crate) async fn read_watermark(&self) -> Result<Option<u64>, PersistenceError> {
+    pub(crate) async fn read_watermark(&self) -> Result<Option<Slot>, PersistenceError> {
         todo!()
     }
 
     /// Record gaps that fell outside the replay window (write-only in v0.1).
     pub(crate) async fn record_lost_slot_range(
         &self,
-        range: RangeInclusive<u64>,
+        range: RangeInclusive<Slot>,
     ) -> Result<(), PersistenceError> {
         todo!()
     }
@@ -90,7 +93,7 @@ impl Persistence {
     /// (see `get_confirmed_rows`).
     pub(crate) async fn get_aged_rows(
         &self,
-        retention_horizon_slot: u64,
+        retention_horizon_slot: Slot,
     ) -> Result<Vec<UnfinalizedRow>, PersistenceError> {
         todo!()
     }

@@ -86,7 +86,7 @@ impl Decoder {
             // Writing `slot - 1` on every transaction only ever marks fully
             // delivered slots. A redelivery of this slot after a restart is
             // absorbed by idempotent writes.
-            let watermark = u64::from(slot).saturating_sub(1);
+            let watermark = Slot(u64::from(slot).saturating_sub(1));
             if events.is_empty() {
                 self.persistence.write_watermark(watermark).await?;
             } else {
@@ -98,9 +98,7 @@ impl Decoder {
                 // Partial decode is expected: events that did decode persist and
                 // the watermark advances. Recovery replays the whole transaction
                 // by signature, and idempotent writes absorb the overlap.
-                self.persistence
-                    .write_dead_letter(signature, slot, "decoder_error")
-                    .await?;
+                self.persistence.write_dead_letter(signature, slot).await?;
             }
         }
         Ok(())
@@ -414,9 +412,7 @@ fn decode_settlements_finalized(
             .collect();
 
         events.push(SettlementEvent::SettlementFinalized {
-            // The wire carries `auction_id` as i64; it is non-negative in
-            // practice.
-            auction_id: begin_input.auction_id as u64,
+            auction_id: begin_input.auction_id,
             solver,
             tx_signature: ctx.signature,
             slot: ctx.slot,

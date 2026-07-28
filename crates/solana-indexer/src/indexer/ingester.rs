@@ -266,10 +266,12 @@ impl Ingester<GeyserStream> {
         settlement_program: Pubkey,
         solflow_program: Pubkey,
     ) -> Result<(), Error> {
+        // The proto field is a bare slot number, and `from_slot` is inclusive, so
+        // resume one past the last fully persisted slot.
         let from_slot = persistence
             .read_watermark()
             .await?
-            .map(|watermark| watermark + 1);
+            .map(|watermark| u64::from(watermark) + 1);
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
