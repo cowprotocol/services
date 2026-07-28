@@ -387,6 +387,23 @@ fn decode_wraps_events_and_skips_reverted_transactions() {
     assert_eq!(events, vec![]);
 }
 
+/// A transaction update without `meta` carries no success flag, so it emits
+/// nothing and is dead-lettered rather than decoded. The ingester forwards
+/// updates on a valid body and signature alone, so the decoder cannot assume
+/// `meta` is present.
+#[test]
+fn transaction_without_meta_is_dead_lettered() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (mut tx, ..) = create_order_tx();
+    tx.meta = None;
+    let (decoder, _sender) = test_decoder(settlement, solflow);
+
+    let (events, decode_failed) = decoder.decode(&tx, Slot(5), signature(6));
+
+    assert_eq!(events, vec![]);
+    assert!(decode_failed);
+}
+
 /// A settlement instruction with an unknown discriminator sets the failure
 /// flag and yields no event, while an instruction that decodes cleanly in the
 /// same transaction still emits its event.

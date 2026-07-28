@@ -114,11 +114,21 @@ impl Decoder {
         slot: Slot,
         signature: Signature,
     ) -> (Vec<DecodedEvent>, bool) {
+        // `meta` carries whether the transaction succeeded, so without it there is
+        // no way to tell, and emitting events for a transaction that may have
+        // reverted is the failure this guard exists to prevent. Dead-letter it
+        // instead of skipping: replay re-fetches by signature, and
+        // `getTransaction` returns the meta.
+        let Some(meta) = tx.meta.as_ref() else {
+            tracing::warn!(slot = %slot, %signature, "transaction update without meta");
+            return (Vec::new(), true);
+        };
+
         // A failed Solana transaction rolls back every account write, so no
         // state-changing event may be emitted for it. Failed transactions are
         // delivered on purpose (the revert is an attribution signal), and a
         // dedicated revert-attribution event is a later PR.
-        if tx.meta.as_ref().is_some_and(|meta| meta.err.is_some()) {
+        if meta.err.is_some() {
             tracing::debug!(slot = %slot, %signature, "transaction reverted, skipping");
             return (Vec::new(), false);
         }
@@ -132,17 +142,11 @@ impl Decoder {
         // `relevant_instructions` reconstructs the account list internally to
         // resolve program ids; rebuild it once here so the decode can resolve
         // account indices to pubkeys too.
-        let account_keys = build_account_keys(tx);
-        let post_token_balances = tx
-            .meta
-            .as_ref()
-            .map(|meta| meta.post_token_balances.clone())
-            .unwrap_or_default();
         let ctx = TxContext {
             slot,
             signature,
-            account_keys,
-            post_token_balances,
+            account_keys: build_account_keys(tx),
+            post_token_balances: meta.post_token_balances.clone(),
         };
 
         // `relevant_instructions` yields only settlement and SolFlow instructions.
