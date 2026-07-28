@@ -72,14 +72,15 @@ impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating
 
             let (context, mut results) = futures::try_join!(get_context, get_results)?;
 
+            // Keep all errors, but drop unreasonable Ok results.
+            results.retain(|(_, r)| r.is_err() || is_reasonable(r));
+
             // Rank all estimates from best to worst so callers can inspect the
             // full ordering (e.g. the reference score of the winner).
             results.sort_by(|(_, a), (_, b)| {
                 compare_quote_result(&query, a, b, &context, self.verification_mode).reverse()
             });
 
-            // Keep all errors, but drop unreasonable Ok results.
-            results.retain(|(_, r)| r.is_err() || is_reasonable(r));
             let mut results = results.into_iter();
             let Some(winner) = results.next() else {
                 return Err(unreasonable_estimates_error());
