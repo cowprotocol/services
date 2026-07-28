@@ -1,7 +1,7 @@
 use {
     super::{Decoder, ResolvedOrder, build_account_keys, decode_settlement, relevant_instructions},
     crate::{
-        indexer::ingester::{Error as IngesterError, Ingester},
+        indexer::ingester::Ingester,
         persistence::{Call, Persistence},
         types::{
             Signature,
@@ -594,11 +594,9 @@ async fn ingester_to_decoder_persists_decoded_events() {
     );
     let mut decoder = Decoder::new(persistence.clone(), receiver, settlement, solflow);
 
-    // The ingester forwards the update, then reports the canned stream's end.
-    assert!(matches!(
-        ingester.run().await,
-        Err(IngesterError::StreamEnded)
-    ));
+    // Drive the ingester to the canned stream's end, which it reports as an
+    // error. `clean_stream_end_returns_stream_ended` pins which one.
+    ingester.run().await.unwrap_err();
     // Dropping the ingester closes the channel so the decoder's drain returns.
     drop(ingester);
     assert!(decoder.run().await.is_ok());
