@@ -1424,6 +1424,13 @@ components:
           allOf:
             - $ref: "#/components/schemas/StoredOrderQuote"
           nullable: true
+        validFrom:
+          description: >
+            Earliest UNIX timestamp when the order may be put into a regular batch
+            auction. If this is not set the order is allowed to be in regular auctions
+            immediately after creation.
+          type: number
+          nullable: true
       required:
         - creationDate
         - class

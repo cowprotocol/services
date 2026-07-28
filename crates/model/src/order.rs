@@ -731,8 +731,8 @@ pub struct OrderMetadata {
     /// quote data for reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote: Option<OrderQuote>,
-    /// Earliest time (UNIX timestamp seconds) the order may enter a batch
-    /// auction.
+    /// Earliest time (UNIX timestamp seconds) the order may enter a regular
+    /// batch auction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub valid_from: Option<u32>,
 }
