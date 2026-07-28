@@ -267,7 +267,7 @@ Column                    | Type                         | Nullable | Details
  sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
- true_valid_to | timestamptz                  | not null | timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
+ true_valid_to | bigint                       | not null | UNIX timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
  valid\_from               | bigint                       | nullable | earliest UNIX timestamp (in seconds) at which the order may enter a batch auction. Taken from the order's app-data (`validFrom`). NULL means no lower bound, i.e. the order is eligible immediately (the default for all existing orders).
 
 Indexes:
