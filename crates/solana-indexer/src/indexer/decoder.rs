@@ -98,9 +98,7 @@ impl Decoder {
                 // Partial decode is expected: events that did decode persist and
                 // the watermark advances. Recovery replays the whole transaction
                 // by signature, and idempotent writes absorb the overlap.
-                self.persistence
-                    .write_dead_letter(signature, slot, "decoder_error")
-                    .await?;
+                self.persistence.write_dead_letter(signature, slot).await?;
             }
         }
         Ok(())

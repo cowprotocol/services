@@ -603,13 +603,13 @@ async fn ingester_to_decoder_persists_decoded_events() {
 
     assert_eq!(
         persistence.calls(),
-        vec![Call::PersistEvents(
-            vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
+        vec![Call::PersistEvents {
+            events: vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
                 order_uid: expected_uid,
                 owner: Pubkey::new_from_array([0x11; 32]),
                 created_by,
             })],
-            Slot(41),
-        )]
+            watermark: Slot(41),
+        }]
     );
 }

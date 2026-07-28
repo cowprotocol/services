@@ -19,11 +19,14 @@ use {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Call {
     /// Events plus the watermark they ride with.
-    PersistEvents(Vec<DecodedEvent>, Slot),
+    PersistEvents {
+        events: Vec<DecodedEvent>,
+        watermark: Slot,
+    },
     /// A watermark advance on a transaction that decoded to no events.
     Watermark(Slot),
     /// A transaction whose decode failed.
-    DeadLetter(Signature, Slot, &'static str),
+    DeadLetter { signature: Signature, slot: Slot },
 }
 
 /// PostgreSQL persistence. Used by Decoder, Watchdog, and FinalizationWorker.
@@ -63,7 +66,10 @@ impl Persistence {
         // as INSERT ON CONFLICT DO NOTHING, the watermark UPDATE guarded with
         // WHERE slot < $new_watermark.
         #[cfg(test)]
-        self.record(Call::PersistEvents(events, new_watermark));
+        self.record(Call::PersistEvents {
+            events,
+            watermark: new_watermark,
+        });
         Ok(())
     }
 
@@ -77,17 +83,20 @@ impl Persistence {
     }
 
     /// Record a transaction whose decode failed so recovery can replay it by
-    /// signature. One row per transaction. `reason` is always "decoder_error"
-    /// at v0.1.
+    /// signature. One row per transaction.
+    ///
+    /// The row's `reason` column is not a parameter: a decoder error is the
+    /// only failure mode that reaches this table (spec §12.2), so the
+    /// adapter writes `'decoder_error'`. A second reason would arrive as a
+    /// typed argument.
     pub(crate) async fn write_dead_letter(
         &self,
         signature: Signature,
         slot: Slot,
-        reason: &'static str,
     ) -> Result<(), PersistenceError> {
         // No-op seam until the Postgres adapter lands.
         #[cfg(test)]
-        self.record(Call::DeadLetter(signature, slot, reason));
+        self.record(Call::DeadLetter { signature, slot });
         Ok(())
     }
 
