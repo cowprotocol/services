@@ -34,6 +34,7 @@ use {
     },
     bigdecimal::Zero,
     eth_domain_types as eth,
+    number::u256_ext::U256Ext,
 };
 
 impl Fulfillment {
@@ -210,10 +211,8 @@ impl Fulfillment {
             Side::Sell => self
                 .protocol_fee(prices, protocol_fee)?
                 .0
-                .checked_mul(prices.buy)
-                .ok_or(Math::Overflow)?
-                .checked_div(prices.sell)
-                .ok_or(Math::DivisionByZero)?
+                .checked_mul_ratio(&prices.buy, &prices.sell)
+                .map_err(Math::from)?
                 .into(),
         };
         Ok(fee_in_sell_token)

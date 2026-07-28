@@ -7,15 +7,18 @@ use {
         PriceEstimationError,
         Query,
         QuoteVerificationMode,
+        StreamingPriceEstimating,
     },
     alloy::primitives::{Address, U256},
-    anyhow::Context as _,
     event_bus_dto::{
         price_estimate::{EstimateResult, PriceEstimateEvent},
         query::{OrderKind as DtoOrderKind, QueryFields},
         winning_price_estimate::WinningPriceEstimateEvent,
     },
-    futures::future::{BoxFuture, FutureExt, TryFutureExt},
+    futures::{
+        future::{BoxFuture, FutureExt, TryFutureExt},
+        stream::{BoxStream, FuturesUnordered, StreamExt},
+    },
     model::order::OrderKind,
     std::{
         cmp::Ordering,
@@ -37,13 +40,6 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
             };
             let get_context = self.ranking.provide_context(out_token, query.timeout);
 
-            // Filter out obviously wrong estimates:
-            // - 0 gas cost would lead to us paying huge subsidies
-            // - 0 out_amount means the quote is useless
-            let is_reasonable = |r: &PriceEstimateResult| {
-                r.as_ref()
-                    .is_ok_and(|r| r.gas > 0 && !r.out_amount.is_zero())
-            };
             let get_results = self
                 .produce_results(query.clone(), is_reasonable, |context| {
                     // Call estimate() eagerly so its side-effects still happen
@@ -75,16 +71,9 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 .into_iter()
                 .filter(|(_index, r)| r.is_err() || is_reasonable(r))
                 .max_by(|a, b| {
-                    compare_quote_result(
-                        &query,
-                        &a.1,
-                        &b.1,
-                        &context,
-                        !matches!(self.verification_mode, QuoteVerificationMode::Unverified),
-                    )
+                    compare_quote_result(&query, &a.1, &b.1, &context, self.verification_mode)
                 })
-                .with_context(|| "all price estimates were unreasonable (0 gas or 0 out_amount)")
-                .map_err(PriceEstimationError::EstimatorInternal)?;
+                .ok_or_else(unreasonable_estimates_error)?;
 
             if winner.1.is_ok() {
                 let EstimatorIndex(stage_index, estimator_index) = winner.0;
@@ -100,16 +89,116 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
     }
 }
 
+impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
+    /// Runs every estimator concurrently across all stages and forwards a quote
+    /// only when it ranks strictly better than the best one already sent, so
+    /// the client sees a series that improves in *ranking order* and never
+    /// regresses. The first successful quote goes out as soon as the
+    /// fastest solver answers. The caller stops by dropping the stream.
+    ///
+    /// "Better" is the same ranking the one-shot [`Self::estimate`] uses.
+    /// A verified quote outranks an unverified one regardless of `out_amount`,
+    /// so a later verified quote can supersede an earlier unverified one that
+    /// had a higher nominal amount.
+    ///
+    /// Errors are not forwarded as they arrive. If no quote is ever produced,
+    /// the stream ends with the single error the one-shot [`Self::estimate`]
+    /// would return for the same query: the highest-priority estimator error,
+    /// or the "unreasonable estimates" error when every quote had 0 gas or 0
+    /// out_amount.
+    fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
+        let out_token = match query.kind {
+            OrderKind::Buy => query.sell_token,
+            OrderKind::Sell => query.buy_token,
+        };
+        async_stream::stream! {
+            let mut estimates = self
+                .stages
+                .iter()
+                .flatten()
+                .map(|(_name, estimator)| estimator.estimate(query.clone()))
+                .collect::<FuturesUnordered<_>>()
+                // Only errors and reasonable estimates can be ranked
+                .filter(|r| std::future::ready(r.is_err() || is_reasonable(r)));
+
+            let context_fut = self.ranking.provide_context(out_token, query.timeout).shared();
+
+            // Collect estimates concurrently while fetching the ranking context;
+            // they can't be ranked before it resolves.
+            let mut results: Vec<_> = (&mut estimates)
+                .take_until(context_fut.clone())
+                .collect()
+                .await;
+
+            let context = match context_fut.await {
+                Ok(context) => context,
+                // Without a ranking context we cannot rank anything, so fail the
+                // whole stream like the one-shot path does on a context error.
+                Err(err) => {
+                    yield Err(err);
+                    return;
+                }
+            };
+
+            // Replay the buffered results (arrival order), then continue draining
+            // the live stream. Every result is kept so that, if no quote is ever
+            // forwarded, the terminal error can be picked as `estimate` does.
+            let mut best: Option<Estimate> = None;
+            let mut stream = futures::stream::iter(std::mem::take(&mut results)).chain(estimates);
+            while let Some(result) = stream.next().await {
+                if let Ok(estimate) = &result {
+                    let beats_best = best.as_ref().is_none_or(|best| {
+                        compare_quote_result(
+                            &query,
+                            &result,
+                            &Ok(best.clone()),
+                            &context,
+                            self.verification_mode,
+                        )
+                        .is_gt()
+                    });
+                    if beats_best {
+                        best = Some(estimate.clone());
+                        yield Ok(estimate.clone());
+                    }
+                }
+                results.push(result);
+            }
+
+            if best.is_none() {
+                yield results
+                    .into_iter()
+                    .max_by(|a, b| compare_quote_result(&query, a, b, &context, self.verification_mode))
+                    .unwrap_or_else(|| Err(unreasonable_estimates_error()));
+            }
+        }
+        .boxed()
+    }
+}
+
+fn is_reasonable(result: &PriceEstimateResult) -> bool {
+    result
+        .as_ref()
+        .is_ok_and(|estimate| estimate.gas > 0 && !estimate.out_amount.is_zero())
+}
+
+fn unreasonable_estimates_error() -> PriceEstimationError {
+    PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+        "all price estimates were unreasonable (0 gas or 0 out_amount)"
+    ))
+}
+
 fn compare_quote_result(
     query: &Query,
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
     context: &RankingContext,
-    prefer_verified_estimates: bool,
+    verification_mode: QuoteVerificationMode,
 ) -> Ordering {
+    let prefer_verified = !matches!(verification_mode, QuoteVerificationMode::Unverified);
     match (a, b) {
         (Ok(a), Ok(b)) => {
-            match (prefer_verified_estimates, a.verified, b.verified) {
+            match (prefer_verified, a.verified, b.verified) {
                 // prefer verified over unverified quotes
                 (true, true, false) => Ordering::Greater,
                 (true, false, true) => Ordering::Less,
@@ -160,6 +249,7 @@ impl PriceRanking {
     }
 }
 
+#[derive(Clone)]
 struct RankingContext {
     native_price: f64,
     gas_price: f64,
