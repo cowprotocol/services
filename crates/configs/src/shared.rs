@@ -29,8 +29,8 @@ const fn default_ethrpc_max_concurrent_requests() -> usize {
 
 fn default_log_filter() -> String {
     String::from(
-        "info,autopilot=debug,driver=debug,observe=info,orderbook=debug,solver=debug,shared=debug,\
-         cow_amm=debug",
+        "info,autopilot=debug,driver=debug,observe=info,observe::http_body=debug,orderbook=debug,\
+         solver=debug,shared=debug,cow_amm=debug",
     )
 }
 

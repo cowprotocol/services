@@ -30,8 +30,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim AS intermediate
+# curl is used by the playground compose healthchecks (this image is not the
+# production one; prod builds from Dockerfile.deploy-ci).
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y ca-certificates tini gettext-base && \
+    apt-get install -y ca-certificates tini gettext-base curl && \
     apt-get clean
 
 FROM intermediate AS autopilot

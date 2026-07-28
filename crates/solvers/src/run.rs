@@ -36,9 +36,9 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
 
-    let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
+    let version = observe::version::git_version();
 
-    tracing::info!(%commit_hash, "running solver engine with {args:#?}");
+    tracing::info!(%version, "running solver engine with {args:#?}");
 
     let solver = match args.command {
         cli::Command::Baseline { config: path } => {

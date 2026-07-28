@@ -45,6 +45,12 @@ paths:
           schema:
             $ref: "#/components/schemas/DateTime"
           required: true
+        - in: query
+          name: fastPath
+          description: Hint that this quote is intended for fast-path execution.
+          schema:
+            type: boolean
+          required: false
       responses:
         "200":
           description: Quote successfully created.
@@ -274,12 +280,20 @@ components:
           items:
             $ref: "#/components/schemas/Interaction"
         sellTokenBalance:
+          deprecated: true
+          description: >
+            In practice only `erc20` occurs; `internal`/`external` (Balancer Vault) 
+            are deprecated and rejected at order creation. Retained for compatibility.
           type: string
           enum:
             - erc20
             - internal
             - external
         buyTokenBalance:
+          deprecated: true
+          description: >
+            In practice only `erc20` occurs; `internal` (Balancer Vault) is
+            rejected at order creation. Retained for compatibility.
           type: string
           enum:
             - erc20
@@ -422,6 +436,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/JitOrder"
+        supportsFastPath:
+          type: boolean
+          description: Whether the quoting solver supports fast-path (out-of-competition) execution.
       required:
         - clearingPrices
         - solver

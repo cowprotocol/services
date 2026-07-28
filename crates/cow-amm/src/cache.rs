@@ -100,7 +100,7 @@ impl Storage {
 
     pub(crate) async fn remove_amms(&self, amm_addresses: &[Address]) {
         let mut lock = self.0.cache.write().await;
-        for (_, amms) in lock.iter_mut() {
+        for amms in lock.values_mut() {
             amms.retain(|amm| !amm_addresses.contains(amm.address()))
         }
     }

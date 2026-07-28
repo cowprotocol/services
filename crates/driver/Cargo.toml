@@ -55,7 +55,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 request-sharing = { workspace = true }
-reqwest = { workspace = true, features = ["query"] }
+reqwest = { workspace = true, features = ["query", "stream"] }
 s3 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde-ext = { workspace = true }
@@ -67,6 +67,7 @@ thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
 token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
+tokio-stream = { workspace = true }
 toml = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["decompression-br", "limit", "trace"] }
@@ -92,13 +93,10 @@ alloy = { workspace = true, features = ["signer-mnemonic"] }
 app-data = { workspace = true, features = ["test_helpers"] }
 contracts = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
+flate2 = { workspace = true }
 maplit = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["process", "test-util"] }
-
-[build-dependencies]
-anyhow = { workspace = true }
-vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
 mimalloc-allocator = ["dep:mimalloc"]

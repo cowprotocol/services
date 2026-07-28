@@ -36,5 +36,42 @@ services:
         source: ./database/conf/
         target: /flyway/conf
 
+  # Flyway can't create databases, so provision the pool-indexer's own DB first.
+  # Idempotent (mirrors .devcontainer/setup-e2e.sh), so it's safe on an existing
+  # volume too — no fresh-volume init script required.
+  create-pool-indexer-db:
+    image: postgres:16
+    restart: on-failure
+    depends_on:
+      - db
+    environment:
+      PGHOST: db
+      PGUSER: $USER
+    command:
+      - sh
+      - -c
+      - "psql -tc \"SELECT 1 FROM pg_database WHERE datname='pool_indexer'\" | grep -q 1 || psql -c \"CREATE DATABASE pool_indexer\""
+
+  # Same flyway image as `migrations`, but applies the pool-indexer's own
+  # migration set to its own database (mirrors the per-network prod DB).
+  migrations-pool-indexer:
+    build:
+      context: .
+      target: migrations
+    restart: on-failure
+    command: migrate
+    depends_on:
+      create-pool-indexer-db:
+        condition: service_completed_successfully
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db/pool_indexer?user=$USER&password=
+    volumes:
+      - type: bind
+        source: ./database/sql-pool-indexer/
+        target: /flyway/sql
+      - type: bind
+        source: ./database/conf/
+        target: /flyway/conf
+
 volumes:
   postgres:

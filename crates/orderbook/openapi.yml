@@ -528,6 +528,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PriceEstimationError"
+  /api/v1/quote/stream:
+    post:
+      operationId: quoteStream
+      summary: Stream progressively improving quotes as solvers respond.
+      description: >
+        Accepts the same request body as `POST /api/v1/quote`. Instead of
+        waiting for all solvers and returning the single best quote, this
+        endpoint opens a Server-Sent Events stream and emits quotes as solvers
+        respond. A quote is emitted only when it ranks better than the best one
+        already sent; the first goes out as soon as the fastest solver answers.
+        Solvers without a usable quote, and quotes that do not beat the best
+        already sent, emit no event, so you may receive fewer events than there
+        are solvers. The stream closes when the quote timeout elapses or all
+        solvers have responded. Each emitted quote carries an `id` that can be
+        referenced when placing an order.
+
+        The `priceQuality` field of the request body is ignored: this endpoint
+        always queries all solvers and attempts verification, and each emitted
+        quote carries its own `verified` flag. A verified quote ranks above an
+        unverified one regardless of amount, so a later quote may report a lower
+        `out_amount`. Individual solver errors are not streamed; if no solver
+        returns a usable quote, a terminal event named `error` is sent with a
+        `PriceEstimationError` body before the stream closes.
+      requestBody:
+        description: The order parameters to compute quotes for.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderQuoteRequest"
+      responses:
+        "200":
+          description: >
+            A Server-Sent Events stream. Each event's `data` field is a JSON
+            object matching `OrderQuoteResponse`. Events arrive as the
+            best-ranked quote improves.
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/OrderQuoteResponse"
+        "400":
+          description: Error quoting order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceEstimationError"
+        "404":
+          description: No route was found for the specified order.
+        "422":
+          description: Unable to parse request body as valid JSON.
+        "429":
+          description: Too many order quotes.
+        "500":
+          description: Unexpected error quoting an order.
   "/api/v2/solver_competition/{auction_id}":
     get:
       operationId: getSolverCompetitionByAuctionIdV2
@@ -921,14 +975,26 @@ components:
         - limit
         - liquidity
     SellTokenSource:
-      description: Where should the `sellToken` be drawn from?
+      description: |-
+        Where should the `sellToken` be drawn from?
+
+        **Only `erc20` is accepted for new orders.** The `internal` and `external`
+        (Balancer Vault) sources are deprecated: orders using them are rejected at
+        creation with `UnsupportedSellTokenSource`. The values remain in the enum
+        because they may still appear on historical orders returned by the API.
       type: string
       enum:
         - erc20
         - internal
         - external
     BuyTokenDestination:
-      description: Where should the `buyToken` be transferred to?
+      description: |-
+        Where should the `buyToken` be transferred to?
+
+        **Only `erc20` is accepted for new orders.** The `internal` (Balancer Vault)
+        destination is rejected at creation with `UnsupportedBuyTokenDestination`.
+        The value remains in the enum because it may still appear on historical
+        orders returned by the API.
       type: string
       enum:
         - erc20
@@ -1036,6 +1102,7 @@ components:
           description: Is the order fill-or-kill or partially fillable?
           type: boolean
         sellTokenBalance:
+          deprecated: true
           description: >
             Where the sell token should be drawn from. Defaults to `erc20` for
             standard ERC-20 token transfers.
@@ -1043,6 +1110,7 @@ components:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          deprecated: true
           description: >
             Where the buy token should be transferred to. Defaults to `erc20` for
             standard ERC-20 token transfers.
@@ -1109,11 +1177,13 @@ components:
           description: "see `OrderParameters::partiallyFillable`"
           type: boolean
         sellTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::sellTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::buyTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
@@ -1466,11 +1536,13 @@ components:
           items:
             $ref: "#/components/schemas/InteractionData"
         sellTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::sellTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          deprecated: true
           description: "see `OrderParameters::buyTokenBalance`"
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
@@ -1595,7 +1667,7 @@ components:
             properties:
               solver:
                 type: string
-                description: Name of the solver.
+                description: The on-chain address of the solver.
               executedAmounts:
                 $ref: "#/components/schemas/ExecutedAmounts"
             required:
@@ -1980,10 +2052,12 @@ components:
               anyOf:
                 - $ref: "#/components/schemas/AppDataHash"
             sellTokenBalance:
+              deprecated: true
               allOf:
                 - $ref: "#/components/schemas/SellTokenSource"
               default: erc20
             buyTokenBalance:
+              deprecated: true
               allOf:
                 - $ref: "#/components/schemas/BuyTokenDestination"
               default: erc20
@@ -1993,6 +2067,12 @@ components:
               allOf:
                 - $ref: "#/components/schemas/PriceQuality"
               default: verified
+            fastPath:
+              description: >
+                Signals that this quote is intended for fast-path
+                (out-of-competition) execution. Propagated to the solver.
+              type: boolean
+              default: false
             signingScheme:
               allOf:
                 - $ref: "#/components/schemas/SigningScheme"
@@ -2743,10 +2823,12 @@ components:
           allOf:
             - $ref: "#/components/schemas/Address"
         sellTokenBalance:
+          deprecated: true
           description: Where the sell token should be drawn from.
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
         buyTokenBalance:
+          deprecated: true
           description: Where the buy token should be transferred to.
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"

@@ -5,7 +5,7 @@ use {
     contracts::ERC20::ERC20,
     model::{
         order::{Order, OrderKind},
-        signature::SigningScheme,
+        signature::{Signature, SigningScheme},
     },
     simulator::{
         report::{Event, SimulationReport},
@@ -44,6 +44,12 @@ pub enum OrderSimulationError {
     Infra(anyhow::Error),
 }
 
+pub struct SimulationSuccess {
+    /// Returns how much gas was needed to verify the order's EIP 1271
+    /// signature (if it had any).
+    pub eip1271_signature_verification_gas: u64,
+}
+
 /// Simulates an order's pre-hooks, swap, and post-hooks against the chain.
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait]
@@ -53,7 +59,7 @@ pub trait OrderSimulating: Send + Sync {
         order: &Order,
         full_app_data: &str,
         full_balance_check: bool,
-    ) -> Result<(), OrderSimulationError>;
+    ) -> Result<SimulationSuccess, OrderSimulationError>;
 }
 
 /// Drives [`SettlementSimulator`] to run a full-order simulation at order
@@ -76,16 +82,20 @@ impl OrderSimulating for OrderCreationSimulator {
         order: &Order,
         full_app_data: &str,
         full_balance_check: bool,
-    ) -> Result<(), OrderSimulationError> {
+    ) -> Result<SimulationSuccess, OrderSimulationError> {
         let inputs = self
             .prepare_simulation(order, full_app_data, full_balance_check)
             .await?;
 
-        // Fast path for "well behaved" orders which make up the majority.
-        // We only run the more involved analysis logic when something is
-        // actually wrong with the order.
-        if inputs.simulate().await.is_ok() {
-            return Ok(());
+        // Generating a failure report is more costly than a standard simulation.
+        // To avoid unnecessary overhead in the happy path we assume orders are
+        // well behaved and do a regular simulation by default. Except when it's
+        // an EIP 1271 order in which case we always have to run the more complex
+        // code to figure out how much gas the signature check needs.
+        if !matches!(order.signature, Signature::Eip1271(_)) && inputs.simulate().await.is_ok() {
+            return Ok(SimulationSuccess {
+                eip1271_signature_verification_gas: 0,
+            });
         }
 
         analyze_simulation(order, inputs).await
@@ -147,7 +157,7 @@ impl OrderCreationSimulator {
 async fn analyze_simulation(
     order: &Order,
     inputs: EthCallInputs,
-) -> Result<(), OrderSimulationError> {
+) -> Result<SimulationSuccess, OrderSimulationError> {
     let report = inputs
         .simulation_report()
         .await
@@ -160,7 +170,19 @@ async fn analyze_simulation(
         &report,
     ) {
         Some(revert) => revert,
-        None => return Ok(()),
+        None => {
+            let gas = if matches!(order.signature, Signature::Eip1271(_)) {
+                report
+                    .eip1271_gas_cost(&order.metadata.owner)
+                    .map_err(OrderSimulationError::Infra)?
+            } else {
+                0
+            };
+
+            return Ok(SimulationSuccess {
+                eip1271_signature_verification_gas: gas,
+            });
+        }
     };
 
     let tenderly = inputs.simulator.tenderly();

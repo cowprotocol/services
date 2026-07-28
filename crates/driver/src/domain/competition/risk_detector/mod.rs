@@ -137,7 +137,7 @@ impl Detector {
         }
 
         auction.orders = supported_orders;
-        if !removed_uids.is_empty() {
+        if !removed_uids.is_empty() && auction.id.is_some() {
             tracing::debug!(orders = ?removed_uids, "ignored orders with unsupported tokens");
         }
 

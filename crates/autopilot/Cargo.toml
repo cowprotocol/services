@@ -62,6 +62,7 @@ rust_decimal = { workspace = true }
 s3 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_stacker = { workspace = true }
 serde_with = { workspace = true }
 shared = { workspace = true }
 simulator = { workspace = true }
@@ -87,10 +88,6 @@ mockall = { workspace = true }
 shared = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-
-[build-dependencies]
-anyhow = { workspace = true }
-vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
 mimalloc-allocator = ["dep:mimalloc"]

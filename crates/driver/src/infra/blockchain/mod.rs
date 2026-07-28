@@ -1,5 +1,9 @@
 use {
-    crate::{boundary, domain::blockchain::TxStatus},
+    crate::{
+        boundary,
+        domain::blockchain::TxStatus,
+        infra::{blockchain::gas::GasPriceParameters, config::file::GasEstimatorType},
+    },
     account_balances::{BalanceSimulator, SimulationError},
     alloy::{
         eips::eip1559::Eip1559Estimation,
@@ -104,15 +108,27 @@ impl Ethereum {
     pub async fn new(
         rpc: Rpc,
         addresses: contracts::Addresses,
-        gas: Arc<GasPriceEstimator>,
         current_block_args: &shared::current_block::Arguments,
         tx_gas_limit: eth::Gas,
+        gas_estimator_type: &GasEstimatorType,
+        gas_adjustments: GasPriceParameters,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
         let current_block_stream = current_block_args
             .stream(args.url.clone(), web3.provider.clone())
             .await
             .expect("couldn't initialize current block stream");
+
+        let gas = Arc::new(
+            GasPriceEstimator::new(
+                &web3.provider,
+                &current_block_stream,
+                gas_estimator_type,
+                gas_adjustments,
+            )
+            .await
+            .expect("initialize gas price estimator"),
+        );
 
         let contracts = Contracts::new(&web3, chain, addresses)
             .await
@@ -122,7 +138,6 @@ impl Ethereum {
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
             *contracts.vault_relayer(),
-            Some(*contracts.vault().address()),
             state_overrider.clone(),
         );
 
@@ -216,12 +231,21 @@ impl Ethereum {
 
     /// Estimate gas used by a transaction.
     pub async fn estimate_gas(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
+        // Cap the search at the per-tx gas limit so a rogue solution can't force
+        // the node to binary-search up to the block gas limit while we re-check
+        // the settlement on every block during submission.
+        let gas_limit = u64::try_from(self.inner.tx_gas_limit.0).map_err(|err| {
+            Error::GasPrice(anyhow::anyhow!(
+                "failed to convert gas_limit to u64: {err:?}"
+            ))
+        })?;
         let tx = TransactionRequest::default()
             .from(tx.from)
             .to(tx.to)
             .value(tx.value.0)
             .input(tx.input.into())
-            .access_list(tx.access_list.into());
+            .access_list(tx.access_list.into())
+            .with_gas_limit(gas_limit);
 
         let tx = match self.simulation_gas_price().await {
             Some(gas_price) => tx.with_gas_price(gas_price),

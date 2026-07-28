@@ -2,6 +2,7 @@ mod buffering;
 pub mod errors;
 mod evm_ext;
 mod instrumentation;
+mod rpc_headers;
 mod wallet;
 
 use {
@@ -10,18 +11,28 @@ use {
     alloy_rpc_client::{ClientBuilder, RpcClient},
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
+    rpc_headers::{RpcHeadersLayer, TracingRequestIdLayer},
 };
 pub use {evm_ext::EvmProviderExt, instrumentation::ProviderLabelingExt, wallet::MutWallet};
 
 /// Creates an [`RpcClient`] from the given URL with [`LabelingLayer`],
-/// [`InstrumentationLayer`] and [`BatchCallLayer`].
+/// [`InstrumentationLayer`], [`TracingRequestIdLayer`], [`BatchCallLayer`] and
+/// [`RpcHeadersLayer`].
+///
+/// [`TracingRequestIdLayer`] is installed *before* [`BatchCallLayer`] so it
+/// runs on the caller's task and can capture the tracing request id from the
+/// current span. [`RpcHeadersLayer`] is installed last so it runs innermost —
+/// it must observe the packet after [`BatchCallLayer`] has coalesced calls into
+/// a batch.
 fn rpc(url: &str, config: Config, label: Option<&str>) -> RpcClient {
     ClientBuilder::default()
         .layer(LabelingLayer {
             label: label.unwrap_or("main").into(),
         })
         .layer(InstrumentationLayer)
+        .layer(TracingRequestIdLayer)
         .layer(BatchCallLayer::new(config))
+        .layer(RpcHeadersLayer)
         .http(url.parse().unwrap())
 }
 
@@ -37,6 +48,8 @@ fn unbuffered_rpc(url: &str, label: Option<&str>) -> RpcClient {
             label: label.unwrap_or("main_unbuffered").into(),
         })
         .layer(InstrumentationLayer)
+        .layer(TracingRequestIdLayer)
+        .layer(RpcHeadersLayer)
         .http(url.parse().unwrap())
 }
 

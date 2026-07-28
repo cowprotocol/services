@@ -278,7 +278,7 @@ impl TraceCallDetectorRaw {
         // Allow for a small discrepancy (1 wei) in the balance after the transfer
         // which may come from rounding discrepancies in tokens that track
         // balances with "shares" (e.g. eUSD).
-        if computed_balance_recipient_after < balance_recipient_after.saturating_sub(U256::ONE) {
+        if balance_recipient_after < computed_balance_recipient_after.saturating_sub(U256::ONE) {
             return Ok(TokenQuality::bad(format!(
                 "Transferring {amount} into arbitrary recipient {arbitrary:?} was expected to \
                  result in a balance of {computed_balance_recipient_after} but actually resulted \

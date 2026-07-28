@@ -47,6 +47,7 @@ mod get_trades_v2;
 mod get_user_orders;
 mod post_order;
 mod post_quote;
+mod post_quote_stream;
 mod put_app_data;
 mod ready;
 mod version;
@@ -99,7 +100,7 @@ async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Respon
     let response = next.run(req).await;
     let status = response.status().as_u16();
 
-    tracing::info!(
+    tracing::trace!(
         method,
         uri,
         user_agent,
@@ -240,6 +241,11 @@ pub fn handle_all_routes(
             "POST",
             "/api/v1/quote",
             post(post_quote::post_quote_handler),
+        ),
+        (
+            "POST",
+            "/api/v1/quote/stream",
+            post(post_quote_stream::post_quote_stream_handler),
         ),
         (
             "GET",

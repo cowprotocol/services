@@ -39,6 +39,7 @@ impl JitOrder {
         }
     }
 
+    #[allow(deprecated)]
     pub fn sign(
         self,
         signing_scheme: EcdsaSigningScheme,

@@ -63,9 +63,10 @@ pub struct PoolState {
     pub liquidity: U256,
     #[serde_as(as = "DisplayFromStr")]
     pub tick: i32,
-    // (tick_idx, liquidity_net)
-    #[serde_as(as = "BTreeMap<DisplayFromStr, DisplayFromStr>")]
-    pub liquidity_net: BTreeMap<i32, i128>,
+    // (tick_idx, liquidity_net). `Arc`-shared so cloning a `PoolInfo` doesn't
+    // deep-copy the tick map; copied-on-write only when mutated (Mint/Burn).
+    #[serde_as(as = "Arc<BTreeMap<DisplayFromStr, DisplayFromStr>>")]
+    pub liquidity_net: Arc<BTreeMap<i32, i128>>,
     #[serde(skip_serializing)]
     pub fee: Ratio<u32>,
 }
@@ -90,18 +91,19 @@ impl TryFrom<PoolData> for PoolInfo {
                 sqrt_price: pool.sqrt_price,
                 liquidity: pool.liquidity,
                 tick: pool.tick,
-                liquidity_net: pool
-                    .ticks
-                    .context("no ticks")?
-                    .into_iter()
-                    .filter_map(|tick| {
-                        if tick.liquidity_net == 0 {
-                            None
-                        } else {
-                            Some((tick.tick_idx, tick.liquidity_net))
-                        }
-                    })
-                    .collect(),
+                liquidity_net: Arc::new(
+                    pool.ticks
+                        .context("no ticks")?
+                        .into_iter()
+                        .filter_map(|tick| {
+                            if tick.liquidity_net == 0 {
+                                None
+                            } else {
+                                Some((tick.tick_idx, tick.liquidity_net))
+                            }
+                        })
+                        .collect(),
+                ),
                 fee: Ratio::new(u32::try_from(pool.fee_tier)?, 1_000_000u32),
             },
             gas_stats: PoolStats {
@@ -464,8 +466,9 @@ fn append_events(
                         pool.liquidity -= U256::from(burn.amount);
                     }
 
-                    update_liquidity_net(&mut pool.liquidity_net, tick_lower, -amount);
-                    update_liquidity_net(&mut pool.liquidity_net, tick_upper, amount);
+                    let liquidity_net = Arc::make_mut(&mut pool.liquidity_net);
+                    update_liquidity_net(liquidity_net, tick_lower, -amount);
+                    update_liquidity_net(liquidity_net, tick_upper, amount);
                 }
                 UniswapV3PoolEvents::Mint(mint) => {
                     let tick_lower = mint.tickLower.as_i32();
@@ -484,8 +487,9 @@ fn append_events(
                         pool.liquidity += U256::from(mint.amount);
                     }
 
-                    update_liquidity_net(&mut pool.liquidity_net, tick_lower, amount);
-                    update_liquidity_net(&mut pool.liquidity_net, tick_upper, -amount);
+                    let liquidity_net = Arc::make_mut(&mut pool.liquidity_net);
+                    update_liquidity_net(liquidity_net, tick_lower, amount);
+                    update_liquidity_net(liquidity_net, tick_upper, -amount);
                 }
                 UniswapV3PoolEvents::Swap(swap) => {
                     pool.tick = swap.tick.as_i32();
@@ -591,11 +595,11 @@ mod tests {
                 sqrt_price: U256::from(792216481398733702759960397_u128),
                 liquidity: U256::from(303015134493562686441_u128),
                 tick: -92110,
-                liquidity_net: BTreeMap::from([
+                liquidity_net: Arc::new(BTreeMap::from([
                     (-122070, 104713649338178916454i128),
                     (-77030, 1182024318125220460617i128),
                     (67260, 5812623076452005012674i128),
-                ]),
+                ])),
                 fee: Ratio::new(10_000u32, 1_000_000u32),
             },
             gas_stats: PoolStats {
@@ -667,7 +671,7 @@ mod tests {
         );
         append_events(&mut pools, vec![event]);
         assert_eq!(
-            pools[&address].state.liquidity_net,
+            *pools[&address].state.liquidity_net,
             BTreeMap::from([(100_000, -12345i128), (110_000, 12345i128)])
         );
 
@@ -685,7 +689,7 @@ mod tests {
         );
         append_events(&mut pools, vec![event]);
         assert_eq!(
-            pools[&address].state.liquidity_net,
+            *pools[&address].state.liquidity_net,
             BTreeMap::from([
                 (100_000, -12345i128),
                 (105_000, -54321i128),
@@ -718,7 +722,7 @@ mod tests {
         );
         append_events(&mut pools, vec![event]);
         assert_eq!(
-            pools[&address].state.liquidity_net,
+            *pools[&address].state.liquidity_net,
             BTreeMap::from([(100_000, 12345i128), (110_000, -12345i128)])
         );
 
@@ -737,7 +741,7 @@ mod tests {
         );
         append_events(&mut pools, vec![event]);
         assert_eq!(
-            pools[&address].state.liquidity_net,
+            *pools[&address].state.liquidity_net,
             BTreeMap::from([
                 (100_000, 12345i128),
                 (105_000, 54321i128),

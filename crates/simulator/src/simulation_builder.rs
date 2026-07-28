@@ -41,6 +41,7 @@ pub(crate) struct Inner {
     pub(crate) chain_id: u64,
     pub(crate) current_block: CurrentBlockWatcher,
     pub(crate) tenderly: Option<Arc<dyn tenderly::Api>>,
+    pub(crate) simulation_overrides: Option<crate::state_override_stream::SimulationOverrides>,
 }
 
 impl SettlementSimulator {
@@ -54,6 +55,7 @@ impl SettlementSimulator {
         state_overrides: Arc<dyn StateOverriding>,
         current_block: CurrentBlockWatcher,
         tenderly: Option<Arc<dyn tenderly::Api>>,
+        simulation_overrides: Option<crate::state_override_stream::SimulationOverrides>,
     ) -> Result<Self> {
         let authenticator = settlement.authenticator().call().await?;
         let vault_relayer = Address(settlement.vaultRelayer().call().await?.0);
@@ -74,6 +76,7 @@ impl SettlementSimulator {
             chain_id,
             current_block,
             tenderly,
+            simulation_overrides,
         })))
     }
 
@@ -87,6 +90,15 @@ impl SettlementSimulator {
 
     pub fn provider(&self) -> DynProvider {
         self.0.provider.clone()
+    }
+
+    /// Gas price for simulations. Nodes default `eth_call`s without one to 0
+    /// and some sneaky tokens detect that to behave differently than they would
+    /// on-chain. Doubling the base fee leaves headroom in case it moved on
+    /// since we last saw a block; otherwise nodes reject the call for
+    /// having a fee cap below the base fee.
+    pub fn simulation_gas_price(&self) -> u128 {
+        u128::from(self.0.current_block.borrow().base_fee) * 2
     }
 
     pub fn settlement_address(&self) -> Address {
@@ -472,6 +484,9 @@ impl EthCallInputs {
     pub async fn simulation_report(
         &self,
     ) -> Result<report::SimulationReport, RpcError<alloy_transport::TransportErrorKind>> {
+        let trace_options = GethDebugTracingCallOptions::default()
+            .with_tracing_options(GethDebugTracingOptions::call_tracer(CallConfig::default()))
+            .with_state_overrides(self.state_overrides.clone());
         let trace = self
             .simulator
             .0
@@ -480,11 +495,7 @@ impl EthCallInputs {
             .debug_trace_call_callframe(
                 self.as_transaction_request(),
                 self.block.into(),
-                GethDebugTracingCallOptions::default()
-                    .with_tracing_options(GethDebugTracingOptions::call_tracer(
-                        CallConfig::default(),
-                    ))
-                    .with_state_overrides(self.state_overrides.clone()),
+                trace_options,
             )
             .await?;
 

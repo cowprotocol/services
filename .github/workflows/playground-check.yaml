@@ -5,10 +5,24 @@ on:
   schedule:
     # Run this job once per day
     - cron: "0 0 * * *"
+  pull_request:
+    paths:
+      - "playground/**"
+      - ".github/workflows/playground-check.yaml"
 
 jobs:
   playground-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        compose-file:
+          - docker-compose.fork.yml
+          - docker-compose.non-interactive.yml
     runs-on: ubuntu-latest
+    # Healthy runs finish well under this (~22 min for the fork variant). If the job
+    # is taking close to this cap, it's likely going to fail, in which case it's
+    # better to fail fast instead of hanging.
+    timeout-minutes: 60
     env:
       FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
     steps:
@@ -24,7 +38,7 @@ jobs:
           swap-storage: false
 
       - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
@@ -32,7 +46,7 @@ jobs:
         run: sudo apt-get -qq update && sudo apt-get -y -q install curl jq
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@c7450ba673e133f5ee30098b3b54f444d3a2ca2d # v1.8.0
+        uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
 
       - name: Setup environment
         run: |
@@ -40,14 +54,18 @@ jobs:
           sed -i -e 's/ETH_RPC_URL=.*/ETH_RPC_URL=$FORK_URL_MAINNET/g' playground/.env
           cat playground/.env
 
-      - name: Start docker containers
+      - name: Start docker containers and wait for readiness
+        id: containers
         working-directory: playground
         run: |
-          # firstly start explorer container to workaround yarn cache problem 
-          docker compose -f docker-compose.fork.yml up -d explorer
-          docker compose -f docker-compose.fork.yml up -d
+          # firstly start explorer container to workaround yarn cache problem
+          docker compose -f ${{ matrix.compose-file }} up -d explorer
+          # --wait blocks on the healthchecks before the test runs. Fork builds
+          # the services in-container (~20 min), so the timeout matches start_period.
+          docker compose -f ${{ matrix.compose-file }} up -d --wait --wait-timeout 2700
 
       - name: Execute validation script
+        id: test_script
         working-directory: playground
         run: ./test_playground.sh
 
@@ -70,7 +88,7 @@ jobs:
         id: artifact-upload-step
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: logs.tgz
+          name: logs-${{ matrix.compose-file }}.tgz
           path: ./logs.tgz
 
       - name: Slack notification on failure

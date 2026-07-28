@@ -6,7 +6,7 @@ use {
     crate::trade_finding::QuoteExecution,
     alloy::primitives::{Address, U256},
     anyhow::Result,
-    futures::future::BoxFuture,
+    futures::{future::BoxFuture, stream::BoxStream},
     model::order::OrderKind,
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
@@ -158,6 +158,10 @@ pub struct Query {
     /// used to answer the query.
     #[serde(skip_serializing)]
     pub block_dependent: bool,
+    /// Whether this quote is intended for fast-path (out-of-competition)
+    /// execution; propagated to the driver.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub fast_path: bool,
     pub timeout: Duration,
 }
 
@@ -192,6 +196,9 @@ pub struct Estimate {
     pub solver: Address,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
+    /// Whether the quoting solver supports fast-path (out-of-competition)
+    /// execution for this order.
+    pub supports_fast_path: bool,
     /// Data associated with this estimation.
     #[debug(ignore)]
     pub execution: QuoteExecution,
@@ -221,6 +228,13 @@ pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 pub trait PriceEstimating: Send + Sync + 'static {
     fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult>;
+}
+
+/// Like `PriceEstimating`, but yields every estimator's result as it
+/// completes instead of collapsing to the single best one.
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
+pub trait StreamingPriceEstimating: Send + Sync + 'static {
+    fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult>;
 }
 
 pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);

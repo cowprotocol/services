@@ -253,11 +253,13 @@ mod tests {
             HEALTHY_PRICE_ESTIMATION_TIME,
             MockPriceEstimating,
             PriceEstimating,
+            PriceEstimationError,
             Query,
+            StreamingPriceEstimating,
         },
         alloy::primitives::{Address, U256},
         anyhow::anyhow,
-        futures::channel::oneshot::channel,
+        futures::{StreamExt, channel::oneshot::channel},
         model::order::OrderKind,
         number::nonzero::NonZeroU256,
         std::time::Duration,
@@ -274,6 +276,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -283,6 +286,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -292,6 +296,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -301,6 +306,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -310,6 +316,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
         ];
@@ -400,6 +407,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Buy,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
@@ -461,6 +469,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
@@ -538,6 +547,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
@@ -596,6 +606,218 @@ mod tests {
         };
 
         racing.estimate(query).await.unwrap();
+    }
+
+    fn make_query() -> Arc<Query> {
+        Arc::new(Query {
+            verification: Default::default(),
+            sell_token: Address::with_last_byte(0),
+            buy_token: Address::with_last_byte(1),
+            in_amount: NonZeroU256::try_from(1).unwrap(),
+            kind: OrderKind::Sell,
+            block_dependent: false,
+            fast_path: false,
+            timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+        })
+    }
+
+    #[tokio::test]
+    async fn estimate_stream_yields_all_results() {
+        let fast = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async {
+                    Ok(Estimate {
+                        out_amount: U256::from(1u64),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            m
+        };
+        let slow = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async {
+                    sleep(Duration::from_millis(10)).await;
+                    Ok(Estimate {
+                        out_amount: U256::from(2u64),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            m
+        };
+
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![vec![
+                ("fast".to_owned(), Arc::new(fast)),
+                ("slow".to_owned(), Arc::new(slow)),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
+
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
+
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.is_ok()));
+        // `fast` (out_amount 1) resolves immediately while `slow` sleeps, so a
+        // stream that yields as results arrive must emit `fast` first. A serial
+        // collect-then-yield implementation would fail this.
+        let amounts: Vec<_> = results
+            .iter()
+            .map(|r| r.as_ref().unwrap().out_amount)
+            .collect();
+        assert_eq!(amounts, vec![U256::from(1u64), U256::from(2u64)]);
+    }
+
+    /// A transient error is held back, not forwarded: once a later solver
+    /// returns a usable quote, the client sees only the quote, never the error.
+    #[tokio::test]
+    async fn estimate_stream_suppresses_errors_when_a_quote_arrives() {
+        let ok = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async {
+                    // Resolve after the error to prove the earlier error is
+                    // dropped rather than forwarded ahead of the quote.
+                    sleep(Duration::from_millis(10)).await;
+                    Ok(Estimate {
+                        out_amount: U256::from(1u64),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            m
+        };
+        let err = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate()
+                .times(1)
+                .returning(|_| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
+            m
+        };
+
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![vec![
+                ("ok".to_owned(), Arc::new(ok)),
+                ("err".to_owned(), Arc::new(err)),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
+
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].as_ref().unwrap().out_amount, U256::from(1u64));
+    }
+
+    /// When every estimator fails, nothing is forwarded until the stream ends,
+    /// then it emits the single highest-priority error — exactly what the
+    /// one-shot `estimate` returns for the same query.
+    #[tokio::test]
+    async fn estimate_stream_ends_with_highest_priority_error_when_all_fail() {
+        fn failing(err: PriceEstimationError) -> Arc<dyn PriceEstimating> {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate()
+                .times(1)
+                .return_once(move |_| async move { Err(err) }.boxed());
+            Arc::new(m)
+        }
+
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![vec![
+                (
+                    "low".to_owned(),
+                    failing(PriceEstimationError::ProtocolInternal(anyhow!("boom"))),
+                ),
+                (
+                    "high".to_owned(),
+                    failing(PriceEstimationError::RateLimited),
+                ),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
+
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
+
+        assert_eq!(results.len(), 1);
+        assert!(matches!(results[0], Err(PriceEstimationError::RateLimited)));
+    }
+
+    /// Best-so-far under `QuoteVerificationMode::Prefer`: a quote is forwarded
+    /// only when it ranks better than the best already sent. Errors are dropped
+    /// mid-stream, and because a verified quote outranks an unverified one
+    /// regardless of `out_amount` (same as the one-shot competition), a later
+    /// verified quote supersedes an earlier, higher unverified one.
+    #[tokio::test]
+    async fn estimate_stream_only_forwards_improving_quotes() {
+        // Staggered delays make the arrival order deterministic.
+        fn quote(delay_ms: u64, out_amount: u64, verified: bool) -> Arc<dyn PriceEstimating> {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(move |_| {
+                async move {
+                    sleep(Duration::from_millis(delay_ms)).await;
+                    Ok(Estimate {
+                        out_amount: U256::from(out_amount),
+                        gas: 1,
+                        verified,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            Arc::new(m)
+        }
+
+        fn failing(delay_ms: u64) -> Arc<dyn PriceEstimating> {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(move |_| {
+                async move {
+                    sleep(Duration::from_millis(delay_ms)).await;
+                    Err(PriceEstimationError::NoLiquidity)
+                }
+                .boxed()
+            });
+            Arc::new(m)
+        }
+
+        // Arrival order: fast unverified 100, better unverified 200, an error,
+        // then a worse (lower) verified 150.
+        let estimator = CompetitionEstimator::new(
+            vec![vec![
+                ("unverified-fast".to_owned(), quote(0, 100, false)),
+                ("unverified-better".to_owned(), quote(10, 200, false)),
+                ("err".to_owned(), failing(20)),
+                ("verified-worse".to_owned(), quote(30, 150, true)),
+            ]],
+            PriceRanking::MaxOutAmount,
+        )
+        .with_verification(QuoteVerificationMode::Prefer);
+
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
+
+        assert!(
+            results.iter().all(|r| r.is_ok()),
+            "no error should be yielded"
+        );
+        let amounts: Vec<_> = results
+            .iter()
+            .map(|r| r.as_ref().unwrap().out_amount)
+            .collect();
+        // 100 (best) -> 200 (improves) -> error (dropped) -> 150 (verified,
+        // supersedes).
+        assert_eq!(
+            amounts,
+            vec![U256::from(100u64), U256::from(200u64), U256::from(150u64)]
+        );
+        assert!(results.last().unwrap().as_ref().unwrap().verified);
     }
 
     #[test]

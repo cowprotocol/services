@@ -36,6 +36,7 @@ autopilot = { workspace = true, features = ["test-util"] }
 axum = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
+chain = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 configs = { workspace = true, features = ["test-util"] }
@@ -47,6 +48,7 @@ driver = { workspace = true }
 eth-domain-types = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 futures = { workspace = true }
+gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
 liquidity-sources = { workspace = true }

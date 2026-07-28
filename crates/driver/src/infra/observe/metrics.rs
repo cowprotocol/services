@@ -58,6 +58,15 @@ pub struct Metrics {
         )
     )]
     pub used_solve_time: prometheus::HistogramVec,
+
+    /// Time spent serializing and streaming the solve request body to each
+    /// solver, split by `phase`: `serialization` (isolated CPU cost) and
+    /// `total` (serialization plus solver transfer + optional gzip archival).
+    #[metric(
+        labels("solver", "phase"),
+        buckets(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5)
+    )]
+    pub solve_request_body_time: prometheus::HistogramVec,
 }
 
 impl Metrics {

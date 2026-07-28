@@ -1,0 +1,6 @@
+# CVE-2020-36460 (RUSTSEC-2021-0103, "Data races in model") applies to the
+# unrelated crates.io `model` crate. Trivy matches it by name and version
+# against our own workspace crate `crates/model` (also named `model`, version
+# 0.1.0), which is a different crate and is not affected. We do not depend on
+# the crates.io `model` crate.
+CVE-2020-36460

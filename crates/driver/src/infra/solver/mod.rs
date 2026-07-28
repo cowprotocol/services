@@ -27,23 +27,19 @@ use {
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
     anyhow::Result,
-    bytes::Bytes,
     derive_more::{From, Into},
     eth_domain_types as eth,
     num::BigRational,
     observe::tracing::distributed::headers::tracing_headers,
     reqwest::header::HeaderName,
-    std::{
-        collections::HashMap,
-        sync::atomic::{AtomicUsize, Ordering},
-        time::{Duration, Instant},
-    },
+    std::{collections::HashMap, time::Duration},
     thiserror::Error,
     tracing::{Instrument, instrument},
 };
 
 pub mod dto;
 pub mod eip7702;
+mod streaming;
 
 // TODO At some point I should be checking that the names are unique, I don't
 // think I'm doing that.
@@ -193,6 +189,8 @@ pub struct Config {
     /// Use limit orders for quoting
     /// TODO: Remove once all solvers are moved to use limit orders for quoting
     pub quote_using_limit_orders: bool,
+    /// Whether this solver supports fast-path (out-of-competition) execution.
+    pub fast_path_enabled: bool,
     pub merge_solutions: SolutionMerging,
     /// S3 configuration for storing the auctions in the form they are sent to
     /// the solver engine
@@ -327,6 +325,11 @@ impl Solver {
         self.config.quote_using_limit_orders
     }
 
+    /// Whether this solver supports fast-path (out-of-competition) execution.
+    pub fn fast_path_enabled(&self) -> bool {
+        self.config.fast_path_enabled
+    }
+
     pub fn solution_merging(&self) -> SolutionMerging {
         self.config.merge_solutions
     }
@@ -369,8 +372,6 @@ impl Solver {
         auction: &Auction,
         liquidity: &[liquidity::Liquidity],
     ) -> Result<Vec<Solution>, Error> {
-        let start = Instant::now();
-
         let flashloan_hints = self.assemble_flashloan_hints(auction);
         let wrappers = self.assemble_wrappers(auction);
 
@@ -389,21 +390,48 @@ impl Solver {
             self.config.haircut_bps,
         );
 
-        let body = serialize_body(auction_dto);
+        let url = shared::url::join(&self.config.endpoint, "solve");
 
-        if let Some(id) = auction.id() {
-            // Only auctions with IDs are real auctions (/quote requests don't have an ID).
-            // Only for those it makes sense to archive them and measure the execution time.
-            self.persistence.archive_auction(id, body.clone());
-            ::observe::metrics::metrics().measure_auction_overhead(
-                start,
-                "driver",
-                "serialize_request",
-            );
+        // Real auctions (those with an ID) are archived to S3; quotes aren't, so
+        // they skip the gzip capture entirely and just stream the body.
+        let archive_id = self
+            .persistence
+            .archives_enabled()
+            .then(|| auction.id())
+            .flatten();
+        let (body, measurements) = match archive_id {
+            // Stream the request body while capturing a gzipped copy for S3, so
+            // neither the request nor the archive holds the full JSON at once.
+            Some(id) => {
+                let (body, compressed, measurements) = streaming::stream_body_and_gzip(auction_dto);
+                self.persistence.archive_auction_gzipped(id, compressed);
+                (body, measurements)
+            }
+            None => streaming::stream_body(auction_dto),
+        };
+
+        // Record the serialization overhead for real auctions only; quotes go
+        // through the same streaming path but would skew the metric. The stream
+        // reports the timing once serialization finishes, independently of
+        // whether the auction was archived.
+        if auction.id().is_some() {
+            let solver = self.config.name.clone();
+            tokio::spawn(async move {
+                if let Ok(measurements) = measurements.await {
+                    observe::metrics::metrics().record_auction_overhead(
+                        measurements.serialize,
+                        "driver",
+                        "serialize_request",
+                    );
+                    super::observe::serialized_solve_request(
+                        &solver,
+                        measurements.serialize,
+                        measurements.total,
+                    );
+                }
+            });
         }
 
-        let url = shared::url::join(&self.config.endpoint, "solve");
-        super::observe::solver_request(&url, &body);
         let timeout = match auction.deadline(self.timeouts()).solvers().remaining() {
             Ok(timeout) => timeout,
             Err(_) => {
@@ -543,45 +571,6 @@ impl Solver {
     }
 }
 
-/// Serializes the request body in a way that avoid re-allocating while not
-/// overallocating a lot of memory. It does that by keeping track of the biggest
-/// request seen for each kind of request (quote with/without liquidity, full
-/// auction with/without liquidity) and allocating the correct amount of memory
-/// based on the data in the auction.
-fn serialize_body(auction_dto: solvers_dto::auction::Auction) -> Bytes {
-    // these values store the biggest allocation we needed for each
-    // category of requests
-    static QUOTE_WITH_LIQUIDITY: AtomicUsize = AtomicUsize::new(1_000);
-    static QUOTE_WITHOUT_LIQUIDITY: AtomicUsize = AtomicUsize::new(1_000);
-    static AUCTION_WITH_LIQUIDITY: AtomicUsize = AtomicUsize::new(1_000);
-    static AUCTION_WITHOUT_LIQUIDITY: AtomicUsize = AtomicUsize::new(1_000);
-
-    // based on the "shape" of the auction we pick the allocation size
-    let is_auction = auction_dto.id.is_some();
-    let with_liquidity = !auction_dto.liquidity.is_empty();
-    let memory_target = match (is_auction, with_liquidity) {
-        (false, false) => &QUOTE_WITHOUT_LIQUIDITY,
-        (false, true) => &QUOTE_WITH_LIQUIDITY,
-        (true, false) => &AUCTION_WITHOUT_LIQUIDITY,
-        (true, true) => &AUCTION_WITH_LIQUIDITY,
-    };
-
-    // pre-allocate biggest request size + 0.5% (to avoid re-allocations when
-    // the request grows only slightly)
-    let pre_alloc_size = memory_target.load(Ordering::Relaxed);
-    let pre_alloc_size = pre_alloc_size + pre_alloc_size * 5 / 1_000;
-    let mut buffer = Vec::with_capacity(pre_alloc_size);
-
-    serde_json::to_writer(&mut buffer, &auction_dto).unwrap();
-
-    // now that we know how much memory was actually needed we update the memory
-    // targets
-    memory_target.fetch_max(buffer.len(), Ordering::Relaxed);
-    tracing::trace!(pre_alloc_size, final_size = buffer.len(), "body allocation");
-
-    Bytes::from(buffer)
-}
-
 #[cfg(test)]
 mod tests {
     use {
@@ -619,6 +608,7 @@ mod tests {
             request_headers: Default::default(),
             fee_handler: FeeHandler::Driver,
             quote_using_limit_orders: false,
+            fast_path_enabled: false,
             merge_solutions: SolutionMerging::Forbidden,
             s3: None,
             solver_native_token: ManageNativeToken {

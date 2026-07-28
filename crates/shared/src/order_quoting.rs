@@ -8,7 +8,7 @@ use {
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
-    futures::TryFutureExt,
+    futures::{StreamExt, TryFutureExt},
     gas_price_estimation::GasPriceEstimating,
     model::{
         interaction::InteractionData,
@@ -21,6 +21,7 @@ use {
         self,
         PriceEstimating,
         PriceEstimationError,
+        StreamingPriceEstimating,
         Verification,
         native::NativePriceEstimating,
         trade_finding::external::dto,
@@ -39,6 +40,9 @@ pub struct QuoteParameters {
     pub verification: Verification,
     pub signing_scheme: QuoteSigningScheme,
     pub additional_gas: u64,
+    /// Whether this quote is intended for fast-path (out-of-competition)
+    /// execution.
+    pub fast_path: bool,
     pub timeout: Option<std::time::Duration>,
 }
 
@@ -48,16 +52,7 @@ impl QuoteParameters {
         default_quote_timeout: std::time::Duration,
         max_quote_timeout: std::time::Duration,
     ) -> price_estimation::Query {
-        let (kind, in_amount) = match self.side {
-            OrderQuoteSide::Sell {
-                sell_amount:
-                    SellAmount::BeforeFee { value: sell_amount }
-                    | SellAmount::AfterFee { value: sell_amount },
-            } => (OrderKind::Sell, sell_amount),
-            OrderQuoteSide::Buy {
-                buy_amount_after_fee,
-            } => (OrderKind::Buy, buy_amount_after_fee),
-        };
+        let (kind, in_amount) = self.side.kind_and_amount();
 
         let timeout = self
             .timeout
@@ -71,6 +66,7 @@ impl QuoteParameters {
             in_amount,
             kind,
             block_dependent: true,
+            fast_path: self.fast_path,
             timeout,
         }
     }
@@ -207,6 +203,9 @@ pub struct QuoteData {
     pub solver: Address,
     /// Were we able to verify that this quote is accurate?
     pub verified: bool,
+    /// Whether the quoting solver supports fast-path (out-of-competition)
+    /// execution for this order.
+    pub supports_fast_path: bool,
     /// Additional data associated with the quote.
     pub metadata: QuoteMetadata,
 }
@@ -232,6 +231,8 @@ impl TryFrom<QuoteRow> for QuoteData {
             quote_kind: row.quote_kind,
             solver: Address::from_slice(&row.solver.0),
             verified: row.verified,
+            // Not stored in the DB yet; defaults to false until persisted.
+            supports_fast_path: false,
             metadata: row.metadata.try_into()?,
         })
     }
@@ -418,6 +419,7 @@ pub struct OrderQuoter {
     validity: Validity,
     default_quote_timeout: std::time::Duration,
     max_quote_timeout: std::time::Duration,
+    streaming_price_estimator: Option<Arc<dyn StreamingPriceEstimating>>,
 }
 
 impl OrderQuoter {
@@ -443,7 +445,16 @@ impl OrderQuoter {
             validity,
             default_quote_timeout,
             max_quote_timeout,
+            streaming_price_estimator: None,
         }
+    }
+
+    pub fn with_streaming_estimator(
+        mut self,
+        estimator: Arc<dyn StreamingPriceEstimating>,
+    ) -> Self {
+        self.streaming_price_estimator = Some(estimator);
+        self
     }
 
     async fn compute_quote_data(
@@ -484,43 +495,13 @@ impl OrderQuoter {
                 .map_err(|err| (EstimatorKind::NativeBuy, err).into()),
         )?;
 
-        let (quoted_sell_amount, quoted_buy_amount) = match &parameters.side {
-            OrderQuoteSide::Sell {
-                sell_amount: SellAmount::BeforeFee { value: sell_amount },
-            }
-            | OrderQuoteSide::Sell {
-                sell_amount: SellAmount::AfterFee { value: sell_amount },
-            } => (sell_amount.get(), trade_estimate.out_amount),
-            OrderQuoteSide::Buy {
-                buy_amount_after_fee: buy_amount,
-            } => (trade_estimate.out_amount, buy_amount.get()),
-        };
-
-        let fee_parameters = FeeParameters {
-            gas_amount: trade_estimate.gas as f64,
-            gas_price: effective_gas_price as f64,
+        let quote = assemble_quote_data(
+            parameters,
+            trade_estimate,
+            effective_gas_price,
             sell_token_price,
-        };
-
-        let quote_kind = quote_kind_from_signing_scheme(&parameters.signing_scheme);
-        let quote = QuoteData {
-            sell_token: parameters.sell_token,
-            buy_token: parameters.buy_token,
-            quoted_sell_amount,
-            quoted_buy_amount,
-            fee_parameters,
-            kind: trade_query.kind,
             expiration,
-            quote_kind,
-            solver: trade_estimate.solver,
-            verified: trade_estimate.verified,
-            metadata: QuoteMetadataV1 {
-                interactions: trade_estimate.execution.interactions,
-                pre_interactions: trade_estimate.execution.pre_interactions,
-                jit_orders: trade_estimate.execution.jit_orders,
-            }
-            .into(),
-        };
+        );
 
         Ok(quote)
     }
@@ -624,6 +605,133 @@ impl OrderQuoting for OrderQuoter {
     }
 }
 
+#[async_trait::async_trait]
+pub trait StreamingQuoting: Send + Sync {
+    /// Fetches gas and native prices once, then yields one `Quote` per solver
+    /// result as it arrives. Each yielded quote is persisted (as opposed to
+    /// just the final quote in the one-shot quote endpoint) so it can be
+    /// referenced by id during a later order placement.
+    async fn calculate_quote_stream(
+        &self,
+        parameters: QuoteParameters,
+    ) -> Result<
+        futures::stream::BoxStream<'static, Result<Quote, CalculateQuoteError>>,
+        CalculateQuoteError,
+    >;
+}
+
+#[async_trait::async_trait]
+impl StreamingQuoting for OrderQuoter {
+    async fn calculate_quote_stream(
+        &self,
+        parameters: QuoteParameters,
+    ) -> Result<
+        futures::stream::BoxStream<'static, Result<Quote, CalculateQuoteError>>,
+        CalculateQuoteError,
+    > {
+        let estimator = self.streaming_price_estimator.clone().ok_or_else(|| {
+            CalculateQuoteError::Other(anyhow::anyhow!("streaming estimator not configured"))
+        })?;
+
+        let trade_query =
+            Arc::new(parameters.to_price_query(self.default_quote_timeout, self.max_quote_timeout));
+
+        let (effective_gas_price, sell_token_price, _buy_token_price) = futures::try_join!(
+            self.gas_estimator
+                .effective_gas_price()
+                .map_err(|err| CalculateQuoteError::from((
+                    EstimatorKind::Gas,
+                    PriceEstimationError::ProtocolInternal(err)
+                ))),
+            self.native_price_estimator
+                .estimate_native_price(parameters.sell_token, trade_query.timeout)
+                .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeSell, err))),
+            // We don't care about the native price of the buy_token for the quote but we need it
+            // when we build the auction. To prevent creating orders which we can't settle later on
+            // we make the native buy_token price a requirement here as well.
+            self.native_price_estimator
+                .estimate_native_price(parameters.buy_token, trade_query.timeout)
+                .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeBuy, err))),
+        )?;
+
+        let expiration = match parameters.signing_scheme {
+            QuoteSigningScheme::Eip1271 {
+                onchain_order: true,
+                ..
+            } => self.now.now() + self.validity.eip1271_onchain_quote,
+            QuoteSigningScheme::PreSign {
+                onchain_order: true,
+            } => self.now.now() + self.validity.presign_onchain_quote,
+            _ => self.now.now() + self.validity.standard_quote,
+        };
+
+        let additional_cost = parameters.additional_cost();
+        let storage = self.storage.clone();
+
+        let stream = async_stream::stream! {
+            let inner = estimator.estimate_stream(trade_query);
+            futures::pin_mut!(inner);
+
+            // Errors are only surfaced at the end if no quote ever succeeds.
+            let mut deferred_err: Option<CalculateQuoteError> = None;
+            let mut any_ok = false;
+            while let Some(result) = inner.next().await {
+                let estimate = match result {
+                    Ok(e) => e,
+                    // An inner error is terminal but less specific than SellAmountDoesNotCoverFee, so it should not mask the latter.
+                    Err(err) => {
+                        deferred_err = deferred_err.or(Some(CalculateQuoteError::from((EstimatorKind::Regular, err))));
+                        continue;
+                    }
+                };
+                // Drop estimates with zero gas or zero output to avoid emitting garbage quotes.
+                if estimate.gas == 0 || estimate.out_amount.is_zero() {
+                    continue;
+                }
+                let data = assemble_quote_data(
+                    &parameters,
+                    estimate,
+                    effective_gas_price,
+                    sell_token_price,
+                    expiration,
+                );
+                let mut quote =
+                    Quote::new(Default::default(), data).with_additional_cost(additional_cost);
+                if let OrderQuoteSide::Sell {
+                    sell_amount: SellAmount::BeforeFee { value },
+                } = &parameters.side
+                {
+                    let sell_amount = value.get().saturating_sub(quote.fee_amount);
+                    if sell_amount.is_zero() {
+                        // SellAmountDoesNotCoverFee is a more actionable error than a generic inner one
+                        deferred_err = Some(CalculateQuoteError::SellAmountDoesNotCoverFee {
+                            fee_amount: quote.fee_amount,
+                        });
+                        continue;
+                    }
+                    quote = quote.with_scaled_sell_amount(sell_amount);
+                }
+                // Persist the quote so it can be referenced by id when the
+                // order is later placed, mirroring the one-shot endpoint. A
+                // failed write must not turn an otherwise good quote into an
+                // error event.
+                match storage.save(quote.data.clone()).await {
+                    Ok(id) => quote.id = Some(id),
+                    Err(err) => tracing::error!(?err, "failed to persist streamed quote"),
+                }
+                any_ok = true;
+                yield Ok(quote);
+            }
+            // No quote succeeded: surface the deferred fee error, if any.
+            if !any_ok && let Some(err) = deferred_err {
+                yield Err(err);
+            }
+        };
+
+        Ok(stream.boxed())
+    }
+}
+
 impl From<&OrderQuoteRequest> for PreOrderData {
     fn from(quote_request: &OrderQuoteRequest) -> Self {
         let owner = quote_request.from;
@@ -656,6 +764,56 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
             onchain_order: true,
         } => QuoteKind::PreSignOnchainOrder,
         _ => QuoteKind::Standard,
+    }
+}
+
+/// Assembles a `QuoteData` from a completed price estimate and its inputs.
+///
+/// `expiration` must be computed by the caller (it depends on `&self` state in
+/// `OrderQuoter`).
+fn assemble_quote_data(
+    parameters: &QuoteParameters,
+    estimate: price_estimation::Estimate,
+    effective_gas_price: u128,
+    sell_token_price: f64,
+    expiration: DateTime<Utc>,
+) -> QuoteData {
+    let (quoted_sell_amount, quoted_buy_amount, kind) = match &parameters.side {
+        OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee { value: sell_amount },
+        }
+        | OrderQuoteSide::Sell {
+            sell_amount: SellAmount::AfterFee { value: sell_amount },
+        } => (sell_amount.get(), estimate.out_amount, OrderKind::Sell),
+        OrderQuoteSide::Buy {
+            buy_amount_after_fee: buy_amount,
+        } => (estimate.out_amount, buy_amount.get(), OrderKind::Buy),
+    };
+
+    let fee_parameters = FeeParameters {
+        gas_amount: estimate.gas as f64,
+        gas_price: effective_gas_price as f64,
+        sell_token_price,
+    };
+
+    QuoteData {
+        sell_token: parameters.sell_token,
+        buy_token: parameters.buy_token,
+        quoted_sell_amount,
+        quoted_buy_amount,
+        fee_parameters,
+        kind,
+        expiration,
+        quote_kind: quote_kind_from_signing_scheme(&parameters.signing_scheme),
+        solver: estimate.solver,
+        verified: estimate.verified,
+        supports_fast_path: estimate.supports_fast_path,
+        metadata: QuoteMetadataV1 {
+            interactions: estimate.execution.interactions,
+            pre_interactions: estimate.execution.pre_interactions,
+            jit_orders: estimate.execution.jit_orders,
+        }
+        .into(),
     }
 }
 
@@ -727,10 +885,10 @@ mod tests {
         super::*,
         alloy::{
             eips::eip1559::Eip1559Estimation,
-            primitives::{Address, U256},
+            primitives::{Address, U256 as AlloyU256},
         },
         chrono::Utc,
-        futures::FutureExt,
+        futures::{FutureExt, StreamExt, stream},
         gas_price_estimation::FakeGasPriceEstimator,
         mockall::{Sequence, predicate::eq},
         model::time,
@@ -784,6 +942,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -805,6 +964,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
@@ -815,6 +975,7 @@ mod tests {
                         gas: 3,
                         solver: Address::repeat_byte(1),
                         verified: false,
+                        supports_fast_path: false,
                         execution: Default::default(),
                     })
                 }
@@ -857,6 +1018,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: Address::repeat_byte(1),
                 verified: false,
+                supports_fast_path: false,
                 metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
@@ -870,6 +1032,7 @@ mod tests {
             validity: super::Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -894,6 +1057,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
+                    supports_fast_path: false,
                     metadata: Default::default(),
                 },
                 sell_amount: U256::from(70),
@@ -923,6 +1087,7 @@ mod tests {
                 verification_gas_limit: 1,
             },
             additional_gas: 2,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -944,6 +1109,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: true,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
@@ -954,6 +1120,7 @@ mod tests {
                         gas: 3,
                         solver: Address::repeat_byte(1),
                         verified: false,
+                        supports_fast_path: false,
                         execution: Default::default(),
                     })
                 }
@@ -996,6 +1163,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: Address::repeat_byte(1),
                 verified: false,
+                supports_fast_path: false,
                 metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
@@ -1009,6 +1177,7 @@ mod tests {
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1033,6 +1202,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
+                    supports_fast_path: false,
                     metadata: Default::default(),
                 },
                 sell_amount: U256::from(100),
@@ -1057,6 +1227,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1078,6 +1249,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: true,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
@@ -1088,6 +1260,7 @@ mod tests {
                         gas: 3,
                         solver: Address::repeat_byte(1),
                         verified: false,
+                        supports_fast_path: false,
                         execution: Default::default(),
                     })
                 }
@@ -1130,6 +1303,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: Address::repeat_byte(1),
                 verified: false,
+                supports_fast_path: false,
                 metadata: Default::default(),
             }))
             .returning(|_| Ok(1337));
@@ -1143,6 +1317,7 @@ mod tests {
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1167,6 +1342,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
+                    supports_fast_path: false,
                     metadata: Default::default(),
                 },
                 sell_amount: U256::from(100),
@@ -1192,6 +1368,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1207,6 +1384,7 @@ mod tests {
                     gas: 200,
                     solver: Address::repeat_byte(1),
                     verified: false,
+                    supports_fast_path: false,
                     execution: Default::default(),
                 })
             }
@@ -1240,6 +1418,7 @@ mod tests {
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
         };
 
         assert!(matches!(
@@ -1264,6 +1443,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
+            fast_path: false,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1279,6 +1459,7 @@ mod tests {
                     gas: 200,
                     solver: Address::repeat_byte(1),
                     verified: false,
+                    supports_fast_path: false,
                     execution: Default::default(),
                 })
             }
@@ -1312,6 +1493,7 @@ mod tests {
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
         };
 
         assert!(matches!(
@@ -1359,6 +1541,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: Address::repeat_byte(1),
                 verified: false,
+                supports_fast_path: false,
                 metadata: Default::default(),
             }))
         });
@@ -1372,6 +1555,7 @@ mod tests {
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
         };
 
         assert_eq!(
@@ -1393,6 +1577,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
+                    supports_fast_path: false,
                     metadata: Default::default(),
                 },
                 sell_amount: U256::from(85),
@@ -1441,6 +1626,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: Address::repeat_byte(1),
                 verified: false,
+                supports_fast_path: false,
                 metadata: Default::default(),
             }))
         });
@@ -1454,6 +1640,7 @@ mod tests {
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
         };
 
         assert_eq!(
@@ -1475,6 +1662,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
+                    supports_fast_path: false,
                     metadata: Default::default(),
                 },
                 sell_amount: U256::from(100),
@@ -1524,6 +1712,7 @@ mod tests {
                         quote_kind: QuoteKind::Standard,
                         solver: Address::repeat_byte(1),
                         verified: false,
+                        supports_fast_path: false,
                         metadata: Default::default(),
                     },
                 )))
@@ -1538,6 +1727,7 @@ mod tests {
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
         };
 
         assert_eq!(
@@ -1559,6 +1749,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
+                    supports_fast_path: false,
                     metadata: Default::default(),
                 },
                 sell_amount: U256::from(100),
@@ -1610,6 +1801,7 @@ mod tests {
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
         };
 
         assert!(matches!(
@@ -1640,6 +1832,7 @@ mod tests {
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
         };
 
         assert!(matches!(
@@ -1767,5 +1960,454 @@ mod tests {
                 assert_eq!(v1.jit_orders.len(), 2);
             }
         }
+    }
+
+    #[test]
+    fn assemble_quote_data_sell_order() {
+        let expiration = Utc::now() + chrono::Duration::seconds(60);
+        let parameters = QuoteParameters {
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee {
+                    value: NonZeroU256::try_from(100).unwrap(),
+                },
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            verification: Default::default(),
+            additional_gas: 0,
+            fast_path: false,
+            timeout: None,
+        };
+        let estimate = price_estimation::Estimate {
+            out_amount: AlloyU256::from(42),
+            gas: 3,
+            solver: Address::repeat_byte(7),
+            verified: true,
+            supports_fast_path: false,
+            execution: Default::default(),
+        };
+
+        let data = assemble_quote_data(&parameters, estimate, 2, 0.5, expiration);
+
+        assert_eq!(data.sell_token, Address::repeat_byte(1));
+        assert_eq!(data.buy_token, Address::repeat_byte(2));
+        assert_eq!(data.quoted_sell_amount, AlloyU256::from(100));
+        assert_eq!(data.quoted_buy_amount, AlloyU256::from(42));
+        assert_eq!(data.kind, OrderKind::Sell);
+        assert_eq!(data.expiration, expiration);
+        assert_eq!(data.quote_kind, QuoteKind::Standard);
+        assert_eq!(data.solver, Address::repeat_byte(7));
+        assert!(data.verified);
+        assert_eq!(
+            data.fee_parameters,
+            FeeParameters {
+                gas_amount: 3.,
+                gas_price: 2.,
+                sell_token_price: 0.5,
+            }
+        );
+        assert_eq!(data.metadata, QuoteMetadata::default());
+    }
+
+    #[test]
+    fn assemble_quote_data_buy_order() {
+        // Buy orders flip the assignment: the estimate's out_amount is the
+        // quoted sell amount, and the requested buy amount is fixed.
+        let expiration = Utc::now() + chrono::Duration::seconds(60);
+        let parameters = QuoteParameters {
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            side: OrderQuoteSide::Buy {
+                buy_amount_after_fee: NonZeroU256::try_from(100).unwrap(),
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            verification: Default::default(),
+            additional_gas: 0,
+            fast_path: false,
+            timeout: None,
+        };
+        let estimate = price_estimation::Estimate {
+            out_amount: AlloyU256::from(42),
+            gas: 3,
+            solver: Address::repeat_byte(7),
+            verified: false,
+            supports_fast_path: false,
+            execution: Default::default(),
+        };
+
+        let data = assemble_quote_data(&parameters, estimate, 2, 0.5, expiration);
+
+        assert_eq!(data.quoted_sell_amount, AlloyU256::from(42));
+        assert_eq!(data.quoted_buy_amount, AlloyU256::from(100));
+        assert_eq!(data.kind, OrderKind::Buy);
+        assert!(!data.verified);
+    }
+
+    // Helpers shared by the streaming tests below.
+    fn make_streaming_quoter(
+        streaming_estimator: price_estimation::MockStreamingPriceEstimating,
+        native_price_estimator: MockNativePriceEstimating,
+        gas_price: alloy::eips::eip1559::Eip1559Estimation,
+        now: chrono::DateTime<Utc>,
+    ) -> OrderQuoter {
+        let next_id = std::sync::atomic::AtomicI64::new(1);
+        let mut storage = MockQuoteStoring::new();
+        storage
+            .expect_save()
+            .times(0..)
+            .returning(move |_| Ok(next_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+
+        OrderQuoter {
+            price_estimator: Arc::new(MockPriceEstimating::new()),
+            native_price_estimator: Arc::new(native_price_estimator),
+            gas_estimator: Arc::new(FakeGasPriceEstimator::new(gas_price)),
+            storage: Arc::new(storage),
+            now: Arc::new(now),
+            validity: Validity::default(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: Some(Arc::new(streaming_estimator)),
+        }
+    }
+
+    fn default_streaming_params() -> QuoteParameters {
+        QuoteParameters {
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee {
+                    value: number::nonzero::NonZeroU256::try_from(1000).unwrap(),
+                },
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            verification: Default::default(),
+            additional_gas: 0,
+            fast_path: false,
+            timeout: None,
+        }
+    }
+
+    fn setup_native_price_mock(
+        native_price_estimator: &mut MockNativePriceEstimating,
+        sell_token: Address,
+        buy_token: Address,
+    ) {
+        native_price_estimator
+            .expect_estimate_native_price()
+            .withf(move |t, _| *t == sell_token)
+            .returning(|_, _| async { Ok(1.0) }.boxed());
+        native_price_estimator
+            .expect_estimate_native_price()
+            .withf(move |t, _| *t == buy_token)
+            .returning(|_, _| async { Ok(1.0) }.boxed());
+    }
+
+    #[tokio::test]
+    async fn streaming_two_good_estimates_yields_two_quotes() {
+        let params = default_streaming_params();
+        let gas_price = alloy::eips::eip1559::Eip1559Estimation {
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 0,
+        };
+        let now = Utc::now();
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        setup_native_price_mock(
+            &mut native_price_estimator,
+            params.sell_token,
+            params.buy_token,
+        );
+
+        let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
+        streaming_estimator.expect_estimate_stream().returning(|_| {
+            stream::iter([
+                Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(500),
+                    gas: 10,
+                    solver: Address::repeat_byte(1),
+                    verified: false,
+                    supports_fast_path: false,
+                    execution: Default::default(),
+                }),
+                Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(600),
+                    gas: 20,
+                    solver: Address::repeat_byte(2),
+                    verified: false,
+                    supports_fast_path: false,
+                    execution: Default::default(),
+                }),
+            ])
+            .boxed()
+        });
+
+        let quoter =
+            make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let mut stream = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+
+        let q1 = stream.next().await.expect("first quote").expect("ok");
+        let q2 = stream.next().await.expect("second quote").expect("ok");
+        assert!(stream.next().await.is_none());
+
+        assert_eq!(q1.id, Some(1));
+        assert_eq!(q2.id, Some(2));
+        assert_eq!(q1.data.quoted_buy_amount, AlloyU256::from(500));
+        assert_eq!(q2.data.quoted_buy_amount, AlloyU256::from(600));
+    }
+
+    #[tokio::test]
+    async fn streaming_drops_unusable_estimates() {
+        let params = default_streaming_params();
+        let gas_price = alloy::eips::eip1559::Eip1559Estimation {
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 0,
+        };
+        let now = Utc::now();
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        setup_native_price_mock(
+            &mut native_price_estimator,
+            params.sell_token,
+            params.buy_token,
+        );
+
+        let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
+        streaming_estimator.expect_estimate_stream().returning(|_| {
+            stream::iter([
+                Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(400),
+                    gas: 10,
+                    solver: Address::repeat_byte(1),
+                    verified: false,
+                    supports_fast_path: false,
+                    execution: Default::default(),
+                }),
+                // zero gas - must be dropped silently
+                Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(400),
+                    gas: 0,
+                    solver: Address::repeat_byte(2),
+                    verified: false,
+                    supports_fast_path: false,
+                    execution: Default::default(),
+                }),
+                // zero out_amount - must be dropped silently
+                Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::ZERO,
+                    gas: 10,
+                    solver: Address::repeat_byte(3),
+                    verified: false,
+                    supports_fast_path: false,
+                    execution: Default::default(),
+                }),
+            ])
+            .boxed()
+        });
+
+        let quoter =
+            make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let mut stream = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+
+        let q1 = stream.next().await.expect("first quote").expect("ok");
+        assert_eq!(q1.data.quoted_buy_amount, AlloyU256::from(400));
+        assert!(
+            stream.next().await.is_none(),
+            "estimates with zero gas or zero out_amount must be dropped"
+        );
+    }
+
+    #[tokio::test]
+    async fn streaming_returns_error_when_estimator_not_configured() {
+        let params = default_streaming_params();
+        let now = Utc::now();
+
+        // Build a quoter without calling with_streaming_estimator.
+        let quoter = OrderQuoter {
+            price_estimator: Arc::new(MockPriceEstimating::new()),
+            native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
+            gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
+            storage: Arc::new(MockQuoteStoring::new()),
+            now: Arc::new(now),
+            validity: Validity::default(),
+            default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            streaming_price_estimator: None,
+        };
+
+        let result = quoter.calculate_quote_stream(params).await;
+        assert!(
+            matches!(result, Err(CalculateQuoteError::Other(_))),
+            "expected Other error when streaming estimator not configured",
+        );
+    }
+
+    #[tokio::test]
+    async fn streaming_before_fee_scales_sell_and_buy_amounts() {
+        // sell_before_fee = 1000, gas = 10, gas_price = 1, sell_token_price = 1.0
+        // fee = ceil((10 * 1) / 1.0) = 10
+        // sell_amount = 1000 - 10 = 990
+        // buy_amount = 500 * 990 / 1000 = 495
+        let params = QuoteParameters {
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: number::nonzero::NonZeroU256::try_from(1000).unwrap(),
+                },
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            verification: Default::default(),
+            additional_gas: 0,
+            fast_path: false,
+            timeout: None,
+        };
+        let gas_price = alloy::eips::eip1559::Eip1559Estimation {
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 0,
+        };
+        let now = Utc::now();
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        setup_native_price_mock(
+            &mut native_price_estimator,
+            params.sell_token,
+            params.buy_token,
+        );
+
+        let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
+        streaming_estimator.expect_estimate_stream().returning(|_| {
+            stream::iter([Ok(price_estimation::Estimate {
+                out_amount: AlloyU256::from(500),
+                gas: 10,
+                solver: Address::repeat_byte(1),
+                verified: false,
+                supports_fast_path: false,
+                execution: Default::default(),
+            })])
+            .boxed()
+        });
+
+        let quoter =
+            make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let mut s = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+
+        let q = s.next().await.expect("quote").expect("ok");
+        assert!(s.next().await.is_none());
+
+        assert_eq!(q.sell_amount, AlloyU256::from(990));
+        assert_eq!(q.buy_amount, AlloyU256::from(495));
+        assert_eq!(q.fee_amount, AlloyU256::from(10));
+    }
+
+    #[tokio::test]
+    async fn streaming_defers_fee_error_until_no_quote_succeeds() {
+        // sell_before_fee = 100, gas_price = 1, sell_token_price = 1.0, so
+        // fee = ceil(gas * 1 / 1.0) = gas. A gas of 2000 saturates 100 - 2000 to
+        // 0 -> SellAmountDoesNotCoverFee; a gas of 10 leaves 90 -> a good quote.
+        fn params() -> QuoteParameters {
+            QuoteParameters {
+                sell_token: Address::repeat_byte(1),
+                buy_token: Address::repeat_byte(2),
+                side: OrderQuoteSide::Sell {
+                    sell_amount: SellAmount::BeforeFee {
+                        value: number::nonzero::NonZeroU256::try_from(100).unwrap(),
+                    },
+                },
+                signing_scheme: QuoteSigningScheme::Eip712,
+                verification: Default::default(),
+                additional_gas: 0,
+                fast_path: false,
+                timeout: None,
+            }
+        }
+        fn estimate(gas: u64) -> price_estimation::Estimate {
+            price_estimation::Estimate {
+                out_amount: AlloyU256::from(500),
+                gas,
+                solver: Address::repeat_byte(1),
+                verified: false,
+                supports_fast_path: false,
+                execution: Default::default(),
+            }
+        }
+        let gas_price = alloy::eips::eip1559::Eip1559Estimation {
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 0,
+        };
+        let now = Utc::now();
+
+        let make = |results: Vec<price_estimation::PriceEstimateResult>| {
+            let params = params();
+            let mut native_price_estimator = MockNativePriceEstimating::new();
+            setup_native_price_mock(
+                &mut native_price_estimator,
+                params.sell_token,
+                params.buy_token,
+            );
+            let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
+            streaming_estimator
+                .expect_estimate_stream()
+                .return_once(move |_| stream::iter(results).boxed());
+            let quoter =
+                make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+            (quoter, params)
+        };
+
+        let assert_sell_amount_error = |err: CalculateQuoteError| {
+            assert!(
+                matches!(
+                    err,
+                    CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount }
+                        if fee_amount == U256::from(2000)
+                ),
+                "expected SellAmountDoesNotCoverFee, got {err:?}",
+            );
+        };
+
+        // Only a fee-exceeding estimate: the deferred error surfaces at the end.
+        let (quoter, params) = make(vec![Ok(estimate(2000))]);
+        let mut s = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+        assert_sell_amount_error(s.next().await.expect("error item").unwrap_err());
+        assert!(s.next().await.is_none());
+
+        // A later quote covers its fee: the deferred error is suppressed and only
+        // the good quote is yielded.
+        let (quoter, params) = make(vec![Ok(estimate(2000)), Ok(estimate(10))]);
+        let mut s = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+        let q = s.next().await.expect("quote").expect("ok");
+        assert_eq!(q.sell_amount, AlloyU256::from(90));
+        assert!(
+            s.next().await.is_none(),
+            "the deferred fee error must not be yielded once a quote succeeds",
+        );
+
+        // A fee-exceeding quote plus a terminal estimator error: the more
+        // specific SellAmountDoesNotCoverFee must win over the estimator error.
+        let (quoter, params) = make(vec![
+            Ok(estimate(2000)),
+            Err(price_estimation::PriceEstimationError::NoLiquidity),
+        ]);
+        let mut s = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+        assert_sell_amount_error(s.next().await.expect("error item").unwrap_err());
+        assert!(s.next().await.is_none());
     }
 }

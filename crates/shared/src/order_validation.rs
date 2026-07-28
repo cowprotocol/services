@@ -1,6 +1,6 @@
 use {
     crate::{
-        order_creation_simulation::{OrderSimulating, OrderSimulationError},
+        order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
             CalculateQuoteError,
             OrderQuoting,
@@ -80,7 +80,7 @@ impl OrderSimulator {
         order: &Order,
         full_app_data: &str,
         full_balance_check: bool,
-    ) -> Result<(), OrderSimulationError> {
+    ) -> Result<SimulationSuccess, OrderSimulationError> {
         let start = Instant::now();
         let (outcome, result) = match tokio::time::timeout(
             self.timeout,
@@ -89,7 +89,7 @@ impl OrderSimulator {
         )
         .await
         {
-            Ok(r @ Ok(())) => ("ok", r),
+            Ok(Ok(r)) => ("ok", Ok(r)),
             Ok(r @ Err(OrderSimulationError::Reverted { .. })) => ("reverted", r),
             Ok(r @ Err(OrderSimulationError::Infra(_))) => ("infra", r),
             Err(_) => (
@@ -113,7 +113,7 @@ impl OrderSimulator {
 /// and infra errors as warnings. Agreement is silent.
 fn log_simulation_outcome(
     signature: &Result<u64, SignatureValidationError>,
-    simulation: &Result<(), OrderSimulationError>,
+    simulation: &Result<SimulationSuccess, OrderSimulationError>,
     preview_order: &Order,
     full_app_data: &str,
 ) {
@@ -148,7 +148,7 @@ fn log_simulation_outcome(
                 "order simulation disagreement: signature passed, simulation reverted",
             );
         }
-        (Err(SignatureValidationError::Invalid), Ok(())) => tracing::warn!(
+        (Err(SignatureValidationError::Invalid), Ok(_)) => tracing::warn!(
             ?order_uid,
             ?owner,
             ?order_data,
@@ -672,10 +672,8 @@ impl OrderValidating for OrderValidator {
                 order.buy_token_balance,
             ));
         }
-        if !matches!(
-            order.sell_token_balance,
-            SellTokenSource::Erc20 | SellTokenSource::External
-        ) {
+
+        if order.sell_token_balance != SellTokenSource::Erc20 {
             return Err(PartialValidationError::UnsupportedSellTokenSource(
                 order.sell_token_balance,
             ));
@@ -762,6 +760,16 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Full { full } => validate(full)?,
         };
 
+        if app_data.protocol.enable_fast_path {
+            return Err(AppDataValidationError::Invalid(anyhow::anyhow!(
+                "'enableFastPath' is not yet supported"
+            )));
+        }
+        if app_data.protocol.valid_from.is_some() {
+            return Err(AppDataValidationError::Invalid(anyhow::anyhow!(
+                "'validFrom' is not yet supported"
+            )));
+        }
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
@@ -1159,6 +1167,7 @@ async fn get_or_create_quote(
                 verification: quote_search_parameters.verification.clone(),
                 signing_scheme: quote_search_parameters.signing_scheme,
                 additional_gas: quote_search_parameters.additional_gas,
+                fast_path: false,
                 timeout: None, // let &dyn OrderQuoting chose default
             };
 
@@ -1381,11 +1390,8 @@ mod tests {
                 ..Default::default()
             })
             .await;
-        assert!(
-            matches!(result, Err(PartialValidationError::UnsupportedOrderType)),
-            "{result:?}"
-        );
-        assert!(matches!(
+        std::assert_matches!(result, Err(PartialValidationError::UnsupportedOrderType));
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     owner: Address::with_last_byte(1),
@@ -1393,8 +1399,8 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::Forbidden)
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     receiver: Address::with_last_byte(1),
@@ -1402,8 +1408,8 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::Forbidden)
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     buy_token_balance: BuyTokenDestination::Internal,
@@ -1413,8 +1419,8 @@ mod tests {
             Err(PartialValidationError::UnsupportedBuyTokenDestination(
                 BuyTokenDestination::Internal
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     sell_token_balance: SellTokenSource::Internal,
@@ -1424,8 +1430,19 @@ mod tests {
             Err(PartialValidationError::UnsupportedSellTokenSource(
                 SellTokenSource::Internal
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    sell_token_balance: SellTokenSource::External,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::UnsupportedSellTokenSource(
+                SellTokenSource::External
+            ))
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: 0,
@@ -1435,8 +1452,8 @@ mod tests {
             Err(PartialValidationError::ValidTo(
                 OrderValidToError::Insufficient,
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to
@@ -1448,8 +1465,8 @@ mod tests {
             Err(PartialValidationError::ValidTo(
                 OrderValidToError::Excessive,
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to
@@ -1462,8 +1479,8 @@ mod tests {
             Err(PartialValidationError::ValidTo(
                 OrderValidToError::Excessive,
             ))
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
@@ -1473,8 +1490,8 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::SameBuyAndSellToken)
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
@@ -1484,8 +1501,8 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::SameBuyAndSellToken)
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
@@ -1494,7 +1511,7 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::InvalidNativeSellToken)
-        ));
+        );
     }
 
     #[tokio::test]
@@ -2801,6 +2818,7 @@ mod tests {
                 verification,
                 signing_scheme: QuoteSigningScheme::Eip712,
                 additional_gas: 0,
+                fast_path: false,
                 timeout: None,
             }))
             .returning({
@@ -3150,7 +3168,9 @@ mod tests {
             sim.expect_simulate()
                 .times(1)
                 .returning(move |_, _, _| match simulation {
-                    Sim::Pass => Ok(()),
+                    Sim::Pass => Ok(SimulationSuccess {
+                        eip1271_signature_verification_gas: 0,
+                    }),
                     Sim::Reverted => Err(OrderSimulationError::Reverted {
                         reason: "hook reverted".into(),
                         tenderly_url: None,
@@ -3238,7 +3258,11 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .times(0);
         let mut sim = MockOrderSimulating::new();
-        sim.expect_simulate().times(1).returning(|_, _, _| Ok(()));
+        sim.expect_simulate().times(1).returning(|_, _, _| {
+            Ok(SimulationSuccess {
+                eip1271_signature_verification_gas: 0,
+            })
+        });
         let validator =
             build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
 

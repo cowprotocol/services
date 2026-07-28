@@ -168,6 +168,22 @@ impl Default for OrderQuoteSide {
     }
 }
 
+impl OrderQuoteSide {
+    /// Returns the order kind together with the corresponding input amount: the
+    /// sell amount (before or after fee) for sell orders, and the buy amount
+    /// after fee for buy orders.
+    pub fn kind_and_amount(&self) -> (OrderKind, NonZeroU256) {
+        match self {
+            OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee { value } | SellAmount::AfterFee { value },
+            } => (OrderKind::Sell, *value),
+            OrderQuoteSide::Buy {
+                buy_amount_after_fee,
+            } => (OrderKind::Buy, *buy_amount_after_fee),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Validity {
     To(u32),

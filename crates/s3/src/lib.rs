@@ -7,10 +7,48 @@ use {
         primitives::{ByteStream, SdkBody},
     },
     bytes::Bytes,
-    flate2::{Compression, bufread::GzEncoder},
+    flate2::{Compression, bufread, write},
     serde::Serialize,
-    std::io::Read,
+    std::io::{Read, Write},
 };
+
+/// gzip level for every object archived to S3, so the eager and streaming
+/// compression paths produce identical output.
+const COMPRESSION_LEVEL: u32 = 3;
+
+/// A streaming gzip sink: write plaintext in, then [`GzipWriter::finish`] for
+/// the compressed bytes. Lets callers compress while streaming a payload
+/// elsewhere, without materializing the full plaintext.
+pub struct GzipWriter(write::GzEncoder<Vec<u8>>);
+
+impl GzipWriter {
+    pub fn new() -> Self {
+        Self(write::GzEncoder::new(
+            Vec::new(),
+            Compression::new(COMPRESSION_LEVEL),
+        ))
+    }
+
+    pub fn finish(self) -> std::io::Result<Vec<u8>> {
+        self.0.finish()
+    }
+}
+
+impl Default for GzipWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Write for GzipWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
 
 #[derive(Default)]
 pub struct Config {
@@ -58,6 +96,15 @@ impl Uploader {
         let compressed = tokio::task::spawn_blocking(move || Self::gzip(&content))
             .await
             .context("compression task panicked")??;
+        self.upload_gzipped(id, Bytes::from(compressed)).await
+    }
+
+    /// Uploads bytes that are already gzip-compressed JSON, tagging the object
+    /// with `Content-Encoding: gzip`.
+    // NOTE: PUT's the whole gzipped blob, if the gzipped JSON is larger than 5MB
+    // it might be worth it to consider multipart uploads as it's the minimium S3
+    // part size
+    pub async fn upload_gzipped(&self, id: String, compressed: Bytes) -> Result<String> {
         let key = std::path::Path::new(&self.filename_prefix)
             .join(format!("{id}.json"))
             .to_str()
@@ -96,7 +143,7 @@ impl Uploader {
 
     /// Compresses the input bytes using Gzip.
     fn gzip(bytes: &[u8]) -> Result<Vec<u8>> {
-        let mut encoder = GzEncoder::new(bytes, Compression::new(3));
+        let mut encoder = bufread::GzEncoder::new(bytes, Compression::new(COMPRESSION_LEVEL));
         let mut encoded: Vec<u8> = Vec::with_capacity(bytes.len());
         encoder.read_to_end(&mut encoded).context("gzip encoding")?;
         Ok(encoded)

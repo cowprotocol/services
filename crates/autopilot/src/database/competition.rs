@@ -2,12 +2,7 @@ use {
     crate::domain::competition::Score,
     alloy::primitives::{Address, U256},
     anyhow::Context,
-    database::{
-        auction::AuctionId,
-        auction_prices::AuctionPrice,
-        byte_array::ByteArray,
-        surplus_capturing_jit_order_owners,
-    },
+    database::{auction::AuctionId, auction_prices::AuctionPrice, byte_array::ByteArray},
     derive_more::Debug,
     model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
@@ -36,12 +31,6 @@ impl super::Postgres {
             .database_queries
             .with_label_values(&["save_competition"])
             .start_timer();
-
-        // offload CPU intensive work of serializing to a blocking thread so we can
-        // already start with the DB queries in the mean time.
-        let json = tokio::task::spawn_blocking(move || {
-            serde_json::to_string(&competition.competition_table)
-        });
 
         let mut ex = self.pool.begin().await.context("begin")?;
 
@@ -75,32 +64,6 @@ impl super::Postgres {
         .await
         .context("auction_prices::insert")?;
 
-        let json = json
-            .await
-            .context("failed to await blocking task")?
-            .context("failed to serialize solver competition")?;
-        database::solver_competition::save(&mut ex, competition.auction_id, &json)
-            .await
-            .context("solver_competition::save")?;
-
         ex.commit().await.context("commit")
-    }
-
-    /// Saves the surplus capturing jit order owners to the DB
-    pub async fn save_surplus_capturing_jit_order_owners(
-        &self,
-        auction_id: AuctionId,
-        surplus_capturing_jit_order_owners: &[database::Address],
-    ) -> anyhow::Result<()> {
-        let mut ex = self.pool.acquire().await.context("acquire")?;
-
-        surplus_capturing_jit_order_owners::insert(
-            &mut ex,
-            auction_id,
-            surplus_capturing_jit_order_owners,
-        )
-        .await?;
-
-        Ok(())
     }
 }

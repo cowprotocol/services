@@ -9,7 +9,7 @@ use {
     crate::config::EventBusConfig,
     async_nats::jetstream::Context as JetstreamClient,
     bytes::Bytes,
-    chrono::Utc,
+    event_bus_dto::{Envelope, Event},
     futures::stream::{FuturesUnordered, StreamExt},
     serde::Serialize,
     tokio::sync::{
@@ -17,34 +17,6 @@ use {
         mpsc::{Receiver, Sender, channel},
     },
 };
-
-/// Wire format version of the JSON envelope sent on every event. Bump
-/// alongside any breaking change to [`Envelope`].
-const ENVELOPE_VERSION: &str = "v1";
-
-/// JSON envelope wrapping every event published to the bus. Consumers can
-/// rely on `version` to evolve their parsers, on `timestamp` for ordering,
-/// and on `requestId` to correlate events to a single inbound request.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Envelope<T: Serialize> {
-    version: &'static str,
-    timestamp: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    request_id: Option<String>,
-    body: T,
-}
-
-impl<T: Serialize> Envelope<T> {
-    fn new(request_id: Option<String>, body: T) -> Self {
-        Self {
-            version: ENVELOPE_VERSION,
-            timestamp: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-            request_id,
-            body,
-        }
-    }
-}
 
 struct EventBusConnector {
     /// Channel to decouple issuing events from actually sending them to the
@@ -186,6 +158,13 @@ async fn log_ack(subject: String, ack_fut: async_nats::jetstream::context::Publi
 }
 
 /// Enqueues the event to be sent to the event bus in a background task.
+///
+/// For ad-hoc events, use [`publish`] instead.
+pub fn publish_event<E: Event>(event: E) {
+    publish(E::SUBJECT, event);
+}
+
+/// Enqueues the event to be sent to the event bus in a background task.
 pub fn publish(subject: &str, data: impl Serialize) {
     let Some(bus) = BUS.get() else {
         tracing::trace!("attempting to publish events without initializing the event bus");
@@ -259,41 +238,4 @@ fn record_dropped(reason: DropReason) {
         .dropped_events
         .with_label_values(&[reason.as_label()])
         .inc();
-}
-
-#[cfg(test)]
-mod tests {
-    use {super::*, serde_json::json};
-
-    #[test]
-    fn envelope_matches_wire_format() {
-        let envelope = Envelope {
-            version: ENVELOPE_VERSION,
-            timestamp: "2026-05-22T12:00:00.000Z".to_string(),
-            request_id: Some("req-1".to_string()),
-            body: json!({"outAmount": 1234}),
-        };
-        let serialized: serde_json::Value = serde_json::to_value(&envelope).unwrap();
-        assert_eq!(
-            serialized,
-            json!({
-                "version": "v1",
-                "timestamp": "2026-05-22T12:00:00.000Z",
-                "requestId": "req-1",
-                "body": {"outAmount": 1234},
-            })
-        );
-    }
-
-    #[test]
-    fn envelope_omits_missing_request_id() {
-        let envelope = Envelope {
-            version: ENVELOPE_VERSION,
-            timestamp: "2026-05-22T12:00:00.000Z".to_string(),
-            request_id: None,
-            body: json!({}),
-        };
-        let serialized: serde_json::Value = serde_json::to_value(&envelope).unwrap();
-        assert!(serialized.get("requestId").is_none());
-    }
 }

@@ -216,11 +216,7 @@ pub fn new(
                             sqrt_price: pool.sqrt_price.0,
                             liquidity: pool.liquidity.0,
                             tick: pool.tick.0,
-                            liquidity_net: pool
-                                .liquidity_net
-                                .iter()
-                                .map(|(key, value)| (key.0, value.0))
-                                .collect(),
+                            liquidity_net: pool.liquidity_net.clone(),
                             fee: rational_to_big_decimal(&pool.fee.0),
                         },
                     )
@@ -370,6 +366,8 @@ fn interaction_from_domain(value: domain::Interaction) -> solvers_dto::auction::
     }
 }
 
+// Deprecated External/Internal arms are retained for wire compatibility.
+#[allow(deprecated)]
 fn sell_token_source_from_domain(value: SellTokenSource) -> solvers_dto::auction::SellTokenSource {
     match value {
         SellTokenSource::Erc20 => solvers_dto::auction::SellTokenSource::Erc20,
@@ -378,6 +376,7 @@ fn sell_token_source_from_domain(value: SellTokenSource) -> solvers_dto::auction
     }
 }
 
+#[allow(deprecated)]
 fn buy_token_destination_from_domain(
     value: BuyTokenDestination,
 ) -> solvers_dto::auction::BuyTokenDestination {

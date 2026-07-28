@@ -1,0 +1,19 @@
+[package]
+name = "event-bus-dto"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "event-bus-schemas"
+path = "src/bin/print_schemas.rs"
+
+[dependencies]
+chrono = { workspace = true, features = ["clock", "serde"] }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

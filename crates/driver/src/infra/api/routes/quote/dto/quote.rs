@@ -11,7 +11,7 @@ use {
 };
 
 impl Quote {
-    pub fn new(quote: quote::Quote) -> Self {
+    pub fn new(quote: quote::Quote, supports_fast_path: bool) -> Self {
         Self {
             clearing_prices: quote.clearing_prices,
             pre_interactions: quote.pre_interactions.into_iter().map(Into::into).collect(),
@@ -24,6 +24,7 @@ impl Quote {
             }),
             tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders.into_iter().map(Into::into).collect(),
+            supports_fast_path,
         }
     }
 }
@@ -42,6 +43,8 @@ pub struct Quote {
     #[serde(skip_serializing_if = "Option::is_none")]
     tx_origin: Option<eth::Address>,
     jit_orders: Vec<JitOrder>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    supports_fast_path: bool,
 }
 
 #[serde_as]

@@ -36,6 +36,13 @@ pub struct ProtocolAppData {
     pub flashloan: Option<Flashloan>,
     #[serde(default)]
     pub wrappers: Vec<WrapperCall>,
+    /// Opt into out-of-competition ("fast path") execution.
+    #[serde(default)]
+    pub enable_fast_path: bool,
+    /// Earliest time (UNIX timestamp) the order may enter a batch auction.
+    /// Honored if set; the backend picks one for fast-path orders when it
+    /// is not.
+    pub valid_from: Option<u32>,
 }
 
 /// Contains information to hint at how a solver could make
@@ -299,6 +306,24 @@ pub fn parse(full_app_data: &[u8]) -> Result<ProtocolAppData, serde_json::Error>
     Ok(parsed)
 }
 
+/// Extracts the `appCode` from a full app-data document, if present.
+///
+/// `appCode` sits at the document root, next to (not inside) the protocol
+/// `metadata`, so it is not part of [`ProtocolAppData`] and callers that want
+/// it — e.g. for analytics — parse it separately with this helper. Returns
+/// `None` for absent or malformed app data.
+pub fn app_code(full_app_data: &[u8]) -> Option<String> {
+    #[derive(Deserialize)]
+    struct AppCode {
+        #[serde(rename = "appCode")]
+        app_code: Option<String>,
+    }
+
+    serde_json::from_slice::<AppCode>(full_app_data)
+        .ok()?
+        .app_code
+}
+
 /// The root app data JSON object.
 ///
 /// App data JSON is organised in an object of the form
@@ -425,7 +450,8 @@ impl Serialize for OrderUid {
     where
         S: Serializer,
     {
-        serializer.serialize_str(self.to_string().as_str())
+        let mut buffer = const_hex::Buffer::<56, true>::new();
+        serializer.serialize_str(buffer.format(&self.0))
     }
 }
 
@@ -531,6 +557,8 @@ impl From<BackendAppData> for ProtocolAppData {
             replaced_order: None,
             partner_fee: PartnerFees::default(),
             flashloan: None,
+            enable_fast_path: false,
+            valid_from: None,
         }
     }
 }
@@ -550,6 +578,36 @@ mod tests {
     #[test]
     fn empty_is_valid() {
         assert_app_data!(EMPTY, ProtocolAppData::default());
+    }
+
+    #[test]
+    fn fast_path() {
+        assert_app_data!(
+            r#"{ "metadata": { "enableFastPath": true } }"#,
+            ProtocolAppData {
+                enable_fast_path: true,
+                ..Default::default()
+            },
+        );
+        assert_app_data!(
+            r#"{ "metadata": { "enableFastPath": true, "validFrom": 1700000000 } }"#,
+            ProtocolAppData {
+                enable_fast_path: true,
+                valid_from: Some(1_700_000_000),
+                ..Default::default()
+            },
+        );
+    }
+
+    #[test]
+    fn extracts_app_code() {
+        assert_eq!(
+            app_code(br#"{"appCode": "CoW Swap", "version": "0.9.0"}"#),
+            Some("CoW Swap".to_string()),
+        );
+        assert_eq!(app_code(EMPTY.as_bytes()), None);
+        assert_eq!(app_code(br#"{"version": "0.9.0"}"#), None);
+        assert_eq!(app_code(b"not json"), None);
     }
 
     #[test]

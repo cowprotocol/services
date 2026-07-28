@@ -78,6 +78,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 request_headers: solver_config.request_headers,
                 fee_handler: solver_config.fee_handler,
                 quote_using_limit_orders: solver_config.quote_using_limit_orders,
+                fast_path_enabled: solver_config.fast_path_enabled,
                 merge_solutions: match solver_config.merge_solutions {
                     true => SolutionMerging::Allowed {
                         max_orders_per_merged_solution: solver_config
@@ -380,15 +381,11 @@ fn uniswap_v3_pool_source(
                 max_pools_per_tick_query,
             })
         }
-        file::IndexerConfig::PoolIndexer {
-            url,
-            wait_until_timeout,
-        } => liquidity::config::UniswapV3PoolSource::PoolIndexer(
-            liquidity::config::UniswapV3PoolIndexer {
-                url,
-                wait_until_timeout,
-            },
-        ),
+        file::IndexerConfig::PoolIndexer { url } => {
+            liquidity::config::UniswapV3PoolSource::PoolIndexer(
+                liquidity::config::UniswapV3PoolIndexer { url },
+            )
+        }
     }
 }
 
