@@ -1024,6 +1024,12 @@ impl OrderValidating for OrderValidator {
         // A `valid_from` at or after `valid_to` makes the order impossible to ever
         // be valid. A `valid_from` in the past is allowed: the order is simply
         // eligible immediately.
+        //
+        // This only guards API-submitted orders. On-chain (e.g. ethflow) orders are
+        // already placed and cannot be rejected here; their `valid_from` is
+        // backfilled in `handle_app_data` without this check. A misconfigured
+        // `valid_from >= valid_to` there is intentionally accepted — it simply means
+        // the order never becomes solvable and expires unfilled.
         if app_data
             .inner
             .protocol
