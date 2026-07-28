@@ -183,7 +183,7 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
     }
 
     let quote = test.quoted_orders.first().unwrap();
-    json!({
+    let mut req = json!({
         "sellToken": test.blockchain.get_token(quote.order.sell_token).encode_hex_with_prefix(),
         "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
         "amount": match quote.order.side {
@@ -195,7 +195,14 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
             order::Side::Buy => "buy",
         },
         "deadline": test.deadline,
-    })
+    });
+    if test.quote_fast_path {
+        // Mirrors what the orderbook does for fast-path quotes: request fast-path
+        // and hand over the real auction id it allocated from the shared sequence.
+        req["enableFastPath"] = json!(true);
+        req["auctionId"] = json!(test.auction_id);
+    }
+    req
 }
 
 /// Create the config file for the driver to use.
@@ -322,6 +329,7 @@ async fn create_config_file(
                merge-solutions = {}
                haircut-bps = {}
                max-solutions-to-propose = {}
+               fast-path-enabled = {}
                "#,
             solver.name,
             addr,
@@ -338,6 +346,7 @@ async fn create_config_file(
             solver.merge_solutions,
             solver.haircut_bps,
             solver.max_solutions_to_propose,
+            solver.fast_path_enabled,
         )
         .unwrap();
         if !solver.submission_accounts.is_empty() {

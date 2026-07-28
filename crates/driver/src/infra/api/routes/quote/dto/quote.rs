@@ -25,6 +25,8 @@ impl Quote {
             tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders.into_iter().map(Into::into).collect(),
             supports_fast_path,
+            solution_id: quote.solution_id,
+            auction_id: quote.auction_id,
         }
     }
 }
@@ -45,6 +47,12 @@ pub struct Quote {
     jit_orders: Vec<JitOrder>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     supports_fast_path: bool,
+    /// For fast-path quotes: the cached solution id and the auction id it was
+    /// cached under, to later submit it via `/settle`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    solution_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auction_id: Option<i64>,
 }
 
 #[serde_as]

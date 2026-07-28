@@ -27,7 +27,7 @@ async fn route(
                 state.solver(),
                 state.liquidity(),
                 state.tokens(),
-                &state.competition().risk_detector,
+                state.competition(),
             )
             .await;
         observe::quoted(state.solver().name(), &order, &quote);

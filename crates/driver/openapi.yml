@@ -46,10 +46,19 @@ paths:
             $ref: "#/components/schemas/DateTime"
           required: true
         - in: query
-          name: fastPath
+          name: enableFastPath
           description: Hint that this quote is intended for fast-path execution.
           schema:
             type: boolean
+          required: false
+        - in: query
+          name: auctionId
+          description: >-
+            Real auction id the orderbook allocated from the shared auctions
+            sequence, under which a fast-path solution is cached for a later
+            `/settle`. Only sent for fast-path quotes.
+          schema:
+            type: integer
           required: false
       responses:
         "200":
@@ -439,6 +448,17 @@ components:
         supportsFastPath:
           type: boolean
           description: Whether the quoting solver supports fast-path (out-of-competition) execution.
+        solutionId:
+          type: integer
+          description: >-
+            For fast-path quotes: id of the cached solution, to later submit it
+            via `/settle`. Present only when the solution was successfully cached.
+        auctionId:
+          type: integer
+          description: >-
+            For fast-path quotes: the auction id the solution was cached under,
+            to later submit it via `/settle`. Present only when the solution was
+            successfully cached.
       required:
         - clearingPrices
         - solver

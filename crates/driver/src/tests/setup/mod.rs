@@ -365,6 +365,8 @@ pub struct Solver {
     max_solutions_to_propose: usize,
     /// Additional submission accounts for EIP-7702 parallel settlement.
     submission_accounts: Vec<PrivateKeySigner>,
+    /// Whether this solver supports fast-path (out-of-competition) quotes.
+    fast_path_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -394,6 +396,7 @@ pub fn test_solver() -> Solver {
         haircut_bps: 0,
         max_solutions_to_propose: 1,
         submission_accounts: vec![],
+        fast_path_enabled: false,
     }
 }
 
@@ -442,6 +445,11 @@ impl Solver {
 
     pub fn max_solutions_to_propose(mut self, n: usize) -> Self {
         self.max_solutions_to_propose = n;
+        self
+    }
+
+    pub fn fast_path_enabled(mut self) -> Self {
+        self.fast_path_enabled = true;
         self
     }
 
@@ -532,6 +540,9 @@ pub struct Setup {
     solutions: Vec<Solution>,
     /// Is this a test for the /quote endpoint?
     quote: bool,
+    /// Should the /quote request ask for fast-path (out-of-competition)
+    /// execution, i.e. set `enableFastPath` and pass the auction id?
+    quote_fast_path: bool,
     /// List of solvers in this test
     solvers: Vec<Solver>,
     /// Should simulation be enabled? True by default.
@@ -1003,6 +1014,7 @@ impl Setup {
                 quoted_orders: &quotes,
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
+                quote_fast_path_auction_id: self.quote_fast_path.then_some(self.auction_id),
                 fee_handler: solver.fee_handler,
                 private_key: solver.signer.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
@@ -1041,6 +1053,7 @@ impl Setup {
             settle_submission_deadline: self.settle_submission_deadline,
             quoted_orders: quotes,
             quote: self.quote,
+            quote_fast_path: self.quote_fast_path,
             surplus_capturing_jit_order_owners,
             auction_id: self.auction_id,
         }
@@ -1050,6 +1063,15 @@ impl Setup {
     pub fn quote(self) -> Self {
         Self {
             quote: true,
+            ..self
+        }
+    }
+
+    /// Make the /quote request ask for fast-path execution (sets
+    /// `enableFastPath` and passes the auction id in the request).
+    pub fn quote_fast_path(self) -> Self {
+        Self {
+            quote_fast_path: true,
             ..self
         }
     }
@@ -1082,6 +1104,8 @@ pub struct Test {
     settle_submission_deadline: u64,
     /// Is this testing the /quote endpoint?
     quote: bool,
+    /// Should the /quote request ask for fast-path execution?
+    quote_fast_path: bool,
     /// List of surplus capturing JIT-order owners
     surplus_capturing_jit_order_owners: Vec<eth::Address>,
     auction_id: i64,
@@ -1533,6 +1557,27 @@ impl QuoteOk<'_> {
     /// Get the JSON response body.
     pub fn body(&self) -> &str {
         &self.body
+    }
+
+    /// The id of the cached fast-path solution. Present only when the solution
+    /// was successfully cached for a later `/settle`.
+    pub fn solution_id(&self) -> u64 {
+        let body: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        body.get("solutionId").unwrap().as_u64().unwrap()
+    }
+
+    /// The auction id the cached fast-path solution was cached under.
+    pub fn auction_id(&self) -> i64 {
+        let body: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        body.get("auctionId").unwrap().as_i64().unwrap()
+    }
+
+    /// Assert the quote carries no fast-path settle info (regular quote).
+    pub fn no_fast_path_settle_info(self) -> Self {
+        let body: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(body.get("solutionId").is_none());
+        assert!(body.get("auctionId").is_none());
+        self
     }
 
     /// Check that the quote returns the expected amount of tokens. This is

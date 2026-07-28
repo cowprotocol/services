@@ -49,6 +49,9 @@ pub struct Config<'a> {
     pub deadline: time::Deadline,
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
+    /// For fast-path quotes: the auction id the driver sends in the `/solve`
+    /// request (the id the orderbook allocated). `None` for regular quotes.
+    pub quote_fast_path_auction_id: Option<i64>,
     pub fee_handler: FeeHandler,
     pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
@@ -514,7 +517,12 @@ impl Solver {
                     let base_fee = eth.current_block().borrow().base_fee;
                     let effective_gas_price = eth.gas_price().await.unwrap().effective(base_fee).to_string();
                     let expected = json!({
-                        "id": (!config.quote).then_some("1"),
+                        "id": match (config.quote, config.quote_fast_path_auction_id) {
+                            // Regular auctions use a fixed id; fast-path quotes carry the
+                            // orderbook-allocated id; plain quotes have none.
+                            (false, _) => Some("1".to_owned()),
+                            (true, fast_path_id) => fast_path_id.map(|id| id.to_string()),
+                        },
                         "tokens": tokens_json,
                         "orders": orders_json,
                         "liquidity": [],

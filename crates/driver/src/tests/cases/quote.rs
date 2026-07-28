@@ -89,6 +89,51 @@ async fn with_jit_order() {
     quote.ok().amount().interactions().jit_order();
 }
 
+/// A fast-path quote caches its solution in the driver, echoing the solution id
+/// and the orderbook-provided auction id so the autopilot can later settle it.
+#[tokio::test]
+#[ignore]
+async fn fast_path_caching() {
+    const AUCTION_ID: i64 = 42;
+
+    let test = tests::setup()
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .solvers(vec![tests::setup::test_solver().fast_path_enabled()])
+        .auction_id(AUCTION_ID)
+        .quote()
+        .quote_fast_path()
+        .done()
+        .await;
+
+    let quote = test.quote().await.ok();
+
+    // Both ids are echoed only when the solution was cached: `auction_id` must be
+    // the id the request carried (the one the orderbook allocated from the shared
+    // sequence), and `solution_id` is present (its value is process-global, so
+    // not asserted). The accessors panic if the fields are absent.
+    quote.solution_id();
+    assert_eq!(quote.auction_id(), AUCTION_ID);
+}
+
+/// A regular quote (no `enableFastPath`), even from a fast-path-capable solver,
+/// does not cache a settlement and carries no settle info.
+#[tokio::test]
+#[ignore]
+async fn regular_quote_has_no_settle_info() {
+    let test = tests::setup()
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .solvers(vec![tests::setup::test_solver().fast_path_enabled()])
+        .quote()
+        .done()
+        .await;
+
+    test.quote().await.ok().no_fast_path_settle_info();
+}
+
 /// Test that quote haircut correctly reduces the executed amount for quotes
 /// when configured. The haircut should make quotes more conservative without
 /// affecting the ability to place and execute orders.
