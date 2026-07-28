@@ -10,7 +10,7 @@ use {
         rpc::types::Log,
     },
     anyhow::{Context, Result, anyhow, bail},
-    app_data::AppDataHash,
+    app_data::{AppDataHash, ProtocolAppData},
     chrono::{TimeZone, Utc},
     contracts::{
         CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
@@ -356,13 +356,9 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         .await
         .context("appending quotes for onchain orders failed")?;
 
-        insert_order_hooks(transaction, &orders, &self.trampoline)
+        handle_app_data(transaction, &mut orders, &self.trampoline)
             .await
-            .context("failed to insert hooks")?;
-
-        populate_valid_from(transaction, &mut orders)
-            .await
-            .context("failed to populate valid_from")?;
+            .context("failed to handle app data")?;
 
         database::orders::insert_orders_and_ignore_conflicts(transaction, orders.as_slice())
             .await
@@ -685,29 +681,11 @@ fn extract_order_data_from_onchain_order_placement_event(
     Ok((order_data, owner, signing_scheme, order_uid))
 }
 
-async fn insert_order_hooks(
+async fn handle_app_data(
     db: &mut PgConnection,
-    orders: &[Order],
+    orders: &mut [Order],
     trampoline: &HooksTrampoline::Instance,
 ) -> Result<()> {
-    let mut interactions_to_insert = vec![];
-
-    let execute_via_trampoline = |hooks: Vec<app_data::Hook>| {
-        trampoline
-            .execute(
-                hooks
-                    .into_iter()
-                    .map(|hook| Hook {
-                        target: hook.target,
-                        callData: alloy::primitives::Bytes::from(hook.call_data.clone()),
-                        gasLimit: U256::from(hook.gas_limit),
-                    })
-                    .collect(),
-            )
-            .calldata()
-            .to_vec()
-    };
-
     for order in orders {
         let appdata_json = database::app_data::fetch(db, &order.app_data)
             .await
@@ -720,56 +698,72 @@ async fn insert_order_hooks(
             tracing::debug!(appdata = %String::from_utf8_lossy(&appdata_json), "could not parse appdata");
             continue;
         };
-        if parsed.hooks.pre.is_empty() && parsed.hooks.post.is_empty() {
-            continue; // no additional interactions to index
-        }
 
-        let interactions_count = database::orders::next_free_interaction_indices(db, order.uid)
-            .await
-            .context("failed to fetch interaction count")?;
-
-        if !parsed.hooks.pre.is_empty() {
-            let interaction = database::orders::Interaction {
-                target: ByteArray(trampoline.address().0.0),
-                value: 0.into(),
-                data: execute_via_trampoline(parsed.hooks.pre),
-                index: interactions_count.next_pre_interaction_index,
-                execution: database::orders::ExecutionTime::Pre,
-            };
-            interactions_to_insert.push((order.uid, interaction));
-        }
-
-        if !parsed.hooks.post.is_empty() {
-            let interaction = database::orders::Interaction {
-                target: ByteArray(trampoline.address().0.0),
-                value: 0.into(),
-                data: execute_via_trampoline(parsed.hooks.post),
-                index: interactions_count.next_post_interaction_index,
-                execution: database::orders::ExecutionTime::Post,
-            };
-            interactions_to_insert.push((order.uid, interaction));
-        }
-    }
-
-    database::orders::insert_or_overwrite_interactions(db, &interactions_to_insert)
-        .await
-        .context("could not insert interactions for orders")
-}
-
-async fn populate_valid_from(db: &mut PgConnection, orders: &mut [Order]) -> Result<()> {
-    for order in orders {
-        let appdata_json = database::app_data::fetch(db, &order.app_data)
-            .await
-            .context("failed to fetch appdata")?;
-        let Some(appdata_json) = appdata_json else {
-            continue;
-        };
-        let Ok(parsed) = app_data::parse(&appdata_json) else {
-            continue;
-        };
+        store_hooks(db, order, &parsed, trampoline).await?;
         order.valid_from = parsed.valid_from.map(|v| v as i64);
     }
     Ok(())
+}
+
+async fn store_hooks(
+    db: &mut PgConnection,
+    order: &Order,
+    parsed: &ProtocolAppData,
+    trampoline: &HooksTrampoline::Instance,
+) -> Result<()> {
+    if parsed.hooks.pre.is_empty() && parsed.hooks.post.is_empty() {
+        return Ok(());
+    }
+
+    let interactions_count = database::orders::next_free_interaction_indices(db, order.uid)
+        .await
+        .context("failed to fetch interaction count")?;
+
+    let execute_via_trampoline = |hooks: &[app_data::Hook]| {
+        trampoline
+            .execute(
+                hooks
+                    .iter()
+                    .map(|hook| Hook {
+                        target: hook.target,
+                        callData: alloy::primitives::Bytes::from(hook.call_data.clone()),
+                        gasLimit: U256::from(hook.gas_limit),
+                    })
+                    .collect(),
+            )
+            .calldata()
+            .to_vec()
+    };
+
+    let mut interactions = vec![];
+    if !parsed.hooks.pre.is_empty() {
+        interactions.push((
+            order.uid,
+            database::orders::Interaction {
+                target: ByteArray(trampoline.address().0.0),
+                value: 0.into(),
+                data: execute_via_trampoline(&parsed.hooks.pre),
+                index: interactions_count.next_pre_interaction_index,
+                execution: database::orders::ExecutionTime::Pre,
+            },
+        ));
+    }
+    if !parsed.hooks.post.is_empty() {
+        interactions.push((
+            order.uid,
+            database::orders::Interaction {
+                target: ByteArray(trampoline.address().0.0),
+                value: 0.into(),
+                data: execute_via_trampoline(&parsed.hooks.post),
+                index: interactions_count.next_post_interaction_index,
+                execution: database::orders::ExecutionTime::Post,
+            },
+        ));
+    }
+
+    database::orders::insert_or_overwrite_interactions(db, &interactions)
+        .await
+        .context("could not insert interactions for order")
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
