@@ -192,10 +192,10 @@ impl QuoteHandler {
             while let Some(item) = inner.next().await {
                 let quote = match item {
                     Ok(quote) => quote,
-                    // Per-solver failure: skip it, a later solver may still succeed.
+                    // The inner stream only yields terminal errors.
                     Err(err) => {
-                        tracing::debug!(%err, "dropping failed streamed quote");
-                        continue;
+                        yield Err(OrderQuoteError::CalculateQuote(err));
+                        return;
                     }
                 };
                 let response = get_vol_fee_adjusted_quote_data(
