@@ -2,6 +2,7 @@ use {
     super::Postgres,
     crate::{boundary, domain, infra::persistence::dto},
     anyhow::{Context, Result},
+    bytes::Bytes,
     chrono::{DateTime, Utc},
     futures::{StreamExt, TryStreamExt},
     model::{order::Order, quote::QuoteId},
@@ -116,21 +117,17 @@ impl Postgres {
     pub async fn replace_current_auction(
         &self,
         new_auction_id: dto::AuctionId,
-        new_auction_data: dto::RawAuctionData,
+        json: Bytes,
     ) -> Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["insert_auction_with_id"])
             .start_timer();
 
-        let data = tokio::task::spawn_blocking(move || {
-            serde_json::to_string(&new_auction_data).context("failed to serialize auction")
-        })
-        .await
-        .context("auction serialization task panicked")??;
+        let data = std::str::from_utf8(&json).context("serialized auction is not valid UTF-8")?;
 
         let mut ex = self.pool.acquire().await?;
-        database::auction::insert_auction_with_id(&mut ex, new_auction_id, &data).await?;
+        database::auction::insert_auction_with_id(&mut ex, new_auction_id, data).await?;
         Ok(())
     }
 }

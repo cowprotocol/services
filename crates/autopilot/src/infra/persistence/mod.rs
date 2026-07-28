@@ -6,13 +6,13 @@ use {
             self,
             settlement::{SettlementEvent, TradeEvent, transaction::EncodedTrade},
         },
-        infra::persistence::dto::RawAuctionData,
     },
     ::winner_selection::state::RankedItem,
     alloy::primitives::B256,
     anyhow::Context,
     bigdecimal::{BigDecimal, ToPrimitive},
     boundary::database::byte_array::ByteArray,
+    bytes::Bytes,
     chrono::{DateTime, Utc},
     database::{
         events::EventIndex,
@@ -58,8 +58,8 @@ pub struct Persistence {
 
 struct AuctionUpload {
     auction_id: domain::auction::Id,
-    /// Contains everything buy the auction_id.
-    auction_data: RawAuctionData,
+    /// The serialized auction, containing everything but the auction_id.
+    json: Bytes,
 }
 
 impl Persistence {
@@ -83,8 +83,14 @@ impl Persistence {
         let (sender, mut receiver) = mpsc::unbounded_channel::<AuctionUpload>();
         tokio::task::spawn(async move {
             while let Some(upload) = receiver.recv().await {
+                // Started after `recv` so queue wait isn't counted as write time.
+                let _timer = Metrics::get()
+                    .auction_archive
+                    .with_label_values(&["database"])
+                    .start_timer();
+
                 if let Err(err) = db
-                    .replace_current_auction(upload.auction_id, upload.auction_data)
+                    .replace_current_auction(upload.auction_id, upload.json)
                     .await
                 {
                     tracing::error!(?err, "failed to replace auction in DB");
@@ -151,33 +157,71 @@ impl Persistence {
             .map_err(DatabaseError)
     }
 
-    /// Spawns a background task that replaces the current auction in the DB
-    /// with the new one.
-    pub fn replace_current_auction_in_db(
+    /// Archives the auction to the DB and, if configured, to S3.
+    ///
+    /// The auction is moved onto the blocking pool to avoid a deep clone and
+    /// handed back to the caller.
+    #[instrument(skip_all)]
+    pub async fn archive_auction(
         &self,
-        new_auction_id: domain::auction::Id,
-        new_auction_data: &domain::RawAuctionData,
-    ) {
+        id: domain::auction::Id,
+        auction: domain::RawAuctionData,
+    ) -> domain::RawAuctionData {
+        let span = tracing::Span::current();
+        let (auction, json) = {
+            // Only the conversion and serialization are on the run loop's critical
+            // path; both sinks below hand off to background tasks.
+            let _timer = observe::metrics::metrics()
+                .on_auction_overhead_start("autopilot", "serialize_auction");
+
+            tokio::task::spawn_blocking(move || {
+                let json = span.in_scope(|| {
+                    let auction_data = dto::auction::from_domain(&auction);
+                    serde_json::to_vec(&auction_data).map(Bytes::from_owner)
+                });
+                (auction, json)
+            })
+            .await
+            .expect("auction conversion task panicked")
+        };
+        let json = match json {
+            Ok(json) => json,
+            Err(err) => {
+                tracing::error!(?err, ?id, "failed to serialize auction");
+                return auction;
+            }
+        };
+
+        // Enqueued before spawning the S3 upload so the queue keeps seeing
+        // auctions in the order the run loop cut them.
         self.upload_queue
             .send(AuctionUpload {
-                auction_id: new_auction_id,
-                auction_data: dto::auction::from_domain(new_auction_data.clone()),
+                auction_id: id,
+                json: json.clone(),
             })
             .expect("upload queue should be alive at all times");
+
+        if !auction.orders.is_empty() {
+            self.upload_auction_to_s3(id, json);
+        }
+
+        auction
     }
 
-    /// Spawns a background task that uploads the auction to S3.
-    pub fn upload_auction_to_s3(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
-        if auction.orders.is_empty() {
-            return;
-        }
+    /// Spawns a background task that uploads the already serialized auction to
+    /// S3.
+    fn upload_auction_to_s3(&self, id: domain::auction::Id, json: Bytes) {
         let Some(s3) = self.s3.clone() else {
             return;
         };
-        let auction = auction.clone();
         tokio::task::spawn(async move {
-            let auction_dto = dto::auction::from_domain(auction);
-            match s3.upload(id.to_string(), auction_dto).await {
+            // Covers gzip as well as the PUT, since `upload_json_bytes` compresses.
+            let _timer = Metrics::get()
+                .auction_archive
+                .with_label_values(&["s3"])
+                .start_timer();
+
+            match s3.upload_json_bytes(id.to_string(), json).await {
                 Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
                 Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
             }
@@ -1017,6 +1061,16 @@ struct Metrics {
     /// Timing of db queries.
     #[metric(name = "persistence_database_queries", labels("type"))]
     database_queries: prometheus::HistogramVec,
+
+    /// Time spent writing an already serialized auction to each archive sink.
+    /// Both sinks run in background tasks, so this is off the run loop's
+    /// critical path.
+    #[metric(
+        name = "persistence_auction_archive",
+        labels("sink"),
+        buckets(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0)
+    )]
+    auction_archive: prometheus::HistogramVec,
 }
 
 impl Metrics {
