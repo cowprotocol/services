@@ -866,15 +866,18 @@ pub fn open_orders_by_time_or_uids<'a>(
     after_timestamp: DateTime<Utc>,
     now: i64,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
-    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL joins
+    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL joins.
+    //
+    // `selected_orders` has two branches:
+    // - Branch 1: the usual "changed since $1" set (created/cancelled since the
+    //   checkpoint, or explicitly requested by uid), gated by `valid_from <= now`.
+    // - Branch 2: re-selects orders whose `valid_from` crossed since $1 -- becoming
+    //   valid isn't a DB write, so branch 1 would never pick them up.
     #[rustfmt::skip]
     const QUERY: &str = r#"
 WITH selected_orders AS (
     SELECT o.*
     FROM   orders o
-    -- Branch 1 is the usual "changed since $1" set, gated by valid_from. Branch 2
-    -- re-selects orders whose valid_from crossed since $1 -- becoming valid isn't a
-    -- DB write, so branch 1 would otherwise never pick them up.
     WHERE (
             (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))
             AND (o.valid_from IS NULL OR o.valid_from <= $3)
@@ -2154,7 +2157,10 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         async fn solvable_uids(ex: &mut PgConnection, now: i64) -> HashSet<OrderUid> {
-            solvable_orders(ex, 0, now)
+            // `min_valid_to = now` mirrors production, so `valid_to` expiry is
+            // enforced alongside `valid_from` gating (an order that already
+            // expired must not resurface just because `valid_from` crossed).
+            solvable_orders(ex, now, now)
                 .map_ok(|o| o.uid)
                 .try_collect()
                 .await
@@ -2166,7 +2172,9 @@ mod tests {
             kind: OrderKind::Sell,
             sell_amount: 10.into(),
             buy_amount: 100.into(),
-            valid_to: 100,
+            // Valid well past the checked `now` values, so the order is genuinely
+            // solvable once `valid_from` kicks in (`valid_from` < `valid_to`).
+            valid_to: 10_000,
             partially_fillable: true,
             creation_timestamp: Utc::now(),
             valid_from: Some(1_000),
@@ -2227,7 +2235,10 @@ mod tests {
             kind: OrderKind::Sell,
             sell_amount: 10.into(),
             buy_amount: 100.into(),
-            valid_to: 100,
+            // Valid past valid_from so the order is genuinely solvable when it
+            // becomes eligible (valid_from < valid_to). The incremental query only
+            // selects candidates; the cache layer applies the valid_to filter.
+            valid_to: valid_from + 100,
             partially_fillable: true,
             // Created well before the checkpoint: branch 1 never picks it up.
             creation_timestamp: base - Duration::seconds(100),
