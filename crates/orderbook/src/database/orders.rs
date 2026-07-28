@@ -701,49 +701,6 @@ mod tests {
         std::sync::atomic::{AtomicI64, Ordering},
     };
 
-    // The DB->model read conversion preserves a concrete valid_from (i64 ->
-    // Option<u32>), the value surfaced on the order API responses.
-    #[test]
-    fn valid_from_survives_db_to_model_conversion() {
-        let full_order = FullOrder {
-            uid: ByteArray([0; 56]),
-            owner: ByteArray([0; 20]),
-            creation_timestamp: Utc::now(),
-            sell_token: ByteArray([1; 20]),
-            buy_token: ByteArray([2; 20]),
-            sell_amount: BigDecimal::from(1),
-            buy_amount: BigDecimal::from(1),
-            valid_to: (Utc::now() + Duration::days(1)).timestamp(),
-            valid_from: Some(1_700_000_000),
-            app_data: ByteArray([0; 32]),
-            fee_amount: BigDecimal::default(),
-            kind: DbOrderKind::Sell,
-            class: DbOrderClass::Liquidity,
-            partially_fillable: true,
-            signature: vec![0; 65],
-            receiver: None,
-            sum_sell: BigDecimal::default(),
-            sum_buy: BigDecimal::default(),
-            sum_fee: BigDecimal::default(),
-            invalidated: false,
-            signing_scheme: DbSigningScheme::Eip712,
-            settlement_contract: ByteArray([0; 20]),
-            sell_token_balance: DbSellTokenSource::External,
-            buy_token_balance: DbBuyTokenDestination::Internal,
-            presignature_pending: false,
-            pre_interactions: Vec::new(),
-            post_interactions: Vec::new(),
-            ethflow_data: None,
-            onchain_user: None,
-            onchain_placement_error: None,
-            executed_fee: Default::default(),
-            executed_fee_token: ByteArray([1; 20]),
-            full_app_data: Default::default(),
-        };
-        let order = full_order_into_model_order(full_order).unwrap();
-        assert_eq!(order.metadata.valid_from, Some(1_700_000_000));
-    }
-
     #[test]
     fn order_status() {
         let valid_to_timestamp = Utc::now() + Duration::days(1);

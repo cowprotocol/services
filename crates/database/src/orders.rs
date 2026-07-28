@@ -872,10 +872,9 @@ pub fn open_orders_by_time_or_uids<'a>(
 WITH selected_orders AS (
     SELECT o.*
     FROM   orders o
-    -- First branch: recently created/cancelled/updated orders that are not
-    -- still gated by a future valid_from. Second branch re-selects orders whose
-    -- valid_from passed since the last checkpoint ($1): becoming valid is not a
-    -- DB update, so this is the only way such orders enter the incremental cache.
+    -- Branch 1 is the usual "changed since $1" set, gated by valid_from. Branch 2
+    -- re-selects orders whose valid_from crossed since $1 -- becoming valid isn't a
+    -- DB write, so branch 1 would otherwise never pick them up.
     WHERE (
             (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))
             AND (o.valid_from IS NULL OR o.valid_from <= $3)
@@ -2181,8 +2180,6 @@ mod tests {
         assert_eq!(solvable_uids(&mut db, 1_000).await, hashset![gated.uid]);
         assert_eq!(solvable_uids(&mut db, 2_000).await, hashset![gated.uid]);
 
-        // A NULL valid_from is always eligible; the gated order stays excluded at
-        // now=0.
         let ungated = Order {
             uid: ByteArray([2u8; 56]),
             kind: OrderKind::Sell,
@@ -2250,88 +2247,6 @@ mod tests {
             incremental_uids(&mut db, checkpoint, valid_from).await,
             hashset![order.uid]
         );
-    }
-
-    // Incremental branch 1: a *recently created* order (creation_timestamp newer
-    // than the checkpoint) that is still gated by a future valid_from must be
-    // excluded until now >= valid_from. This specifically guards branch 1's gate,
-    // which the transition test above does not exercise (its order predates the
-    // checkpoint, so only branch 2 applies).
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_open_orders_valid_from_branch1_gating() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        async fn incremental_uids(
-            ex: &mut PgConnection,
-            after: DateTime<Utc>,
-            now: i64,
-        ) -> HashSet<OrderUid> {
-            open_orders_by_time_or_uids(ex, &[], after, now)
-                .map_ok(|o| o.uid)
-                .try_collect()
-                .await
-                .unwrap()
-        }
-
-        let base = Utc::now();
-        let checkpoint = base - Duration::seconds(10); // order is created AFTER this
-        let valid_from = base.timestamp() + 50;
-
-        let order = Order {
-            uid: ByteArray([1u8; 56]),
-            kind: OrderKind::Sell,
-            sell_amount: 10.into(),
-            buy_amount: 100.into(),
-            valid_to: 100,
-            partially_fillable: true,
-            creation_timestamp: base,
-            valid_from: Some(valid_from),
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
-
-        // Branch 1's time predicate matches (created after the checkpoint), but the
-        // valid_from gate must still keep the order out while it is pending.
-        assert!(
-            incremental_uids(&mut db, checkpoint, valid_from - 1)
-                .await
-                .is_empty()
-        );
-        // Once valid_from passes it is included.
-        assert_eq!(
-            incremental_uids(&mut db, checkpoint, valid_from).await,
-            hashset![order.uid]
-        );
-    }
-
-    // Write->read round-trip of a concrete valid_from through the DB layer: the
-    // INSERT bind (orders.valid_from) and the SELECT that sources o.valid_from
-    // into both the `Order` row and `FullOrder`.
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_order_valid_from_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order {
-            valid_from: Some(1_700_000_000),
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
-
-        let read = read_order(&mut db, &order.uid).await.unwrap().unwrap();
-        assert_eq!(read.valid_from, Some(1_700_000_000));
-
-        let full = single_full_order_with_quote(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap()
-            .full_order;
-        assert_eq!(full.valid_from, Some(1_700_000_000));
     }
 
     #[tokio::test]

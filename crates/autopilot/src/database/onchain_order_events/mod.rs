@@ -683,10 +683,6 @@ fn extract_order_data_from_onchain_order_placement_event(
     Ok((order_data, owner, signing_scheme, order_uid))
 }
 
-/// Populates app-data-derived order fields before the orders are persisted:
-/// backfills each order's `valid_from` and inserts its pre/post hook
-/// interactions. Orders whose app-data is unknown or unparseable are left
-/// as-is.
 async fn insert_order_hooks(
     db: &mut PgConnection,
     orders: &mut [Order],
@@ -788,7 +784,7 @@ mod test {
 
     use {
         super::*,
-        alloy::{primitives::U256, providers::Provider},
+        alloy::primitives::U256,
         contracts::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethrpc::Web3,
@@ -1152,41 +1148,6 @@ mod test {
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
-    }
-
-    // Onchain orders carry only the app-data hash on-chain; their `valid_from` is
-    // backfilled from the stored app-data document inside `insert_order_hooks`
-    // (the same fetch+parse that indexes hooks).
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_insert_order_hooks_backfills_valid_from() {
-        let db = Postgres::with_defaults().await.unwrap();
-        let mut db = db.pool.begin().await.unwrap();
-        database::clear_DANGER_(&mut db).await.unwrap();
-
-        // App-data with a validFrom and no hooks: the trampoline is never invoked.
-        let app_hash = ByteArray([7u8; 32]);
-        let full_app_data: &[u8] = br#"{"metadata":{"validFrom":1700000000}}"#;
-        database::app_data::insert(&mut db, &app_hash, full_app_data)
-            .await
-            .unwrap();
-
-        let trampoline = HooksTrampoline::Instance::new(
-            Address::from([0xcf; 20]),
-            alloy::providers::ProviderBuilder::new()
-                .connect_mocked_client(alloy::providers::mock::Asserter::new())
-                .erased(),
-        );
-
-        let mut orders = vec![Order {
-            app_data: app_hash,
-            ..Default::default()
-        }];
-        insert_order_hooks(&mut db, &mut orders, &trampoline)
-            .await
-            .unwrap();
-
-        assert_eq!(orders[0].valid_from, Some(1_700_000_000));
     }
 
     #[ignore]

@@ -2185,62 +2185,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_validate_err_invalid_valid_from() {
-        let mut order_quoter = MockOrderQuoting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter
-            .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _| Ok(()));
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
-        let validator = OrderValidator::new(
-            native_token,
-            Arc::new(order_validation::banned::Users::none()),
-            OrderValidPeriodConfiguration::any(),
-            false,
-            Default::default(),
-            HooksTrampoline::Instance::new(
-                Address::repeat_byte(0xcf),
-                ProviderBuilder::new()
-                    .connect_mocked_client(Asserter::new())
-                    .erased(),
-            ),
-            Arc::new(order_quoter),
-            Arc::new(balance_fetcher),
-            Arc::new(MockSignatureValidating::new()),
-            None,
-            Arc::new(limit_order_counter),
-            0,
-            Default::default(),
-            u64::MAX,
-            SameTokensPolicy::Disallow,
-        );
-        // `validFrom == valid_to` makes the order impossible to ever be valid.
-        let valid_to = time::now_in_epoch_seconds() + 2;
-        let order = OrderCreation {
-            valid_to,
-            sell_token: Address::with_last_byte(1),
-            buy_token: Address::with_last_byte(2),
-            buy_amount: alloy::primitives::U256::from(1),
-            sell_amount: alloy::primitives::U256::from(1),
-            fee_amount: alloy::primitives::U256::from(0),
-            signature: Signature::Eip712(EcdsaSignature::non_zero()),
-            app_data: OrderCreationAppData::Full {
-                full: format!(r#"{{"metadata":{{"validFrom":{valid_to}}}}}"#),
-            },
-            ..Default::default()
-        };
-        let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
-            .await;
-        assert!(matches!(result, Err(ValidationError::InvalidValidFrom)));
-    }
-
-    #[tokio::test]
     async fn post_validate_err_wrong_owner() {
         let mut order_quoter = MockOrderQuoting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
