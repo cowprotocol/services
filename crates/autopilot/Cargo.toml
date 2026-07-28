@@ -57,6 +57,7 @@ price-estimation = { workspace = true, features = ["test-util"] }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
+rayon = { workspace = true }
 reqwest = { workspace = true, features = ["gzip", "json", "stream"] }
 rust_decimal = { workspace = true }
 s3 = { workspace = true }

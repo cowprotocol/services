@@ -105,6 +105,7 @@ prometheus-metric-storage = "0.6"
 quote = "1.0.41"
 rand = "0.9.4"
 rate-limit = { path = "crates/rate-limit" }
+rayon = "1.12"
 refunder = { path = "crates/refunder" }
 regex = "1.10.4"
 request-sharing = { path = "crates/request-sharing" }
