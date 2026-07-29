@@ -476,12 +476,14 @@ impl NativePriceUpdater {
         let update_task = async move {
             while let Some(updater) = weak.upgrade() {
                 let now = Instant::now();
-                updater.single_update(prefetch_time).await;
+                updater
+                    .single_update(prefetch_time)
+                    .instrument(tracing::info_span!("native_price_updater"))
+                    .await;
                 drop(updater);
                 tokio::time::sleep(update_interval.saturating_sub(now.elapsed())).await;
             }
-        }
-        .instrument(tracing::info_span!("native_price_updater"));
+        };
         tokio::spawn(update_task);
 
         updater
