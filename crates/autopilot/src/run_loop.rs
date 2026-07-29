@@ -315,7 +315,7 @@ impl RunLoop {
         Metrics::auction(id);
 
         // always update the auction because the tests use this as a readiness probe
-        let auction = self.persistence.archive_auction(id, auction).await;
+        self.persistence.archive_auction(id, &auction);
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization

@@ -153,53 +153,43 @@ impl Persistence {
 
     /// Archives the auction to the DB and, if configured, to S3.
     ///
-    /// The auction is moved onto the blocking pool to avoid a deep clone and
-    /// handed back to the caller.
+    /// Only the conversion into the archival shape is on the run loop's
+    /// critical path; the serialization and both sinks happen in background
+    /// tasks. The auction is taken by reference so the conversion doesn't
+    /// need a deep clone.
     #[instrument(skip_all)]
-    pub async fn archive_auction(
-        &self,
-        id: domain::auction::Id,
-        auction: domain::RawAuctionData,
-    ) -> domain::RawAuctionData {
-        let span = tracing::Span::current();
-        let (auction, json) = {
-            // Only the conversion and serialization are on the run loop's critical
-            // path; both sinks below hand off to background tasks.
+    pub fn archive_auction(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
+        let auction_data = {
             let _timer = observe::metrics::metrics()
-                .on_auction_overhead_start("autopilot", "serialize_auction");
-
-            tokio::task::spawn_blocking(move || {
-                let json = span.in_scope(|| {
-                    let auction_data = dto::auction::from_domain(&auction);
-                    serde_json::to_vec(&auction_data).map(Bytes::from_owner)
-                });
-                (auction, json)
-            })
-            .await
-            .expect("auction conversion task panicked")
-        };
-        let json = match json {
-            Ok(json) => json,
-            Err(err) => {
-                tracing::error!(?err, ?id, "failed to serialize auction");
-                return auction;
-            }
+                .on_auction_overhead_start("autopilot", "convert_auction");
+            dto::auction::from_domain(auction)
         };
 
-        // Enqueued before spawning the S3 upload so the queue keeps seeing
-        // auctions in the order the run loop cut them.
-        self.upload_queue
-            .send(AuctionUpload {
-                auction_id: id,
-                json: json.clone(),
+        let upload_to_s3 = !auction.orders.is_empty();
+        let this = self.clone();
+        let span = tracing::Span::current();
+        tokio::task::spawn_blocking(move || {
+            span.in_scope(|| {
+                let json = match serde_json::to_vec(&auction_data).map(Bytes::from) {
+                    Ok(json) => json,
+                    Err(err) => {
+                        tracing::error!(?err, ?id, "failed to serialize auction");
+                        return;
+                    }
+                };
+
+                this.upload_queue
+                    .send(AuctionUpload {
+                        auction_id: id,
+                        json: json.clone(),
+                    })
+                    .expect("upload queue should be alive at all times");
+
+                if upload_to_s3 {
+                    this.upload_auction_to_s3(id, json);
+                }
             })
-            .expect("upload queue should be alive at all times");
-
-        if !auction.orders.is_empty() {
-            self.upload_auction_to_s3(id, json);
-        }
-
-        auction
+        });
     }
 
     /// Spawns a background task that uploads the already serialized auction to
