@@ -11,7 +11,7 @@ use {
         collections::HashMap,
         sync::{Arc, RwLock},
     },
-    tracing::Instrument,
+    tracing::instrument,
 };
 
 #[derive(Clone, Debug)]
@@ -37,10 +37,7 @@ impl Fetcher {
             cache: RwLock::new(HashMap::new()),
             requests: BoxRequestSharing::labelled("token_info".into()),
         });
-        tokio::task::spawn(
-            update_task(block_stream, Arc::downgrade(&inner))
-                .instrument(tracing::info_span!("token_fetcher")),
-        );
+        tokio::task::spawn(update_task(block_stream, Arc::downgrade(&inner)));
         Self(inner)
     }
 
@@ -99,6 +96,7 @@ async fn update_task(blocks: CurrentBlockWatcher, inner: std::sync::Weak<Inner>)
 }
 
 /// Updates the settlement contract's balance for every cached token.
+#[instrument(skip_all)]
 async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     let settlement = *inner.eth.contracts().settlement().address();
     let futures: Vec<_> = {
