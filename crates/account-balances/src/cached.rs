@@ -2,7 +2,7 @@ use {
     crate::{BalanceFetching, Query, TransferSimulationError},
     alloy_primitives::{Address, U256},
     anyhow::Result,
-    ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
+    ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher, into_stream},
     futures::StreamExt,
     itertools::Itertools,
     model::order::SellTokenSource,
@@ -10,7 +10,7 @@ use {
         collections::HashMap,
         sync::{Arc, Mutex},
     },
-    tracing::{Instrument, instrument},
+    tracing::instrument,
 };
 
 type BlockNumber = u64;
@@ -119,45 +119,51 @@ impl Balances {
 
         let task = async move {
             while let Some(block) = stream.next().await {
-                async {
-                    let balances_to_update = {
-                        let mut cache = cache.lock().unwrap();
-                        cache.last_seen_block = block.number;
-                        cache
-                            .data
-                            .iter()
-                            .filter_map(|(query, entry)| {
-                                // Only update balances that have been requested recently.
-                                let oldest_allowed_request =
-                                    cache.last_seen_block.saturating_sub(EVICTION_TIME);
-                                (entry.requested_at >= oldest_allowed_request)
-                                    .then_some(query.clone())
-                            })
-                            .collect_vec()
-                    };
-
-                    let results = inner.get_balances(&balances_to_update).await;
-
-                    let mut cache = cache.lock().unwrap();
-                    balances_to_update
-                        .into_iter()
-                        .zip(results)
-                        .for_each(|(query, result)| {
-                            if let Ok(balance) = result {
-                                cache.update_balance(&query, balance, block.number);
-                            }
-                        });
-                    cache.data.retain(|_, value| {
-                        // Only keep balances where we know we have the most recent data.
-                        value.updated_at >= block.number
-                    });
-                }
-                .instrument(tracing::info_span!("balance_cache"))
-                .await;
+                Self::refresh_balances(inner.as_ref(), &cache, block).await;
             }
             tracing::error!("block stream terminated unexpectedly");
         };
         tokio::spawn(task);
+    }
+
+    /// Updates all balances there were used recently enough. All other
+    /// balances get evicted from the cache.
+    #[instrument(skip_all)]
+    async fn refresh_balances(
+        fetcher: &dyn BalanceFetching,
+        cache: &Mutex<BalanceCache>,
+        block: BlockInfo,
+    ) {
+        let balances_to_update = {
+            let mut cache = cache.lock().unwrap();
+            cache.last_seen_block = block.number;
+            cache
+                .data
+                .iter()
+                .filter_map(|(query, entry)| {
+                    // Only update balances that have been requested recently.
+                    let oldest_allowed_request =
+                        cache.last_seen_block.saturating_sub(EVICTION_TIME);
+                    (entry.requested_at >= oldest_allowed_request).then_some(query.clone())
+                })
+                .collect_vec()
+        };
+
+        let results = fetcher.get_balances(&balances_to_update).await;
+
+        let mut cache = cache.lock().unwrap();
+        balances_to_update
+            .into_iter()
+            .zip(results)
+            .for_each(|(query, result)| {
+                if let Ok(balance) = result {
+                    cache.update_balance(&query, balance, block.number);
+                }
+            });
+        cache.data.retain(|_, value| {
+            // Only keep balances where we know we have the most recent data.
+            value.updated_at >= block.number
+        });
     }
 }
 
