@@ -535,11 +535,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         db_write.clone(),
     );
 
-    tokio::task::spawn(
-        order_events_cleaner
-            .run_forever()
-            .instrument(tracing::info_span!("order_events_cleaner")),
-    );
+    tokio::task::spawn(order_events_cleaner.run_forever());
 
     let market_makable_token_list_configuration = TokenListConfiguration {
         url: config.trusted_tokens.url.clone(),
