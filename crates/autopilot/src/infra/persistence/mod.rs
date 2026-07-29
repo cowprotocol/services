@@ -83,12 +83,6 @@ impl Persistence {
         let (sender, mut receiver) = mpsc::unbounded_channel::<AuctionUpload>();
         tokio::task::spawn(async move {
             while let Some(upload) = receiver.recv().await {
-                // Started after `recv` so queue wait isn't counted as write time.
-                let _timer = Metrics::get()
-                    .auction_archive
-                    .with_label_values(&["database"])
-                    .start_timer();
-
                 if let Err(err) = db
                     .replace_current_auction(upload.auction_id, upload.json)
                     .await
@@ -215,12 +209,6 @@ impl Persistence {
             return;
         };
         tokio::task::spawn(async move {
-            // Covers gzip as well as the PUT, since `upload_json_bytes` compresses.
-            let _timer = Metrics::get()
-                .auction_archive
-                .with_label_values(&["s3"])
-                .start_timer();
-
             match s3.upload_json_bytes(id.to_string(), json).await {
                 Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
                 Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
@@ -1061,16 +1049,6 @@ struct Metrics {
     /// Timing of db queries.
     #[metric(name = "persistence_database_queries", labels("type"))]
     database_queries: prometheus::HistogramVec,
-
-    /// Time spent writing an already serialized auction to each archive sink.
-    /// Both sinks run in background tasks, so this is off the run loop's
-    /// critical path.
-    #[metric(
-        name = "persistence_auction_archive",
-        labels("sink"),
-        buckets(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0)
-    )]
-    auction_archive: prometheus::HistogramVec,
 }
 
 impl Metrics {
