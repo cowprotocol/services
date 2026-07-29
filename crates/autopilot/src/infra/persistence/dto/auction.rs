@@ -9,23 +9,24 @@ use {
     std::collections::BTreeMap,
 };
 
-pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
+/// Converts the auction into the shape that gets archived to the DB and S3.
+///
+/// Takes the auction by reference so the caller can keep using it afterwards
+/// without a deep clone.
+pub fn from_domain(auction: &domain::RawAuctionData) -> RawAuctionData {
     RawAuctionData {
         block: auction.block,
         orders: auction
             .orders
-            .into_iter()
+            .iter()
             .map(super::order::from_domain)
             .collect(),
         prices: auction
             .prices
-            .into_iter()
-            .map(|(key, value)| (*key, value.get().0))
+            .iter()
+            .map(|(key, value)| (**key, value.get().0))
             .collect(),
-        surplus_capturing_jit_order_owners: auction
-            .surplus_capturing_jit_order_owners
-            .into_iter()
-            .collect(),
+        surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.clone(),
     }
 }
 
