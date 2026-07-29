@@ -166,6 +166,7 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
         balance_overrider,
         block_stream,
         None,
+        None,
     )
     .await
     .expect("failed to create SettlementSimulator");
@@ -276,6 +277,7 @@ async fn build_naturally_failing_replay_simulation(
         30_000_000u64,
         balance_overrider,
         block_stream,
+        None,
         None,
     )
     .await

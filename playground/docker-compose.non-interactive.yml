@@ -93,11 +93,18 @@ services:
     volumes:
       - ./configs/orderbook.toml:/orderbook.toml
     depends_on:
-      - db-migrations
+      db-migrations:
+        condition: service_completed_successfully
     ports:
       - 8080:80 # API
       - 9586:9586 # metrics
       - 6669:6669 # tokio console
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/api/v1/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 600s
 
   autopilot:
     build:
@@ -125,6 +132,12 @@ services:
     ports:
       - 9589:9589 # metrics
       - 6670:6669 # tokio console
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9589/startup || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 600s
 
   driver:
     build:
@@ -151,6 +164,12 @@ services:
     depends_on:
       chain:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 600s
 
   # baseline (solver engine)
   baseline:
@@ -174,6 +193,12 @@ services:
     ports:
       - 9001:80 # API & metrics
       - 6672:6669 # tokio console
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 600s
 
   frontend:
     build:

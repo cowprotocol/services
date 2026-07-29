@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Message types passed over the internal channel.
 //!
 //! The ingester pushes [`StreamUpdate`] into the channel to the decoder.

@@ -7,6 +7,7 @@ use {
     futures::{FutureExt, StreamExt},
     prometheus::{IntCounter, IntCounterVec, IntGauge},
     rand::Rng,
+    request_sharing::{BoxRequestSharing, RequestSharing},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -287,6 +288,7 @@ struct CachingInner {
     /// After startup this is a read only value.
     approximation_tokens: HashMap<Address, ApproximationToken>,
     quote_timeout: Duration,
+    requests_in_flight: BoxRequestSharing<Address, CacheEntry>,
 }
 
 impl CachingNativePriceEstimator {
@@ -303,6 +305,7 @@ impl CachingNativePriceEstimator {
             concurrent_requests,
             approximation_tokens,
             quote_timeout,
+            requests_in_flight: RequestSharing::labelled("native_price".to_string()),
         });
         Self(inner)
     }
@@ -312,6 +315,10 @@ impl CachingNativePriceEstimator {
     /// estimation request gets issued. We check the cache before each
     /// request because they can take a long time and some other task might
     /// have fetched some requested price in the meantime.
+    ///
+    /// Concurrent requests for the same token are de-duplicated, so only a
+    /// single underlying quote is issued per token even when it's requested
+    /// from multiple places at once.
     fn estimate_prices_and_update_cache<'a, I>(
         &'a self,
         tokens: I,
@@ -323,32 +330,44 @@ impl CachingNativePriceEstimator {
         I::IntoIter: Send + 'a,
     {
         let estimates = tokens.into_iter().map(move |token| async move {
-            // check if the price is cached by now
-            let now = Instant::now();
+            // The price may already be cached
             if let Some(cached) =
-                Cache::get_cached_price(token, now, &self.0.cache.0.data, &max_age)
+                Cache::get_cached_price(token, Instant::now(), &self.0.cache.0.data, &max_age)
             {
                 return (token, cached.result);
             }
 
-            let approximation = self
-                .0
-                .approximation_tokens
-                .get(&token)
-                .copied()
-                .unwrap_or(ApproximationToken::same_decimals(token));
-
+            // Coalesce concurrent in-flight requests for the same token so the
+            // underlying estimator is queried at most once
             let result = self
                 .0
-                .estimator
-                .estimate_native_price(approximation.address, request_timeout)
-                .await
-                .map(|price| approximation.normalize_price(price));
+                .requests_in_flight
+                .shared_or_else(token, move |&token| {
+                    let this = self.clone();
+                    async move {
+                        let approximation = this
+                            .0
+                            .approximation_tokens
+                            .get(&token)
+                            .copied()
+                            .unwrap_or(ApproximationToken::same_decimals(token));
 
-            // update price in cache
-            if should_cache(&result) {
-                self.0.cache.insert(token, result.clone());
-            };
+                        let result = this
+                            .0
+                            .estimator
+                            .estimate_native_price(approximation.address, request_timeout)
+                            .await
+                            .map(|price| approximation.normalize_price(price));
+
+                        if should_cache(&result) {
+                            this.0.cache.insert(token, result.clone());
+                        }
+
+                        result
+                    }
+                    .boxed()
+                })
+                .await;
 
             (token, result)
         });
@@ -632,6 +651,38 @@ mod tests {
             let result = estimator
                 .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
                 .await;
+            assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn deduplicates_concurrent_requests_for_same_token() {
+        let mut inner = MockNativePriceEstimating::new();
+        // Even though many callers request the same uncached token at once, the
+        // underlying estimator must be queried exactly once (sleep keeps the leader's
+        // request in flight while others arrive).
+        inner
+            .expect_estimate_native_price()
+            .times(1)
+            .returning(|_, _| {
+                async {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    Ok(1.0)
+                }
+                .boxed()
+            });
+
+        let estimator =
+            create_caching_estimator(inner, Duration::from_secs(10), 10, Default::default());
+
+        let results = futures::future::join_all(
+            (0..10)
+                .map(|_| estimator.estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)),
+        )
+        .await;
+
+        assert_eq!(results.len(), 10);
+        for result in results {
             assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
         }
     }

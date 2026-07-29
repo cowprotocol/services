@@ -22,7 +22,6 @@ use {
             observe::{self, OrderExcludedFromAuctionReason, metrics},
             solver::{self, Account, SolutionMerging, Solver},
         },
-        util::math,
     },
     alloy::{network::TxSigner as _, primitives::Bytes},
     anyhow::Context as _,
@@ -30,6 +29,7 @@ use {
     eth_domain_types as eth,
     futures::{FutureExt, StreamExt},
     itertools::Itertools,
+    number::u256_ext::U256Ext,
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
         cmp::Reverse,
@@ -738,7 +738,9 @@ impl Competition {
             //    following: `available + (fee * available / sell) <= allocated_balance`
             if let order::Partial::Yes { available } = &mut order.partial {
                 *available = order::TargetAmount(
-                    math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
+                    available
+                        .0
+                        .checked_mul_ratio(&allocated_balance.0, &max_sell.0)
                         .unwrap_or_default(),
                 );
             }

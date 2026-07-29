@@ -68,12 +68,19 @@ impl Tenderly {
         &self,
         tx: T,
         block: BlockNo,
+        overrides: Option<StateOverride>,
         generate_access_list: GenerateAccessList,
     ) -> Result<Simulation, Error>
     where
         T: Into<TransactionRequest>,
     {
         let tx = tx.into();
+        // Strip nonce: Tenderly's StateObject::try_from rejects it, and pAMM
+        // frames always carry it. Contract nonces only matter for CREATE.
+        let mut overrides = overrides.unwrap_or_default();
+        for account_override in overrides.values_mut() {
+            account_override.nonce = None;
+        }
         let request = dto::Request {
             generate_access_list: match generate_access_list {
                 GenerateAccessList::Yes => Some(true),
@@ -81,12 +88,7 @@ impl Tenderly {
             },
             save_if_fails: self.save_if_fails.then_some(true),
             save: self.save.then_some(true),
-            ..prepare_request(
-                self.eth.chain().id().to_string(),
-                &tx,
-                Default::default(),
-                block,
-            )?
+            ..prepare_request(self.eth.chain().id().to_string(), &tx, overrides, block)?
         };
 
         Ok(self

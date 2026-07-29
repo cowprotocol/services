@@ -69,6 +69,26 @@ impl Postgres {
             .map(try_into_dto)
             .ok_or(LoadSolverCompetitionError::NotFound)?
     }
+
+    pub async fn order_is_actively_bid_on(
+        &self,
+        order_uid: &OrderUid,
+        latest_competitions_count: u32,
+    ) -> anyhow::Result<bool> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["order_is_actively_bid_on_v2"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        database::solver_competition_v2::order_is_in_recent_solutions(
+            &mut ex,
+            &ByteArray(order_uid.0),
+            latest_competitions_count as i64,
+        )
+        .await
+        .map_err(Into::into)
+    }
 }
 
 fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionError> {

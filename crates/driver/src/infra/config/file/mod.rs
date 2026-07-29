@@ -279,6 +279,10 @@ struct SolverConfig {
     #[serde(default)]
     quote_using_limit_orders: bool,
 
+    /// Whether this solver supports fast-path (out-of-competition) execution.
+    #[serde(default)]
+    fast_path_enabled: bool,
+
     /// If enabled driver tries to merge multiple solutions for the same
     /// auction together.
     #[serde(default)]

@@ -487,18 +487,6 @@ Indexes:
 - trade\_order\_uid: btree (`order_uid`, `block_number`, `log_index`)
 - trades_covering: btree(`order_uid`) INCLUDE (`buy_amount`, `sell_amount`, `fee_amount`)
 
-### surplus\_capturing\_jit\_order\_owners
-
-Stores all surplus capturing jit order owners that are part of an auction. JIT orders settled for addresses which were not part of a given auction will not count towards surplus.
-
- Column     | Type    | Nullable | Details
-------------|---------|----------|--------
-auction\_id | bigint  | not null | which auction this order was part of
-owners      | bytea[] | not null | surplus capturing jit order owner included in the auction
-
-Indexes:
-- PRIMARY KEY: btree(`auction_id`)
-
 ### jit\_orders
 
 JIT orders stored here are orders that were settled outside of the competitition Auction. This means both regular JIT orders that protocol is not aware of, as well as regular user orders that were not listed in the Auction can appear in this table.

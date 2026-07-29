@@ -20,6 +20,11 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 derive_more = { workspace = true }
 futures = { workspace = true }
+settlement-interface = {
+  package = "settlement-interface",
+  git = "https://github.com/cowprotocol/solana-programs",
+  rev = "4e0bd7eaed7c237a327705425be2a4a50a8b4a3a"
+}
 solana-client = { workspace = true }
 solana-sdk = { workspace = true }
 thiserror = { workspace = true }

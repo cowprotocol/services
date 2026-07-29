@@ -109,6 +109,14 @@ pub struct PriceEstimation {
     #[serde(default)]
     pub tenderly: Option<crate::simulator::TenderlyConfig>,
 
+    /// Optional background websocket stream of eth_call-style state override
+    /// sets, applied during quote/trade verification simulation. Same wire
+    /// format and semantics as the driver's
+    /// `[simulator.state-override-stream]`. When absent, no stream task is
+    /// spawned and behavior is unchanged.
+    #[serde(default)]
+    pub state_override_stream: Option<crate::simulator::StateOverrideStream>,
+
     /// The CoinGecko native price configuration.
     pub coin_gecko: Option<CoinGeckoConfig>,
 
@@ -120,6 +128,7 @@ impl Default for PriceEstimation {
     fn default() -> Self {
         Self {
             tenderly: Default::default(),
+            state_override_stream: Default::default(),
             price_estimation_rate_limiter: None,
             amount_to_estimate_prices_with: None,
             one_inch: Default::default(),

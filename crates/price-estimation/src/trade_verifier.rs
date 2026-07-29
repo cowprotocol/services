@@ -129,6 +129,7 @@ impl TradeVerifier {
                     gas,
                     solver: trade.solver(),
                     verified: false,
+                    supports_fast_path: trade.supports_fast_path(),
                     execution: QuoteExecution {
                         interactions: map_interactions_data(trade.interactions()),
                         pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -211,7 +212,11 @@ impl TradeVerifier {
                 settle_call.calldata.clone(),
             )
             .from(*solver_contract.address())
-            .gas(self.simulator.max_gas_limit());
+            .gas(self.simulator.max_gas_limit())
+            // Verify the trade at a realistic gas price. Otherwise tokens that
+            // behave differently when they detect a gas price of 0 could make
+            // us verify a price that is not actually executable on-chain.
+            .gas_price(self.simulator.simulation_gas_price());
 
         Ok(SwapCall {
             tx_request: call.into_transaction_request(),
@@ -815,6 +820,7 @@ fn ensure_quote_accuracy(
         gas: summary.gas_used.saturating_to(),
         solver: trade.solver(),
         verified: true,
+        supports_fast_path: trade.supports_fast_path(),
         execution: QuoteExecution {
             interactions: map_interactions_data(trade.interactions()),
             pre_interactions: map_interactions_data(trade.pre_interactions()),

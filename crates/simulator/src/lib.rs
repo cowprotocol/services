@@ -2,10 +2,13 @@ pub mod encoding;
 pub mod ethereum;
 pub mod report;
 pub mod simulation_builder;
+pub mod state_override_stream;
 pub mod tenderly;
 mod utils;
 
 use {
+    crate::state_override_stream::SimulationOverrides,
+    alloy_primitives::Address,
     eth_domain_types::{self as eth, AccessList, Tx},
     http_client::HttpClientFactory,
     observe::future::Measure,
@@ -18,6 +21,7 @@ pub struct Simulator {
     eth: Ethereum,
     disable_access_lists: bool,
     disable_gas: Option<eth::Gas>,
+    simulation_overrides: Option<SimulationOverrides>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +46,7 @@ impl Simulator {
             eth,
             disable_access_lists: false,
             disable_gas: None,
+            simulation_overrides: None,
         }
     }
 
@@ -52,6 +57,7 @@ impl Simulator {
             eth,
             disable_access_lists: false,
             disable_gas: None,
+            simulation_overrides: None,
         }
     }
 
@@ -67,18 +73,34 @@ impl Simulator {
         self.disable_gas = Some(fixed_gas);
     }
 
-    /// Simulate the access list needed by a transaction. If the transaction
-    /// already has an access list, the returned access list will be a
-    /// superset of the existing one.
-    pub async fn access_list(&self, tx: &Tx) -> Result<AccessList, Error> {
+    pub fn set_simulation_overrides(&mut self, overrides: SimulationOverrides) {
+        self.simulation_overrides = Some(overrides);
+    }
+
+    /// Computes access list for sending native eth to the given receiver.
+    /// This access list may be needed to make sending ETH to smart contract
+    /// wallets possible.
+    pub async fn access_list_for_eth_transfer(
+        &self,
+        from: Address,
+        to: Address,
+    ) -> Result<AccessList, Error> {
+        let tx = eth::Tx {
+            from,
+            to,
+            value: 1.into(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
         if self.disable_access_lists {
-            return Ok(tx.access_list.clone());
+            return Ok(Default::default());
         }
         let block = self.eth.current_block().borrow().number.into();
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
+                // function assumes `from` has the needed ETH so no state overrides are needed
                 tenderly
-                    .simulate(tx.clone(), block, tenderly::GenerateAccessList::Yes)
+                    .simulate(tx.clone(), block, None, tenderly::GenerateAccessList::Yes)
                     .await
                     .map_err(with(tx.clone(), block))?
                     .access_list
@@ -97,11 +119,20 @@ impl Simulator {
         if let Some(gas) = self.disable_gas {
             return Ok(gas);
         }
-        let block = self.eth.current_block().borrow().number.into();
+        let block: eth::BlockNo = self.eth.current_block().borrow().number.into();
+        let state_overrides = self
+            .simulation_overrides
+            .as_ref()
+            .and_then(|overrides| overrides.current());
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
-                    .simulate(tx.clone(), block, tenderly::GenerateAccessList::No)
+                    .simulate(
+                        tx.clone(),
+                        block,
+                        state_overrides,
+                        tenderly::GenerateAccessList::No,
+                    )
                     .measure("tenderly_simulate_gas")
                     .await
                     .map_err(with(tx, block))?
@@ -109,7 +140,7 @@ impl Simulator {
             }
             Inner::Ethereum => self
                 .eth
-                .estimate_gas(tx.clone())
+                .estimate_gas(tx.clone(), state_overrides)
                 .await
                 .map_err(with(tx, block))?,
         })
