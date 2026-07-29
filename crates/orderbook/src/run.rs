@@ -34,7 +34,7 @@ use {
     },
     order_validation,
     price_estimation::{
-        PriceEstimating,
+        CompetitionPriceEstimating,
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
@@ -342,7 +342,7 @@ pub async fn run(config: Configuration) {
         max_limit: config.order_validation.max_limit_order_validity_period,
     };
 
-    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
+    let create_quoter = |price_estimator: Arc<dyn CompetitionPriceEstimating>| {
         OrderQuoter::new(
             price_estimator,
             native_price_estimator.clone(),

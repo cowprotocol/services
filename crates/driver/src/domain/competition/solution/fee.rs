@@ -208,16 +208,12 @@ impl Fulfillment {
     ) -> Result<eth::TokenAmount, Error> {
         let fee_in_sell_token = match self.order().side {
             Side::Buy => self.protocol_fee(prices, protocol_fee)?,
-            Side::Sell => {
-                if prices.sell.is_zero() {
-                    return Err(Math::DivisionByZero.into());
-                }
-                self.protocol_fee(prices, protocol_fee)?
-                    .0
-                    .checked_mul_ratio(&prices.buy, &prices.sell)
-                    .ok_or(Math::Overflow)?
-                    .into()
-            }
+            Side::Sell => self
+                .protocol_fee(prices, protocol_fee)?
+                .0
+                .checked_mul_ratio(&prices.buy, &prices.sell)
+                .map_err(Math::from)?
+                .into(),
         };
         Ok(fee_in_sell_token)
     }
