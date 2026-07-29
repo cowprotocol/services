@@ -9,7 +9,7 @@ use {
         sync::{Arc, RwLock},
         time::Duration,
     },
-    tracing::{Instrument, instrument},
+    tracing::instrument,
 };
 
 #[derive(Clone, Debug, Default)]

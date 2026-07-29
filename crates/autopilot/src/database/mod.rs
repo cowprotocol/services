@@ -6,7 +6,7 @@ use {
         num::{NonZeroU32, NonZeroUsize},
         time::Duration,
     },
-    tracing::{Instrument, instrument},
+    tracing::instrument,
 };
 
 mod auction;
