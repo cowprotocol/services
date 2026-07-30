@@ -2,6 +2,7 @@
 
 pub mod arguments;
 pub mod boundary;
+pub mod chain_loop;
 pub mod database;
 pub mod domain;
 pub mod event_updater;
