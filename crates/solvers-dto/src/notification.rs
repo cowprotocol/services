@@ -1,6 +1,7 @@
 use {
     alloy_primitives::{Address, B256, U256},
     alloy_rpc_types_eth::AccessList,
+    bytes::Bytes,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -80,7 +81,7 @@ pub struct Tx {
     pub from: Address,
     pub to: Address,
     #[serde_as(as = "serde_ext::Hex")]
-    pub input: Vec<u8>,
+    pub input: Bytes,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     pub access_list: AccessList,

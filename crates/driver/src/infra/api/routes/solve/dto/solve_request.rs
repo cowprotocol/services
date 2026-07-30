@@ -13,6 +13,7 @@ use {
         },
         infra::{Ethereum, tokens},
     },
+    bytes::Bytes,
     eth_domain_types as eth,
     serde::Deserialize,
     serde_with::serde_as,
@@ -293,7 +294,7 @@ struct Order {
     app_data: [u8; order::app_data::APP_DATA_LEN],
     signing_scheme: SigningScheme,
     #[serde_as(as = "serde_ext::Hex")]
-    signature: Vec<u8>,
+    signature: Bytes,
     quote: Option<Quote>,
 }
 
@@ -312,7 +313,7 @@ struct Interaction {
     #[serde_as(as = "serde_ext::U256")]
     value: eth::U256,
     #[serde_as(as = "serde_ext::Hex")]
-    call_data: Vec<u8>,
+    call_data: Bytes,
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -5,6 +5,7 @@ use {
     super::cached::{Backend, BackendError},
     alloy_primitives::Address,
     async_trait::async_trait,
+    bytes::Bytes,
     hmac::{Hmac, Mac},
     sha2::Sha256,
     std::time::Duration,
@@ -35,7 +36,7 @@ pub(super) enum Error {
 pub(super) struct Client {
     client: reqwest::Client,
     url: Url,
-    hmac_key: Vec<u8>,
+    hmac_key: Bytes,
     api_key: Option<String>,
 }
 
@@ -54,7 +55,7 @@ impl Client {
                 .build()
                 .expect("reqwest client builder with default TLS settings is infallible"),
             url,
-            hmac_key: config.hmac_key.into_bytes(),
+            hmac_key: Bytes::from(config.hmac_key.into_bytes()),
             api_key: config.api_key,
         }
     }

@@ -267,7 +267,7 @@ impl Solutions {
                             }).collect()),
                     solution.wrappers.iter().cloned().map(|w| WrapperCall {
                         address: w.address,
-                        data: w.data.into(),
+                        data: w.data,
                     }).collect(),
                 )
                 .map_err(|err| match err {
@@ -362,7 +362,7 @@ impl JitOrder {
             .to_boundary_signature()
             .and_then(|sig| {
                 sig.recover_owner(
-                    self.0.signature.as_slice(),
+                    &self.0.signature,
                     &DomainSeparator(domain_separator.0),
                     &self.raw_order_data().hash_struct(),
                 )

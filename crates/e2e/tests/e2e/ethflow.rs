@@ -850,7 +850,10 @@ async fn test_order_parameters(
         response.interactions.pre[0].target,
         *ethflow_contract.address()
     );
-    assert_eq!(response.interactions.pre[0].call_data, WRAP_ALL_SELECTOR);
+    assert_eq!(
+        response.interactions.pre[0].call_data.as_ref(),
+        WRAP_ALL_SELECTOR.as_slice(),
+    );
 }
 
 pub struct ExtendedEthFlowOrder(pub CoWSwapEthFlow::EthFlowOrder::Data);
@@ -889,7 +892,7 @@ impl ExtendedEthFlowOrder {
             .with_valid_to(u32::MAX)
             .with_app_data(self.0.appData.0)
             .with_class(OrderClass::Market) // Eth-flow orders only support market orders at this point in time
-            .with_eip1271(*ethflow_contract.address(), vec![])
+            .with_eip1271(*ethflow_contract.address(), bytes::Bytes::new())
             .build()
     }
 

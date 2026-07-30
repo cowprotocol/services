@@ -133,7 +133,7 @@ async fn allowance(web3: Web3) {
             .from(solver.address());
         Hook {
             target: *cow.address(),
-            call_data: tx.calldata().to_vec(),
+            call_data: tx.calldata().clone().0,
             gas_limit: tx.estimate_gas().await.unwrap(),
         }
     };
@@ -144,7 +144,7 @@ async fn allowance(web3: Web3) {
             .approve(trader.address(), U256::MAX);
         Hook {
             target: *onchain.contracts().weth.address(),
-            call_data: approve.calldata().to_vec(),
+            call_data: approve.calldata().clone().0,
             gas_limit: approve.estimate_gas().await.unwrap(),
         }
     };
@@ -301,9 +301,9 @@ async fn signature(web3: Web3) {
     let approval_call_data = token
         .approve(onchain.contracts().allowance, 5u64.eth())
         .calldata()
-        .to_vec();
+        .clone();
     let approval_builder = safe.sign_transaction(*token.address(), approval_call_data, U256::ZERO);
-    let call_data = approval_builder.calldata().to_vec();
+    let call_data = approval_builder.calldata().clone().0;
     let target = approval_builder
         .into_transaction_request()
         .to
@@ -349,10 +349,13 @@ async fn signature(web3: Web3) {
         },
         ..Default::default()
     };
-    order.signature = Signature::Eip1271(safe.sign_message(&hashed_eip712_message(
-        &onchain.contracts().domain_separator,
-        &order.data().hash_struct(),
-    )));
+    order.signature = Signature::Eip1271(
+        safe.sign_message(&hashed_eip712_message(
+            &onchain.contracts().domain_separator,
+            &order.data().hash_struct(),
+        ))
+        .into(),
+    );
 
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -434,7 +437,7 @@ async fn partial_fills(web3: Web3) {
         counter.setCounterToBalance("pre".to_string(), *sell_token.address(), trader.address());
     let pre_hook = Hook {
         target: *counter.address(),
-        call_data: pre_inc.calldata().to_vec(),
+        call_data: pre_inc.calldata().clone().0,
         gas_limit: pre_inc.estimate_gas().await.unwrap(),
     };
 
@@ -442,7 +445,7 @@ async fn partial_fills(web3: Web3) {
         counter.setCounterToBalance("post".to_string(), *sell_token.address(), trader.address());
     let post_hook = Hook {
         target: *counter.address(),
-        call_data: post_inc.calldata().to_vec(),
+        call_data: post_inc.calldata().clone().0,
         gas_limit: post_inc.estimate_gas().await.unwrap(),
     };
 
@@ -577,10 +580,10 @@ async fn quote_verification(web3: Web3) {
         token
             .transfer(trader.address(), 5u64.eth())
             .calldata()
-            .to_vec(),
+            .clone(),
         U256::ZERO,
     );
-    let call_data = transfer_builder.calldata().to_vec();
+    let call_data = transfer_builder.calldata().clone().0;
     let target = transfer_builder
         .into_transaction_request()
         .to

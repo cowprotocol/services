@@ -56,7 +56,7 @@ mod tests {
 
         assert_eq!(withdraw_call.0, *weth.address());
         assert!(withdraw_call.1.is_zero());
-        let call = &withdraw_call.2.0;
+        let call = &withdraw_call.2;
         assert_eq!(call.len(), 36);
         let withdraw_signature = hex!("2e1a7d4d");
         assert_eq!(call[0..4], withdraw_signature);

@@ -11,6 +11,7 @@ use {
         signers::local::{MnemonicBuilder, PrivateKeySigner},
         sol_types::SolCall,
     },
+    bytes::Bytes,
     contracts::{
         BalancerV2Authorizer,
         BalancerV2Vault,
@@ -67,7 +68,7 @@ pub struct Blockchain {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interaction {
     pub address: eth::Address,
-    pub calldata: Vec<u8>,
+    pub calldata: Bytes,
     pub inputs: Vec<eth::Asset>,
     pub outputs: Vec<eth::Asset>,
     pub internalize: bool,
@@ -179,7 +180,7 @@ impl QuotedOrder {
     }
 
     /// The signature of the order.
-    pub fn order_signature(&self, blockchain: &Blockchain) -> Vec<u8> {
+    pub fn order_signature(&self, blockchain: &Blockchain) -> Bytes {
         self.boundary(blockchain, blockchain.trader_secret_key.clone())
             .signature()
     }
@@ -189,7 +190,7 @@ impl QuotedOrder {
         &self,
         blockchain: &Blockchain,
         signer: PrivateKeySigner,
-    ) -> Vec<u8> {
+    ) -> Bytes {
         self.boundary(blockchain, signer).signature()
     }
 
@@ -816,8 +817,9 @@ impl Blockchain {
                             super::Calldata::Valid { additional_bytes } => transfer_interaction
                                 .into_iter()
                                 .chain(std::iter::repeat_n(0xab, additional_bytes))
-                                .collect(),
-                            super::Calldata::Invalid => vec![1, 2, 3, 4, 5],
+                                .collect::<Vec<u8>>()
+                                .into(),
+                            super::Calldata::Invalid => Bytes::from_static(&[1, 2, 3, 4, 5]),
                         },
                         inputs: Default::default(),
                         outputs: Default::default(),
@@ -826,9 +828,9 @@ impl Blockchain {
                     Interaction {
                         address: *pair.contract.address(),
                         calldata: match solution.calldata {
-                            super::Calldata::Valid { .. } => swap_interaction,
+                            super::Calldata::Valid { .. } => swap_interaction.into(),
                             super::Calldata::Invalid => {
-                                vec![10, 11, 12, 13, 14, 15, 63, 78]
+                                Bytes::from_static(&[10, 11, 12, 13, 14, 15, 63, 78])
                             }
                         },
                         inputs: vec![eth::Asset {

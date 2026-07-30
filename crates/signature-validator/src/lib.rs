@@ -1,6 +1,7 @@
 use {
     alloy_primitives::{Address, FixedBytes},
     balance_overrides::{BalanceOverrideRequest, StateOverriding},
+    bytes::Bytes,
     contracts::GPv2Settlement,
     ethrpc::Web3,
     hex_literal::hex,
@@ -16,7 +17,7 @@ mod simulation;
 pub struct SignatureCheck {
     pub signer: Address,
     pub hash: [u8; 32],
-    pub signature: Vec<u8>,
+    pub signature: Bytes,
     pub interactions: Vec<InteractionData>,
     pub balance_override: Option<BalanceOverrideRequest>,
 }
@@ -25,7 +26,7 @@ impl SignatureCheck {
     pub fn new(
         signer: Address,
         hash: [u8; 32],
-        signature: Vec<u8>,
+        signature: Bytes,
         interactions: Vec<InteractionData>,
         balance_override: Option<BalanceOverrideRequest>,
     ) -> Self {

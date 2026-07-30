@@ -12,11 +12,12 @@ use {
         Solver,
         WrapperConfig,
     },
-    alloy_primitives::{Address, B256, Bytes, U256, b256, keccak256},
+    alloy_primitives::{Address, B256, U256, b256, keccak256},
     alloy_rpc_types::state::{AccountOverride, StateOverride},
     alloy_sol_types::SolCall,
     app_data::AppDataHash,
     balance_overrides::{ApprovalOverrideRequest, BalanceOverrideRequest, StateOverriding},
+    bytes::{Bytes, BytesMut},
     contracts::GPv2Settlement,
     derive_more::Debug,
     model::{
@@ -74,8 +75,8 @@ pub struct EncodedSettlement {
 }
 
 impl EncodedSettlement {
-    pub fn into_settle_call(&self) -> Bytes {
-        GPv2Settlement::GPv2Settlement::settleCall {
+    pub fn into_settle_call(&self) -> BytesMut {
+        let calldata = GPv2Settlement::GPv2Settlement::settleCall {
             tokens: self.tokens.clone(),
             clearingPrices: self.clearing_prices.clone(),
             interactions: self.interactions.clone().into_array().map(|interactions| {
@@ -84,7 +85,7 @@ impl EncodedSettlement {
                     .map(|i| GPv2Settlement::GPv2Interaction::Data {
                         target: i.0,
                         value: i.1,
-                        callData: i.2.0.into(),
+                        callData: i.2.into(),
                     })
                     .collect()
             }),
@@ -102,12 +103,12 @@ impl EncodedSettlement {
                     feeAmount: t.7,
                     flags: t.8,
                     executedAmount: t.9,
-                    signature: t.10.clone(),
+                    signature: t.10.clone().into(),
                 })
                 .collect(),
         }
-        .abi_encode()
-        .into()
+        .abi_encode();
+        BytesMut::from_iter(calldata)
     }
 }
 
@@ -137,7 +138,7 @@ pub struct JitOrder {
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
     #[serde_as(as = "serde_ext::Hex")]
-    pub signature: Vec<u8>,
+    pub signature: Bytes,
     pub signing_scheme: SigningScheme,
 }
 
@@ -169,7 +170,7 @@ pub fn encode_trade(
         order.fee_amount,
         order_flags(order, signature),
         executed_amount,
-        Bytes::from(signature.encode_for_settlement(owner)),
+        signature.encode_for_settlement(owner),
     )
 }
 
@@ -209,7 +210,7 @@ pub struct Interaction {
     pub target: Address,
     pub value: U256,
     #[debug("{}", const_hex::encode_prefixed::<&[u8]>(data.as_ref()))]
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 pub trait InteractionEncoding {
@@ -228,21 +229,13 @@ impl Interaction {
 
 impl InteractionEncoding for Interaction {
     fn encode(&self) -> EncodedInteraction {
-        (
-            self.target,
-            self.value,
-            Bytes::copy_from_slice(self.data.as_slice()),
-        )
+        (self.target, self.value, self.data.clone())
     }
 }
 
 impl InteractionEncoding for InteractionData {
     fn encode(&self) -> EncodedInteraction {
-        (
-            self.target,
-            self.value,
-            Bytes::copy_from_slice(&self.call_data),
-        )
+        (self.target, self.value, self.call_data.clone())
     }
 }
 
@@ -289,8 +282,8 @@ pub fn encode_wrapper_settlement(
 
     // Create wrappedSettleCall
     let calldata = contracts::ICowWrapper::ICowWrapper::wrappedSettleCall {
-        settleData: settle_calldata,
-        wrapperData: wrapper_data,
+        settleData: settle_calldata.into(),
+        wrapperData: wrapper_data.into(),
     }
     .abi_encode();
 
@@ -444,11 +437,11 @@ pub(crate) async fn finish_simulation_builder(
     };
 
     let settle_calldata = {
-        let mut bytes = settlement.into_settle_call().to_vec();
+        let mut bytes = settlement.into_settle_call();
         if let Some(id) = builder.auction_id {
             bytes.extend_from_slice(&id.to_be_bytes());
         }
-        bytes.into()
+        bytes.freeze()
     };
 
     let wrapper = builder.wrapper;
@@ -467,7 +460,7 @@ pub(crate) async fn finish_simulation_builder(
                         token: l.token,
                     })
                     .collect(),
-                settlement: settle_calldata,
+                settlement: settle_calldata.into(),
             }
             .abi_encode()
             .into();
@@ -555,7 +548,7 @@ async fn executed_amount(
                 .simulator
                 .0
                 .settlement
-                .filledAmount(Bytes::from(uid.0))
+                .filledAmount(alloy_primitives::Bytes::from(uid.0))
                 .block(block.into())
                 .call()
                 .await
@@ -611,7 +604,7 @@ async fn build_final_state_overrides(
             AccountOverrideRequest::Code { account, code } => Some((
                 *account,
                 AccountOverride {
-                    code: Some(code.clone()),
+                    code: Some(code.clone().into()),
                     ..Default::default()
                 },
             )),

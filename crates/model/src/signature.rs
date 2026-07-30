@@ -4,6 +4,7 @@ use {
     alloy_signer::SignerSync,
     alloy_signer_local::PrivateKeySigner,
     anyhow::{Context as _, Result, ensure},
+    bytes::Bytes,
     serde::{Deserialize, Serialize, de},
     std::{
         convert::TryInto as _,
@@ -54,7 +55,7 @@ pub enum Signature {
     /// passed to the verification method, along with this signature.
     ///
     /// https://eips.ethereum.org/EIPS/eip-1271
-    Eip1271(Vec<u8>),
+    Eip1271(Bytes),
     /// For these signatures, the user broadcasts a transaction onchain. This
     /// transaction contains a signature of the order hash. Because this
     /// onchain transaction is also signed, it proves that the user indeed
@@ -123,7 +124,7 @@ impl Signature {
                         .expect("scheme is an ecdsa scheme"),
                 )
             }
-            SigningScheme::Eip1271 => Self::Eip1271(bytes.to_vec()),
+            SigningScheme::Eip1271 => Self::Eip1271(Bytes::copy_from_slice(bytes)),
             SigningScheme::PreSign => {
                 ensure!(
                     bytes.is_empty() || bytes.len() == 20,
@@ -134,11 +135,13 @@ impl Signature {
         })
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Bytes {
         match self {
-            Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
+            Self::Eip712(signature) | Self::EthSign(signature) => {
+                Bytes::copy_from_slice(&signature.to_bytes())
+            }
             Self::Eip1271(signature) => signature.clone(),
-            Self::PreSign => Vec::new(),
+            Self::PreSign => Bytes::new(),
         }
     }
 
@@ -151,11 +154,13 @@ impl Signature {
         }
     }
 
-    pub fn encode_for_settlement(&self, owner: Address) -> Vec<u8> {
+    pub fn encode_for_settlement(&self, owner: Address) -> Bytes {
         match self {
-            Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
-            Self::Eip1271(signature) => [owner.as_slice(), signature].concat(),
-            Self::PreSign => owner.to_vec(),
+            Self::Eip712(signature) | Self::EthSign(signature) => {
+                Bytes::copy_from_slice(&signature.to_bytes())
+            }
+            Self::Eip1271(signature) => Bytes::from([owner.as_slice(), signature].concat()),
+            Self::PreSign => Bytes::copy_from_slice(owner.as_slice()),
         }
     }
 
@@ -199,7 +204,7 @@ pub struct Recovered {
 struct JsonSignature {
     signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
-    signature: Vec<u8>,
+    signature: Bytes,
 }
 
 impl From<Signature> for JsonSignature {
@@ -467,7 +472,7 @@ mod tests {
         );
         assert_eq!(
             Signature::from_bytes(SigningScheme::Eip1271, &[1, 2, 3]).unwrap(),
-            Signature::Eip1271(vec![1, 2, 3]),
+            Signature::Eip1271(Bytes::from_static(&[1, 2, 3])),
         );
     }
 
@@ -478,18 +483,25 @@ mod tests {
         expected_ecdsa[64] = 27;
 
         assert_eq!(
-            Signature::default_with(SigningScheme::Eip712).to_bytes(),
-            expected_ecdsa.to_vec()
+            Signature::default_with(SigningScheme::Eip712)
+                .to_bytes()
+                .as_ref(),
+            expected_ecdsa.as_slice(),
         );
         assert_eq!(
-            Signature::default_with(SigningScheme::EthSign).to_bytes(),
-            expected_ecdsa.to_vec()
+            Signature::default_with(SigningScheme::EthSign)
+                .to_bytes()
+                .as_ref(),
+            expected_ecdsa.as_slice(),
         );
         assert_eq!(
             Signature::default_with(SigningScheme::PreSign).to_bytes(),
-            Vec::<u8>::new()
+            Bytes::new(),
         );
-        assert_eq!(Signature::Eip1271(vec![1, 2, 3]).to_bytes(), vec![1, 2, 3]);
+        assert_eq!(
+            Signature::Eip1271(Bytes::from_static(&[1, 2, 3])).to_bytes(),
+            Bytes::from_static(&[1, 2, 3]),
+        );
     }
 
     #[test]
@@ -509,7 +521,7 @@ mod tests {
         // Test round-trip for non-ECDSA signatures (no normalization needed)
         for (signature, json) in [
             (
-                Signature::Eip1271(vec![1, 2, 3]),
+                Signature::Eip1271(Bytes::from_static(&[1, 2, 3])),
                 json!({
                     "signingScheme": "eip1271",
                     "signature": "0x010203",

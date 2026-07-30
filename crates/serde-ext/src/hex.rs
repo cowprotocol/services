@@ -1,4 +1,6 @@
 use {
+    alloy_primitives::Bytes as AlloyBytes,
+    bytes::Bytes,
     serde::{Deserializer, Serializer, de},
     serde_with::{DeserializeAs, SerializeAs},
 };
@@ -7,12 +9,12 @@ use {
 #[derive(Debug)]
 pub struct Hex;
 
-impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
-    fn deserialize_as<D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
+impl<'de> DeserializeAs<'de, Bytes> for Hex {
+    fn deserialize_as<D: Deserializer<'de>>(deserializer: D) -> Result<Bytes, D::Error> {
         struct Visitor;
 
         impl de::Visitor<'_> for Visitor {
-            type Value = Vec<u8>;
+            type Value = Bytes;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 write!(formatter, "a hex-encoded string starting with \"0x\"")
@@ -27,7 +29,7 @@ impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
                         "failed to decode {s:?} as a hex string: missing \"0x\" prefix",
                     )));
                 }
-                const_hex::decode(&s[2..]).map_err(|err| {
+                const_hex::decode(&s[2..]).map(Bytes::from).map_err(|err| {
                     de::Error::custom(format!("failed to decode {s:?} as a hex string: {err}",))
                 })
             }
@@ -37,8 +39,20 @@ impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
     }
 }
 
-impl SerializeAs<Vec<u8>> for Hex {
-    fn serialize_as<S: Serializer>(source: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error> {
+impl SerializeAs<Bytes> for Hex {
+    fn serialize_as<S: Serializer>(source: &Bytes, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&const_hex::encode_prefixed(source))
+    }
+}
+
+impl<'de> DeserializeAs<'de, AlloyBytes> for Hex {
+    fn deserialize_as<D: Deserializer<'de>>(deserializer: D) -> Result<AlloyBytes, D::Error> {
+        <Hex as DeserializeAs<Bytes>>::deserialize_as(deserializer).map(AlloyBytes::from)
+    }
+}
+
+impl SerializeAs<AlloyBytes> for Hex {
+    fn serialize_as<S: Serializer>(source: &AlloyBytes, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&const_hex::encode_prefixed(source))
     }
 }

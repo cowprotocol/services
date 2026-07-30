@@ -61,8 +61,12 @@ impl JitOrder {
                 .unwrap(),
         );
         let signature = match signature {
-            model::signature::Signature::Eip712(signature) => signature.to_bytes().to_vec(),
-            model::signature::Signature::EthSign(signature) => signature.to_bytes().to_vec(),
+            model::signature::Signature::Eip712(signature) => {
+                bytes::Bytes::copy_from_slice(&signature.to_bytes())
+            }
+            model::signature::Signature::EthSign(signature) => {
+                bytes::Bytes::copy_from_slice(&signature.to_bytes())
+            }
             model::signature::Signature::Eip1271(signature) => signature,
             model::signature::Signature::PreSign => panic!("Not supported PreSigned JIT orders"),
         };

@@ -81,7 +81,7 @@ pub fn to_interaction(
     domain::Interaction {
         target: encoded.0,
         value: encoded.1.into(),
-        call_data: encoded.2,
+        call_data: encoded.2.into(),
     }
 }
 

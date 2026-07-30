@@ -68,10 +68,13 @@ async fn test(web3: Web3) {
         receiver: Some(safe.address()),
         ..Default::default()
     };
-    order.signature = Signature::Eip1271(safe.sign_message(&hashed_eip712_message(
-        &onchain.contracts().domain_separator,
-        &order.data().hash_struct(),
-    )));
+    order.signature = Signature::Eip1271(
+        safe.sign_message(&hashed_eip712_message(
+            &onchain.contracts().domain_separator,
+            &order.data().hash_struct(),
+        ))
+        .into(),
+    );
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
 

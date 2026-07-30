@@ -1847,24 +1847,24 @@ mod tests {
                 InteractionData {
                     target: Address::from_slice(&[1; 20]),
                     value: U256::ONE,
-                    call_data: vec![1],
+                    call_data: bytes::Bytes::from_static(&[1]),
                 },
                 InteractionData {
                     target: Address::from_slice(&[2; 20]),
                     value: U256::from(2),
-                    call_data: vec![2],
+                    call_data: bytes::Bytes::from_static(&[2]),
                 },
             ],
             pre_interactions: vec![
                 InteractionData {
                     target: Address::from_slice(&[3; 20]),
                     value: U256::from(3),
-                    call_data: vec![3],
+                    call_data: bytes::Bytes::from_static(&[3]),
                 },
                 InteractionData {
                     target: Address::from_slice(&[4; 20]),
                     value: U256::from(4),
-                    call_data: vec![4],
+                    call_data: bytes::Bytes::from_static(&[4]),
                 },
             ],
             jit_orders: vec![dto::JitOrder {
@@ -1880,7 +1880,7 @@ mod tests {
                 partially_fillable: false,
                 sell_token_source: model::order::SellTokenSource::External,
                 buy_token_destination: model::order::BuyTokenDestination::Internal,
-                signature: vec![1; 16],
+                signature: bytes::Bytes::from(vec![1u8; 16]),
                 signing_scheme: model::signature::SigningScheme::Eip712,
             }],
         }

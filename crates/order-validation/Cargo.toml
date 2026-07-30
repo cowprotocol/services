@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 alloy-contract = { workspace = true }
 alloy-primitives = { workspace = true }
 async-trait = { workspace = true }
+bytes = { workspace = true }
 const-hex = { workspace = true }
 contracts = { workspace = true }
 futures = { workspace = true }

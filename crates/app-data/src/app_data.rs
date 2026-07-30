@@ -2,6 +2,7 @@ use {
     crate::{AppDataHash, Hooks, app_data_hash::hash_full_app_data},
     alloy_primitives::{Address, U256},
     anyhow::{Result, anyhow},
+    bytes::Bytes,
     bytes_hex::BytesHex,
     moka::sync::Cache,
     number::serialization::HexOrDecimalU256,
@@ -78,7 +79,7 @@ pub struct WrapperCall {
     pub address: Address,
     /// Additional calldata to be passed to the wrapper contract.
     #[serde_as(as = "BytesHex")]
-    pub data: Vec<u8>,
+    pub data: Bytes,
     /// Declares whether this wrapper (and its data) needs to be included
     /// unmodified in a solution containing this order.
     #[serde(default)]
@@ -683,18 +684,18 @@ mod tests {
                 hooks: Hooks {
                     pre: vec![Hook {
                         target: Address::from_slice(&[0; 20]),
-                        call_data: vec![],
+                        call_data: Bytes::new(),
                         gas_limit: 0,
                     }],
                     post: vec![
                         Hook {
                             target: Address::from_slice(&[1; 20]),
-                            call_data: vec![1],
+                            call_data: Bytes::from_static(&[1]),
                             gas_limit: 1
                         },
                         Hook {
                             target: Address::from_slice(&[2; 20]),
-                            call_data: vec![2, 2],
+                            call_data: Bytes::from_static(&[2, 2]),
                             gas_limit: 2,
                         },
                     ],
@@ -851,18 +852,18 @@ mod tests {
                 hooks: Hooks {
                     pre: vec![Hook {
                         target: Address::from_slice(&[0; 20]),
-                        call_data: vec![],
+                        call_data: Bytes::new(),
                         gas_limit: 0,
                     }],
                     post: vec![
                         Hook {
                             target: Address::from_slice(&[1; 20]),
-                            call_data: vec![1],
+                            call_data: Bytes::from_static(&[1]),
                             gas_limit: 1
                         },
                         Hook {
                             target: Address::from_slice(&[2; 20]),
-                            call_data: vec![2, 2],
+                            call_data: Bytes::from_static(&[2, 2]),
                             gas_limit: 2,
                         },
                     ],

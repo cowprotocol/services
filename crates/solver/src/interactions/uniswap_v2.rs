@@ -69,7 +69,7 @@ mod tests {
 
         // Verify Swap
         assert_eq!(swap_call.0, router_address);
-        let call = &swap_call.2.0;
+        let call = &swap_call.2;
         let swap_signature = hex!("8803dbee");
         let path_offset = 160;
         let path_size = 2;

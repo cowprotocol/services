@@ -3,6 +3,7 @@ use {
     alloy_rpc_types::state::StateOverride,
     alloy_sol_types::{SolCall, SolType, sol_data},
     balance_overrides::{BalanceOverrideRequest, StateOverriding},
+    bytes::Bytes,
     contracts::{GPv2Settlement, support::Balances},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
@@ -42,7 +43,7 @@ impl Query {
 pub enum TransferSimulationError {
     InsufficientAllowance,
     InsufficientBalance,
-    TransferFailed(Vec<u8>),
+    TransferFailed(Bytes),
     Other(anyhow::Error),
 }
 
@@ -200,7 +201,7 @@ impl BalanceSimulator {
             allowance: U256::from_le_slice(&allowance.as_le_bytes()),
             effective_balance: U256::from_le_slice(&effective_balance.as_le_bytes()),
             can_transfer,
-            transfer_revert_reason: transfer_revert_reason.to_vec(),
+            transfer_revert_reason: Bytes::copy_from_slice(&transfer_revert_reason),
         };
 
         tracing::trace!(
@@ -222,7 +223,7 @@ pub struct Simulation {
     pub allowance: U256,
     pub effective_balance: U256,
     pub can_transfer: bool,
-    pub transfer_revert_reason: Vec<u8>,
+    pub transfer_revert_reason: Bytes,
 }
 
 #[derive(Debug)]

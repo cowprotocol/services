@@ -44,7 +44,7 @@ impl TraceCallDetectorRaw {
                 TransactionRequest::default()
                     .to(i.target)
                     .value(i.value)
-                    .input(i.call_data.clone().into())
+                    .input(alloy_primitives::Bytes::from(i.call_data.clone()).into())
             })
             .collect();
         // We transfer the full available amount of the token from the amm pool into the

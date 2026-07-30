@@ -209,7 +209,7 @@ impl TradeVerifier {
                 query.sell_token,
                 sell_amount,
                 settle_call.to,
-                settle_call.calldata.clone(),
+                settle_call.calldata.clone().into(),
             )
             .from(*solver_contract.address())
             .gas(self.simulator.max_gas_limit())
@@ -223,7 +223,7 @@ impl TradeVerifier {
             state_overrides: settle_call.state_overrides,
             block: settle_call.block,
             tokens,
-            settle_calldata: settle_call.calldata,
+            settle_calldata: settle_call.calldata.into(),
         })
     }
 
@@ -336,7 +336,8 @@ impl TradeVerifier {
                 owner: tracked_owner,
                 countGas: true,
             }
-            .abi_encode(),
+            .abi_encode()
+            .into(),
         }
     }
 
@@ -526,7 +527,9 @@ impl TradeVerifier {
             // Deploy the piggy bank account we can draw sell tokens from
             AccountOverrideRequest::Code {
                 account: Self::SPARDOSE,
-                code: contracts::support::Spardose::Spardose::DEPLOYED_BYTECODE.clone(),
+                code: contracts::support::Spardose::Spardose::DEPLOYED_BYTECODE
+                    .clone()
+                    .0,
             },
             // Give the piggy bank enough tokens to fund the trader
             AccountOverrideRequest::Balance {
@@ -540,7 +543,7 @@ impl TradeVerifier {
         // holds none.
         requests.push(AccountOverrideRequest::Code {
             account: solver,
-            code: Solver::Solver::DEPLOYED_BYTECODE.clone(),
+            code: Solver::Solver::DEPLOYED_BYTECODE.clone().0,
         });
         // Usually we would require the solver accounts to actually have enough ETH
         // to execute the proposed quote. Otherwise we might get many great quotes

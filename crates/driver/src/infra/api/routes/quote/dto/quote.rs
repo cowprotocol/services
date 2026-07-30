@@ -1,5 +1,6 @@
 use {
     crate::domain::{self, competition::solution::encoding::codec, quote},
+    bytes::Bytes,
     eth_domain_types as eth,
     model::{
         order::{BuyTokenDestination, SellTokenSource},
@@ -55,7 +56,7 @@ struct Interaction {
     #[serde_as(as = "serde_ext::U256")]
     value: eth::U256,
     #[serde_as(as = "serde_ext::Hex")]
-    call_data: Vec<u8>,
+    call_data: Bytes,
 }
 
 impl From<domain::Interaction> for Interaction {
@@ -89,7 +90,7 @@ struct JitOrder {
     sell_token_source: SellTokenSource,
     buy_token_destination: BuyTokenDestination,
     #[serde_as(as = "serde_ext::Hex")]
-    signature: Vec<u8>,
+    signature: Bytes,
     signing_scheme: SigningScheme,
 }
 

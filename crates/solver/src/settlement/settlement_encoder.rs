@@ -780,11 +780,8 @@ pub mod tests {
 
     #[test]
     fn settlement_unwraps_after_execution_plan() {
-        let interaction: EncodedInteraction = (
-            Address::new([0x01; 20]),
-            U256::ZERO,
-            alloy::primitives::Bytes::default(),
-        );
+        let interaction: EncodedInteraction =
+            (Address::new([0x01; 20]), U256::ZERO, bytes::Bytes::new());
         let unwrap = UnwrapWethInteraction {
             weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::ONE,
@@ -882,12 +879,12 @@ pub mod tests {
         let i1 = InteractionData {
             target: Address::from_slice(&[12; 20]),
             value: U256::from(321),
-            call_data: vec![1, 2, 3, 4],
+            call_data: bytes::Bytes::from_static(&[1, 2, 3, 4]),
         };
         let i2 = InteractionData {
             target: Address::from_slice(&[42; 20]),
             value: U256::from(1212),
-            call_data: vec![4, 3, 2, 1],
+            call_data: bytes::Bytes::from_static(&[4, 3, 2, 1]),
         };
         encoder
             .add_trade(
@@ -937,8 +934,8 @@ pub mod tests {
         assert_eq!(encoder.pre_interactions, vec![i1.clone(), i1.clone()]);
         assert_eq!(encoder.post_interactions, vec![i2.clone(), i2.clone()]);
 
-        let i1 = (i1.target, i1.value, i1.call_data.into());
-        let i2 = (i2.target, i2.value, i2.call_data.into());
+        let i1 = (i1.target, i1.value, i1.call_data);
+        let i2 = (i2.target, i2.value, i2.call_data);
         let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(
             encoded.interactions.into_array(),
@@ -998,11 +995,7 @@ pub mod tests {
     pub struct TestInteraction;
     impl Interaction for TestInteraction {
         fn encode(&self) -> EncodedInteraction {
-            (
-                Address::ZERO,
-                U256::ZERO,
-                alloy::primitives::Bytes::default(),
-            )
+            (Address::ZERO, U256::ZERO, bytes::Bytes::new())
         }
     }
 

@@ -1115,7 +1115,7 @@ mod tests {
                     uid: OrderUid::from_parts(B256::repeat_byte(2), Address::repeat_byte(22), 2),
                     ..Default::default()
                 },
-                signature: Signature::Eip1271(vec![2, 2]),
+                signature: Signature::Eip1271(bytes::Bytes::from_static(&[2, 2])),
                 ..Default::default()
             }),
             // Regular order - not PresignaturePending
@@ -1263,7 +1263,7 @@ mod tests {
                 partially_fillable: false,
                 ..Default::default()
             },
-            signature: Signature::Eip1271(vec![1, 2, 3]),
+            signature: Signature::Eip1271(bytes::Bytes::from_static(&[1, 2, 3])),
             metadata: OrderMetadata {
                 uid: OrderUid::from_parts(B256::repeat_byte(6), Address::repeat_byte(66), 6),
                 ..Default::default()

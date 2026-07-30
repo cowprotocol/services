@@ -518,12 +518,11 @@ impl IntoResponse for LoadSolverCompetitionError {
 }
 
 #[cfg(test)]
-pub async fn response_body(response: axum::http::Response<axum::body::Body>) -> Vec<u8> {
+pub async fn response_body(response: axum::http::Response<axum::body::Body>) -> bytes::Bytes {
     // SAFETY: usize::MAX is ok here because it's a test
     axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap()
-        .to_vec()
 }
 
 #[cfg(test)]

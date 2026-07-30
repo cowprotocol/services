@@ -288,7 +288,7 @@ mod tests {
         let response = (StatusCode::OK, Json(order_quote_response.clone())).into_response();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_body(response).await;
-        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let expected = serde_json::to_value(order_quote_response).unwrap();
         assert_eq!(body, expected);
     }
@@ -300,7 +300,7 @@ mod tests {
                 .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = response_body(response).await;
-        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let expected_error = json!({"errorType": "InternalServerError", "description": ""});
         assert_eq!(body, expected_error);
         // There are many other FeeAndQuoteErrors, but writing a test for each

@@ -317,7 +317,7 @@ http-timeout = "10s"
         interactions: vec![solvers_dto::solution::Interaction::Custom(
             solvers_dto::solution::CustomInteraction {
                 target: *liquorice_settlement.address(),
-                calldata: liquorice_solution_calldata,
+                calldata: liquorice_solution_calldata.into(),
                 value: U256::ZERO,
                 allowances: vec![solvers_dto::solution::Allowance {
                     token: *token_usdc.address(),
