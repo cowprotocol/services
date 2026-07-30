@@ -17,7 +17,7 @@ use {
     alloy_sol_types::SolCall,
     app_data::AppDataHash,
     balance_overrides::{ApprovalOverrideRequest, BalanceOverrideRequest, StateOverriding},
-    bytes::{Bytes, BytesMut},
+    bytes::Bytes,
     contracts::GPv2Settlement,
     derive_more::Debug,
     model::{
@@ -75,8 +75,8 @@ pub struct EncodedSettlement {
 }
 
 impl EncodedSettlement {
-    pub fn into_settle_call(&self) -> BytesMut {
-        let calldata = GPv2Settlement::GPv2Settlement::settleCall {
+    pub fn into_settle_call(&self) -> Vec<u8> {
+        GPv2Settlement::GPv2Settlement::settleCall {
             tokens: self.tokens.clone(),
             clearingPrices: self.clearing_prices.clone(),
             interactions: self.interactions.clone().into_array().map(|interactions| {
@@ -107,8 +107,7 @@ impl EncodedSettlement {
                 })
                 .collect(),
         }
-        .abi_encode();
-        BytesMut::from_iter(calldata)
+        .abi_encode()
     }
 }
 
@@ -441,7 +440,7 @@ pub(crate) async fn finish_simulation_builder(
         if let Some(id) = builder.auction_id {
             bytes.extend_from_slice(&id.to_be_bytes());
         }
-        bytes.freeze()
+        Bytes::from(bytes)
     };
 
     let wrapper = builder.wrapper;
