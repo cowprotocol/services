@@ -928,6 +928,104 @@ mod tests {
         Ok(amount_out)
     }
 
+    /// Exercises the gas path end to end: `Simulator::gas` must estimate a pAMM
+    /// call that only succeeds when the live overrides are applied in the
+    /// context they were stamped for.
+    ///
+    /// Also pins down why the estimate is no longer run against `pending`: the
+    /// very same overrides are rejected there, because `pending`'s timestamp is
+    /// the node's wall clock rather than the block they were stamped for.
+    ///
+    /// Needs `NODE_URL`, `NODE_WS_URL` and `PAMM_QUOTE_STREAM_URL`:
+    ///
+    /// ```text
+    /// NODE_URL=... NODE_WS_URL=... PAMM_QUOTE_STREAM_URL=wss://.../ws/pamm_quote_stream \
+    ///   cargo nextest run -p simulator --run-ignored ignored-only \
+    ///   estimates_gas_for_pamm_call
+    /// ```
+    #[tokio::test]
+    #[ignore]
+    async fn estimates_gas_for_pamm_call() {
+        use {
+            alloy_provider::{Provider, network::TransactionBuilder},
+            alloy_sol_types::SolValue,
+        };
+
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+        let web3 = ethrpc::Web3::new_from_env();
+        let ws_url: url::Url = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
+        let blocks = ethrpc::block_stream::current_block_ws_stream(web3.provider.clone(), ws_url)
+            .await
+            .unwrap();
+        let cfg = Config {
+            ws_url: std::env::var("PAMM_QUOTE_STREAM_URL")
+                .unwrap()
+                .parse()
+                .unwrap(),
+            max_age: Duration::from_secs(30),
+        };
+        let overrides = spawn(&cfg);
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        let eth = crate::Ethereum::new(
+            web3.clone(),
+            chain::Chain::Mainnet,
+            Default::default(),
+            Arc::new(gas_price_estimation::FakeGasPriceEstimator::default()),
+            blocks.clone(),
+            U256::from(30_000_000),
+        );
+        let args = (USDT, WETH, U256::from(1_000_000_000u64));
+        let tx = eth_domain_types::Tx {
+            from: Address::ZERO,
+            to: FERMI_ROUTER,
+            value: U256::ZERO.into(),
+            input: [QUOTE.as_slice(), &args.abi_encode_params()]
+                .concat()
+                .into(),
+            access_list: Default::default(),
+        };
+
+        // Without the stream the venue is stale and the estimate reverts.
+        let bare = crate::Simulator::ethereum(eth.clone());
+        assert!(
+            bare.gas(tx.clone()).await.is_err(),
+            "estimate succeeded without overrides, the check proves nothing"
+        );
+
+        // With it, the same estimate goes through.
+        let mut simulator = crate::Simulator::ethereum(eth);
+        simulator.set_simulation_overrides(overrides.clone());
+        let gas = simulator
+            .gas(tx.clone())
+            .await
+            .expect("gas estimation reverted with overrides applied");
+        assert!(
+            gas.0 > U256::from(21_000),
+            "implausible gas estimate {gas:?}"
+        );
+
+        // ...but not against `pending`, which is where it used to run.
+        let head = *blocks.borrow();
+        let state = overrides
+            .overrides_for(head.number, head.timestamp)
+            .expect("stream served no overrides at head");
+        let request = alloy_rpc_types::TransactionRequest::default()
+            .with_to(FERMI_ROUTER)
+            .with_input(tx.input.0.clone());
+        assert!(
+            web3.provider
+                .estimate_gas(request)
+                .overrides(state)
+                .pending()
+                .await
+                .is_err(),
+            "overrides stamped for {} were accepted at pending",
+            head.number
+        );
+    }
+
     /// The overrides have to be served continuously, not just in the sliver
     /// right after a block lands. Samples the accessor at chain head across
     /// several blocks and requires virtually all samples to be served; the

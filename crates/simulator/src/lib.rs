@@ -8,6 +8,7 @@ mod utils;
 
 use {
     crate::state_override_stream::SimulationOverrides,
+    alloy_eips::BlockId,
     alloy_primitives::Address,
     eth_domain_types::{self as eth, AccessList, Tx},
     http_client::HttpClientFactory,
@@ -128,6 +129,14 @@ impl Simulator {
             .simulation_overrides
             .as_ref()
             .and_then(|overrides| overrides.overrides_for(block_number, block_timestamp));
+        // The overrides are stamped for `block_number`, so the estimate has to
+        // run against that block. `pending` can't carry them: its timestamp is
+        // the node's wall clock, which is unknowable when the request is built
+        // and moves between calls. Without overrides nothing changes.
+        let block_id = match state_overrides {
+            Some(_) => BlockId::number(block_number),
+            None => BlockId::pending(),
+        };
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
@@ -144,7 +153,7 @@ impl Simulator {
             }
             Inner::Ethereum => self
                 .eth
-                .estimate_gas(tx.clone(), state_overrides)
+                .estimate_gas(tx.clone(), state_overrides, block_id)
                 .await
                 .map_err(with(tx, block))?,
         })
