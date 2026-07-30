@@ -563,6 +563,12 @@ fn passes_balance(
 /// buy amounts (scaled by balance) are both non-zero.
 #[inline(always)]
 fn passes_dust(order: &Order, balance: U256) -> bool {
+    // fill-or-kill orders with too little funds have already been filtered
+    // out at this point
+    if !order.data.partially_fillable {
+        return true;
+    }
+
     let Ok(remaining) =
         remaining_amounts::Remaining::from_order_with_balance(&order.into(), balance)
     else {
