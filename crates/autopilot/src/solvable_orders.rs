@@ -37,7 +37,6 @@ use {
         HistogramVec,
         IntCounter,
         IntCounterVec,
-        IntGauge,
         IntGaugeVec,
         core::{AtomicU64, GenericGauge},
     },

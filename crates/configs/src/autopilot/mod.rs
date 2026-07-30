@@ -298,7 +298,6 @@ mod tests {
         surplus-capturing-jit-order-owners = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         min-order-validity-period = "2m"
         max-auction-age = "10m"
-        native-price-timeout = "3s"
 
         [[drivers]]
         name = "solver1"
