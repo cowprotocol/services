@@ -220,6 +220,13 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     }
 
     let unbuffered_ethrpc = unbuffered_ethrpc(&config.shared.node_url).await;
+    // Dedicated transport so the bursty indexing fan-out gets its own batching
+    // queue instead of sharing one with the rest of the autopilot's traffic.
+    let indexing_web3 = shared::web3::web3(
+        &shared::web3::Arguments::from(&config.indexing_ethrpc),
+        &config.shared.node_url,
+        "indexing",
+    );
     let ethrpc = ethrpc(&config.shared.node_url, &ethrpc_args).await;
     let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
@@ -289,7 +296,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         web3: web3.clone(),
     })));
     let block_retriever = Arc::new(BlockRetriever {
-        provider: web3.provider.clone(),
+        provider: indexing_web3.provider.clone(),
         block_stream: eth.current_block().clone(),
     });
 
@@ -415,7 +422,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
-            web3.provider.clone(),
+            indexing_web3.provider.clone(),
             *eth.contracts().settlement().address(),
         ),
         boundary::events::settlement::Indexer::new(
@@ -548,7 +555,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), config.ethflow.contracts.clone()),
+            EthFlowRefundRetriever::new(indexing_web3.clone(), config.ethflow.contracts.clone()),
             db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -580,7 +587,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), config.ethflow.contracts),
+            CoWSwapOnchainOrdersContract::new(indexing_web3.clone(), config.ethflow.contracts),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
