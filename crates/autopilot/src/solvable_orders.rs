@@ -161,10 +161,7 @@ struct FilteredOrders {
 }
 
 impl FilteredOrders {
-    /// Emits per-reason metrics and, when `store_events` is set, forwards each
-    /// reason's uids to persistence with the correct event label. Consumes
-    /// `self` so the uid vecs can be moved into the background storage task
-    /// without copying.
+    /// Handles all the observability (metrics, logging, upload order events).
     fn report(self, persistence: &infra::Persistence, store_events: bool) {
         Metrics::track_filtered_orders(UnsupportedToken, &self.token_deny_listed);
         Metrics::track_filtered_orders(InvalidSignature, &self.presig_pending);
@@ -174,11 +171,18 @@ impl FilteredOrders {
         Metrics::track_filtered_orders(InsufficientBalance, &self.insufficient_balance);
         Metrics::track_filtered_orders(DustOrder, &self.dust);
 
-        if !store_events {
-            return;
+        if store_events {
+            self.store_order_events(persistence)
         }
+    }
 
+    /// Uploads order debug events to the database in separate
+    /// background tasks.
+    fn store_order_events(self, persistence: &infra::Persistence) {
         let store = |uids: Vec<OrderUid>, label, reason| {
+            if uids.is_empty() {
+                return;
+            }
             persistence.store_order_events_owned(
                 uids,
                 |uid| domain::OrderUid(uid.0),
@@ -511,6 +515,7 @@ impl SolvableOrdersCache {
 }
 
 /// Returns true if either of the order's tokens is on the deny list.
+#[inline(always)]
 fn token_deny_listed(order: &Order, deny_listed_tokens: &DenyListedTokens) -> bool {
     deny_listed_tokens.contains(&order.data.sell_token)
         || deny_listed_tokens.contains(&order.data.buy_token)
@@ -518,6 +523,7 @@ fn token_deny_listed(order: &Order, deny_listed_tokens: &DenyListedTokens) -> bo
 
 /// Returns true if the order is waiting for a pre-signature. EIP-1271 orders
 /// are validated by the driver before settlement, so we don't check them here.
+#[inline(always)]
 fn is_presig_pending(order: &Order) -> bool {
     matches!(
         order.metadata.status,
@@ -527,6 +533,7 @@ fn is_presig_pending(order: &Order) -> bool {
 
 /// Returns true if the order has sufficient balance to be settled. EIP-1271
 /// orders and orders exempt via a wrapper interaction bypass the check.
+#[inline(always)]
 fn passes_balance(
     order: &Order,
     balance: U256,
@@ -550,6 +557,7 @@ fn passes_balance(
 
 /// Returns true if the order is not a dust order —  its remaining sell and
 /// buy amounts (scaled by balance) are both non-zero.
+#[inline(always)]
 fn passes_dust(order: &Order, balance: U256) -> bool {
     let Ok(remaining) =
         remaining_amounts::Remaining::from_order_with_balance(&order.into(), balance)
