@@ -137,7 +137,6 @@ pub struct SolvableOrdersCache {
     weth: Address,
     protocol_fees: domain::ProtocolFees,
     surplus_capturing_jit_order_owners: Vec<Address>,
-    settlement_contract: Address,
     disable_order_balance_filter: bool,
     wrapper_cache: app_data::WrapperCache,
 }
@@ -225,7 +224,6 @@ impl SolvableOrdersCache {
         weth: Address,
         protocol_fees: domain::ProtocolFees,
         surplus_capturing_jit_order_owners: Vec<Address>,
-        settlement_contract: Address,
         disable_order_balance_filter: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -239,7 +237,6 @@ impl SolvableOrdersCache {
             weth,
             protocol_fees,
             surplus_capturing_jit_order_owners,
-            settlement_contract,
             disable_order_balance_filter,
             wrapper_cache: app_data::WrapperCache::new(20_000),
         })
@@ -371,12 +368,7 @@ impl SolvableOrdersCache {
                 if !self.disable_order_balance_filter {
                     let balance = *balances.get(&Query::from_order(order))?;
 
-                    if !passes_balance(
-                        order,
-                        balance,
-                        self.settlement_contract,
-                        &balance_filter_exempt,
-                    ) {
+                    if !passes_balance(order, balance, &balance_filter_exempt) {
                         filtered.insufficient_balance.push(uid);
                         return None;
                     }
@@ -538,7 +530,6 @@ fn is_presig_pending(order: &Order) -> bool {
 fn passes_balance(
     order: &Order,
     balance: U256,
-    settlement_contract: Address,
     exempt: &HashSet<OrderUid, FbBuildHasher<56>>,
 ) -> bool {
     // EIP-1271 orders can unlock funds via pre-interactions; wrapper orders
@@ -547,15 +538,7 @@ fn passes_balance(
         return true;
     }
 
-    // TODO: replace with proper detection logic. For now, orders with the
-    // settlement contract as the receiver are treated as flashloan orders whose
-    // funds are unlocked via a pre-interaction that our balance simulation
-    // can't reproduce.
-    if order.data.receiver.as_ref() == Some(&settlement_contract) {
-        return true;
-    }
-
-    if order.data.partially_fillable && balance >= U256::ONE {
+    if order.data.partially_fillable && balance.is_zero() {
         return true;
     }
 
@@ -640,7 +623,6 @@ mod tests {
 
     #[test]
     fn passes_balance_covers_all_cases() {
-        let settlement_contract = Address::repeat_byte(1);
         let orders = [
             // enough balance for sell and fee
             Order {
@@ -686,57 +668,17 @@ mod tests {
                 },
                 ..Default::default()
             },
-            // considered flashloan order because of special receiver
-            Order {
-                data: OrderData {
-                    sell_token: Address::with_last_byte(6),
-                    sell_amount: alloy::primitives::U256::from(200),
-                    fee_amount: alloy::primitives::U256::ZERO,
-                    partially_fillable: true,
-                    receiver: Some(settlement_contract),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
         ];
         let no_bypass = HashSet::with_hasher(FbBuildHasher::default());
 
-        assert!(passes_balance(
-            &orders[0],
-            U256::from(2),
-            settlement_contract,
-            &no_bypass
-        ));
-        assert!(!passes_balance(
-            &orders[1],
-            U256::ONE,
-            settlement_contract,
-            &no_bypass
-        ));
-        assert!(passes_balance(
-            &orders[2],
-            U256::ONE,
-            settlement_contract,
-            &no_bypass
-        ));
-        assert!(!passes_balance(
-            &orders[3],
-            U256::ZERO,
-            settlement_contract,
-            &no_bypass
-        ));
-        assert!(passes_balance(
-            &orders[4],
-            U256::ZERO,
-            settlement_contract,
-            &no_bypass
-        ));
+        assert!(passes_balance(&orders[0], U256::from(2), &no_bypass));
+        assert!(!passes_balance(&orders[1], U256::ONE, &no_bypass));
+        assert!(passes_balance(&orders[2], U256::ONE, &no_bypass));
+        assert!(!passes_balance(&orders[3], U256::ZERO, &no_bypass));
     }
 
     #[test]
     fn passes_balance_bypasses_eip1271_and_wrappers() {
-        let settlement_contract = Address::repeat_byte(1);
-
         let eip1271_order = Order {
             data: OrderData {
                 sell_token: Address::with_last_byte(7),
@@ -790,45 +732,15 @@ mod tests {
         let empty_set = HashSet::with_hasher(FbBuildHasher::default());
 
         // EIP-1271 always bypasses regardless of the exempt set.
-        assert!(passes_balance(
-            &eip1271_order,
-            U256::ZERO,
-            settlement_contract,
-            &empty_set
-        ));
-        assert!(passes_balance(
-            &eip1271_order,
-            U256::ZERO,
-            settlement_contract,
-            &wrapper_set
-        ));
+        assert!(passes_balance(&eip1271_order, U256::ZERO, &empty_set));
+        assert!(passes_balance(&eip1271_order, U256::ZERO, &wrapper_set));
 
         // Wrapper order bypasses only when its uid is in the exempt set.
-        assert!(!passes_balance(
-            &wrapper_order,
-            U256::ZERO,
-            settlement_contract,
-            &empty_set
-        ));
-        assert!(passes_balance(
-            &wrapper_order,
-            U256::ZERO,
-            settlement_contract,
-            &wrapper_set
-        ));
+        assert!(!passes_balance(&wrapper_order, U256::ZERO, &empty_set));
+        assert!(passes_balance(&wrapper_order, U256::ZERO, &wrapper_set));
 
         // Regular order without a matching balance entry always fails.
-        assert!(!passes_balance(
-            &regular_order,
-            U256::ZERO,
-            settlement_contract,
-            &empty_set
-        ));
-        assert!(!passes_balance(
-            &regular_order,
-            U256::ZERO,
-            settlement_contract,
-            &wrapper_set
-        ));
+        assert!(!passes_balance(&regular_order, U256::ZERO, &empty_set));
+        assert!(!passes_balance(&regular_order, U256::ZERO, &wrapper_set));
     }
 }
