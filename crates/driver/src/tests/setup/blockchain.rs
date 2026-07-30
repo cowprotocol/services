@@ -806,7 +806,8 @@ impl Blockchain {
                     Default::default(),
                 )
                 .calldata()
-                .to_vec();
+                .clone()
+                .0;
             fulfillments.push(Fulfillment {
                 quoted_order: self.quote(order),
                 execution: execution.clone(),
@@ -817,8 +818,7 @@ impl Blockchain {
                             super::Calldata::Valid { additional_bytes } => transfer_interaction
                                 .into_iter()
                                 .chain(std::iter::repeat_n(0xab, additional_bytes))
-                                .collect::<Vec<u8>>()
-                                .into(),
+                                .collect(),
                             super::Calldata::Invalid => Bytes::from_static(&[1, 2, 3, 4, 5]),
                         },
                         inputs: Default::default(),
@@ -828,7 +828,7 @@ impl Blockchain {
                     Interaction {
                         address: *pair.contract.address(),
                         calldata: match solution.calldata {
-                            super::Calldata::Valid { .. } => swap_interaction.into(),
+                            super::Calldata::Valid { .. } => swap_interaction,
                             super::Calldata::Invalid => {
                                 Bytes::from_static(&[10, 11, 12, 13, 14, 15, 63, 78])
                             }
