@@ -2,10 +2,7 @@ use {
     crate::{
         boundary,
         domain,
-        infra::{
-            persistence::dto::{self, order::Order},
-            solvers::InjectIntoHttpRequest,
-        },
+        infra::{persistence::dto::order::OrdersJson, solvers::InjectIntoHttpRequest},
     },
     alloy::primitives::{Address, U256},
     brotli::enc::writer::CompressorWriter,
@@ -42,6 +39,7 @@ pub struct Request {
 impl Request {
     pub async fn new(
         auction: &domain::Auction,
+        orders: OrdersJson,
         trusted_tokens: &HashSet<Address>,
         deadline: chrono::DateTime<chrono::Utc>,
         compress: bool,
@@ -50,7 +48,7 @@ impl Request {
             observe::metrics::metrics().on_auction_overhead_start("autopilot", "serialize_request");
         let helper = RequestHelper {
             id: auction.id,
-            orders: auction.orders.iter().map(dto::order::from_domain).collect(),
+            orders,
             tokens: auction
                 .prices
                 .iter()
@@ -175,13 +173,13 @@ impl Response {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RequestHelper {
     #[serde_as(as = "DisplayFromStr")]
     pub id: i64,
     pub tokens: Vec<Token>,
-    pub orders: Vec<Order>,
+    pub orders: OrdersJson,
     pub deadline: DateTime<Utc>,
     pub surplus_capturing_jit_order_owners: Vec<Address>,
 }

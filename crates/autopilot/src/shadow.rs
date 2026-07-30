@@ -15,6 +15,7 @@ use {
         },
         infra::{
             self,
+            persistence::dto::order::OrdersJson,
             solvers::dto::{reveal, solve},
         },
         run::Liveness,
@@ -184,6 +185,7 @@ impl RunLoop {
     async fn competition(&self, auction: &domain::Auction) -> Vec<Bid<Unscored>> {
         let request = solve::Request::new(
             auction,
+            OrdersJson::new(&auction.orders).await,
             &self.trusted_tokens.all(),
             Utc::now() + self.solve_deadline,
             self.compress_solve_request,

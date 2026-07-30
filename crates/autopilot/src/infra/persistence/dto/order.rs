@@ -8,8 +8,10 @@ use {
     configs::fee_factor::FeeFactor,
     eth_domain_types as eth,
     number::serialization::HexOrDecimalU256,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Serialize, Serializer},
+    serde_json::value::RawValue,
     serde_with::serde_as,
+    std::sync::Arc,
 };
 
 #[serde_as]
@@ -121,6 +123,44 @@ pub fn to_domain(order: Order) -> domain::Order {
         app_data: order.app_data.into(),
         signature: order.signature.into(),
         quote: order.quote.map(|q| q.to_domain(order.uid.into())),
+    }
+}
+
+/// The auction's order list, already rendered to JSON. Serializes verbatim so
+/// the archived auction and the `/solve` request body can splice in the same
+/// bytes instead of each converting and serializing the orders themselves.
+/// Cheap to clone.
+#[derive(Clone, Debug)]
+pub struct OrdersJson(Arc<RawValue>);
+
+impl OrdersJson {
+    /// Converts the orders into their DTO shape on the calling thread (they are
+    /// borrowed, so this can't be moved into the background without a deep
+    /// clone) and renders them to JSON on the blocking pool.
+    pub async fn new(orders: &[domain::Order]) -> Self {
+        let orders: Vec<Order> = {
+            let _timer = observe::metrics::metrics()
+                .on_auction_overhead_start("autopilot", "convert_orders");
+            orders.iter().map(from_domain).collect()
+        };
+
+        tokio::task::spawn_blocking(move || {
+            let _timer = observe::metrics::metrics()
+                .on_auction_overhead_start("autopilot", "serialize_orders");
+            // `to_raw_value` keeps the serializer output as-is; unlike
+            // `RawValue::from_string` it doesn't re-scan the JSON to validate it.
+            let json = serde_json::value::to_raw_value(&orders)
+                .expect("orders should be JSON serializable");
+            OrdersJson(Arc::from(json))
+        })
+        .await
+        .expect("order serialization should not panic")
+    }
+}
+
+impl Serialize for OrdersJson {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
     }
 }
 
@@ -381,5 +421,37 @@ impl From<domain::auction::order::Side> for database::orders::OrderKind {
             domain::auction::order::Side::Buy => Self::Buy,
             domain::auction::order::Side::Sell => Self::Sell,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Wrapper {
+        orders: OrdersJson,
+        block: u64,
+    }
+
+    #[test]
+    fn orders_json_is_spliced_verbatim() {
+        let orders = serde_json::json!([{"uid": "0x01"}, {"uid": "0x02"}]);
+        let orders = OrdersJson(Arc::from(serde_json::value::to_raw_value(&orders).unwrap()));
+
+        assert_eq!(
+            serde_json::to_string(&Wrapper { orders, block: 7 }).unwrap(),
+            r#"{"orders":[{"uid":"0x01"},{"uid":"0x02"}],"block":7}"#
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_orders_json() {
+        let orders = OrdersJson::new(&[]).await;
+
+        assert_eq!(orders.0.get(), "[]");
+        // both consumers get the very same bytes instead of re-rendering them
+        assert!(Arc::ptr_eq(&orders.0, &orders.clone().0));
     }
 }
