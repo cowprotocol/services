@@ -1,5 +1,6 @@
 use {
     alloy_primitives::{Address, B256, U256, map::B256Map},
+    bytes::Bytes,
     eth_domain_types as eth,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -25,7 +26,7 @@ pub struct Request {
     pub to: Address,
     /// Encoded contract method call data.
     #[serde_as(as = "serde_ext::Hex")]
-    pub input: Vec<u8>,
+    pub input: Bytes,
     /// Amount of gas provided for the simulation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
@@ -195,7 +196,7 @@ pub struct Transaction {
 pub struct CallTrace {
     #[serde(default)]
     #[serde_as(as = "Option<serde_ext::Hex>")]
-    pub output: Option<Vec<u8>>,
+    pub output: Option<Bytes>,
     pub error: Option<String>,
 }
 

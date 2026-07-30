@@ -1,5 +1,6 @@
 use {
     crate::domain::{auction, eth, liquidity, order},
+    bytes::Bytes,
     eth::{Address, U256},
     number::u256_ext::U256Ext,
     std::{collections::HashMap, slice},
@@ -11,7 +12,7 @@ pub struct Id(pub u64);
 #[derive(Debug, Default)]
 pub struct WrapperCall {
     pub target: eth::Address,
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 /// A solution to an auction.
@@ -452,7 +453,7 @@ pub struct LiquidityInteraction {
 pub struct CustomInteraction {
     pub target: Address,
     pub value: eth::Ether,
-    pub calldata: Vec<u8>,
+    pub calldata: Bytes,
     /// Indicated whether the interaction should be internalized (skips its
     /// execution as an optimization). This is only allowed under certain
     /// conditions.

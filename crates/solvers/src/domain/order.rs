@@ -3,6 +3,7 @@
 use {
     crate::domain::eth,
     alloy::primitives::B256,
+    bytes::Bytes,
     eth::Address,
     std::fmt::{self, Debug, Display, Formatter},
 };
@@ -105,7 +106,7 @@ pub enum Signature {
     /// passed to the verification method, along with this signature.
     ///
     /// https://eips.ethereum.org/EIPS/eip-1271
-    Eip1271(Vec<u8>),
+    Eip1271(Bytes),
     /// For these signatures, the user broadcasts a transaction onchain. This
     /// transaction contains a signature of the order hash. Because this
     /// onchain transaction is also signed, it proves that the user indeed
@@ -157,5 +158,5 @@ pub struct FlashloanHint {
 #[derive(Debug, Clone)]
 pub struct WrapperCall {
     pub address: eth::Address,
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }

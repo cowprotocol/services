@@ -29,8 +29,8 @@ impl GzipWriter {
         ))
     }
 
-    pub fn finish(self) -> std::io::Result<Vec<u8>> {
-        self.0.finish()
+    pub fn finish(self) -> std::io::Result<Bytes> {
+        self.0.finish().map(Bytes::from)
     }
 }
 
@@ -96,7 +96,7 @@ impl Uploader {
         let compressed = tokio::task::spawn_blocking(move || Self::gzip(&content))
             .await
             .context("compression task panicked")??;
-        self.upload_gzipped(id, Bytes::from(compressed)).await
+        self.upload_gzipped(id, compressed).await
     }
 
     /// Uploads bytes that are already gzip-compressed JSON, tagging the object
@@ -142,11 +142,11 @@ impl Uploader {
     }
 
     /// Compresses the input bytes using Gzip.
-    fn gzip(bytes: &[u8]) -> Result<Vec<u8>> {
+    fn gzip(bytes: &[u8]) -> Result<Bytes> {
         let mut encoder = bufread::GzEncoder::new(bytes, Compression::new(COMPRESSION_LEVEL));
         let mut encoded: Vec<u8> = Vec::with_capacity(bytes.len());
         encoder.read_to_end(&mut encoded).context("gzip encoding")?;
-        Ok(encoded)
+        Ok(Bytes::from(encoded))
     }
 }
 

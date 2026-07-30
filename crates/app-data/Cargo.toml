@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 alloy-primitives = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true }
+bytes = { workspace = true }
 bytes-hex = { workspace = true }
 const-hex = { workspace = true }
 moka = { workspace = true, features = ["sync"] }

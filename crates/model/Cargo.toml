@@ -16,6 +16,7 @@ alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 bigdecimal = { workspace = true }
+bytes = { workspace = true }
 bytes-hex = { workspace = true }
 chrono = { workspace = true, features = ["clock", "serde"] }
 const-hex = { workspace = true }

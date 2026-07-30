@@ -1,6 +1,7 @@
 use {
     crate::domain::{self, fee},
     alloy::primitives::{Address, B256, U256},
+    bytes::Bytes,
     eth_domain_types as eth,
     std::fmt::{self, Debug, Display, Formatter},
 };
@@ -76,7 +77,7 @@ pub enum Side {
 pub struct Interaction {
     pub target: Address,
     pub value: U256,
-    pub call_data: Vec<u8>,
+    pub call_data: Bytes,
 }
 
 /// Source from which the sellAmount should be drawn upon order fulfillment
@@ -127,7 +128,7 @@ pub enum Signature {
     /// passed to the verification method, along with this signature.
     ///
     /// https://eips.ethereum.org/EIPS/eip-1271
-    Eip1271(Vec<u8>),
+    Eip1271(Bytes),
     /// For these signatures, the user broadcasts a transaction onchain. This
     /// transaction contains a signature of the order hash. Because this
     /// onchain transaction is also signed, it proves that the user indeed
@@ -145,11 +146,13 @@ impl Signature {
         }
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Bytes {
         match self {
-            Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
+            Self::Eip712(signature) | Self::EthSign(signature) => {
+                Bytes::copy_from_slice(&signature.to_bytes())
+            }
             Self::Eip1271(signature) => signature.clone(),
-            Self::PreSign => Vec::new(),
+            Self::PreSign => Bytes::new(),
         }
     }
 }

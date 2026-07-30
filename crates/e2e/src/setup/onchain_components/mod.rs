@@ -167,7 +167,7 @@ impl CowToken {
 
         Hook {
             target: *self.contract.address(),
-            call_data: permit.calldata().to_vec(),
+            call_data: permit.calldata().clone().0,
             gas_limit: permit.estimate_gas().await.unwrap(),
         }
     }

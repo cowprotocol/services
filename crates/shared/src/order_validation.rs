@@ -16,6 +16,7 @@ use {
     async_trait::async_trait,
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
+    bytes::Bytes,
     contracts::{HooksTrampoline, WETH9},
     futures::future::OptionFuture,
     model::{
@@ -263,7 +264,7 @@ pub enum ValidationError {
     InvalidSignature,
     /// If fee and sell amount overflow u256
     SellAmountOverflow,
-    TransferSimulationFailed(Vec<u8>),
+    TransferSimulationFailed(Bytes),
     /// The specified on-chain signature requires the from address of the
     /// order signer.
     MissingFrom,
@@ -516,7 +517,8 @@ impl OrderValidator {
                                 .collect(),
                         )
                         .calldata()
-                        .to_vec(),
+                        .clone()
+                        .into(),
                 }]
             }
         };
@@ -606,7 +608,7 @@ impl OrderValidator {
                     }
                     TransferSimulationError::Other(err) => {
                         tracing::warn!("TransferSimulation failed: {:?}", err);
-                        Err(ValidationError::TransferSimulationFailed(Vec::new()))
+                        Err(ValidationError::TransferSimulationFailed(Bytes::new()))
                     }
                 };
             }
@@ -1834,7 +1836,7 @@ mod tests {
         let domain_separator = DomainSeparator::default();
         let creation = OrderCreation {
             from: Some(Address::repeat_byte(1)),
-            signature: Signature::Eip1271(vec![1, 2, 3]),
+            signature: Signature::Eip1271(Bytes::from_static(&[1, 2, 3])),
             app_data: OrderCreationAppData::Full {
                 full: json!({
                     "metadata": {
@@ -1874,7 +1876,8 @@ mod tests {
                     }),
                 ])
                 .calldata()
-                .to_vec(),
+                .clone()
+                .into(),
         }];
 
         let mut signature_validator = MockSignatureValidating::new();
@@ -1883,7 +1886,7 @@ mod tests {
             .with(eq(SignatureCheck::new(
                 creation.from.unwrap(),
                 order_hash.0,
-                vec![1, 2, 3],
+                Bytes::from_static(&[1, 2, 3]),
                 pre_interactions.clone(),
                 None,
             )))
@@ -1912,7 +1915,7 @@ mod tests {
             .with(eq(SignatureCheck::new(
                 creation.from.unwrap(),
                 order_hash.0,
-                vec![1, 2, 3],
+                Bytes::from_static(&[1, 2, 3]),
                 pre_interactions.clone(),
                 None,
             )))
@@ -2462,7 +2465,7 @@ mod tests {
             sell_amount: alloy::primitives::U256::from(1),
             fee_amount: alloy::primitives::U256::from(1),
             from: Some(Address::repeat_byte(1)),
-            signature: Signature::Eip1271(vec![1, 2, 3]),
+            signature: Signature::Eip1271(Bytes::from_static(&[1, 2, 3])),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
             },
@@ -3038,7 +3041,7 @@ mod tests {
             buy_amount: alloy::primitives::U256::from(4),
             sell_amount: alloy::primitives::U256::from(3),
             fee_amount: alloy::primitives::U256::from(0),
-            signature: Signature::Eip1271(vec![1, 2, 3]),
+            signature: Signature::Eip1271(Bytes::from_static(&[1, 2, 3])),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
             },
@@ -3069,7 +3072,7 @@ mod tests {
             sell_amount: U256::ONE,
             fee_amount: U256::ZERO,
             from: Some(Address::repeat_byte(1)),
-            signature: Signature::Eip1271(vec![1, 2, 3]),
+            signature: Signature::Eip1271(Bytes::from_static(&[1, 2, 3])),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
             },

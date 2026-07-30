@@ -94,7 +94,7 @@ impl Postgres {
                 database::app_data::insert(ex, contract_app_data, full_app_data).await?
                 && full_app_data != existing
             {
-                return Err(InsertionError::AppDataMismatch(existing));
+                return Err(InsertionError::AppDataMismatch(existing.into()));
             }
         }
         Ok(())

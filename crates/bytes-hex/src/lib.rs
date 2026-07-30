@@ -1,6 +1,7 @@
-//! Serialization of Vec<u8> to 0x prefixed hex string
+//! Serialization of byte containers to a 0x prefixed hex string.
 
 use {
+    bytes::Bytes,
     serde::{Deserialize, Deserializer, Serializer, de::Error},
     serde_with::{DeserializeAs, SerializeAs},
     std::borrow::Cow,
@@ -15,7 +16,7 @@ where
     serializer.serialize_str(&bytes)
 }
 
-pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+pub fn deserialize<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -23,7 +24,9 @@ where
     let hex_str = prefixed_hex_str
         .strip_prefix("0x")
         .ok_or_else(|| D::Error::custom("missing '0x' prefix"))?;
-    const_hex::decode(hex_str).map_err(D::Error::custom)
+    const_hex::decode(hex_str)
+        .map(Bytes::from)
+        .map_err(D::Error::custom)
 }
 
 pub struct BytesHex(());
@@ -40,8 +43,8 @@ where
     }
 }
 
-impl<'de> DeserializeAs<'de, Vec<u8>> for BytesHex {
-    fn deserialize_as<D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+impl<'de> DeserializeAs<'de, Bytes> for BytesHex {
+    fn deserialize_as<D>(deserializer: D) -> Result<Bytes, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -51,16 +54,19 @@ impl<'de> DeserializeAs<'de, Vec<u8>> for BytesHex {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
 
     #[derive(Debug, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
     struct S {
         #[serde(with = "super")]
-        b: Vec<u8>,
+        b: Bytes,
     }
 
     #[test]
     fn json() {
-        let orig = S { b: vec![0, 1] };
+        let orig = S {
+            b: Bytes::from_static(&[0, 1]),
+        };
         let serialized = serde_json::to_value(&orig).unwrap();
         let expected = serde_json::json!({
             "b": "0x0001"

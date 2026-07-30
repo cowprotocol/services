@@ -71,7 +71,7 @@ impl IpfsAppData {
                     return Err(err);
                 }
             };
-            match String::from_utf8(result) {
+            match String::from_utf8(result.to_vec()) {
                 Ok(result) => Ok(Some(result)),
                 Err(err) => {
                     tracing::debug!(?err, %cid, "CID doesn't point to utf-8");

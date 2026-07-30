@@ -2,6 +2,7 @@ use {
     alloy_primitives::{Address, B256, U256},
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
+    bytes::Bytes,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -62,7 +63,7 @@ pub struct Order {
     pub wrappers: Vec<WrapperCall>,
     pub signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
-    pub signature: Vec<u8>,
+    pub signature: Bytes,
 }
 
 /// Destination for which the buyAmount should be transferred to order's
@@ -108,7 +109,7 @@ pub struct InteractionData {
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(with = "bytes_hex")]
-    pub call_data: Vec<u8>,
+    pub call_data: Bytes,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -318,7 +319,7 @@ pub struct FlashloanHint {
 pub struct WrapperCall {
     pub address: Address,
     #[serde(with = "bytes_hex")]
-    pub data: Vec<u8>,
+    pub data: Bytes,
     /// Declares whether this wrapper (and its data) needs to be included
     /// unmodified in a solution containing this order.
     #[serde(default)]

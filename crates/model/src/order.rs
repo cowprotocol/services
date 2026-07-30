@@ -14,6 +14,7 @@ use {
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
+    bytes::Bytes,
     chrono::{DateTime, offset::Utc},
     derive_more::Debug as DeriveDebug,
     hex_literal::hex,
@@ -169,7 +170,7 @@ impl OrderBuilder {
         self
     }
 
-    pub fn with_eip1271(mut self, owner: Address, signature: Vec<u8>) -> Self {
+    pub fn with_eip1271(mut self, owner: Address, signature: Bytes) -> Self {
         self.0.metadata.owner = owner;
         self.0.signature = Signature::Eip1271(signature);
         self

@@ -27,16 +27,20 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::SolverResponse {
                         }),
                         solution::Trade::Jit(trade) => {
                             let (signing_scheme, signature) = match &trade.order.signature {
-                                order::Signature::Eip712(signature) => {
-                                    (SigningScheme::Eip712, signature.to_bytes().to_vec())
-                                }
-                                order::Signature::EthSign(signature) => {
-                                    (SigningScheme::EthSign, signature.to_bytes().to_vec())
-                                }
+                                order::Signature::Eip712(signature) => (
+                                    SigningScheme::Eip712,
+                                    bytes::Bytes::copy_from_slice(&signature.to_bytes()),
+                                ),
+                                order::Signature::EthSign(signature) => (
+                                    SigningScheme::EthSign,
+                                    bytes::Bytes::copy_from_slice(&signature.to_bytes()),
+                                ),
                                 order::Signature::Eip1271(bytes) => {
                                     (SigningScheme::Eip1271, bytes.clone())
                                 }
-                                order::Signature::PreSign => (SigningScheme::PreSign, vec![]),
+                                order::Signature::PreSign => {
+                                    (SigningScheme::PreSign, bytes::Bytes::new())
+                                }
                             };
 
                             Trade::Jit(JitTrade {

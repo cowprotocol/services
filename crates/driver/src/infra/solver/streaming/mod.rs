@@ -181,7 +181,7 @@ impl Finalize for GzipCapture {
     fn finalize(self) {
         match self.writer.finish() {
             Ok(compressed) => {
-                let _ = self.tx.send(Bytes::from(compressed));
+                let _ = self.tx.send(compressed);
             }
             Err(err) => tracing::debug!(?err, "gzip of archived request body failed"),
         }

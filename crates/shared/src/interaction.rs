@@ -1,5 +1,6 @@
 use {
-    alloy::primitives::{Address, Bytes, U256},
+    alloy::primitives::{Address, U256},
+    bytes::Bytes,
     model::interaction::InteractionData,
 };
 
@@ -31,10 +32,6 @@ impl Interaction for EncodedInteraction {
 
 impl Interaction for InteractionData {
     fn encode(&self) -> EncodedInteraction {
-        (
-            self.target,
-            self.value,
-            Bytes::copy_from_slice(self.call_data.as_slice()),
-        )
+        (self.target, self.value, self.call_data.clone())
     }
 }

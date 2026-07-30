@@ -8,6 +8,7 @@ use {
         infra,
     },
     alloy::primitives::{Address, U256},
+    bytes::Bytes,
     std::fmt::{self, Debug, Formatter},
 };
 
@@ -60,7 +61,7 @@ pub struct Call {
     /// The address that gets called on-chain.
     pub to: Address,
     /// The associated calldata for the on-chain call.
-    pub calldata: Vec<u8>,
+    pub calldata: Bytes,
 }
 
 impl Debug for Call {

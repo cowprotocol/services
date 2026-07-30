@@ -53,7 +53,7 @@ mod tests {
         assert_eq!(target, approve.token);
         assert!(value.is_zero());
         assert_eq!(
-            calldata.0,
+            calldata,
             hex!(
                 "095ea7b3
                  0000000000000000000000000202020202020202020202020202020202020202

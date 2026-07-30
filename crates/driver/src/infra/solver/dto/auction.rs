@@ -362,7 +362,7 @@ fn interaction_from_domain(value: domain::Interaction) -> solvers_dto::auction::
     solvers_dto::auction::InteractionData {
         target: value.target,
         value: value.value.0,
-        call_data: value.call_data.to_vec(),
+        call_data: value.call_data.0,
     }
 }
 

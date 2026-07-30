@@ -870,7 +870,7 @@ async fn test_solver_pays_for_pre_hook_on_same_token_order(web3: Web3) {
     let increment = counter.incrementCounter("pre".to_string());
     let pre_hook = Hook {
         target: *counter.address(),
-        call_data: increment.calldata().to_vec(),
+        call_data: increment.calldata().clone().0,
         gas_limit: increment.estimate_gas().await.unwrap(),
     };
 

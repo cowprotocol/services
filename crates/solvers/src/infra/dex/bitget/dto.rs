@@ -4,6 +4,7 @@
 use {
     crate::domain::{dex, eth},
     bigdecimal::BigDecimal,
+    bytes::Bytes,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -135,7 +136,7 @@ pub struct SwapTransaction {
     pub to: eth::Address,
     /// Decoded calldata bytes (Bitget sends a `"0x..."` hex string).
     #[serde(deserialize_with = "bytes_hex::deserialize")]
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 /// A Bitget API reverse-swap request (`requestMode = "minAmountOut"`).
@@ -232,7 +233,7 @@ pub struct ReverseSwapTx {
 
     /// Decoded calldata bytes (Bitget sends a `"0x..."` hex string).
     #[serde(deserialize_with = "bytes_hex::deserialize")]
-    pub calldata: Vec<u8>,
+    pub calldata: Bytes,
 
     /// Function name. Observed values include `"swap"`. Other values
     /// (e.g. `"approve"`) likely appear for setup transactions in

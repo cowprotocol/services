@@ -20,7 +20,7 @@ use {
             wire::SubscribeUpdateTransactionInfo,
         },
     },
-    bytes::Bytes,
+    bytes::{Bytes, BytesMut},
     settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
@@ -490,7 +490,7 @@ struct RawInstruction<'a> {
     /// Path within the top-level instruction's CPI tree (see
     /// `ResolvedInstruction::inner_ix_path`). Empty for a top-level
     /// instruction.
-    inner_ix_path: Vec<u8>,
+    inner_ix_path: Bytes,
     /// Index of the invoked program in the account list.
     program_id_index: u32,
     /// Account-list indices of the accounts the instruction touches.
@@ -518,7 +518,7 @@ impl RawInstruction<'_> {
         Some(ResolvedInstruction {
             program_id,
             data: Bytes::copy_from_slice(self.data),
-            accounts: self.account_indices.to_vec(),
+            accounts: Bytes::copy_from_slice(self.account_indices),
             instruction_index: self.instruction_index,
             inner_ix_path: self.inner_ix_path,
         })
@@ -560,7 +560,7 @@ fn relevant_instructions(
         let instruction_index = index as u32;
         let top = RawInstruction {
             instruction_index,
-            inner_ix_path: Vec::new(),
+            inner_ix_path: Bytes::new(),
             program_id_index: ix.program_id_index,
             account_indices: &ix.accounts,
             data: &ix.data,
@@ -585,7 +585,7 @@ fn relevant_instructions(
         // level from it. A dropped (untracked) inner still advances the counter,
         // so kept siblings keep their true position. A missing stack_height
         // (pre-Solana-1.14.6 data) falls back to depth 1.
-        let mut path: Vec<u8> = Vec::new();
+        let mut path: BytesMut = BytesMut::new();
         for inner in &group.instructions {
             let depth = inner
                 .stack_height
@@ -602,7 +602,7 @@ fn relevant_instructions(
             }
             let raw = RawInstruction {
                 instruction_index,
-                inner_ix_path: path.clone(),
+                inner_ix_path: Bytes::copy_from_slice(&path),
                 program_id_index: inner.program_id_index,
                 account_indices: &inner.accounts,
                 data: &inner.data,

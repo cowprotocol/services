@@ -123,7 +123,7 @@ impl Eip712TypedZeroExOrder {
             },
             OrderMetadata {
                 created_at: DateTime::<Utc>::MIN_UTC,
-                order_hash: self.hash_struct().to_vec(),
+                order_hash: bytes::Bytes::copy_from_slice(&self.hash_struct()),
                 remaining_fillable_taker_amount: self.remaining_fillable_taker_amount,
             },
         )
