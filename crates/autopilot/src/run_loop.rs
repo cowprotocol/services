@@ -907,7 +907,7 @@ impl RunLoop {
 /// This function panics if any of the time computations over- or
 /// underflow. This should not happen as we deal with times within
 /// seconds of the current time.
-fn pick_solve_deadline_impl(
+pub(crate) fn pick_solve_deadline_impl(
     now: chrono::DateTime<chrono::Utc>,
     min_solve_time: Duration,
     slot_config: Option<&SlotConfig>,
