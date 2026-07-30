@@ -48,6 +48,7 @@ url = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
+rustls = { workspace = true, features = ["aws-lc-rs"] }
 testlib = { workspace = true }
 
 [features]

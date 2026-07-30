@@ -125,7 +125,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         let simulation_overrides = args
             .state_override_stream
             .as_ref()
-            .map(|cfg| simulator::state_override_stream::spawn(cfg, network.block_stream.clone()));
+            .map(simulator::state_override_stream::spawn);
         let simulator = SettlementSimulator::new(
             settlement_contract,
             network.flash_loan_router,
