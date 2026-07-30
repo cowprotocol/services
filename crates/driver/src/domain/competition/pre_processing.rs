@@ -228,7 +228,7 @@ impl Utilities {
     /// auction pre-processing since eagerly deserializing these requests
     /// is surprisingly costly because their are so big.
     async fn parse_request(&self, solve_request: Request<Body>) -> Result<Arc<Auction>> {
-        let solve_request = collect_request_body(solve_request).await?;
+        let mut solve_request = collect_request_body(solve_request).await?.to_vec();
 
         let auction_dto: SolveRequest = {
             let _timer = metrics::get().processing_stage_timer("parse_dto");
@@ -236,7 +236,7 @@ impl Utilities {
                 observe::metrics::metrics().on_auction_overhead_start("driver", "parse_dto");
             // deserialization takes tens of milliseconds so run it on a blocking task
             tokio::task::spawn_blocking(move || {
-                serde_json::from_slice(&solve_request)
+                simd_json::from_slice(&mut solve_request)
                     .inspect_err(|err| {
                         tracing::warn!(?err, "failed to parse /solve request body");
                     })

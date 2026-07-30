@@ -158,6 +158,7 @@ url = "2.5.0"
 winner-selection = { path = "crates/winner-selection" }
 yellowstone-grpc-client = "13.1.0"
 yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
+simd-json = "0.17.3"
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"

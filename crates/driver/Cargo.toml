@@ -72,6 +72,7 @@ toml = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["decompression-br", "limit", "trace"] }
 url = { workspace = true, features = ["serde"] }
+simd-json = {workspace = true}
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
