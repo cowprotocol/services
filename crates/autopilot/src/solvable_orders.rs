@@ -380,10 +380,10 @@ impl SolvableOrdersCache {
                         filtered.insufficient_balance.push(uid);
                         return None;
                     }
-                    if !passes_dust(order, balance) {
-                        filtered.dust.push(uid);
-                        return None;
-                    }
+                    // if !passes_dust(order, balance) {
+                    //     filtered.dust.push(uid);
+                    //     return None;
+                    // }
                 }
 
                 let quote = db_solvable_orders
