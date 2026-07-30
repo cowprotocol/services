@@ -9,7 +9,7 @@ use {
         sync::{Arc, RwLock},
         time::Duration,
     },
-    tracing::{Instrument, instrument},
+    tracing::instrument,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -85,7 +85,7 @@ impl AutoUpdatingTokenList {
                     }
                 }
             };
-            tokio::task::spawn(updater.instrument(tracing::info_span!("auto_updating_token_list")));
+            tokio::task::spawn(updater);
         }
 
         Self { tokens }
