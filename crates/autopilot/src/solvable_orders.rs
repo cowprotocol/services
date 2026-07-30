@@ -267,8 +267,27 @@ impl SolvableOrdersCache {
         let _timer = observe::metrics::metrics()
             .on_auction_overhead_start("autopilot", "update_solvabe_orders");
 
-        let db_solvable_orders = self.get_solvable_orders().await?;
+        let (db_solvable_orders, in_flight) = tokio::try_join!(
+            self.get_solvable_orders(),
+            self.fetch_in_flight_orders(block).map(Ok),
+        )?;
         tracing::trace!("fetched solvable orders from db");
+
+        // Exclude any owner that already has an order in-flight (i.e. won a previous
+        // auction and is being settled on-chain). A surplus-capturing JIT order created
+        // on its behalf could conflict with the settling order, so we drop the owner
+        // from this auction until the in-flight order clears.
+        let surplus_capturing_jit_order_owners: Vec<Address> = {
+            let in_flight_owners: AddressHashSet = in_flight
+                .iter()
+                .map(|uid| domain::OrderUid(uid.0).owner())
+                .collect();
+            self.surplus_capturing_jit_order_owners
+                .iter()
+                .filter(|owner| !in_flight_owners.contains(*owner))
+                .copied()
+                .collect()
+        };
 
         // Phase 1: single-pass sync pre-filter that also collects everything
         // needed for the concurrent I/O in phase 2.
@@ -298,6 +317,10 @@ impl SolvableOrdersCache {
             traded_tokens.insert(order.data.sell_token);
             traded_tokens.insert(order.data.buy_token);
 
+            if in_flight.contains(&uid) {
+                filtered.in_flight.push(uid);
+                continue;
+            }
             if token_deny_listed(order, &self.deny_listed_tokens) {
                 filtered.token_deny_listed.push(uid);
                 continue;
@@ -317,12 +340,14 @@ impl SolvableOrdersCache {
             if let Some(receiver) = order.data.receiver {
                 traders.insert(receiver);
             }
-            balance_queries.push(Query::from_order(order));
-            if self.wrapper_cache.has_wrappers(
-                &order.data.app_data,
-                order.metadata.full_app_data.as_deref(),
-            ) {
-                balance_filter_exempt.insert(uid);
+            if !self.disable_order_balance_filter {
+                balance_queries.push(Query::from_order(order));
+                if self.wrapper_cache.has_wrappers(
+                    &order.data.app_data,
+                    order.metadata.full_app_data.as_deref(),
+                ) {
+                    balance_filter_exempt.insert(uid);
+                }
             }
             survivors.push(order);
         }
@@ -333,36 +358,16 @@ impl SolvableOrdersCache {
             .schedule_token_updates(traded_tokens);
 
         // Phase 2: concurrent I/O based on phase-1 outputs.
-        let (in_flight, banned_set, balances) = tokio::join!(
-            self.fetch_in_flight_orders(block),
+        let (banned_set, balances) = tokio::join!(
             self.timed_future("banned_user_filtering", self.banned_users.banned(traders)),
             self.fetch_balances(balance_queries),
         );
 
         // Phase 3: final pass using data from phase-2
-        // Exclude any owner that already has an order in-flight (i.e. won a previous
-        // auction and is being settled on-chain). A surplus-capturing JIT order created
-        // on its behalf could conflict with the settling order, so we drop the owner
-        // from this auction until the in-flight order clears.
-        let in_flight_owners: AddressHashSet = in_flight
-            .iter()
-            .map(|uid| domain::OrderUid(uid.0).owner())
-            .collect();
-        let surplus_capturing_jit_order_owners: Vec<Address> = self
-            .surplus_capturing_jit_order_owners
-            .iter()
-            .filter(|owner| !in_flight_owners.contains(*owner))
-            .copied()
-            .collect();
-
         let final_orders = survivors
             .into_iter()
             .filter_map(|order| {
                 let uid = order.metadata.uid;
-                if in_flight.contains(&uid) {
-                    filtered.in_flight.push(uid);
-                    return None;
-                }
                 let is_banned = banned_set.contains(&order.metadata.owner)
                     || order.data.receiver.is_some_and(|r| banned_set.contains(&r));
                 if is_banned {
