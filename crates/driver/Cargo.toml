@@ -32,7 +32,6 @@ chain = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["clock"] }
 configs = { workspace = true }
 const-hex = { workspace = true }
-cow-amm = { workspace = true }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
 eth-domain-types = { workspace = true }

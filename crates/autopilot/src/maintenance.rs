@@ -24,7 +24,6 @@ use {
     },
     std::{
         future::Future,
-        sync::Arc,
         time::{Duration, Instant},
     },
     tokio::sync::watch,
@@ -94,8 +93,6 @@ pub struct Maintenance {
     /// Used for periodic cleanup tasks to not have the DB overflow with old
     /// data.
     db_cleanup: Postgres,
-    /// All indexing tasks to keep cow amms up to date.
-    cow_amm_indexer: Vec<Arc<dyn Maintaining>>,
     /// Tasks to index ethflow orders that were submitted onchain.
     ethflow_order_indexer: Vec<EthflowOrderIndexer>,
     /// Tasks to index ethflow refunds.
@@ -113,7 +110,6 @@ impl Maintenance {
         Self {
             settlement_indexer,
             db_cleanup,
-            cow_amm_indexer: Default::default(),
             ethflow_order_indexer: Default::default(),
             ethflow_refund_indexer: Default::default(),
             settlement_observer,
@@ -209,14 +205,6 @@ impl Maintenance {
                 self.settlement_indexer.run_maintenance()
             ),
             Self::timed_future(
-                "cow_amm_indexer",
-                futures::future::try_join_all(
-                    self.cow_amm_indexer
-                        .iter()
-                        .map(|indexer| indexer.run_maintenance()),
-                ),
-            ),
-            Self::timed_future(
                 "ethflow_order_indexer",
                 futures::future::try_join_all(
                     self.ethflow_order_indexer
@@ -264,13 +252,6 @@ impl Maintenance {
     ) {
         self.ethflow_order_indexer.push(order_indexer);
         self.ethflow_refund_indexer.push(refund_indexer);
-    }
-
-    /// Registers all maintenance tasks that are necessary to correctly support
-    /// CoW AMMs.
-    pub fn add_cow_amm_indexer(&mut self, registry: &cow_amm::Registry) {
-        self.cow_amm_indexer
-            .extend(registry.maintenance_tasks().clone());
     }
 
     /// Runs the future and collects runtime metrics.
