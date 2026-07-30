@@ -96,12 +96,12 @@ pub mod gpv2_order {
     ) -> InteractionData {
         let order_hash = eip712_hash_struct(order);
         let order_hash = hashed_eip712_message(domain_separator, &order_hash);
-        let calldata = amm.commit(order_hash).calldata().clone();
+        let call_data = amm.commit(order_hash).calldata().0.clone();
 
         InteractionData {
             target: *amm.address(),
             value: Default::default(),
-            call_data: calldata.to_vec(),
+            call_data,
         }
     }
 }

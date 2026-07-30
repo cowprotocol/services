@@ -165,7 +165,7 @@ fn convert_interactions(
         .map(|interaction| InteractionData {
             target: interaction.target,
             value: interaction.value,
-            call_data: interaction.callData.to_vec(),
+            call_data: interaction.callData.0,
         })
         .collect()
 }
