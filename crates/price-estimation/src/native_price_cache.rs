@@ -170,7 +170,7 @@ pub struct Cache(Arc<CacheInner>);
 const MAX_CACHE_SIZE: u64 = 20_000;
 
 struct CacheInner {
-    data: moka::sync::Cache<Address, CachedResult, FbBuildHasher<20>>,
+    data: moka::sync::Cache<Address, CachedResult>,
     max_age: Duration,
 }
 
@@ -179,10 +179,9 @@ impl Cache {
         let mut rng = rand::rng();
         let now = std::time::Instant::now();
 
-        let data: moka::sync::Cache<Address, CachedResult, FbBuildHasher<20>> =
-            moka::sync::Cache::builder()
-                .max_capacity(MAX_CACHE_SIZE)
-                .build_with_hasher(FbBuildHasher::<20>::default());
+        let data: moka::sync::Cache<Address, CachedResult> = moka::sync::Cache::builder()
+            .max_capacity(MAX_CACHE_SIZE)
+            .build();
 
         for (token, price) in initial_prices {
             if let Some(price) = from_normalized_price(price) {
@@ -233,7 +232,7 @@ impl Cache {
     fn get_cached_price(
         token: Address,
         now: Instant,
-        cache: &moka::sync::Cache<Address, CachedResult, FbBuildHasher<20>>,
+        cache: &moka::sync::Cache<Address, CachedResult>,
         max_age: &Duration,
     ) -> Option<CachedResult> {
         let entry = cache.get(&token)?;
@@ -269,7 +268,7 @@ impl Cache {
     fn get_cached_prices(
         &self,
         tokens: &[Address],
-    ) -> HashMap<Address, Result<f64, PriceEstimationError>, FbBuildHasher<20>> {
+    ) -> AddressHashMap<Result<f64, PriceEstimationError>> {
         let now = Instant::now();
         let mut results = HashMap::default();
         for token in tokens {
