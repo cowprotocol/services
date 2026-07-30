@@ -85,9 +85,6 @@ pub struct Metrics {
     /// Auction filtered orders grouped by class.
     #[metric(labels("reason"))]
     auction_filtered_orders: IntGaugeVec,
-
-    /// Auction filtered market orders due to missing native token price.
-    auction_market_order_missing_price: IntGauge,
 }
 
 impl Metrics {
@@ -375,7 +372,10 @@ impl SolvableOrdersCache {
                     return None;
                 }
                 if !self.disable_order_balance_filter {
-                    let balance = *balances.get(&Query::from_order(order))?;
+                    let Some(&balance) = balances.get(&Query::from_order(order)) else {
+                        filtered.insufficient_balance.push(uid);
+                        return None;
+                    };
 
                     if !passes_balance(order, balance, &balance_filter_exempt) {
                         filtered.insufficient_balance.push(uid);
@@ -550,7 +550,7 @@ fn passes_balance(
         return true;
     }
 
-    if order.data.partially_fillable && balance.is_zero() {
+    if order.data.partially_fillable && !balance.is_zero() {
         return true;
     }
 
