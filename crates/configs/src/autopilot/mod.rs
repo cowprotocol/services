@@ -16,7 +16,7 @@ use {
         http_client::HttpClient,
         order_quoting::OrderQuoting,
         price_estimation::PriceEstimation,
-        shared::SharedConfig,
+        shared::{EthRpcConfig, SharedConfig},
     },
     alloy::primitives::Address,
     anyhow::{anyhow, ensure},
@@ -45,6 +45,17 @@ fn default_api_address() -> SocketAddr {
 
 const fn default_max_maintenance_timeout() -> Duration {
     Duration::from_secs(5)
+}
+
+/// Event indexing bursts up to `MAX_PARALLEL_RPC_CALLS` calls at once when
+/// catching up or recovering from a reorg. A batch resolves only once its
+/// slowest member does, so smaller batches keep a single slow `eth_getLogs`
+/// from holding up the rest.
+fn default_indexing_ethrpc() -> EthRpcConfig {
+    EthRpcConfig {
+        max_batch_size: 20,
+        ..Default::default()
+    }
 }
 
 const fn default_min_order_validity_period() -> Duration {
@@ -100,6 +111,12 @@ pub struct Configuration {
     /// Configuration for eth-flow order indexing and processing.
     #[serde(default)]
     pub ethflow: EthflowConfig,
+
+    /// RPC batching settings for the connection dedicated to event indexing.
+    /// Indexing gets its own provider so its bursts neither queue behind nor
+    /// share HTTP batches with the rest of the autopilot's node traffic.
+    #[serde(default = "default_indexing_ethrpc")]
+    pub indexing_ethrpc: EthRpcConfig,
 
     /// Run the autopilot in shadow mode by specifying an upstream CoW protocol
     /// deployment to pull auctions from. The autopilot performs solver
@@ -214,6 +231,7 @@ impl Configuration {
             native_price_estimation: NativePriceConfig::test_default(),
             database: DatabasePoolConfig::test_default(),
             ethflow: TestDefault::test_default(),
+            indexing_ethrpc: default_indexing_ethrpc(),
             shadow: Default::default(),
             metrics_address: default_metrics_address(),
             api_address: default_api_address(),
@@ -245,6 +263,7 @@ impl Configuration {
             native_price_estimation: NativePriceConfig::test_default(),
             database: DatabasePoolConfig::test_default(),
             ethflow: TestDefault::test_default(),
+            indexing_ethrpc: default_indexing_ethrpc(),
             shadow: Default::default(),
             metrics_address: default_metrics_address(),
             api_address: default_api_address(),
@@ -361,6 +380,11 @@ mod tests {
 
         [order-quoting]
         price-estimation-drivers = []
+
+        [indexing-ethrpc]
+        max-batch-size = 5
+        max-concurrent-requests = 4
+        batch-delay = "10ms"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -449,6 +473,13 @@ mod tests {
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
         assert_eq!(config.max_auction_age, Duration::from_secs(600));
         assert_eq!(config.native_price_timeout, Duration::from_secs(3));
+
+        assert_eq!(config.indexing_ethrpc.max_batch_size, 5);
+        assert_eq!(config.indexing_ethrpc.max_concurrent_requests, 4);
+        assert_eq!(
+            config.indexing_ethrpc.batch_delay,
+            Duration::from_millis(10)
+        );
     }
 
     #[test]
@@ -478,6 +509,9 @@ mod tests {
         assert!(config.fee_policies.policies.is_empty());
         assert_eq!(config.fee_policies.max_partner_fee.get(), 0.01);
         assert!(config.fee_policies.upcoming_policies.policies.is_empty());
+        // Indexing defaults to smaller batches than the shared transport.
+        assert_eq!(config.indexing_ethrpc.max_batch_size, 20);
+        assert_eq!(config.shared.ethrpc.max_batch_size, 100);
         assert!(
             config
                 .fee_policies

@@ -482,6 +482,16 @@ where
             !latest_blocks.is_empty(),
             "entered update events with empty block list"
         );
+        let runs = contiguous_runs(latest_blocks);
+        tracing::debug!(
+            blocks = latest_blocks.len(),
+            runs,
+            first = latest_blocks.first().unwrap().0,
+            last = latest_blocks.last().unwrap().0,
+            "fetching events by block hash"
+        );
+        track_block_contiguity(latest_blocks.len(), runs);
+
         let (blocks, events) = self.past_events_by_block_hashes(latest_blocks).await;
         track_block_range(&format!("range_{}", blocks.len()));
         if blocks.is_empty() {
@@ -610,6 +620,16 @@ fn detect_reorg_path<'a>(
     (latest_blocks, is_reorg)
 }
 
+/// Number of contiguous runs of block numbers in an ascending block list.
+/// A single run means the whole list could have been fetched with one
+/// `eth_getLogs` over a block number range instead of one call per block hash.
+fn contiguous_runs(blocks: &[BlockNumberHash]) -> usize {
+    if blocks.is_empty() {
+        return 0;
+    }
+    1 + blocks.windows(2).filter(|w| w[1].0 != w[0].0 + 1).count()
+}
+
 /// Splits range into two disjuctive consecutive ranges, second one containing
 /// last (up to) MAX_BLOCKS_QUERIED elements, first one containing the rest (if
 /// any)
@@ -668,6 +688,14 @@ struct Metrics {
     /// Tracks how many blocks were replaced/added in each call to EventHandler
     #[metric(labels("range"))]
     block_ranges: prometheus::IntCounterVec,
+
+    /// Blocks fetched with an individual `eth_getLogs` call by block hash.
+    blocks_fetched_by_hash: prometheus::IntCounter,
+
+    /// Contiguous block number runs those blocks formed. The ratio
+    /// `blocks_fetched_by_hash / contiguous_block_runs` is how many RPC calls
+    /// a single range query would have collapsed into one.
+    contiguous_block_runs: prometheus::IntCounter,
 }
 
 fn track_block_range(range: &str) {
@@ -676,6 +704,13 @@ fn track_block_range(range: &str) {
         .block_ranges
         .with_label_values(&[range])
         .inc();
+}
+
+fn track_block_contiguity(blocks: usize, runs: usize) {
+    let metrics = Metrics::instance(observe::metrics::get_storage_registry())
+        .expect("unexpected error getting metrics instance");
+    metrics.blocks_fetched_by_hash.inc_by(blocks as u64);
+    metrics.contiguous_block_runs.inc_by(runs as u64);
 }
 
 #[cfg(test)]
@@ -738,6 +773,20 @@ mod tests {
             // Nothing to do here since `last_event_block` looks up last stored event.
             Ok(())
         }
+    }
+
+    #[test]
+    fn contiguous_runs_test() {
+        let block = |number| (number, B256::with_last_byte(number as u8));
+
+        assert_eq!(contiguous_runs(&[]), 0);
+        assert_eq!(contiguous_runs(&[block(5)]), 1);
+        assert_eq!(contiguous_runs(&[block(5), block(6), block(7)]), 1);
+        assert_eq!(contiguous_runs(&[block(5), block(7)]), 2);
+        assert_eq!(
+            contiguous_runs(&[block(5), block(6), block(9), block(10)]),
+            2
+        );
     }
 
     #[test]
