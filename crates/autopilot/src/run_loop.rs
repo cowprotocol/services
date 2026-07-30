@@ -14,6 +14,7 @@ use {
         },
         infra::{
             self,
+            persistence::dto::order::OrdersJson,
             solvers::dto::{settle, solve},
         },
         leader_lock_tracker::LeaderLockTracker,
@@ -100,6 +101,13 @@ pub struct SlotConfig {
 pub struct Probes {
     pub liveness: Arc<Liveness>,
     pub startup: Arc<Option<AtomicBool>>,
+}
+
+/// A freshly cut auction, carrying its order list already rendered to JSON so
+/// the archived auction and every `/solve` request reuse the same bytes.
+struct CutAuction {
+    auction: domain::Auction,
+    orders_json: OrdersJson,
 }
 
 pub struct RunLoop {
@@ -193,13 +201,13 @@ impl RunLoop {
                 continue;
             }
 
-            if let Some(auction) = self_arc
+            if let Some(cut) = self_arc
                 .next_auction(start_block, &mut last_auction, &mut last_block)
                 .await
             {
-                let auction_id = auction.id;
+                let auction_id = cut.auction.id;
                 self_arc
-                    .single_run(auction)
+                    .single_run(cut)
                     .instrument(tracing::info_span!("auction", auction_id))
                     .await
             }
@@ -282,26 +290,27 @@ impl RunLoop {
         start_block: BlockInfo,
         prev_auction: &mut Option<domain::Auction>,
         prev_block: &mut Option<B256>,
-    ) -> Option<domain::Auction> {
+    ) -> Option<CutAuction> {
         // wait for appropriate time to start building the auction
-        let auction = self.cut_auction().await?;
+        let cut = self.cut_auction().await?;
+        let auction = &cut.auction;
         tracing::trace!(auction_id = ?auction.id, "auction cut");
 
         // Only run the solvers if the auction or block has changed.
         let previous = prev_auction.replace(auction.clone());
-        if previous.as_ref() == Some(&auction)
+        if previous.as_ref() == Some(auction)
             && prev_block.replace(start_block.hash) == Some(start_block.hash)
         {
             return None;
         }
 
-        observe::log_auction_delta(&previous, &auction, &start_block);
+        observe::log_auction_delta(&previous, auction, &start_block);
         self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
-        Some(auction)
+        Some(cut)
     }
 
-    async fn cut_auction(&self) -> Option<domain::Auction> {
+    async fn cut_auction(&self) -> Option<CutAuction> {
         let Some(auction) = self.solvable_orders_cache.current_auction().await else {
             tracing::debug!("no current auction");
             return None;
@@ -314,8 +323,11 @@ impl RunLoop {
             .ok()?;
         Metrics::auction(id);
 
+        let orders_json = OrdersJson::new(&auction.orders).await;
+
         // always update the auction because the tests use this as a readiness probe
-        self.persistence.archive_auction(id, &auction);
+        self.persistence
+            .archive_auction(id, &auction, orders_json.clone());
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization
@@ -323,18 +335,22 @@ impl RunLoop {
             tracing::debug!("skipping empty auction");
             return None;
         }
-        Some(domain::Auction {
-            id,
-            block: auction.block,
-            orders: auction.orders,
-            prices: auction.prices,
-            surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
+        Some(CutAuction {
+            auction: domain::Auction {
+                id,
+                block: auction.block,
+                orders: auction.orders,
+                prices: auction.prices,
+                surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
+            },
+            orders_json,
         })
     }
 
     #[instrument(skip_all)]
-    async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
+    async fn single_run(self: &Arc<Self>, cut: CutAuction) {
         let single_run_start = Instant::now();
+        let auction = &cut.auction;
         tracing::info!(auction_id = ?auction.id, "solving");
 
         // Mark all auction orders as `Ready` for competition
@@ -343,13 +359,13 @@ impl RunLoop {
         tracing::trace!(auction_id = ?auction.id, "orders marked as ready");
 
         // Collect valid solutions from all drivers
-        let solutions = self.fetch_solutions(&auction).await;
+        let solutions = self.fetch_solutions(&cut).await;
         observe::bids(&solutions);
         if solutions.is_empty() {
             return;
         }
 
-        let ranking = self.winner_selection.arbitrate(solutions, &auction);
+        let ranking = self.winner_selection.arbitrate(solutions, auction);
 
         // Count and record the number of winners
         let num_winners = ranking.winners().count();
@@ -364,7 +380,7 @@ impl RunLoop {
         // of storing all the competition/auction-related data to the DB.
         if let Err(err) = self
             .post_processing(
-                &auction,
+                auction,
                 competition_simulation_block,
                 &ranking,
                 block_deadline,
@@ -408,7 +424,7 @@ impl RunLoop {
             );
         }
         tracing::trace!(auction_id = ?auction.id, "settlement execution started");
-        observe::unsettled(&ranking, &auction);
+        observe::unsettled(&ranking, auction);
     }
 
     /// Starts settlement execution in a background task. The function is async
@@ -588,11 +604,12 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
     #[instrument(skip_all)]
-    async fn fetch_solutions(&self, auction: &domain::Auction) -> Vec<competition::Bid<Unscored>> {
+    async fn fetch_solutions(&self, cut: &CutAuction) -> Vec<competition::Bid<Unscored>> {
         let deadline = self.pick_solve_deadline();
 
         let request = solve::Request::new(
-            auction,
+            &cut.auction,
+            cut.orders_json.clone(),
             &self.trusted_tokens.all(),
             deadline,
             self.config.compress_solve_request,
