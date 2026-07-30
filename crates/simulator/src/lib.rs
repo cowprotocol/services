@@ -119,11 +119,15 @@ impl Simulator {
         if let Some(gas) = self.disable_gas {
             return Ok(gas);
         }
-        let block: eth::BlockNo = self.eth.current_block().borrow().number.into();
+        let (block_number, block_timestamp) = {
+            let block = self.eth.current_block().borrow();
+            (block.number, block.timestamp)
+        };
+        let block: eth::BlockNo = block_number.into();
         let state_overrides = self
             .simulation_overrides
             .as_ref()
-            .and_then(|overrides| overrides.current());
+            .and_then(|overrides| overrides.overrides_for(block_number, block_timestamp));
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly

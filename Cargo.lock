@@ -9250,6 +9250,7 @@ dependencies = [
  "prometheus",
  "prometheus-metric-storage",
  "reqwest 0.13.4",
+ "rustls",
  "serde",
  "serde-ext",
  "serde_json",
