@@ -147,6 +147,72 @@ struct Inner {
     solvable_orders: boundary::SolvableOrders,
 }
 
+/// Orders dropped during a single `update()` cycle, grouped by the reason they
+/// were dropped. Owns the ability to both emit filtered-order metrics and
+/// persist the events, keeping observability separate from the filtering logic.
+#[derive(Default)]
+struct FilteredOrders {
+    token_deny_listed: Vec<OrderUid>,
+    presig_pending: Vec<OrderUid>,
+    missing_price: Vec<OrderUid>,
+    in_flight: Vec<OrderUid>,
+    banned_user: Vec<OrderUid>,
+    insufficient_balance: Vec<OrderUid>,
+    dust: Vec<OrderUid>,
+}
+
+impl FilteredOrders {
+    /// Emits per-reason metrics and, when `store_events` is set, forwards each
+    /// reason's uids to persistence with the correct event label. Consumes
+    /// `self` so the uid vecs can be moved into the background storage task
+    /// without copying.
+    fn report(self, persistence: &infra::Persistence, store_events: bool) {
+        Metrics::track_filtered_orders(UnsupportedToken, &self.token_deny_listed);
+        Metrics::track_filtered_orders(InvalidSignature, &self.presig_pending);
+        Metrics::track_filtered_orders(MissingNativePrice, &self.missing_price);
+        Metrics::track_filtered_orders(InFlight, &self.in_flight);
+        Metrics::track_filtered_orders(BannedUser, &self.banned_user);
+        Metrics::track_filtered_orders(InsufficientBalance, &self.insufficient_balance);
+        Metrics::track_filtered_orders(DustOrder, &self.dust);
+
+        if !store_events {
+            return;
+        }
+
+        let store = |uids: Vec<OrderUid>, label, reason| {
+            persistence.store_order_events_owned(
+                uids,
+                |uid| domain::OrderUid(uid.0),
+                label,
+                Some(reason),
+            );
+        };
+        store(
+            self.token_deny_listed,
+            OrderEventLabel::Invalid,
+            UnsupportedToken,
+        );
+        store(
+            self.presig_pending,
+            OrderEventLabel::Invalid,
+            InvalidSignature,
+        );
+        store(self.banned_user, OrderEventLabel::Invalid, BannedUser);
+        store(
+            self.insufficient_balance,
+            OrderEventLabel::Invalid,
+            InsufficientBalance,
+        );
+        store(self.in_flight, OrderEventLabel::Filtered, InFlight);
+        store(self.dust, OrderEventLabel::Filtered, DustOrder);
+        store(
+            self.missing_price,
+            OrderEventLabel::Filtered,
+            MissingNativePrice,
+        );
+    }
+}
+
 impl SolvableOrdersCache {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
@@ -213,10 +279,7 @@ impl SolvableOrdersCache {
             .or_insert_with(|| to_normalized_price(1.0).unwrap());
 
         let capacity_hint = db_solvable_orders.orders.len();
-        // filtered orders
-        let mut unsupported_uids = Vec::new();
-        let mut presig_uids = Vec::new();
-        let mut missing_price_uids = Vec::new();
+        let mut filtered = FilteredOrders::default();
 
         // data needed for filtering logic in next phase
         let mut traders = AddressHashSet::default();
@@ -234,18 +297,18 @@ impl SolvableOrdersCache {
             traded_tokens.insert(order.data.sell_token);
             traded_tokens.insert(order.data.buy_token);
 
-            if is_unsupported(order, &self.deny_listed_tokens) {
-                unsupported_uids.push(uid);
+            if token_deny_listed(order, &self.deny_listed_tokens) {
+                filtered.token_deny_listed.push(uid);
                 continue;
             }
             if is_presig_pending(order) {
-                presig_uids.push(uid);
+                filtered.presig_pending.push(uid);
                 continue;
             }
             if !prices.contains_key(&order.data.sell_token)
                 || !prices.contains_key(&order.data.buy_token)
             {
-                missing_price_uids.push(uid);
+                filtered.missing_price.push(uid);
                 continue;
             }
 
@@ -262,10 +325,6 @@ impl SolvableOrdersCache {
             }
             survivors.push(order);
         }
-
-        Metrics::track_filtered_orders(UnsupportedToken, &unsupported_uids);
-        Metrics::track_filtered_orders(InvalidSignature, &presig_uids);
-        Metrics::track_filtered_orders(MissingNativePrice, &missing_price_uids);
 
         // at this point we know all relevant tokens and tell the native price
         // cache to have them ready for the next auction
@@ -295,24 +354,18 @@ impl SolvableOrdersCache {
             .copied()
             .collect();
 
-        // filtered orders
-        let mut in_flight_removed = Vec::new();
-        let mut banned_removed = Vec::new();
-        let mut balance_removed = Vec::new();
-        let mut dust_removed = Vec::new();
-
         let final_orders = survivors
             .into_iter()
             .filter_map(|order| {
                 let uid = order.metadata.uid;
                 if in_flight.contains(&uid) {
-                    in_flight_removed.push(uid);
+                    filtered.in_flight.push(uid);
                     return None;
                 }
                 let is_banned = banned_set.contains(&order.metadata.owner)
                     || order.data.receiver.is_some_and(|r| banned_set.contains(&r));
                 if is_banned {
-                    banned_removed.push(uid);
+                    filtered.banned_user.push(uid);
                     return None;
                 }
                 if !self.disable_order_balance_filter {
@@ -324,11 +377,11 @@ impl SolvableOrdersCache {
                         self.settlement_contract,
                         &balance_filter_exempt,
                     ) {
-                        balance_removed.push(uid);
+                        filtered.insufficient_balance.push(uid);
                         return None;
                     }
                     if !passes_dust(order, balance) {
-                        dust_removed.push(uid);
+                        filtered.dust.push(uid);
                         return None;
                     }
                 }
@@ -344,42 +397,8 @@ impl SolvableOrdersCache {
             })
             .collect::<Vec<_>>();
 
-        Metrics::track_filtered_orders(InFlight, &in_flight_removed);
-        Metrics::track_filtered_orders(BannedUser, &banned_removed);
-        Metrics::track_filtered_orders(InsufficientBalance, &balance_removed);
-        Metrics::track_filtered_orders(DustOrder, &dust_removed);
-
         Metrics::track_orders_in_final_auction(&final_orders);
-
-        if store_events {
-            let mut invalid_order_uids: HashMap<OrderUid, OrderFilterReason, FbBuildHasher<56>> =
-                HashMap::with_hasher(FbBuildHasher::default());
-            invalid_order_uids.extend(
-                unsupported_uids
-                    .into_iter()
-                    .map(|uid| (uid, UnsupportedToken)),
-            );
-            invalid_order_uids.extend(presig_uids.into_iter().map(|uid| (uid, InvalidSignature)));
-            invalid_order_uids.extend(banned_removed.into_iter().map(|uid| (uid, BannedUser)));
-            invalid_order_uids.extend(
-                balance_removed
-                    .into_iter()
-                    .map(|uid| (uid, InsufficientBalance)),
-            );
-
-            let mut filtered_order_events: Vec<(OrderUid, OrderFilterReason)> = Vec::new();
-            filtered_order_events
-                .extend(in_flight_removed.iter().copied().map(|uid| (uid, InFlight)));
-            filtered_order_events.extend(dust_removed.into_iter().map(|uid| (uid, DustOrder)));
-            filtered_order_events.extend(
-                missing_price_uids
-                    .into_iter()
-                    .map(|uid| (uid, MissingNativePrice)),
-            );
-
-            self.store_events_by_reason(invalid_order_uids, OrderEventLabel::Invalid);
-            self.store_events_by_reason(filtered_order_events, OrderEventLabel::Filtered);
-        }
+        filtered.report(&self.persistence, store_events);
 
         let auction = domain::RawAuctionData {
             block,
@@ -497,29 +516,10 @@ impl SolvableOrdersCache {
             .start_timer();
         fut.await
     }
-
-    fn store_events_by_reason(
-        &self,
-        orders: impl IntoIterator<Item = (OrderUid, OrderFilterReason)>,
-        label: OrderEventLabel,
-    ) {
-        let mut by_reason: HashMap<OrderFilterReason, Vec<OrderUid>> = HashMap::new();
-        for (uid, reason) in orders {
-            by_reason.entry(reason).or_default().push(uid);
-        }
-        for (reason, uids) in by_reason {
-            self.persistence.store_order_events_owned(
-                uids,
-                |uid| domain::OrderUid(uid.0),
-                label,
-                Some(reason),
-            );
-        }
-    }
 }
 
 /// Returns true if either of the order's tokens is on the deny list.
-fn is_unsupported(order: &Order, deny_listed_tokens: &DenyListedTokens) -> bool {
+fn token_deny_listed(order: &Order, deny_listed_tokens: &DenyListedTokens) -> bool {
     deny_listed_tokens.contains(&order.data.sell_token)
         || deny_listed_tokens.contains(&order.data.buy_token)
 }
@@ -633,9 +633,9 @@ mod tests {
             .with_buy_token(token0)
             .build();
 
-        assert!(is_unsupported(&sell_denied, &deny_listed_tokens));
-        assert!(!is_unsupported(&neither_denied, &deny_listed_tokens));
-        assert!(is_unsupported(&buy_denied, &deny_listed_tokens));
+        assert!(token_deny_listed(&sell_denied, &deny_listed_tokens));
+        assert!(!token_deny_listed(&neither_denied, &deny_listed_tokens));
+        assert!(token_deny_listed(&buy_denied, &deny_listed_tokens));
     }
 
     #[test]
