@@ -12,7 +12,7 @@ use {
     alloy::primitives::{Bytes, FixedBytes},
     anyhow::{Context, Result},
     axum::{
-        body::{self, Body},
+        body::{Body, HttpBody},
         http::Request,
     },
     balance_overrides::BalanceOverrideRequest,
@@ -228,7 +228,7 @@ impl Utilities {
     /// auction pre-processing since eagerly deserializing these requests
     /// is surprisingly costly because their are so big.
     async fn parse_request(&self, solve_request: Request<Body>) -> Result<Arc<Auction>> {
-        let mut solve_request = collect_request_body(solve_request).await?.to_vec();
+        let mut solve_request = collect_request_body(solve_request).await?;
 
         let auction_dto: SolveRequest = {
             let _timer = metrics::get().processing_stage_timer("parse_dto");
@@ -571,18 +571,89 @@ fn init_auction_id_in_span(id: Option<i64>) {
     current_span.record("auction_id", id);
 }
 
+/// Streams the request body into a single owned buffer. `axum::body::to_bytes`
+/// would hand back a `Bytes`, which then needs another full copy to get the
+/// mutable buffer `simd_json` parses in place, so assemble the buffer directly.
 #[instrument(skip_all)]
-async fn collect_request_body(request: Request<Body>) -> Result<body::Bytes> {
+async fn collect_request_body(request: Request<Body>) -> Result<Vec<u8>> {
+    /// Bodies are attacker-controlled, so only trust the size hint up to a
+    /// plausible auction size. Larger bodies still work, they just grow the
+    /// buffer as they arrive.
+    const MAX_RESERVE: u64 = 32 << 20;
+
     tracing::trace!("start streaming request body");
     let _timer =
         observe::metrics::metrics().on_auction_overhead_start("driver", "stream_http_body");
     let start = Instant::now();
 
-    let body_bytes = axum::body::to_bytes(request.into_body(), usize::MAX)
-        .await
-        .context("failed to stream request body")?;
+    let reserve = request.body().size_hint().lower().min(MAX_RESERVE) as usize;
+    let mut buffer = Vec::with_capacity(reserve);
+    let mut body = request.into_body().into_data_stream();
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.context("failed to stream request body")?;
+        buffer.extend_from_slice(&chunk);
+    }
 
     let duration = start.elapsed();
-    tracing::debug!(?duration, "finished streaming request body");
-    Ok(body_bytes)
+    tracing::debug!(
+        ?duration,
+        bytes = buffer.len(),
+        "finished streaming request body"
+    );
+    Ok(buffer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn payload(len: usize) -> Vec<u8> {
+        (0..len).map(|i| (i % 251) as u8).collect()
+    }
+
+    /// A body arriving in chunks must be reassembled byte for byte, no matter
+    /// how the chunk boundaries fall.
+    #[tokio::test]
+    async fn collects_chunked_body() {
+        let expected = payload(3 * 16 * 1024 + 7);
+        let chunks: Vec<_> = expected
+            .chunks(16 * 1024)
+            .map(|chunk| Ok::<_, std::io::Error>(chunk.to_vec()))
+            .collect();
+        // a streamed body advertises no length, like the decompressed `/solve`
+        // bodies autopilot sends
+        let body = Body::from_stream(futures::stream::iter(chunks));
+        let request = Request::builder().body(body).unwrap();
+
+        assert_eq!(collect_request_body(request).await.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn collects_single_chunk_body() {
+        let expected = payload(64 * 1024);
+        let request = Request::builder()
+            .body(Body::from(expected.clone()))
+            .unwrap();
+
+        assert_eq!(collect_request_body(request).await.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn collects_empty_body() {
+        let request = Request::builder().body(Body::empty()).unwrap();
+        assert!(collect_request_body(request).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn propagates_stream_error() {
+        let chunks = vec![
+            Ok(b"{\"id\":".to_vec()),
+            Err(std::io::Error::other("connection reset")),
+        ];
+        let body = Body::from_stream(futures::stream::iter(chunks));
+        let request = Request::builder().body(body).unwrap();
+
+        let err = collect_request_body(request).await.unwrap_err();
+        assert!(err.to_string().contains("failed to stream request body"));
+    }
 }
