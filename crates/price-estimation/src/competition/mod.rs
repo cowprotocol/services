@@ -39,6 +39,7 @@ pub struct CompetitionEstimator<T> {
     usable_results_for_early_return: NonZeroUsize,
     ranking: PriceRanking,
     verification_mode: QuoteVerificationMode,
+    publish_events: bool,
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
@@ -50,6 +51,21 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
             usable_results_for_early_return: NonZeroUsize::MAX,
             ranking,
             verification_mode: QuoteVerificationMode::Unverified,
+            publish_events: false,
+        }
+    }
+
+    /// Publishes the individual native price estimates and the winner of every
+    /// competition to the event bus.
+    ///
+    /// Opt-in because the orderbook resolves native prices through the
+    /// autopilot on every request instead of caching them itself, so having it
+    /// publish too would bury the autopilot's actual price refreshes under two
+    /// orders of magnitude of forwarded lookups.
+    pub fn with_event_publishing(self) -> Self {
+        Self {
+            publish_events: true,
+            ..self
         }
     }
 
@@ -623,6 +639,7 @@ mod tests {
             usable_results_for_early_return: NonZeroUsize::new(2).unwrap(),
             ranking: PriceRanking::MaxOutAmount,
             verification_mode: QuoteVerificationMode::Unverified,
+            publish_events: false,
         };
 
         let result = racing.estimates(query).await.unwrap().into_vec();
