@@ -1038,7 +1038,7 @@ mod tests {
     async fn test_problematic_sepolia_address() {
         use crate::infra::AlloyChain;
 
-        let (provider, _wallet) = ethrpc::alloy::provider(
+        let provider = ethrpc::alloy::provider(
             "https://ethereum-sepolia-rpc.publicnode.com",
             ethrpc::Config::default(),
             None,

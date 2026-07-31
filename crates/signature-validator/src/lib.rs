@@ -2,7 +2,7 @@ use {
     alloy_primitives::{Address, FixedBytes},
     balance_overrides::{BalanceOverrideRequest, StateOverriding},
     contracts::GPv2Settlement,
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
     hex_literal::hex,
     model::interaction::InteractionData,
     std::sync::Arc,
@@ -114,12 +114,12 @@ pub struct Contracts {
 
 /// Creates the default [`SignatureValidating`] instance.
 pub fn validator(
-    web3: &Web3,
+    provider: &AlloyProvider,
     contracts: Contracts,
     balance_overrider: Arc<dyn StateOverriding>,
 ) -> Arc<dyn SignatureValidating> {
     Arc::new(simulation::Validator::new(
-        web3,
+        provider,
         contracts.settlement,
         *contracts.signatures.address(),
         contracts.vault_relayer,

@@ -12,7 +12,7 @@ use {
     alloy_sol_types::SolCall,
     alloy_transport::TransportErrorKind,
     contracts::ERC20,
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
     moka::sync::Cache,
     std::{iter, time::Duration},
 };
@@ -193,13 +193,13 @@ type OverrideDetectorCacheKey = (Token, Option<(Holder, Spender)>);
 
 /// Heuristic approval override detector with integrated caching.
 ///
-/// Owns the Web3 handle, detection parameters, and the per-token strategy
+/// Owns the provider handle, detection parameters, and the per-token strategy
 /// cache. Strategies that can compute the correct slot for any `(owner,
 /// spender)` pair (Solidity mappings, Solady) are cached under `(token, None)`.
 /// `DirectSlot` strategies, which encode a specific observed slot, are cached
 /// under `(token, Some((owner, spender)))`.
 pub(crate) struct Detector {
-    web3: Web3,
+    provider: AlloyProvider,
     probing_depth: u8,
     verification_timeout: Duration,
     pub(crate) cache: Cache<OverrideDetectorCacheKey, Option<ApprovalStrategy>>,
@@ -207,13 +207,13 @@ pub(crate) struct Detector {
 
 impl Detector {
     pub fn new(
-        web3: Web3,
+        provider: AlloyProvider,
         probing_depth: u8,
         verification_timeout: Duration,
         cache_size: u64,
     ) -> Self {
         Self {
-            web3,
+            provider,
             probing_depth,
             verification_timeout,
             cache: Cache::builder().max_capacity(cache_size).build(),
@@ -287,7 +287,6 @@ impl Detector {
         };
 
         let trace = self
-            .web3
             .provider
             .debug_trace_call(
                 call_request,
@@ -372,7 +371,7 @@ impl Detector {
         let overrides: alloy_primitives::map::AddressMap<AccountOverride> =
             iter::once((target_contract, state_override)).collect();
 
-        let token_contract = ERC20::Instance::new(token, self.web3.provider.clone());
+        let token_contract = ERC20::Instance::new(token, self.provider.clone());
         let allowance = token_contract
             .allowance(owner, spender)
             .state(overrides)
@@ -478,7 +477,7 @@ mod tests {
         let amount = U256::from(123123123);
 
         let web3 = Web3::new_from_env();
-        let helper = StateOverrides::new(web3.clone());
+        let helper = StateOverrides::new(web3.provider.clone());
 
         let state_overrides: StateOverride = helper
             .approval_override(ApprovalOverrideRequest {
@@ -511,7 +510,7 @@ mod tests {
         let amount = U256::from(123123123);
 
         let web3 = Web3::new_from_env();
-        let helper = StateOverrides::new(web3.clone());
+        let helper = StateOverrides::new(web3.provider.clone());
 
         let state_overrides: StateOverride = helper
             .approval_override(ApprovalOverrideRequest {
@@ -543,7 +542,7 @@ mod tests {
         let amount = U256::from(123123123);
 
         let web3 = Web3::new_from_env();
-        let helper = StateOverrides::new(web3.clone());
+        let helper = StateOverrides::new(web3.provider.clone());
 
         let state_overrides: StateOverride = helper
             .balance_override(crate::BalanceOverrideRequest {

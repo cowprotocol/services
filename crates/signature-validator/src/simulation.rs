@@ -17,7 +17,7 @@ use {
         GPv2Settlement,
         support::Signatures,
     },
-    ethrpc::{Web3, alloy::ProviderLabelingExt},
+    ethrpc::{AlloyProvider, alloy::ProviderLabelingExt},
     std::sync::{Arc, LazyLock},
     tracing::instrument,
 };
@@ -26,7 +26,7 @@ pub struct Validator {
     signatures_address: Address,
     settlement: GPv2Settlement::Instance,
     vault_relayer: Address,
-    web3: Web3,
+    provider: AlloyProvider,
     balance_overrider: Arc<dyn StateOverriding>,
 }
 
@@ -35,18 +35,18 @@ impl Validator {
     const IS_VALID_SIGNATURE_MAGIC_BYTES: &'static str = "1626ba7e";
 
     pub fn new(
-        web3: &Web3,
+        provider: &AlloyProvider,
         settlement: GPv2Settlement::Instance,
         signatures_address: Address,
         vault_relayer: Address,
         balance_overrider: Arc<dyn StateOverriding>,
     ) -> Self {
-        let web3 = web3.labeled("signatureValidation");
+        let provider = provider.labeled("signatureValidation");
         Self {
             signatures_address,
             settlement,
             vault_relayer,
-            web3: web3.clone(),
+            provider,
             balance_overrider,
         }
     }
@@ -61,7 +61,7 @@ impl Validator {
         // change), the order's validity can be directly determined by whether
         // the signature matches the expected hash of the order data, checked
         // with isValidSignature method called on the owner's contract
-        let contract = ERC1271SignatureValidator::new(check.signer, &self.web3.provider);
+        let contract = ERC1271SignatureValidator::new(check.signer, &self.provider);
         let magic_bytes = contract
             .isValidSignature(check.hash.into(), check.signature.clone().into())
             .call()

@@ -9,7 +9,7 @@ use {
     alloy_transport::{RpcError, TransportErrorKind},
     anyhow::{Context, Result, bail, ensure},
     contracts::ERC20,
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
     model::interaction::InteractionData,
 };
 
@@ -19,14 +19,14 @@ const METHOD_NOT_FOUND_CODE: i64 = -32601;
 /// problematic for solving) by simulating several transfers of a token.
 #[derive(Debug, Clone)]
 pub struct TraceCallDetectorRaw {
-    pub web3: Web3,
+    pub provider: AlloyProvider,
     pub settlement_contract: Address,
 }
 
 impl TraceCallDetectorRaw {
-    pub fn new(web3: Web3, settlement: Address) -> Self {
+    pub fn new(provider: AlloyProvider, settlement: Address) -> Self {
         Self {
-            web3,
+            provider,
             settlement_contract: settlement,
         }
     }
@@ -53,7 +53,7 @@ impl TraceCallDetectorRaw {
         // implementation sending to an address that does not have any balance
         // yet (implicitly 0) causes an allocation.
         request.append(&mut self.create_trace_request(token, amount, take_from));
-        let traces = match trace_many(&self.web3, request).await {
+        let traces = match trace_many(&self.provider, request).await {
             Ok(result) => result,
             Err(RpcError::UnsupportedFeature(err)) => {
                 tracing::warn!(error = ?err, "node does not support trace_callMany");
@@ -326,7 +326,7 @@ fn u256_from_be_bytes_strict(b: &[u8]) -> Option<U256> {
 ///
 /// Returns `Err` if communication with the node failed.
 async fn trace_many(
-    web3: &Web3,
+    provider: &AlloyProvider,
     requests: Vec<TransactionRequest>,
 ) -> Result<Vec<TraceResults>, RpcError<TransportErrorKind>> {
     let r: Vec<_> = requests
@@ -334,7 +334,7 @@ async fn trace_many(
         .zip(std::iter::repeat([TraceType::Trace].as_slice()))
         .collect();
 
-    web3.provider.trace_call_many(r.as_slice()).latest().await
+    provider.trace_call_many(r.as_slice()).latest().await
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ use {
     anyhow::Result,
     async_trait::async_trait,
     contracts::ERC20,
-    ethrpc::{Web3, alloy::errors::ignore_non_node_error},
+    ethrpc::{AlloyProvider, alloy::errors::ignore_non_node_error},
     futures::{
         FutureExt,
         StreamExt,
@@ -48,7 +48,7 @@ pub trait TokenInfoFetching: Send + Sync {
 }
 
 pub struct TokenInfoFetcher {
-    pub web3: Web3,
+    pub provider: AlloyProvider,
 }
 
 impl TokenInfoFetcher {
@@ -60,7 +60,7 @@ impl TokenInfoFetcher {
             });
         }
 
-        let erc20 = ERC20::Instance::new(address, self.web3.provider.clone());
+        let erc20 = ERC20::Instance::new(address, self.provider.clone());
         let (decimals, symbol) = {
             let decimals = erc20.decimals();
             let symbol = erc20.symbol();

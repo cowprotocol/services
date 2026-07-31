@@ -1,4 +1,4 @@
-pub use ethrpc::Web3;
+pub use ethrpc::{AlloyProvider, Web3};
 use {
     std::{
         fmt::{self, Display, Formatter},
@@ -72,4 +72,19 @@ impl From<&configs::shared::EthRpcConfig> for Arguments {
 pub fn web3(args: &Arguments, url: &Url, name: impl ToString) -> Web3 {
     let label = name.to_string();
     ethrpc::web3(args.ethrpc(), url, Some(&label))
+}
+
+/// Create a provider with a label for observability.
+///
+/// Unlike [`web3`], the returned provider cannot sign transactions. Prefer it
+/// for components that only read from the node.
+pub fn provider(args: &Arguments, url: &Url, name: impl ToString) -> AlloyProvider {
+    let label = name.to_string();
+    match (
+        args.ethrpc_max_batch_size,
+        args.ethrpc_max_concurrent_requests,
+    ) {
+        (0 | 1, 0) => ethrpc::alloy::unbuffered_provider(url.as_str(), Some(&label)),
+        _ => ethrpc::alloy::provider(url.as_str(), args.ethrpc(), Some(&label)),
+    }
 }

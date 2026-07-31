@@ -56,7 +56,7 @@ impl Api {
         let mut app = axum::Router::new();
 
         let balance_fetcher = account_balances::cached(
-            self.eth.web3(),
+            &self.eth.web3().provider,
             self.eth.balance_simulator().clone(),
             self.eth.current_block().clone(),
         );

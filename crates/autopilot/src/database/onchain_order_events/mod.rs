@@ -27,7 +27,7 @@ use {
         onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
         orders::{Order, OrderClass, insert_quotes},
     },
-    ethrpc::{Web3, block_stream::timestamp_of_block_in_seconds},
+    ethrpc::{AlloyProvider, block_stream::timestamp_of_block_in_seconds},
     event_indexing::{block_retriever::RangeInclusive, event_handler::EventStoring},
     futures::{StreamExt, stream},
     itertools::{izip, multiunzip},
@@ -64,7 +64,7 @@ use {
 
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     db: Postgres,
-    web3: Web3,
+    provider: AlloyProvider,
     quoter: Arc<dyn OrderQuoting>,
     custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
     domain_separator: DomainSeparator,
@@ -80,7 +80,7 @@ where
 {
     pub fn new(
         db: Postgres,
-        web3: Web3,
+        provider: AlloyProvider,
         quoter: Arc<dyn OrderQuoting>,
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
@@ -89,7 +89,7 @@ where
     ) -> Self {
         OnchainOrderParser {
             db,
-            web3,
+            provider,
             quoter,
             custom_onchain_data_parser,
             domain_separator,
@@ -224,7 +224,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         Vec<TxHash>,
     )> {
         let block_number_timestamp_hashmap =
-            get_block_numbers_of_events(&self.web3, &order_placement_events).await?;
+            get_block_numbers_of_events(&self.provider, &order_placement_events).await?;
         let custom_event_data = self
             .custom_onchain_data_parser
             .parse_custom_event_data(&order_placement_events)?;
@@ -376,7 +376,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
 }
 
 async fn get_block_numbers_of_events(
-    web3: &Web3,
+    provider: &AlloyProvider,
     events: &[(ContractEvent, Log)],
 ) -> Result<HashMap<u64, u32>> {
     let mut event_block_numbers: Vec<u64> = events
@@ -390,11 +390,9 @@ async fn get_block_numbers_of_events(
     let futures = event_block_numbers
         .into_iter()
         .map(|block_number| async move {
-            let timestamp = timestamp_of_block_in_seconds(
-                &web3.provider,
-                BlockNumberOrTag::Number(block_number),
-            )
-            .await?;
+            let timestamp =
+                timestamp_of_block_in_seconds(provider, BlockNumberOrTag::Number(block_number))
+                    .await?;
             Ok((block_number, timestamp))
         });
     let block_number_timestamp_pair: Vec<anyhow::Result<(u64, u32)>> =
@@ -1240,16 +1238,16 @@ mod test {
         custom_onchain_order_parser
             .expect_customized_event_data_for_event_index()
             .returning(|_, _, _, _| 1u8);
-        let web3 = Web3::new_from_env();
+        let provider = Web3::new_from_env().provider;
         let onchain_order_parser = OnchainOrderParser {
             db: Postgres {
                 pool: PgPool::connect_lazy("postgresql://").unwrap(),
                 config: Default::default(),
             },
-            trampoline: HooksTrampoline::Instance::deployed(&web3.provider)
+            trampoline: HooksTrampoline::Instance::deployed(&provider)
                 .await
                 .unwrap(),
-            web3,
+            provider,
             quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
             domain_separator,

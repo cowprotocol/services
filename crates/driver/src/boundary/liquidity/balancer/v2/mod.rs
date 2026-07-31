@@ -166,7 +166,7 @@ async fn init_liquidity(
         .collect(),
     };
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
-        web3: web3.clone(),
+        provider: web3.provider.clone(),
     })));
 
     let balancer_pool_fetcher = Arc::new(
