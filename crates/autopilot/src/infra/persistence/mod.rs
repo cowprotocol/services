@@ -199,6 +199,9 @@ impl Persistence {
             return;
         };
         tokio::task::spawn(async move {
+            // delay compression and upload to not do the heaviest work at
+            // the start of the auction
+            tokio::time::sleep(Duration::from_secs(2)).await;
             match s3.upload_json_bytes(id.to_string(), json).await {
                 Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
                 Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
