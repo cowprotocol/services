@@ -41,9 +41,21 @@ impl MutWallet {
         let default_address =
             <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(&w_lock);
 
-        // note that [`Arc::make_mut()`] will never perform a deep clone because
-        // we never give out clones of the inner `Arc` and we take a
-        // write lock in this function which gives us exclusive access.
+        // Using `Arc::make_mut()` here will never lead to a scenario
+        // where multiple clones of the original [`MutWallet`] have
+        // different sets of signers.
+        // We use a write lock to ensure that only 1 caller can add
+        // a signer at a time avoiding race conditions.
+        // Also we only ever implicitly give out clones of the inner
+        // `Arc<EthereumWallet>` in `sign_transaction_from()` but it's
+        // impossible to extract the `Arc<EthereumWallet>` out of the
+        // returned future.
+        // That means the worst that could happen is that `Arc::make_mut()`
+        // makes a deep clone instead of just modifying the only `Arc`
+        // instance in existence.
+        // But in practice this will never happen because we generally
+        // first add all signers to the [`MutWallet`] before we start
+        // signing transactions.
         if default_address.is_zero() {
             Arc::make_mut(&mut w_lock).register_default_signer(signer);
         } else {
