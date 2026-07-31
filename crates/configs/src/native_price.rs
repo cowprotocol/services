@@ -40,6 +40,14 @@ pub struct NativePriceConfig {
     /// estimators but that will not have any further effect.
     #[serde(default = "default_results_required")]
     pub results_required: NonZeroUsize,
+
+    /// Whether to publish every native price estimate and competition winner to
+    /// the event bus. Requires the event bus to be configured; only meaningful
+    /// for a component that owns a native price cache (i.e. the autopilot),
+    /// since a component that forwards its lookups elsewhere would publish one
+    /// event per request rather than per price refresh.
+    #[serde(default)]
+    pub publish_events: bool,
 }
 
 impl Default for NativePriceConfig {
@@ -48,6 +56,7 @@ impl Default for NativePriceConfig {
             approximation_tokens: Default::default(),
             cache: Default::default(),
             results_required: default_results_required(),
+            publish_events: false,
         }
     }
 }
@@ -86,12 +95,15 @@ mod tests {
                 ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"],
             ]
 
+            publish-events = true
+
             [cache]
             max-age = "5m"
             concurrent-requests = 4
         "#;
         let config: NativePriceConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.approximation_tokens.len(), 1);
+        assert!(config.publish_events);
         assert_eq!(config.cache.max_age, Duration::from_secs(300));
         assert_eq!(
             config.cache.concurrent_requests,
@@ -111,6 +123,7 @@ mod tests {
             config.cache.concurrent_requests,
             NonZeroUsize::new(1).unwrap()
         );
+        assert!(!config.publish_events);
     }
 
     #[test]
@@ -139,6 +152,7 @@ mod tests {
                 concurrent_requests: NonZeroUsize::new(8).unwrap(),
             },
             results_required: default_results_required(),
+            publish_events: true,
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -148,6 +162,7 @@ mod tests {
             config.approximation_tokens,
             deserialized.approximation_tokens,
         );
+        assert_eq!(config.publish_events, deserialized.publish_events);
         assert_eq!(config.cache.max_age, deserialized.cache.max_age);
         assert_eq!(
             config.cache.concurrent_requests,
