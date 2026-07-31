@@ -4,7 +4,7 @@ use {
     alloy_sol_types::{SolCall, SolType, sol_data},
     balance_overrides::{BalanceOverrideRequest, StateOverriding},
     contracts::{GPv2Settlement, support::Balances},
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::{AlloyProvider, block_stream::CurrentBlockWatcher},
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -84,17 +84,20 @@ pub trait BalanceFetching: Send + Sync {
 }
 
 /// Create the default [`BalanceFetching`] instance.
-pub fn fetcher(web3: &Web3, balance_simulator: BalanceSimulator) -> Arc<dyn BalanceFetching> {
-    Arc::new(simulation::Balances::new(web3, balance_simulator))
+pub fn fetcher(
+    provider: &AlloyProvider,
+    balance_simulator: BalanceSimulator,
+) -> Arc<dyn BalanceFetching> {
+    Arc::new(simulation::Balances::new(provider, balance_simulator))
 }
 
 /// Create a cached [`BalanceFetching`] instance.
 pub fn cached(
-    web3: &Web3,
+    provider: &AlloyProvider,
     balance_simulator: BalanceSimulator,
     blocks: CurrentBlockWatcher,
 ) -> Arc<dyn BalanceFetching> {
-    let cached = Arc::new(cached::Balances::new(fetcher(web3, balance_simulator)));
+    let cached = Arc::new(cached::Balances::new(fetcher(provider, balance_simulator)));
     cached.spawn_background_task(blocks);
     cached
 }

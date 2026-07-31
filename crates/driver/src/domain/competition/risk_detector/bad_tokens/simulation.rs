@@ -29,8 +29,10 @@ struct Inner {
 
 impl Detector {
     pub fn new(max_age: Duration, eth: &infra::Ethereum) -> Self {
-        let detector =
-            TraceCallDetectorRaw::new(eth.web3().clone(), *eth.contracts().settlement().address());
+        let detector = TraceCallDetectorRaw::new(
+            eth.web3().provider.clone(),
+            *eth.contracts().settlement().address(),
+        );
         Self(Arc::new(Inner {
             cache: Cache::new(max_age),
             detector,

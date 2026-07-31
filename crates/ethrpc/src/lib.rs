@@ -29,7 +29,7 @@ impl Web3 {
     }
 
     pub fn new_from_url(url: &str) -> Self {
-        let (alloy, wallet) = crate::alloy::provider(url, Default::default(), None);
+        let (alloy, wallet) = crate::alloy::signing_provider(url, Default::default(), None);
         Self {
             provider: alloy,
             wallet,
@@ -68,8 +68,8 @@ pub fn web3(args: Config, url: &Url, label: Option<&str>) -> Web3 {
         args.ethrpc_max_batch_size,
         args.ethrpc_max_concurrent_requests,
     ) {
-        (0 | 1, 0) => alloy::unbuffered_provider(url.as_str(), label),
-        _ => alloy::provider(url.as_str(), args, label),
+        (0 | 1, 0) => alloy::unbuffered_signing_provider(url.as_str(), label),
+        _ => alloy::signing_provider(url.as_str(), args, label),
     };
 
     Web3 {

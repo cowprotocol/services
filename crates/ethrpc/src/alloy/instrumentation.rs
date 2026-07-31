@@ -9,9 +9,9 @@
 //! trait to conveniently create a new `Provider` with an additional
 //! [`LabelingLayer`].
 use {
-    crate::{Web3, alloy::RpcClientRandomIdExt},
+    crate::{AlloyProvider, Web3, alloy::RpcClientRandomIdExt},
     alloy_json_rpc::{RequestPacket, ResponsePacket, SerializedRequest},
-    alloy_provider::{Provider, ProviderBuilder},
+    alloy_provider::Provider,
     alloy_rpc_client::RpcClient,
     alloy_transport::TransportError,
     std::{
@@ -150,24 +150,30 @@ pub trait ProviderLabelingExt {
     fn labeled<S: ToString>(&self, label: S) -> Self;
 }
 
+/// Rebuilds `provider`'s client with an extra [`LabelingLayer`] on top.
+fn relabeled_client<S: ToString>(provider: &AlloyProvider, label: S) -> RpcClient {
+    let is_local = provider.client().is_local();
+    let transport = provider.client().transport().clone();
+    let transport_with_label = LabelingLayer {
+        label: label.to_string(),
+    }
+    .layer(transport);
+
+    RpcClient::with_random_id(transport_with_label, is_local)
+}
+
+impl ProviderLabelingExt for AlloyProvider {
+    fn labeled<S: ToString>(&self, label: S) -> Self {
+        super::build_provider(relabeled_client(self, label), None)
+    }
+}
+
 impl ProviderLabelingExt for Web3 {
     fn labeled<S: ToString>(&self, label: S) -> Self {
-        let is_local = self.provider.client().is_local();
-        let transport = self.provider.client().transport().clone();
-        let transport_with_label = LabelingLayer {
-            label: label.to_string(),
-        }
-        .layer(transport);
-        let client = RpcClient::with_random_id(transport_with_label, is_local);
-        let alloy = ProviderBuilder::new()
-            .wallet(self.wallet.clone())
-            // TODO: eventually remove this and all the other simple nonce managers
-            .with_simple_nonce_management()
-            .connect_client(client)
-            .erased();
+        let client = relabeled_client(&self.provider, label);
 
         Self {
-            provider: alloy,
+            provider: super::build_provider(client, Some(self.wallet.clone())),
             wallet: self.wallet.clone(),
         }
     }

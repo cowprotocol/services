@@ -5,7 +5,7 @@ use {
         sol_types::SolEvent,
     },
     contracts::CoWSwapOnchainOrders,
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
     event_indexing::event_handler::AlloyEventRetrieving,
 };
 
@@ -17,17 +17,20 @@ use {
 // hardcoded topics (which should correspond to the topics of all avents in the
 // onchain-order contract ABI).
 pub struct CoWSwapOnchainOrdersContract {
-    web3: Web3,
+    provider: AlloyProvider,
     addresses: Vec<Address>,
 }
 
 impl CoWSwapOnchainOrdersContract {
-    pub fn new(web3: Web3, addresses: Vec<Address>) -> Self {
+    pub fn new(provider: AlloyProvider, addresses: Vec<Address>) -> Self {
         assert!(
             !addresses.is_empty(),
             "CoWSwapOnchainOrdersContract must have at least one address to listen to."
         );
-        Self { web3, addresses }
+        Self {
+            provider,
+            addresses,
+        }
     }
 }
 
@@ -44,6 +47,6 @@ impl AlloyEventRetrieving for CoWSwapOnchainOrdersContract {
     }
 
     fn provider(&self) -> &alloy::providers::DynProvider {
-        &self.web3.provider
+        &self.provider
     }
 }

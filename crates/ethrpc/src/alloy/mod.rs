@@ -53,37 +53,64 @@ fn unbuffered_rpc(url: &str, label: Option<&str>) -> RpcClient {
         .http(url.parse().unwrap())
 }
 
+/// Builds an [`AlloyProvider`] on top of the given client.
+///
+/// A wallet is only attached when the caller actually signs transactions.
+/// Alloy's wallet filler fills the `from` field of *every* request it sees,
+/// `eth_call` included, so a [`MutWallet`] on a provider that never signs means
+/// taking a lock (and blocking the runtime worker) on each of them.
+pub(crate) fn build_provider(client: RpcClient, wallet: Option<MutWallet>) -> AlloyProvider {
+    // `with_simple_nonce_management` queries the node for the nonce every time
+    // that it is needed; it adds overhead but makes working with alloy at the
+    // same time much simpler.
+    match wallet {
+        Some(wallet) => ProviderBuilder::new()
+            .wallet(wallet)
+            .with_simple_nonce_management()
+            .connect_client(client)
+            .erased(),
+        None => ProviderBuilder::new()
+            .with_simple_nonce_management()
+            .connect_client(client)
+            .erased(),
+    }
+}
+
 /// Creates an unbuffered provider for the given URL and label.
 ///
 /// Unlike [`provider()`], this does not include batching.
 /// Useful for read-only operations like block polling.
+pub fn unbuffered_provider(url: &str, label: Option<&str>) -> AlloyProvider {
+    build_provider(unbuffered_rpc(url, label), None)
+}
+
+/// Same as [`unbuffered_provider()`] but with an empty [`MutWallet`] attached.
 ///
-/// Returns a copy of the [`MutWallet`] so the caller can modify it later.
-pub fn unbuffered_provider(url: &str, label: Option<&str>) -> (AlloyProvider, MutWallet) {
-    let rpc = unbuffered_rpc(url, label);
+/// Returns a copy of the [`MutWallet`] so the caller can register signers
+/// later.
+pub fn unbuffered_signing_provider(url: &str, label: Option<&str>) -> (AlloyProvider, MutWallet) {
     let wallet = MutWallet::default();
-    let provider = ProviderBuilder::new()
-        .wallet(wallet.clone())
-        .with_simple_nonce_management()
-        .connect_client(rpc)
-        .erased();
+    let provider = build_provider(unbuffered_rpc(url, label), Some(wallet.clone()));
 
     (provider, wallet)
 }
 
-/// Creates a provider with the provided URL and an empty [`MutWallet`].
+/// Creates a provider with the provided URL that cannot sign transactions.
+pub fn provider(url: &str, config: Config, label: Option<&str>) -> AlloyProvider {
+    build_provider(rpc(url, config, label), None)
+}
+
+/// Same as [`provider()`] but with an empty [`MutWallet`] attached.
 ///
-/// Returns a copy of the [`MutWallet`] so the caller can modify it later.
-pub fn provider(url: &str, config: Config, label: Option<&str>) -> (AlloyProvider, MutWallet) {
-    let rpc = rpc(url, config, label);
+/// Returns a copy of the [`MutWallet`] so the caller can register signers
+/// later.
+pub fn signing_provider(
+    url: &str,
+    config: Config,
+    label: Option<&str>,
+) -> (AlloyProvider, MutWallet) {
     let wallet = MutWallet::default();
-    let provider = ProviderBuilder::new()
-        .wallet(wallet.clone())
-        // will query the node for the nonce every time that it is needed
-        // adds overhead but makes working with alloy at the same time much simpler
-        .with_simple_nonce_management()
-        .connect_client(rpc)
-        .erased();
+    let provider = build_provider(rpc(url, config, label), Some(wallet.clone()));
 
     (provider, wallet)
 }
@@ -120,12 +147,8 @@ impl ProviderSignerExt for AlloyProvider {
     fn without_wallet(&self) -> Self {
         let is_local = self.client().is_local();
         let transport = self.client().transport().clone();
-        let client = RpcClient::with_random_id(transport, is_local);
 
-        ProviderBuilder::new()
-            .with_simple_nonce_management()
-            .connect_client(client)
-            .erased()
+        build_provider(RpcClient::with_random_id(transport, is_local), None)
     }
 }
 

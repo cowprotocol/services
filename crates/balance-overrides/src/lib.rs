@@ -35,26 +35,26 @@ pub struct StateOverrides {
 
 impl StateOverrides {
     /// Creates a new instance with default detection parameters.
-    pub fn new(web3: ethrpc::Web3) -> Self {
-        Self::with_config(web3, 60, detector::DEFAULT_VERIFICATION_TIMEOUT, 1000)
+    pub fn new(provider: ethrpc::AlloyProvider) -> Self {
+        Self::with_config(provider, 60, detector::DEFAULT_VERIFICATION_TIMEOUT, 1000)
     }
 
     /// Creates a new instance with custom detection parameters.
     pub fn with_config(
-        web3: ethrpc::Web3,
+        provider: ethrpc::AlloyProvider,
         probing_depth: u8,
         verification_timeout: std::time::Duration,
         cache_size: u64,
     ) -> Self {
         Self {
             balance_detector: balance::Detector::new(
-                web3.clone(),
+                provider.clone(),
                 probing_depth,
                 verification_timeout,
                 cache_size,
             ),
             approval_detector: approval::Detector::new(
-                web3,
+                provider,
                 probing_depth,
                 verification_timeout,
                 cache_size,
@@ -229,7 +229,7 @@ mod tests {
         };
 
         let mock_web3 = mock::web3();
-        let state_overrides = StateOverrides::new(mock_web3);
+        let state_overrides = StateOverrides::new(mock_web3.provider);
 
         state_overrides
             .balance_detector
@@ -271,7 +271,7 @@ mod tests {
         };
 
         let mock_web3 = mock::web3();
-        let state_overrides = StateOverrides::new(mock_web3);
+        let state_overrides = StateOverrides::new(mock_web3.provider);
 
         state_overrides
             .balance_detector
@@ -316,7 +316,7 @@ mod tests {
         };
 
         let mock_web3 = mock::web3();
-        let state_overrides = StateOverrides::new(mock_web3);
+        let state_overrides = StateOverrides::new(mock_web3.provider);
 
         state_overrides
             .approval_detector
@@ -362,7 +362,7 @@ mod tests {
         };
 
         let mock_web3 = mock::web3();
-        let state_overrides = StateOverrides::new(mock_web3);
+        let state_overrides = StateOverrides::new(mock_web3.provider);
 
         state_overrides
             .approval_detector
