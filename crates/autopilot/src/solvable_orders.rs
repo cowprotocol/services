@@ -131,7 +131,7 @@ impl Metrics {
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
     persistence: infra::Persistence,
-    banned_users: banned::Users,
+    banned_users: Arc<banned::Users>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     deny_listed_tokens: DenyListedTokens,
     cache: Mutex<Option<Inner>>,
@@ -157,7 +157,7 @@ impl SolvableOrdersCache {
     pub fn new(
         min_order_validity_period: Duration,
         persistence: infra::Persistence,
-        banned_users: banned::Users,
+        banned_users: Arc<banned::Users>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         deny_listed_tokens: DenyListedTokens,
         native_price_estimator: Arc<NativePriceUpdater>,
