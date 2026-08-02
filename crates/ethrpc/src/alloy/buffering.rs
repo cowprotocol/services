@@ -11,13 +11,11 @@
 //! to the next layer, and reports the results of the individual calls back via
 //! another channel.
 //!
-//! To prevent a single caller from monopolizing the pipeline (e.g. the balance
-//! cache dumping thousands of requests just before the auction assembler needs
-//! a handful), each enqueued call is tagged with the tokio task id of the
-//! caller. The background worker keeps a queue per caller and assembles
-//! batches by round-robin across those queues. Fairness is best-effort: it
-//! depends on each subsystem driving its RPC calls from a stable task rather
-//! than spawning a fresh task per request.
+//! To prevent a single caller from monopolizing the pipeline, each enqueued
+//! call is tagged with the tokio task id of the caller. The background worker
+//! keeps a queue per caller and assembles batches by round-robin across those
+//! queues. Fairness is best-effort: it depends on each subsystem driving its
+//! RPC calls from a stable task rather than spawning a fresh task per request.
 use {
     crate::Config,
     alloy_json_rpc::{RequestPacket, Response, ResponsePacket, SerializedRequest},
