@@ -129,6 +129,7 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
         maintenance: MaintenanceSync,
+        banned_users: Arc<infra::banned::Users>,
     ) -> Self {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
@@ -137,7 +138,7 @@ impl RunLoop {
         let wake_notify = Arc::new(tokio::sync::Notify::new());
 
         // Spawn background tasks to listen for events
-        persistence.spawn_order_listener(wake_notify.clone());
+        persistence.spawn_order_listener(wake_notify.clone(), banned_users);
         Self::spawn_block_listener(eth.current_block().clone(), wake_notify.clone());
 
         Self {

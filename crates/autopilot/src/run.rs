@@ -470,23 +470,25 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         config.price_estimation.max_quote_timeout,
     ));
 
+    let banned_users = Arc::new(infra::banned::Users::new(
+        eth.contracts().chainalysis_oracle().clone(),
+        config
+            .banned_users
+            .hermod
+            .clone()
+            .map(|hermod| infra::banned::HermodConfig {
+                url: hermod.url,
+                hmac_key: hermod.hmac_key,
+                api_key: hermod.api_key,
+            }),
+        config.banned_users.addresses,
+        config.banned_users.max_cache_size.get().to_u64().unwrap(),
+    ));
+
     let solvable_orders_cache = SolvableOrdersCache::new(
         config.min_order_validity_period,
         persistence.clone(),
-        infra::banned::Users::new(
-            eth.contracts().chainalysis_oracle().clone(),
-            config
-                .banned_users
-                .hermod
-                .clone()
-                .map(|hermod| infra::banned::HermodConfig {
-                    url: hermod.url,
-                    hmac_key: hermod.hmac_key,
-                    api_key: hermod.api_key,
-                }),
-            config.banned_users.addresses,
-            config.banned_users.max_cache_size.get().to_u64().unwrap(),
-        ),
+        banned_users.clone(),
         balance_fetcher.clone(),
         deny_listed_tokens.clone(),
         competition_native_price_updater.clone(),
@@ -652,6 +654,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             startup,
         },
         awaiter,
+        banned_users,
     );
     run.run_forever(shutdown_controller).await;
 

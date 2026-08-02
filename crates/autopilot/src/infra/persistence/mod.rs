@@ -8,7 +8,7 @@ use {
         },
     },
     ::winner_selection::state::RankedItem,
-    alloy::primitives::B256,
+    alloy::primitives::{Address, B256},
     anyhow::Context,
     bigdecimal::{BigDecimal, ToPrimitive},
     boundary::database::byte_array::ByteArray,
@@ -99,10 +99,59 @@ impl Persistence {
         LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
     }
 
+    /// Spawns a long running task that looks up the banned status of every
+    /// address pushed into the returned queue, warming the shared cache.
+    /// Lookups are batched: a batch is flushed once it reaches `BATCH_SIZE`
+    /// addresses or `BATCH_DELAY` after its first address, whichever comes
+    /// first.
+    fn spawn_banned_prefetch_task(
+        banned_users: Arc<crate::infra::banned::Users>,
+    ) -> mpsc::Sender<Address> {
+        const BATCH_SIZE: usize = 50;
+        const BATCH_DELAY: Duration = Duration::from_secs(1);
+        // A few batches of headroom; prefetching is best effort so there is
+        // no need for backpressure — dropping an address on overflow just
+        // moves the lookup back to the auction cut.
+        const QUEUE_SIZE: usize = BATCH_SIZE * 4;
+
+        let (sender, mut receiver) = mpsc::channel(QUEUE_SIZE);
+        tokio::spawn(async move {
+            while let Some(address) = receiver.recv().await {
+                let mut batch = HashSet::from([address]);
+                let deadline = tokio::time::sleep(BATCH_DELAY);
+                tokio::pin!(deadline);
+                loop {
+                    tokio::select! {
+                        () = &mut deadline => break,
+                        next = receiver.recv() => {
+                            let Some(address) = next else { break };
+                            batch.insert(address);
+                            if batch.len() >= BATCH_SIZE {
+                                break;
+                            }
+                        }
+                    }
+                }
+                banned_users.banned(batch).await;
+            }
+            tracing::error!("banned users prefetch task terminated unexpectedly");
+        });
+        sender
+    }
+
     /// Spawns a background task that listens for new order notifications from
     /// PostgreSQL and notifies via the provided Notify.
-    pub fn spawn_order_listener(&self, notify: Arc<tokio::sync::Notify>) {
+    ///
+    /// Additionally warms the banned users cache for new orders' owners
+    /// (batched, best effort) so the auction cut doesn't pay for the remote
+    /// lookup on its critical path.
+    pub fn spawn_order_listener(
+        &self,
+        notify: Arc<tokio::sync::Notify>,
+        banned_users: Arc<crate::infra::banned::Users>,
+    ) {
         let pool = self.postgres.pool.clone();
+        let prefetch_queue = Self::spawn_banned_prefetch_task(banned_users);
         tokio::spawn(async move {
             loop {
                 let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
@@ -127,6 +176,25 @@ impl Persistence {
                         Ok(notification) => {
                             let order_uid = notification.payload();
                             tracing::debug!(order_uid, "received order notification from postgres");
+                            // Best effort: the receiver (distinct from the
+                            // owner in ~3% of orders) is not derivable from
+                            // the payload and remains a cut-time lookup
+                            match order_uid_from_notification(order_uid) {
+                                Some(uid) => {
+                                    if let Err(err) = prefetch_queue.try_send(uid.owner()) {
+                                        tracing::debug!(
+                                            ?err,
+                                            "failed to enqueue banned status prefetch"
+                                        );
+                                    }
+                                }
+                                None => {
+                                    tracing::warn!(
+                                        order_uid,
+                                        "malformed order notification payload"
+                                    )
+                                }
+                            }
                             notify.notify_one();
                         }
                         Err(err) => {
@@ -1032,6 +1100,13 @@ impl Persistence {
             .map(|o| crate::domain::OrderUid(o.0))
             .collect())
     }
+}
+
+/// Parses the payload of a `new_order` notification: the hex encoded order
+/// UID as emitted by the `order_insert_notify` database trigger.
+fn order_uid_from_notification(payload: &str) -> Option<domain::OrderUid> {
+    let bytes = alloy::hex::decode(payload).ok()?;
+    Some(domain::OrderUid(bytes.try_into().ok()?))
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
