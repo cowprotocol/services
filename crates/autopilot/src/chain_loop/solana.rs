@@ -1,8 +1,11 @@
 //! Skeleton proving the Chain abstraction admits a non EVM chain.
-//! Placeholder newtypes stand in for solana-sdk types on purpose, the
-//! autopilot must not grow a solana dependency for a spike. Seams are
-//! constructible stubs so AuctionLoop<SolanaChain> instantiates next to
-//! AuctionLoop<EvmChain>, none of them has a backend yet.
+//!
+//! The type vocabulary (Pubkey, IntentHash, u64 amounts) comes from the
+//! winner-selection crate's Solana instantiation, so the loop and the
+//! shared CIP-38 logic agree on types by construction. The WinnerSelection
+//! seam is real: it runs the same generic arbitrator the EVM loop uses.
+//! The remaining seams are constructible stubs, their backends (slot
+//! stream, orderbook, driver protocol, persistence) do not exist yet.
 
 use {
     super::{
@@ -17,7 +20,11 @@ use {
         WinnerSelection,
     },
     async_trait::async_trait,
-    std::collections::HashSet,
+    std::collections::{HashMap, HashSet},
+    winner_selection::{
+        self as ws,
+        solana::{IntentHash, Pubkey},
+    },
 };
 
 pub struct SolanaChain;
@@ -28,19 +35,12 @@ pub struct SolanaTip {
     pub slot: u64,
 }
 
-/// 32 byte account id (ed25519 pubkey).
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct SolanaAddress(pub [u8; 32]);
-
-/// Placeholder order id, unlike the EVM 56 byte uid it does not embed
-/// owner and validity.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct SolanaOrderUid(pub [u8; 32]);
-
+/// A solvable order as the auction carries it: enough for the dedupe and
+/// for building the winner-selection context.
 #[derive(Clone, PartialEq, Debug)]
 pub struct SolanaOrder {
-    pub uid: SolanaOrderUid,
-    pub owner: SolanaAddress,
+    pub uid: IntentHash,
+    pub owner: Pubkey,
 }
 
 #[derive(Clone, Debug)]
@@ -48,31 +48,26 @@ pub struct SolanaAuction {
     pub id: i64,
     pub slot: u64,
     pub orders: Vec<SolanaOrder>,
+    /// Native (wSOL) prices per mint, lamport-scaled.
+    pub prices: HashMap<Pubkey, u64>,
 }
 
 impl PartialEq for SolanaAuction {
     // the dedupe must ignore the allocated id, same as domain::Auction
     fn eq(&self, other: &Self) -> bool {
-        self.slot == other.slot && self.orders == other.orders
+        self.slot == other.slot && self.orders == other.orders && self.prices == other.prices
     }
-}
-
-pub struct SolanaSolution {
-    pub solver: SolanaAddress,
-    pub order_uids: Vec<SolanaOrderUid>,
-}
-
-pub struct SolanaRanking {
-    pub winners: Vec<SolanaSolution>,
-    pub non_winners: Vec<SolanaSolution>,
 }
 
 impl Chain for SolanaChain {
     type Auction = SolanaAuction;
     type AuctionId = i64;
-    type OrderUid = SolanaOrderUid;
-    type Ranking = SolanaRanking;
-    type Solution = SolanaSolution;
+    type OrderUid = IntentHash;
+    /// The shared crate's ranking over Solana types, same struct the EVM
+    /// loop consumes over EVM types.
+    type Ranking = ws::Ranking<ws::solana::Solana>;
+    /// A solver's proposed execution in the shared crate's vocabulary.
+    type Solution = ws::Solution<ws::Unscored, ws::solana::Solana>;
     // slot by which winners must have settled
     type SubmissionDeadline = u64;
     type Tip = SolanaTip;
@@ -84,22 +79,20 @@ impl AuctionInfo<SolanaChain> for SolanaAuction {
     }
 }
 
-impl RankingInfo<SolanaChain> for SolanaRanking {
+impl RankingInfo<SolanaChain> for ws::Ranking<ws::solana::Solana> {
     fn winner_count(&self) -> usize {
-        self.winners.len()
+        self.winners().count()
     }
 
-    fn winning_order_uids(&self) -> HashSet<SolanaOrderUid> {
-        self.winners
-            .iter()
-            .flat_map(|solution| solution.order_uids.iter().copied())
+    fn winning_order_uids(&self) -> HashSet<IntentHash> {
+        self.winners()
+            .flat_map(|solution| solution.orders().iter().map(|order| order.uid))
             .collect()
     }
 
-    fn considered_order_uids(&self) -> HashSet<SolanaOrderUid> {
-        self.non_winners
-            .iter()
-            .flat_map(|solution| solution.order_uids.iter().copied())
+    fn considered_order_uids(&self) -> HashSet<IntentHash> {
+        self.non_winners()
+            .flat_map(|solution| solution.orders().iter().map(|order| order.uid))
             .collect()
     }
 }
@@ -134,20 +127,52 @@ pub struct SolanaSolverCompetition;
 
 #[async_trait]
 impl SolverCompetition<SolanaChain> for SolanaSolverCompetition {
-    async fn solve(&self, _auction: &SolanaAuction) -> Vec<SolanaSolution> {
+    async fn solve(
+        &self,
+        _auction: &SolanaAuction,
+    ) -> Vec<ws::Solution<ws::Unscored, ws::solana::Solana>> {
         unimplemented!("spike: no solana driver protocol exists yet")
     }
 }
 
-pub struct SolanaWinnerSelection;
+/// The real thing: CIP-38 winner selection through the same generic
+/// arbitrator the EVM loop uses, instantiated over Solana types.
+pub struct SolanaWinnerSelection {
+    arbitrator: ws::Arbitrator<ws::solana::Solana>,
+}
+
+impl SolanaWinnerSelection {
+    pub fn new(max_winners: usize, wsol_mint: Pubkey) -> Self {
+        Self {
+            arbitrator: ws::Arbitrator {
+                max_winners,
+                wrapped_native: wsol_mint,
+            },
+        }
+    }
+}
 
 impl WinnerSelection<SolanaChain> for SolanaWinnerSelection {
     fn arbitrate(
         &self,
-        _solutions: Vec<SolanaSolution>,
-        _auction: &SolanaAuction,
-    ) -> SolanaRanking {
-        unimplemented!("spike: winner-selection crate is Address and U256 typed")
+        solutions: Vec<ws::Solution<ws::Unscored, ws::solana::Solana>>,
+        auction: &SolanaAuction,
+    ) -> ws::Ranking<ws::solana::Solana> {
+        let context = ws::AuctionContext::<ws::solana::Solana> {
+            // Every auction order is a user order. No protocol fees at the
+            // demo stage, so the policy list is empty but present, which is
+            // what makes the order count toward the score.
+            fee_policies: auction
+                .orders
+                .iter()
+                .map(|order| (order.uid, vec![]))
+                .collect(),
+            // JIT surplus capture is unsupported on Solana, the intent hash
+            // embeds no owner to attribute.
+            surplus_capturing_jit_order_owners: HashSet::new(),
+            native_prices: auction.prices.clone(),
+        };
+        self.arbitrator.arbitrate(solutions, &context)
     }
 }
 
@@ -159,7 +184,12 @@ impl SettlementExecutor<SolanaChain> for SolanaSettlementExecutor {
         unimplemented!("spike: solana submission windows are undecided")
     }
 
-    async fn execute(&self, _auction_id: i64, _ranking: &SolanaRanking, _deadline: u64) {
+    async fn execute(
+        &self,
+        _auction_id: i64,
+        _ranking: &ws::Ranking<ws::solana::Solana>,
+        _deadline: u64,
+    ) {
         unimplemented!("spike: no solana settlement submission exists yet")
     }
 }
@@ -176,21 +206,21 @@ impl SettlementObserver<SolanaChain> for SolanaSettlementObserver {
         &self,
         _auction: &SolanaAuction,
         _tip: &SolanaTip,
-        _ranking: &SolanaRanking,
+        _ranking: &ws::Ranking<ws::solana::Solana>,
         _deadline: u64,
     ) -> anyhow::Result<()> {
         unimplemented!("spike: no solana persistence exists yet")
     }
 
-    fn orders_matched(
-        &self,
-        _executing: HashSet<SolanaOrderUid>,
-        _considered: HashSet<SolanaOrderUid>,
-    ) {
+    fn orders_matched(&self, _executing: HashSet<IntentHash>, _considered: HashSet<IntentHash>) {
         unimplemented!("spike: no solana persistence exists yet")
     }
 
-    fn competition_ended(&self, _auction: &SolanaAuction, _ranking: &SolanaRanking) {
+    fn competition_ended(
+        &self,
+        _auction: &SolanaAuction,
+        _ranking: &ws::Ranking<ws::solana::Solana>,
+    ) {
         unimplemented!("spike: no solana persistence exists yet")
     }
 }

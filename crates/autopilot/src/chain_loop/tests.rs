@@ -469,7 +469,10 @@ async fn instantiates_for_evm_and_solana() {
         Box::new(solana::SolanaCycleTrigger),
         Box::new(solana::SolanaAuctionProvider),
         Box::new(solana::SolanaSolverCompetition),
-        Box::new(solana::SolanaWinnerSelection),
+        Box::new(solana::SolanaWinnerSelection::new(
+            10,
+            ::winner_selection::solana::Pubkey([0xff; 32]),
+        )),
         Box::new(solana::SolanaSettlementExecutor),
         Box::new(solana::SolanaSettlementObserver),
         Box::new(AlwaysLeader),
@@ -508,5 +511,62 @@ async fn instantiates_for_evm_and_solana() {
             .as_ref()
             .as_ref()
             .is_some_and(|flag| flag.load(Ordering::Acquire))
+    );
+}
+
+/// The composition proof: the WinnerSelection seam (spike 1) executes the
+/// shared generic CIP-38 arbitrator (spike 2) over Solana types. Same
+/// algorithm crate the EVM loop uses, no Solana copy of the logic.
+#[test]
+fn solana_seam_runs_the_shared_cip38_arbitrator() {
+    use ::winner_selection::{
+        solana::{IntentHash, Pubkey},
+        solution::Solution as WsSolution,
+        state::RankedItem,
+    };
+
+    let uid = IntentHash([1; 32]);
+    let (mint_a, mint_b) = (Pubkey([1; 32]), Pubkey([2; 32]));
+    let order = |executed_buy: u64| ::winner_selection::solution::Order {
+        uid,
+        sell_token: mint_a,
+        buy_token: mint_b,
+        sell_amount: 100,
+        buy_amount: 90,
+        executed_sell: 100,
+        executed_buy,
+        side: ::winner_selection::Side::Sell,
+    };
+    let auction = solana::SolanaAuction {
+        id: 7,
+        slot: 1000,
+        orders: vec![solana::SolanaOrder {
+            uid,
+            owner: Pubkey([9; 32]),
+        }],
+        prices: [(mint_b, 1_000_000_000u64)].into(),
+    };
+    let solutions = vec![
+        WsSolution::new(1, Pubkey([3; 32]), vec![order(95)]),
+        WsSolution::new(2, Pubkey([4; 32]), vec![order(92)]),
+    ];
+
+    let seam = solana::SolanaWinnerSelection::new(10, Pubkey([0xff; 32]));
+    let ranking = WinnerSelection::<solana::SolanaChain>::arbitrate(&seam, solutions, &auction);
+
+    // The generic arbitrator picked one winner (uniform directional price)
+    // and the loop-facing RankingInfo view feeds the bookkeeping sets.
+    assert_eq!(
+        ranking.winners().map(|s| s.id()).collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert_eq!(ranking.ranked[0].score(), 5);
+    assert_eq!(
+        RankingInfo::<solana::SolanaChain>::winning_order_uids(&ranking),
+        HashSet::from([uid])
+    );
+    assert_eq!(
+        RankingInfo::<solana::SolanaChain>::winner_count(&ranking),
+        1
     );
 }
