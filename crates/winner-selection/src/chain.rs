@@ -1,6 +1,6 @@
 //! Chain vocabulary for winner selection.
 //!
-//! The CIP-38 algorithm is chain-agnostic: it needs identifiers it can hash
+//! The winner-selection algorithm is chain-agnostic: it needs identifiers it can hash
 //! and compare, amounts it can do checked arithmetic on, and three small
 //! chain-specific hooks. Everything else in this crate is written once,
 //! generic over [`ChainTypes`].

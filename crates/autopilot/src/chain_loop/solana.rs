@@ -2,7 +2,7 @@
 //!
 //! The type vocabulary (Pubkey, IntentHash, u64 amounts) comes from the
 //! winner-selection crate's Solana instantiation, so the loop and the
-//! shared CIP-38 logic agree on types by construction. The WinnerSelection
+//! shared winner-selection logic agree on types by construction. The WinnerSelection
 //! seam is real: it runs the same generic arbitrator the EVM loop uses.
 //! The remaining seams are constructible stubs, their backends (slot
 //! stream, orderbook, driver protocol, persistence) do not exist yet.
@@ -135,7 +135,7 @@ impl SolverCompetition<SolanaChain> for SolanaSolverCompetition {
     }
 }
 
-/// The real thing: CIP-38 winner selection through the same generic
+/// The real thing: winner selection through the same generic
 /// arbitrator the EVM loop uses, instantiated over Solana types.
 pub struct SolanaWinnerSelection {
     arbitrator: ws::Arbitrator<ws::solana::Solana>,
