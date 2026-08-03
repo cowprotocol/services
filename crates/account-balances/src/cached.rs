@@ -64,14 +64,22 @@ pub struct Balances {
     /// Cached entries that haven't been requested for this long get evicted
     /// on the next block refresh.
     eviction_time: Duration,
+    /// Cap the refresh rate so that fast chains don't burn CPU. New blocks
+    /// that arrive during this window get coalesced into a single refresh.
+    min_refresh_interval: Duration,
 }
 
 impl Balances {
-    pub fn new(inner: Arc<dyn BalanceFetching>, eviction_time: Duration) -> Self {
+    pub fn new(
+        inner: Arc<dyn BalanceFetching>,
+        eviction_time: Duration,
+        min_refresh_interval: Duration,
+    ) -> Self {
         Self {
             inner,
             balance_cache: Default::default(),
             eviction_time,
+            min_refresh_interval,
         }
     }
 }
@@ -102,11 +110,13 @@ impl Balances {
         let inner = self.inner.clone();
         let cache = self.balance_cache.clone();
         let eviction_time = self.eviction_time;
+        let min_refresh_interval = self.min_refresh_interval;
         let mut stream = into_stream(block_stream);
 
         let task = async move {
             while stream.next().await.is_some() {
                 Self::refresh_balances(inner.as_ref(), &cache, eviction_time).await;
+                tokio::time::sleep(min_refresh_interval).await;
             }
             tracing::error!("block stream terminated unexpectedly");
         };
@@ -217,6 +227,7 @@ mod tests {
     };
 
     const TEST_EVICTION_TIME: Duration = Duration::from_millis(100);
+    const TEST_MIN_REFRESH_INTERVAL: Duration = Duration::from_millis(1);
 
     fn query(token: u8) -> Query {
         Query {
@@ -237,7 +248,11 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Ok(U256::ONE)]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
+        let fetcher = Balances::new(
+            Arc::new(inner),
+            TEST_EVICTION_TIME,
+            TEST_MIN_REFRESH_INTERVAL,
+        );
         // 1st call to `inner`.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
@@ -255,7 +270,11 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Err(anyhow::anyhow!("some error"))]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
+        let fetcher = Balances::new(
+            Arc::new(inner),
+            TEST_EVICTION_TIME,
+            TEST_MIN_REFRESH_INTERVAL,
+        );
         // 1st call to `inner`.
         assert!(fetcher.get_balances(&[query(1)]).await[0].is_err());
         // 2nd call to `inner`.
@@ -274,7 +293,11 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Ok(U256::ONE)]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
+        let fetcher = Balances::new(
+            Arc::new(inner),
+            TEST_EVICTION_TIME,
+            TEST_MIN_REFRESH_INTERVAL,
+        );
         fetcher.spawn_background_task(receiver);
 
         // 1st call to `inner`. Balance gets cached.
@@ -311,7 +334,11 @@ mod tests {
             .withf(|arg| arg == [query(2)])
             .returning(|_| vec![Ok(U256::from(2))]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
+        let fetcher = Balances::new(
+            Arc::new(inner),
+            TEST_EVICTION_TIME,
+            TEST_MIN_REFRESH_INTERVAL,
+        );
         // 1st call to `inner` putting balance 1 into the cache.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
@@ -337,7 +364,11 @@ mod tests {
             .times(2)
             .returning(|_| vec![Ok(U256::ONE)]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
+        let fetcher = Balances::new(
+            Arc::new(inner),
+            TEST_EVICTION_TIME,
+            TEST_MIN_REFRESH_INTERVAL,
+        );
         fetcher.spawn_background_task(receiver);
 
         let cached_entry = || {
