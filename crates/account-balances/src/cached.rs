@@ -9,28 +9,22 @@ use {
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
+        time::{Duration, Instant},
     },
     tracing::{Instrument, instrument},
 };
 
-type BlockNumber = u64;
-
-/// Balances get removed from the cache after this many blocks without being
-/// requested.
-const EVICTION_TIME: BlockNumber = 5;
-
 #[derive(Default)]
 struct BalanceCache {
-    last_seen_block: BlockNumber,
     data: HashMap<Query, BalanceEntry>,
 }
 
 impl BalanceCache {
     /// Retrieves cached balance and updates the `requested_at` field.
-    fn get_cached_balance(&mut self, query: &Query) -> Option<U256> {
+    fn get_cached_balance(&mut self, query: &Query, now: Instant) -> Option<U256> {
         match self.data.get_mut(query) {
             Some(entry) => {
-                entry.requested_at = self.last_seen_block;
+                entry.requested_at = now;
                 Some(entry.balance)
             }
             None => None,
@@ -39,26 +33,19 @@ impl BalanceCache {
 
     /// Only updates existing balances. This should always be used in the
     /// background task.
-    fn update_balance(&mut self, query: &Query, balance: U256, update_block: BlockNumber) {
-        if update_block < self.last_seen_block {
-            // This should never realistically happen.
-            return;
-        }
-
+    fn update_balance(&mut self, query: &Query, balance: U256) {
         if let Some(entry) = self.data.get_mut(query) {
-            entry.updated_at = update_block;
             entry.balance = balance;
         }
     }
 
     /// Only inserts new balances. This should always be used when we needed to
     /// fetch a balance because it was requested by a backend component.
-    fn insert_balance(&mut self, query: Query, balance: U256, requested_at: BlockNumber) {
+    fn insert_balance(&mut self, query: Query, balance: U256) {
         self.data.insert(
             query,
             BalanceEntry {
-                requested_at,
-                updated_at: requested_at,
+                requested_at: Instant::now(),
                 balance,
             },
         );
@@ -67,21 +54,24 @@ impl BalanceCache {
 
 #[derive(Debug, Clone)]
 struct BalanceEntry {
-    requested_at: BlockNumber,
-    updated_at: BlockNumber,
+    requested_at: Instant,
     balance: U256,
 }
 
 pub struct Balances {
     inner: Arc<dyn BalanceFetching>,
     balance_cache: Arc<Mutex<BalanceCache>>,
+    /// Cached entries that haven't been requested for this long get evicted
+    /// on the next block refresh.
+    eviction_time: Duration,
 }
 
 impl Balances {
-    pub fn new(inner: Arc<dyn BalanceFetching>) -> Self {
+    pub fn new(inner: Arc<dyn BalanceFetching>, eviction_time: Duration) -> Self {
         Self {
             inner,
             balance_cache: Default::default(),
+            eviction_time,
         }
     }
 }
@@ -91,68 +81,76 @@ struct CacheResponse {
     cached: Vec<(usize, Result<U256>)>,
     // Indices of queries that were not in the cache.
     missing: Vec<usize>,
-    requested_at: BlockNumber,
 }
 
 impl Balances {
     fn get_cached_balances(&self, queries: &[Query]) -> CacheResponse {
         let mut cache = self.balance_cache.lock().unwrap();
+        let now = Instant::now();
         let (cached, missing) = queries
             .iter()
             .enumerate()
-            .partition_map(|(i, query)| match cache.get_cached_balance(query) {
+            .partition_map(|(i, query)| match cache.get_cached_balance(query, now) {
                 Some(balance) => itertools::Either::Left((i, Ok(balance))),
                 None => itertools::Either::Right(i),
             });
-        CacheResponse {
-            cached,
-            missing,
-            requested_at: cache.last_seen_block,
-        }
+        CacheResponse { cached, missing }
     }
 
     /// Spawns task that refreshes the cached balances on every new block.
     pub fn spawn_background_task(&self, block_stream: CurrentBlockWatcher) {
         let inner = self.inner.clone();
         let cache = self.balance_cache.clone();
+        let eviction_time = self.eviction_time;
         let mut stream = into_stream(block_stream);
 
         let task = async move {
-            while let Some(block) = stream.next().await {
-                let balances_to_update = {
-                    let mut cache = cache.lock().unwrap();
-                    cache.last_seen_block = block.number;
-                    cache
-                        .data
-                        .iter()
-                        .filter_map(|(query, entry)| {
-                            // Only update balances that have been requested recently.
-                            let oldest_allowed_request =
-                                cache.last_seen_block.saturating_sub(EVICTION_TIME);
-                            (entry.requested_at >= oldest_allowed_request).then_some(query.clone())
-                        })
-                        .collect_vec()
-                };
-
-                let results = inner.get_balances(&balances_to_update).await;
-
-                let mut cache = cache.lock().unwrap();
-                balances_to_update
-                    .into_iter()
-                    .zip(results)
-                    .for_each(|(query, result)| {
-                        if let Ok(balance) = result {
-                            cache.update_balance(&query, balance, block.number);
-                        }
-                    });
-                cache.data.retain(|_, value| {
-                    // Only keep balances where we know we have the most recent data.
-                    value.updated_at >= block.number
-                });
+            while stream.next().await.is_some() {
+                Self::refresh_balances(inner.as_ref(), &cache, eviction_time).await;
             }
             tracing::error!("block stream terminated unexpectedly");
         };
         tokio::spawn(task.instrument(tracing::info_span!("balance_cache")));
+    }
+
+    /// Evicts entries that haven't been requested within `eviction_time` and
+    /// refreshes the remaining cached balances.
+    #[instrument(skip_all)]
+    async fn refresh_balances(
+        fetcher: &dyn BalanceFetching,
+        cache: &Mutex<BalanceCache>,
+        eviction_time: Duration,
+    ) {
+        let balances_to_update = {
+            let mut cache = cache.lock().unwrap();
+            let now = Instant::now();
+            let mut to_update = Vec::with_capacity(cache.data.len());
+            cache.data.retain(|query, entry| {
+                let recently_requested =
+                    now.saturating_duration_since(entry.requested_at) <= eviction_time;
+                if recently_requested {
+                    to_update.push(query.clone());
+                }
+                recently_requested
+            });
+            to_update
+        };
+
+        if balances_to_update.is_empty() {
+            return;
+        }
+
+        let results = fetcher.get_balances(&balances_to_update).await;
+
+        let mut cache = cache.lock().unwrap();
+        balances_to_update
+            .into_iter()
+            .zip(results)
+            .for_each(|(query, result)| {
+                if let Ok(balance) = result {
+                    cache.update_balance(&query, balance);
+                }
+            });
     }
 }
 
@@ -163,7 +161,6 @@ impl BalanceFetching for Balances {
         let CacheResponse {
             mut cached,
             missing,
-            requested_at,
         } = self.get_cached_balances(queries);
 
         if missing.is_empty() {
@@ -177,7 +174,7 @@ impl BalanceFetching for Balances {
             let mut cache = self.balance_cache.lock().unwrap();
             for (query, result) in missing_queries.into_iter().zip(new_balances.iter()) {
                 if let Ok(balance) = result {
-                    cache.insert_balance(query, *balance, requested_at)
+                    cache.insert_balance(query, *balance)
                 }
             }
         }
@@ -219,6 +216,8 @@ mod tests {
         model::order::SellTokenSource,
     };
 
+    const TEST_EVICTION_TIME: Duration = Duration::from_millis(100);
+
     fn query(token: u8) -> Query {
         Query {
             owner: Address::repeat_byte(1),
@@ -238,7 +237,7 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Ok(U256::ONE)]);
 
-        let fetcher = Balances::new(Arc::new(inner));
+        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
         // 1st call to `inner`.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
@@ -256,7 +255,7 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Err(anyhow::anyhow!("some error"))]);
 
-        let fetcher = Balances::new(Arc::new(inner));
+        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
         // 1st call to `inner`.
         assert!(fetcher.get_balances(&[query(1)]).await[0].is_err());
         // 2nd call to `inner`.
@@ -275,7 +274,7 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Ok(U256::ONE)]);
 
-        let fetcher = Balances::new(Arc::new(inner));
+        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
         fetcher.spawn_background_task(receiver);
 
         // 1st call to `inner`. Balance gets cached.
@@ -312,7 +311,7 @@ mod tests {
             .withf(|arg| arg == [query(2)])
             .returning(|_| vec![Ok(U256::from(2))]);
 
-        let fetcher = Balances::new(Arc::new(inner));
+        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
         // 1st call to `inner` putting balance 1 into the cache.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
@@ -335,10 +334,10 @@ mod tests {
         let mut inner = MockBalanceFetching::new();
         inner
             .expect_get_balances()
-            .times(7)
+            .times(2)
             .returning(|_| vec![Ok(U256::ONE)]);
 
-        let fetcher = Balances::new(Arc::new(inner));
+        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
         fetcher.spawn_background_task(receiver);
 
         let cached_entry = || {
@@ -351,17 +350,29 @@ mod tests {
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
-        for block in 1..=EVICTION_TIME + 1 {
-            assert!(cached_entry().is_some());
-            // New block gets detected.
-            sender
-                .send(BlockInfo {
-                    number: block,
-                    ..Default::default()
-                })
-                .unwrap();
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        }
+        // Trigger a refresh while the entry is still within the eviction window.
+        // Balance stays in the cache and gets refreshed (2nd call to `inner`).
+        sender
+            .send(BlockInfo {
+                number: 1,
+                ..Default::default()
+            })
+            .unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        assert!(cached_entry().is_some());
+
+        // Wait past the eviction window without touching the entry.
+        tokio::time::sleep(TEST_EVICTION_TIME + tokio::time::Duration::from_millis(20)).await;
+
+        // Next block triggers a refresh that evicts the stale entry during list
+        // construction and skips the `inner` call entirely.
+        sender
+            .send(BlockInfo {
+                number: 2,
+                ..Default::default()
+            })
+            .unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         assert!(cached_entry().is_none());
     }
 }
