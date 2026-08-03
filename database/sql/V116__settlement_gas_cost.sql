@@ -1,7 +1,7 @@
 -- Store the actual on-chain gas cost of each settlement transaction.
 --
 -- These values are read from the transaction receipt by the autopilot's
--- settlement observer), letting the orderbook attribute a real gas cost
+-- settlement observer, letting the orderbook attribute a real gas cost
 -- to individual trades and orders.
 --
 -- Nullable: only populated for settlements observed after this migration is
