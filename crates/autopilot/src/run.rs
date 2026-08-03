@@ -264,6 +264,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             balance_overrider,
         ),
         eth.current_block().clone(),
+        chain_id,
     );
 
     let gas_estimators: Vec<gas_price_estimation::GasEstimatorType> = config
