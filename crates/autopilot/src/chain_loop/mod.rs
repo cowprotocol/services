@@ -24,6 +24,7 @@ use {
 
 pub mod evm;
 pub mod solana;
+pub mod solvable;
 
 #[cfg(test)]
 mod tests;

@@ -17,20 +17,21 @@ use {
         SettlementObserver,
         SolverCompetition,
         WinnerSelection,
+        solvable,
     },
     crate::{
         domain,
         domain::competition::{Bid, Unscored, winner_selection},
-        infra::{self, solvers::dto::solve},
+        infra::{self, banned, solvers::dto::solve},
         leader_lock_tracker::LeaderLockTracker,
         maintenance::{MaintenanceSync, SyncTarget},
         run::Liveness,
         run_loop::{self, Probes, SlotConfig},
         solvable_orders::SolvableOrdersCache,
     },
-    alloy::primitives::B256,
+    alloy::primitives::{Address, B256, U256},
     async_trait::async_trait,
-    database::order_events::OrderEventLabel,
+    database::order_events::{OrderEventLabel, OrderFilterReason},
     eth_domain_types::WrappedNativeToken,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     rand::seq::SliceRandom,
@@ -522,5 +523,74 @@ impl AuctionLoop<EvmChain> {
             Box::new(leadership),
             probes,
         )
+    }
+}
+
+// --- solvable-orders filtering bindings ---
+
+impl solvable::FilterChain for EvmChain {
+    type BalanceKey = account_balances::Query;
+    type Data = ::winner_selection::evm::Evm;
+    type Order = model::order::Order;
+    type Reason = OrderFilterReason;
+
+    fn uid(order: &Self::Order) -> domain::OrderUid {
+        domain::OrderUid(order.metadata.uid.0)
+    }
+
+    fn owner(order: &Self::Order) -> Address {
+        order.metadata.owner
+    }
+
+    fn receiver(order: &Self::Order) -> Option<Address> {
+        order.data.receiver
+    }
+
+    fn traded_tokens(order: &Self::Order) -> [Address; 2] {
+        [order.data.sell_token, order.data.buy_token]
+    }
+
+    fn balance_key(order: &Self::Order) -> account_balances::Query {
+        account_balances::Query::from_order(order)
+    }
+}
+
+/// The banned-address backends behind the generic filter: hardcoded
+/// list, Chainalysis oracle, Hermod, all inside `banned::Users`.
+pub struct EvmBannedLookup(pub banned::Users);
+
+#[async_trait]
+impl solvable::BannedLookup<Address> for EvmBannedLookup {
+    async fn banned(&self, candidates: Vec<Address>) -> HashSet<Address> {
+        self.0.banned(candidates).await
+    }
+}
+
+/// The keep rule of solvable_orders.rs `orders_with_balance`: EIP-1271
+/// orders unlock funds via pre-interactions, settlement-contract
+/// receivers are flashloan orders, partially fillable orders need a
+/// single unit, everything else needs sell plus fee.
+pub struct EvmBalancePolicy {
+    pub settlement_contract: Address,
+}
+
+impl solvable::BalancePolicy<EvmChain> for EvmBalancePolicy {
+    fn keep(&self, order: &model::order::Order, balance: Option<&U256>) -> bool {
+        if matches!(order.signature, model::signature::Signature::Eip1271(_)) {
+            return true;
+        }
+        if order.data.receiver.as_ref() == Some(&self.settlement_contract) {
+            return true;
+        }
+        let Some(&balance) = balance else {
+            return false;
+        };
+        if order.data.partially_fillable && balance >= U256::ONE {
+            return true;
+        }
+        match order.data.sell_amount.checked_add(order.data.fee_amount) {
+            Some(needed) => balance >= needed,
+            None => false,
+        }
     }
 }

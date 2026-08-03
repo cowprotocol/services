@@ -1,20 +1,20 @@
 //! Chain vocabulary for winner selection.
 //!
-//! The winner-selection algorithm is chain-agnostic: it needs identifiers it can hash
-//! and compare, amounts it can do checked arithmetic on, and three small
-//! chain-specific hooks. Everything else in this crate is written once,
+//! The winner-selection algorithm is chain-agnostic: it needs identifiers it
+//! can hash and compare, amounts it can do checked arithmetic on, and three
+//! small chain-specific hooks. Everything else in this crate is written once,
 //! generic over [`ChainTypes`].
 
 use std::{fmt::Debug, hash::Hash};
 
 /// The per-chain type vocabulary and hooks.
-pub trait ChainTypes: Copy + Debug + Eq + Hash + 'static {
+pub trait ChainTypes: Copy + Debug + Eq + Hash + Send + Sync + 'static {
     /// Token identifier (EVM: 20-byte address, Solana: 32-byte mint).
-    type TokenId: Copy + Debug + Eq + Hash;
+    type TokenId: Copy + Debug + Eq + Hash + Send + Sync;
     /// Account identifier, used for solvers and order owners.
-    type AccountId: Copy + Debug + Eq + Hash;
+    type AccountId: Copy + Debug + Eq + Hash + Send + Sync;
     /// Order identifier (EVM: 56-byte UID, Solana: 32-byte intent hash).
-    type OrderUid: Copy + Debug + Eq + Hash;
+    type OrderUid: Copy + Debug + Eq + Hash + Send + Sync;
     /// Amount type used for token amounts, prices, and scores.
     type Amount: Amount;
 
@@ -38,7 +38,7 @@ pub trait ChainTypes: Copy + Debug + Eq + Hash + 'static {
 /// EVM code's `checked_mul` then `checked_div`), the widening variant uses
 /// a double-width intermediate and only fails if the final quotient does
 /// not fit.
-pub trait Amount: Copy + Debug + Default + Ord {
+pub trait Amount: Copy + Debug + Default + Ord + Send + Sync {
     const ZERO: Self;
 
     fn is_zero(&self) -> bool {

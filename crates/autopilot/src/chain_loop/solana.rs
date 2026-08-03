@@ -2,9 +2,9 @@
 //!
 //! The type vocabulary (Pubkey, IntentHash, u64 amounts) comes from the
 //! winner-selection crate's Solana instantiation, so the loop and the
-//! shared winner-selection logic agree on types by construction. The WinnerSelection
-//! seam is real: it runs the same generic arbitrator the EVM loop uses.
-//! The remaining seams are constructible stubs, their backends (slot
+//! shared winner-selection logic agree on types by construction. The
+//! WinnerSelection seam is real: it runs the same generic arbitrator the EVM
+//! loop uses. The remaining seams are constructible stubs, their backends (slot
 //! stream, orderbook, driver protocol, persistence) do not exist yet.
 
 use {
@@ -18,6 +18,7 @@ use {
         SettlementObserver,
         SolverCompetition,
         WinnerSelection,
+        solvable,
     },
     async_trait::async_trait,
     std::collections::{HashMap, HashSet},
@@ -222,5 +223,91 @@ impl SettlementObserver<SolanaChain> for SolanaSettlementObserver {
         _ranking: &ws::Ranking<ws::solana::Solana>,
     ) {
         unimplemented!("spike: no solana persistence exists yet")
+    }
+}
+
+// --- solvable-orders filtering bindings ---
+
+/// Why an order was dropped, the Solana reason set (autopilot spec:
+/// Unauthorized replaces InvalidSignature, InvalidDelegation is new).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum SolanaFilterReason {
+    InFlight,
+    BannedUser,
+    UnsupportedToken,
+    InsufficientBalance,
+}
+
+/// A solvable order as the filters see it.
+pub struct SolanaSolvableOrder {
+    pub uid: IntentHash,
+    pub owner: Pubkey,
+    pub receiver: Option<Pubkey>,
+    pub sell_token: Pubkey,
+    pub buy_token: Pubkey,
+    pub sell_token_account: Pubkey,
+    pub sell_amount: u64,
+    pub fee: u64,
+    pub partially_fillable: bool,
+}
+
+impl solvable::FilterChain for SolanaChain {
+    type BalanceKey = Pubkey;
+    type Data = ws::solana::Solana;
+    type Order = SolanaSolvableOrder;
+    type Reason = SolanaFilterReason;
+
+    fn uid(order: &Self::Order) -> IntentHash {
+        order.uid
+    }
+
+    fn owner(order: &Self::Order) -> Pubkey {
+        order.owner
+    }
+
+    fn receiver(order: &Self::Order) -> Option<Pubkey> {
+        order.receiver
+    }
+
+    fn traded_tokens(order: &Self::Order) -> [Pubkey; 2] {
+        [order.sell_token, order.buy_token]
+    }
+
+    fn balance_key(order: &Self::Order) -> Pubkey {
+        order.sell_token_account
+    }
+}
+
+/// Set-backed lookup, the MVP backend (OFAC list from config). The
+/// Chainalysis oracle backend is EVM-only.
+pub struct SetBannedLookup(pub std::collections::HashSet<Pubkey>);
+
+#[async_trait]
+impl solvable::BannedLookup<Pubkey> for SetBannedLookup {
+    async fn banned(&self, candidates: Vec<Pubkey>) -> std::collections::HashSet<Pubkey> {
+        candidates
+            .into_iter()
+            .filter(|candidate| self.0.contains(candidate))
+            .collect()
+    }
+}
+
+/// The InsufficientBalance rule of the autopilot spec: a fill-or-kill
+/// order needs `delegated_amount >= sell_amount + fee` (checked), a
+/// partially fillable one needs a single delegated unit.
+pub struct SolanaBalancePolicy;
+
+impl solvable::BalancePolicy<SolanaChain> for SolanaBalancePolicy {
+    fn keep(&self, order: &SolanaSolvableOrder, delegated: Option<&u64>) -> bool {
+        let Some(&delegated) = delegated else {
+            return false;
+        };
+        if order.partially_fillable {
+            return delegated >= 1;
+        }
+        match order.sell_amount.checked_add(order.fee) {
+            Some(needed) => delegated >= needed,
+            None => false,
+        }
     }
 }
