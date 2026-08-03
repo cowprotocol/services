@@ -11,7 +11,6 @@ use {
     ethrpc::{Web3, alloy::ProviderLabelingExt},
     futures::future,
     model::order::SellTokenSource,
-    tracing::instrument,
 };
 
 pub struct Balances {
@@ -77,7 +76,6 @@ impl Balances {
 
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
-    #[instrument(skip_all)]
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         let futures = queries
@@ -128,7 +126,6 @@ impl BalanceFetching for Balances {
         Ok(())
     }
 
-    #[instrument(skip(self))]
     async fn allowance(
         &self,
         owner: Address,

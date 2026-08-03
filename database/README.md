@@ -459,18 +459,6 @@ Indexes:
 - PRIMARY KEY: btree(`auction_id`, `solver`, `solution_uid`)
 - settlement\_executions\_time\_range\_index: btree(`start_timestamp`, `end_timestamp`)
 
-### solver\_competitions
-
-Stores an overview of the solver competition. It contains orders in the auction along with prices for every relevant token as well as all valid solutions submitted by solvers together with their quality.
-
- Column | Type   | Nullable | Details
---------|--------|----------|--------
- id     | bigint | not null | id of the auction that the solver competition belongs to
- json   | jsonb  | nullable | overview of the solver competition with unspecified format
-
-Indexes:
-- PRIMARY KEY: btree(`id`)
-
 ### trades
 
 This table contains data of [`Trade`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L49-L58) events issued by the settlement contract after a successful settlement.

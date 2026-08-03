@@ -12,7 +12,6 @@ mod banned_users;
 mod buffers;
 mod contract_revert;
 mod cors;
-mod cow_amm;
 mod database;
 mod debug_order;
 mod deprecated_endpoints;
