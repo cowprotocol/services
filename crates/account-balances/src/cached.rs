@@ -330,7 +330,7 @@ mod tests {
         let mut inner = MockBalanceFetching::new();
         inner
             .expect_get_balances()
-            .times(2)
+            .times(3)
             .returning(|_| vec![Ok(U256::ONE)]);
 
         let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME);
@@ -361,7 +361,7 @@ mod tests {
         tokio::time::sleep(TEST_EVICTION_TIME + tokio::time::Duration::from_millis(20)).await;
 
         // Next block triggers a refresh that evicts the stale entry during list
-        // construction and skips the `inner` call entirely.
+        // construction (3rd call to `inner`, with empty slice).
         sender
             .send(BlockInfo {
                 number: 2,
