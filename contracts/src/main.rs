@@ -106,6 +106,10 @@ fn build_module() -> Module {
         .add_contract(Contract::new("ERC20"))
         .add_contract(Contract::new("ERC20Mintable"))
         .add_contract(Contract::new("IERC4626"))
+        // Only needed to deploy it on test networks; production code reaches it
+        // through `alloy_provider::MULTICALL3_ADDRESS`, which is the same on every
+        // network because it is always created by the same EOA at nonce 0.
+        .add_contract(Contract::new("Multicall3"))
         // GnosisSafe
         .add_contract(Contract::new("GnosisSafe"))
         .add_contract(Contract::new("GnosisSafeCompatibilityFallbackHandler"))

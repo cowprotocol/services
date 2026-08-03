@@ -1,7 +1,11 @@
 use {
     alloy::{
-        primitives::{Address, B256, U256, keccak256},
-        providers::Provider,
+        primitives::{Address, B256, U256, address, keccak256},
+        providers::{
+            MULTICALL3_ADDRESS,
+            Provider,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
         sol_types::SolCall,
     },
     contracts::{
@@ -13,13 +17,15 @@ use {
         GPv2Settlement,
         HoneyswapRouter,
         HooksTrampoline,
+        Multicall3,
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
         support::{Balances, Signatures},
     },
-    ethrpc::alloy::CallBuilderExt,
+    ethrpc::alloy::{CallBuilderExt, ProviderSignerExt},
     model::DomainSeparator,
+    number::units::EthUnit,
     shared::web3::Web3,
 };
 
@@ -134,6 +140,8 @@ impl Contracts {
             .await
             .expect("get accounts failed");
         let admin = accounts[0];
+
+        deploy_multicall3(web3).await;
 
         let weth = WETH9::Instance::deploy(web3.provider.clone())
             .await
@@ -261,6 +269,44 @@ impl Contracts {
             _ => B256::new(liquidity_sources::uniswap_v2::UNISWAP_INIT),
         }
     }
+}
+
+/// Puts `Multicall3` at [`MULTICALL3_ADDRESS`], where balance fetching expects
+/// it. Real networks all have it there because it is always created by the same
+/// account at nonce 0, so reproduce that instead of deploying it from one of
+/// the test accounts, which would land it at a different address.
+async fn deploy_multicall3(web3: &Web3) {
+    const DEPLOYER: Address = address!("0x05f32B3cC3888453ff71B01135B34FF8e41263F2");
+
+    // A wallet-less provider makes alloy forward the transaction to the node for
+    // signing instead of looking for a key we don't have.
+    let deployment = Multicall3::Instance::deploy_builder(web3.provider.without_wallet())
+        .from(DEPLOYER)
+        .into_transaction_request();
+
+    web3.provider
+        .anvil_send_impersonated_transaction_with_config(
+            deployment,
+            ImpersonateConfig {
+                fund_amount: Some(1u64.eth()),
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .expect("failed to deploy Multicall3")
+        .watch()
+        .await
+        .expect("Multicall3 deployment was not mined");
+
+    assert!(
+        !web3
+            .provider
+            .get_code_at(MULTICALL3_ADDRESS)
+            .await
+            .unwrap()
+            .is_empty(),
+        "Multicall3 was not deployed at {MULTICALL3_ADDRESS:?}"
+    );
 }
 
 /// Resolve a router with the canonical UniswapV2 ABI for the current chain.

@@ -6,16 +6,29 @@ use {
     super::{BalanceFetching, Query, TransferSimulationError},
     crate::BalanceSimulator,
     alloy_primitives::{Address, U256},
-    anyhow::Result,
+    alloy_provider::{CallItem, MULTICALL3_ADDRESS, Provider},
+    alloy_sol_types::SolCall,
+    anyhow::{Context, Result, ensure},
     contracts::ERC20,
     ethrpc::{Web3, alloy::ProviderLabelingExt},
     futures::future,
+    itertools::Itertools,
     model::order::SellTokenSource,
+    tokio::sync::OnceCell,
 };
+
+/// How many queries to bundle into a single `Multicall3` call. Every query
+/// contributes two sub-calls (`balanceOf` + `allowance`), so the limit is
+/// really about staying well below the node's `eth_call` gas cap for tokens
+/// with expensive accessors.
+const MULTICALL_BATCH_SIZE: usize = 50;
 
 pub struct Balances {
     web3: Web3,
     balance_simulator: BalanceSimulator,
+    /// Whether this chain has the canonical `Multicall3` deployment. Resolved
+    /// on first use; without it balances are read one by one.
+    has_multicall: OnceCell<bool>,
 }
 
 impl Balances {
@@ -25,6 +38,7 @@ impl Balances {
         Self {
             web3,
             balance_simulator,
+            has_multicall: OnceCell::new(),
         }
     }
 
@@ -32,12 +46,35 @@ impl Balances {
         self.balance_simulator.vault_relayer
     }
 
+    /// `Multicall3` lives at the same address on every network we support, but
+    /// test chains reuse well-known chain IDs without deploying it, so check
+    /// that the contract is actually there.
+    ///
+    /// Transient RPC failures are not cached so that the lookup is retried on
+    /// the next call.
+    async fn has_multicall(&self) -> Result<bool> {
+        self.has_multicall
+            .get_or_try_init(|| async {
+                let code = self
+                    .web3
+                    .provider
+                    .get_code_at(MULTICALL3_ADDRESS)
+                    .await
+                    .context("could not fetch Multicall3 code")?;
+                if code.is_empty() {
+                    tracing::warn!(
+                        address = ?MULTICALL3_ADDRESS,
+                        "no Multicall3 deployment; reading balances one by one"
+                    );
+                }
+                Ok(!code.is_empty())
+            })
+            .await
+            .copied()
+    }
+
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
-        // Only ERC20 sell-token balances are supported; other sources are deprecated
-        // and rejected at order creation.
-        if query.source != SellTokenSource::Erc20 {
-            anyhow::bail!("unsupported sell token source: {:?}", query.source);
-        }
+        ensure_erc20(query.source)?;
         let simulation = self
             .balance_simulator
             .simulate(
@@ -56,41 +93,162 @@ impl Balances {
         })
     }
 
-    async fn tradable_balance_simple(
-        &self,
-        query: &Query,
-        token: &ERC20::Instance,
-    ) -> Result<U256> {
-        // Only ERC20 sell-token balances are supported. Other sources are deprecated
-        // and rejected at order creation.
-        if query.source != SellTokenSource::Erc20 {
-            anyhow::bail!("unsupported sell token source: {:?}", query.source);
+    /// Reads the tradable balances of queries without pre-interactions, in the
+    /// order they were given. All queries must have an ERC20 sell-token source.
+    async fn tradable_balances_simple(&self, queries: &[&Query]) -> Vec<Result<U256>> {
+        if queries.is_empty() {
+            return Vec::new();
         }
-        let balance = token.balanceOf(query.owner);
-        let allowance = token.allowance(query.owner, self.vault_relayer());
-        let (balance, allowance) =
-            futures::try_join!(balance.call().into_future(), allowance.call().into_future())?;
-        Ok(std::cmp::min(balance, allowance))
+
+        match self.has_multicall().await {
+            Ok(true) => (),
+            Ok(false) => return self.tradable_balances_individually(queries).await,
+            Err(err) => {
+                tracing::warn!(?err, "could not look up Multicall3");
+                return self.tradable_balances_individually(queries).await;
+            }
+        }
+
+        let chunks = queries
+            .chunks(MULTICALL_BATCH_SIZE)
+            .map(|chunk| async move {
+                match self.tradable_balances_batched(chunk).await {
+                    Ok(balances) => balances,
+                    // A whole batch failing is not something we can attribute to any
+                    // single query (most likely the node hit its `eth_call` gas cap),
+                    // so retry the chunk without batching rather than failing it.
+                    Err(err) => {
+                        tracing::warn!(?err, "batched balance call failed, retrying individually");
+                        self.tradable_balances_individually(chunk).await
+                    }
+                }
+            });
+
+        future::join_all(chunks)
+            .await
+            .into_iter()
+            .flatten()
+            .collect()
     }
+
+    /// Reads the balances and allowances of a chunk of queries with a single
+    /// `Multicall3` call.
+    async fn tradable_balances_batched(&self, queries: &[&Query]) -> Result<Vec<Result<U256>>> {
+        // A dynamic multicall decodes every result with the same decoder. That
+        // works for both of our calls because `balanceOf` and `allowance` return
+        // a single `uint256`.
+        let mut multicall = self
+            .web3
+            .provider
+            .multicall()
+            .dynamic::<ERC20::ERC20::balanceOfCall>();
+        for query in queries {
+            // A single misbehaving token must not fail the whole batch.
+            let call =
+                |input: Vec<u8>| CallItem::new(query.token, input.into()).with_failure_allowed();
+            multicall = multicall
+                .add_call_dynamic(call(
+                    ERC20::ERC20::balanceOfCall {
+                        account: query.owner,
+                    }
+                    .abi_encode(),
+                ))
+                .add_call_dynamic(call(
+                    ERC20::ERC20::allowanceCall {
+                        owner: query.owner,
+                        spender: self.vault_relayer(),
+                    }
+                    .abi_encode(),
+                ));
+        }
+
+        let results = multicall.aggregate3().await?;
+        ensure!(
+            results.len() == queries.len() * 2,
+            "expected {} multicall results, got {}",
+            queries.len() * 2,
+            results.len()
+        );
+
+        Ok(results
+            .into_iter()
+            .tuples()
+            .map(|(balance, allowance)| {
+                let balance = balance.context("could not read balance")?;
+                let allowance = allowance.context("could not read allowance")?;
+                Ok(std::cmp::min(balance, allowance))
+            })
+            .collect())
+    }
+
+    /// Fallback for chains and nodes that cannot serve batched calls.
+    async fn tradable_balances_individually(&self, queries: &[&Query]) -> Vec<Result<U256>> {
+        future::join_all(queries.iter().map(|query| async move {
+            let token = ERC20::Instance::new(query.token, self.web3.provider.clone());
+            let balance = token.balanceOf(query.owner);
+            let allowance = token.allowance(query.owner, self.vault_relayer());
+            let (balance, allowance) =
+                futures::try_join!(balance.call().into_future(), allowance.call().into_future())?;
+            Ok(std::cmp::min(balance, allowance))
+        }))
+        .await
+    }
+}
+
+/// Only ERC20 sell-token balances are supported; the other sources are
+/// deprecated and rejected at order creation.
+fn ensure_erc20(source: SellTokenSource) -> Result<()> {
+    ensure!(
+        source == SellTokenSource::Erc20,
+        "unsupported sell token source: {source:?}"
+    );
+    Ok(())
 }
 
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
-        // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
-        let futures = queries
-            .iter()
-            .map(|query| async {
-                if query.interactions.is_empty() {
-                    let token = ERC20::Instance::new(query.token, self.web3.provider.clone());
-                    self.tradable_balance_simple(query, &token).await
-                } else {
-                    self.tradable_balance_simulated(query).await
-                }
-            })
-            .collect::<Vec<_>>();
+        // Queries with pre-interactions have to be simulated from the settlement
+        // contract's context one by one. The rest are plain `balanceOf` and
+        // `allowance` reads which we can batch into very few node round-trips.
+        let mut unsupported = Vec::new();
+        let mut simple = Vec::new();
+        let mut simulated = Vec::new();
+        for (index, query) in queries.iter().enumerate() {
+            match ensure_erc20(query.source) {
+                Err(err) => unsupported.push((index, Err(err))),
+                Ok(()) if query.interactions.is_empty() => simple.push((index, query)),
+                Ok(()) => simulated.push((index, query)),
+            }
+        }
 
-        future::join_all(futures).await
+        let simple_queries: Vec<_> = simple.iter().map(|(_, query)| *query).collect();
+        let (simple_balances, simulated_balances) = futures::join!(
+            self.tradable_balances_simple(&simple_queries),
+            future::join_all(
+                simulated
+                    .iter()
+                    .map(|(_, query)| self.tradable_balance_simulated(query))
+            ),
+        );
+
+        let mut results: Vec<_> = unsupported
+            .into_iter()
+            .chain(
+                simple
+                    .into_iter()
+                    .map(|(index, _)| index)
+                    .zip(simple_balances),
+            )
+            .chain(
+                simulated
+                    .into_iter()
+                    .map(|(index, _)| index)
+                    .zip(simulated_balances),
+            )
+            .collect();
+        results.sort_by_key(|(index, _)| *index);
+        results.into_iter().map(|(_, balance)| balance).collect()
     }
 
     async fn can_transfer(
@@ -132,11 +290,7 @@ impl BalanceFetching for Balances {
         token: Address,
         source: SellTokenSource,
     ) -> Result<U256> {
-        // Only ERC20 sell-token balances are supported; other sources are deprecated
-        // and rejected at order creation.
-        if source != SellTokenSource::Erc20 {
-            anyhow::bail!("unsupported sell token source: {:?}", source);
-        }
+        ensure_erc20(source)?;
         let token = ERC20::Instance::new(token, self.web3.provider.clone());
         Ok(token.allowance(owner, self.vault_relayer()).call().await?)
     }
@@ -154,10 +308,7 @@ mod tests {
         std::sync::Arc,
     };
 
-    #[ignore]
-    #[tokio::test]
-    async fn test_for_user() {
-        let web3 = Web3::new_from_env();
+    fn mainnet_balances(web3: &Web3) -> Balances {
         let settlement = GPv2Settlement::GPv2Settlement::new(
             address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
             web3.provider.clone(),
@@ -166,15 +317,74 @@ mod tests {
             address!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
             web3.provider.clone(),
         );
-        let balances = Balances::new(
-            &web3,
+        Balances::new(
+            web3,
             BalanceSimulator::new(
                 settlement,
                 balances,
                 address!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
                 Arc::new(DummyStateOverrider),
             ),
-        );
+        )
+    }
+
+    /// Batching must not change any result compared to reading the balances one
+    /// by one, including for tokens that make the reads fail.
+    #[ignore]
+    #[tokio::test]
+    async fn test_batching_matches_individual_calls() {
+        let web3 = Web3::new_from_env();
+        let balances = mainnet_balances(&web3);
+
+        let query = |owner, token| Query {
+            owner,
+            token,
+            source: SellTokenSource::Erc20,
+            interactions: vec![],
+            balance_override: None,
+        };
+
+        let weth = address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+        let usdc = address!("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+        // An address without any code, so both paths have to report a failure.
+        let not_a_token = address!("0x1111111111111111111111111111111111111111");
+
+        let mut queries = vec![
+            query(address!("0x28C6c06298d514Db089934071355E5743bf21d60"), usdc),
+            query(address!("0x28C6c06298d514Db089934071355E5743bf21d60"), weth),
+            query(
+                address!("0x28C6c06298d514Db089934071355E5743bf21d60"),
+                not_a_token,
+            ),
+        ];
+        // Push past `MULTICALL_BATCH_SIZE` so that chunking is exercised too.
+        for i in 0..MULTICALL_BATCH_SIZE {
+            queries.push(query(Address::repeat_byte(i as u8), weth));
+        }
+
+        let batched = balances.get_balances(&queries).await;
+        let individual = balances
+            .tradable_balances_individually(&queries.iter().collect::<Vec<_>>())
+            .await;
+
+        assert_eq!(batched.len(), queries.len());
+        for (index, (batched, individual)) in batched.iter().zip(&individual).enumerate() {
+            match (batched, individual) {
+                (Ok(batched), Ok(individual)) => assert_eq!(batched, individual, "query {index}"),
+                (Err(_), Err(_)) => (),
+                _ => panic!("query {index} disagrees: {batched:?} vs {individual:?}"),
+            }
+        }
+        // The non-token must actually have failed, otherwise the assertion above
+        // would pass without ever comparing an error.
+        assert!(batched[2].is_err());
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_for_user() {
+        let web3 = Web3::new_from_env();
+        let balances = mainnet_balances(&web3);
 
         let owner = address!("b0a4e99371dfb0734f002ae274933b4888f618ef");
         let token = address!("d909c5862cdb164adb949d92622082f0092efc3d");
