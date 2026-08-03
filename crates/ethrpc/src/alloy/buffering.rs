@@ -83,11 +83,11 @@ pub(crate) struct BatchCallProvider<S> {
 /// which is not a huge issue.
 type CallerId = Option<tokio::task::Id>;
 
-struct CallContext<REQ, RESP> {
+struct CallContext<Req, Resp> {
     /// tokio task that issued this request
     caller: CallerId,
-    request: REQ,
-    response_sender: oneshot::Sender<RESP>,
+    request: Req,
+    response_sender: oneshot::Sender<Resp>,
 }
 
 type ResponseSender = oneshot::Sender<Result<Response, RpcError<TransportErrorKind>>>;
@@ -237,13 +237,13 @@ where
 ///
 /// Invariant: a caller is in `round_robin` iff its entry in `per_caller`
 /// is non-empty, and `len` equals the sum of all per-caller queue lengths.
-struct FairQueue<REQ, RESP> {
-    per_caller: HashMap<CallerId, VecDeque<(REQ, oneshot::Sender<RESP>)>>,
+struct FairQueue<Req, Resp> {
+    per_caller: HashMap<CallerId, VecDeque<(Req, oneshot::Sender<Resp>)>>,
     round_robin: VecDeque<CallerId>,
     len: usize,
 }
 
-impl<REQ, RESP> Default for FairQueue<REQ, RESP> {
+impl<Req, Resp> Default for FairQueue<Req, Resp> {
     fn default() -> Self {
         Self {
             per_caller: Default::default(),
@@ -253,9 +253,9 @@ impl<REQ, RESP> Default for FairQueue<REQ, RESP> {
     }
 }
 
-impl<REQ, RESP> FairQueue<REQ, RESP> {
+impl<Req, Resp> FairQueue<Req, Resp> {
     /// Enqueues request and adds caller to the round-robin queue if necessary.
-    fn enqueue(&mut self, call: CallContext<REQ, RESP>) {
+    fn enqueue(&mut self, call: CallContext<Req, Resp>) {
         let queue = self.per_caller.entry(call.caller).or_default();
         let first = queue.is_empty();
         queue.push_back((call.request, call.response_sender));
@@ -266,7 +266,7 @@ impl<REQ, RESP> FairQueue<REQ, RESP> {
     }
 
     /// Pop the next call in round-robin order, if any.
-    fn pop(&mut self) -> Option<(REQ, oneshot::Sender<RESP>)> {
+    fn pop(&mut self) -> Option<(Req, oneshot::Sender<Resp>)> {
         let caller = self.round_robin.pop_front()?;
         let queue = self
             .per_caller
@@ -304,7 +304,7 @@ impl<REQ, RESP> FairQueue<REQ, RESP> {
     /// to process requests makes sense.
     async fn collect_requests(
         &mut self,
-        calls: &mut mpsc::UnboundedReceiver<CallContext<REQ, RESP>>,
+        calls: &mut mpsc::UnboundedReceiver<CallContext<Req, Resp>>,
         max_batch_size: usize,
         batch_delay: Duration,
     ) -> bool {
@@ -349,7 +349,7 @@ impl<REQ, RESP> FairQueue<REQ, RESP> {
 
     /// Batches at most `max_batch_size` items in a round-robin fashion to
     /// prevent individual callers from starving all the others.
-    fn build_fair_batch(&mut self, max_batch_size: usize) -> Vec<(REQ, oneshot::Sender<RESP>)> {
+    fn build_fair_batch(&mut self, max_batch_size: usize) -> Vec<(Req, oneshot::Sender<Resp>)> {
         let mut batch = Vec::with_capacity(self.len().min(max_batch_size));
         while batch.len() < max_batch_size {
             let Some((request, sender)) = self.pop() else {
