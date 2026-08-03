@@ -514,9 +514,9 @@ async fn instantiates_for_evm_and_solana() {
     );
 }
 
-/// The composition proof: the WinnerSelection seam (spike 1) executes the
-/// shared generic arbitrator (spike 2) over Solana types. Same algorithm
-/// crate the EVM loop uses, no Solana copy of the logic.
+/// The composition proof: the WinnerSelection seam executes the shared
+/// generic arbitrator over Solana types. Same algorithm crate the EVM
+/// loop uses, no Solana copy of the logic.
 #[test]
 fn solana_seam_runs_the_shared_arbitrator() {
     use ::winner_selection::{
