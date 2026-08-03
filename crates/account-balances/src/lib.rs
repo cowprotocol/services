@@ -102,10 +102,14 @@ pub fn cached(
     /// This should be longer than a normal auction to prevent the autopilot
     /// from purging the cache before running the next auction.
     const CACHE_EVICTION_TIME: Duration = Duration::from_secs(20);
+    /// Cap the refresh rate so that fast chains don't burn CPU refetching
+    /// balances every single block.
+    const MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
     let cached = Arc::new(cached::Balances::new(
         fetcher(web3, balance_simulator),
         CACHE_EVICTION_TIME,
+        MIN_REFRESH_INTERVAL,
     ));
     cached.spawn_background_task(blocks);
     cached
