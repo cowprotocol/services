@@ -21,7 +21,7 @@ use {
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
-        support::{Balances, Multicall3, Signatures},
+        support::{Balances, Signatures},
     },
     ethrpc::alloy::{CallBuilderExt, ProviderSignerExt},
     model::DomainSeparator,
