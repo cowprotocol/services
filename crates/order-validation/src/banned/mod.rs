@@ -58,6 +58,22 @@ impl Users {
         Self { list, remote: None }
     }
 
+    /// Returns the ban status of `address` if it is already known locally,
+    /// `None` if determining it requires a remote lookup.
+    pub fn cached(&self, address: &Address) -> Option<bool> {
+        if self.list.contains(address) {
+            return Some(true);
+        }
+        // The zero/burn address is never checked remotely, see [`Self::banned`].
+        if address.is_zero() {
+            return Some(false);
+        }
+        match &self.remote {
+            Some(remote) => remote.cached(address),
+            None => Some(false),
+        }
+    }
+
     /// Returns the subset of `addresses` that are banned. Cache misses hit
     /// the configured remote sources.
     pub async fn banned(&self, addresses: impl IntoIterator<Item = Address>) -> HashSet<Address> {

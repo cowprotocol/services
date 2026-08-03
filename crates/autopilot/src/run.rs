@@ -15,7 +15,7 @@ use {
                 event_retriever::CoWSwapOnchainOrdersContract,
             },
         },
-        domain,
+        domain::{self, order_notify},
         event_updater::EventUpdater,
         infra,
         maintenance::Maintenance,
@@ -464,6 +464,9 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         config.banned_users.max_cache_size.get().to_u64().unwrap(),
     ));
 
+    let order_notifications = order_notify::Notifier::new();
+    infra::banned::spawn_cache_prewarming(&order_notifications, banned_users.clone());
+
     let solvable_orders_cache = SolvableOrdersCache::new(
         config.min_order_validity_period,
         persistence.clone(),
@@ -628,7 +631,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             startup,
         },
         awaiter,
-        banned_users,
+        order_notifications,
     );
     run.run_forever(shutdown_controller).await;
 
