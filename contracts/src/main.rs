@@ -106,6 +106,22 @@ fn build_module() -> Module {
         .add_contract(Contract::new("ERC20"))
         .add_contract(Contract::new("ERC20Mintable"))
         .add_contract(Contract::new("IERC4626"))
+        // Always created by the same EOA at nonce 0, so it ends up at the same
+        // address on every network.
+        .add_contract(Contract::new("Multicall3").with_networks(networks![
+            MAINNET => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            GNOSIS => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            SEPOLIA => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            ARBITRUM_ONE => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            BASE => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            AVALANCHE => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            BNB => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            OPTIMISM => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            POLYGON => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            LINEA => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            PLASMA => "0xcA11bde05977b3631167028862bE2a173976CA11",
+            INK => "0xcA11bde05977b3631167028862bE2a173976CA11",
+        ]))
         // GnosisSafe
         .add_contract(Contract::new("GnosisSafe"))
         .add_contract(Contract::new("GnosisSafeCompatibilityFallbackHandler"))

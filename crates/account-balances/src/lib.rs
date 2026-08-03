@@ -84,8 +84,12 @@ pub trait BalanceFetching: Send + Sync {
 }
 
 /// Create the default [`BalanceFetching`] instance.
-pub fn fetcher(web3: &Web3, balance_simulator: BalanceSimulator) -> Arc<dyn BalanceFetching> {
-    Arc::new(simulation::Balances::new(web3, balance_simulator))
+pub fn fetcher(
+    web3: &Web3,
+    balance_simulator: BalanceSimulator,
+    chain_id: u64,
+) -> Arc<dyn BalanceFetching> {
+    Arc::new(simulation::Balances::new(web3, balance_simulator, chain_id))
 }
 
 /// Create a cached [`BalanceFetching`] instance.
@@ -93,8 +97,13 @@ pub fn cached(
     web3: &Web3,
     balance_simulator: BalanceSimulator,
     blocks: CurrentBlockWatcher,
+    chain_id: u64,
 ) -> Arc<dyn BalanceFetching> {
-    let cached = Arc::new(cached::Balances::new(fetcher(web3, balance_simulator)));
+    let cached = Arc::new(cached::Balances::new(fetcher(
+        web3,
+        balance_simulator,
+        chain_id,
+    )));
     cached.spawn_background_task(blocks);
     cached
 }
