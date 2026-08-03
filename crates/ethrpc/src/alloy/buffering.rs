@@ -196,6 +196,15 @@ where
                 FairQueue::<SerializedRequest, Result<Response, TransportError>>::default();
 
             loop {
+                // first wait for a concurrency slot to become available.
+                // that way we end up with the most up-to-data batch
+                // possible in the end.
+                let permit = semaphore
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .expect("semaphore never closed");
+
                 if !queue
                     .collect_requests(&mut calls, max_batch_size, batch_delay)
                     .await
@@ -205,13 +214,6 @@ where
                 }
 
                 let batch = queue.build_fair_batch(max_batch_size);
-
-                // wait for a concurrency slot to apply backpressure
-                let permit = semaphore
-                    .clone()
-                    .acquire_owned()
-                    .await
-                    .expect("semaphore never closed");
 
                 // Clone the inner service per batch as recommended in
                 // <https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services>.
