@@ -108,18 +108,29 @@ impl Decoder {
     /// a flag reporting whether any settlement instruction failed to decode.
     /// The settlement half runs through the pure [`decode_settlement`], the
     /// SolFlow half is a stub.
+    #[tracing::instrument(skip_all, fields(slot = %slot, signature = %signature))]
     fn decode(
         &self,
         tx: &SubscribeUpdateTransactionInfo,
         slot: Slot,
         signature: Signature,
     ) -> (Vec<DecodedEvent>, bool) {
+        // `meta` carries whether the transaction succeeded, so without it there is
+        // no way to tell, and emitting events for a transaction that may have
+        // reverted is the failure this guard exists to prevent. Dead-letter it
+        // instead of skipping: replay re-fetches by signature, and
+        // `getTransaction` returns the meta.
+        let Some(meta) = tx.meta.as_ref() else {
+            tracing::warn!("transaction update without meta");
+            return (Vec::new(), true);
+        };
+
         // A failed Solana transaction rolls back every account write, so no
         // state-changing event may be emitted for it. Failed transactions are
         // delivered on purpose (the revert is an attribution signal), and a
         // dedicated revert-attribution event is a later PR.
-        if tx.meta.as_ref().is_some_and(|meta| meta.err.is_some()) {
-            tracing::debug!(slot = %slot, %signature, "transaction reverted, skipping");
+        if meta.err.is_some() {
+            tracing::debug!("transaction reverted, skipping");
             return (Vec::new(), false);
         }
 
@@ -132,17 +143,11 @@ impl Decoder {
         // `relevant_instructions` reconstructs the account list internally to
         // resolve program ids; rebuild it once here so the decode can resolve
         // account indices to pubkeys too.
-        let account_keys = build_account_keys(tx);
-        let post_token_balances = tx
-            .meta
-            .as_ref()
-            .map(|meta| meta.post_token_balances.clone())
-            .unwrap_or_default();
         let ctx = TxContext {
             slot,
             signature,
-            account_keys,
-            post_token_balances,
+            account_keys: build_account_keys(tx),
+            post_token_balances: meta.post_token_balances.clone(),
         };
 
         // `relevant_instructions` yields only settlement and SolFlow instructions.
@@ -213,8 +218,11 @@ fn decode_settlement(
     for instruction in instructions {
         let Ok((discriminator, _)) = recover_discriminator(&instruction.data) else {
             decode_failed = true;
-            tracing::debug!(
+            // Warn, not debug: this dead-letters the transaction, so it needs to
+            // be findable in the logs alongside the row.
+            tracing::warn!(
                 instruction_index = instruction.instruction_index,
+                err = %DecodeError::UnknownDiscriminator,
                 "settlement instruction with an unknown discriminator, skipping"
             );
             continue;
@@ -272,9 +280,9 @@ fn decode_order_created(
 ) -> Result<SettlementEvent, DecodeError> {
     let mut accounts = instruction_account_keys(instruction, account_keys)?;
     let input = CreateOrderInput::parse(&instruction.data, &mut accounts)
-        .map_err(|_| DecodeError::SchemaMismatch)?;
+        .map_err(|err| DecodeError::SchemaMismatch(err.to_string()))?;
     let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
-        .map_err(|_| DecodeError::SchemaMismatch)?;
+        .map_err(|err| DecodeError::SchemaMismatch(err.to_string()))?;
     Ok(SettlementEvent::OrderCreated {
         order_uid: OrderUid(uid.to_bytes()),
         owner: to_sdk_pubkey(intent.owner),
@@ -291,7 +299,7 @@ fn decode_buffers_created(
 ) -> Result<Vec<SettlementEvent>, DecodeError> {
     let mut accounts = instruction_account_keys(instruction, account_keys)?;
     let input = CreateBufferInput::parse(&instruction.data, &mut accounts)
-        .map_err(|_| DecodeError::SchemaMismatch)?;
+        .map_err(|err| DecodeError::SchemaMismatch(err.to_string()))?;
     Ok(input
         .buffers
         .iter()
@@ -327,17 +335,23 @@ fn decode_settlements_finalized(
         };
         let mut begin_accounts = match instruction_account_keys(begin, &ctx.account_keys) {
             Ok(accounts) => accounts,
-            Err(_) => {
+            Err(err) => {
                 *decode_failed = true;
+                tracing::warn!(
+                    instruction_index = begin.instruction_index,
+                    %err,
+                    "BeginSettle account resolution failed, skipping"
+                );
                 continue;
             }
         };
         let begin_input = match BeginSettleInput::parse(&begin.data, &mut begin_accounts) {
             Ok(input) => input,
-            Err(_) => {
+            Err(err) => {
                 *decode_failed = true;
                 tracing::warn!(
                     instruction_index = begin.instruction_index,
+                    %err,
                     "BeginSettle did not match the expected layout, skipping"
                 );
                 continue;
@@ -362,18 +376,24 @@ fn decode_settlements_finalized(
         };
         let mut finalize_accounts = match instruction_account_keys(finalize, &ctx.account_keys) {
             Ok(accounts) => accounts,
-            Err(_) => {
+            Err(err) => {
                 *decode_failed = true;
+                tracing::warn!(
+                    instruction_index = finalize.instruction_index,
+                    %err,
+                    "FinalizeSettle account resolution failed, skipping"
+                );
                 continue;
             }
         };
         let finalize_input =
             match FinalizeSettleInput::parse(&finalize.data, &mut finalize_accounts) {
                 Ok(input) => input,
-                Err(_) => {
+                Err(err) => {
                     *decode_failed = true;
                     tracing::warn!(
                         instruction_index = finalize.instruction_index,
+                        %err,
                         "FinalizeSettle did not match the expected layout, skipping"
                     );
                     continue;
@@ -386,7 +406,7 @@ fn decode_settlements_finalized(
         let received: Vec<u64> = finalize_input
             .pushes
             .iter()
-            .map(|push| u64::from_le_bytes(*push.amount))
+            .map(|push| push.amount)
             .collect();
 
         let trades = begin_input
@@ -433,10 +453,12 @@ fn instruction_account_keys(
         .accounts
         .iter()
         .map(|&index| {
-            account_keys
-                .get(usize::from(index))
-                .copied()
-                .ok_or(DecodeError::SchemaMismatch)
+            account_keys.get(usize::from(index)).copied().ok_or(
+                DecodeError::AccountIndexOutOfRange {
+                    index,
+                    len: account_keys.len(),
+                },
+            )
         })
         .collect()
 }

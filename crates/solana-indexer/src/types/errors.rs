@@ -10,14 +10,17 @@ pub(crate) enum DecodeError {
     /// match any known instruction on either program.
     #[error("unknown instruction discriminator")]
     UnknownDiscriminator,
-    /// The ALT (Address Lookup Table) loaded-address list could not be resolved
-    /// against the full account list.
-    #[error("alt resolution failed")]
-    AltResolutionFailed,
+    /// An account index did not resolve against the transaction's account list,
+    /// which includes the ALT (Address Lookup Table) loaded addresses.
+    #[error("account index {index} out of range for {len} account keys")]
+    AccountIndexOutOfRange { index: u8, len: usize },
     /// The instruction was recognised but its schema did not match the on-chain
-    /// layout.
-    #[error("schema mismatch")]
-    SchemaMismatch,
+    /// layout. Carries the interface parser's error rendered as text, which
+    /// names the check that failed. Text rather than the `ProgramError` itself
+    /// because the interface does not re-export it and pins its own
+    /// `solana-program-error` major, and nothing branches on this.
+    #[error("schema mismatch: {0}")]
+    SchemaMismatch(String),
 }
 
 /// Failures surfaced from the persistence boundary.
