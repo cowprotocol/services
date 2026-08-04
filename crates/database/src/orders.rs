@@ -2161,9 +2161,7 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         async fn solvable_uids(ex: &mut PgConnection, now: i64) -> HashSet<OrderUid> {
-            // `min_valid_to = now` mirrors production, so `valid_to` expiry is
-            // enforced alongside `valid_from` gating (an order that already
-            // expired must not resurface just because `valid_from` crossed).
+            // `min_valid_to = now` mirrors production so `valid_to` expiry is enforced.
             solvable_orders(ex, now, now)
                 .map_ok(|o| o.uid)
                 .try_collect()
@@ -2176,8 +2174,7 @@ mod tests {
             kind: OrderKind::Sell,
             sell_amount: 10.into(),
             buy_amount: 100.into(),
-            // Valid well past the checked `now` values, so the order is genuinely
-            // solvable once `valid_from` kicks in (`valid_from` < `valid_to`).
+            // `valid_to` is past every checked `now`.
             valid_to: 10_000,
             partially_fillable: true,
             creation_timestamp: Utc::now(),
@@ -2207,9 +2204,6 @@ mod tests {
         assert_eq!(solvable_uids(&mut db, 0).await, hashset![ungated.uid]);
     }
 
-    // Incremental path: a pending->valid transition is not a DB update, so the
-    // second branch must re-select an order whose valid_from crossed `now` since
-    // the last checkpoint, even though it was created before that checkpoint.
     #[tokio::test]
     #[ignore]
     async fn postgres_open_orders_valid_from_transition() {
@@ -2234,11 +2228,10 @@ mod tests {
         let checkpoint = base;
         let valid_from = base.timestamp() + 50; // future relative to the checkpoint
 
-        // Both orders are created before the checkpoint, so branch 1 never picks them
-        // up. Only branch 2 (valid_from crossing) can surface them.
+        // Created before the checkpoint, so only a `valid_from` crossing can pick them
+        // up.
         let created_before = base - Duration::seconds(100);
 
-        // Window still open when valid_from crosses: branch 2 must re-select it.
         let valid = Order {
             uid: ByteArray([1u8; 56]),
             kind: OrderKind::Sell,
@@ -2250,9 +2243,8 @@ mod tests {
             valid_from: Some(valid_from),
             ..Default::default()
         };
-        // Empty window (`valid_from >= valid_to`): it "becomes eligible" only after it
-        // has already expired, so branch 2's `true_valid_to >= now` guard must exclude
-        // it. Otherwise a permanently-dead order gets resurfaced.
+        // This order will already be expired by the time it
+        // would become eligible, so it must not be picked up.
         let expired = Order {
             uid: ByteArray([2u8; 56]),
             kind: OrderKind::Sell,
@@ -2267,14 +2259,11 @@ mod tests {
         insert_order(&mut db, &valid).await.unwrap();
         insert_order(&mut db, &expired).await.unwrap();
 
-        // Still gated (now < valid_from): neither branch selects either order.
         assert!(
             incremental_uids(&mut db, checkpoint, valid_from - 1)
                 .await
                 .is_empty()
         );
-        // valid_from has now passed: branch 2 re-selects the still-valid order despite
-        // no DB update, but excludes the already-expired one.
         assert_eq!(
             incremental_uids(&mut db, checkpoint, valid_from).await,
             hashset![valid.uid]

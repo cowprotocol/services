@@ -18,14 +18,13 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_quote_fastpath_flags_rejected() {
-    run_test(quote_fastpath_flags_rejected).await;
+async fn local_node_fast_path_flags_rejected() {
+    run_test(fast_path_flags_rejected).await;
 }
 
-/// Verifies that the orderbook rejects quotes and orders that use the
-/// not-yet-supported `fast_path` quote flag or `enableFastPath` app-data field.
-/// (`validFrom` is supported — see the `valid_from` e2e test.)
-async fn quote_fastpath_flags_rejected(web3: Web3) {
+/// Verifies the orderbook rejects the not-yet-supported `fast_path` quote flag
+/// and `enableFastPath` app-data field.
+async fn fast_path_flags_rejected(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let services = Services::new(&onchain).await;

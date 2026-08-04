@@ -275,8 +275,8 @@ pub enum ValidationError {
     /// reverted or did not return the expected value.
     InvalidEip1271Signature(B256),
     ZeroAmount,
-    /// `valid_from` is at or after `valid_to`, so the order could never be
-    /// valid.
+    /// `valid_from` leaves too small a window before `valid_to` for the order
+    /// to be settled.
     InvalidValidFrom,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
@@ -1021,27 +1021,11 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
-        // A `valid_from` at or after `valid_to` makes the order impossible to ever
-        // be valid. A `valid_from` in the past is allowed: the order is simply
-        // eligible immediately.
-        //
-        // This check only runs for orders submitted through the API. On-chain orders
-        // (like ethflow) are already placed on chain, so we can't reject them here;
-        // their `valid_from` is backfilled later in `handle_app_data`, without this
-        // check. If such an order has `valid_from >= valid_to` we just store it as is.
-        // It can never be solved anyway, because the auction only picks orders that
-        // stay valid for at least `min_order_validity_period` past now, and one whose
-        // `valid_to` is already at or before its `valid_from` never clears that bar.
-        // It still gets refunded when it expires (for ethflow). If we flagged it as
-        // invalid at ingestion instead, it would lose that refund and the user's
-        // funds would be stuck, so we don't.
-        if app_data
-            .inner
-            .protocol
-            .valid_from
-            .is_some_and(|valid_from| valid_from >= data.valid_to)
-        {
-            return Err(ValidationError::InvalidValidFrom);
+        if let Some(valid_from) = app_data.inner.protocol.valid_from {
+            let min = self.validity_configuration.min.as_secs();
+            if u64::from(data.valid_to) < u64::from(valid_from) + min {
+                return Err(ValidationError::InvalidValidFrom);
+            }
         }
 
         let order = Order {
