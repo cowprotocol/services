@@ -43,6 +43,29 @@ Axes, each a comma-separated list, swept as a cartesian product:
 
 `--json` / `--csv` dump per-pass numbers for plotting.
 
+## Charting a run
+
+`plot.py` turns a `--csv` file into the figure below. Its dependencies are
+declared inline, so `uv run` fetches them into a throwaway environment and there
+is nothing to install:
+
+```bash
+./crates/multicall-bench/plot.py output.csv multicall-bench.png \
+    --subject "3,090 owner/token pairs, mainnet, pinned to a finalized block"
+```
+
+It drops each config's **first pass**, which pays for the reqwest connection pool
+ramping up: on this data that pass runs up to 5x the median of the rest for a
+multicall config, while an unbatched config barely notices, because a 6-second
+pass amortises the ramp and a 250ms one does not. That is a shortcoming of the
+harness — the two-query prime in `measure` is not enough to warm the pool — so
+raise `--repeat` and treat the first pass as scrap until it is fixed.
+
+The unbatched path is drawn as a reference band rather than as another position
+on the x axis. It is the baseline the multicall sizes are measured against, not
+"batch size zero"; putting it on the same axis reads as one continuum and hides
+the comparison.
+
 `--block` pins every read to one block: `finalized` (the default), `safe`,
 `latest`, a number, or `none` to follow the chain the way production does. Tags
 are resolved to a concrete number once at startup, because pinning to the tag
