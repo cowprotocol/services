@@ -1,6 +1,6 @@
 use {
     alloy_primitives::{Address, U256},
-    alloy_rpc_types::state::StateOverride,
+    alloy_rpc_types::{BlockId, state::StateOverride},
     alloy_sol_types::{SolCall, SolType, sol_data},
     balance_overrides::{BalanceOverrideRequest, StateOverriding},
     contracts::{GPv2Settlement, support::Balances},
@@ -86,6 +86,33 @@ pub trait BalanceFetching: Send + Sync {
 /// Create the default [`BalanceFetching`] instance.
 pub fn fetcher(web3: &Web3, balance_simulator: BalanceSimulator) -> Arc<dyn BalanceFetching> {
     Arc::new(simulation::Balances::new(web3, balance_simulator))
+}
+
+/// Knobs for measuring the balance fetcher against a real node. Every field
+/// left at `None` keeps the production behaviour.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Overrides {
+    /// Queries per `Multicall3` call. `0` reads every balance individually.
+    pub multicall_batch_size: Option<usize>,
+    /// Pins the reads to a fixed block so repeated passes return identical
+    /// values instead of following the chain.
+    pub block: Option<BlockId>,
+}
+
+/// Like [`fetcher`], but with the tuning knobs in [`Overrides`] applied.
+pub fn fetcher_with_overrides(
+    web3: &Web3,
+    balance_simulator: BalanceSimulator,
+    overrides: Overrides,
+) -> Arc<dyn BalanceFetching> {
+    let mut balances = simulation::Balances::new(web3, balance_simulator);
+    if let Some(size) = overrides.multicall_batch_size {
+        balances = balances.with_multicall_batch_size(size);
+    }
+    if let Some(block) = overrides.block {
+        balances = balances.with_block(block);
+    }
+    Arc::new(balances)
 }
 
 /// Create a cached [`BalanceFetching`] instance.
