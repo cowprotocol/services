@@ -5,10 +5,12 @@
 //! the production `ethrpc` provider stack, so the numbers include the JSON-RPC
 //! batching layer and the individual-call fallback.
 
+mod bench;
 mod dump;
 mod fixture;
 mod metrics;
-mod run;
+mod report;
+mod results;
 
 use {anyhow::Result, clap::Parser, observe::config::Config};
 
@@ -18,7 +20,7 @@ enum Command {
     /// Dump the open-order working set from a protocol database replica.
     Dump(dump::Args),
     /// Replay a dumped working set against a node.
-    Run(Box<run::Args>),
+    Run(Box<bench::Args>),
 }
 
 #[tokio::main]
@@ -29,6 +31,6 @@ async fn main() -> Result<()> {
 
     match Command::parse() {
         Command::Dump(args) => dump::run(args).await,
-        Command::Run(args) => run::run(*args).await,
+        Command::Run(args) => bench::run(*args).await,
     }
 }
