@@ -21,7 +21,7 @@ async fn route(
     let handle_request = async {
         let order = order.into_domain();
         observe::quoting(&order);
-        let quote = order
+        let result = order
             .quote(
                 state.eth(),
                 state.solver(),
@@ -30,10 +30,14 @@ async fn route(
                 state.competition(),
             )
             .await;
-        observe::quoted(state.solver().name(), &order, &quote);
+        observe::quoted(state.solver().name(), &order, &result);
+        let (quote, solution_id) = result?;
+        let auction_id = solution_id.and(order.auction_id);
         Ok(axum::response::Json(dto::Quote::new(
-            quote?,
+            quote,
             state.solver().fast_path_enabled(),
+            solution_id,
+            auction_id,
         )))
     };
 

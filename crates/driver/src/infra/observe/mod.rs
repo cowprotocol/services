@@ -281,9 +281,13 @@ pub fn solved(solver: &str, result: &Result<Vec<Solved>, competition::Error>) {
 }
 
 /// Observe the result of quoting an auction.
-pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote, quote::Error>) {
+pub fn quoted(
+    solver: &solver::Name,
+    order: &quote::Order,
+    result: &Result<(Quote, Option<u64>), quote::Error>,
+) {
     match result {
-        Ok(quote) => {
+        Ok((quote, _)) => {
             tracing::info!(?order, ?quote, "quoted order");
             metrics::get()
                 .quotes

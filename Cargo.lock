@@ -4490,6 +4490,7 @@ dependencies = [
  "http-client",
  "humantime",
  "humantime-serde",
+ "indexmap 2.14.0",
  "itertools 0.14.0",
  "liquidity-sources",
  "maplit",

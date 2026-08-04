@@ -35,11 +35,6 @@ pub struct Quote {
     pub tx_origin: Option<eth::Address>,
     #[debug(ignore)]
     pub jit_orders: Vec<solution::trade::Jit>,
-    /// For fast-path quotes: the id of the cached solution and the auction id
-    /// it was cached under, so the caller can later settle it via `/settle`.
-    /// `None` for regular quotes.
-    pub solution_id: Option<u64>,
-    pub auction_id: Option<i64>,
 }
 
 impl Quote {
@@ -68,8 +63,6 @@ impl Quote {
                     _ => None,
                 })
                 .collect(),
-            solution_id: None,
-            auction_id: None,
         })
     }
 
@@ -126,8 +119,7 @@ pub struct Order {
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
     pub enable_fast_path: bool,
-    /// Real auction id the orderbook allocated from the shared `auctions`
-    /// sequence for a fast-path quote. `None` for regular quotes.
+    /// Unique auction id for a fast-path quote. `None` for regular quotes.
     pub auction_id: Option<i64>,
 }
 
@@ -143,11 +135,10 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
         competition: &Competition,
-    ) -> Result<Quote, Error> {
+    ) -> Result<(Quote, Option<u64>), Error> {
         if self.enable_fast_path && !solver.fast_path_enabled() {
             return Err(Error::QuotingFailed(QuotingFailed::FastPathNotSupported));
         }
-        let fast_path = self.enable_fast_path && solver.fast_path_enabled();
 
         let liquidity = match solver.liquidity() {
             solver::Liquidity::Fetch => {
@@ -158,15 +149,8 @@ impl Order {
             solver::Liquidity::Skip => Default::default(),
         };
 
-        // For fast-path quotes the orderbook allocates a real auction id from the
-        // shared `auctions` sequence and forwards it here, so the solution can be
-        // encoded into a settlement and cached for a later `/settle`.
-        let auction_id = fast_path
-            .then_some(self.auction_id)
-            .flatten()
-            .map(auction::Id);
         let auction = self
-            .fake_auction(eth, tokens, solver.quote_using_limit_orders(), auction_id)
+            .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
         let auction = competition
             .risk_detector
@@ -182,19 +166,22 @@ impl Order {
             .into_iter()
             .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
             .ok_or(QuotingFailed::NoSolutions)?;
-        let mut quote = Quote::try_new(eth, &solution)?;
+        let quote = Quote::try_new(eth, &solution)?;
 
-        // Cache the solution so the autopilot can settle it during the fast-path
-        // exclusivity window. The quote's order is synthetic (unsigned), so the
-        // settlement is not encoded here but deferred to the fast-path settle,
-        // once the real order exists.
-        if let Some(auction_id) = auction_id {
-            let solution_id = solution.id().get();
-            competition.cache_quote_solution(auction, solution);
-            quote.solution_id = Some(solution_id);
-            quote.auction_id = Some(auction_id.0);
-        }
-        Ok(quote)
+        // Cache the fast-path solution under `(auction_id, solution_id)` so the
+        // autopilot can settle it during the exclusivity window. The quote's order
+        // is synthetic (unsigned), so the settlement is not encoded here but
+        // re-encoded against the real order at settle time. The solution id is
+        // returned so the caller can reference the cached solution.
+        let cached_solution_id = match (self.enable_fast_path, self.auction_id) {
+            (true, Some(auction_id)) => {
+                let solution_id = solution.id().get();
+                competition.cache_quote_solution(auction::Id(auction_id), solution);
+                Some(solution_id)
+            }
+            _ => None,
+        };
+        Ok((quote, cached_solution_id))
     }
 
     async fn fake_auction(
@@ -202,7 +189,6 @@ impl Order {
         eth: &Ethereum,
         tokens: &infra::tokens::Fetcher,
         quote_using_limit_orders: bool,
-        auction_id: Option<auction::Id>,
     ) -> Result<competition::Auction, Error> {
         let tokens = tokens.get(&[self.buy().token, self.sell().token]).await;
 
@@ -210,7 +196,7 @@ impl Order {
         let sell_token_metadata = tokens.get(&self.sell().token);
 
         competition::Auction::new(
-            auction_id,
+            self.auction_id.map(auction::Id),
             vec![competition::Order {
                 data: std::sync::Arc::new(competition::order::OrderData {
                     uid: Default::default(),

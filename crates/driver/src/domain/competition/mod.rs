@@ -28,6 +28,7 @@ use {
     axum::{body::Body, http::Request},
     eth_domain_types as eth,
     futures::{FutureExt, StreamExt},
+    indexmap::IndexMap,
     itertools::Itertools,
     number::u256_ext::U256Ext,
     simulator::{RevertError, Simulator, SimulatorError},
@@ -273,27 +274,18 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
-    /// Cached fast-path quote solutions, most recent at the front. Unlike
-    /// `/solve` (which caches ready-to-submit settlements), a quote runs
-    /// against a throwaway auction whose order is synthetic and unsigned,
-    /// so its solution cannot be encoded into a submittable settlement
-    /// until the real order exists at settle time. We therefore cache the
-    /// solution and its auction and (re-)encode later, on the fast-path
-    /// settle.
-    pub quote_solutions: Mutex<VecDeque<CachedQuoteSolution>>,
+    /// Cached fast-path quote solutions, keyed by `(auction_id, solution_id)`.
+    /// Unlike `/solve` (which caches ready-to-submit settlements), a quote runs
+    /// against a throwaway auction whose order is synthetic and unsigned, so
+    /// its solution cannot be encoded into a submittable settlement until
+    /// the real order exists at settle time; the fast-path settle path
+    /// re-encodes it against that order.
+    pub quote_solutions: Mutex<IndexMap<(i64, u64), Solution>>,
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     submitter_pool: SubmitterPool,
-}
-
-/// A fast-path quote solution cached for later settlement, together with the
-/// throwaway auction it was solved against.
-#[derive(Debug)]
-pub struct CachedQuoteSolution {
-    pub auction: Auction,
-    pub solution: Solution,
 }
 
 impl Competition {
@@ -553,13 +545,15 @@ impl Competition {
         Ok(scored.into_iter().map(|(solved, _)| solved).collect())
     }
 
-    /// Caches a fast-path quote's solution, keyed by the auction id (allocated
-    /// by the orderbook from the shared sequence) and the solution id, so it
-    /// can be settled later via the fast-path settle path.
-    pub fn cache_quote_solution(&self, auction: Auction, solution: Solution) {
+    /// Caches a fast-path quote's solution under `(auction_id, solution_id)` so
+    /// it can be settled later via the fast-path settle path. Bounded to
+    /// `MAX_CACHED_QUOTE_SOLUTIONS`, evicting the oldest entries first.
+    pub fn cache_quote_solution(&self, auction_id: auction::Id, solution: Solution) {
         let mut lock = self.quote_solutions.lock().unwrap();
-        lock.push_front(CachedQuoteSolution { auction, solution });
-        lock.truncate(MAX_CACHED_QUOTE_SOLUTIONS);
+        lock.insert((auction_id.0, solution.id().get()), solution);
+        while lock.len() > MAX_CACHED_QUOTE_SOLUTIONS {
+            lock.shift_remove_index(0);
+        }
     }
 
     /// Re-simulate all proposed solutions on every new block and drop any
