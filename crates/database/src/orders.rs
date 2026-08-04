@@ -871,8 +871,11 @@ pub fn open_orders_by_time_or_uids<'a>(
     // `selected_orders` has two branches:
     // - Branch 1: the usual "changed since $1" set (created/cancelled since the
     //   checkpoint, or explicitly requested by uid), gated by `valid_from <= now`.
-    // - Branch 2: re-selects orders whose `valid_from` crossed since $1 -- becoming
-    //   valid isn't a DB write, so branch 1 would never pick them up.
+    // - Branch 2: re-selects orders whose `valid_from` crossed since $1. Becoming
+    //   valid is not a DB write, so branch 1 never sees them. It also skips orders
+    //   that already expired (`true_valid_to < now`), so an order with an empty
+    //   window (`valid_from >= valid_to`) or one that already closed is not picked
+    //   up again.
     #[rustfmt::skip]
     const QUERY: &str = r#"
 WITH selected_orders AS (
@@ -884,7 +887,8 @@ WITH selected_orders AS (
           )
        OR (o.valid_from IS NOT NULL
             AND o.valid_from >  EXTRACT(EPOCH FROM $1)::bigint
-            AND o.valid_from <= $3)
+            AND o.valid_from <= $3
+            AND o.true_valid_to >= $3)
 ),
 trades_agg AS (
      SELECT t.order_uid,
@@ -2230,33 +2234,50 @@ mod tests {
         let checkpoint = base;
         let valid_from = base.timestamp() + 50; // future relative to the checkpoint
 
-        let order = Order {
+        // Both orders are created before the checkpoint, so branch 1 never picks them
+        // up. Only branch 2 (valid_from crossing) can surface them.
+        let created_before = base - Duration::seconds(100);
+
+        // Window still open when valid_from crosses: branch 2 must re-select it.
+        let valid = Order {
             uid: ByteArray([1u8; 56]),
             kind: OrderKind::Sell,
             sell_amount: 10.into(),
             buy_amount: 100.into(),
-            // Valid past valid_from so the order is genuinely solvable when it
-            // becomes eligible (valid_from < valid_to). The incremental query only
-            // selects candidates; the cache layer applies the valid_to filter.
             valid_to: valid_from + 100,
             partially_fillable: true,
-            // Created well before the checkpoint: branch 1 never picks it up.
-            creation_timestamp: base - Duration::seconds(100),
+            creation_timestamp: created_before,
             valid_from: Some(valid_from),
             ..Default::default()
         };
-        insert_order(&mut db, &order).await.unwrap();
+        // Empty window (`valid_from >= valid_to`): it "becomes eligible" only after it
+        // has already expired, so branch 2's `true_valid_to >= now` guard must exclude
+        // it. Otherwise a permanently-dead order gets resurfaced.
+        let expired = Order {
+            uid: ByteArray([2u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            valid_to: valid_from - 10,
+            partially_fillable: true,
+            creation_timestamp: created_before,
+            valid_from: Some(valid_from),
+            ..Default::default()
+        };
+        insert_order(&mut db, &valid).await.unwrap();
+        insert_order(&mut db, &expired).await.unwrap();
 
-        // Still gated (now < valid_from): neither branch selects it.
+        // Still gated (now < valid_from): neither branch selects either order.
         assert!(
             incremental_uids(&mut db, checkpoint, valid_from - 1)
                 .await
                 .is_empty()
         );
-        // valid_from has now passed: branch 2 re-selects it despite no DB update.
+        // valid_from has now passed: branch 2 re-selects the still-valid order despite
+        // no DB update, but excludes the already-expired one.
         assert_eq!(
             incremental_uids(&mut db, checkpoint, valid_from).await,
-            hashset![order.uid]
+            hashset![valid.uid]
         );
     }
 
