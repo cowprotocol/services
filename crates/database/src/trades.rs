@@ -24,49 +24,71 @@ pub struct TradesQueryRow {
     pub gas_cost: Option<BigDecimal>,
 }
 
-/// SQL expression computing a single trade's share of its settlement's on-chain
-/// gas cost: the settlement's total cost (`gas_used * effective_gas_price`)
-/// divided equally across all trades settled in the same transaction. Expects
-/// the settlement row to be aliased `s`; selected as the column `gas_cost`,
-/// which is `NULL` for settlements whose gas was not persisted (see migration
-/// V116).
-pub(crate) const GAS_COST_EXPR: &str = r#"FLOOR(
-    (s.gas_used * s.effective_gas_price)
-    / NULLIF((
-        SELECT COUNT(*)
-        FROM trades tc
-        WHERE tc.block_number = s.block_number
-        AND   tc.log_index < s.log_index
-        AND   tc.log_index > COALESCE((
-            SELECT MAX(sp.log_index)
-            FROM settlements sp
-            WHERE sp.block_number = s.block_number
-            AND   sp.log_index < s.log_index
-        ), -1)
-    ), 0)
-) AS gas_cost"#;
-
-/// Scalar subquery yielding a single order's total on-chain gas cost (native
-/// token wei) summed across all of its fills, or `NULL` when none of its
-/// settlements have persisted gas (see V116). Correlates on the order alias
-/// `o`, so it can be embedded in the `orders`/`jit_orders` order-detail queries
-/// to fetch the gas cost in the same round-trip.
-pub(crate) const ORDER_GAS_COST: &str = const_format::concatcp!(
-    r#"(
-    SELECT FLOOR(SUM(settlement.gas_cost))
+/// CTE definition (to be placed in a `WITH` list) mapping every trade to the
+/// settlement that included it and to its share of that settlement's on-chain
+/// gas cost. A trade belongs to the first settlement following it in the same
+/// block, and a settlement's cost (`gas_used * effective_gas_price`) is split
+/// equally across the trades between it and the previous settlement of the
+/// block. `gas_cost` is `NULL` for settlements whose gas was not persisted (see
+/// migration V116).
+///
+/// `NOT MATERIALIZED` is load-bearing: the CTE spans the whole `trades` table,
+/// so it is only affordable if Postgres inlines it into the referencing query
+/// and pushes the caller's filters down into the index scans. A materialized
+/// version (the default as soon as a query references the CTE more than once)
+/// sequentially scans `trades`.
+pub(crate) const TRADE_GAS_COSTS_CTE: &str = r#"trade_gas_costs AS NOT MATERIALIZED (
+    SELECT
+        t.order_uid,
+        t.block_number,
+        t.log_index,
+        settlement.tx_hash,
+        settlement.auction_id,
+        FLOOR(
+            (settlement.gas_used * settlement.effective_gas_price)
+            / NULLIF(settlement.trades_in_settlement, 0)
+        ) AS gas_cost
     FROM trades t
     JOIN LATERAL (
-        SELECT "#,
-    GAS_COST_EXPR,
-    r#"
+        SELECT
+            s.tx_hash,
+            s.auction_id,
+            s.gas_used,
+            s.effective_gas_price,
+            (
+                SELECT COUNT(*)
+                FROM trades tc
+                WHERE tc.block_number = s.block_number
+                AND   tc.log_index < s.log_index
+                AND   tc.log_index > COALESCE((
+                    SELECT MAX(sp.log_index)
+                    FROM settlements sp
+                    WHERE sp.block_number = s.block_number
+                    AND   sp.log_index < s.log_index
+                ), -1)
+            ) AS trades_in_settlement
         FROM settlements s
         WHERE s.block_number = t.block_number
         AND   s.log_index > t.log_index
         ORDER BY s.log_index ASC
         LIMIT 1
     ) AS settlement ON true
-    WHERE settlement.gas_cost IS NOT NULL
-    AND   t.order_uid = o.uid
+)"#;
+
+/// Scalar subquery yielding a single order's total on-chain gas cost (native
+/// token wei) summed across all of its fills, or `NULL` when none of its
+/// settlements have persisted gas (see V116). Carries its own copy of
+/// [`TRADE_GAS_COSTS_CTE`] so it stays a self-contained expression, and
+/// correlates on the order alias `o`, so it can be embedded in the
+/// `orders`/`jit_orders` order-detail queries to fetch the gas cost in the same
+/// round-trip.
+pub(crate) const ORDER_GAS_COST: &str = const_format::concatcp!(
+    "(WITH ",
+    TRADE_GAS_COSTS_CTE,
+    r#"
+    SELECT SUM(gas.gas_cost)
+    FROM trade_gas_costs gas
+    WHERE gas.order_uid = o.uid
 )"#,
 );
 
@@ -95,7 +117,9 @@ SELECT
     o.sell_token"#;
 
     const QUERY: &str = const_format::concatcp!(
-        "WITH page AS (",
+        "WITH ",
+        TRADE_GAS_COSTS_CTE,
+        ", page AS (",
         "(",
         SELECT,
         " FROM trades t",
@@ -151,6 +175,8 @@ SELECT
         " LIMIT $3",
         " OFFSET $4",
         ")",
+        // Joined onto the paginated `page` CTE (not the UNION branches) so the
+        // settlement lookup and gas attribution only run for the returned rows.
         r#"
 SELECT
     page.block_number,
@@ -162,26 +188,13 @@ SELECT
     page.owner,
     page.buy_token,
     page.sell_token,
-    settlement.tx_hash,
-    settlement.auction_id,
-    settlement.gas_cost
-FROM page"#,
-        // Joined onto the paginated `page` CTE (not the UNION branches) so gas
-        // is computed only for the returned rows.
-        r#"
-LEFT OUTER JOIN LATERAL (
-    SELECT
-        s.tx_hash,
-        s.auction_id,
-        "#,
-        GAS_COST_EXPR,
-        r#"
-    FROM settlements s
-    WHERE s.block_number = page.block_number
-    AND   s.log_index > page.log_index
-    ORDER BY s.log_index ASC
-    LIMIT 1
-) AS settlement ON true"#,
+    gas.tx_hash,
+    gas.auction_id,
+    gas.gas_cost
+FROM page
+LEFT OUTER JOIN trade_gas_costs gas
+    ON  gas.block_number = page.block_number
+    AND gas.log_index = page.log_index"#,
         " ORDER BY page.block_number DESC, page.log_index DESC",
     );
 
