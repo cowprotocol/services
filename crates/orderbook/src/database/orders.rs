@@ -297,7 +297,7 @@ impl OrderStoring for Postgres {
 
         let mut ex = self.pool.acquire().await?;
 
-        match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
+        let order = match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
             Some(order_with_quote) => {
                 let (order, quote) = order_with_quote.into_order_and_quote();
                 Some(full_order_with_quote_into_model_order(
@@ -312,7 +312,9 @@ impl OrderStoring for Postgres {
                     .map(full_order_into_model_order)
             }
         }
-        .transpose()
+        .transpose()?;
+
+        Ok(order)
     }
 
     async fn many_orders(&self, uids: &[OrderUid]) -> Result<Vec<(OrderUid, Result<Order>)>> {
@@ -336,6 +338,7 @@ impl OrderStoring for Postgres {
             // time
             database::jit_orders::get_many_by_uid(&mut ex_jit_orders, &uids)
         )?;
+
         Ok(orders
             .into_iter()
             .map(|order| {
@@ -609,6 +612,7 @@ fn full_order_with_quote_into_model_order(
         executed_fee: big_decimal_to_u256(&order.executed_fee)
             .context("executed fee is not a valid u256")?,
         executed_fee_token: Address::new(order.executed_fee_token.0),
+        gas_cost: order.gas_cost.as_ref().and_then(big_decimal_to_u256),
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
@@ -732,6 +736,7 @@ mod tests {
             executed_fee: Default::default(),
             executed_fee_token: ByteArray([1; 20]), // TODO surplus token
             full_app_data: Default::default(),
+            gas_cost: None,
         };
 
         // Open - sell (filled - 0%)
