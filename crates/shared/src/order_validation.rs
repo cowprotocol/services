@@ -1451,17 +1451,6 @@ mod tests {
         std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
-                    valid_to: 0,
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::ValidTo(
-                OrderValidToError::Insufficient,
-            ))
-        );
-        std::assert_matches!(
-            validator
-                .partial_validate(PreOrderData {
                     valid_to: legit_valid_to
                         + validity_configuration.max_market.as_secs() as u32
                         + 1,
@@ -1761,6 +1750,100 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn enforces_minimum_validity_window() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Ok(()));
+        let mut signature_validating = MockSignatureValidating::new();
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .never();
+        let hooks = HooksTrampoline::Instance::new(
+            Address::from([0xcf; 20]),
+            ProviderBuilder::new()
+                .connect_mocked_client(Asserter::new())
+                .erased(),
+        );
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let validator = OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(60),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
+            false,
+            Default::default(),
+            hooks,
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validating),
+            None,
+            Arc::new(limit_order_counter),
+            1,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+        );
+
+        let now = time::now_in_epoch_seconds();
+        let plain = |valid_to: u32| OrderCreation {
+            valid_to,
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(0),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
+            ..Default::default()
+        };
+        let delayed = |valid_from: u32, valid_to: u32| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "validFrom": valid_from } }).to_string(),
+            },
+            ..plain(valid_to)
+        };
+        let validate = async |creation| {
+            validator
+                .validate_and_construct_order(
+                    creation,
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await
+        };
+
+        // No `valid_from`: the window is measured from `now`.
+        std::assert_matches!(
+            validate(plain(now + 30)).await,
+            Err(ValidationError::Partial(PartialValidationError::ValidTo(
+                OrderValidToError::Insufficient
+            )))
+        );
+        validate(plain(now + 150)).await.unwrap();
+
+        // With `valid_from`: the window is measured from `valid_from`, so a far-future
+        // `valid_to` doesn't help.
+        std::assert_matches!(
+            validate(delayed(now + 50, now + 90)).await,
+            Err(ValidationError::InvalidValidFrom)
+        );
+        validate(delayed(now + 50, now + 150)).await.unwrap();
     }
 
     #[tokio::test]
