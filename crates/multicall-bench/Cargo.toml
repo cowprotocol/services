@@ -1,0 +1,29 @@
+[package]
+name = "multicall-bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+account-balances = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true }
+alloy-rpc-types = { workspace = true }
+anyhow = { workspace = true }
+balance-overrides = { workspace = true }
+chain = { workspace = true }
+clap = { workspace = true }
+contracts = { workspace = true }
+ethrpc = { workspace = true }
+model = { workspace = true }
+observe = { workspace = true }
+prometheus = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing = { workspace = true }
+
+[lints]
+workspace = true
