@@ -7,6 +7,7 @@ use {
     crate::BalanceSimulator,
     alloy_primitives::{Address, U256},
     alloy_provider::{CallItem, MULTICALL3_ADDRESS, Provider},
+    alloy_rpc_types::BlockId,
     alloy_sol_types::SolCall,
     anyhow::{Context, Result, ensure},
     contracts::ERC20,
@@ -29,6 +30,10 @@ pub struct Balances {
     /// Whether this chain has the canonical `Multicall3` deployment. Resolved
     /// on first use; without it balances are read one by one.
     has_multicall: OnceCell<bool>,
+    multicall_batch_size: usize,
+    /// Block the balance reads are pinned to. `None` reads the latest state,
+    /// which is what production wants.
+    block: Option<BlockId>,
 }
 
 impl Balances {
@@ -39,7 +44,25 @@ impl Balances {
             web3,
             balance_simulator,
             has_multicall: OnceCell::new(),
+            multicall_batch_size: MULTICALL_BATCH_SIZE,
+            block: None,
         }
+    }
+
+    /// Overrides how many queries are bundled into a single `Multicall3` call.
+    /// `0` reads every balance individually. Exists so that the batch size can
+    /// be tuned against a real node.
+    pub fn with_multicall_batch_size(mut self, size: usize) -> Self {
+        self.multicall_batch_size = size;
+        self
+    }
+
+    /// Pins the balance reads to a fixed block, so that repeated reads return
+    /// the same values instead of following the chain. Only affects the direct
+    /// `balanceOf`/`allowance` reads, not the pre-interaction simulation.
+    pub fn with_block(mut self, block: BlockId) -> Self {
+        self.block = Some(block);
+        self
     }
 
     fn vault_relayer(&self) -> Address {
@@ -100,6 +123,10 @@ impl Balances {
             return Vec::new();
         }
 
+        if self.multicall_batch_size == 0 {
+            return self.tradable_balances_individually(queries).await;
+        }
+
         match self.has_multicall().await {
             Ok(true) => (),
             Ok(false) => return self.tradable_balances_individually(queries).await,
@@ -110,7 +137,7 @@ impl Balances {
         }
 
         let chunks = queries
-            .chunks(MULTICALL_BATCH_SIZE)
+            .chunks(self.multicall_batch_size)
             .map(|chunk| async move {
                 match self.tradable_balances_batched(chunk).await {
                     Ok(balances) => balances,
@@ -142,6 +169,9 @@ impl Balances {
             .provider
             .multicall()
             .dynamic::<ERC20::ERC20::balanceOfCall>();
+        if let Some(block) = self.block {
+            multicall = multicall.block(block);
+        }
         for query in queries {
             // A single misbehaving token must not fail the whole batch.
             let call =
@@ -185,8 +215,12 @@ impl Balances {
     async fn tradable_balances_individually(&self, queries: &[&Query]) -> Vec<Result<U256>> {
         future::join_all(queries.iter().map(|query| async move {
             let token = ERC20::Instance::new(query.token, self.web3.provider.clone());
-            let balance = token.balanceOf(query.owner);
-            let allowance = token.allowance(query.owner, self.vault_relayer());
+            let mut balance = token.balanceOf(query.owner);
+            let mut allowance = token.allowance(query.owner, self.vault_relayer());
+            if let Some(block) = self.block {
+                balance = balance.block(block);
+                allowance = allowance.block(block);
+            }
             let (balance, allowance) =
                 futures::try_join!(balance.call().into_future(), allowance.call().into_future())?;
             Ok(std::cmp::min(balance, allowance))
