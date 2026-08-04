@@ -33,11 +33,9 @@ pub trait ChainTypes: Copy + Debug + Eq + Hash + Send + Sync + 'static {
 
 /// Checked arithmetic the scoring math needs.
 ///
-/// The mul-div methods mirror how each chain multiplies before dividing:
-/// the non-widening variants fail on intermediate overflow (matching the
-/// EVM code's `checked_mul` then `checked_div`), the widening variant uses
-/// a double-width intermediate and only fails if the final quotient does
-/// not fit.
+/// The non-widening mul-div variants fail on intermediate overflow, the
+/// widening variant uses a double-width intermediate and only fails if
+/// the final quotient does not fit.
 pub trait Amount: Copy + Debug + Default + Ord + Send + Sync {
     const ZERO: Self;
 

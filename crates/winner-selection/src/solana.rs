@@ -1,7 +1,7 @@
 //! Solana instantiation of the chain vocabulary.
 //!
-//! Deliberately free of any Solana SDK dependency: the algorithm only needs
-//! identifiers it can hash and compare, so 32-byte newtypes suffice.
+//! No solana-sdk dependency: the algorithm only needs identifiers it can
+//! hash and compare, 32-byte newtypes suffice.
 
 use crate::chain::{Amount, ChainTypes, MathError, MathResult};
 
@@ -34,14 +34,13 @@ impl ChainTypes for Solana {
         token
     }
 
-    /// The intent hash embeds no owner. JIT surplus capture is unsupported
-    /// on Solana, so no caller misses it.
+    /// The intent hash embeds no owner, so JIT orders cannot be attributed.
     fn uid_owner(_uid: &IntentHash) -> Option<Pubkey> {
         None
     }
 
     /// `amount * price / 10^9` with a u128 intermediate, saturating to
-    /// `u64::MAX` like the EVM path saturates its multiplication.
+    /// `u64::MAX` on overflow.
     fn value_in_native(price: u64, amount: u64) -> u64 {
         let wide = u128::from(price) * u128::from(amount) / NATIVE_DENOMINATOR;
         u64::try_from(wide).unwrap_or(u64::MAX)

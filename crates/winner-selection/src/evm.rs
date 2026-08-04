@@ -3,7 +3,7 @@
 pub use alloy_primitives::{Address, U256};
 use {
     crate::chain::{Amount, ChainTypes, MathError, MathResult},
-    alloy_primitives::{U512, ruint::UintTryFrom},
+    alloy_primitives::{U512, ruint::UintTryFrom, utils::Unit},
     number::u256_ext::U256Ext,
 };
 
@@ -19,11 +19,9 @@ pub fn as_erc20(token: Address, wrapped: Address) -> Address {
     }
 }
 
-/// Convert a token amount to ETH using this price.
-///
-/// Formula: `amount * price / 10^18`
+/// Converts a token amount to ETH. `price` is the 1e18-scaled native price.
 pub fn price_in_eth(price: U256, amount: U256) -> U256 {
-    amount.saturating_mul(price) / U256::from(1_000_000_000_000_000_000u64)
+    amount.saturating_mul(price) / Unit::ETHER.wei()
 }
 
 /// A unique identifier for an order.

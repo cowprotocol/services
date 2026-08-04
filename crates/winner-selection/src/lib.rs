@@ -7,7 +7,7 @@
 //!
 //! The algorithm is generic over the chain's type vocabulary
 //! ([`chain::ChainTypes`]). Every generic type defaults its chain parameter
-//! to [`evm::Evm`], so EVM callers use the crate exactly as before, while
+//! to [`evm::Evm`], so bare type names mean the EVM instantiation, and
 //! Solana callers instantiate the same logic with [`solana::Solana`].
 
 pub mod arbitrator;
