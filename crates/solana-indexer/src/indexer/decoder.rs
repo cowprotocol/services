@@ -406,7 +406,7 @@ fn decode_settlements_finalized(
         let received: Vec<u64> = finalize_input
             .pushes
             .iter()
-            .map(|push| u64::from_le_bytes(*push.amount))
+            .map(|push| push.amount)
             .collect();
 
         let trades = begin_input
