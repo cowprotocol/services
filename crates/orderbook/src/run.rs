@@ -55,6 +55,12 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .expect("failed to load configuration file")
         .validate()
         .expect("failed to validate configuration file");
+    let chain_name = config
+        .shared
+        .chain_id
+        .and_then(|id| Chain::try_from(id).ok())
+        .map(|chain| chain.name())
+        .unwrap_or("unknown");
     let tracing_config = config
         .shared
         .tracing
@@ -63,7 +69,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .map(|endpoint| {
             observe::TracingConfig::new(
                 endpoint.clone(),
-                "orderbook".into(),
+                format!("orderbook-{chain_name}"),
                 config.shared.tracing.exporter_timeout,
                 config.shared.tracing.level,
             )

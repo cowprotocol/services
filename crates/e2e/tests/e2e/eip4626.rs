@@ -5,6 +5,7 @@ use {
     },
     configs::{
         autopilot::{Configuration, native_price::NativePriceConfig},
+        native_price::Eip4626Config,
         native_price_estimators::{NativePriceEstimator, NativePriceEstimators},
         test_util::TestDefault,
     },
@@ -97,7 +98,10 @@ async fn eip4626_native_price_test(web3: Web3) {
     let driver_url: url::Url = "http://localhost:11088/test_solver".parse().unwrap();
     let autopilot_config = Configuration {
         native_price_estimation: NativePriceConfig {
-            eip4626: true,
+            eip4626: Eip4626Config {
+                enabled: true,
+                ..Default::default()
+            },
             estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
                 "test_quoter".to_string(),
                 driver_url,
@@ -187,7 +191,10 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
     let driver_url: url::Url = "http://localhost:11088/test_solver".parse().unwrap();
     let autopilot_config = Configuration {
         native_price_estimation: NativePriceConfig {
-            eip4626: true,
+            eip4626: Eip4626Config {
+                enabled: true,
+                ..Default::default()
+            },
             estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
                 "test_quoter".to_string(),
                 driver_url,
@@ -321,7 +328,10 @@ async fn eip4626_decimal_mismatch_native_price_test(web3: Web3) {
     let driver_url: url::Url = "http://localhost:11088/test_solver".parse().unwrap();
     let autopilot_config = Configuration {
         native_price_estimation: NativePriceConfig {
-            eip4626: true,
+            eip4626: Eip4626Config {
+                enabled: true,
+                ..Default::default()
+            },
             estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
                 "test_quoter".to_string(),
                 driver_url,
@@ -396,7 +406,7 @@ async fn eip4626_empty_revert_terminal_token_test(web3: Web3) {
     // unchanged — any fixed value works.
     let expected_price = 0.0001;
     let inner = FixedPrice(expected_price);
-    let estimator = Eip4626::new(Box::new(inner), web3.provider);
+    let estimator = Eip4626::new(Box::new(inner), web3.provider, std::iter::empty());
 
     for token in [BUY_ETH_ADDRESS, USDC, GNO] {
         let price = estimator
@@ -421,7 +431,7 @@ async fn forked_node_mainnet_eip4626_partial_vault_terminal_token() {
 async fn eip4626_partial_vault_terminal_token_test(web3: Web3) {
     let expected_price = 0.0001;
     let inner = FixedPrice(expected_price);
-    let estimator = Eip4626::new(Box::new(inner), web3.provider);
+    let estimator = Eip4626::new(Box::new(inner), web3.provider, std::iter::empty());
 
     let price = estimator
         .estimate_native_price(WMT_USDC, HEALTHY_PRICE_ESTIMATION_TIME)
