@@ -270,6 +270,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             balance_overrider,
         ),
         eth.current_block().clone(),
+        config.balance_cache.eviction_time,
+        config.balance_cache.min_update_interval,
     );
 
     let gas_estimators: Vec<gas_price_estimation::GasEstimatorType> = config

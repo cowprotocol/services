@@ -1,5 +1,6 @@
 use {
     crate::{
+        balance_cache::BalanceCacheConfig,
         banned_users::BannedUsersConfig,
         database::DatabasePoolConfig,
         fee_factor::FeeFactor,
@@ -126,6 +127,10 @@ pub struct Configuration {
     /// auction's submission deadline block has been reached.
     #[serde(default)]
     pub hide_competition_before_deadline: bool,
+
+    /// Settings for the on-chain balance cache.
+    #[serde(default)]
+    pub balance_cache: BalanceCacheConfig,
 }
 
 impl Configuration {
@@ -216,6 +221,7 @@ pub mod test_util {
                 price_estimation: PriceEstimation::test_default(),
                 order_simulation_timeout: Duration::from_secs(2),
                 hide_competition_before_deadline: false,
+                balance_cache: TestDefault::test_default(),
             }
         }
     }
@@ -383,6 +389,7 @@ mod tests {
             http_client: Default::default(),
             price_estimation: Default::default(),
             order_simulation_timeout: default_simulation_timeout(),
+            balance_cache: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

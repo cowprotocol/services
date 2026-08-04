@@ -96,20 +96,13 @@ pub fn cached(
     web3: &Web3,
     balance_simulator: BalanceSimulator,
     blocks: CurrentBlockWatcher,
+    eviction_time: Duration,
+    min_update_interval: Duration,
 ) -> Arc<dyn BalanceFetching> {
-    /// How long a cached balance may go without being requested before it is
-    /// evicted from the cache on the next block refresh.
-    /// This should be longer than a normal auction to prevent the autopilot
-    /// from purging the cache before running the next auction.
-    const CACHE_EVICTION_TIME: Duration = Duration::from_secs(20);
-    /// Cap the refresh rate so that fast chains don't burn CPU refetching
-    /// balances every single block.
-    const MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
-
     let cached = Arc::new(cached::Balances::new(
         fetcher(web3, balance_simulator),
-        CACHE_EVICTION_TIME,
-        MIN_REFRESH_INTERVAL,
+        eviction_time,
+        min_update_interval,
     ));
     cached.spawn_background_task(blocks);
     cached
