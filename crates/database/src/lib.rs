@@ -2,7 +2,6 @@ pub mod app_data;
 pub mod auction;
 pub mod auction_prices;
 pub mod byte_array;
-pub mod cow_amms;
 pub mod ethflow_orders;
 pub mod events;
 pub mod fee_policies;
@@ -19,7 +18,6 @@ pub mod quotes;
 pub mod reference_scores;
 pub mod settlement_executions;
 pub mod settlements;
-pub mod solver_competition;
 pub mod solver_competition_v2;
 pub mod trades;
 
@@ -52,7 +50,6 @@ pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 pub const TABLES: &[&str] = &[
     "app_data",
     "auctions",
-    "cow_amms",
     "ethflow_orders",
     "ethflow_refunds",
     "interactions",
@@ -67,7 +64,6 @@ pub const TABLES: &[&str] = &[
     "reference_scores",
     "settlement_executions",
     "settlements",
-    "solver_competitions",
     "trades",
 ];
 

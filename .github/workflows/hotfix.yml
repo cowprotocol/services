@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           token: "${{ secrets.HOTFIX_ACTION_TOKEN }}"
           fetch-depth: 0
@@ -29,12 +29,21 @@ jobs:
       - name: Get latest release version tag
         id: fetch_tag
         run: |
-          LATEST_VERSION=$(curl -s https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest | jq -r '.tag_name')
-          if ! [[ "$LATEST_VERSION" =~ ^v[0-9]+\.[0-9]+\..* ]]; then
-            echo "Invalid tag format, cannot bump version of: $LATEST_VERSION"
+          # Get the latest 10 releases, they come ordered by date by default,
+          # extract the tags, sort them and get the latest one (by version)
+          LATEST_VERSION=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=10"  \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -1)
+          if [[ -z "$LATEST_VERSION" ]]; then
+            echo "Could not determine the latest release version tag"
             exit 1
           fi
+          echo "Latest release version: $LATEST_VERSION"
           echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.HOTFIX_ACTION_TOKEN }}
 
       - name: Determine next patch version
         id: bump
@@ -43,6 +52,13 @@ jobs:
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NO_PREFIX"
           NEW_PATCH=$((PATCH + 1))
           NEW_TAG="v$MAJOR.$MINOR.$NEW_PATCH"
+          # A tag can exist without a release (e.g. an earlier run that failed
+          # after pushing the tag), in which case bumping the patch is not enough.
+          if git rev-parse -q --verify "refs/tags/$NEW_TAG" >/dev/null; then
+            echo "Tag $NEW_TAG already exists but has no release; resolve manually"
+            exit 1
+          fi
+          echo "Next hotfix version: $NEW_TAG"
           echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
         env:
           VERSION: ${{ steps.fetch_tag.outputs.latest }}

@@ -1,5 +1,5 @@
 use {
-    crate::native_price_estimators::NativePriceEstimators,
+    crate::{native_price::Eip4626Config, native_price_estimators::NativePriceEstimators},
     serde::Deserialize,
     std::time::Duration,
 };
@@ -46,15 +46,13 @@ pub struct NativePriceConfig {
     )]
     pub prefetch_time: Duration,
 
-    /// Enable EIP-4626 vault token pricing. When enabled, the native price
-    /// estimator will attempt to price vault tokens by querying their
-    /// underlying asset and conversion rate on-chain.
-    #[serde(default)]
-    pub eip4626: bool,
-
     /// Shared native price settings (cache, approximation tokens, etc.).
     #[serde(flatten)]
     pub shared: crate::native_price::NativePriceConfig,
+
+    /// EIP-4626 vault token pricing settings.
+    #[serde(default)]
+    pub eip4626: Eip4626Config,
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -68,7 +66,7 @@ impl NativePriceConfig {
             api_estimators: Default::default(),
             cache_refresh_interval: default_native_price_cache_refresh(),
             prefetch_time: Duration::from_millis(500),
-            eip4626: false,
+            eip4626: Default::default(),
             shared: crate::native_price::NativePriceConfig {
                 cache: crate::native_price::CacheConfig {
                     max_age: Duration::from_secs(2),
@@ -82,7 +80,7 @@ impl NativePriceConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, alloy::primitives::address};
 
     #[test]
     fn deserialize_full() {
@@ -97,6 +95,25 @@ mod tests {
         assert!(config.api_estimators.is_some());
         assert_eq!(config.cache_refresh_interval, Duration::from_secs(30));
         assert_eq!(config.prefetch_time, Duration::from_secs(120));
+        assert!(!config.eip4626.enabled);
+        assert!(config.eip4626.exemptions.is_empty());
+    }
+
+    #[test]
+    fn deserialize_eip4626() {
+        let toml = r#"
+        estimators = [[{type = "CoinGecko"}]]
+
+        [eip4626]
+        enabled = true
+        exemptions = ["0x0000000000000000000000000000000000000001"]
+        "#;
+        let config: NativePriceConfig = toml::from_str(toml).unwrap();
+        assert!(config.eip4626.enabled);
+        assert_eq!(
+            config.eip4626.exemptions,
+            [address!("0x0000000000000000000000000000000000000001")]
+        );
     }
 
     #[test]

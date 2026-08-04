@@ -760,6 +760,16 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Full { full } => validate(full)?,
         };
 
+        if app_data.protocol.enable_fast_path {
+            return Err(AppDataValidationError::Invalid(anyhow::anyhow!(
+                "'enableFastPath' is not yet supported"
+            )));
+        }
+        if app_data.protocol.valid_from.is_some() {
+            return Err(AppDataValidationError::Invalid(anyhow::anyhow!(
+                "'validFrom' is not yet supported"
+            )));
+        }
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
@@ -1157,6 +1167,7 @@ async fn get_or_create_quote(
                 verification: quote_search_parameters.verification.clone(),
                 signing_scheme: quote_search_parameters.signing_scheme,
                 additional_gas: quote_search_parameters.additional_gas,
+                fast_path: false,
                 timeout: None, // let &dyn OrderQuoting chose default
             };
 
@@ -2807,6 +2818,7 @@ mod tests {
                 verification,
                 signing_scheme: QuoteSigningScheme::Eip712,
                 additional_gas: 0,
+                fast_path: false,
                 timeout: None,
             }))
             .returning({

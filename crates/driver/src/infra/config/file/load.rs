@@ -78,6 +78,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 request_headers: solver_config.request_headers,
                 fee_handler: solver_config.fee_handler,
                 quote_using_limit_orders: solver_config.quote_using_limit_orders,
+                fast_path_enabled: solver_config.fast_path_enabled,
                 merge_solutions: match solver_config.merge_solutions {
                     true => SolutionMerging::Allowed {
                         max_orders_per_merged_solution: solver_config
@@ -348,12 +349,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             weth: config.contracts.weth.map(Into::into),
             balances: config.contracts.balances.map(Into::into),
             signatures: config.contracts.signatures.map(Into::into),
-            cow_amm_helper_by_factory: config
-                .contracts
-                .cow_amms
-                .into_iter()
-                .map(|cfg| (cfg.factory.into(), cfg.helper.into()))
-                .collect(),
             flashloan_router: config.contracts.flashloan_router.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
