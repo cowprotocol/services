@@ -23,7 +23,7 @@ futures = { workspace = true }
 settlement-interface = {
   package = "settlement-interface",
   git = "https://github.com/cowprotocol/solana-programs",
-  branch = "make-parsing-generic-on-accounts"
+  rev = "4d4fc46f594e0159246afaf148f0af2a463d0095"
 }
 solana-client = { workspace = true }
 solana-sdk = { workspace = true }
