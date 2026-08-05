@@ -13,7 +13,7 @@ use {
     },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
-    tracing::{Instrument, instrument},
+    tracing::instrument,
     url::Url,
 };
 
@@ -142,47 +142,31 @@ pub async fn current_block_ws_stream(
         // Process incoming blocks. WsConnect handles reconnection automatically,
         // so we don't need manual reconnection logic here.
         while let Some(block) = stream.next().await {
-            let block_info = match BlockInfo::try_from(block.clone()) {
-                Ok(info) => info,
-                Err(err) => {
-                    tracing::error!(?err, ?block, "failed to parse block, skipping");
-                    continue;
-                }
-            };
-
-            update_current_block_metrics(block_info.number);
-
-            // If the block is exactly the same as the previous one, ignore it.
-            if previous_block.hash == block_info.hash {
-                continue;
-            }
-
-            tracing::debug!(number=%block_info.number, hash=?block_info.hash, "received block");
-            update_block_metrics(previous_block.number, block_info.number);
-
-            // Only update the stream if the number has increased.
-            if block_info.number <= previous_block.number {
-                continue;
-            }
-
-            tracing::info!(number=%block_info.number, hash=?block_info.hash, "noticed a new block");
-            if let Err(err) = sender.send(block_info) {
-                tracing::error!(
-                    ?err,
-                    "failed to send block to stream, aborting subscription loop"
-                );
-                panic!("subscription loop terminated due to sender failure");
-            }
-
-            previous_block = block_info;
+            convert_block_and_process(block, &mut previous_block, &sender);
         }
 
         // If we reach here, the stream ended permanently
         tracing::error!("block stream ended after max reconnection attempts");
     };
 
-    tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
+    tokio::task::spawn(update_future);
     Ok(receiver)
+}
+
+#[instrument(skip_all)]
+fn convert_block_and_process(
+    block: alloy_rpc_types::Header,
+    previous_block: &mut BlockInfo,
+    sender: &watch::Sender<BlockInfo>,
+) {
+    let block_info = match BlockInfo::try_from(block.clone()) {
+        Ok(info) => info,
+        Err(err) => {
+            tracing::error!(?err, ?block, "failed to parse block, skipping");
+            return;
+        }
+    };
+    handle_new_block(previous_block, block_info, sender);
 }
 
 /// Creates a cloneable stream that yields the current block whenever it
@@ -218,46 +202,59 @@ pub async fn current_block_stream(
         let mut previous_block = first_block;
         loop {
             tokio::time::sleep(poll_interval).await;
-            let block = match get_block_at_id(&provider, BlockId::latest()).await {
-                Ok(block) => block,
-                Err(err) => {
-                    tracing::warn!("failed to get current block: {:?}", err);
-                    continue;
-                }
-            };
-
-            update_current_block_metrics(block.number);
-
-            // If the block is exactly the same, ignore it.
-            if previous_block.hash == block.hash {
-                continue;
-            }
-
-            // The new block is different but might still have the same number.
-
-            tracing::debug!(number=%block.number, hash=?block.hash, "polled block");
-            update_block_metrics(previous_block.number, block.number);
-
-            // Only update the stream if the number has increased.
-            if block.number <= previous_block.number {
-                continue;
-            }
-
-            tracing::info!(number=%block.number, hash=?block.hash, "noticed a new block");
-            if let Err(err) = sender.send(block) {
-                tracing::error!(
-                    ?err,
-                    "failed to send block to stream, aborting polling loop"
-                );
-                panic!("polling loop terminated due to sender failure");
-            }
-
-            previous_block = block;
+            fetch_block_and_process(&provider, &mut previous_block, &sender).await;
         }
     };
 
-    tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
+    tokio::task::spawn(update_future);
     Ok(receiver)
+}
+
+#[instrument(skip_all)]
+async fn fetch_block_and_process(
+    provider: &AlloyProvider,
+    previous_block: &mut BlockInfo,
+    sender: &watch::Sender<BlockInfo>,
+) {
+    let block = match get_block_at_id(provider, BlockId::latest()).await {
+        Ok(block) => block,
+        Err(err) => {
+            tracing::warn!("failed to get current block: {:?}", err);
+            return;
+        }
+    };
+    handle_new_block(previous_block, block, sender);
+}
+
+/// Applies a freshly observed block to the shared watcher, updating metrics
+/// and forwarding it if it represents progress relative to `previous_block`.
+fn handle_new_block(
+    previous_block: &mut BlockInfo,
+    new_block: BlockInfo,
+    sender: &watch::Sender<BlockInfo>,
+) {
+    update_current_block_metrics(new_block.number);
+
+    // If the block is exactly the same as the previous one, ignore it.
+    if previous_block.hash == new_block.hash {
+        return;
+    }
+
+    tracing::debug!(number=%new_block.number, hash=?new_block.hash, "observed new block");
+    update_block_metrics(previous_block.number, new_block.number);
+
+    // Only update the stream if the number has increased.
+    if new_block.number <= previous_block.number {
+        return;
+    }
+
+    tracing::info!(number=%new_block.number, hash=?new_block.hash, "noticed a new block");
+    if let Err(err) = sender.send(new_block) {
+        tracing::error!(?err, "failed to send block to stream, aborting loop");
+        panic!("block stream loop terminated due to sender failure");
+    }
+
+    *previous_block = new_block;
 }
 
 /// A method for creating a block stream with an initial value that never

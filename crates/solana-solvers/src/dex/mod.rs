@@ -20,7 +20,8 @@ pub struct Order {
     pub side: Side,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Side {
     Buy,
     Sell,
@@ -45,6 +46,11 @@ pub enum Dex {
 
 impl Dex {
     /// Quote `order` for settlement signer `user`.
+    ///
+    /// The route spends its input from `user`'s ATA for the sell mint.
+    /// Jupiter has no source-account override, so the settlement must pull
+    /// the sell funds into that ATA, creating it if missing, before the
+    /// swap executes.
     pub async fn swap(&self, order: &Order, user: &Pubkey) -> Result<Swap, jupiter::Error> {
         match self {
             Dex::Jupiter(jupiter) => jupiter.swap(order, user).await,

@@ -158,6 +158,10 @@ pub struct Query {
     /// used to answer the query.
     #[serde(skip_serializing)]
     pub block_dependent: bool,
+    /// Whether this quote is intended for fast-path (out-of-competition)
+    /// execution; propagated to the driver.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub fast_path: bool,
     pub timeout: Duration,
 }
 
@@ -192,6 +196,9 @@ pub struct Estimate {
     pub solver: Address,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
+    /// Whether the quoting solver supports fast-path (out-of-competition)
+    /// execution for this order.
+    pub supports_fast_path: bool,
     /// Data associated with this estimation.
     #[debug(ignore)]
     pub execution: QuoteExecution,
@@ -228,6 +235,44 @@ pub trait PriceEstimating: Send + Sync + 'static {
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 pub trait StreamingPriceEstimating: Send + Sync + 'static {
     fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult>;
+}
+
+/// All estimates returned by a [`CompetitionPriceEstimating`] call, ordered
+/// best to worst. Guaranteed to be non-empty.
+#[derive(Debug)]
+pub struct RankedEstimates {
+    values: Vec<Estimate>,
+}
+
+impl RankedEstimates {
+    /// Constructs from a guaranteed best estimate plus any remaining estimates
+    /// in best-to-worst order.
+    pub fn new(best: Estimate, rest: impl IntoIterator<Item = Estimate>) -> Self {
+        let values = std::iter::once(best).chain(rest).collect();
+        Self { values }
+    }
+
+    pub fn into_best(self) -> Estimate {
+        self.values
+            .into_iter()
+            .next()
+            .expect("non-empty by construction")
+    }
+
+    /// Returns all estimates ordered best to worst.
+    pub fn into_vec(self) -> Vec<Estimate> {
+        self.values
+    }
+}
+
+/// Like `PriceEstimating`, but returns all estimates collected from all inner
+/// estimators as a [`RankedEstimates`], ordered best to worst.
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
+pub trait CompetitionPriceEstimating: Send + Sync + 'static {
+    fn estimates(
+        &self,
+        query: Arc<Query>,
+    ) -> BoxFuture<'_, Result<RankedEstimates, PriceEstimationError>>;
 }
 
 pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);

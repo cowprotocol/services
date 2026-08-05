@@ -151,6 +151,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(3).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 

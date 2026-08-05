@@ -238,14 +238,15 @@ fn decode_settlement(
             SettlementInstruction::CreateBuffer => {
                 decode_buffers_created(instruction, &ctx.account_keys)
             }
-            // Bootstrap only, no domain event.
-            SettlementInstruction::Initialize => Ok(Vec::new()),
             // Paired below, once both halves of the settlement are in hand.
             SettlementInstruction::BeginSettle | SettlementInstruction::FinalizeSettle => {
                 Ok(Vec::new())
             }
-            // No domain event.
-            SettlementInstruction::ReclaimOrder => Ok(Vec::new()),
+            // No domain event: `Initialize` bootstraps the program state.
+            // TODO: map `ReclaimOrder` to `OrderClosed`.
+            SettlementInstruction::Initialize | SettlementInstruction::ReclaimOrder => {
+                Ok(Vec::new())
+            }
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
@@ -400,36 +401,54 @@ fn decode_settlements_finalized(
                 }
             };
         // Orders and finalize pushes are positionally aligned: `BeginSettle`
-        // enforces exactly one push per order, both sorted by order PDA, so order
-        // `i` is paid by push `i`. Collect the push amounts up front so the
-        // finalize borrow ends before the zip below.
-        let received: Vec<u64> = finalize_input
-            .pushes
-            .iter()
-            .map(|push| push.amount)
-            .collect();
+        // enforces exactly one push per order, both sorted by order PDA, so
+        // order `i` is paid by push `i`. A count mismatch breaks that
+        // invariant, so the pair cannot be decoded.
+        let order_count = begin_input.orders.iter().count();
+        let push_count = finalize_input.pushes.iter().count();
+        if order_count != push_count {
+            tracing::warn!(
+                instruction_index = begin.instruction_index,
+                order_count,
+                push_count,
+                "order and push counts differ, skipping the settlement pair"
+            );
+            continue;
+        }
 
-        let trades = begin_input
+        let mut trades = Vec::with_capacity(order_count);
+        let mut corrupt = false;
+        for (order, amount_received_delta) in begin_input
             .orders
             .iter()
-            .zip(received)
-            .filter_map(|(order, amount_received_delta)| {
-                let resolved = resolve_order(order.order_pda)?;
-                // Sell-side pull total. Amounts are little-endian `u64`, and
-                // the stream is untrusted, so saturate instead of wrapping.
-                let amount_withdrawn_delta = order
-                    .amounts
-                    .iter()
-                    .map(|amount| u64::from_le_bytes(*amount))
-                    .fold(0u64, u64::saturating_add);
-                Some(TradeDelta {
-                    order_uid: resolved.order_uid,
-                    amount_withdrawn_delta,
-                    amount_received_delta,
-                    order_fulfilled: resolved.order_fulfilled,
-                })
-            })
-            .collect();
+            .zip(finalize_input.pushes.iter().map(|push| push.amount))
+        {
+            let Some(resolved) = resolve_order(order.order_pda) else {
+                continue;
+            };
+            // Sell-side pull total, little-endian on the wire. An overflowing
+            // sum cannot be a real settlement, so it invalidates the pair.
+            let sum = order.amounts.iter().try_fold(0u64, |acc, amount| {
+                acc.checked_add(u64::from_le_bytes(*amount))
+            });
+            let Some(amount_withdrawn_delta) = sum else {
+                tracing::warn!(
+                    instruction_index = begin.instruction_index,
+                    "pull amounts overflow u64, skipping the settlement pair"
+                );
+                corrupt = true;
+                break;
+            };
+            trades.push(TradeDelta {
+                order_uid: resolved.order_uid,
+                amount_withdrawn_delta,
+                amount_received_delta,
+                order_fulfilled: resolved.order_fulfilled,
+            });
+        }
+        if corrupt {
+            continue;
+        }
 
         events.push(SettlementEvent::SettlementFinalized {
             auction_id: begin_input.auction_id,
