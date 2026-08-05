@@ -71,6 +71,7 @@ pub mod support {
     pub use {
         cow_contract_anyoneauthenticator as AnyoneAuthenticator,
         cow_contract_balances as Balances,
+        cow_contract_deadlinecheck as DeadlineCheck,
         cow_contract_signatures as Signatures,
         cow_contract_solver as Solver,
         cow_contract_spardose as Spardose,
