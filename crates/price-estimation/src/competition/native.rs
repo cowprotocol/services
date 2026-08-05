@@ -54,7 +54,8 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
                 .into_iter()
                 .max_by(|a, b| compare_native_result(&a.1, &b.1))
                 .context("could not get any native price")?;
-            self.report_winner(&token, OrderKind::Buy, winner)
+            self.report_winner(&token, OrderKind::Buy, &winner);
+            winner.1
         }
         .boxed()
     }

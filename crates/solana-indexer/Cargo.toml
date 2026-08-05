@@ -35,3 +35,10 @@ yellowstone-grpc-proto = { workspace = true }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+settlement-client = {
+  package = "settlement-client",
+  git = "https://github.com/cowprotocol/solana-programs",
+  rev = "4d4fc46f594e0159246afaf148f0af2a463d0095"
+}
