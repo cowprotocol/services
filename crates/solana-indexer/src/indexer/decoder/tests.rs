@@ -610,31 +610,53 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     );
 }
 
-/// Both components as one pipeline: proto `SubscribeUpdate`s carrying
-/// `CreateOrder`s go into the ingester and come out of the decoder as
-/// persisted events. This is the only test spanning the channel, so it pins
-/// that what the ingester forwards is what the decoder can consume, and the
-/// slot buffering: slot 42 is flushed at watermark 42 once slot 43 starts,
-/// while slot 43 (cut off by the stream end) persists at watermark 42 so a
-/// restart replays it.
+/// Both components as one pipeline: proto `SubscribeUpdate`s go into the
+/// ingester and come out of the decoder as persistence writes. This is the
+/// only test spanning the channel, so it pins that what the ingester forwards
+/// is what the decoder can consume, and it drives all three persistence
+/// writes: the bare watermark for a slot with no events, the dead letter for
+/// a failed decode, and the event batch of a slot cut off by the stream end.
 #[tokio::test]
 async fn ingester_to_decoder_persists_decoded_events() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut info, expected_uid, created_by) = create_order_tx();
+    let (info, expected_uid, created_by) = create_order_tx();
+
+    // Slot 42: a reverted transaction, so the slot decodes to no events.
     // The ingester drops transactions without a well-formed signature.
-    info.signature = signature(9).as_ref().to_vec();
-    let mut later_info = info.clone();
-    later_info.signature = signature(10).as_ref().to_vec();
-    let expected_event = DecodedEvent::Settlement(SettlementEvent::OrderCreated {
-        order_uid: expected_uid,
-        owner: Pubkey::new_from_array([0x11; 32]),
-        created_by,
-    });
+    let mut reverted = info.clone();
+    reverted.signature = signature(9).as_ref().to_vec();
+    reverted.meta.as_mut().unwrap().err = Some(TransactionError { err: vec![1] });
+
+    // Slot 43: a good `CreateOrder` plus a settlement instruction with an
+    // unknown discriminator, so the slot persists its event and the
+    // transaction is dead-lettered.
+    let mut partial = info;
+    partial.signature = signature(10).as_ref().to_vec();
+    let message = partial
+        .transaction
+        .as_mut()
+        .unwrap()
+        .message
+        .as_mut()
+        .unwrap();
+    let settlement_index = message
+        .account_keys
+        .iter()
+        .position(|key| key.as_slice() == settlement.to_bytes())
+        .unwrap();
+    message.instructions.insert(
+        0,
+        CompiledInstruction {
+            program_id_index: u32::try_from(settlement_index).unwrap(),
+            accounts: vec![1],
+            data: vec![0xFF],
+        },
+    );
 
     let (sender, receiver) = tokio::sync::mpsc::channel(16);
     let persistence = Persistence::default();
     let mut ingester = Ingester::new(
-        stream::iter(vec![Ok(tx_update(42, info)), Ok(tx_update(43, later_info))]),
+        stream::iter([Ok(tx_update(42, reverted)), Ok(tx_update(43, partial))]),
         sender,
         Arc::new(AtomicU64::new(0)),
     );
@@ -650,14 +672,24 @@ async fn ingester_to_decoder_persists_decoded_events() {
     assert_eq!(
         persistence.calls(),
         vec![
+            // Slot 42 produced no events and is flushed as a bare watermark
+            // once slot 43 starts.
+            Call::Watermark(Slot(42)),
+            // The unknown discriminator dead-letters the slot 43 transaction.
+            Call::DeadLetter {
+                signature: signature(10),
+                slot: Slot(43),
+            },
+            // The stream ends inside slot 43, so its events persist with the
+            // watermark held at the previous slot and a restart replays it.
             Call::PersistEvents {
-                events: vec![expected_event.clone()],
+                events: vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
+                    order_uid: expected_uid,
+                    owner: Pubkey::new_from_array([0x11; 32]),
+                    created_by,
+                })],
                 watermark: Slot(42),
             },
-            Call::PersistEvents {
-                events: vec![expected_event],
-                watermark: Slot(42),
-            }
         ]
     );
 }
