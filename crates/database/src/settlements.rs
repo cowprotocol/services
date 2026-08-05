@@ -90,29 +90,34 @@ WHERE block_number = $3 AND log_index = $4
         .map(|_| ())
 }
 
-/// Stores the actual gas cost (read from the transaction receipt) of a settled
-/// transaction. See migration `V116`.
+/// Stores the winning solver together with the actual gas cost of the
+/// settlement transaction (read from the transaction receipt). See migration
+/// `V116` for the gas columns.
 #[instrument(skip_all)]
-pub async fn update_settlement_gas(
+pub async fn update_settlement_solver_and_gas(
     ex: &mut PgConnection,
     block_number: i64,
     log_index: i64,
+    solver: Address,
+    solution_uid: i64,
     gas_used: BigDecimal,
     effective_gas_price: BigDecimal,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE settlements
-SET gas_used = $1, effective_gas_price = $2
-WHERE block_number = $3 AND log_index = $4
+SET solver = $1, solution_uid = $2, gas_used = $3, effective_gas_price = $4
+WHERE block_number = $5 AND log_index = $6
     ;"#;
     sqlx::query(QUERY)
+        .bind(solver)
+        .bind(solution_uid)
         .bind(gas_used)
         .bind(effective_gas_price)
         .bind(block_number)
         .bind(log_index)
         .execute(ex)
-        .await?;
-    Ok(())
+        .await
+        .map(|_| ())
 }
 
 /// Deletes all database data that referenced the deleted settlement events.
@@ -143,6 +148,7 @@ mod tests {
             events::{Event, EventIndex, Settlement},
         },
         sqlx::Connection,
+        std::str::FromStr,
     };
 
     async fn all_settlement_tx_hashes(
@@ -235,5 +241,64 @@ mod tests {
         let settlement = get_settlements_without_auction(&mut db).await.unwrap();
 
         assert!(settlement.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_settlement_solver_and_gas() {
+        type Row = (Address, Option<i64>, Option<BigDecimal>, Option<BigDecimal>);
+        const QUERY: &str = r#"
+SELECT solver, solution_uid, gas_used, effective_gas_price
+FROM settlements
+WHERE block_number = $1 AND log_index = $2
+    ;"#;
+
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let event = EventIndex::default();
+        crate::events::insert_settlement(&mut db, &event, &Default::default())
+            .await
+            .unwrap();
+
+        let row: Row = sqlx::query_as(QUERY)
+            .bind(event.block_number)
+            .bind(event.log_index)
+            .fetch_one(&mut *db)
+            .await
+            .unwrap();
+        assert_eq!(row, (ByteArray([0u8; 20]), None, None, None));
+
+        let solver = ByteArray([1u8; 20]);
+        // `u256::MAX`, the widest value `numeric(78, 0)` needs to accept.
+        let gas_used = BigDecimal::from_str(
+            "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+        )
+        .unwrap();
+        let effective_gas_price = BigDecimal::from(42_000_000_000u64);
+
+        update_settlement_solver_and_gas(
+            &mut db,
+            event.block_number,
+            event.log_index,
+            solver,
+            7,
+            gas_used.clone(),
+            effective_gas_price.clone(),
+        )
+        .await
+        .unwrap();
+
+        let row: Row = sqlx::query_as(QUERY)
+            .bind(event.block_number)
+            .bind(event.log_index)
+            .fetch_one(&mut *db)
+            .await
+            .unwrap();
+        assert_eq!(
+            row,
+            (solver, Some(7), Some(gas_used), Some(effective_gas_price))
+        );
     }
 }

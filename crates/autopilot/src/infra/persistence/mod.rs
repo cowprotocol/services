@@ -813,19 +813,12 @@ impl Persistence {
                 "settlement update",
             );
 
-            database::settlements::update_settlement_solver(
+            database::settlements::update_settlement_solver_and_gas(
                 &mut ex,
                 block_number,
                 log_index,
                 solver,
                 settlement.solution_uid(),
-            )
-            .await?;
-
-            database::settlements::update_settlement_gas(
-                &mut ex,
-                block_number,
-                log_index,
                 u256_to_big_decimal(&gas.0),
                 u256_to_big_decimal(&gas_price.0.0),
             )
