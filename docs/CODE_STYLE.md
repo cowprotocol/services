@@ -19,7 +19,7 @@ Comments exist for a future reader who has **only the code** — not this chat, 
 - Recaps chat context or planning discussion
 - Explains implementation details that belong in the identifier's name instead
 - Marks removed code (`// removed foo()`) — just delete it
-- State how new code is different to the old one - we only need to understand the current code
+- States how new code differs from the old one - we only need to understand the current code
 
 Litmus test: if removing the comment would not confuse a reader who has never seen this conversation, delete it.
 
@@ -62,6 +62,7 @@ Trigger: *repetition of the same argument set*, not just function count. Do not 
 ## 3. Prefer early returns to deep nesting
 
 Guard clauses and `?` beat pyramids of `if` / `if let` / nested `match`. The happy path should stay on the left margin.
+This eases burden on readers since they can build an incremental view of the state as they read the code.
 
 Avoid:
 ```rust
@@ -101,3 +102,6 @@ fn handle(order: Order) -> Result<Filled> {
 A single `match` on an enum is not "nesting" in the bad sense — it gives exhaustiveness. The problem is stacked `if` / `if let` pyramids that push the real logic off the right edge. Flatten only when it does not hurt readability; do not flatten at the cost of losing exhaustive matching on an enum.
 
 ## 4. Don't change code or comments unnecessarily
+
+Humans have to review each PR so let's not waste their time with reviewing unnecessary changes.
+
