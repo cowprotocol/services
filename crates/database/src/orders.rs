@@ -99,6 +99,7 @@ pub struct Order {
     pub buy_token_balance: BuyTokenDestination,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     pub class: OrderClass,
+    pub valid_from: Option<i64>,
 }
 
 #[instrument(skip_all)]
@@ -147,7 +148,8 @@ INSERT INTO orders (
     buy_token_balance,
     cancellation_timestamp,
     class,
-    true_valid_to
+    true_valid_to,
+    valid_from
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
@@ -159,7 +161,8 @@ VALUES (
             COALESCE((SELECT valid_to FROM ethflow_orders WHERE uid = $1), $21)
         ELSE
             $21
-    END
+    END,
+    $22
 )
     "#;
 
@@ -204,6 +207,7 @@ async fn insert_order_execute_sqlx(
         .bind(order.class)
         // true_valid_to takes the same value as valid_to when inserting an order
         .bind(order.valid_to)
+        .bind(order.valid_from)
         .execute(ex)
         .await
         .map(|result| result.rows_affected() > 0)
@@ -502,6 +506,8 @@ pub struct FullOrder {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub valid_to: i64,
+    /// Earliest time (unix seconds) the order may enter a batch auction.
+    pub valid_from: Option<i64>,
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
@@ -615,7 +621,7 @@ impl FullOrderWithQuote {
 // that with the current amount of data this wouldn't be better.
 pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
-o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
+o.valid_to, o.valid_from, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 o.class,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
@@ -735,6 +741,7 @@ WHERE
 pub fn solvable_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
+    now: i64,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     /// The base solvable orders query used in specialized queries. Parametrized
     /// by valid_to.
@@ -752,6 +759,7 @@ pub fn solvable_orders(
         FROM   orders o
         WHERE  o.cancellation_timestamp IS NULL
             AND o.true_valid_to >= $1
+            AND (o.valid_from IS NULL OR o.valid_from <= $2)
             AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
@@ -775,6 +783,7 @@ pub fn solvable_orders(
         lo.sell_amount,
         lo.buy_amount,
         lo.valid_to,
+        lo.valid_from,
         lo.app_data,
         lo.fee_amount,
         lo.kind,
@@ -844,7 +853,10 @@ pub fn solvable_orders(
            (lo.kind = 'buy'  AND COALESCE(ta.sum_buy ,0) < lo.buy_amount))
     "#;
 
-    sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
+    sqlx::query_as(OPEN_ORDERS)
+        .bind(min_valid_to)
+        .bind(now)
+        .fetch(ex)
 }
 
 #[instrument(skip_all)]
@@ -852,14 +864,31 @@ pub fn open_orders_by_time_or_uids<'a>(
     ex: &'a mut PgConnection,
     uids: &'a [OrderUid],
     after_timestamp: DateTime<Utc>,
+    now: i64,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
-    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL joins
+    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL joins.
+    //
+    // `selected_orders` has two branches:
+    // - Branch 1: the usual "changed since $1" set (created/cancelled since the
+    //   checkpoint, or explicitly requested by uid), gated by `valid_from <= now`.
+    // - Branch 2: re-selects orders whose `valid_from` crossed since $1. Becoming
+    //   valid is not a DB write, so branch 1 never sees them. It also skips orders
+    //   that already expired (`true_valid_to < now`), so an order with an empty
+    //   window (`valid_from >= valid_to`) or one that already closed is not picked
+    //   up again.
     #[rustfmt::skip]
     const QUERY: &str = r#"
 WITH selected_orders AS (
     SELECT o.*
     FROM   orders o
-    WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))
+    WHERE (
+            (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))
+            AND (o.valid_from IS NULL OR o.valid_from <= $3)
+          )
+       OR (o.valid_from IS NOT NULL
+            AND o.valid_from >  EXTRACT(EPOCH FROM $1)::bigint
+            AND o.valid_from <= $3
+            AND o.true_valid_to >= $3)
 ),
 trades_agg AS (
      SELECT t.order_uid,
@@ -879,6 +908,7 @@ SELECT
     so.sell_amount,
     so.buy_amount,
     so.valid_to,
+    so.valid_from,
     so.app_data,
     so.fee_amount,
     so.kind,
@@ -953,6 +983,7 @@ LEFT JOIN trades_agg ta ON  ta.order_uid = so.uid
     sqlx::query_as(QUERY)
         .bind(after_timestamp)
         .bind(uids)
+        .bind(now)
         .fetch(ex)
 }
 
@@ -1822,7 +1853,12 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
 
         async fn get_full_order(ex: &mut PgConnection) -> Option<FullOrder> {
-            solvable_orders(ex, 0).next().await.transpose().unwrap()
+            // now = i64::MAX so valid_from never gates these orders.
+            solvable_orders(ex, 0, i64::MAX)
+                .next()
+                .await
+                .transpose()
+                .unwrap()
         }
 
         async fn pre_signature_event(
@@ -1927,7 +1963,7 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
 
         async fn get_full_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<FullOrder> {
-            solvable_orders(ex, min_valid_to)
+            solvable_orders(ex, min_valid_to, i64::MAX)
                 .next()
                 .await
                 .transpose()
@@ -2039,7 +2075,7 @@ mod tests {
             after_timestamp: DateTime<Utc>,
             uids: &[OrderUid],
         ) -> HashSet<OrderUid> {
-            open_orders_by_time_or_uids(ex, uids, after_timestamp)
+            open_orders_by_time_or_uids(ex, uids, after_timestamp, i64::MAX)
                 .map_ok(|o| o.uid)
                 .try_collect()
                 .await
@@ -2115,6 +2151,123 @@ mod tests {
                 ByteArray([3u8; 56]),
             ]
         )
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_solvable_orders_valid_from() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        async fn solvable_uids(ex: &mut PgConnection, now: i64) -> HashSet<OrderUid> {
+            // `min_valid_to = now` mirrors production so `valid_to` expiry is enforced.
+            solvable_orders(ex, now, now)
+                .map_ok(|o| o.uid)
+                .try_collect()
+                .await
+                .unwrap()
+        }
+
+        let gated = Order {
+            uid: ByteArray([1u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            // `valid_to` is past every checked `now`.
+            valid_to: 10_000,
+            partially_fillable: true,
+            creation_timestamp: Utc::now(),
+            valid_from: Some(1_000),
+            ..Default::default()
+        };
+        insert_order(&mut db, &gated).await.unwrap();
+
+        // Gated out before valid_from.
+        assert!(solvable_uids(&mut db, 999).await.is_empty());
+        // Eligible exactly at, and after, valid_from.
+        assert_eq!(solvable_uids(&mut db, 1_000).await, hashset![gated.uid]);
+        assert_eq!(solvable_uids(&mut db, 2_000).await, hashset![gated.uid]);
+
+        let ungated = Order {
+            uid: ByteArray([2u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            valid_to: 100,
+            partially_fillable: true,
+            creation_timestamp: Utc::now(),
+            valid_from: None,
+            ..Default::default()
+        };
+        insert_order(&mut db, &ungated).await.unwrap();
+        assert_eq!(solvable_uids(&mut db, 0).await, hashset![ungated.uid]);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_open_orders_valid_from_transition() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        async fn incremental_uids(
+            ex: &mut PgConnection,
+            after: DateTime<Utc>,
+            now: i64,
+        ) -> HashSet<OrderUid> {
+            open_orders_by_time_or_uids(ex, &[], after, now)
+                .map_ok(|o| o.uid)
+                .try_collect()
+                .await
+                .unwrap()
+        }
+
+        // Anchor all times to one base so the margins survive second boundaries.
+        let base = Utc::now();
+        let checkpoint = base;
+        let valid_from = base.timestamp() + 50; // future relative to the checkpoint
+
+        // Created before the checkpoint, so only a `valid_from` crossing can pick them
+        // up.
+        let created_before = base - Duration::seconds(100);
+
+        let valid = Order {
+            uid: ByteArray([1u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            valid_to: valid_from + 100,
+            partially_fillable: true,
+            creation_timestamp: created_before,
+            valid_from: Some(valid_from),
+            ..Default::default()
+        };
+        // This order will already be expired by the time it
+        // would become eligible, so it must not be picked up.
+        let expired = Order {
+            uid: ByteArray([2u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            valid_to: valid_from - 10,
+            partially_fillable: true,
+            creation_timestamp: created_before,
+            valid_from: Some(valid_from),
+            ..Default::default()
+        };
+        insert_order(&mut db, &valid).await.unwrap();
+        insert_order(&mut db, &expired).await.unwrap();
+
+        assert!(
+            incremental_uids(&mut db, checkpoint, valid_from - 1)
+                .await
+                .is_empty()
+        );
+        assert_eq!(
+            incremental_uids(&mut db, checkpoint, valid_from).await,
+            hashset![valid.uid]
+        );
     }
 
     #[tokio::test]
