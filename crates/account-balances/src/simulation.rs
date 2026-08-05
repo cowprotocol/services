@@ -6,16 +6,15 @@ use {
     super::{BalanceFetching, Query, TransferSimulationError},
     crate::BalanceSimulator,
     alloy_primitives::{Address, U256},
-    alloy_provider::{CallItem, MULTICALL3_ADDRESS, Provider},
+    alloy_provider::{CallItem, Provider},
     alloy_rpc_types::BlockId,
     alloy_sol_types::SolCall,
     anyhow::{Context, Result, ensure},
     contracts::ERC20,
     ethrpc::{Web3, alloy::ProviderLabelingExt},
-    futures::future,
+    futures::{FutureExt, StreamExt, future},
     itertools::Itertools,
     model::order::SellTokenSource,
-    tokio::sync::OnceCell,
 };
 
 /// How many queries to bundle into a single `Multicall3` call. Every query
@@ -24,12 +23,14 @@ use {
 /// with expensive accessors.
 const MULTICALL_BATCH_SIZE: usize = 50;
 
+/// How many `Multicall3` calls to keep in flight at once. `aggregate3` goes
+/// out as individual `eth_call`s that bypass the RPC batching layer, so
+/// unbounded concurrency would flood the node.
+const MAX_CONCURRENT_MULTICALLS: usize = 10;
+
 pub struct Balances {
     web3: Web3,
     balance_simulator: BalanceSimulator,
-    /// Whether this chain has the canonical `Multicall3` deployment. Resolved
-    /// on first use; without it balances are read one by one.
-    has_multicall: OnceCell<bool>,
     multicall_batch_size: usize,
     /// Block the balance reads are pinned to. `None` reads the latest state,
     /// which is what production wants.
@@ -43,7 +44,6 @@ impl Balances {
         Self {
             web3,
             balance_simulator,
-            has_multicall: OnceCell::new(),
             multicall_batch_size: MULTICALL_BATCH_SIZE,
             block: None,
         }
@@ -69,33 +69,6 @@ impl Balances {
         self.balance_simulator.vault_relayer
     }
 
-    /// `Multicall3` lives at the same address on every network we support, but
-    /// test chains reuse well-known chain IDs without deploying it, so check
-    /// that the contract is actually there.
-    ///
-    /// Transient RPC failures are not cached so that the lookup is retried on
-    /// the next call.
-    async fn has_multicall(&self) -> Result<bool> {
-        self.has_multicall
-            .get_or_try_init(|| async {
-                let code = self
-                    .web3
-                    .provider
-                    .get_code_at(MULTICALL3_ADDRESS)
-                    .await
-                    .context("could not fetch Multicall3 code")?;
-                if code.is_empty() {
-                    tracing::warn!(
-                        address = ?MULTICALL3_ADDRESS,
-                        "no Multicall3 deployment; reading balances one by one"
-                    );
-                }
-                Ok(!code.is_empty())
-            })
-            .await
-            .copied()
-    }
-
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
         ensure_erc20(query.source)?;
         let simulation = self
@@ -119,43 +92,40 @@ impl Balances {
     /// Reads the tradable balances of queries without pre-interactions, in the
     /// order they were given. All queries must have an ERC20 sell-token source.
     async fn tradable_balances_simple(&self, queries: &[&Query]) -> Vec<Result<U256>> {
-        if queries.is_empty() {
-            return Vec::new();
-        }
-
         if self.multicall_batch_size == 0 {
             return self.tradable_balances_individually(queries).await;
         }
 
-        match self.has_multicall().await {
-            Ok(true) => (),
-            Ok(false) => return self.tradable_balances_individually(queries).await,
-            Err(err) => {
-                tracing::warn!(?err, "could not look up Multicall3");
-                return self.tradable_balances_individually(queries).await;
-            }
-        }
-
-        let chunks = queries
+        // Boxing and eagerly collecting works around rustc's higher-ranked
+        // lifetime inference bug when async blocks capturing references meet
+        // `buffered`.
+        let chunks: Vec<_> = queries
             .chunks(self.multicall_batch_size)
-            .map(|chunk| async move {
-                match self.tradable_balances_batched(chunk).await {
-                    Ok(balances) => balances,
-                    // A whole batch failing is not something we can attribute to any
-                    // single query (most likely the node hit its `eth_call` gas cap),
-                    // so retry the chunk without batching rather than failing it.
-                    Err(err) => {
-                        tracing::warn!(?err, "batched balance call failed, retrying individually");
-                        self.tradable_balances_individually(chunk).await
+            .map(|chunk| {
+                async move {
+                    match self.tradable_balances_batched(chunk).await {
+                        Ok(balances) => balances,
+                        // A whole batch failing is not something we can attribute to
+                        // any single query (most likely the node hit its `eth_call`
+                        // gas cap), so retry the chunk without batching rather than
+                        // failing it.
+                        Err(err) => {
+                            tracing::warn!(
+                                ?err,
+                                "batched balance call failed, retrying individually"
+                            );
+                            self.tradable_balances_individually(chunk).await
+                        }
                     }
                 }
-            });
+                .boxed()
+            })
+            .collect();
 
-        future::join_all(chunks)
+        futures::stream::iter(chunks)
+            .buffered(MAX_CONCURRENT_MULTICALLS)
+            .concat()
             .await
-            .into_iter()
-            .flatten()
-            .collect()
     }
 
     /// Reads the balances and allowances of a chunk of queries with a single
