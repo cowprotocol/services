@@ -1,5 +1,4 @@
 pub mod api;
-pub mod banned;
 pub mod blockchain;
 pub mod order_notify;
 pub mod persistence;

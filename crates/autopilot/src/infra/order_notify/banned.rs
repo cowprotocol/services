@@ -1,6 +1,6 @@
-pub use order_validation::banned::*;
 use {
     crate::{domain::OrderUid, infra::order_notify},
+    order_validation::banned::Users,
     std::sync::Arc,
 };
 

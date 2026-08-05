@@ -2,12 +2,17 @@
 //!
 //! The notifier subscribes to the `new_order` Postgres notifications emitted
 //! by the `order_insert_notify` trigger and hands every arriving order to a
-//! fixed list of systems, so work that would otherwise happen on the auction
-//! cut's critical path (warming the banned users cache, ...) can start early.
+//! fixed list of systems: waking the run loop, warming the banned users
+//! cache, ...
+
+mod banned;
+mod run_loop;
 
 use {
-    crate::{domain::OrderUid, infra::banned},
+    self::run_loop::RunLoopWaker,
+    crate::{domain::OrderUid, infra::order_notify::banned::CachePrewarmer},
     futures::future::join_all,
+    order_validation::banned::Users,
     sqlx::PgPool,
     std::{sync::Arc, time::Duration},
 };
@@ -28,9 +33,12 @@ pub struct Notifier {
 }
 
 impl Notifier {
-    pub fn new(banned_users: Arc<banned::Users>) -> Self {
+    pub fn new(banned_users: Arc<Users>, run_loop_wake: Arc<tokio::sync::Notify>) -> Self {
         Self {
-            listeners: vec![Box::new(banned::CachePrewarmer(banned_users))],
+            listeners: vec![
+                Box::new(RunLoopWaker(run_loop_wake)),
+                Box::new(CachePrewarmer(banned_users)),
+            ],
         }
     }
 
@@ -54,6 +62,8 @@ impl Notifier {
                     continue;
                 }
 
+                tracing::info!("connected to PostgreSQL for order notifications");
+
                 loop {
                     match listener.recv().await {
                         Ok(notification) => self.dispatch(notification.payload()).await,
@@ -68,6 +78,7 @@ impl Notifier {
     }
 
     async fn dispatch(&self, payload: &str) {
+        tracing::debug!(payload, "received order notification from postgres");
         let Some(order) = order_uid_from_notification(payload) else {
             tracing::warn!(payload, "malformed order notification payload");
             return;
