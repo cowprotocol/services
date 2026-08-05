@@ -3,8 +3,6 @@ use {
     std::sync::Arc,
 };
 
-/// Wakes the run loop so the arriving order makes it into the next auction as
-/// soon as possible.
 pub struct RunLoopWaker(pub Arc<tokio::sync::Notify>);
 
 #[async_trait::async_trait]

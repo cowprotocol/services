@@ -1,10 +1,3 @@
-//! Fan-out of orders as they arrive in the orderbook.
-//!
-//! The notifier subscribes to the `new_order` Postgres notifications emitted
-//! by the `order_insert_notify` trigger and hands every arriving order to a
-//! fixed list of systems: waking the run loop, warming the banned users
-//! cache, ...
-
 mod banned;
 mod run_loop;
 
