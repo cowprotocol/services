@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 alloy-primitives = { workspace = true }
-chain-types = { workspace = true }
 anyhow = { workspace = true }
+chain-types = { workspace = true }
 itertools = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
