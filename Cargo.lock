@@ -10821,6 +10821,8 @@ dependencies = [
  "axum 0.8.8",
  "base64 0.22.1",
  "clap",
+ "const-hex",
+ "futures",
  "observe",
  "reqwest 0.13.4",
  "serde",

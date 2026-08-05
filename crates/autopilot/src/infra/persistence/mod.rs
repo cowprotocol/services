@@ -814,12 +814,16 @@ impl Persistence {
                 "settlement update",
             );
 
-            database::settlements::update_settlement_solver(
+            database::settlements::update_settlement_solver_and_gas(
                 &mut ex,
                 block_number,
                 log_index,
                 solver,
                 settlement.solution_uid(),
+                // We're not expecting this to actually happen, BUT, since this is the cost of a
+                // transaction we'll double count this value if 1 transaction has 2 settlements
+                u256_to_big_decimal(&gas.0),
+                u256_to_big_decimal(&gas_price.0.0),
             )
             .await?;
 
