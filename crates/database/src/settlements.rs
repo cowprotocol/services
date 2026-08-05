@@ -67,9 +67,6 @@ WHERE block_number = $2 AND log_index = $3
         .map(|_| ())
 }
 
-/// Stores the winning solver together with the actual gas cost of the
-/// settlement transaction (read from the transaction receipt). See migration
-/// `V116` for the gas columns.
 #[instrument(skip_all)]
 pub async fn update_settlement_solver_and_gas(
     ex: &mut PgConnection,
