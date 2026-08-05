@@ -14,11 +14,10 @@ pub(crate) enum DecodeError {
     /// which includes the ALT (Address Lookup Table) loaded addresses.
     #[error("account index {index} out of range for {len} account keys")]
     AccountIndexOutOfRange { index: u8, len: usize },
-    /// The instruction was recognised but its schema did not match the on-chain
-    /// layout. Carries the interface parser's error rendered as text, which
-    /// names the check that failed. Text rather than the `ProgramError` itself
-    /// because the interface does not re-export it and pins its own
-    /// `solana-program-error` major, and nothing branches on this.
+    /// The instruction was recognised but its schema did not match the
+    /// on-chain layout. Carries the parser's error rendered as text, which
+    /// names the failed check. Nothing branches on it, and the interface does
+    /// not re-export its error type.
     #[error("schema mismatch: {0}")]
     SchemaMismatch(String),
 }

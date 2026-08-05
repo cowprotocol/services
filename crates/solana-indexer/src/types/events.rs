@@ -23,8 +23,8 @@ pub(crate) struct TradeDelta {
     pub amount_received_delta: u64,
     /// Whether the order is fully filled after this trade.
     ///
-    /// This is **not** a field emitted by the settlement program's event data;
-    /// it is inferred by the decoder from the order PDA's post-trade snapshot.
+    /// Not a field of the program's event data: the decoder infers it from
+    /// the order PDA's post-trade snapshot.
     /// It is `true` when post-trade `amount_withdrawn` equals the order's full
     /// sell amount, or `amount_received` equals the full buy amount.
     pub order_fulfilled: bool,

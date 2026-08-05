@@ -31,9 +31,8 @@ pub(crate) enum Call {
 
 /// PostgreSQL persistence. Used by Decoder, Watchdog, and FinalizationWorker.
 ///
-/// Cheap to clone: wraps a shared pool. The method bodies are stubbed until the
-/// Postgres adapter lands.
-// TODO: hold `postgres: Arc<Postgres>` once the adapter is added.
+/// Cheap to clone: wraps a shared pool. The method bodies are stubs.
+// TODO: hold `postgres: Arc<Postgres>` and implement the writes.
 #[derive(Clone, Default)]
 pub(crate) struct Persistence {
     /// Shared with every clone, so a test can read what the decoder wrote after
@@ -61,7 +60,7 @@ impl Persistence {
         events: Vec<DecodedEvent>,
         new_watermark: Slot,
     ) -> Result<(), PersistenceError> {
-        // No-op seam until the Postgres adapter lands. The adapter writes the
+        // No-op seam (no Postgres adapter). The adapter writes the
         // events and advances the watermark in one SQL transaction: append rows
         // as INSERT ON CONFLICT DO NOTHING, the watermark UPDATE guarded with
         // WHERE slot < $new_watermark.
@@ -75,7 +74,7 @@ impl Persistence {
 
     /// Record a slot checkpoint. Rejects downward writes.
     pub(crate) async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
-        // No-op seam until the Postgres adapter lands, which adds the monotonic
+        // No-op seam (no Postgres adapter). The adapter adds the monotonic
         // guard.
         #[cfg(test)]
         self.record(Call::Watermark(slot));
@@ -86,15 +85,14 @@ impl Persistence {
     /// signature. One row per transaction.
     ///
     /// The row's `reason` column is not a parameter: a decoder error is the
-    /// only failure mode that reaches this table (spec §12.2), so the
-    /// adapter writes `'decoder_error'`. A second reason would arrive as a
-    /// typed argument.
+    /// only failure mode that reaches this table, so the adapter writes
+    /// `'decoder_error'`. A second reason would arrive as a typed argument.
     pub(crate) async fn write_dead_letter(
         &self,
         signature: Signature,
         slot: Slot,
     ) -> Result<(), PersistenceError> {
-        // No-op seam until the Postgres adapter lands.
+        // No-op seam (no Postgres adapter).
         #[cfg(test)]
         self.record(Call::DeadLetter { signature, slot });
         Ok(())
