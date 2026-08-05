@@ -227,8 +227,8 @@ fn decode_settlement(
 }
 
 /// `CreateOrder` -> `OrderCreated`. The parser recovers the encoded order
-/// intent and the `created_by` account; the intent's hash is the order UID and
-/// it carries the owner.
+/// intent and the `created_by` account. The intent's hash is the order UID,
+/// and the intent carries the owner.
 fn decode_order_created(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
@@ -246,8 +246,8 @@ fn decode_order_created(
 }
 
 /// `CreateBuffer` -> one `BufferCreated` per created buffer. The parser groups
-/// the trailing accounts into `[buffer_pda, mint]` pairs; the event's token is
-/// each pair's mint.
+/// the trailing accounts into `[buffer_pda, mint]` pairs, and the event's
+/// token is each pair's mint.
 fn decode_buffers_created(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
@@ -346,8 +346,8 @@ fn decode_settlements_finalized(
             .zip(received)
             .filter_map(|(order, amount_received_delta)| {
                 let resolved = resolve_order(order.order_pda)?;
-                // Sell-side pull total. Amounts are little-endian `u64`; the
-                // stream is untrusted, so saturate instead of wrapping.
+                // Sell-side pull total. Amounts are little-endian `u64`, and
+                // the stream is untrusted, so saturate instead of wrapping.
                 let amount_withdrawn_delta = order
                     .amounts
                     .iter()
@@ -363,7 +363,7 @@ fn decode_settlements_finalized(
             .collect();
 
         events.push(SettlementEvent::SettlementFinalized {
-            // The wire carries `auction_id` as i64; it is non-negative in
+            // The wire carries `auction_id` as i64. It is non-negative in
             // practice.
             auction_id: begin_input.auction_id as u64,
             solver,
