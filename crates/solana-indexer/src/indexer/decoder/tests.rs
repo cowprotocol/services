@@ -38,14 +38,6 @@ fn key_bytes(key: Pubkey) -> Vec<u8> {
     key.to_bytes().to_vec()
 }
 
-fn compiled(program_id_index: u32, accounts: Vec<u8>, data: Vec<u8>) -> CompiledInstruction {
-    CompiledInstruction {
-        program_id_index,
-        accounts,
-        data,
-    }
-}
-
 fn inner(
     program_id_index: u32,
     accounts: Vec<u8>,
@@ -104,8 +96,16 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
         vec![solflow, acct_b],
         // top-level: a router call (dropped) then a solflow call (kept, index 1)
         vec![
-            compiled(0, vec![1], vec![0]),
-            compiled(3, vec![1, 4], vec![1, 2, 3]),
+            CompiledInstruction {
+                program_id_index: 0,
+                accounts: vec![1],
+                data: vec![0],
+            },
+            CompiledInstruction {
+                program_id_index: 3,
+                accounts: vec![1, 4],
+                data: vec![1, 2, 3],
+            },
         ],
         // settlement invoked as a CPI under top-level instruction 0
         vec![InnerInstructions {
@@ -154,11 +154,23 @@ fn unresolvable_programs_dropped_account_indices_carried_through() {
                 account_keys: vec![key_bytes(settlement), vec![1, 2, 3, 4, 5]],
                 instructions: vec![
                     // program index 9 is out of range -> dropped
-                    compiled(9, vec![0], vec![0]),
+                    CompiledInstruction {
+                        program_id_index: 9,
+                        accounts: vec![0],
+                        data: vec![0],
+                    },
                     // program index 1 is the zeroed bad key -> untracked, dropped
-                    compiled(1, vec![0], vec![0]),
+                    CompiledInstruction {
+                        program_id_index: 1,
+                        accounts: vec![0],
+                        data: vec![0],
+                    },
                     // settlement, with an out-of-range account index carried as-is
-                    compiled(0, vec![5], vec![7]),
+                    CompiledInstruction {
+                        program_id_index: 0,
+                        accounts: vec![5],
+                        data: vec![7],
+                    },
                 ],
                 ..Default::default()
             }),
@@ -189,7 +201,11 @@ fn inner_ix_path_tracks_cpi_nesting_depth() {
         vec![],
         vec![],
         // one top-level router call (dropped)
-        vec![compiled(0, vec![4], vec![0])],
+        vec![CompiledInstruction {
+            program_id_index: 0,
+            accounts: vec![4],
+            data: vec![0],
+        }],
         vec![InnerInstructions {
             index: 0,
             instructions: vec![
@@ -228,7 +244,11 @@ fn corrupt_stack_height_is_clamped() {
         vec![pubkey(9), settlement], // [router(0), settlement(1)]
         vec![],
         vec![],
-        vec![compiled(0, vec![1], vec![0])], // top-level router, dropped
+        vec![CompiledInstruction {
+            program_id_index: 0,
+            accounts: vec![1],
+            data: vec![0],
+        }], // top-level router, dropped
         vec![InnerInstructions {
             index: 0,
             instructions: vec![inner(1, vec![1], vec![7], Some(10_000))],
@@ -259,7 +279,11 @@ fn stream_tx(slot: Slot, signature: Signature, settlement: Pubkey) -> StreamUpda
         vec![settlement, pubkey(8)],
         vec![],
         vec![],
-        vec![compiled(0, vec![1], vec![0])],
+        vec![CompiledInstruction {
+            program_id_index: 0,
+            accounts: vec![1],
+            data: vec![0],
+        }],
         vec![],
     );
     StreamUpdate::Tx {
@@ -323,7 +347,11 @@ fn create_order_decodes_to_order_created() {
         account_keys,
         vec![],
         vec![],
-        vec![compiled(0, vec![1, 2, 3, 4], data)],
+        vec![CompiledInstruction {
+            program_id_index: 0,
+            accounts: vec![1, 2, 3, 4],
+            data,
+        }],
         vec![],
     );
 
@@ -347,10 +375,14 @@ fn create_order_decodes_to_order_created() {
 }
 
 /// A crafted `BeginSettle` + `FinalizeSettle` pair decodes to one
-/// `SettlementFinalized`: the auction id read from the begin wire, the summed
-/// sell amount, the buy-side push amount paired to its order by position
-/// (order `i` is paid by push `i`), the order UID from the injected resolver,
-/// and the solver read as the fee payer.
+/// `SettlementFinalized`, where:
+///
+/// - the auction id comes from the begin wire,
+/// - the order's sell amount is the sum of its pulls,
+/// - the push amount pairs to its order by position (order `i` is paid by push
+///   `i`),
+/// - the order UID comes from the injected resolver,
+/// - the solver is the fee payer.
 #[test]
 fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
@@ -372,9 +404,10 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         pubkey(29),
     ];
 
-    // BeginSettle body: finalize index 1, auction id 4242, one order, bump 0xAA,
-    // two transfers of 300 and 700 (sum 1000 = the sell-side amount withdrawn).
-    // The wire is little-endian, matching the interface's encoder.
+    // BeginSettle body: finalize index 1, auction id 4242, one order, bump
+    // 0xAA, and two pulls of 300 and 700. Both pulls drain the same order's
+    // sell token, so their sum (1000) is that order's withdrawn delta. The
+    // wire is little-endian, matching the interface's encoder.
     let mut begin_data = vec![SettlementInstruction::BeginSettle.discriminator()];
     begin_data.extend_from_slice(&1u16.to_le_bytes());
     begin_data.extend_from_slice(&4242i64.to_le_bytes());
@@ -398,9 +431,17 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         vec![],
         vec![
             // BeginSettle @ 0: sysvar, state, token, order_pda, sell, dest0, dest1.
-            compiled(1, vec![2, 3, 4, 5, 6, 7, 8], begin_data),
+            CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![2, 3, 4, 5, 6, 7, 8],
+                data: begin_data,
+            },
             // FinalizeSettle @ 1: sysvar, state, token, buffer (source), dest0.
-            compiled(1, vec![2, 3, 4, 9, 7], finalize_data),
+            CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![2, 3, 4, 9, 7],
+                data: finalize_data,
+            },
         ],
         vec![],
     );
