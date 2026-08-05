@@ -154,9 +154,7 @@ Use rust-analyzer MCP when appropriate such as finding usages or renaming. After
 
 ## Code Style
 
-Instead of using full paths like `volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride>`, import the type at the beginning so you don't have to use the full path later.
-
-Don't add a lot of comments. Add comments only if the code is a bit weird or the concept is not clear.
+See `docs/CODE_STYLE.md` for the code style rules — follow them for all non-trivial changes.
 
 ## CoW Protocol Database Access
 
