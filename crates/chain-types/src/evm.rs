@@ -3,7 +3,7 @@
 pub use alloy_primitives::{Address, U256};
 use {
     crate::{Amount, ChainTypes, MathError, MathResult},
-    alloy_primitives::{U512, ruint::UintTryFrom, utils::Unit},
+    alloy_primitives::{U512, ruint::UintTryFrom},
     number::u256_ext::U256Ext,
 };
 
@@ -17,14 +17,6 @@ pub fn as_erc20(token: Address, wrapped: Address) -> Address {
     } else {
         token
     }
-}
-
-/// Converts a token amount to ETH with a 512-bit intermediate, saturating to
-/// `U256::MAX` when the quotient does not fit. `price` is the 1e18-scaled
-/// native price.
-pub fn price_in_eth(price: U256, amount: U256) -> U256 {
-    let wide = amount.widening_mul(price) / U512::from(Unit::ETHER.wei());
-    U256::uint_try_from(wide).unwrap_or(U256::MAX)
 }
 
 /// A unique identifier for an order.
@@ -56,16 +48,14 @@ impl ChainTypes for Evm {
     type OrderUid = OrderUid;
     type TokenId = Address;
 
+    const NATIVE_PRICE_DENOMINATOR: U256 = U256::from_limbs([10u64.pow(18), 0, 0, 0]);
+
     fn canonical_token(token: Address, wrapped_native: Address) -> Address {
         as_erc20(token, wrapped_native)
     }
 
     fn uid_owner(uid: &OrderUid) -> Option<Address> {
         Some(uid.owner())
-    }
-
-    fn value_in_native(price: U256, amount: U256) -> U256 {
-        price_in_eth(price, amount)
     }
 }
 

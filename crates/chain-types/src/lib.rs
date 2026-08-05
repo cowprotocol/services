@@ -8,8 +8,9 @@
 pub mod evm;
 pub mod solana;
 
-pub use num::traits::{CheckedAdd, CheckedSub, SaturatingAdd, Zero};
 use std::{fmt::Debug, hash::Hash};
+
+pub use num::traits::{Bounded, CheckedAdd, CheckedSub, SaturatingAdd, Zero};
 
 /// The per-chain type vocabulary and hooks.
 pub trait ChainTypes: Copy + Debug + Eq + Hash + Send + Sync + 'static {
@@ -31,9 +32,18 @@ pub trait ChainTypes: Copy + Debug + Eq + Hash + Send + Sync + 'static {
     /// Only used to attribute JIT orders to surplus-capturing owners.
     fn uid_owner(uid: &Self::OrderUid) -> Option<Self::AccountId>;
 
+    /// What one whole native token is priced in: the scale of the chain's
+    /// native prices (EVM: 10^18 wei, Solana: 10^9 lamports).
+    const NATIVE_PRICE_DENOMINATOR: Self::Amount;
+
     /// Convert a token amount to the native token using this price:
-    /// `amount * price / native_denominator`.
-    fn value_in_native(price: Self::Amount, amount: Self::Amount) -> Self::Amount;
+    /// `amount * price / NATIVE_PRICE_DENOMINATOR` with a widening
+    /// intermediate, saturating when the result does not fit the amount type.
+    fn value_in_native(price: Self::Amount, amount: Self::Amount) -> Self::Amount {
+        amount
+            .try_widening_mul_div_floor(price, Self::NATIVE_PRICE_DENOMINATOR)
+            .unwrap_or_else(|_| Self::Amount::max_value())
+    }
 }
 
 /// Checked arithmetic the scoring math needs.
@@ -44,7 +54,7 @@ pub trait ChainTypes: Copy + Debug + Eq + Hash + Send + Sync + 'static {
 /// a double-width intermediate and only fails if the final quotient does not
 /// fit.
 pub trait Amount:
-    Copy + Debug + Ord + Send + Sync + Zero + CheckedAdd + CheckedSub + SaturatingAdd
+    Copy + Debug + Ord + Send + Sync + Zero + Bounded + CheckedAdd + CheckedSub + SaturatingAdd
 {
     /// `self + rhs`, `Overflow` when it does not fit.
     fn try_add(self, rhs: Self) -> MathResult<Self> {

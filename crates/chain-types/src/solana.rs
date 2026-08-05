@@ -14,9 +14,6 @@ pub struct Pubkey(pub [u8; 32]);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct IntentHash(pub [u8; 32]);
 
-/// Lamports per SOL, the native-price denominator (9 decimals).
-const NATIVE_DENOMINATOR: u128 = 1_000_000_000;
-
 /// The Solana chain marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Solana;
@@ -27,6 +24,9 @@ impl ChainTypes for Solana {
     type OrderUid = IntentHash;
     type TokenId = Pubkey;
 
+    /// Lamports per SOL (9 decimals).
+    const NATIVE_PRICE_DENOMINATOR: u64 = 1_000_000_000;
+
     /// Identity: Solana orders name SPL mints directly, there is no
     /// native-token sentinel to map.
     fn canonical_token(token: Pubkey, _wrapped_native: Pubkey) -> Pubkey {
@@ -36,13 +36,6 @@ impl ChainTypes for Solana {
     /// The intent hash embeds no owner, so JIT orders cannot be attributed.
     fn uid_owner(_uid: &IntentHash) -> Option<Pubkey> {
         None
-    }
-
-    /// `amount * price / 10^9` with a u128 intermediate, saturating to
-    /// `u64::MAX` on overflow.
-    fn value_in_native(price: u64, amount: u64) -> u64 {
-        let wide = u128::from(price) * u128::from(amount) / NATIVE_DENOMINATOR;
-        u64::try_from(wide).unwrap_or(u64::MAX)
     }
 }
 

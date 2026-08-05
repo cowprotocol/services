@@ -1,6 +1,6 @@
 //! Primitive types for winner selection, generic over the chain.
 
-pub use crate::evm::{Address, NATIVE_TOKEN, OrderUid, U256, as_erc20, price_in_eth};
+pub use crate::evm::{Address, NATIVE_TOKEN, OrderUid, U256, as_erc20};
 use crate::{chain::ChainTypes, evm::Evm};
 
 /// A directed token pair for tracking uniform clearing prices.
