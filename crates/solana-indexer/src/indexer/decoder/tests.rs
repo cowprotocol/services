@@ -23,8 +23,7 @@ use {
     bytes::Bytes,
     settlement_interface::{
         Pubkey as InterfacePubkey,
-        SettlementInstruction,
-        data::intent::{EncodedOrderIntent, OrderIntent, OrderKind},
+        data::intent::{OrderIntent, OrderKind},
         pda::order::find_order_pda,
     },
     solana_sdk::pubkey::Pubkey,
