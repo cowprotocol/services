@@ -9080,6 +9080,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "settlement-client"
+version = "0.1.0"
+source = "git+https://github.com/cowprotocol/solana-programs?rev=4d4fc46f594e0159246afaf148f0af2a463d0095#4d4fc46f594e0159246afaf148f0af2a463d0095"
+dependencies = [
+ "settlement-interface",
+]
+
+[[package]]
 name = "settlement-interface"
 version = "0.1.0"
 source = "git+https://github.com/cowprotocol/solana-programs?rev=4d4fc46f594e0159246afaf148f0af2a463d0095#4d4fc46f594e0159246afaf148f0af2a463d0095"
@@ -9948,6 +9956,7 @@ dependencies = [
  "bytes",
  "derive_more 1.0.0",
  "futures",
+ "settlement-client",
  "settlement-interface",
  "solana-client",
  "solana-sdk",

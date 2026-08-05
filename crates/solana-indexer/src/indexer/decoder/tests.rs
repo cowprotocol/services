@@ -25,6 +25,7 @@ use {
         Pubkey as InterfacePubkey,
         SettlementInstruction,
         data::intent::{EncodedOrderIntent, OrderIntent, OrderKind},
+        pda::order::find_order_pda,
     },
     solana_sdk::pubkey::Pubkey,
     tokio::sync::mpsc::Sender,
@@ -32,6 +33,36 @@ use {
 
 fn pubkey(n: u8) -> Pubkey {
     Pubkey::new_from_array([n; 32])
+}
+
+/// Compile client-built instructions into the proto transaction shape: the
+/// account list starts with the fee payer, then every referenced key in
+/// encounter order.
+fn tx_from_instructions(
+    payer: Pubkey,
+    instructions: &[settlement_interface::Instruction],
+) -> SubscribeUpdateTransactionInfo {
+    let mut keys = vec![payer];
+    let index_of = |keys: &mut Vec<Pubkey>, key: Pubkey| -> u8 {
+        if let Some(index) = keys.iter().position(|k| *k == key) {
+            return u8::try_from(index).unwrap();
+        }
+        keys.push(key);
+        u8::try_from(keys.len() - 1).unwrap()
+    };
+    let compiled = instructions
+        .iter()
+        .map(|instruction| CompiledInstruction {
+            program_id_index: u32::from(index_of(&mut keys, instruction.program_id)),
+            accounts: instruction
+                .accounts
+                .iter()
+                .map(|meta| index_of(&mut keys, meta.pubkey))
+                .collect(),
+            data: instruction.data.clone(),
+        })
+        .collect();
+    tx_info(keys, vec![], vec![], compiled, vec![])
 }
 
 fn key_bytes(key: Pubkey) -> Vec<u8> {
@@ -311,21 +342,15 @@ async fn run_drains_transactions_until_the_sender_drops() {
     assert!(decoder.run().await.is_ok());
 }
 
-/// A crafted `CreateOrder` decodes to `OrderCreated` with the UID (the
-/// hash of the encoded intent), the intent's owner, and the `created_by`
-/// account resolved from the instruction's account list. The account-list owner
-/// differs from the intent owner, so this also pins that the event owner comes
-/// from the intent data, not the accounts.
+/// A `CreateOrder` built by the client crate decodes to `OrderCreated` with
+/// the UID (the hash of the encoded intent), the intent's owner, and the
+/// `created_by` account resolved from the instruction's account list. The
+/// account-list owner differs from the intent owner, so this also pins that
+/// the event owner comes from the intent data, not the accounts.
 #[test]
 fn create_order_decodes_to_order_created() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     let created_by = pubkey(12);
-    // Account list: [settlement(0), owner(1), created_by(2), order_pda(3),
-    // system(4)].
-    let account_keys = vec![settlement, pubkey(11), created_by, pubkey(13), pubkey(14)];
-
-    // Build the encoded intent through the interface's public API so the test
-    // hashes it independently of the decoder.
     let intent = OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
         buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
@@ -337,23 +362,14 @@ fn create_order_decodes_to_order_created() {
         partially_fillable: false,
         app_data: [0x44; 32],
     };
-    let encoded = EncodedOrderIntent::from(&intent);
-    let intent_bytes: [u8; EncodedOrderIntent::SIZE] = (&encoded).into();
-    let mut data = vec![SettlementInstruction::CreateOrder.discriminator()];
-    data.extend_from_slice(&intent_bytes);
-
-    // CreateOrder accounts: [owner, created_by, order_pda, system].
-    let tx = tx_info(
-        account_keys,
-        vec![],
-        vec![],
-        vec![CompiledInstruction {
-            program_id_index: 0,
-            accounts: vec![1, 2, 3, 4],
-            data,
-        }],
-        vec![],
-    );
+    let instruction = settlement_client::instructions::CreateOrder {
+        program_id: settlement,
+        owner: pubkey(11),
+        created_by,
+        intent: &intent,
+    }
+    .into();
+    let tx = tx_from_instructions(pubkey(9), &[instruction]);
 
     let ctx = TxContext {
         slot: Slot(5),
@@ -374,78 +390,64 @@ fn create_order_decodes_to_order_created() {
     );
 }
 
-/// A crafted `BeginSettle` + `FinalizeSettle` pair decodes to one
-/// `SettlementFinalized`, where:
+/// A `BeginSettle` + `FinalizeSettle` pair built by the client crate decodes
+/// to one `SettlementFinalized`, where:
 ///
 /// - the auction id comes from the `BeginSettle` instruction data,
-/// - the order's sell amount is the sum of its pulls,
+/// - the order's sell amount is the sum of its pulls (300 + 700, both taken
+///   from the same order's sell account),
 /// - the push amount pairs to its order by position (order `i` is paid by push
 ///   `i`),
-/// - the order UID comes from the injected resolver,
+/// - the order UID comes from the injected resolver, keyed by the canonical
+///   order PDA the builder derives,
 /// - the solver is the fee payer.
 #[test]
 fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     let solver = pubkey(10);
-    let order_pda = pubkey(20);
-    // Account list:
-    // [solver(0), settlement(1), sysvar(2), state(3), token(4), order_pda(5),
-    //  sell(6), dest0(7), dest1(8), buffer(9)].
-    let account_keys = vec![
-        solver,
-        settlement,
-        pubkey(22),
-        pubkey(23),
-        pubkey(24),
-        order_pda,
-        pubkey(26),
-        pubkey(27),
-        pubkey(28),
-        pubkey(29),
-    ];
+    let intent = OrderIntent {
+        owner: InterfacePubkey::new_from_array([0x11; 32]),
+        buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
+        sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        sell_amount: 1_000,
+        buy_amount: 1_234,
+        valid_to: 42,
+        kind: OrderKind::Sell,
+        partially_fillable: false,
+        app_data: [0x44; 32],
+    };
+    let order_pda = find_order_pda(&settlement, &intent.uid()).0;
 
-    // BeginSettle body: finalize index 1, auction id 4242, one order, bump
-    // 0xAA, and two transfers of 300 and 700. Both take tokens from the same
-    // order's sell account, so their sum (1000) is that order's withdrawn
-    // delta. The byte layout is little-endian, matching the interface's
-    // encoder.
-    let mut begin_data = vec![SettlementInstruction::BeginSettle.discriminator()];
-    begin_data.extend_from_slice(&1u16.to_le_bytes());
-    begin_data.extend_from_slice(&4242i64.to_le_bytes());
-    begin_data.push(1);
-    begin_data.push(0xAA);
-    begin_data.push(2);
-    begin_data.extend_from_slice(&300u64.to_le_bytes());
-    begin_data.extend_from_slice(&700u64.to_le_bytes());
-
-    // FinalizeSettle body: begin index 0, one push of 1234 to dest0 (bump 0xBB).
-    // dest0 is one of the order's begin destinations, so it credits the order's
-    // buy-side receipt.
-    let mut finalize_data = vec![SettlementInstruction::FinalizeSettle.discriminator()];
-    finalize_data.extend_from_slice(&0u16.to_le_bytes());
-    finalize_data.push(0xBB);
-    finalize_data.extend_from_slice(&1_234u64.to_le_bytes());
-
-    let tx = tx_info(
-        account_keys,
-        vec![],
-        vec![],
-        vec![
-            // BeginSettle @ 0: sysvar, state, token, order_pda, sell, dest0, dest1.
-            CompiledInstruction {
-                program_id_index: 1,
-                accounts: vec![2, 3, 4, 5, 6, 7, 8],
-                data: begin_data,
-            },
-            // FinalizeSettle @ 1: sysvar, state, token, buffer (source), dest0.
-            CompiledInstruction {
-                program_id_index: 1,
-                accounts: vec![2, 3, 4, 9, 7],
-                data: finalize_data,
-            },
-        ],
-        vec![],
-    );
+    let begin = settlement_client::instructions::BeginSettle {
+        program_id: settlement,
+        finalize_ix_index: 1,
+        auction_id: 4242,
+        orders: &[settlement_client::instructions::InitializedIntent {
+            intent: &intent,
+            pulls: &[
+                settlement_client::instructions::Pull {
+                    destination: pubkey(27),
+                    amount: 300,
+                },
+                settlement_client::instructions::Pull {
+                    destination: pubkey(28),
+                    amount: 700,
+                },
+            ],
+        }],
+    }
+    .into();
+    let finalize = settlement_client::instructions::FinalizeSettle {
+        program_id: settlement,
+        begin_ix_index: 0,
+        orders: &[settlement_client::instructions::FinalizedIntent {
+            intent: &intent,
+            mint: pubkey(30),
+            amount: 1_234,
+        }],
+    }
+    .into();
+    let tx = tx_from_instructions(solver, &[begin, finalize]);
 
     let expected_uid = OrderUid([0x55; 32]);
     let resolve_order = |pda: &Pubkey| {
