@@ -2,8 +2,8 @@
 //! The decoder pulls `StreamUpdate`s from the ingester, decodes
 //! settlement-program and SolFlow transactions, and persists typed events.
 
-// TODO: `decode_solflow` is a stub (no on-chain SolFlow program yet), and the
-// `Persistence` write bodies are no-ops until the Postgres adapter lands.
+// TODO: `decode_solflow` is a stub (the on-chain SolFlow program does not
+// exist), and the `Persistence` write bodies are no-ops (no Postgres adapter).
 
 use {
     crate::{
@@ -127,8 +127,8 @@ impl Decoder {
 
         // A failed Solana transaction rolls back every account write, so no
         // state-changing event may be emitted for it. Failed transactions are
-        // delivered on purpose (the revert is an attribution signal), and a
-        // dedicated revert-attribution event is a later PR.
+        // delivered on purpose (the revert is an attribution signal), and no
+        // event models the revert.
         if meta.err.is_some() {
             tracing::debug!("transaction reverted, skipping");
             return (Vec::new(), false);
@@ -159,9 +159,9 @@ impl Decoder {
             .cloned()
             .collect();
 
-        // TODO: resolve order PDAs against persisted order rows once the store
-        // adapter lands. Until then nothing resolves, so `SettlementFinalized`
-        // events carry the tx-level fields with empty trades.
+        // TODO: resolve order PDAs against persisted order rows. Without a
+        // resolver backend nothing resolves, so `SettlementFinalized` events
+        // carry the tx-level fields with empty trades.
         let (events, decode_failed) = decode_settlement(&settlement, &ctx, |_order_pda| None);
 
         for instruction in instructions
@@ -272,8 +272,8 @@ fn decode_settlement(
 }
 
 /// `CreateOrder` -> `OrderCreated`. The parser recovers the encoded order
-/// intent and the `created_by` account; the intent's hash is the order UID and
-/// it carries the owner.
+/// intent and the `created_by` account. The intent's hash is the order UID,
+/// and the intent carries the owner.
 fn decode_order_created(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
@@ -291,8 +291,8 @@ fn decode_order_created(
 }
 
 /// `CreateBuffer` -> one `BufferCreated` per created buffer. The parser groups
-/// the trailing accounts into `[buffer_pda, mint]` pairs; the event's token is
-/// each pair's mint.
+/// the trailing accounts into `[buffer_pda, mint]` pairs, and the event's
+/// token is each pair's mint.
 fn decode_buffers_created(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
@@ -415,8 +415,8 @@ fn decode_settlements_finalized(
             .zip(received)
             .filter_map(|(order, amount_received_delta)| {
                 let resolved = resolve_order(order.order_pda)?;
-                // Sell-side pull total. Amounts are little-endian `u64`; the
-                // stream is untrusted, so saturate instead of wrapping.
+                // Sell-side pull total. Amounts are little-endian `u64`, and
+                // the stream is untrusted, so saturate instead of wrapping.
                 let amount_withdrawn_delta = order
                     .amounts
                     .iter()

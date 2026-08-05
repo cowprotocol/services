@@ -272,8 +272,8 @@ fn stream_tx(slot: Slot, signature: Signature, settlement: Pubkey) -> StreamUpda
 
 /// Verifies the run loop drains buffered updates and returns Ok when the
 /// sender drops. Event content is not asserted here: the persistence bodies
-/// are no-ops until the Postgres adapter lands, so nothing is observable
-/// through them. Decode output is asserted directly in
+/// are no-ops, so nothing is observable through them. Decode output is
+/// asserted directly in
 /// `decode_wraps_settlement_events_as_decoded`.
 #[tokio::test]
 async fn run_drains_transactions_until_the_sender_drops() {
