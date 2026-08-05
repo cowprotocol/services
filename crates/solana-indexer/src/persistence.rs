@@ -31,6 +31,11 @@ impl Persistence {
         // events and advances the watermark in one SQL transaction: append rows
         // as INSERT ON CONFLICT DO NOTHING, the watermark UPDATE guarded with
         // WHERE slot < $new_watermark.
+        tracing::warn!(
+            event_count = events.len(),
+            watermark = %new_watermark,
+            "persistence adapter missing, dropping decoded events"
+        );
         Ok(())
     }
 
@@ -38,6 +43,7 @@ impl Persistence {
     pub(crate) async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
         // No-op seam (no Postgres adapter). The adapter adds the monotonic
         // guard.
+        tracing::warn!(%slot, "persistence adapter missing, dropping watermark write");
         Ok(())
     }
 
@@ -53,6 +59,11 @@ impl Persistence {
         slot: Slot,
     ) -> Result<(), PersistenceError> {
         // No-op seam (no Postgres adapter).
+        tracing::warn!(
+            %signature,
+            %slot,
+            "persistence adapter missing, dropping dead-letter row"
+        );
         Ok(())
     }
 

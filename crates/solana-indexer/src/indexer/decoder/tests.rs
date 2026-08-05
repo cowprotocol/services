@@ -1,5 +1,12 @@
 use {
-    super::{Decoder, ResolvedOrder, build_account_keys, decode_settlement, relevant_instructions},
+    super::{
+        Decoder,
+        PartialDecode,
+        ResolvedOrder,
+        build_account_keys,
+        decode_settlement,
+        relevant_instructions,
+    },
     crate::{
         persistence::Persistence,
         types::{
@@ -25,7 +32,7 @@ use {
     settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{EncodedOrderIntent, OrderIntent, OrderKind},
+        data::intent::{OrderIntent, OrderKind},
         pda::order::find_order_pda,
     },
     solana_sdk::pubkey::Pubkey,
@@ -386,7 +393,7 @@ fn decode_wraps_events_and_gates_on_transaction_meta() {
     let (mut tx, expected_uid, created_by) = create_order_tx();
     let (decoder, _sender) = test_decoder(settlement, solflow);
 
-    let (events, decode_failed) = decoder.decode(&tx, Slot(5), signature(6));
+    let (events, decode_failed) = decoder.decode(tx.clone(), Slot(5), signature(6));
     assert!(!decode_failed);
     assert_eq!(
         events,
@@ -398,12 +405,12 @@ fn decode_wraps_events_and_gates_on_transaction_meta() {
     );
 
     tx.meta.as_mut().unwrap().err = Some(TransactionError { err: vec![1] });
-    let (events, decode_failed) = decoder.decode(&tx, Slot(5), signature(6));
+    let (events, decode_failed) = decoder.decode(tx.clone(), Slot(5), signature(6));
     assert!(!decode_failed);
     assert_eq!(events, vec![]);
 
     tx.meta = None;
-    let (events, decode_failed) = decoder.decode(&tx, Slot(5), signature(6));
+    let (events, decode_failed) = decoder.decode(tx.clone(), Slot(5), signature(6));
     assert!(decode_failed);
     assert_eq!(events, vec![]);
 }
@@ -439,9 +446,11 @@ fn unknown_discriminator_sets_failure_flag_and_keeps_good_events() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, &solflow);
-    let (events, decode_failed) = decode_settlement(&instructions, &ctx, |_| None);
+    let result = decode_settlement(&instructions, &ctx, |_| None);
 
-    assert!(decode_failed);
+    let Err(PartialDecode { events }) = result else {
+        panic!("expected a partial decode, got {result:?}");
+    };
     assert_eq!(
         events,
         vec![SettlementEvent::OrderCreated {
@@ -486,10 +495,9 @@ fn unpaired_begin_settle_sets_failure_flag() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, &solflow);
-    let (events, decode_failed) = decode_settlement(&instructions, &ctx, |_| None);
+    let result = decode_settlement(&instructions, &ctx, |_| None);
 
-    assert_eq!(events, vec![]);
-    assert!(decode_failed);
+    assert_eq!(result, Err(PartialDecode { events: vec![] }));
 }
 
 /// A `BeginSettle` + `FinalizeSettle` pair built by the client crate decodes
@@ -566,9 +574,8 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, &solflow);
-    let (events, decode_failed) = decode_settlement(&instructions, &ctx, resolve_order);
+    let events = decode_settlement(&instructions, &ctx, resolve_order).expect("clean decode");
 
-    assert!(!decode_failed);
     assert_eq!(
         events,
         vec![SettlementEvent::SettlementFinalized {
