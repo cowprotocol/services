@@ -12,12 +12,12 @@
 
 pub mod arbitrator;
 pub mod auction;
-pub mod chain;
-pub mod evm;
 pub mod primitives;
-pub mod solana;
 pub mod solution;
 pub mod state;
+
+pub use chain_types as chain;
+pub use chain_types::{evm, solana};
 #[cfg(test)]
 mod tests;
 
@@ -25,7 +25,7 @@ mod tests;
 pub use {
     arbitrator::{Arbitrator, Ranking},
     auction::AuctionContext,
-    chain::{Amount, ChainTypes},
+    chain_types::{Amount, ChainTypes},
     primitives::{Address, DirectedTokenPair, OrderUid, Side, U256},
     solution::{Order, RankType, Ranked, Scored, Solution, Unscored},
 };

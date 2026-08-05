@@ -2,7 +2,7 @@
 
 pub use alloy_primitives::{Address, U256};
 use {
-    crate::chain::{Amount, ChainTypes, MathError, MathResult},
+    crate::{Amount, ChainTypes, MathError, MathResult},
     alloy_primitives::{U512, ruint::UintTryFrom, utils::Unit},
     number::u256_ext::U256Ext,
 };
@@ -19,9 +19,12 @@ pub fn as_erc20(token: Address, wrapped: Address) -> Address {
     }
 }
 
-/// Converts a token amount to ETH. `price` is the 1e18-scaled native price.
+/// Converts a token amount to ETH with a 512-bit intermediate, saturating to
+/// `U256::MAX` when the quotient does not fit. `price` is the 1e18-scaled
+/// native price.
 pub fn price_in_eth(price: U256, amount: U256) -> U256 {
-    amount.saturating_mul(price) / Unit::ETHER.wei()
+    let wide = amount.widening_mul(price) / U512::from(Unit::ETHER.wei());
+    U256::uint_try_from(wide).unwrap_or(U256::MAX)
 }
 
 /// A unique identifier for an order.
@@ -67,20 +70,6 @@ impl ChainTypes for Evm {
 }
 
 impl Amount for U256 {
-    const ZERO: Self = U256::ZERO;
-
-    fn try_add(self, rhs: Self) -> MathResult<Self> {
-        U256::checked_add(self, rhs).ok_or(MathError::Overflow)
-    }
-
-    fn try_sub(self, rhs: Self) -> MathResult<Self> {
-        U256::checked_sub(self, rhs).ok_or(MathError::Negative)
-    }
-
-    fn saturating_add(self, rhs: Self) -> Self {
-        U256::saturating_add(self, rhs)
-    }
-
     fn try_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self> {
         self.checked_mul(mul)
             .ok_or(MathError::Overflow)?

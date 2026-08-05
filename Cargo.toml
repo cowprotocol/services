@@ -84,6 +84,7 @@ mockall = "0.12.1"
 model = { path = "crates/model" }
 moka = "0.12.10"
 multibase = "0.9"
+chain-types = { path = "crates/chain-types" }
 num = "0.4.3"
 number = { path = "crates/number" }
 observe = { path = "crates/observe" }

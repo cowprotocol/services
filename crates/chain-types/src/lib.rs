@@ -1,10 +1,14 @@
-//! Chain vocabulary for winner selection.
+//! Per-chain type vocabulary for chain-generic protocol logic.
 //!
-//! The winner-selection algorithm is chain-agnostic: it needs identifiers it
-//! can hash and compare, amounts it can do checked arithmetic on, and three
-//! small chain-specific hooks. Everything else in this crate is written once,
-//! generic over [`ChainTypes`].
+//! Chain-generic algorithms need identifiers they can hash and compare,
+//! amounts they can do checked arithmetic on, and a small set of
+//! chain-specific hooks. This crate defines that vocabulary ([`ChainTypes`],
+//! [`Amount`]) together with its EVM and Solana instantiations.
 
+pub mod evm;
+pub mod solana;
+
+pub use num::traits::{CheckedAdd, CheckedSub, SaturatingAdd, Zero};
 use std::{fmt::Debug, hash::Hash};
 
 /// The per-chain type vocabulary and hooks.
@@ -19,7 +23,8 @@ pub trait ChainTypes: Copy + Debug + Eq + Hash + Send + Sync + 'static {
     type Amount: Amount;
 
     /// Canonical form of a token for clearing-price uniqueness. EVM maps the
-    /// native-token sentinel to the wrapped native token, Solana is identity.
+    /// native-token sentinel (a buy-side-only value, sell tokens arrive
+    /// wrapped) to the wrapped native token, Solana is identity.
     fn canonical_token(token: Self::TokenId, wrapped_native: Self::TokenId) -> Self::TokenId;
 
     /// Owner embedded in the order UID, if the chain's UID carries one.
@@ -33,21 +38,23 @@ pub trait ChainTypes: Copy + Debug + Eq + Hash + Send + Sync + 'static {
 
 /// Checked arithmetic the scoring math needs.
 ///
-/// The non-widening mul-div variants fail on intermediate overflow, the
-/// widening variant uses a double-width intermediate and only fails if
-/// the final quotient does not fit.
-pub trait Amount: Copy + Debug + Default + Ord + Send + Sync {
-    const ZERO: Self;
-
-    fn is_zero(&self) -> bool {
-        *self == Self::ZERO
+/// Plain arithmetic comes from the `num` traits. The mul-div combinations and
+/// fee scaling are domain operations `num` does not model: the non-widening
+/// mul-div variants fail on intermediate overflow, the widening variant uses
+/// a double-width intermediate and only fails if the final quotient does not
+/// fit.
+pub trait Amount:
+    Copy + Debug + Ord + Send + Sync + Zero + CheckedAdd + CheckedSub + SaturatingAdd
+{
+    /// `self + rhs`, `Overflow` when it does not fit.
+    fn try_add(self, rhs: Self) -> MathResult<Self> {
+        self.checked_add(&rhs).ok_or(MathError::Overflow)
     }
 
-    /// `self + rhs`, `Overflow` when it does not fit.
-    fn try_add(self, rhs: Self) -> MathResult<Self>;
     /// `self - rhs`, `Negative` when the result would go below zero.
-    fn try_sub(self, rhs: Self) -> MathResult<Self>;
-    fn saturating_add(self, rhs: Self) -> Self;
+    fn try_sub(self, rhs: Self) -> MathResult<Self> {
+        self.checked_sub(&rhs).ok_or(MathError::Negative)
+    }
 
     /// `self * mul / div`, rounding down.
     fn try_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self>;

@@ -8,7 +8,7 @@
 use {
     crate::{
         auction::AuctionContext,
-        chain::{Amount, ChainTypes, MathError, MathResult},
+        chain::{Amount, ChainTypes, MathError, MathResult, SaturatingAdd, Zero},
         evm::Evm,
         primitives::{DirectedTokenPair, FeePolicy, Quote, Side},
         solution::{Order, RankType, Solution, Unscored},
@@ -147,7 +147,7 @@ impl<C: ChainTypes> Arbitrator<C> {
                 Ok(score) => {
                     let total_score = score
                         .values()
-                        .fold(C::Amount::ZERO, |acc, s| acc.saturating_add(*s));
+                        .fold(C::Amount::zero(), |acc, s| acc.saturating_add(s));
                     scores_by_solution.insert(
                         SolutionKey {
                             solver: solution.solver(),
@@ -197,8 +197,8 @@ impl<C: ChainTypes> Arbitrator<C> {
                 buy: order.buy_token,
             };
 
-            let entry = scores.entry(token_pair).or_default();
-            *entry = entry.saturating_add(score);
+            let entry = scores.entry(token_pair).or_insert_with(C::Amount::zero);
+            *entry = entry.saturating_add(&score);
         }
 
         Ok(scores)
@@ -274,7 +274,7 @@ impl<C: ChainTypes> Arbitrator<C> {
             .map(|v| v.as_slice())
             .unwrap_or_default();
 
-        let mut total_fee = C::Amount::ZERO;
+        let mut total_fee = C::Amount::zero();
         let mut current_prices = *base_prices;
 
         // Process policies in reverse order, updating custom prices as we go
@@ -386,7 +386,7 @@ impl<C: ChainTypes> Arbitrator<C> {
         let adjusted_quote = self.adjust_quote_to_order_limits(order, quote)?;
         match self.surplus_over(order, prices, adjusted_quote) {
             Ok(surplus) => Ok(surplus),
-            Err(MathError::Negative) => Ok(C::Amount::ZERO),
+            Err(MathError::Negative) => Ok(C::Amount::zero()),
             Err(err) => Err(err),
         }
     }
@@ -605,8 +605,8 @@ impl<C: ChainTypes> Arbitrator<C> {
                 .enumerate()
                 .filter(|(index, _)| winner_indices.contains(index))
                 .map(|(_, solution)| solution.score())
-                .reduce(|acc, score| acc.saturating_add(score))
-                .unwrap_or_default();
+                .reduce(|acc, score| acc.saturating_add(&score))
+                .unwrap_or_else(C::Amount::zero);
 
             reference_scores.insert(solver, score);
         }
@@ -628,7 +628,9 @@ fn compute_baseline_scores<C: ChainTypes>(
             continue;
         };
 
-        let current_best = baseline_scores.entry(token_pair.clone()).or_default();
+        let current_best = baseline_scores
+            .entry(token_pair.clone())
+            .or_insert_with(C::Amount::zero);
         if score > current_best {
             *current_best = *score;
         }

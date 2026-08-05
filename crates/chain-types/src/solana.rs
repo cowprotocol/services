@@ -3,7 +3,7 @@
 //! No solana-sdk dependency: the algorithm only needs identifiers it can
 //! hash and compare, 32-byte newtypes suffice.
 
-use crate::chain::{Amount, ChainTypes, MathError, MathResult};
+use crate::{Amount, ChainTypes, MathError, MathResult};
 
 /// A Solana account address (token mint or solver identity).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -27,9 +27,8 @@ impl ChainTypes for Solana {
     type OrderUid = IntentHash;
     type TokenId = Pubkey;
 
-    /// Identity: orders always trade SPL token accounts, native SOL enters
-    /// settlement pre-wrapped as the wSOL mint, so there is no sentinel to
-    /// canonicalize.
+    /// Identity: Solana orders name SPL mints directly, there is no
+    /// native-token sentinel to map.
     fn canonical_token(token: Pubkey, _wrapped_native: Pubkey) -> Pubkey {
         token
     }
@@ -50,20 +49,6 @@ impl ChainTypes for Solana {
 /// u64 amounts always use u128 intermediates: every u64 product fits, so
 /// unlike the EVM's U256 the non-widening and widening variants coincide.
 impl Amount for u64 {
-    const ZERO: Self = 0;
-
-    fn try_add(self, rhs: Self) -> MathResult<Self> {
-        u64::checked_add(self, rhs).ok_or(MathError::Overflow)
-    }
-
-    fn try_sub(self, rhs: Self) -> MathResult<Self> {
-        u64::checked_sub(self, rhs).ok_or(MathError::Negative)
-    }
-
-    fn saturating_add(self, rhs: Self) -> Self {
-        u64::saturating_add(self, rhs)
-    }
-
     fn try_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self> {
         if div == 0 {
             return Err(MathError::DivisionByZero);
