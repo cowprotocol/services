@@ -78,6 +78,8 @@ impl Jupiter {
             .append_pair("outputMint", &order.buy_mint.to_string())
             .append_pair("amount", &order.amount.to_string())
             .append_pair("swapMode", swap_mode.as_str())
+            // Jupiter bakes the resulting bounds into the returned instruction
+            // data; nothing downstream re-applies slippage.
             .append_pair("slippageBps", &self.slippage_bps.to_string());
         self.send(self.with_key(self.client.get(url))).await
     }
@@ -203,13 +205,27 @@ mod tests {
         let jupiter = Jupiter::new(&config(false)).unwrap();
         // Any valid pubkey works for building instructions, the swap only runs
         // for real once the driver supplies its settlement signer.
+        let sell = order(Side::Sell);
         let swap = jupiter
-            .swap(&order(Side::Sell), &Pubkey::from_str(WSOL).unwrap())
+            .swap(&sell, &Pubkey::from_str(WSOL).unwrap())
             .await
             .unwrap();
         assert_eq!(swap.in_amount, 1_000_000);
         assert!(swap.out_amount > 0);
         assert!(!swap.instructions.is_empty());
+
+        // End to end: the live swap assembles into a valid solution that
+        // serializes.
+        let solution = crate::dto::solution::Solution::new(
+            0,
+            crate::dto::order::OrderUid([1; 32]),
+            &sell,
+            swap,
+        )
+        .unwrap();
+        assert_eq!(solution.trades.len(), 1);
+        assert!(!solution.interactions.is_empty());
+        serde_json::to_string(&solution).unwrap();
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
