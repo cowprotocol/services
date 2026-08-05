@@ -16,8 +16,7 @@ pub mod primitives;
 pub mod solution;
 pub mod state;
 
-pub use chain_types as chain;
-pub use chain_types::{evm, solana};
+pub use chain_types::{self as chain, evm, solana};
 #[cfg(test)]
 mod tests;
 
