@@ -54,11 +54,6 @@ cow-contract-balances = { path = "../contracts-generated/balances" }
 cow-contract-baoswaprouter = { path = "../contracts-generated/baoswaprouter" }
 cow-contract-chainalysisoracle = { path = "../contracts-generated/chainalysisoracle" }
 cow-contract-counter = { path = "../contracts-generated/counter" }
-cow-contract-cowamm = { path = "../contracts-generated/cowamm" }
-cow-contract-cowammconstantproductfactory = { path = "../contracts-generated/cowammconstantproductfactory" }
-cow-contract-cowammfactorygetter = { path = "../contracts-generated/cowammfactorygetter" }
-cow-contract-cowammlegacyhelper = { path = "../contracts-generated/cowammlegacyhelper" }
-cow-contract-cowammuniswapv2priceoracle = { path = "../contracts-generated/cowammuniswapv2priceoracle" }
 cow-contract-cowprotocoltoken = { path = "../contracts-generated/cowprotocoltoken" }
 cow-contract-cowswapethflow = { path = "../contracts-generated/cowswapethflow" }
 cow-contract-cowswaponchainorders = { path = "../contracts-generated/cowswaponchainorders" }
