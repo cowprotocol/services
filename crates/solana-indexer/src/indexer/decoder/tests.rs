@@ -377,7 +377,7 @@ fn create_order_decodes_to_order_created() {
 /// A crafted `BeginSettle` + `FinalizeSettle` pair decodes to one
 /// `SettlementFinalized`, where:
 ///
-/// - the auction id comes from the begin wire,
+/// - the auction id comes from the `BeginSettle` instruction data,
 /// - the order's sell amount is the sum of its pulls,
 /// - the push amount pairs to its order by position (order `i` is paid by push
 ///   `i`),
@@ -405,9 +405,10 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     ];
 
     // BeginSettle body: finalize index 1, auction id 4242, one order, bump
-    // 0xAA, and two pulls of 300 and 700. Both pulls drain the same order's
-    // sell token, so their sum (1000) is that order's withdrawn delta. The
-    // wire is little-endian, matching the interface's encoder.
+    // 0xAA, and two transfers of 300 and 700. Both take tokens from the same
+    // order's sell account, so their sum (1000) is that order's withdrawn
+    // delta. The byte layout is little-endian, matching the interface's
+    // encoder.
     let mut begin_data = vec![SettlementInstruction::BeginSettle.discriminator()];
     begin_data.extend_from_slice(&1u16.to_le_bytes());
     begin_data.extend_from_slice(&4242i64.to_le_bytes());
