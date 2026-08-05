@@ -4,7 +4,6 @@ use {
         database::{Postgres, order_events::store_order_events},
         domain::{
             self,
-            order_notify,
             settlement::{SettlementEvent, TradeEvent, transaction::EncodedTrade},
         },
     },
@@ -101,13 +100,8 @@ impl Persistence {
     }
 
     /// Spawns a background task that listens for new order notifications from
-    /// PostgreSQL, notifies via the provided Notify and publishes the arriving
-    /// orders so interested components can act on them right away.
-    pub fn spawn_order_listener(
-        &self,
-        notify: Arc<tokio::sync::Notify>,
-        new_orders: order_notify::Notifier,
-    ) {
+    /// PostgreSQL and notifies via the provided Notify.
+    pub fn spawn_order_listener(&self, notify: Arc<tokio::sync::Notify>) {
         let pool = self.postgres.pool.clone();
         tokio::spawn(async move {
             loop {
@@ -133,15 +127,6 @@ impl Persistence {
                         Ok(notification) => {
                             let order_uid = notification.payload();
                             tracing::debug!(order_uid, "received order notification from postgres");
-                            match order_uid_from_notification(order_uid) {
-                                Some(uid) => new_orders.publish(uid),
-                                None => {
-                                    tracing::warn!(
-                                        order_uid,
-                                        "malformed order notification payload"
-                                    )
-                                }
-                            }
                             notify.notify_one();
                         }
                         Err(err) => {
@@ -1047,13 +1032,6 @@ impl Persistence {
             .map(|o| crate::domain::OrderUid(o.0))
             .collect())
     }
-}
-
-/// Parses the payload of a `new_order` notification: the hex encoded order
-/// UID as emitted by the `order_insert_notify` database trigger.
-fn order_uid_from_notification(payload: &str) -> Option<domain::OrderUid> {
-    let bytes = alloy::hex::decode(payload).ok()?;
-    Some(domain::OrderUid(bytes.try_into().ok()?))
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

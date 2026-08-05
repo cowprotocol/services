@@ -73,11 +73,6 @@ impl Cached {
         Some(cached)
     }
 
-    /// Returns the cached ban status of `address`, never hitting a backend.
-    pub(super) fn cached(&self, address: &Address) -> Option<bool> {
-        self.cache.get(address).map(|entry| entry.is_banned)
-    }
-
     /// Returns the subset reported as banned by any backend. Misses fan out
     /// to backends concurrently.
     pub(super) async fn check(&self, addresses: &HashSet<Address>) -> HashSet<Address> {

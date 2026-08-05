@@ -10,7 +10,6 @@ use {
                 Unscored,
                 winner_selection::{self, Ranking},
             },
-            order_notify,
             settlement::{ExecutionEnded, ExecutionStarted},
         },
         infra::{
@@ -130,7 +129,6 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
         maintenance: MaintenanceSync,
-        order_notifier: order_notify::Notifier,
     ) -> Self {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
@@ -139,7 +137,7 @@ impl RunLoop {
         let wake_notify = Arc::new(tokio::sync::Notify::new());
 
         // Spawn background tasks to listen for events
-        persistence.spawn_order_listener(wake_notify.clone(), order_notifier);
+        persistence.spawn_order_listener(wake_notify.clone());
         Self::spawn_block_listener(eth.current_block().clone(), wake_notify.clone());
 
         Self {
