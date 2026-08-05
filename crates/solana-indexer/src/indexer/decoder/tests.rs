@@ -347,42 +347,14 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, OrderUid, Pubkey) {
     (tx, OrderUid(intent.uid().to_bytes()), created_by)
 }
 
-/// A crafted `CreateOrder` decodes to `OrderCreated` with the UID (the
-/// hash of the encoded intent), the intent's owner, and the `created_by`
-/// account resolved from the instruction's account list. The account-list owner
-/// differs from the intent owner, so this also pins that the event owner comes
-/// from the intent data, not the accounts.
+/// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run`
+/// to persist, and gates on the transaction meta: a set `meta.err` means a
+/// revert that rolled back every account write, so nothing is emitted and
+/// nothing is dead-lettered, while an absent meta carries no success flag at
+/// all, so nothing is emitted and the transaction is dead-lettered. One
+/// fixture throughout, the meta is the only difference.
 #[test]
-fn create_order_decodes_to_order_created() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (tx, expected_uid, created_by) = create_order_tx();
-
-    let ctx = TxContext {
-        slot: Slot(5),
-        signature: signature(6),
-        account_keys: build_account_keys(&tx),
-        post_token_balances: vec![],
-    };
-    let instructions = relevant_instructions(&tx, &settlement, &solflow);
-    let (events, decode_failed) = decode_settlement(&instructions, &ctx, |_| None);
-
-    assert!(!decode_failed);
-    assert_eq!(
-        events,
-        vec![SettlementEvent::OrderCreated {
-            order_uid: expected_uid,
-            owner: Pubkey::new_from_array([0x11; 32]),
-            created_by,
-        }]
-    );
-}
-
-/// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run` to
-/// persist, and emits nothing once the same transaction carries `meta.err`: a
-/// revert rolls back every account write, and it is not a decode failure to
-/// dead-letter. One fixture for both, so `meta.err` is the only difference.
-#[test]
-fn decode_wraps_events_and_skips_reverted_transactions() {
+fn decode_wraps_events_and_gates_on_transaction_meta() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     let (mut tx, expected_uid, created_by) = create_order_tx();
     let (decoder, _sender) = test_decoder(settlement, solflow);
@@ -402,23 +374,11 @@ fn decode_wraps_events_and_skips_reverted_transactions() {
     let (events, decode_failed) = decoder.decode(&tx, Slot(5), signature(6));
     assert!(!decode_failed);
     assert_eq!(events, vec![]);
-}
 
-/// A transaction update without `meta` carries no success flag, so it emits
-/// nothing and is dead-lettered rather than decoded. The ingester forwards
-/// updates on a valid body and signature alone, so the decoder cannot assume
-/// `meta` is present.
-#[test]
-fn transaction_without_meta_is_dead_lettered() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut tx, ..) = create_order_tx();
     tx.meta = None;
-    let (decoder, _sender) = test_decoder(settlement, solflow);
-
     let (events, decode_failed) = decoder.decode(&tx, Slot(5), signature(6));
-
-    assert_eq!(events, vec![]);
     assert!(decode_failed);
+    assert_eq!(events, vec![]);
 }
 
 /// A settlement instruction with an unknown discriminator sets the failure
