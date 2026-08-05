@@ -229,7 +229,7 @@ impl<C: ChainTypes> Arbitrator<C> {
             let fees = self.protocol_fees(order, context, &custom_prices)?;
 
             user_surplus
-                .checked_add(fees)
+                .try_add(fees)
                 .context("overflow adding fees to surplus")?
         };
 
@@ -248,7 +248,7 @@ impl<C: ChainTypes> Arbitrator<C> {
                 // and then divide:
                 // buy_amount = surplus * buy_price / sell_price
                 let surplus_in_buy_tokens = surplus_in_surplus_token
-                    .widening_mul_div_floor(order.buy_amount, order.sell_amount)
+                    .try_widening_mul_div_floor(order.buy_amount, order.sell_amount)
                     .context("converting surplus to buy tokens")?;
 
                 // Afterwards we convert the buy token surplus to the native token.
@@ -282,7 +282,7 @@ impl<C: ChainTypes> Arbitrator<C> {
             let fee = self.protocol_fee(order, policy, &current_prices)?;
 
             total_fee = total_fee
-                .checked_add(fee)
+                .try_add(fee)
                 .context("overflow adding protocol fees")?;
 
             // Update custom prices for next iteration (except last iteration)
@@ -357,19 +357,19 @@ impl<C: ChainTypes> Arbitrator<C> {
         match order.side {
             Side::Buy => {
                 // Scale limit sell to support partially fillable orders
-                let limit_sell = limits.sell.mul_div_floor(executed, limits.buy)?;
+                let limit_sell = limits.sell.try_mul_div_floor(executed, limits.buy)?;
 
-                let sold = executed.mul_div_floor(prices.buy, prices.sell)?;
+                let sold = executed.try_mul_div_floor(prices.buy, prices.sell)?;
 
-                limit_sell.checked_sub(sold).ok_or(MathError::Negative)
+                limit_sell.try_sub(sold)
             }
             Side::Sell => {
                 // Scale limit buy to support partially fillable orders (ceiling division)
-                let limit_buy = executed.mul_div_ceil(limits.buy, limits.sell)?;
+                let limit_buy = executed.try_mul_div_ceil(limits.buy, limits.sell)?;
 
-                let bought = executed.mul_div_ceil(prices.sell, prices.buy)?;
+                let bought = executed.try_mul_div_ceil(prices.sell, prices.buy)?;
 
-                bought.checked_sub(limit_buy).ok_or(MathError::Negative)
+                bought.try_sub(limit_buy)
             }
         }
     }
@@ -400,18 +400,15 @@ impl<C: ChainTypes> Arbitrator<C> {
         match order.side {
             Side::Sell => {
                 // Quote buy amount after fees
-                let quote_buy_amount = quote
-                    .buy_amount
-                    .checked_sub(
-                        quote
-                            .fee
-                            .mul_div_floor(quote.buy_amount, quote.sell_amount)?,
-                    )
-                    .ok_or(MathError::Negative)?;
+                let quote_buy_amount = quote.buy_amount.try_sub(
+                    quote
+                        .fee
+                        .try_mul_div_floor(quote.buy_amount, quote.sell_amount)?,
+                )?;
 
                 // Scale to order's sell amount
                 let scaled_buy_amount =
-                    quote_buy_amount.mul_div_floor(order.sell_amount, quote.sell_amount)?;
+                    quote_buy_amount.try_mul_div_floor(order.sell_amount, quote.sell_amount)?;
 
                 // Use max to handle out-of-market orders
                 let buy_amount = order.buy_amount.max(scaled_buy_amount);
@@ -423,14 +420,11 @@ impl<C: ChainTypes> Arbitrator<C> {
             }
             Side::Buy => {
                 // Quote sell amount including fees
-                let quote_sell_amount = quote
-                    .sell_amount
-                    .checked_add(quote.fee)
-                    .ok_or(MathError::Overflow)?;
+                let quote_sell_amount = quote.sell_amount.try_add(quote.fee)?;
 
                 // Scale to order's buy amount
                 let scaled_sell_amount =
-                    quote_sell_amount.mul_div_floor(order.buy_amount, quote.buy_amount)?;
+                    quote_sell_amount.try_mul_div_floor(order.buy_amount, quote.buy_amount)?;
 
                 // Use min to handle out-of-market orders
                 let sell_amount = order.sell_amount.min(scaled_sell_amount);
@@ -454,9 +448,7 @@ impl<C: ChainTypes> Arbitrator<C> {
         // fee = surplus_before_fee * factor
         // surplus_after_fee = surplus_before_fee - fee
         // fee = surplus_after_fee * factor / (1 - factor)
-        surplus
-            .mul_f64(factor / (1.0 - factor))
-            .ok_or(MathError::Overflow)
+        surplus.try_mul_f64(factor / (1.0 - factor))
     }
 
     /// Calculate volume fee as a cut of trade volume.
@@ -482,9 +474,7 @@ impl<C: ChainTypes> Arbitrator<C> {
             Side::Buy => factor / (1.0 + factor),
         };
 
-        executed_in_surplus_token
-            .mul_f64(adjusted_factor)
-            .ok_or(MathError::Overflow)
+        executed_in_surplus_token.try_mul_f64(adjusted_factor)
     }
 
     /// Calculate custom clearing prices from executed amounts.
@@ -511,16 +501,12 @@ impl<C: ChainTypes> Arbitrator<C> {
 
         Ok(ClearingPrices {
             sell: match order.side {
-                Side::Sell => buy_amount
-                    .checked_add(protocol_fee)
-                    .ok_or(MathError::Overflow)?,
+                Side::Sell => buy_amount.try_add(protocol_fee)?,
                 Side::Buy => buy_amount,
             },
             buy: match order.side {
                 Side::Sell => sell_amount,
-                Side::Buy => sell_amount
-                    .checked_sub(protocol_fee)
-                    .ok_or(MathError::Negative)?,
+                Side::Buy => sell_amount.try_sub(protocol_fee)?,
             },
         })
     }
@@ -529,14 +515,18 @@ impl<C: ChainTypes> Arbitrator<C> {
     fn sell_amount(&self, order: &Order<C>, prices: &ClearingPrices<C>) -> MathResult<C::Amount> {
         match order.side {
             Side::Sell => Ok(order.executed_sell),
-            Side::Buy => order.executed_buy.mul_div_floor(prices.buy, prices.sell),
+            Side::Buy => order
+                .executed_buy
+                .try_mul_div_floor(prices.buy, prices.sell),
         }
     }
 
     /// Calculate effective buy amount (what user received).
     fn buy_amount(&self, order: &Order<C>, prices: &ClearingPrices<C>) -> MathResult<C::Amount> {
         match order.side {
-            Side::Sell => order.executed_sell.mul_div_ceil(prices.sell, prices.buy),
+            Side::Sell => order
+                .executed_sell
+                .try_mul_div_ceil(prices.sell, prices.buy),
             Side::Buy => Ok(order.executed_buy),
         }
     }

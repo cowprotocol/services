@@ -69,33 +69,33 @@ impl ChainTypes for Evm {
 impl Amount for U256 {
     const ZERO: Self = U256::ZERO;
 
-    fn checked_add(self, rhs: Self) -> Option<Self> {
-        U256::checked_add(self, rhs)
+    fn try_add(self, rhs: Self) -> MathResult<Self> {
+        U256::checked_add(self, rhs).ok_or(MathError::Overflow)
     }
 
-    fn checked_sub(self, rhs: Self) -> Option<Self> {
-        U256::checked_sub(self, rhs)
+    fn try_sub(self, rhs: Self) -> MathResult<Self> {
+        U256::checked_sub(self, rhs).ok_or(MathError::Negative)
     }
 
     fn saturating_add(self, rhs: Self) -> Self {
         U256::saturating_add(self, rhs)
     }
 
-    fn mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self> {
+    fn try_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self> {
         self.checked_mul(mul)
             .ok_or(MathError::Overflow)?
             .checked_div(div)
             .ok_or(MathError::DivisionByZero)
     }
 
-    fn mul_div_ceil(self, mul: Self, div: Self) -> MathResult<Self> {
+    fn try_mul_div_ceil(self, mul: Self, div: Self) -> MathResult<Self> {
         self.checked_mul(mul)
             .ok_or(MathError::Overflow)?
             .checked_ceil_div(&div)
             .ok_or(MathError::DivisionByZero)
     }
 
-    fn widening_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self> {
+    fn try_widening_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self> {
         let wide = self
             .widening_mul(mul)
             .checked_div(U512::from(div))
@@ -103,7 +103,7 @@ impl Amount for U256 {
         U256::uint_try_from(wide).map_err(|_| MathError::Overflow)
     }
 
-    fn mul_f64(self, factor: f64) -> Option<Self> {
-        self.checked_mul_f64(factor)
+    fn try_mul_f64(self, factor: f64) -> MathResult<Self> {
+        self.checked_mul_f64(factor).ok_or(MathError::Overflow)
     }
 }

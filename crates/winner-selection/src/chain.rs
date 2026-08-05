@@ -43,18 +43,20 @@ pub trait Amount: Copy + Debug + Default + Ord + Send + Sync {
         *self == Self::ZERO
     }
 
-    fn checked_add(self, rhs: Self) -> Option<Self>;
-    fn checked_sub(self, rhs: Self) -> Option<Self>;
+    /// `self + rhs`, `Overflow` when it does not fit.
+    fn try_add(self, rhs: Self) -> MathResult<Self>;
+    /// `self - rhs`, `Negative` when the result would go below zero.
+    fn try_sub(self, rhs: Self) -> MathResult<Self>;
     fn saturating_add(self, rhs: Self) -> Self;
 
     /// `self * mul / div`, rounding down.
-    fn mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self>;
+    fn try_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self>;
     /// `self * mul / div`, rounding up.
-    fn mul_div_ceil(self, mul: Self, div: Self) -> MathResult<Self>;
+    fn try_mul_div_ceil(self, mul: Self, div: Self) -> MathResult<Self>;
     /// `self * mul / div` with a double-width intermediate, rounding down.
-    fn widening_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self>;
+    fn try_widening_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self>;
     /// `self * factor` for fee factors in `[0, 1)` ranges.
-    fn mul_f64(self, factor: f64) -> Option<Self>;
+    fn try_mul_f64(self, factor: f64) -> MathResult<Self>;
 }
 
 pub type MathResult<T> = Result<T, MathError>;

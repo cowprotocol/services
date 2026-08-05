@@ -52,19 +52,19 @@ impl ChainTypes for Solana {
 impl Amount for u64 {
     const ZERO: Self = 0;
 
-    fn checked_add(self, rhs: Self) -> Option<Self> {
-        u64::checked_add(self, rhs)
+    fn try_add(self, rhs: Self) -> MathResult<Self> {
+        u64::checked_add(self, rhs).ok_or(MathError::Overflow)
     }
 
-    fn checked_sub(self, rhs: Self) -> Option<Self> {
-        u64::checked_sub(self, rhs)
+    fn try_sub(self, rhs: Self) -> MathResult<Self> {
+        u64::checked_sub(self, rhs).ok_or(MathError::Negative)
     }
 
     fn saturating_add(self, rhs: Self) -> Self {
         u64::saturating_add(self, rhs)
     }
 
-    fn mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self> {
+    fn try_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self> {
         if div == 0 {
             return Err(MathError::DivisionByZero);
         }
@@ -72,7 +72,7 @@ impl Amount for u64 {
         u64::try_from(wide).map_err(|_| MathError::Overflow)
     }
 
-    fn mul_div_ceil(self, mul: Self, div: Self) -> MathResult<Self> {
+    fn try_mul_div_ceil(self, mul: Self, div: Self) -> MathResult<Self> {
         if div == 0 {
             return Err(MathError::DivisionByZero);
         }
@@ -80,15 +80,17 @@ impl Amount for u64 {
         u64::try_from(wide).map_err(|_| MathError::Overflow)
     }
 
-    fn widening_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self> {
-        self.mul_div_floor(mul, div)
+    fn try_widening_mul_div_floor(self, mul: Self, div: Self) -> MathResult<Self> {
+        self.try_mul_div_floor(mul, div)
     }
 
-    fn mul_f64(self, factor: f64) -> Option<Self> {
+    fn try_mul_f64(self, factor: f64) -> MathResult<Self> {
         if !factor.is_finite() || factor < 0.0 {
-            return None;
+            return Err(MathError::Overflow);
         }
         let result = self as f64 * factor;
-        (result <= u64::MAX as f64).then_some(result as u64)
+        (result <= u64::MAX as f64)
+            .then_some(result as u64)
+            .ok_or(MathError::Overflow)
     }
 }
