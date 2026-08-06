@@ -152,13 +152,12 @@ pub trait CycleTrigger<C: Cycle>: Send {
     /// returns the tip to build on.
     async fn next_cycle(&mut self) -> C::Tip;
 
-    /// Latest observed tip without waiting. single_run reads it after
-    /// ranking to derive the submission deadline.
+    /// Latest observed tip without waiting. The loop reads it after ranking
+    /// to derive the submission deadline.
     fn current_tip(&self) -> C::Tip;
 }
 
-/// Produces the cut auction for a tip. Wraps the maintenance cutoff, the
-/// solvable orders cache and the auction cutting.
+/// Produces the cut auction for a tip.
 #[async_trait]
 pub trait AuctionProvider<C: Cycle>: Send + Sync {
     /// Brings indexers and the solvable orders cache up to date with the
