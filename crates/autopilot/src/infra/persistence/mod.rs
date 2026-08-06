@@ -6,13 +6,13 @@ use {
             self,
             settlement::{SettlementEvent, TradeEvent, transaction::EncodedTrade},
         },
-        infra::persistence::dto::RawAuctionData,
     },
     ::winner_selection::state::RankedItem,
     alloy::primitives::B256,
     anyhow::Context,
     bigdecimal::{BigDecimal, ToPrimitive},
     boundary::database::byte_array::ByteArray,
+    bytes::Bytes,
     chrono::{DateTime, Utc},
     database::{
         events::EventIndex,
@@ -58,8 +58,8 @@ pub struct Persistence {
 
 struct AuctionUpload {
     auction_id: domain::auction::Id,
-    /// Contains everything buy the auction_id.
-    auction_data: RawAuctionData,
+    /// The serialized auction, containing everything but the auction_id.
+    json: Bytes,
 }
 
 impl Persistence {
@@ -84,7 +84,7 @@ impl Persistence {
         tokio::task::spawn(async move {
             while let Some(upload) = receiver.recv().await {
                 if let Err(err) = db
-                    .replace_current_auction(upload.auction_id, upload.auction_data)
+                    .replace_current_auction(upload.auction_id, upload.json)
                     .await
                 {
                     tracing::error!(?err, "failed to replace auction in DB");
@@ -151,33 +151,55 @@ impl Persistence {
             .map_err(DatabaseError)
     }
 
-    /// Spawns a background task that replaces the current auction in the DB
-    /// with the new one.
-    pub fn replace_current_auction_in_db(
-        &self,
-        new_auction_id: domain::auction::Id,
-        new_auction_data: &domain::RawAuctionData,
-    ) {
-        self.upload_queue
-            .send(AuctionUpload {
-                auction_id: new_auction_id,
-                auction_data: dto::auction::from_domain(new_auction_data.clone()),
+    /// Archives the auction to the DB and, if configured, to S3.
+    ///
+    /// Only the conversion into the archival shape is on the run loop's
+    /// critical path; the serialization and both sinks happen in background
+    /// tasks. The auction is taken by reference so the conversion doesn't
+    /// need a deep clone.
+    #[instrument(skip_all)]
+    pub fn archive_auction(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
+        let auction_data = {
+            let _timer = observe::metrics::metrics()
+                .on_auction_overhead_start("autopilot", "convert_auction");
+            dto::auction::from_domain(auction)
+        };
+
+        let upload_to_s3 = !auction.orders.is_empty();
+        let this = self.clone();
+        let span = tracing::Span::current();
+        tokio::task::spawn_blocking(move || {
+            span.in_scope(|| {
+                let json = match serde_json::to_vec(&auction_data).map(Bytes::from) {
+                    Ok(json) => json,
+                    Err(err) => {
+                        tracing::error!(?err, ?id, "failed to serialize auction");
+                        return;
+                    }
+                };
+
+                this.upload_queue
+                    .send(AuctionUpload {
+                        auction_id: id,
+                        json: json.clone(),
+                    })
+                    .expect("upload queue should be alive at all times");
+
+                if upload_to_s3 {
+                    this.upload_auction_to_s3(id, json);
+                }
             })
-            .expect("upload queue should be alive at all times");
+        });
     }
 
-    /// Spawns a background task that uploads the auction to S3.
-    pub fn upload_auction_to_s3(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
-        if auction.orders.is_empty() {
-            return;
-        }
+    /// Spawns a background task that uploads the already serialized auction to
+    /// S3.
+    fn upload_auction_to_s3(&self, id: domain::auction::Id, json: Bytes) {
         let Some(s3) = self.s3.clone() else {
             return;
         };
-        let auction = auction.clone();
         tokio::task::spawn(async move {
-            let auction_dto = dto::auction::from_domain(auction);
-            match s3.upload(id.to_string(), auction_dto).await {
+            match s3.upload_json_bytes(id.to_string(), json).await {
                 Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
                 Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
             }
@@ -580,6 +602,7 @@ impl Persistence {
                 &mut tx,
                 &updated_order_uids,
                 after_timestamp,
+                started_at.timestamp(),
             )
             .map(|result| match result {
                 Ok(order) => full_order_into_model_order(order)
@@ -791,12 +814,16 @@ impl Persistence {
                 "settlement update",
             );
 
-            database::settlements::update_settlement_solver(
+            database::settlements::update_settlement_solver_and_gas(
                 &mut ex,
                 block_number,
                 log_index,
                 solver,
                 settlement.solution_uid(),
+                // We're not expecting this to actually happen, BUT, since this is the cost of a
+                // transaction we'll double count this value if 1 transaction has 2 settlements
+                u256_to_big_decimal(&gas.0),
+                u256_to_big_decimal(&gas_price.0.0),
             )
             .await?;
 

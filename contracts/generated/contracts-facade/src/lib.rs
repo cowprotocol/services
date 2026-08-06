@@ -87,12 +87,3 @@ pub mod test {
         cow_contract_remoteerc20balances as RemoteERC20Balances,
     };
 }
-pub mod cow_amm {
-    pub use {
-        cow_contract_cowamm as CowAmm,
-        cow_contract_cowammconstantproductfactory as CowAmmConstantProductFactory,
-        cow_contract_cowammfactorygetter as CowAmmFactoryGetter,
-        cow_contract_cowammlegacyhelper as CowAmmLegacyHelper,
-        cow_contract_cowammuniswapv2priceoracle as CowAmmUniswapV2PriceOracle,
-    };
-}

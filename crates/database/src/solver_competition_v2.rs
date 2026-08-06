@@ -694,9 +694,17 @@ mod tests {
         settlements::update_settlement_auction(&mut db, 1, 0, 1)
             .await
             .unwrap();
-        settlements::update_settlement_solver(&mut db, 1, 0, ByteArray([1u8; 20]), 0)
-            .await
-            .unwrap();
+        settlements::update_settlement_solver_and_gas(
+            &mut db,
+            1,
+            0,
+            ByteArray([1u8; 20]),
+            0,
+            BigDecimal::from(100_000),
+            BigDecimal::from(1_000_000_000),
+        )
+        .await
+        .unwrap();
 
         // competition_auctions
         let auction = auction::Auction {
@@ -791,12 +799,14 @@ mod tests {
         settlements::update_settlement_auction(&mut db, block_number, log_index, auction_id)
             .await
             .unwrap();
-        settlements::update_settlement_solver(
+        settlements::update_settlement_solver_and_gas(
             &mut db,
             block_number,
             log_index,
             ByteArray([1u8; 20]),
             0,
+            BigDecimal::from(100_000),
+            BigDecimal::from(1_000_000_000),
         )
         .await
         .unwrap();
@@ -999,9 +1009,17 @@ mod tests {
             .await
             .unwrap();
         // associate with solution 3
-        settlements::update_settlement_solver(&mut db, 5, 0, Default::default(), 3)
-            .await
-            .unwrap();
+        settlements::update_settlement_solver_and_gas(
+            &mut db,
+            5,
+            0,
+            Default::default(),
+            3,
+            BigDecimal::from(100_000),
+            BigDecimal::from(1_000_000_000),
+        )
+        .await
+        .unwrap();
 
         // when an order gets marked as settled we dont consider it inflight anymore
         let later_block_with_settlement = fetch_in_flight_orders(&mut db, 5).await.unwrap();
