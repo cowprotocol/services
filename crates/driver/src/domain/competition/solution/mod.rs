@@ -505,6 +505,32 @@ impl Solution {
         Settlement::encode(self, auction, eth, simulator, solver_native_token).await
     }
 
+    /// Swap this quote solution's single user order for the real signed
+    /// `order`, keeping the cached route and clearing prices.
+    pub fn rebind_quote_order(&self, order: competition::Order) -> Result<Self, error::Error> {
+        let user_trades = self.user_trades().count();
+        if user_trades != 1 {
+            return Err(error::Error::FastPathTradeCount(user_trades));
+        }
+        let mut solution = self.clone();
+        let user = solution
+            .trades
+            .iter_mut()
+            .find_map(|trade| match trade {
+                Trade::Fulfillment(fulfillment) => Some(fulfillment),
+                Trade::Jit(_) => None,
+            })
+            .expect("exactly one user trade counted above");
+        let quoted = user.order();
+        if (order.sell.token, order.buy.token, order.side)
+            != (quoted.sell.token, quoted.buy.token, quoted.side)
+        {
+            return Err(error::Error::FastPathOrderMismatch);
+        }
+        *user = user.with_order(order)?;
+        Ok(solution)
+    }
+
     /// Token prices settled by this solution, expressed using an arbitrary
     /// reference unit chosen by the solver. These values are only
     /// meaningful in relation to each others.
@@ -689,6 +715,12 @@ pub mod error {
         NonBufferableTokensUsed(BTreeSet<TokenAddress>),
         #[error("invalid internalization: uninternalized solution fails to simulate")]
         FailingInternalization,
+        #[error("expected exactly one user trade in the fast-path quote solution, found {0}")]
+        FastPathTradeCount(usize),
+        #[error("fast-path order does not match the quoted order")]
+        FastPathOrderMismatch,
+        #[error("invalid fast-path trade: {0:?}")]
+        FastPathTrade(#[from] Trade),
         #[error("Gas estimate of {0:?} exceeded the per settlement limit of {1:?}")]
         GasLimitExceeded(eth::Gas, eth::Gas),
         #[error("insufficient solver account Ether balance, required {0:?}")]

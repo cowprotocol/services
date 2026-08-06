@@ -2,7 +2,10 @@ mod dto;
 
 use {
     crate::{
-        domain::competition::auction,
+        domain::competition::{
+            auction,
+            order::app_data::{AppData, AppDataHash},
+        },
         infra::{
             api::{self, Error, State, extract::LoggingJson},
             observe,
@@ -25,6 +28,27 @@ async fn route(
 
     async move {
         observe::settling();
+        if let Some(order) = req.order {
+            let app_data = AppData::Hash(AppDataHash::from(order.app_data));
+            let prices = req
+                .prices
+                .into_iter()
+                .filter_map(|(token, price)| {
+                    auction::Price::try_new(price.into())
+                        .ok()
+                        .map(|price| (token.into(), price))
+                })
+                .collect();
+            state
+                .competition()
+                .reencode_quote_solution(
+                    auction_id,
+                    req.solution_id,
+                    order.into_domain(app_data),
+                    prices,
+                )
+                .await?;
+        }
         let result = state
             .competition()
             .settle(

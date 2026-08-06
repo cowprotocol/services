@@ -274,18 +274,23 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
-    /// Cached fast-path quote solutions, keyed by `(auction_id, solution_id)`.
-    /// Unlike `/solve` (which caches ready-to-submit settlements), a quote runs
-    /// against a throwaway auction whose order is synthetic and unsigned, so
-    /// its solution cannot be encoded into a submittable settlement until
-    /// the real order exists at settle time; the fast-path settle path
-    /// re-encodes it against that order.
-    pub quote_solutions: Mutex<IndexMap<(i64, u64), Solution>>,
+    /// Fast-path quote solutions, keyed by `(auction_id, solution_id)`,
+    /// re-encoded into a submittable settlement once the real signed order
+    /// is placed.
+    pub quote_solutions: Mutex<IndexMap<(i64, u64), CachedQuoteSolution>>,
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     submitter_pool: SubmitterPool,
+}
+
+/// A quote solution plus the single-order auction it was solved in (kept for
+/// its token set, which the re-encode needs).
+#[derive(Debug, Clone)]
+pub struct CachedQuoteSolution {
+    pub auction: Auction,
+    pub solution: Solution,
 }
 
 impl Competition {
@@ -548,12 +553,61 @@ impl Competition {
     /// Caches a fast-path quote's solution under `(auction_id, solution_id)` so
     /// it can be settled later via the fast-path settle path. Bounded to
     /// `MAX_CACHED_QUOTE_SOLUTIONS`, evicting the oldest entries first.
-    pub fn cache_quote_solution(&self, auction_id: auction::Id, solution: Solution) {
+    pub fn cache_quote_solution(
+        &self,
+        auction_id: auction::Id,
+        auction: Auction,
+        solution: Solution,
+    ) {
         let mut lock = self.quote_solutions.lock().unwrap();
-        lock.insert((auction_id.0, solution.id().get()), solution);
+        lock.insert(
+            (auction_id.0, solution.id().get()),
+            CachedQuoteSolution { auction, solution },
+        );
         while lock.len() > MAX_CACHED_QUOTE_SOLUTIONS {
             lock.shift_remove_index(0);
         }
+    }
+
+    /// Re-encode a cached quote solution against the real signed `order` and
+    /// cache the settlement under `(auction_id, solution_id)` for `/settle`.
+    pub async fn reencode_quote_solution(
+        &self,
+        auction_id: auction::Id,
+        solution_id: u64,
+        order: Order,
+        prices: auction::Prices,
+    ) -> Result<(), Error> {
+        let key = (auction_id.0, solution_id);
+        let cached = self
+            .quote_solutions
+            .lock()
+            .unwrap()
+            .get(&key)
+            .cloned()
+            .ok_or(Error::SolutionNotAvailable)?;
+        let solution = cached.solution.rebind_quote_order(order.clone())?;
+        let tokens = Arc::new(cached.auction.tokens.with_native_prices(&prices));
+        let auction = Auction {
+            orders: vec![order],
+            tokens,
+            ..cached.auction
+        };
+        let settlement = solution
+            .encode(
+                &auction,
+                &self.eth,
+                &self.simulator,
+                self.solver.solver_native_token(),
+            )
+            .await?;
+        {
+            let mut settlements = self.settlements.lock().unwrap();
+            settlements.push_front(settlement);
+            settlements.truncate(self.solver.max_solutions_to_propose() * MAX_CONCURRENT_AUCTIONS);
+        }
+        self.quote_solutions.lock().unwrap().shift_remove(&key);
+        Ok(())
     }
 
     /// Re-simulate all proposed solutions on every new block and drop any
@@ -1110,4 +1164,6 @@ pub enum Error {
     NoValidOrdersFound,
     #[error("could not parse the request")]
     MalformedRequest,
+    #[error("failed to build fast-path settlement: {0:?}")]
+    FastPathSettlement(#[from] solution::Error),
 }

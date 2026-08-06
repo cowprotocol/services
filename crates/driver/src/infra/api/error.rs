@@ -146,6 +146,7 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
             competition::Error::NoValidOrdersFound => Kind::NoValidOrders,
             competition::Error::MalformedRequest => Kind::MalformedRequest,
+            competition::Error::FastPathSettlement(_) => Kind::Unknown,
         };
         error.into()
     }
