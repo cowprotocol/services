@@ -33,11 +33,15 @@ async fn route(
             let prices = req
                 .prices
                 .into_iter()
-                .filter_map(|(token, price)| {
-                    auction::Price::try_new(price.into())
-                        .ok()
-                        .map(|price| (token.into(), price))
-                })
+                .filter_map(
+                    |(token, price)| match auction::Price::try_new(price.into()) {
+                        Ok(price) => Some((token.into(), price)),
+                        Err(_) => {
+                            tracing::warn!(?token, "dropping invalid fast-path native price");
+                            None
+                        }
+                    },
+                )
                 .collect();
             state
                 .competition()

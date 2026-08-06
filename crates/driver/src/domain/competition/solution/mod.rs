@@ -522,9 +522,17 @@ impl Solution {
             })
             .expect("exactly one user trade counted above");
         let quoted = user.order();
-        if (order.sell.token, order.buy.token, order.side)
-            != (quoted.sell.token, quoted.buy.token, quoted.side)
-        {
+        if (
+            order.sell.token,
+            order.buy.token,
+            order.side,
+            order.target(),
+        ) != (
+            quoted.sell.token,
+            quoted.buy.token,
+            quoted.side,
+            quoted.target(),
+        ) {
             return Err(error::Error::FastPathOrderMismatch);
         }
         *user = user.with_order(order)?;

@@ -178,7 +178,7 @@ pub(crate) struct Order {
 }
 
 impl Order {
-    #[allow(deprecated)]
+    #[expect(deprecated)]
     pub(crate) fn into_domain(self, app_data: AppData) -> competition::Order {
         let partial = if self.partially_fillable {
             competition::order::Partial::Yes {

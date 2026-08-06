@@ -606,6 +606,21 @@ components:
           description: Auction ID in which the specified solution ID is competing.
           type: integer
           example: 123
+        order:
+          description: >
+            Real signed order for a fast-path settlement. When present, the driver
+            re-encodes the cached quote solution against this order before settling.
+            Optional; omitted for regular settlements.
+          allOf:
+            - $ref: "#/components/schemas/Order"
+        prices:
+          description: >
+            Native prices (wei per 10**18 of the token), keyed by token address, for
+            the order's tokens. Used to size the re-encoded settlement's slippage
+            buffer. Optional; only meaningful together with `order`.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenAmount"
     RevealRequest:
       description: Request to the `/reveal` endpoint.
       type: object

@@ -531,12 +531,8 @@ impl Competition {
         // Cache all settlements so they can be revealed/settled later. Keep
         // solutions from previous overlapping auctions around long enough
         // for their /settle to complete.
-        {
-            let mut lock = self.settlements.lock().unwrap();
-            for (_, settlement) in &scored {
-                lock.push_front(settlement.clone());
-            }
-            lock.truncate(max_to_propose * MAX_CONCURRENT_AUCTIONS);
+        for (_, settlement) in &scored {
+            self.queue_settlement(settlement.clone());
         }
 
         if let Ok(remaining) = deadline.remaining() {
@@ -570,7 +566,7 @@ impl Competition {
     }
 
     /// Re-encode a cached quote solution against the real signed `order` and
-    /// cache the settlement under `(auction_id, solution_id)` for `/settle`.
+    /// promote it into the regular settle queue for `/settle`.
     pub async fn reencode_quote_solution(
         &self,
         auction_id: auction::Id,
@@ -578,15 +574,16 @@ impl Competition {
         order: Order,
         prices: auction::Prices,
     ) -> Result<(), Error> {
-        let key = (auction_id.0, solution_id);
         let cached = self
             .quote_solutions
             .lock()
             .unwrap()
-            .get(&key)
-            .cloned()
+            .shift_remove(&(auction_id.0, solution_id))
             .ok_or(Error::SolutionNotAvailable)?;
-        let solution = cached.solution.rebind_quote_order(order.clone())?;
+        let solution = cached
+            .solution
+            .rebind_quote_order(order.clone())
+            .map_err(Error::FastPathInvalidOrder)?;
         let tokens = Arc::new(cached.auction.tokens.with_native_prices(&prices));
         let auction = Auction {
             orders: vec![order],
@@ -601,13 +598,14 @@ impl Competition {
                 self.solver.solver_native_token(),
             )
             .await?;
-        {
-            let mut settlements = self.settlements.lock().unwrap();
-            settlements.push_front(settlement);
-            settlements.truncate(self.solver.max_solutions_to_propose() * MAX_CONCURRENT_AUCTIONS);
-        }
-        self.quote_solutions.lock().unwrap().shift_remove(&key);
+        self.queue_settlement(settlement);
         Ok(())
+    }
+
+    fn queue_settlement(&self, settlement: Settlement) {
+        let mut lock = self.settlements.lock().unwrap();
+        lock.push_front(settlement);
+        lock.truncate(self.solver.max_solutions_to_propose() * MAX_CONCURRENT_AUCTIONS);
     }
 
     /// Re-simulate all proposed solutions on every new block and drop any
@@ -1164,6 +1162,8 @@ pub enum Error {
     NoValidOrdersFound,
     #[error("could not parse the request")]
     MalformedRequest,
+    #[error("fast-path order does not match the quoted solution: {0:?}")]
+    FastPathInvalidOrder(solution::Error),
     #[error("failed to build fast-path settlement: {0:?}")]
     FastPathSettlement(#[from] solution::Error),
 }
