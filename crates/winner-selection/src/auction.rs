@@ -5,7 +5,7 @@
 //! and is the same for all solutions.
 
 use {
-    crate::{chain::ChainTypes, evm::Evm, primitives::FeePolicy},
+    crate::{chain::Scoring, evm::Evm, primitives::FeePolicy},
     std::collections::{HashMap, HashSet},
 };
 
@@ -14,7 +14,7 @@ use {
 /// This contains auction-level data that's needed to run the winner selection
 /// algorithm but isn't part of individual solutions. Both autopilot and driver
 /// build this from their respective auction representations.
-pub struct AuctionContext<C: ChainTypes = Evm> {
+pub struct AuctionContext<C: Scoring = Evm> {
     /// Fee policies for each order in the auction.
     ///
     /// Maps order UID to the list of fee policies that apply to that order.
@@ -35,7 +35,7 @@ pub struct AuctionContext<C: ChainTypes = Evm> {
 }
 
 // Manual impl because `derive(Default)` would wrongly require `C: Default`.
-impl<C: ChainTypes> Default for AuctionContext<C> {
+impl<C: Scoring> Default for AuctionContext<C> {
     fn default() -> Self {
         Self {
             fee_policies: HashMap::default(),
@@ -45,7 +45,7 @@ impl<C: ChainTypes> Default for AuctionContext<C> {
     }
 }
 
-impl<C: ChainTypes> AuctionContext<C> {
+impl<C: Scoring> AuctionContext<C> {
     /// Check if an order contributes to the solution's score.
     ///
     /// An order contributes to score if:

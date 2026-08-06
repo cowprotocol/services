@@ -2,7 +2,7 @@
 
 pub use alloy_primitives::{Address, U256};
 use {
-    crate::{Amount, ChainTypes, MathError, MathResult},
+    crate::{Amount, ChainTypes, MathError, MathResult, Scoring},
     alloy_primitives::{U512, ruint::UintTryFrom},
     number::u256_ext::U256Ext,
 };
@@ -44,8 +44,11 @@ pub struct Evm;
 
 impl ChainTypes for Evm {
     type AccountId = Address;
-    type Amount = U256;
     type OrderUid = OrderUid;
+}
+
+impl Scoring for Evm {
+    type Amount = U256;
     type TokenId = Address;
 
     const NATIVE_PRICE_DENOMINATOR: U256 = U256::from_limbs([10u64.pow(18), 0, 0, 0]);

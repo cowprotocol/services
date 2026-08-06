@@ -5,7 +5,7 @@ use {
     crate::{
         arbitrator::Arbitrator,
         auction::AuctionContext,
-        chain::ChainTypes,
+        chain::Scoring,
         evm::{Evm, OrderUid},
         primitives::{FeePolicy, Side},
         solana::{IntentHash, Pubkey, Solana},
@@ -33,7 +33,7 @@ const SOL_UNIT_PRICE: u64 = 1_000_000_000;
 
 /// A sell order executing at `executed_buy` against a `sell/buy` 100/90
 /// limit. Surplus over limit = executed_buy - 90.
-fn sell_order<C: ChainTypes>(
+fn sell_order<C: Scoring>(
     uid: C::OrderUid,
     sell_token: C::TokenId,
     buy_token: C::TokenId,

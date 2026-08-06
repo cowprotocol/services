@@ -6,10 +6,16 @@ description = "Per-chain type vocabulary and arithmetic traits for chain-generic
 
 [dependencies]
 alloy-primitives = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
 ruint = { workspace = true, features = ["num-traits"] }
 thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true

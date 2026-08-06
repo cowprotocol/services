@@ -2713,10 +2713,14 @@ name = "chain-types"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "anyhow",
+ "async-trait",
  "num 0.4.3",
  "number",
  "ruint",
  "thiserror 1.0.69",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

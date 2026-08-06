@@ -3,7 +3,7 @@
 //! No solana-sdk dependency: the algorithm only needs identifiers it can
 //! hash and compare, 32-byte newtypes suffice.
 
-use crate::{Amount, ChainTypes, MathError, MathResult};
+use crate::{Amount, ChainTypes, MathError, MathResult, Scoring};
 
 /// A Solana account address (token mint or solver identity).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -20,8 +20,11 @@ pub struct Solana;
 
 impl ChainTypes for Solana {
     type AccountId = Pubkey;
-    type Amount = u64;
     type OrderUid = IntentHash;
+}
+
+impl Scoring for Solana {
+    type Amount = u64;
     type TokenId = Pubkey;
 
     /// Lamports per SOL (9 decimals).

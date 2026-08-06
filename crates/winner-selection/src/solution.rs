@@ -6,7 +6,7 @@
 pub use state::{RankType, Unscored};
 
 use crate::{
-    chain::ChainTypes,
+    chain::Scoring,
     evm::{Evm, U256},
     primitives::Side,
     state,
@@ -19,7 +19,7 @@ pub type Ranked = state::Ranked<U256>;
 /// This contains only what's absolutely necessary to run the winner selection
 /// algorithm.
 #[derive(Debug, Clone)]
-pub struct Solution<State, C: ChainTypes = Evm> {
+pub struct Solution<State, C: Scoring = Evm> {
     /// Solution ID from solver (unique per solver).
     id: u64,
 
@@ -33,7 +33,7 @@ pub struct Solution<State, C: ChainTypes = Evm> {
     state: State,
 }
 
-impl<T, C: ChainTypes> Solution<T, C> {
+impl<T, C: Scoring> Solution<T, C> {
     /// Get the solution ID.
     pub fn id(&self) -> u64 {
         self.id
@@ -50,7 +50,7 @@ impl<T, C: ChainTypes> Solution<T, C> {
     }
 }
 
-impl<State, C: ChainTypes> state::HasState for Solution<State, C> {
+impl<State, C: Scoring> state::HasState for Solution<State, C> {
     type Next<NewState> = Solution<NewState, C>;
     type State = State;
 
@@ -68,7 +68,7 @@ impl<State, C: ChainTypes> state::HasState for Solution<State, C> {
     }
 }
 
-impl<C: ChainTypes> Solution<Unscored, C> {
+impl<C: Scoring> Solution<Unscored, C> {
     /// Create a new unscored solution.
     pub fn new(id: u64, solver: C::AccountId, orders: Vec<Order<C>>) -> Self {
         Self {
@@ -86,7 +86,7 @@ impl<C: ChainTypes> Solution<Unscored, C> {
 /// including limit amounts (from the original order) and executed amounts
 /// (what actually happened in this solution).
 #[derive(Debug, Clone)]
-pub struct Order<C: ChainTypes = Evm> {
+pub struct Order<C: Scoring = Evm> {
     /// Unique order identifier.
     pub uid: C::OrderUid,
 

@@ -5,8 +5,8 @@
 //! their full solution types to these minimal structs, which are then sent to
 //! the Pod Service for storage and later retrieval.
 //!
-//! The algorithm is generic over the chain's type vocabulary
-//! ([`chain::ChainTypes`]). Every generic type defaults its chain parameter
+//! The algorithm is generic over the chain's scoring vocabulary
+//! ([`chain::Scoring`]). Every generic type defaults its chain parameter
 //! to [`evm::Evm`], so bare type names mean the EVM instantiation, and
 //! Solana callers instantiate the same logic with [`solana::Solana`].
 
@@ -24,7 +24,7 @@ mod tests;
 pub use {
     arbitrator::{Arbitrator, Ranking},
     auction::AuctionContext,
-    chain_types::{Amount, ChainTypes},
+    chain_types::{Amount, Scoring},
     primitives::{Address, DirectedTokenPair, OrderUid, Side, U256},
     solution::{Order, RankType, Ranked, Scored, Solution, Unscored},
 };

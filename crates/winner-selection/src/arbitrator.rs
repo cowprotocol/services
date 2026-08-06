@@ -3,12 +3,12 @@
 //! Implements the auction winner selection algorithm that picks the set of
 //! solutions which maximize surplus while enforcing uniform directional
 //! clearing prices. The algorithm is written once, generic over the chain's
-//! type vocabulary ([`ChainTypes`]).
+//! scoring vocabulary ([`Scoring`]).
 
 use {
     crate::{
         auction::AuctionContext,
-        chain::{Amount, ChainTypes, MathError, MathResult, SaturatingAdd, Zero},
+        chain::{Amount, MathError, MathResult, SaturatingAdd, Scoring, Zero},
         evm::Evm,
         primitives::{DirectedTokenPair, FeePolicy, Quote, Side},
         solution::{Order, RankType, Solution, Unscored},
@@ -24,7 +24,7 @@ use {
 };
 
 /// Auction arbitrator responsible for selecting winning solutions.
-pub struct Arbitrator<C: ChainTypes = Evm> {
+pub struct Arbitrator<C: Scoring = Evm> {
     /// Maximum number of winning solutions to select.
     pub max_winners: usize,
     /// Wrapped native token (WETH on mainnet, WXDAI on Gnosis, wSOL on
@@ -32,7 +32,7 @@ pub struct Arbitrator<C: ChainTypes = Evm> {
     pub wrapped_native: C::TokenId,
 }
 
-impl<C: ChainTypes> Arbitrator<C> {
+impl<C: Scoring> Arbitrator<C> {
     /// Runs the auction mechanism on solutions.
     ///
     /// Takes solutions and auction context, returns a ranking with winners.
@@ -618,7 +618,7 @@ impl<C: ChainTypes> Arbitrator<C> {
 /// Let's call a solution that only trades 1 directed token pair a baseline
 /// solution. Returns the best baseline solution (highest score) for
 /// each token pair if one exists.
-fn compute_baseline_scores<C: ChainTypes>(
+fn compute_baseline_scores<C: Scoring>(
     scores_by_solution: &ScoresBySolution<C>,
 ) -> ScoreByDirection<C> {
     let mut baseline_scores = HashMap::default();
@@ -640,7 +640,7 @@ fn compute_baseline_scores<C: ChainTypes>(
 }
 
 /// Result of partitioning solutions into fair and unfair.
-struct PartitionedSolutions<C: ChainTypes> {
+struct PartitionedSolutions<C: Scoring> {
     /// Solutions that passed fairness checks (with scores).
     kept: Vec<Solution<Scored<C::Amount>, C>>,
     /// Solutions that were filtered out as unfair (with scores).
@@ -649,7 +649,7 @@ struct PartitionedSolutions<C: ChainTypes> {
 
 /// Final ranking of all solutions.
 #[derive(Debug)]
-pub struct Ranking<C: ChainTypes = Evm> {
+pub struct Ranking<C: Scoring = Evm> {
     /// Solutions that were filtered out as unfair (with scores and FilteredOut
     /// rank).
     pub filtered_out: Vec<Solution<Ranked<C::Amount>, C>>,
@@ -658,7 +658,7 @@ pub struct Ranking<C: ChainTypes = Evm> {
     pub ranked: Vec<Solution<Ranked<C::Amount>, C>>,
 }
 
-impl<C: ChainTypes> Ranking<C> {
+impl<C: Scoring> Ranking<C> {
     /// All winning solutions.
     pub fn winners(&self) -> impl Iterator<Item = &Solution<Ranked<C::Amount>, C>> {
         self.ranked.iter().filter(|s| s.is_winner())
@@ -675,7 +675,7 @@ impl<C: ChainTypes> Ranking<C> {
 /// These can be either uniform (same for all orders) or custom (adjusted for
 /// protocol fees on a per-order basis).
 #[derive(Debug, Clone, Copy)]
-struct ClearingPrices<C: ChainTypes> {
+struct ClearingPrices<C: Scoring> {
     /// Price of sell token in terms of buy token.
     sell: C::Amount,
     /// Price of buy token in terms of sell token.
@@ -684,7 +684,7 @@ struct ClearingPrices<C: ChainTypes> {
 
 /// Price limits for an order or quote.
 #[derive(Debug, Clone, Copy)]
-struct PriceLimits<C: ChainTypes> {
+struct PriceLimits<C: Scoring> {
     /// Maximum sell amount.
     sell: C::Amount,
     /// Minimum buy amount.
@@ -693,18 +693,18 @@ struct PriceLimits<C: ChainTypes> {
 
 /// Key to uniquely identify every solution.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct SolutionKey<C: ChainTypes> {
+struct SolutionKey<C: Scoring> {
     solver: C::AccountId,
     solution_id: u64,
 }
 
 /// Solutions annotated with their total score.
-type ScoredSolutions<C> = Vec<Solution<Scored<<C as ChainTypes>::Amount>, C>>;
+type ScoredSolutions<C> = Vec<Solution<Scored<<C as Scoring>::Amount>, C>>;
 
 /// Scores of all trades in a solution aggregated by the directional
 /// token pair. E.g. all trades (WETH -> USDC) are aggregated into
 /// one value and all trades (USDC -> WETH) into another.
-type ScoreByDirection<C> = HashMap<DirectedTokenPair<C>, <C as ChainTypes>::Amount>;
+type ScoreByDirection<C> = HashMap<DirectedTokenPair<C>, <C as Scoring>::Amount>;
 
 /// Mapping from solution to `DirectionalScores` for all solutions
 /// of the auction.
