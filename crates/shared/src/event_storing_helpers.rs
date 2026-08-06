@@ -28,6 +28,7 @@ pub fn create_quote_row(data: QuoteData) -> Result<DbQuote> {
         solver: ByteArray(*data.solver.0),
         verified: data.verified,
         metadata: data.metadata.try_into()?,
+        auction_id: None,
     })
 }
 

@@ -204,6 +204,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             solver: ByteArray(quote.solver.0.0),
             verified: quote.verified,
             metadata: quote.metadata.clone(),
+            auction_id: None,
         };
         database::orders::insert_quote(ex, &db_quote)
             .await
