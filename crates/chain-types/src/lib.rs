@@ -90,7 +90,7 @@ pub enum MathError {
 }
 
 /// An account known to be a contract or program, as opposed to an arbitrary
-/// account. The newtype stops the two from being passed interchangeably.
+/// account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ContractAddress<C: ChainTypes>(pub C::AccountId);
 
