@@ -28,7 +28,7 @@ pub trait Cycle: Sized + Send + Sync + 'static {
     /// The cut auction fanned out to solvers. PartialEq implements the
     /// "same auction on the same tip solves nothing new" dedupe and must
     /// ignore the allocated id.
-    type Auction: AuctionInfo<Self> + Clone + PartialEq + Send + Sync + 'static;
+    type Auction: AuctionInfo + Clone + PartialEq + Send + Sync + 'static;
 
     /// One solution proposed by one driver. Opaque to the loop, it only
     /// moves solutions from the competition into winner selection.
@@ -40,7 +40,7 @@ pub trait Cycle: Sized + Send + Sync + 'static {
 }
 
 /// What the loop needs to know about an auction.
-pub trait AuctionInfo<C: Cycle> {
+pub trait AuctionInfo {
     fn id(&self) -> i64;
 }
 
@@ -315,7 +315,7 @@ mod tests {
         type Tip = MockTip;
     }
 
-    impl AuctionInfo<MockChain> for MockAuction {
+    impl AuctionInfo for MockAuction {
         fn id(&self) -> i64 {
             self.id
         }
