@@ -1177,11 +1177,13 @@ async fn get_or_create_quote(
                 timeout: None, // let &dyn OrderQuoting chose default
             };
 
-            let quote = quoter.calculate_quote(parameters).await?;
-            let quote = quoter
-                .store_quote(quote)
+            let competition = quoter.calculate_quote(parameters.clone()).await?;
+            let id = quoter
+                .store_quote(competition.clone())
                 .await
                 .map_err(ValidationError::Other)?;
+            let mut quote = competition.to_final_quote(&parameters)?;
+            quote.id = Some(id);
 
             tracing::debug!(
                 original_quote_id = ?quote_id,
@@ -1267,7 +1269,14 @@ mod tests {
         super::*,
         crate::{
             order_creation_simulation::MockOrderSimulating,
-            order_quoting::{FindQuoteError, MockOrderQuoting},
+            order_quoting::{
+                FindQuoteError,
+                MockOrderQuoting,
+                QuoteCompetition,
+                QuoteCompetitionMetadata,
+                QuoteRequest,
+                QuoteResponse,
+            },
         },
         account_balances::MockBalanceFetching,
         alloy::{
@@ -2889,9 +2898,23 @@ mod tests {
             verification: verification.clone(),
             ..Default::default()
         };
-        let quote_data = Quote {
-            fee_amount: alloy::primitives::U256::from(6),
-            ..Default::default()
+        // Craft a QuoteCompetition whose winner + metadata produce
+        // fee_amount = 6 via `FeeParameters::fee()`
+        // (gas_amount * gas_price / sell_token_price = 6 * 1 / 1).
+        let competition = QuoteCompetition {
+            request: QuoteRequest {
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            quotes: vec![QuoteResponse {
+                gas_amount: 6.,
+                ..Default::default()
+            }],
+            metadata: QuoteCompetitionMetadata {
+                gas_price: 1.,
+                sell_token_price: 1.,
+                ..Default::default()
+            },
         };
         let fee_amount = U256::ZERO;
         order_quoter
@@ -2911,18 +2934,13 @@ mod tests {
                 timeout: None,
             }))
             .returning({
-                let quote_data = quote_data.clone();
-                move |_| Ok(quote_data.clone())
+                let competition = competition.clone();
+                move |_| Ok(competition.clone())
             });
         order_quoter
             .expect_store_quote()
-            .with(eq(quote_data.clone()))
-            .returning(|quote| {
-                Ok(Quote {
-                    id: Some(42),
-                    ..quote
-                })
-            });
+            .with(eq(competition.clone()))
+            .returning(|_| Ok(42));
 
         let quote = get_quote_and_check_fee(
             &order_quoter,
@@ -2937,6 +2955,7 @@ mod tests {
             quote,
             Quote {
                 id: Some(42),
+                data: competition.to_quote_data(),
                 fee_amount: alloy::primitives::U256::from(6),
                 ..Default::default()
             }
