@@ -52,7 +52,11 @@ impl QuoteParameters {
         &self,
         default_quote_timeout: std::time::Duration,
         max_quote_timeout: std::time::Duration,
+        auction_id: Option<i64>,
     ) -> price_estimation::Query {
+        // TODO: refactor interfaces to make them impossible to misuse.
+        debug_assert_eq!(auction_id.is_some(), self.fast_path);
+
         let (kind, in_amount) = self.side.kind_and_amount();
 
         let timeout = self
@@ -69,6 +73,7 @@ impl QuoteParameters {
             block_dependent: true,
             fast_path: self.fast_path,
             timeout,
+            auction_id,
         }
     }
 
@@ -371,6 +376,10 @@ pub trait QuoteStoring: Send + Sync {
         parameters: QuoteSearchParameters,
         expiration: DateTime<Utc>,
     ) -> Result<Option<(QuoteId, QuoteData)>>;
+
+    /// Generates a new unique auction id. This is used to associate a fast path
+    /// quote with auction competition data.
+    async fn get_next_auction_id(&self) -> Result<i64>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -462,6 +471,11 @@ impl OrderQuoter {
         &self,
         parameters: &QuoteParameters,
     ) -> Result<QuoteData, CalculateQuoteError> {
+        let auction_id = match parameters.fast_path {
+            true => Some(self.storage.get_next_auction_id().await?),
+            false => None,
+        };
+
         let expiration = match parameters.signing_scheme {
             QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
@@ -473,8 +487,11 @@ impl OrderQuoter {
             _ => self.now.now() + self.validity.standard_quote,
         };
 
-        let trade_query =
-            Arc::new(parameters.to_price_query(self.default_quote_timeout, self.max_quote_timeout));
+        let trade_query = Arc::new(parameters.to_price_query(
+            self.default_quote_timeout,
+            self.max_quote_timeout,
+            auction_id,
+        ));
         let (effective_gas_price, trade_estimate, sell_token_price, _) = futures::try_join!(
             self.gas_estimator
                 .effective_gas_price()
@@ -634,9 +651,16 @@ impl StreamingQuoting for OrderQuoter {
         let estimator = self.streaming_price_estimator.clone().ok_or_else(|| {
             CalculateQuoteError::Other(anyhow::anyhow!("streaming estimator not configured"))
         })?;
+        let auction_id = match parameters.fast_path {
+            true => Some(self.storage.get_next_auction_id().await?),
+            false => None,
+        };
 
-        let trade_query =
-            Arc::new(parameters.to_price_query(self.default_quote_timeout, self.max_quote_timeout));
+        let trade_query = Arc::new(parameters.to_price_query(
+            self.default_quote_timeout,
+            self.max_quote_timeout,
+            auction_id,
+        ));
 
         let (effective_gas_price, sell_token_price, _buy_token_price) = futures::try_join!(
             self.gas_estimator
@@ -969,6 +993,7 @@ mod tests {
                     block_dependent: true,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+                    auction_id: None,
                 }
             })
             .returning(|_| {
@@ -1117,6 +1142,7 @@ mod tests {
                     block_dependent: true,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+                    auction_id: None,
                 }
             })
             .returning(|_| {
@@ -1260,6 +1286,7 @@ mod tests {
                     block_dependent: true,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+                    auction_id: None,
                 }
             })
             .returning(|_| {
