@@ -506,36 +506,65 @@ impl Solution {
     }
 
     /// Swap this quote solution's single user order for the real signed
-    /// `order`, keeping the cached route and clearing prices.
-    pub fn rebind_quote_order(&self, order: competition::Order) -> Result<Self, error::Error> {
+    /// `order`, keeping the cached route and clearing prices, and recover the
+    /// order's flashloans/wrappers from its app-data.
+    pub fn rebind_quote_order(
+        &self,
+        order: competition::Order,
+        flashloans_enabled: bool,
+    ) -> Result<Self, error::Error> {
         let user_trades = self.user_trades().count();
         if user_trades != 1 {
             return Err(error::Error::FastPathTradeCount(user_trades));
         }
         let mut solution = self.clone();
-        let user = solution
-            .trades
-            .iter_mut()
-            .find_map(|trade| match trade {
-                Trade::Fulfillment(fulfillment) => Some(fulfillment),
-                Trade::Jit(_) => None,
-            })
-            .expect("exactly one user trade counted above");
-        let quoted = user.order();
-        if (
-            order.sell.token,
-            order.buy.token,
-            order.side,
-            order.target(),
-        ) != (
-            quoted.sell.token,
-            quoted.buy.token,
-            quoted.side,
-            quoted.target(),
-        ) {
-            return Err(error::Error::FastPathOrderMismatch);
-        }
-        *user = user.with_order(order)?;
+        let (flashloans, wrappers) = {
+            let user = solution
+                .trades
+                .iter_mut()
+                .find_map(|trade| match trade {
+                    Trade::Fulfillment(fulfillment) => Some(fulfillment),
+                    Trade::Jit(_) => None,
+                })
+                .expect("exactly one user trade counted above");
+            let quoted = user.order();
+            if (
+                order.sell.token,
+                order.buy.token,
+                order.side,
+                order.target(),
+            ) != (
+                quoted.sell.token,
+                quoted.buy.token,
+                quoted.side,
+                quoted.target(),
+            ) {
+                return Err(error::Error::FastPathOrderMismatch);
+            }
+            let flashloans = order
+                .app_data
+                .flashloan()
+                .filter(|_| flashloans_enabled)
+                .map(|f| {
+                    let flashloan = domain::flashloan::Flashloan::from(f);
+                    (order.uid, (&flashloan).into())
+                })
+                .into_iter()
+                .collect();
+            let wrappers = order
+                .app_data
+                .wrappers()
+                .iter()
+                .map(|w| WrapperCall {
+                    address: w.address,
+                    data: w.data.clone().into(),
+                })
+                .collect();
+            *user = user.with_order(order)?;
+            (flashloans, wrappers)
+        };
+        solution.flashloans = flashloans;
+        solution.wrappers = wrappers;
         Ok(solution)
     }
 

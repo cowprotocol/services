@@ -81,6 +81,19 @@ pub struct DataAggregator {
 }
 
 impl DataAggregator {
+    pub async fn resolve_app_data(
+        &self,
+        hash: &order::app_data::AppDataHash,
+    ) -> Option<Arc<app_data::ValidatedAppData>> {
+        self.utilities
+            .app_data_retriever
+            .as_ref()?
+            .get_cached_or_fetch(hash)
+            .await
+            .ok()
+            .flatten()
+    }
+
     /// Aggregates all the data that is needed to pre-process the given auction.
     /// Uses a shared futures internally to make sure that the works happens
     /// only once for all connected solvers to share.

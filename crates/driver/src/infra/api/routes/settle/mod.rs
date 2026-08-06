@@ -2,10 +2,7 @@ mod dto;
 
 use {
     crate::{
-        domain::competition::{
-            auction,
-            order::app_data::{AppData, AppDataHash},
-        },
+        domain::competition::{auction, order::app_data::AppDataHash},
         infra::{
             api::{self, Error, State, extract::LoggingJson},
             observe,
@@ -29,7 +26,10 @@ async fn route(
     async move {
         observe::settling();
         if let Some(order) = req.order {
-            let app_data = AppData::Hash(AppDataHash::from(order.app_data));
+            let app_data = state
+                .competition()
+                .resolve_app_data(AppDataHash::from(order.app_data))
+                .await;
             let prices = req
                 .prices
                 .into_iter()

@@ -565,6 +565,16 @@ impl Competition {
         }
     }
 
+    pub async fn resolve_app_data(
+        &self,
+        hash: order::app_data::AppDataHash,
+    ) -> order::app_data::AppData {
+        match self.fetcher.resolve_app_data(&hash).await {
+            Some(doc) => doc.into(),
+            None => hash.into(),
+        }
+    }
+
     /// Re-encode a cached quote solution against the real signed `order` and
     /// promote it into the regular settle queue for `/settle`.
     pub async fn reencode_quote_solution(
@@ -582,7 +592,7 @@ impl Competition {
             .ok_or(Error::SolutionNotAvailable)?;
         let solution = cached
             .solution
-            .rebind_quote_order(order.clone())
+            .rebind_quote_order(order.clone(), self.solver.config().flashloans_enabled)
             .map_err(Error::FastPathInvalidOrder)?;
         let tokens = Arc::new(cached.auction.tokens.with_native_prices(&prices));
         let auction = Auction {
