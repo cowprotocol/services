@@ -505,6 +505,69 @@ impl Solution {
         Settlement::encode(self, auction, eth, simulator, solver_native_token).await
     }
 
+    /// Swap this quote solution's single user order for the real signed
+    /// `order`, keeping the cached route and clearing prices, and recover the
+    /// order's flashloans/wrappers from its app-data.
+    pub fn rebind_quote_order(
+        &self,
+        order: competition::Order,
+        flashloans_enabled: bool,
+    ) -> Result<Self, error::Error> {
+        let user_trades = self.user_trades().count();
+        if user_trades != 1 {
+            return Err(error::Error::FastPathTradeCount(user_trades));
+        }
+        let mut solution = self.clone();
+        let (flashloans, wrappers) = {
+            let user = solution
+                .trades
+                .iter_mut()
+                .find_map(|trade| match trade {
+                    Trade::Fulfillment(fulfillment) => Some(fulfillment),
+                    Trade::Jit(_) => None,
+                })
+                .expect("exactly one user trade counted above");
+            let quoted = user.order();
+            if (
+                order.sell.token,
+                order.buy.token,
+                order.side,
+                order.target(),
+            ) != (
+                quoted.sell.token,
+                quoted.buy.token,
+                quoted.side,
+                quoted.target(),
+            ) {
+                return Err(error::Error::FastPathOrderMismatch);
+            }
+            let flashloans = order
+                .app_data
+                .flashloan()
+                .filter(|_| flashloans_enabled)
+                .map(|f| {
+                    let flashloan = domain::flashloan::Flashloan::from(f);
+                    (order.uid, (&flashloan).into())
+                })
+                .into_iter()
+                .collect();
+            let wrappers = order
+                .app_data
+                .wrappers()
+                .iter()
+                .map(|w| WrapperCall {
+                    address: w.address,
+                    data: w.data.clone().into(),
+                })
+                .collect();
+            *user = user.with_order(order)?;
+            (flashloans, wrappers)
+        };
+        solution.flashloans = flashloans;
+        solution.wrappers = wrappers;
+        Ok(solution)
+    }
+
     /// Token prices settled by this solution, expressed using an arbitrary
     /// reference unit chosen by the solver. These values are only
     /// meaningful in relation to each others.
@@ -689,6 +752,12 @@ pub mod error {
         NonBufferableTokensUsed(BTreeSet<TokenAddress>),
         #[error("invalid internalization: uninternalized solution fails to simulate")]
         FailingInternalization,
+        #[error("expected exactly one user trade in the fast-path quote solution, found {0}")]
+        FastPathTradeCount(usize),
+        #[error("fast-path order does not match the quoted order")]
+        FastPathOrderMismatch,
+        #[error("invalid fast-path trade: {0:?}")]
+        FastPathTrade(#[from] Trade),
         #[error("Gas estimate of {0:?} exceeded the per settlement limit of {1:?}")]
         GasLimitExceeded(eth::Gas, eth::Gas),
         #[error("insufficient solver account Ether balance, required {0:?}")]

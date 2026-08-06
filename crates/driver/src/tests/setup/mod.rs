@@ -1193,6 +1193,48 @@ impl Test {
     }
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
+        self.settle_request(solver_name, solution_id, None, None)
+            .await
+    }
+
+    /// The /solve-shaped JSON for the single quoted order.
+    pub fn order_json(&self) -> serde_json::Value {
+        driver::order_json(
+            self,
+            self.quoted_orders
+                .first()
+                .expect("order_json requires a quoted order"),
+        )
+    }
+
+    /// Native prices for the single quoted order's tokens.
+    pub fn prices_json(&self) -> serde_json::Value {
+        driver::prices_json(
+            self,
+            self.quoted_orders
+                .first()
+                .expect("prices_json requires a quoted order"),
+        )
+    }
+
+    /// Call /settle including `order` and its native `prices`.
+    pub async fn settle_with_order(
+        &self,
+        solution_id: u64,
+        order: serde_json::Value,
+        prices: serde_json::Value,
+    ) -> Settle {
+        self.settle_request(solver::NAME, solution_id, Some(order), Some(prices))
+            .await
+    }
+
+    async fn settle_request(
+        &self,
+        solver_name: &str,
+        solution_id: u64,
+        order: Option<serde_json::Value>,
+        prices: Option<serde_json::Value>,
+    ) -> Settle {
         let submission_deadline_latest_block: u64 =
             self.web3().provider.get_block_number().await.unwrap()
                 + self.settle_submission_deadline;
@@ -1207,6 +1249,8 @@ impl Test {
                 submission_deadline_latest_block,
                 solution_id,
                 &self.auction_id.to_string(),
+                order,
+                prices,
             ))
             .send()
             .await

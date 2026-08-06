@@ -150,7 +150,7 @@ impl Order {
         };
 
         let auction = self
-            .fake_auction(eth, tokens, solver.quote_using_limit_orders())
+            .single_order_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
         let auction = competition
             .risk_detector
@@ -168,15 +168,16 @@ impl Order {
             .ok_or(QuotingFailed::NoSolutions)?;
         let quote = Quote::try_new(eth, &solution)?;
 
-        // Cache the fast-path solution under `(auction_id, solution_id)` so the
-        // autopilot can settle it during the exclusivity window. The quote's order
-        // is synthetic (unsigned), so the settlement is not encoded here but
-        // re-encoded against the real order at settle time. The solution id is
-        // returned so the caller can reference the cached solution.
+        // Cache the solution so it can be settled later; return its id so the
+        // caller can reference it.
         let cached_solution_id = match (self.enable_fast_path, self.auction_id) {
             (true, Some(auction_id)) => {
                 let solution_id = solution.id().get();
-                competition.cache_quote_solution(auction::Id(auction_id), solution);
+                competition.cache_quote_solution(
+                    auction::Id(auction_id),
+                    auction.clone(),
+                    solution,
+                );
                 Some(solution_id)
             }
             _ => None,
@@ -184,7 +185,9 @@ impl Order {
         Ok((quote, cached_solution_id))
     }
 
-    async fn fake_auction(
+    /// The single-order auction a quote is solved in. Token prices are unset
+    /// (`None`): a quote carries no native prices.
+    async fn single_order_auction(
         &self,
         eth: &Ethereum,
         tokens: &infra::tokens::Fetcher,

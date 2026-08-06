@@ -134,6 +134,77 @@ async fn regular_quote_has_no_settle_info() {
     test.quote().await.ok().no_fast_path_settle_info();
 }
 
+/// Set up a fast-path quote test: a fast-path solver quoting `ab_order`.
+async fn fast_path_test() -> setup::Test {
+    tests::setup()
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .solvers(vec![setup::test_solver().fast_path_enabled()])
+        .auction_id(42)
+        .quote()
+        .quote_fast_path()
+        .done()
+        .await
+}
+
+/// `/settle` carrying the real signed order re-encodes the cached solution and
+/// executes on-chain.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle() {
+    let test = fast_path_test().await;
+    let solution_id = test.quote().await.ok().solution_id();
+    test.settle_with_order(solution_id, test.order_json(), test.prices_json())
+        .await
+        .ok()
+        .await
+        .ab_order_executed(&test)
+        .await;
+}
+
+/// Without the real order there is nothing to re-encode, so `/settle` finds no
+/// settlement.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_requires_order() {
+    let test = fast_path_test().await;
+    let solution_id = test.quote().await.ok().solution_id();
+    test.settle(solution_id)
+        .await
+        .err()
+        .kind("SolutionNotAvailable");
+}
+
+/// A settle order that doesn't match the quote — different buy token — is
+/// rejected as an invalid fast-path order.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_rejects_mismatched_order() {
+    let test = fast_path_test().await;
+    let solution_id = test.quote().await.ok().solution_id();
+    let mut order = test.order_json();
+    order["buyToken"] = serde_json::json!("0x0101010101010101010101010101010101010101");
+    test.settle_with_order(solution_id, order, test.prices_json())
+        .await
+        .err()
+        .kind("InvalidFastPathOrder");
+}
+
+/// A settle order for a different amount than the quote is rejected.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_rejects_wrong_amount() {
+    let test = fast_path_test().await;
+    let solution_id = test.quote().await.ok().solution_id();
+    let mut order = test.order_json();
+    order["sellAmount"] = serde_json::json!("1");
+    test.settle_with_order(solution_id, order, test.prices_json())
+        .await
+        .err()
+        .kind("InvalidFastPathOrder");
+}
+
 /// Test that quote haircut correctly reduces the executed amount for quotes
 /// when configured. The haircut should make quotes more conservative without
 /// affecting the ability to place and execute orders.

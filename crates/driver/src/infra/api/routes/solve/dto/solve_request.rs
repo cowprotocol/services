@@ -58,127 +58,7 @@ impl SolveRequest {
                         Some(data) => AppData::Full(data.clone()),
                         None => AppData::Hash(AppDataHash::from(order.app_data)),
                     };
-                    let partial = if order.partially_fillable {
-                        competition::order::Partial::Yes {
-                            available: match order.kind {
-                                Kind::Sell => {
-                                    order.sell_amount.saturating_sub(order.executed).into()
-                                }
-                                Kind::Buy => order.buy_amount.saturating_sub(order.executed).into(),
-                            },
-                        }
-                    } else {
-                        competition::order::Partial::No
-                    };
-                    competition::Order {
-                        data: Arc::new(competition::order::OrderData {
-                            uid: order.uid.into(),
-                            receiver: order.receiver,
-                            created: order.created.into(),
-                            valid_to: order.valid_to.into(),
-                            buy: eth::Asset {
-                                amount: order.buy_amount.into(),
-                                token: order.buy_token.into(),
-                            },
-                            sell: eth::Asset {
-                                amount: order.sell_amount.into(),
-                                token: order.sell_token.into(),
-                            },
-                            side: match order.kind {
-                                Kind::Sell => competition::order::Side::Sell,
-                                Kind::Buy => competition::order::Side::Buy,
-                            },
-                            kind: match order.class {
-                                Class::Market => competition::order::Kind::Market,
-                                Class::Limit => competition::order::Kind::Limit,
-                            },
-                            pre_interactions: order
-                                .pre_interactions
-                                .into_iter()
-                                .map(|interaction| domain::Interaction {
-                                    target: interaction.target,
-                                    value: interaction.value.into(),
-                                    call_data: interaction.call_data.into(),
-                                })
-                                .collect(),
-                            post_interactions: order
-                                .post_interactions
-                                .into_iter()
-                                .map(|interaction| domain::Interaction {
-                                    target: interaction.target,
-                                    value: interaction.value.into(),
-                                    call_data: interaction.call_data.into(),
-                                })
-                                .collect(),
-                            sell_token_balance: match order.sell_token_balance {
-                                SellTokenBalance::Erc20 => {
-                                    competition::order::SellTokenBalance::Erc20
-                                }
-                                SellTokenBalance::Internal => {
-                                    competition::order::SellTokenBalance::Internal
-                                }
-                                SellTokenBalance::External => {
-                                    competition::order::SellTokenBalance::External
-                                }
-                            },
-                            buy_token_balance: match order.buy_token_balance {
-                                BuyTokenBalance::Erc20 => {
-                                    competition::order::BuyTokenBalance::Erc20
-                                }
-                                BuyTokenBalance::Internal => {
-                                    competition::order::BuyTokenBalance::Internal
-                                }
-                            },
-                            signature: competition::order::Signature {
-                                scheme: match order.signing_scheme {
-                                    SigningScheme::Eip712 => {
-                                        competition::order::signature::Scheme::Eip712
-                                    }
-                                    SigningScheme::EthSign => {
-                                        competition::order::signature::Scheme::EthSign
-                                    }
-                                    SigningScheme::PreSign => {
-                                        competition::order::signature::Scheme::PreSign
-                                    }
-                                    SigningScheme::Eip1271 => {
-                                        competition::order::signature::Scheme::Eip1271
-                                    }
-                                },
-                                data: order.signature.into(),
-                                signer: order.owner,
-                            },
-                            protocol_fees: order
-                                .protocol_fees
-                                .into_iter()
-                                .map(|policy| match policy {
-                                    FeePolicy::Surplus {
-                                        factor,
-                                        max_volume_factor,
-                                    } => competition::order::FeePolicy::Surplus {
-                                        factor,
-                                        max_volume_factor,
-                                    },
-                                    FeePolicy::PriceImprovement {
-                                        factor,
-                                        max_volume_factor,
-                                        quote,
-                                    } => competition::order::FeePolicy::PriceImprovement {
-                                        factor,
-                                        max_volume_factor,
-                                        quote: quote.into_domain(order.sell_token, order.buy_token),
-                                    },
-                                    FeePolicy::Volume { factor } => {
-                                        competition::order::FeePolicy::Volume { factor }
-                                    }
-                                })
-                                .collect(),
-                            quote: order
-                                .quote
-                                .map(|q| q.into_domain(order.sell_token, order.buy_token)),
-                        }),
-                        app_data,
-                        partial,
-                    }
+                    order.into_domain(app_data)
                 })
                 .collect(),
             self.tokens.into_iter().map(|token| {
@@ -263,7 +143,7 @@ struct Token {
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Order {
+pub(crate) struct Order {
     #[serde_as(as = "serde_ext::Hex")]
     uid: [u8; order::UID_LEN],
     sell_token: eth::Address,
@@ -290,11 +170,118 @@ struct Order {
     buy_token_balance: BuyTokenBalance,
     class: Class,
     #[serde_as(as = "serde_ext::Hex")]
-    app_data: [u8; order::app_data::APP_DATA_LEN],
+    pub(crate) app_data: [u8; order::app_data::APP_DATA_LEN],
     signing_scheme: SigningScheme,
     #[serde_as(as = "serde_ext::Hex")]
     signature: Vec<u8>,
     quote: Option<Quote>,
+}
+
+impl Order {
+    #[expect(deprecated)]
+    pub(crate) fn into_domain(self, app_data: AppData) -> competition::Order {
+        let partial = if self.partially_fillable {
+            competition::order::Partial::Yes {
+                available: match self.kind {
+                    Kind::Sell => self.sell_amount.saturating_sub(self.executed).into(),
+                    Kind::Buy => self.buy_amount.saturating_sub(self.executed).into(),
+                },
+            }
+        } else {
+            competition::order::Partial::No
+        };
+        competition::Order {
+            data: Arc::new(competition::order::OrderData {
+                uid: self.uid.into(),
+                receiver: self.receiver,
+                created: self.created.into(),
+                valid_to: self.valid_to.into(),
+                buy: eth::Asset {
+                    amount: self.buy_amount.into(),
+                    token: self.buy_token.into(),
+                },
+                sell: eth::Asset {
+                    amount: self.sell_amount.into(),
+                    token: self.sell_token.into(),
+                },
+                side: match self.kind {
+                    Kind::Sell => competition::order::Side::Sell,
+                    Kind::Buy => competition::order::Side::Buy,
+                },
+                kind: match self.class {
+                    Class::Market => competition::order::Kind::Market,
+                    Class::Limit => competition::order::Kind::Limit,
+                },
+                pre_interactions: self
+                    .pre_interactions
+                    .into_iter()
+                    .map(|interaction| domain::Interaction {
+                        target: interaction.target,
+                        value: interaction.value.into(),
+                        call_data: interaction.call_data.into(),
+                    })
+                    .collect(),
+                post_interactions: self
+                    .post_interactions
+                    .into_iter()
+                    .map(|interaction| domain::Interaction {
+                        target: interaction.target,
+                        value: interaction.value.into(),
+                        call_data: interaction.call_data.into(),
+                    })
+                    .collect(),
+                sell_token_balance: match self.sell_token_balance {
+                    SellTokenBalance::Erc20 => competition::order::SellTokenBalance::Erc20,
+                    SellTokenBalance::Internal => competition::order::SellTokenBalance::Internal,
+                    SellTokenBalance::External => competition::order::SellTokenBalance::External,
+                },
+                buy_token_balance: match self.buy_token_balance {
+                    BuyTokenBalance::Erc20 => competition::order::BuyTokenBalance::Erc20,
+                    BuyTokenBalance::Internal => competition::order::BuyTokenBalance::Internal,
+                },
+                signature: competition::order::Signature {
+                    scheme: match self.signing_scheme {
+                        SigningScheme::Eip712 => competition::order::signature::Scheme::Eip712,
+                        SigningScheme::EthSign => competition::order::signature::Scheme::EthSign,
+                        SigningScheme::PreSign => competition::order::signature::Scheme::PreSign,
+                        SigningScheme::Eip1271 => competition::order::signature::Scheme::Eip1271,
+                    },
+                    data: self.signature.into(),
+                    signer: self.owner,
+                },
+                protocol_fees: self
+                    .protocol_fees
+                    .into_iter()
+                    .map(|policy| match policy {
+                        FeePolicy::Surplus {
+                            factor,
+                            max_volume_factor,
+                        } => competition::order::FeePolicy::Surplus {
+                            factor,
+                            max_volume_factor,
+                        },
+                        FeePolicy::PriceImprovement {
+                            factor,
+                            max_volume_factor,
+                            quote,
+                        } => competition::order::FeePolicy::PriceImprovement {
+                            factor,
+                            max_volume_factor,
+                            quote: quote.into_domain(self.sell_token, self.buy_token),
+                        },
+                        FeePolicy::Volume { factor } => {
+                            competition::order::FeePolicy::Volume { factor }
+                        }
+                    })
+                    .collect(),
+                quote: self
+                    .quote
+                    .map(|q| q.into_domain(self.sell_token, self.buy_token)),
+            }),
+            app_data,
+            partial,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

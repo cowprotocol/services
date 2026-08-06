@@ -25,6 +25,7 @@ enum Kind {
     FailedToSubmit,
     NoValidOrders,
     MalformedRequest,
+    InvalidFastPathOrder,
     TradingOutsideAllowedWindow,
     TokenTemporarilySuspended,
     InsufficientLiquidity,
@@ -63,6 +64,9 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::TooManyPendingSettlements => "Settlement queue is full",
             Kind::NoValidOrders => "No valid orders found in the auction",
             Kind::MalformedRequest => "Could not parse the request",
+            Kind::InvalidFastPathOrder => {
+                "the settle order does not match the quoted fast-path solution"
+            }
             Kind::TradingOutsideAllowedWindow => {
                 "Token can only be traded during specific time windows"
             }
@@ -146,6 +150,8 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
             competition::Error::NoValidOrdersFound => Kind::NoValidOrders,
             competition::Error::MalformedRequest => Kind::MalformedRequest,
+            competition::Error::FastPathInvalidOrder(_) => Kind::InvalidFastPathOrder,
+            competition::Error::FastPathSettlement(_) => Kind::Unknown,
         };
         error.into()
     }
