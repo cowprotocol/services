@@ -2709,6 +2709,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "chain-types"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "num 0.4.3",
+ "number",
+ "ruint",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13560,8 +13571,8 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "chain-types",
  "itertools 0.14.0",
- "number",
  "thiserror 1.0.69",
  "tracing",
 ]
