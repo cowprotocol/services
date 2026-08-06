@@ -13,29 +13,26 @@ use {
     tracing::Instrument,
 };
 
-/// Type vocabulary of one settlement chain. Every associated type is a type
-/// the loop itself has to name, everything else stays inside the seam
-/// implementations.
+/// Type vocabulary of one settlement chain: the associated types the loop
+/// itself has to name.
 pub trait Cycle: Sized + Send + Sync + 'static {
-    /// Chain progress marker (EVM block, Solana slot). Cycles are triggered
-    /// by it, caches sync to it and the auction dedupe compares it.
+    /// Chain progress marker (EVM block, Solana slot). Compared by the
+    /// dedupe.
     type Tip: Clone + PartialEq + Debug + Send + Sync + 'static;
 
-    /// Order id. The loop keys the Executing and Considered order
-    /// bookkeeping on the uid sets extracted from the ranking.
+    /// Order id. Collected into the Executing and Considered sets, hence
+    /// `Eq + Hash`.
     type OrderUid: Copy + Eq + Hash + Debug + Send + Sync + 'static;
 
-    /// The cut auction fanned out to solvers. PartialEq implements the
-    /// "same auction on the same tip solves nothing new" dedupe and must
-    /// ignore the allocated id.
+    /// The cut auction fanned out to solvers. Its `PartialEq` drives the
+    /// dedupe, so it must ignore the allocated id.
     type Auction: AuctionInfo + Clone + PartialEq + Send + Sync + 'static;
 
-    /// One solution proposed by one driver. Opaque to the loop, it only
-    /// moves solutions from the competition into winner selection.
+    /// One solution proposed by one driver. Opaque to the loop, hence no
+    /// bounds.
     type Solution: Send + 'static;
 
-    /// Winner selection output over all solutions of one auction. Shared by
-    /// the observer (persist outcome) and the executor (dispatch winners).
+    /// Winner selection output over all solutions of one auction.
     type Ranking: RankingInfo<Self> + Send + Sync + 'static;
 }
 
@@ -52,34 +49,28 @@ pub trait RankingInfo<C: Cycle> {
     /// Orders of all winning solutions, marked Executing.
     fn winning_order_uids(&self) -> HashSet<C::OrderUid>;
 
-    /// Orders of ranked non winning solutions. The loop subtracts the
-    /// winning set before marking them Considered.
+    /// Orders of ranked non-winning solutions, marked Considered.
     fn considered_order_uids(&self) -> HashSet<C::OrderUid>;
 }
 
-/// Yields the tip to build the next auction on. Wraps the wake sources
-/// (new tip, new orders) and the staleness resync.
+/// Yields the tip to build the next auction on.
 #[async_trait]
 pub trait CycleTrigger<C: Cycle>: Send {
-    /// Blocks until something happened that warrants a new cycle and
-    /// returns the tip to build on.
+    /// Blocks until a new cycle is warranted, returns the tip to build on.
     async fn next_cycle(&mut self) -> C::Tip;
 
-    /// Latest observed tip without waiting. The loop reads it after ranking
-    /// to derive the submission deadline.
+    /// Latest observed tip, without blocking.
     fn current_tip(&self) -> C::Tip;
 }
 
 /// Produces the cut auction for a tip.
 #[async_trait]
 pub trait AuctionProvider<C: Cycle>: Send + Sync {
-    /// Brings indexers and the solvable orders cache up to date with the
-    /// tip. Errors are logged by the loop but do not stop the cycle, the
-    /// auction is then cut from slightly stale caches.
+    /// Brings caches up to date with the tip. Errors do not stop the cycle:
+    /// the auction is then cut from slightly stale caches.
     async fn sync_to_tip(&self, tip: &C::Tip) -> anyhow::Result<()>;
 
-    /// Cuts the auction for the tip, allocating an id and archiving it.
-    /// None when there is nothing to solve.
+    /// Cuts the auction for the tip. None when there is nothing to solve.
     async fn cut_auction(&self, tip: &C::Tip) -> Option<C::Auction>;
 }
 
@@ -165,10 +156,8 @@ impl<C: Cycle> AuctionLoop<C> {
 
     /// One iteration of the outer loop.
     pub async fn run_cycle(&mut self) {
-        // wait for a state change worth a new auction
         let tip = self.trigger.next_cycle().await;
 
-        // maintenance and cache cutoff for the tip
         if let Err(err) = self.provider.sync_to_tip(&tip).await {
             tracing::warn!(?err, "failed to update auction");
         }
@@ -201,10 +190,8 @@ impl<C: Cycle> AuctionLoop<C> {
 
     /// Runs one competition for the auction.
     async fn single_run(&self, auction: &C::Auction) {
-        // mark all auction orders as ready
         self.observer.orders_ready(auction);
 
-        // collect solutions from all drivers
         let solutions = self.competition.solve(auction).await;
         if solutions.is_empty() {
             return;
@@ -227,7 +214,8 @@ impl<C: Cycle> AuctionLoop<C> {
             return;
         }
 
-        // winning orders are Executing, other ranked orders Considered
+        // a winning order can also appear in a non-winning solution, keep it
+        // Executing only
         let executing = ranking.winning_order_uids();
         let considered = ranking
             .considered_order_uids()
@@ -236,7 +224,6 @@ impl<C: Cycle> AuctionLoop<C> {
             .collect();
         self.observer.orders_matched(executing, considered);
 
-        // dispatch winners for execution in the background
         self.executor
             .execute(auction.id(), &ranking, deadline)
             .await;
