@@ -1,8 +1,7 @@
 //! Read access to the `solana.*` tables the indexer writes.
 //!
-//! Runtime SQL, no compile-time macros: the schema lives on a separate
-//! migration branch and is applied out of band, so queries are checked when
-//! the ignored DB tests run against it, not at build time.
+//! Queries are built at runtime so the crate compiles without the schema
+//! present.
 
 use {
     anyhow::{Context, Result},
@@ -59,11 +58,10 @@ mod tests {
         sqlx::PgPool,
     };
 
-    // Inserts a row into each read table and reads it back. Runs inside a
-    // transaction that rolls back, so it leaves no residue. Needs the
-    // `solana.*` schema applied out of band (the migration branch).
+    // Inserts a row into each read table and reads it back, inside a
+    // transaction that rolls back.
     #[tokio::test]
-    #[ignore = "needs the solana.* schema, run manually against the migration branch"]
+    #[ignore = "needs the solana.* schema applied to the local database"]
     async fn reads_round_trip() {
         let pool = PgPool::connect("postgresql://").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
