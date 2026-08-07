@@ -12,7 +12,10 @@
 
 use {
     crate::{
-        domain::settlement::{self, Settlement},
+        domain::{
+            Metrics,
+            settlement::{self, Settlement},
+        },
         infra,
     },
     anyhow::{Context, Result, anyhow},
@@ -31,6 +34,7 @@ impl Observer {
     /// Creates a new Observer and asynchronously schedules the first update
     /// run.
     pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
+        Metrics::init_settlement_math_errors();
         Self { eth, persistence }
     }
 
