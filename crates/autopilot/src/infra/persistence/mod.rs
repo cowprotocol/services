@@ -155,14 +155,20 @@ impl Persistence {
     ///
     /// Only the conversion into the archival shape is on the run loop's
     /// critical path; the serialization and both sinks happen in background
-    /// tasks. The auction is taken by reference so the conversion doesn't
-    /// need a deep clone.
+    /// tasks. The order list is not converted here at all: those bytes are
+    /// serialized once and shared with the `/solve` request. The auction is
+    /// taken by reference so the conversion doesn't need a deep clone.
     #[instrument(skip_all)]
-    pub fn archive_auction(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
+    pub fn archive_auction(
+        &self,
+        id: domain::auction::Id,
+        auction: &domain::RawAuctionData,
+        orders: dto::order::OrdersJson,
+    ) {
         let auction_data = {
             let _timer = observe::metrics::metrics()
                 .on_auction_overhead_start("autopilot", "convert_auction");
-            dto::auction::from_domain(auction)
+            dto::auction::from_domain(auction, orders)
         };
 
         let upload_to_s3 = !auction.orders.is_empty();

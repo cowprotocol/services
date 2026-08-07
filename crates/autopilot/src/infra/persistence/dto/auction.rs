@@ -1,5 +1,5 @@
 use {
-    super::order::Order,
+    super::order::{Order, OrdersJson},
     crate::domain::{self, auction::Price},
     alloy::primitives::{Address, U256},
     eth_domain_types as eth,
@@ -11,16 +11,18 @@ use {
 
 /// Converts the auction into the shape that gets archived to the DB and S3.
 ///
+/// The order list comes in already serialized because those bytes are shared
+/// with the `/solve` request (see [`OrdersJson`]).
+///
 /// Takes the auction by reference so the caller can keep using it afterwards
 /// without a deep clone.
-pub fn from_domain(auction: &domain::RawAuctionData) -> RawAuctionData {
+pub fn from_domain(
+    auction: &domain::RawAuctionData,
+    orders: OrdersJson,
+) -> RawAuctionData<OrdersJson> {
     RawAuctionData {
         block: auction.block,
-        orders: auction
-            .orders
-            .iter()
-            .map(super::order::from_domain)
-            .collect(),
+        orders,
         prices: auction
             .prices
             .iter()
@@ -30,12 +32,19 @@ pub fn from_domain(auction: &domain::RawAuctionData) -> RawAuctionData {
     }
 }
 
+/// The archived auction. Generic over the order list so the write path can
+/// splice in the pre-rendered [`OrdersJson`] while the read path deserializes
+/// into [`Order`]s. One definition, so the two shapes can't drift apart.
+///
+/// `Deserialize` is only ever instantiated at `O = Vec<Order>`; the derive puts
+/// the bound on the impl, not on the struct, so `RawAuctionData<OrdersJson>`
+/// simply has no `Deserialize` impl.
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RawAuctionData {
+pub struct RawAuctionData<O = Vec<Order>> {
     pub block: u64,
-    pub orders: Vec<Order>,
+    pub orders: O,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<Address, U256>,
     #[serde(default)]
@@ -77,5 +86,40 @@ impl Auction {
                 .into_iter()
                 .collect(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The archived auction is written with pre-rendered orders and read back
+    /// into `Vec<Order>`, so the two shapes must stay in sync.
+    #[tokio::test]
+    async fn archived_auction_round_trips() {
+        let token = Address::from([1u8; 20]);
+        let auction = domain::RawAuctionData {
+            block: 42,
+            orders: vec![],
+            prices: [(
+                token.into(),
+                Price::try_new(U256::from(1000).into()).unwrap(),
+            )]
+            .into_iter()
+            .collect(),
+            surplus_capturing_jit_order_owners: vec![Address::from([2u8; 20])],
+        };
+
+        let written = from_domain(&auction, OrdersJson::new(&auction.orders).await);
+        let json = serde_json::to_string(&written).unwrap();
+
+        let read: RawAuctionData = serde_json::from_str(&json).unwrap();
+        assert_eq!(read.block, 42);
+        assert!(read.orders.is_empty());
+        assert_eq!(read.prices, written.prices);
+        assert_eq!(
+            read.surplus_capturing_jit_order_owners,
+            written.surplus_capturing_jit_order_owners
+        );
     }
 }
