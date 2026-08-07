@@ -5,7 +5,7 @@ use {
 };
 
 const fn default_native_price_cache_refresh() -> Duration {
-    Duration::from_secs(1)
+    Duration::from_millis(100)
 }
 
 const fn default_native_price_prefetch_time() -> Duration {

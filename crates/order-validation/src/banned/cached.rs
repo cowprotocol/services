@@ -3,12 +3,11 @@
 //! "banned by anyone?"; backends stay as pure fetchers.
 
 use {
-    alloy_primitives::Address,
+    alloy_primitives::{Address, map::AddressHashSet},
     async_trait::async_trait,
     futures::{StreamExt, future::join_all, stream},
     moka::sync::Cache,
     std::{
-        collections::HashSet,
         sync::{Arc, Weak},
         time::{Duration, Instant},
     },
@@ -65,8 +64,8 @@ impl Cached {
 
     /// Returns the subset reported as banned by any backend. Misses fan out
     /// to backends concurrently.
-    pub(super) async fn check(&self, addresses: &HashSet<Address>) -> HashSet<Address> {
-        let mut banned = HashSet::new();
+    pub(super) async fn check(&self, addresses: &AddressHashSet) -> AddressHashSet {
+        let mut banned = AddressHashSet::default();
         let mut need_lookup = Vec::new();
         for address in addresses {
             match self.cache.get(address) {

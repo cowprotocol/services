@@ -12,14 +12,14 @@ use {
         hermod::Client as Hermod,
         onchain::Onchain,
     },
-    alloy_primitives::Address,
+    alloy_primitives::{Address, map::AddressHashSet},
     contracts::ChainalysisOracle,
-    std::{collections::HashSet, sync::Arc},
+    std::sync::Arc,
 };
 
 /// A list of banned users and optional registries that can be checked.
 pub struct Users {
-    list: HashSet<Address>,
+    list: AddressHashSet,
     remote: Option<Arc<Cached>>,
 }
 
@@ -39,7 +39,7 @@ impl Users {
             backends.push(Box::new(Hermod::new(config)));
         }
         Self {
-            list: HashSet::from_iter(banned_users),
+            list: AddressHashSet::from_iter(banned_users),
             remote: Cached::new(backends, cache_max_size),
         }
     }
@@ -47,21 +47,21 @@ impl Users {
     /// Creates a new `Users` instance that passes all addresses.
     pub fn none() -> Self {
         Self {
-            list: HashSet::new(),
+            list: AddressHashSet::default(),
             remote: None,
         }
     }
 
     /// Creates a new `Users` instance that passes all addresses except for the
     /// ones in `list`.
-    pub fn from_set(list: HashSet<Address>) -> Self {
+    pub fn from_set(list: AddressHashSet) -> Self {
         Self { list, remote: None }
     }
 
     /// Returns the subset of `addresses` that are banned. Cache misses hit
     /// the configured remote sources.
-    pub async fn banned(&self, addresses: impl IntoIterator<Item = Address>) -> HashSet<Address> {
-        let mut banned = HashSet::new();
+    pub async fn banned(&self, addresses: impl IntoIterator<Item = Address>) -> AddressHashSet {
+        let mut banned = AddressHashSet::default();
 
         let need_lookup = addresses
             .into_iter()
@@ -78,7 +78,7 @@ impl Users {
                 }
             })
             // Need to collect here to make sure filter gets executed and we insert addresses
-            .collect::<HashSet<_>>();
+            .collect::<AddressHashSet>();
 
         if let Some(remote) = &self.remote {
             banned.extend(remote.check(&need_lookup).await);

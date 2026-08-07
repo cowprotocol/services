@@ -121,11 +121,6 @@ pub struct Configuration {
     #[serde(default)]
     pub run_loop: RunLoopConfig,
 
-    /// Maximum timeout for fetching native prices in the run loop.
-    /// If 0, native prices are fetched from cache.
-    #[serde(with = "humantime_serde", default)]
-    pub native_price_timeout: Duration,
-
     /// Whether to skip filtering out orders with insufficient balances.
     #[serde(default)]
     pub disable_order_balance_filter: bool,
@@ -220,7 +215,6 @@ impl Configuration {
             run_loop: TestDefault::test_default(),
             disable_order_balance_filter: false,
             max_maintenance_timeout: default_max_maintenance_timeout(),
-            native_price_timeout: Duration::from_millis(500),
             unsupported_tokens: Default::default(),
             min_order_validity_period: default_min_order_validity_period(),
             max_auction_age: default_max_auction_age(),
@@ -251,7 +245,6 @@ impl Configuration {
             run_loop: TestDefault::test_default(),
             disable_order_balance_filter: false,
             max_maintenance_timeout: default_max_maintenance_timeout(),
-            native_price_timeout: Duration::from_millis(500),
             unsupported_tokens: Default::default(),
             min_order_validity_period: default_min_order_validity_period(),
             max_auction_age: default_max_auction_age(),
@@ -305,7 +298,6 @@ mod tests {
         surplus-capturing-jit-order-owners = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         min-order-validity-period = "2m"
         max-auction-age = "10m"
-        native-price-timeout = "3s"
 
         [[drivers]]
         name = "solver1"
@@ -453,7 +445,6 @@ mod tests {
         );
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
         assert_eq!(config.max_auction_age, Duration::from_secs(600));
-        assert_eq!(config.native_price_timeout, Duration::from_secs(3));
     }
 
     #[test]
@@ -516,7 +507,6 @@ mod tests {
         assert!(config.surplus_capturing_jit_order_owners.is_empty());
         assert_eq!(config.min_order_validity_period, Duration::from_secs(60));
         assert_eq!(config.max_auction_age, Duration::from_secs(300));
-        assert_eq!(config.native_price_timeout, Duration::ZERO);
     }
 
     #[test]
