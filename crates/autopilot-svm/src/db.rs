@@ -12,7 +12,8 @@ use {
 
 /// A row of `solana.settlements`, the indexer's record of one settlement
 /// transaction. `solution_uid` is filled in later by the indexer, so it is
-/// nullable.
+/// nullable. A settlement is finalized once its slot is at or below the
+/// watermark's `finalized_slot`.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct Settlement {
     pub slot: i64,
@@ -20,13 +21,12 @@ pub struct Settlement {
     pub solver: ByteArray<32>,
     pub auction_id: i64,
     pub solution_uid: Option<i64>,
-    pub commitment: String,
 }
 
-/// Latest slot the indexer has processed at `confirmed`. `None` before the
-/// indexer's first write.
+/// Latest fully processed slot, the indexer's resume watermark. `None` before
+/// the indexer's first write. `solana.indexer_state` is a single-row table.
 pub async fn slot_watermark(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
-    const QUERY: &str = r#"SELECT last_indexed_slot FROM solana.indexer_state WHERE id = 0"#;
+    const QUERY: &str = r#"SELECT slot FROM solana.indexer_state"#;
     sqlx::query_scalar(QUERY)
         .fetch_optional(ex)
         .await
@@ -40,7 +40,7 @@ pub async fn settlements_by_auction(
     auction_id: i64,
 ) -> Result<Vec<Settlement>> {
     const QUERY: &str = r#"
-SELECT slot, tx_signature, solver, auction_id, solution_uid, commitment
+SELECT slot, tx_signature, solver, auction_id, solution_uid
 FROM solana.settlements
 WHERE auction_id = $1
     "#;
@@ -70,9 +70,9 @@ mod tests {
 
         sqlx::query(
             r#"
-INSERT INTO solana.indexer_state (id, last_indexed_slot)
-VALUES (0, 42)
-ON CONFLICT (id) DO UPDATE SET last_indexed_slot = EXCLUDED.last_indexed_slot
+INSERT INTO solana.indexer_state (slot, finalized_slot)
+VALUES (42, 0)
+ON CONFLICT (singleton) DO UPDATE SET slot = EXCLUDED.slot
             "#,
         )
         .execute(&mut *tx)
@@ -82,8 +82,8 @@ ON CONFLICT (id) DO UPDATE SET last_indexed_slot = EXCLUDED.last_indexed_slot
 
         sqlx::query(
             r#"
-INSERT INTO solana.settlements (slot, tx_signature, solver, auction_id, solution_uid, commitment)
-VALUES (7, $1, $2, 123, NULL, 'finalized')
+INSERT INTO solana.settlements (slot, tx_signature, solver, auction_id, solution_uid)
+VALUES (7, $1, $2, 123, NULL)
             "#,
         )
         .bind(ByteArray([9u8; 64]))
@@ -95,6 +95,6 @@ VALUES (7, $1, $2, 123, NULL, 'finalized')
         assert_eq!(settlements.len(), 1);
         assert_eq!(settlements[0].auction_id, 123);
         assert_eq!(settlements[0].solution_uid, None);
-        assert_eq!(settlements[0].commitment, "finalized");
+        assert_eq!(settlements[0].slot, 7);
     }
 }
