@@ -410,7 +410,7 @@ mod tests {
         let solution = ws::Solution::new(0, ws::Address::ZERO, vec![order]);
         let arbitrator = ws::Arbitrator {
             max_winners: 1,
-            weth: ws::Address::ZERO,
+            wrapped_native: ws::Address::ZERO,
         };
         let ranking = arbitrator.arbitrate(vec![solution], &context);
 
