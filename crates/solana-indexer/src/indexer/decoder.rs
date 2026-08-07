@@ -368,7 +368,7 @@ fn decode_settlements_finalized(
     };
 
     let mut events = Vec::new();
-    for begin in instructions {
+    'process_instructions: for begin in instructions {
         let Ok((SettlementInstruction::BeginSettle, _)) = recover_discriminator(&begin.data) else {
             continue;
         };
@@ -462,7 +462,6 @@ fn decode_settlements_finalized(
         }
 
         let mut trades = Vec::with_capacity(order_count);
-        let mut corrupt = false;
         for (order, amount_received_delta) in begin_input
             .orders
             .iter()
@@ -477,13 +476,13 @@ fn decode_settlements_finalized(
                 acc.checked_add(u64::from_le_bytes(*amount))
             });
             let Some(amount_withdrawn_delta) = sum else {
+                *decode_failed = true;
                 tracing::warn!(
                     signature = %ctx.signature,
                     instruction_index = begin.instruction_index,
                     "pull amounts overflow u64, skipping the settlement pair"
                 );
-                corrupt = true;
-                break;
+                continue 'process_instructions;
             };
             trades.push(TradeDelta {
                 order_uid: resolved.order_uid,
@@ -491,10 +490,6 @@ fn decode_settlements_finalized(
                 amount_received_delta,
                 order_fulfilled: resolved.order_fulfilled,
             });
-        }
-        if corrupt {
-            *decode_failed = true;
-            continue;
         }
 
         events.push(SettlementEvent::SettlementFinalized {

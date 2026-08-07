@@ -523,8 +523,8 @@ fn unpaired_begin_settle_sets_failure_flag() {
 /// - the auction id comes from the `BeginSettle` instruction data,
 /// - the order's sell amount is the sum of its pulls (300 + 700, both taken
 ///   from the same order's sell account),
-/// - the push amount pairs to its order by position (order `i` is paid by push
-///   `i`),
+/// - the buy-side amount comes from the `FinalizeSettle` entry paired to its
+///   order by position (order `i` is paid by entry `i`),
 /// - the order UID comes from the injected resolver, keyed by the canonical
 ///   order PDA the builder derives,
 /// - the solver is the fee payer.
