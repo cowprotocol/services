@@ -52,6 +52,31 @@ services:
       - -c
       - "psql -tc \"SELECT 1 FROM pg_database WHERE datname='pool_indexer'\" | grep -q 1 || psql -c \"CREATE DATABASE pool_indexer\""
 
+  # Applies the solana.* migration set on top of the base schema. Local dev
+  # runs it against the shared DB; a Solana deployment points it at the
+  # Solana network's database, so EVM databases never receive the set.
+  migrations-solana:
+    build:
+      context: .
+      target: migrations
+    restart: on-failure
+    command: migrate
+    depends_on:
+      - db
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db/?user=$USER&password=
+      FLYWAY_TABLE: flyway_schema_history_solana
+      # The shared conf baselines at 3 (a pre-flyway EVM artifact), which
+      # would swallow this fresh series.
+      FLYWAY_BASELINE_VERSION: "0"
+    volumes:
+      - type: bind
+        source: ./database/sql-solana/
+        target: /flyway/sql
+      - type: bind
+        source: ./database/conf/
+        target: /flyway/conf
+
   # Same flyway image as `migrations`, but applies the pool-indexer's own
   # migration set to its own database (mirrors the per-network prod DB).
   migrations-pool-indexer:
