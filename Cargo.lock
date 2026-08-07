@@ -1559,6 +1559,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "autopilot-svm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "tracing",
+]
+
+[[package]]
 name = "aws-config"
 version = "1.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
