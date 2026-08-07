@@ -25,7 +25,6 @@ axum = { workspace = true }
 bad-tokens = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
-cached = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
@@ -44,6 +43,7 @@ humantime = { workspace = true }
 humantime-serde = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 model = { workspace = true }
+moka = { workspace = true }
 multibase = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
