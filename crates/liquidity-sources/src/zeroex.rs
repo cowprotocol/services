@@ -7,6 +7,7 @@
 use {
     alloy::primitives::{Address, B256, U256, address},
     anyhow::{Context, Result},
+    bytes::Bytes,
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     number::serialization::HexOrDecimalU256,
@@ -98,7 +99,7 @@ impl Default for OrdersQuery {
 pub struct OrderMetadata {
     pub created_at: DateTime<Utc>,
     #[serde(with = "bytes_hex")]
-    pub order_hash: Vec<u8>,
+    pub order_hash: Bytes,
     #[serde_as(as = "DisplayFromStr")]
     pub remaining_fillable_taker_amount: u128,
 }
@@ -557,7 +558,7 @@ mod tests {
                 },
                 OrderMetadata {
                     // unique order_hash
-                    order_hash: [2].into(),
+                    order_hash: Bytes::from_static(&[2]),
                     ..Default::default()
                 },
             ),
@@ -608,7 +609,8 @@ mod tests {
                         order_hash: const_hex::decode(
                             "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
                         )
-                        .unwrap(),
+                        .unwrap()
+                        .into(),
                         remaining_fillable_taker_amount: 262467000000000000u128,
                         created_at: DateTime::from_naive_utc_and_offset(
                             NaiveDate::from_ymd_opt(2022, 2, 26)

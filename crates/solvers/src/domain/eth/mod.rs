@@ -4,7 +4,7 @@ pub use {
     alloy::primitives::{Address, B256, U256},
     chain::ChainId,
 };
-use {alloy::rpc::types::AccessList, derive_more::From};
+use {alloy::rpc::types::AccessList, bytes::Bytes, derive_more::From};
 
 /// A contract address.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -95,5 +95,5 @@ pub struct Tx {
 pub struct Interaction {
     pub target: Address,
     pub value: Ether,
-    pub calldata: Vec<u8>,
+    pub calldata: Bytes,
 }

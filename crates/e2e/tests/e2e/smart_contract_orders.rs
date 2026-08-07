@@ -63,12 +63,12 @@ async fn smart_contract_orders(web3: Web3) {
     let orders = [
         OrderCreation {
             from: Some(safe.address()),
-            signature: Signature::Eip1271(b"invalid signature".to_vec()),
+            signature: Signature::Eip1271(bytes::Bytes::from_static(b"invalid signature")),
             ..order_template.clone()
         },
         OrderCreation {
             from: Some(Address::new(*b"invalid address\0\0\0\0\0")),
-            signature: Signature::Eip1271(signature1271.clone()),
+            signature: Signature::Eip1271(signature1271.clone().into()),
             ..order_template.clone()
         },
     ];
@@ -81,7 +81,7 @@ async fn smart_contract_orders(web3: Web3) {
     let orders = [
         OrderCreation {
             from: Some(safe.address()),
-            signature: Signature::Eip1271(signature1271),
+            signature: Signature::Eip1271(signature1271.into()),
             ..order_template.clone()
         },
         OrderCreation {
@@ -198,7 +198,7 @@ async fn erc1271_gas_limit(web3: Web3) {
         buy_amount: 3u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
-        signature: Signature::Eip1271(signature.to_vec()),
+        signature: Signature::Eip1271(bytes::Bytes::copy_from_slice(&signature)),
         from: Some(*trader.address()),
         ..Default::default()
     };

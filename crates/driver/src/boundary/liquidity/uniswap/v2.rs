@@ -99,7 +99,7 @@ pub fn to_interaction(
     domain::Interaction {
         target,
         value: value.into(),
-        call_data: call_data.0.to_vec().into(),
+        call_data: call_data.into(),
     }
 }
 

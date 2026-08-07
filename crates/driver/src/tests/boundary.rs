@@ -7,6 +7,7 @@ use {
         primitives::{Address, U256},
         signers::local::PrivateKeySigner,
     },
+    bytes::Bytes,
 };
 
 /// Order data used for calculating the order UID and signing.
@@ -31,7 +32,7 @@ impl Order {
         self.build().data.uid(&self.domain_separator, self.owner)
     }
 
-    pub fn signature(&self) -> Vec<u8> {
+    pub fn signature(&self) -> Bytes {
         self.build().signature.to_bytes()
     }
 

@@ -1,5 +1,6 @@
 use {
     alloy_primitives::{Address, U256},
+    bytes::Bytes,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -14,7 +15,7 @@ pub struct InteractionData {
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(with = "bytes_hex")]
-    pub call_data: Vec<u8>,
+    pub call_data: Bytes,
 }
 
 impl Debug for InteractionData {

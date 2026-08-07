@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 alloy = { workspace = true, features = ["contract", "rand", "rpc-types"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+bytes = { workspace = true }
 bytes-hex = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }

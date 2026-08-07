@@ -230,10 +230,14 @@ pub fn tx(
     let (to, calldata) = if has_flashloans && has_wrappers {
         return Err(Error::FlashloanWrappersIncompatible);
     } else if has_flashloans {
-        encode_flashloan_settlement(solution, contracts, settle_calldata)?
+        encode_flashloan_settlement(solution, contracts, settle_calldata.into())?
     } else if has_wrappers {
-        simulator::encoding::encode_wrapper_settlement(&solution.wrappers, settle_calldata.into())
-            .expect("wrappers is not empty")
+        let (addr, calldata) = simulator::encoding::encode_wrapper_settlement(
+            &solution.wrappers,
+            settle_calldata.into(),
+        )
+        .expect("wrappers is not empty");
+        (addr, calldata.into())
     } else {
         (*contracts.settlement().address(), settle_calldata.into())
     };
@@ -256,7 +260,7 @@ pub fn tx(
 fn encode_flashloan_settlement(
     solution: &super::Solution,
     contracts: &infra::blockchain::Contracts,
-    settle_calldata: Vec<u8>,
+    settle_calldata: Bytes,
 ) -> Result<(eth::Address, Bytes), Error> {
     // Get flashloan router contract
     let router = contracts
@@ -277,7 +281,7 @@ fn encode_flashloan_settlement(
 
     // Wrap settlement in flashLoanAndSettle call
     let calldata = router
-        .flashLoanAndSettle(flashloans, settle_calldata.into())
+        .flashLoanAndSettle(flashloans, settle_calldata)
         .calldata()
         .to_vec();
 

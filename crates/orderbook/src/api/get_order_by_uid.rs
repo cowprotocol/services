@@ -46,7 +46,7 @@ mod tests {
         let response = get_order_by_uid_response(Ok(Some(order.clone())));
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_body(response).await;
-        let response_order: Order = serde_json::from_slice(body.as_slice()).unwrap();
+        let response_order: Order = serde_json::from_slice(&body).unwrap();
         assert_eq!(response_order, order);
     }
 

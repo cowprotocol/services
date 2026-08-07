@@ -181,7 +181,7 @@ pub fn extract_interactions(
                 target: Address::from_slice(&interaction.0.0),
                 value: big_decimal_to_u256(&interaction.1)
                     .context("interaction value is not U256")?,
-                call_data: interaction.2.to_vec(),
+                call_data: interaction.2.clone().into(),
             })
         })
         .collect()

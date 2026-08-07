@@ -9,6 +9,7 @@ use {
     },
     alloy::primitives::U256,
     bigdecimal::BigDecimal,
+    bytes::Bytes,
     bytes_hex::BytesHex,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
@@ -214,7 +215,7 @@ pub struct SwapResponseTx {
 
     /// Call data.
     #[serde_as(as = "BytesHex")]
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 /// A OKX API approve transaction request.

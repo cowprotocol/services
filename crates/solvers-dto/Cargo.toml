@@ -11,6 +11,7 @@ alloy-rpc-types = { workspace = true }
 alloy-rpc-types-eth = { workspace = true }
 app-data = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
+bytes = { workspace = true }
 bytes-hex = { workspace = true }  # may get marked as unused but it's used with serde
 chrono = { workspace = true, features = ["serde"] }
 const-hex = { workspace = true }

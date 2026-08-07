@@ -1,6 +1,6 @@
 use {
     crate::{encoding::WrapperCall, report, tenderly},
-    alloy_primitives::{Address, B256, Bytes, U256, address, b256, keccak256},
+    alloy_primitives::{Address, B256, U256, address, b256, keccak256},
     alloy_provider::{DynProvider, Provider, ext::DebugApi},
     alloy_rpc_types::{
         TransactionRequest,
@@ -11,6 +11,7 @@ use {
     alloy_transport::RpcError,
     anyhow::{Context as AnyhowContext, Result},
     balance_overrides::StateOverriding,
+    bytes::Bytes,
     ethrpc::block_stream::CurrentBlockWatcher,
     model::{
         DomainSeparator,
@@ -240,7 +241,7 @@ impl SimulationBuilder {
 
                     wrapper_calls.push(WrapperCall {
                         address: w.address,
-                        data: w.data.into(),
+                        data: w.data,
                     });
                 }
                 self.wrapper = WrapperConfig::Custom(wrapper_calls);
@@ -274,12 +275,13 @@ impl SimulationBuilder {
                     .iter()
                     .map(|h| contracts::HooksTrampoline::HooksTrampoline::Hook {
                         target: h.target,
-                        callData: Bytes::copy_from_slice(&h.call_data),
+                        callData: h.call_data.clone().into(),
                         gasLimit: U256::from(h.gas_limit),
                     })
                     .collect(),
             }
-            .abi_encode(),
+            .abi_encode()
+            .into(),
         })
     }
 
@@ -458,7 +460,7 @@ impl EthCallInputs {
         TransactionRequest {
             from: Some(self.from),
             to: Some(self.to.into()),
-            input: self.calldata.clone().into(),
+            input: alloy_primitives::Bytes::from(self.calldata.clone()).into(),
             gas: Some(self.simulator.0.max_gas_limit),
             ..Default::default()
         }
@@ -475,6 +477,7 @@ impl EthCallInputs {
             .overrides(self.state_overrides.clone())
             .block(self.block.into())
             .await
+            .map(|bytes| bytes.0)
     }
 
     /// Runs the simulation together with a call tracer. Afterwards the call
@@ -550,7 +553,7 @@ impl EthCallInputs {
             network_id: self.simulator.0.chain_id.to_string(),
             from: self.from,
             to: self.to,
-            input: self.calldata.to_vec(),
+            input: self.calldata.clone(),
             gas: Some(self.simulator.0.max_gas_limit),
             value: None,
             simulation_type: Some(tenderly::dto::SimulationType::Full),

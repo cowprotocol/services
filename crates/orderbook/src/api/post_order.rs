@@ -365,7 +365,7 @@ mod tests {
         let response = Result::Ok((StatusCode::CREATED, Json(uid))).into_response();
         assert_eq!(response.status(), StatusCode::CREATED);
         let body = response_body(response).await;
-        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let expected = json!(
             "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"
         );
@@ -377,7 +377,7 @@ mod tests {
         let response = Result::Err(AddOrderError::DuplicatedOrder).into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = response_body(response).await;
-        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let expected_error =
             json!({"errorType": "DuplicatedOrder", "description": "order already exists"});
         assert_eq!(body, expected_error);

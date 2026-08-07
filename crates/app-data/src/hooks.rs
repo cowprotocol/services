@@ -1,5 +1,6 @@
 use {
     alloy_primitives::Address,
+    bytes::Bytes,
     bytes_hex::BytesHex,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -32,7 +33,7 @@ impl Hooks {
 pub struct Hook {
     pub target: Address,
     #[serde_as(as = "BytesHex")]
-    pub call_data: Vec<u8>,
+    pub call_data: Bytes,
     #[serde_as(as = "DisplayFromStr")]
     pub gas_limit: u64,
 }

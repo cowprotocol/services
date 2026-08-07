@@ -177,7 +177,7 @@ impl From<dto::LegacyQuote> for LegacyTrade {
                 .map(|interaction| Interaction {
                     target: interaction.target,
                     value: interaction.value,
-                    data: interaction.call_data,
+                    data: interaction.call_data.clone(),
                 })
                 .collect(),
             solver: quote.solver,
@@ -380,6 +380,7 @@ pub mod dto {
     use {
         alloy::primitives::{Address, U256},
         app_data::AppDataHash,
+        bytes::Bytes,
         bytes_hex::BytesHex,
         model::{
             order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -455,7 +456,7 @@ pub mod dto {
         #[serde_as(as = "HexOrDecimalU256")]
         pub value: U256,
         #[serde_as(as = "BytesHex")]
-        pub call_data: Vec<u8>,
+        pub call_data: Bytes,
     }
 
     #[serde_as]
@@ -478,7 +479,7 @@ pub mod dto {
         pub sell_token_source: SellTokenSource,
         pub buy_token_destination: BuyTokenDestination,
         #[serde_as(as = "BytesHex")]
-        pub signature: Vec<u8>,
+        pub signature: Bytes,
         pub signing_scheme: SigningScheme,
     }
 

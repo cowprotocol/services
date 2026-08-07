@@ -3,6 +3,7 @@ use {
     crate::util,
     alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
+    bytes::{Bytes, BytesMut},
     configs::autopilot::solver::Account,
     eth_domain_types as eth,
     observe::tracing::{distributed::headers::tracing_headers, lazy::Lazy},
@@ -154,16 +155,15 @@ impl Driver {
 pub async fn response_body_with_size_limit(
     response: &mut reqwest::Response,
     limit: usize,
-) -> Result<Vec<u8>> {
-    let mut bytes = Vec::new();
+) -> Result<Bytes> {
+    let mut bytes = BytesMut::new();
     while let Some(chunk) = response.chunk().await? {
-        let slice: &[u8] = &chunk;
-        if bytes.len() + slice.len() > limit {
+        if bytes.len() + chunk.len() > limit {
             return Err(anyhow!("size limit exceeded"));
         }
-        bytes.extend_from_slice(slice);
+        bytes.extend_from_slice(&chunk);
     }
-    Ok(bytes)
+    Ok(bytes.freeze())
 }
 
 trait InjectIntoHttpRequest {

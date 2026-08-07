@@ -234,7 +234,7 @@ pub fn prepare_request(
         network_id: chain_id,
         from: tx.from.unwrap_or_default(),
         to: tx.to.and_then(TxKind::into_to).unwrap_or_default(),
-        input: tx.input.clone().into_input().unwrap_or_default().to_vec(),
+        input: tx.input.clone().into_input().unwrap_or_default().into(),
         gas: tx.gas,
         gas_price: tx
             .gas_price

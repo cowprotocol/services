@@ -1,4 +1,5 @@
 use {
+    bytes::Bytes,
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, skip_serializing_none},
 };
@@ -20,9 +21,9 @@ pub struct Request {
 #[serde(rename_all = "camelCase")]
 pub struct Calldata {
     #[serde(with = "bytes_hex")]
-    pub internalized: Vec<u8>,
+    pub internalized: Bytes,
     #[serde(with = "bytes_hex")]
-    pub uninternalized: Vec<u8>,
+    pub uninternalized: Bytes,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

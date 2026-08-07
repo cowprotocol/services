@@ -892,7 +892,7 @@ impl Persistence {
                                     fee_amount: u256_to_big_decimal(&jit_order.fee_amount.0),
                                     kind: jit_order.side.into(),
                                     partially_fillable: jit_order.partially_fillable,
-                                    signature: jit_order.signature.to_bytes(),
+                                    signature: jit_order.signature.to_bytes().to_vec(),
                                     receiver: ByteArray(jit_order.receiver.0.0),
                                     signing_scheme: match jit_order.signature.scheme() {
                                         DomainSigningScheme::Eip712 => DbSigningScheme::Eip712,

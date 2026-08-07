@@ -191,7 +191,7 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
     };
 
     let sim_order = simulation_builder::Order::new(order_data)
-        .with_signature(order_owner, Signature::Eip1271(signature_bytes))
+        .with_signature(order_owner, Signature::Eip1271(signature_bytes.into()))
         .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice);
 
     simulator
@@ -303,7 +303,7 @@ async fn build_naturally_failing_replay_simulation(
     };
 
     let sim_order = simulation_builder::Order::new(order_data)
-        .with_signature(order_owner, Signature::Eip1271(signature_bytes))
+        .with_signature(order_owner, Signature::Eip1271(signature_bytes.into()))
         .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice);
 
     simulator

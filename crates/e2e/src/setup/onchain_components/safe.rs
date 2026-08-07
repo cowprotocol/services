@@ -155,7 +155,7 @@ impl Safe {
     pub fn sign_transaction(
         &self,
         to: alloy::primitives::Address,
-        data: Vec<u8>,
+        data: Bytes,
         nonce: alloy::primitives::U256,
     ) -> alloy::contract::CallBuilder<
         &alloy::providers::DynProvider,
@@ -186,19 +186,19 @@ impl Safe {
         self.contract.execTransaction(
             to,
             Default::default(), // value
-            alloy::primitives::Bytes::from(data),
+            data,
             Default::default(), // operation (= CALL)
             Default::default(), // safe tx gas
             Default::default(), // base gas
             Default::default(), // gas price
             Default::default(), // gas token
             Default::default(), // refund receiver
-            alloy::primitives::Bytes::from(signature),
+            signature,
         )
     }
 
     /// Returns the ERC-1271 signature bytes for the specified message.
-    pub fn sign_message(&self, message: &[u8; 32]) -> Vec<u8> {
+    pub fn sign_message(&self, message: &[u8; 32]) -> Bytes {
         self.sign({
             // `SafeMessage` struct hash computation ported from the Safe Solidity code:
             // <https://etherscan.io/address/0xf48f2b2d2a534e402487b3ee7c18c33aec0fe5e4#code#F1#L52>
@@ -216,14 +216,14 @@ impl Safe {
     }
 
     pub fn sign_order(&self, order: &mut OrderCreation, onchain: &OnchainComponents) {
-        order.signature = Signature::Eip1271(self.order_eip1271_signature(order, onchain));
+        order.signature = Signature::Eip1271(self.order_eip1271_signature(order, onchain).into());
     }
 
     pub fn order_eip1271_signature(
         &self,
         order: &OrderCreation,
         onchain: &OnchainComponents,
-    ) -> Vec<u8> {
+    ) -> Bytes {
         self.sign_message(&hashed_eip712_message(
             &onchain.contracts().domain_separator,
             &order.data().hash_struct(),
@@ -249,7 +249,7 @@ impl Safe {
 
     /// Creates an ECDSA signature with the [`Safe`]'s `owner` and encodes to
     /// bytes in the format expected by the Safe contract.
-    fn sign(&self, hash: [u8; 32]) -> Vec<u8> {
+    fn sign(&self, hash: [u8; 32]) -> Bytes {
         let signature = self.owner.sign_typed_data(&self.domain_separator(), &hash);
 
         // Signature format specified here:
@@ -260,6 +260,7 @@ impl Safe {
             &[signature.v],
         ]
         .concat()
+        .into()
     }
 }
 

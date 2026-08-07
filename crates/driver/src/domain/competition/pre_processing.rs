@@ -270,7 +270,7 @@ impl Utilities {
                             .map(|i| InteractionData {
                                 target: i.target,
                                 value: i.value.0,
-                                call_data: i.call_data.0.to_vec(),
+                                call_data: i.call_data.0.clone(),
                             })
                             .collect()
                     } else {

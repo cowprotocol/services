@@ -18,6 +18,7 @@ use {
         http::Request,
         response::{IntoResponse, Response},
     },
+    bytes::Bytes,
     std::{collections::VecDeque, net::SocketAddr, sync::Arc},
     tokio::{sync::RwLock, task::JoinHandle},
     url::Url,
@@ -161,7 +162,7 @@ async fn handle_request(
     for attempt in 0..backend_count {
         let backend = state.get_current_backend().await;
 
-        match try_backend(&client, &parts, body_bytes.to_vec(), &backend).await {
+        match try_backend(&client, &parts, body_bytes.clone(), &backend).await {
             Ok(response) => return response.into_response(),
             Err(err) => {
                 tracing::warn!(?err, ?backend, attempt, "backend failed, rotating to next");
@@ -180,9 +181,9 @@ async fn handle_request(
 async fn try_backend(
     client: &reqwest::Client,
     parts: &axum::http::request::Parts,
-    body: Vec<u8>,
+    body: Bytes,
     backend: &Url,
-) -> Result<(axum::http::StatusCode, Vec<u8>), reqwest::Error> {
+) -> Result<(axum::http::StatusCode, Bytes), reqwest::Error> {
     let path = parts
         .uri
         .path_and_query()
@@ -206,5 +207,5 @@ async fn try_backend(
     let backend_resp = backend_req.send().await?;
     let status = axum::http::StatusCode::from_u16(backend_resp.status().as_u16()).unwrap();
     let bytes = backend_resp.bytes().await?;
-    Ok((status, bytes.to_vec()))
+    Ok((status, bytes))
 }

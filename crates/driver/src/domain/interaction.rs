@@ -16,7 +16,7 @@ impl From<Interaction> for model::interaction::InteractionData {
         Self {
             target: interaction.target,
             value: interaction.value.0,
-            call_data: interaction.call_data.to_vec(),
+            call_data: interaction.call_data.0,
         }
     }
 }

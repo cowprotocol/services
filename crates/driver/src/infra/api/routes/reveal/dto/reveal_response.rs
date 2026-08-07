@@ -1,4 +1,4 @@
-use {crate::domain::competition, serde::Serialize, serde_with::serde_as};
+use {crate::domain::competition, bytes::Bytes, serde::Serialize, serde_with::serde_as};
 
 impl RevealResponse {
     pub fn new(reveal: competition::Revealed) -> Self {
@@ -23,7 +23,7 @@ pub struct RevealResponse {
 #[serde(rename_all = "camelCase")]
 struct Calldata {
     #[serde_as(as = "serde_ext::Hex")]
-    internalized: Vec<u8>,
+    internalized: Bytes,
     #[serde_as(as = "serde_ext::Hex")]
-    uninternalized: Vec<u8>,
+    uninternalized: Bytes,
 }

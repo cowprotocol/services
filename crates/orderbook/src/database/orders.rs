@@ -6,6 +6,7 @@ use {
     app_data::AppDataHash,
     async_trait::async_trait,
     bigdecimal::ToPrimitive,
+    bytes::Bytes,
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
@@ -83,7 +84,7 @@ pub enum InsertionError {
     DuplicatedRecord,
     DbError(sqlx::Error),
     /// Full app data to be inserted doesn't match existing.
-    AppDataMismatch(Vec<u8>),
+    AppDataMismatch(Bytes),
     MetadataSerializationFailed(serde_json::Error),
 }
 
@@ -146,7 +147,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             |(index, (interaction, execution))| database::orders::Interaction {
                 target: ByteArray(*interaction.target.0),
                 value: u256_to_big_decimal(&interaction.value),
-                data: interaction.call_data.clone(),
+                data: interaction.call_data.to_vec(),
                 index: index
                     .try_into()
                     .expect("interactions count cannot overflow a i32"),
@@ -170,7 +171,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         kind: order_kind_into(order.data.kind),
         class: order_class_into(&order.metadata.class),
         partially_fillable: order.data.partially_fillable,
-        signature: order.signature.to_bytes(),
+        signature: order.signature.to_bytes().to_vec(),
         signing_scheme: signing_scheme_into(order.signature.scheme()),
         settlement_contract: ByteArray(order.metadata.settlement_contract.0.0),
         sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
@@ -1158,7 +1159,7 @@ mod tests {
         let interaction = |byte: u8| InteractionData {
             target: Address::from_slice(&[byte; 20]),
             value: alloy::primitives::U256::from(byte),
-            call_data: vec![byte; byte as _],
+            call_data: Bytes::from(vec![byte; byte as _]),
         };
 
         let fee_parameters = FeeParameters {
@@ -1223,18 +1224,18 @@ mod tests {
                         InteractionData {
                             target: Address::from_slice(&[1; 20]),
                             value: alloy::primitives::U256::from(100),
-                            call_data: vec![1, 20],
+                            call_data: Bytes::from_static(&[1, 20]),
                         },
                         InteractionData {
                             target: Address::from_slice(&[2; 20]),
                             value: alloy::primitives::U256::from(10),
-                            call_data: vec![2, 20],
+                            call_data: Bytes::from_static(&[2, 20]),
                         },
                     ],
                     pre_interactions: vec![InteractionData {
                         target: Address::from_slice(&[3; 20]),
                         value: alloy::primitives::U256::from(30),
-                        call_data: vec![3, 20],
+                        call_data: Bytes::from_static(&[3, 20]),
                     }],
                     jit_orders: vec![],
                 }

@@ -36,6 +36,7 @@ autopilot = { workspace = true, features = ["test-util"] }
 axum = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
+bytes = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }

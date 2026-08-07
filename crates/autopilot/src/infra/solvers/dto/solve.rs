@@ -293,7 +293,7 @@ pub struct Response {
 mod tests {
     use super::*;
 
-    fn make_test_json() -> Vec<u8> {
+    fn make_test_json() -> Bytes {
         let json_value = serde_json::json!({
             "id": "1",
             "tokens": (0..100).map(|i| {
@@ -307,13 +307,13 @@ mod tests {
             "deadline": "2025-01-01T00:00:00Z",
             "surplusCapturingJitOrderOwners": []
         });
-        serde_json::to_vec(&json_value).unwrap()
+        serde_json::to_vec(&json_value).unwrap().into()
     }
 
-    fn uncompressed_request(json: Vec<u8>) -> Request {
+    fn uncompressed_request(json: Bytes) -> Request {
         Request {
             auction_id: 1,
-            body: Bytes::from(json),
+            body: json,
             content_encoding: None,
             deadline: Utc::now(),
         }
@@ -352,7 +352,7 @@ mod tests {
 
         let mut decompressed = Vec::new();
         brotli::BrotliDecompress(&mut request.body.as_ref(), &mut decompressed).unwrap();
-        assert_eq!(decompressed, json);
+        assert_eq!(decompressed, json.as_ref());
     }
 
     #[test]
@@ -361,6 +361,6 @@ mod tests {
         let request = uncompressed_request(json.clone());
 
         assert_eq!(request.content_encoding, None);
-        assert_eq!(request.body.as_ref(), json.as_slice());
+        assert_eq!(request.body.as_ref(), json.as_ref());
     }
 }

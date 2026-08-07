@@ -6,8 +6,9 @@ pub mod trade_estimator;
 
 use {
     crate::{PriceEstimationError, Query, trade_verifier::PriceQuery},
-    alloy::primitives::{Address, Bytes, U256},
+    alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
+    bytes::Bytes,
     derive_more::Debug,
     external::dto,
     model::{interaction::InteractionData, order::OrderKind},
@@ -207,7 +208,7 @@ pub struct Interaction {
     pub target: Address,
     pub value: U256,
     #[debug("{}", const_hex::encode_prefixed::<&[u8]>(data.as_ref()))]
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 impl Interaction {
@@ -222,11 +223,7 @@ impl Interaction {
 
 impl InteractionEncoding for Interaction {
     fn encode(&self) -> simulator::encoding::EncodedInteraction {
-        (
-            self.target,
-            self.value,
-            Bytes::copy_from_slice(self.data.as_slice()),
-        )
+        (self.target, self.value, self.data.clone())
     }
 }
 
@@ -362,7 +359,7 @@ mod tests {
         let interaction = Interaction {
             target: Default::default(),
             value: U256::ONE,
-            data: vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+            data: Bytes::from_static(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
         };
 
         let interaction_debug = format!("{interaction:?}");

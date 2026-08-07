@@ -1,5 +1,6 @@
 use {
     alloy_primitives::{Address, U256},
+    bytes::Bytes,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -121,7 +122,7 @@ pub struct JitOrder {
     pub buy_token_balance: BuyTokenBalance,
     pub signing_scheme: SigningScheme,
     #[serde_as(as = "serde_ext::Hex")]
-    pub signature: Vec<u8>,
+    pub signature: Bytes,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -146,7 +147,7 @@ pub struct Call {
     pub value: U256,
     #[serde(rename = "callData")]
     #[serde_as(as = "serde_ext::Hex")]
-    pub calldata: Vec<u8>,
+    pub calldata: Bytes,
 }
 
 #[serde_as]
@@ -173,7 +174,7 @@ pub struct CustomInteraction {
     pub value: U256,
     #[serde(rename = "callData")]
     #[serde_as(as = "serde_ext::Hex")]
-    pub calldata: Vec<u8>,
+    pub calldata: Bytes,
     pub allowances: Vec<Allowance>,
     pub inputs: Vec<Asset>,
     pub outputs: Vec<Asset>,
@@ -190,7 +191,7 @@ pub struct OrderInteraction {
     pub value: U256,
     #[serde(rename = "callData")]
     #[serde_as(as = "serde_ext::Hex")]
-    pub calldata: Vec<u8>,
+    pub calldata: Bytes,
 }
 
 #[serde_as]
@@ -280,7 +281,7 @@ pub struct WrapperCall {
     pub address: Address,
     #[serde_as(as = "serde_ext::Hex")]
     #[serde(default)]
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 #[cfg(test)]

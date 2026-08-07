@@ -17,6 +17,7 @@ alloy = { workspace = true }
 axum = { workspace = true }
 base64 = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
+bytes = { workspace = true }
 bytes-hex = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["serde"] }

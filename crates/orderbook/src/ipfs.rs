@@ -1,5 +1,6 @@
 use {
     anyhow::{Context, Result},
+    bytes::Bytes,
     reqwest::{Client, ClientBuilder, StatusCode},
     std::time::Duration,
     url::Url,
@@ -31,7 +32,7 @@ impl Ipfs {
     ///
     /// This function treats timeouts and all status codes except "200 OK" as
     /// Ok(None).
-    pub async fn fetch(&self, cid: &str) -> Result<Option<Vec<u8>>> {
+    pub async fn fetch(&self, cid: &str) -> Result<Option<Bytes>> {
         let url = self.prepare_url(cid);
         let response = match self.client.get(url).send().await {
             Ok(response) => response,
@@ -41,7 +42,7 @@ impl Ipfs {
         let status = response.status();
         let body = response.bytes().await.context("body")?;
         match status {
-            StatusCode::OK => Ok(Some(body.into())),
+            StatusCode::OK => Ok(Some(body)),
             _ => {
                 let body = String::from_utf8_lossy(&body);
                 let body: &str = &body;
