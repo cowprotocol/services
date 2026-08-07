@@ -59,6 +59,7 @@ impl Api {
             self.eth.web3(),
             self.eth.balance_simulator().clone(),
             self.eth.current_block().clone(),
+            self.eth.chain().id(),
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);

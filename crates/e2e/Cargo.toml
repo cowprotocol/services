@@ -9,6 +9,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+account-balances = { workspace = true }
 alloy = {
   workspace = true,
   default-features = false,
