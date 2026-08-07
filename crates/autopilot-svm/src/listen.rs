@@ -50,10 +50,10 @@ impl ListenSession {
     pub async fn run(self, mut handler: impl NotifyHandler) {
         let mut backoff = self.min_backoff;
         loop {
-            match self.session(&mut handler, &mut backoff).await {
-                Ok(never) => match never {},
-                Err(err) => tracing::warn!(channel = %self.channel, ?err, "listen session lost"),
-            }
+            // `session` can only return by failing: its Ok type is
+            // uninhabited.
+            let err = self.session(&mut handler, &mut backoff).await.unwrap_err();
+            tracing::warn!(channel = %self.channel, ?err, "listen session lost");
             tokio::time::sleep(backoff).await;
             backoff = (backoff * 2).min(self.max_backoff);
         }
