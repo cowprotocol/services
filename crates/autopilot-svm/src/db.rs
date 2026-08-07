@@ -40,6 +40,7 @@ pub async fn settlements_by_auction(
 SELECT slot, tx_signature, solver, auction_id, solution_uid
 FROM solana.settlements
 WHERE auction_id = $1
+ORDER BY slot, tx_signature
     "#;
     sqlx::query_as(QUERY)
         .bind(auction_id)
