@@ -203,16 +203,6 @@ pub async fn run(config: Configuration) {
         postgres_write.clone()
     };
 
-    let balance_fetcher = account_balances::fetcher(
-        &web3,
-        BalanceSimulator::new(
-            settlement_contract.clone(),
-            balances_contract.clone(),
-            vault_relayer,
-            balance_overrider.clone(),
-        ),
-    );
-
     let gas_estimators: Vec<gas_price_estimation::GasEstimatorType> = config
         .shared
         .gas_estimators
@@ -226,6 +216,19 @@ pub async fn run(config: Configuration) {
         .stream(config.shared.node_url.clone(), web3.provider.clone())
         .await
         .unwrap();
+
+    let balance_fetcher = account_balances::cached(
+        &web3,
+        BalanceSimulator::new(
+            settlement_contract.clone(),
+            balances_contract.clone(),
+            vault_relayer,
+            balance_overrider.clone(),
+        ),
+        current_block_stream.clone(),
+        config.balance_cache.eviction_time,
+        config.balance_cache.min_update_interval,
+    );
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         gas_price_estimation::create_priority_estimator(

@@ -9,7 +9,10 @@ use {
         interaction::InteractionData,
         order::{Order, SellTokenSource},
     },
-    std::sync::{Arc, LazyLock},
+    std::{
+        sync::{Arc, LazyLock},
+        time::Duration,
+    },
 };
 
 mod cached;
@@ -93,8 +96,14 @@ pub fn cached(
     web3: &Web3,
     balance_simulator: BalanceSimulator,
     blocks: CurrentBlockWatcher,
+    eviction_time: Duration,
+    min_update_interval: Duration,
 ) -> Arc<dyn BalanceFetching> {
-    let cached = Arc::new(cached::Balances::new(fetcher(web3, balance_simulator)));
+    let cached = Arc::new(cached::Balances::new(
+        fetcher(web3, balance_simulator),
+        eviction_time,
+        min_update_interval,
+    ));
     cached.spawn_background_task(blocks);
     cached
 }

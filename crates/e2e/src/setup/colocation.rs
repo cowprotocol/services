@@ -238,6 +238,9 @@ gas-price-cap = "1000000000000"
 
 [[submission.mempool]]
 url = "{NODE_HOST}"
+
+[balance-cache]
+min-update-interval = "0s"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
