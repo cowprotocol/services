@@ -393,8 +393,9 @@ fn decode_wraps_events_and_gates_on_transaction_meta() {
     let (mut tx, expected_uid, created_by) = create_order_tx();
     let (decoder, _sender) = test_decoder(settlement, solflow);
 
-    let (events, decode_failed) = decoder.decode(tx.clone(), Slot(5), signature(6));
-    assert!(!decode_failed);
+    let events = decoder
+        .decode(tx.clone(), Slot(5), signature(6))
+        .expect("clean decode");
     assert_eq!(
         events,
         vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
@@ -405,14 +406,14 @@ fn decode_wraps_events_and_gates_on_transaction_meta() {
     );
 
     tx.meta.as_mut().unwrap().err = Some(TransactionError { err: vec![1] });
-    let (events, decode_failed) = decoder.decode(tx.clone(), Slot(5), signature(6));
-    assert!(!decode_failed);
+    let events = decoder
+        .decode(tx.clone(), Slot(5), signature(6))
+        .expect("a revert is not a decode failure");
     assert_eq!(events, vec![]);
 
     tx.meta = None;
-    let (events, decode_failed) = decoder.decode(tx.clone(), Slot(5), signature(6));
-    assert!(decode_failed);
-    assert_eq!(events, vec![]);
+    let result = decoder.decode(tx.clone(), Slot(5), signature(6));
+    assert_eq!(result, Err(PartialDecode { events: vec![] }));
 }
 
 /// A settlement instruction with an unknown discriminator sets the failure
