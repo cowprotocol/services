@@ -501,6 +501,7 @@ where
                     solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.try_into()?,
+                    auction_id: None,
                 }),
                 Err(err) => {
                     let err_label = err.to_metrics_label();
@@ -1315,6 +1316,7 @@ mod test {
             solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.try_into().unwrap(),
+            auction_id: None,
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(
