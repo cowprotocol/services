@@ -61,14 +61,7 @@ impl QuoteStoring for Postgres {
     }
 
     async fn get_next_auction_id(&self) -> Result<i64> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["get_next_auction_id"])
-            .start_timer();
-        let mut ex = self.pool.acquire().await?;
-        database::auction::get_next_auction_id(&mut ex)
-            .await
-            .context("failed to fetch next auction_id")
+        self.get_next_auction_id().await
     }
 }
 
