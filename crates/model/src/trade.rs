@@ -3,8 +3,9 @@
 
 use {
     crate::{fee_policy::ExecutedProtocolFee, order::OrderUid},
-    alloy_primitives::{Address, B256},
+    alloy_primitives::{Address, B256, U256},
     num::BigUint,
+    number::serialization::HexOrDecimalU256,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
 };
@@ -30,6 +31,13 @@ pub struct Trade {
     // Settlement Data
     pub tx_hash: Option<B256>,
     pub executed_protocol_fees: Vec<ExecutedProtocolFee>,
+    /// On-chain gas cost (in native token wei) attributed to this trade: its
+    /// share of the settlement transaction's gas cost, split equally across all
+    /// trades settled in the same transaction. `None` for trades settled before
+    /// this data was recorded.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_cost: Option<U256>,
 }
 
 #[cfg(test)]
@@ -56,6 +64,7 @@ mod tests {
             "sellToken": "0x000000000000000000000000000000000000000a",
             "buyToken": "0x0000000000000000000000000000000000000009",
             "txHash": "0x0000000000000000000000000000000000000000000000000000000000000040",
+            "gasCost": "3000000",
             "executedProtocolFees": [
                 {
                     "amount": "5",
@@ -104,6 +113,7 @@ mod tests {
             buy_token: Address::with_last_byte(9),
             sell_token: Address::with_last_byte(10),
             tx_hash: Some(B256::with_last_byte(64)),
+            gas_cost: Some(U256::from(3_000_000u64)),
             executed_protocol_fees: vec![
                 ExecutedProtocolFee {
                     amount: U256::from(5u64),
