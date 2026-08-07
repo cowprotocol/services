@@ -90,18 +90,16 @@ async fn with_jit_order() {
 }
 
 /// A fast-path quote caches its solution in the driver, echoing the solution id
-/// and the orderbook-provided auction id so the autopilot can later settle it.
+/// so the autopilot can later settle it.
 #[tokio::test]
 #[ignore]
 async fn fast_path_caching() {
-    const AUCTION_ID: i64 = 42;
-
     let test = tests::setup()
         .pool(ab_pool())
         .order(ab_order())
         .solution(ab_solution())
         .solvers(vec![tests::setup::test_solver().fast_path_enabled()])
-        .auction_id(AUCTION_ID)
+        .auction_id(42)
         .quote()
         .quote_fast_path()
         .done()
@@ -109,12 +107,9 @@ async fn fast_path_caching() {
 
     let quote = test.quote().await.ok();
 
-    // Both ids are echoed only when the solution was cached: `auction_id` must be
-    // the id the request carried (the one the orderbook allocated from the shared
-    // sequence), and `solution_id` is present (its value is process-global, so
-    // not asserted). The accessors panic if the fields are absent.
+    // The solution id is echoed only when the solution was cached (its value is
+    // process-global, so not asserted). The accessor panics if it is absent.
     quote.solution_id();
-    assert_eq!(quote.auction_id(), AUCTION_ID);
 }
 
 /// A regular quote (no `enableFastPath`), even from a fast-path-capable solver,

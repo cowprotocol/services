@@ -11,12 +11,7 @@ use {
 };
 
 impl Quote {
-    pub fn new(
-        quote: quote::Quote,
-        supports_fast_path: bool,
-        solution_id: Option<u64>,
-        auction_id: Option<i64>,
-    ) -> Self {
+    pub fn new(quote: quote::Quote, supports_fast_path: bool, solution_id: Option<u64>) -> Self {
         Self {
             clearing_prices: quote.clearing_prices,
             pre_interactions: quote.pre_interactions.into_iter().map(Into::into).collect(),
@@ -31,7 +26,6 @@ impl Quote {
             jit_orders: quote.jit_orders.into_iter().map(Into::into).collect(),
             supports_fast_path,
             solution_id,
-            auction_id,
         }
     }
 }
@@ -52,12 +46,10 @@ pub struct Quote {
     jit_orders: Vec<JitOrder>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     supports_fast_path: bool,
-    /// For fast-path quotes: the cached solution id and the auction id it was
-    /// cached under, to later submit it via `/settle`.
+    /// For fast-path quotes: the cached solution id, to later settle it via
+    /// `/settle`.
     #[serde(skip_serializing_if = "Option::is_none")]
     solution_id: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    auction_id: Option<i64>,
 }
 
 #[serde_as]

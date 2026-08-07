@@ -176,7 +176,9 @@ impl Order {
         let cached_solution_id = match (self.enable_fast_path, self.auction_id) {
             (true, Some(auction_id)) => {
                 let solution_id = solution.id().get();
-                competition.cache_quote_solution(auction::Id(auction_id), solution);
+                competition
+                    .cache_quote_solution(auction::Id(auction_id), solution)
+                    .await;
                 Some(solution_id)
             }
             _ => None,
