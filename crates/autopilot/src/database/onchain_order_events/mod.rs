@@ -500,8 +500,8 @@ where
                     buy_amount: u256_to_big_decimal(&quote.buy_amount),
                     solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
-                    metadata: quote.data.metadata.try_into()?,
-                    auction_id: None,
+                    metadata: quote.data.metadata.clone().try_into()?,
+                    auction_id: quote.data.auction_id,
                 }),
                 Err(err) => {
                     let err_label = err.to_metrics_label();
@@ -1315,8 +1315,8 @@ mod test {
             buy_amount: u256_to_big_decimal(&quote.buy_amount),
             solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
-            metadata: quote.data.metadata.try_into().unwrap(),
-            auction_id: None,
+            metadata: quote.data.metadata.clone().try_into().unwrap(),
+            auction_id: quote.data.auction_id,
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(
