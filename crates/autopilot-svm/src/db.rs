@@ -1,4 +1,4 @@
-//! Read access to the `solana.*` tables the indexer writes.
+//! Database access for the Solana autopilot.
 
 use {
     anyhow::{Context, Result},
