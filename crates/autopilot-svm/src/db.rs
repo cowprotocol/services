@@ -1,7 +1,4 @@
 //! Read access to the `solana.*` tables the indexer writes.
-//!
-//! Queries are built at runtime so the crate compiles without the schema
-//! present.
 
 use {
     anyhow::{Context, Result},
@@ -58,8 +55,6 @@ mod tests {
         sqlx::PgPool,
     };
 
-    // Inserts a row into each read table and reads it back, inside a
-    // transaction that rolls back.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn reads_round_trip() {

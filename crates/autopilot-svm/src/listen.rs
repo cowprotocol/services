@@ -144,7 +144,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs a local postgres, run manually, kept out of CI"]
+    #[ignore = "needs a local postgres"]
     async fn delivers_notify_fired_during_seed() {
         const CHANNEL: &str = "autopilot_svm_listen_test";
         let pool = PgPool::connect("postgresql://").await.unwrap();
