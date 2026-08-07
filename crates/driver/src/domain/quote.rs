@@ -35,6 +35,7 @@ pub struct Quote {
     pub tx_origin: Option<eth::Address>,
     #[debug(ignore)]
     pub jit_orders: Vec<solution::trade::Jit>,
+    pub solution_id: Option<u64>,
 }
 
 impl Quote {
@@ -63,6 +64,7 @@ impl Quote {
                     _ => None,
                 })
                 .collect(),
+            solution_id: None,
         })
     }
 
@@ -135,7 +137,7 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
         competition: &Competition,
-    ) -> Result<(Quote, Option<u64>), Error> {
+    ) -> Result<Quote, Error> {
         if self.enable_fast_path && !solver.fast_path_enabled() {
             return Err(Error::QuotingFailed(QuotingFailed::FastPathNotSupported));
         }
@@ -166,14 +168,12 @@ impl Order {
             .into_iter()
             .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
             .ok_or(QuotingFailed::NoSolutions)?;
-        let quote = Quote::try_new(eth, &solution)?;
+        let mut quote = Quote::try_new(eth, &solution)?;
 
-        // Cache the fast-path solution under `(auction_id, solution_id)` so the
-        // autopilot can settle it during the exclusivity window. The quote's order
-        // is synthetic (unsigned), so the settlement is not encoded here but
-        // re-encoded against the real order at settle time. The solution id is
-        // returned so the caller can reference the cached solution.
-        let cached_solution_id = match (self.enable_fast_path, self.auction_id) {
+        // Cache the fast-path solution so the autopilot can settle it during the
+        // exclusivity window. The quote's order is synthetic (unsigned), so the
+        // settlement is re-encoded against the real order at settle time.
+        quote.solution_id = match (self.enable_fast_path, self.auction_id) {
             (true, Some(auction_id)) => {
                 let solution_id = solution.id().get();
                 competition
@@ -183,7 +183,7 @@ impl Order {
             }
             _ => None,
         };
-        Ok((quote, cached_solution_id))
+        Ok(quote)
     }
 
     async fn fake_auction(

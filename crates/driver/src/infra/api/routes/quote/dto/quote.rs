@@ -11,7 +11,7 @@ use {
 };
 
 impl Quote {
-    pub fn new(quote: quote::Quote, supports_fast_path: bool, solution_id: Option<u64>) -> Self {
+    pub fn new(quote: quote::Quote, supports_fast_path: bool) -> Self {
         Self {
             clearing_prices: quote.clearing_prices,
             pre_interactions: quote.pre_interactions.into_iter().map(Into::into).collect(),
@@ -25,7 +25,7 @@ impl Quote {
             tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders.into_iter().map(Into::into).collect(),
             supports_fast_path,
-            solution_id,
+            solution_id: quote.solution_id,
         }
     }
 }

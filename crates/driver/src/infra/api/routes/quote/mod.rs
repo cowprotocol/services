@@ -31,11 +31,10 @@ async fn route(
             )
             .await;
         observe::quoted(state.solver().name(), &order, &result);
-        let (quote, solution_id) = result?;
+        let quote = result?;
         Ok(axum::response::Json(dto::Quote::new(
             quote,
             state.solver().fast_path_enabled(),
-            solution_id,
         )))
     };
 
