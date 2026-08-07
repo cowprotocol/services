@@ -541,6 +541,7 @@ fn build_module() -> Module {
                     PLASMA => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
                     LINEA => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
                     INK => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
-                ])),
+                ]))
+                .add_contract(Contract::new("DeadlineCheck")),
         )
 }

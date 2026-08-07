@@ -3058,6 +3058,7 @@ dependencies = [
  "cow-contract-cowprotocoltoken",
  "cow-contract-cowswapethflow",
  "cow-contract-cowswaponchainorders",
+ "cow-contract-deadlinecheck",
  "cow-contract-erc1271signaturevalidator",
  "cow-contract-erc20",
  "cow-contract-erc20mintable",
@@ -3514,6 +3515,17 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-cowswaponchainorders"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-deadlinecheck"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",
