@@ -232,19 +232,6 @@ pub struct QuoteCompetition {
     pub metadata: QuoteCompetitionMetadata,
 }
 
-impl Default for QuoteCompetition {
-    fn default() -> Self {
-        // `winning_quote()` requires a non-empty vec; keep the invariant true
-        // for `Default::default()` so test helpers that lean on it don't
-        // silently produce an unusable competition.
-        Self {
-            request: Default::default(),
-            quotes: vec![QuoteResponse::default()],
-            metadata: Default::default(),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct QuoteRequest {
     pub sell_token: Address,
