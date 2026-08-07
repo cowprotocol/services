@@ -3,6 +3,7 @@
 
 use {
     crate::types::{
+        Signature,
         commitment::{Commitment, UnfinalizedRow},
         errors::PersistenceError,
         events::DecodedEvent,
@@ -14,9 +15,8 @@ use {
 
 /// PostgreSQL persistence. Used by Decoder, Watchdog, and FinalizationWorker.
 ///
-/// Cheap to clone: wraps a shared pool. The method bodies are stubbed until the
-/// Postgres adapter lands.
-// TODO: hold `postgres: Arc<Postgres>` once the adapter is added.
+/// Cheap to clone: wraps a shared pool. The method bodies are stubs.
+// TODO: hold `postgres: Arc<Postgres>` and implement the writes.
 #[derive(Clone)]
 pub(crate) struct Persistence {}
 
@@ -25,25 +25,57 @@ impl Persistence {
     pub(crate) async fn persist_events(
         &self,
         events: Vec<DecodedEvent>,
-        new_watermark: u64,
+        new_watermark: Slot,
     ) -> Result<(), PersistenceError> {
-        todo!()
+        // No-op seam (no Postgres adapter). The adapter writes the
+        // events and advances the watermark in one SQL transaction: append rows
+        // as INSERT ON CONFLICT DO NOTHING, the watermark UPDATE guarded with
+        // WHERE slot < $new_watermark.
+        tracing::warn!(
+            event_count = events.len(),
+            watermark = %new_watermark,
+            "persistence adapter missing, dropping decoded events"
+        );
+        Ok(())
     }
 
     /// Record a slot checkpoint. Rejects downward writes.
-    pub(crate) async fn write_watermark(&self, slot: u64) -> Result<(), PersistenceError> {
-        todo!()
+    pub(crate) async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
+        // No-op seam (no Postgres adapter). The adapter adds the monotonic
+        // guard.
+        tracing::warn!(%slot, "persistence adapter missing, dropping watermark write");
+        Ok(())
+    }
+
+    /// Record a transaction whose decode failed so recovery can replay it by
+    /// signature. One row per transaction.
+    ///
+    /// The row's `reason` column is not a parameter: a decoder error is the
+    /// only failure mode that reaches this table, so the adapter writes
+    /// `'decoder_error'`. A second reason would arrive as a typed argument.
+    pub(crate) async fn write_dead_letter(
+        &self,
+        signature: Signature,
+        slot: Slot,
+    ) -> Result<(), PersistenceError> {
+        // No-op seam (no Postgres adapter).
+        tracing::warn!(
+            %signature,
+            %slot,
+            "persistence adapter missing, dropping dead-letter row"
+        );
+        Ok(())
     }
 
     /// Read persisted watermark for resuming after reconnect.
-    pub(crate) async fn read_watermark(&self) -> Result<Option<u64>, PersistenceError> {
+    pub(crate) async fn read_watermark(&self) -> Result<Option<Slot>, PersistenceError> {
         todo!()
     }
 
     /// Record gaps that fell outside the replay window (write-only in v0.1).
     pub(crate) async fn record_lost_slot_range(
         &self,
-        range: RangeInclusive<u64>,
+        range: RangeInclusive<Slot>,
     ) -> Result<(), PersistenceError> {
         todo!()
     }
@@ -70,7 +102,7 @@ impl Persistence {
     /// (see `get_confirmed_rows`).
     pub(crate) async fn get_aged_rows(
         &self,
-        retention_horizon_slot: u64,
+        retention_horizon_slot: Slot,
     ) -> Result<Vec<UnfinalizedRow>, PersistenceError> {
         todo!()
     }
