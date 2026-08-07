@@ -161,7 +161,7 @@ mod tests {
 
         // LISTEN is active once seed starts: fire the gap NOTIFY now.
         started_rx.await.unwrap();
-        sqlx::query("SELECT pg_notify($1, $2)")
+        sqlx::query(r#"SELECT pg_notify($1, $2)"#)
             .bind(CHANNEL)
             .bind("A")
             .execute(&pool)
@@ -170,7 +170,7 @@ mod tests {
 
         // release seed, then fire a post-seed NOTIFY.
         gate_tx.send(()).unwrap();
-        sqlx::query("SELECT pg_notify($1, $2)")
+        sqlx::query(r#"SELECT pg_notify($1, $2)"#)
             .bind(CHANNEL)
             .bind("B")
             .execute(&pool)
