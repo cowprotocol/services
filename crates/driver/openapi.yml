@@ -51,6 +51,14 @@ paths:
           schema:
             type: boolean
           required: false
+        - in: query
+          name: auctionId
+          description: |
+            auction that will be associated with this quote competition. Only
+            populated for fast path orders
+          schema:
+            type: number
+          required: false
       responses:
         "200":
           description: Quote successfully created.

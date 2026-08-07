@@ -119,6 +119,9 @@ pub struct Order {
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
     pub enable_fast_path: bool,
+    /// auction associated with the given quote for faciliating
+    /// fast path execution.
+    pub auction_id: Option<i64>,
 }
 
 impl Order {

@@ -59,6 +59,10 @@ impl QuoteStoring for Postgres {
             .map(|quote| Ok((quote.id, quote.try_into()?)))
             .transpose()
     }
+
+    async fn get_next_auction_id(&self) -> Result<i64> {
+        self.get_next_auction_id().await
+    }
 }
 
 impl Postgres {

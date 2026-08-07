@@ -16,6 +16,7 @@ impl Order {
             },
             deadline: self.deadline,
             enable_fast_path: self.enable_fast_path,
+            auction_id: self.auction_id,
         }
     }
 }
@@ -32,6 +33,10 @@ pub struct Order {
     deadline: chrono::DateTime<chrono::Utc>,
     #[serde(default)]
     enable_fast_path: bool,
+    /// auction associated with the quote competition
+    /// for fast path quotes
+    #[serde(default)]
+    auction_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
