@@ -3,7 +3,8 @@
 //! Chain-generic algorithms need identifiers they can hash and compare,
 //! amounts they can do checked arithmetic on, and a small set of
 //! chain-specific hooks. This crate defines that vocabulary ([`ChainTypes`],
-//! [`Amount`]) together with its EVM and Solana instantiations.
+//! [`Amount`]) plus common composite types ([`TokenAmount`],
+//! [`ContractAddress`]), together with its EVM and Solana instantiations.
 
 pub mod evm;
 pub mod solana;
@@ -86,4 +87,16 @@ pub enum MathError {
     DivisionByZero,
     #[error("negative")]
     Negative,
+}
+
+/// An account known to be a contract or program, as opposed to an arbitrary
+/// account.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ContractAddress<C: ChainTypes>(pub C::AccountId);
+
+/// An amount together with the token it is denominated in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TokenAmount<C: ChainTypes> {
+    pub token: C::TokenId,
+    pub amount: C::Amount,
 }
