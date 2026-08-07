@@ -2901,21 +2901,22 @@ mod tests {
         // Craft a QuoteCompetition whose winner + metadata produce
         // fee_amount = 6 via `FeeParameters::fee()`
         // (gas_amount * gas_price / sell_token_price = 6 * 1 / 1).
-        let competition = QuoteCompetition {
-            request: QuoteRequest {
+        let competition = QuoteCompetition::new(
+            QuoteRequest {
                 kind: OrderKind::Sell,
                 ..Default::default()
             },
-            quotes: vec![QuoteResponse {
+            QuoteResponse {
                 gas_amount: 6.,
                 ..Default::default()
-            }],
-            metadata: QuoteCompetitionMetadata {
+            },
+            [],
+            QuoteCompetitionMetadata {
                 gas_price: 1.,
                 sell_token_price: 1.,
                 ..Default::default()
             },
-        };
+        );
         let fee_amount = U256::ZERO;
         order_quoter
             .expect_calculate_quote()

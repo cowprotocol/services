@@ -256,16 +256,16 @@ impl RankedEstimates {
         Self { values }
     }
 
-    pub fn into_best(self) -> Estimate {
-        self.values
-            .into_iter()
-            .next()
-            .expect("non-empty by construction")
-    }
-
     /// Returns all estimates ordered best to worst.
+    #[cfg(test)]
     pub fn into_vec(self) -> Vec<Estimate> {
         self.values
+    }
+
+    pub fn into_best_and_rest(self) -> (Estimate, impl Iterator<Item = Estimate>) {
+        let mut iter = self.values.into_iter();
+        let best = iter.next().expect("non-empty by construction");
+        (best, iter)
     }
 }
 

@@ -23,6 +23,7 @@ use {
     price_estimation::{
         self,
         CompetitionPriceEstimating,
+        Estimate,
         PriceEstimationError,
         RankedEstimates,
         StreamingPriceEstimating,
@@ -223,12 +224,13 @@ pub struct QuoteData {
 }
 
 /// Collection of data that describes the full quote comptition (request,
-/// all quotes, native prices, gas price).
+/// all quotes, native prices, gas price). Guaranteed to contain at least
+/// one quote by construction.
 #[derive(Clone, Debug, PartialEq)]
 pub struct QuoteCompetition {
     pub request: QuoteRequest,
-    /// All quotes sorted from best to worst.
-    pub quotes: Vec<QuoteResponse>,
+    /// All quotes sorted from best to worst. Guaranteed to be non-empty.
+    quotes: Vec<QuoteResponse>,
     pub metadata: QuoteCompetitionMetadata,
 }
 
@@ -262,13 +264,25 @@ pub struct QuoteResponse {
 }
 
 impl QuoteCompetition {
+    /// Constructor enforcing that there is at least 1 quote.
+    pub fn new(
+        request: QuoteRequest,
+        best: QuoteResponse,
+        rest: impl IntoIterator<Item = QuoteResponse>,
+        metadata: QuoteCompetitionMetadata,
+    ) -> Self {
+        let quotes = std::iter::once(best).chain(rest).collect();
+        Self {
+            request,
+            quotes,
+            metadata,
+        }
+    }
+
     /// Flattens the winning quote and metadata from the competition in
     /// a `QuoteData`.
     pub fn to_quote_data(&self) -> QuoteData {
-        let winner = self
-            .quotes
-            .first()
-            .expect("only QuoteCompetitions with at least 1 quote should be created");
+        let winner = self.quotes.first().expect("non-empty by construction");
         QuoteData {
             sell_token: self.request.sell_token,
             buy_token: self.request.buy_token,
@@ -908,48 +922,47 @@ fn assemble_quote_data(
         } => buy_amount.get(),
     };
 
-    let quotes: Vec<QuoteResponse> = estimates
-        .into_vec()
-        .into_iter()
-        .map(|estimate| {
-            let (quoted_sell_amount, quoted_buy_amount) = match kind {
-                OrderKind::Sell => (input_amount, estimate.out_amount),
-                OrderKind::Buy => (estimate.out_amount, input_amount),
-            };
-            QuoteResponse {
-                solver: estimate.solver,
-                quoted_sell_amount,
-                quoted_buy_amount,
-                gas_amount: estimate.gas as f64,
-                verified: estimate.verified,
-                supports_fast_path: estimate.supports_fast_path,
-                metadata: QuoteMetadataV1 {
-                    interactions: estimate.execution.interactions,
-                    pre_interactions: estimate.execution.pre_interactions,
-                    jit_orders: estimate.execution.jit_orders,
-                }
-                .into(),
+    let into_quote_response = |estimate: Estimate| -> QuoteResponse {
+        let (quoted_sell_amount, quoted_buy_amount) = match kind {
+            OrderKind::Sell => (input_amount, estimate.out_amount),
+            OrderKind::Buy => (estimate.out_amount, input_amount),
+        };
+        QuoteResponse {
+            solver: estimate.solver,
+            quoted_sell_amount,
+            quoted_buy_amount,
+            gas_amount: estimate.gas as f64,
+            verified: estimate.verified,
+            supports_fast_path: estimate.supports_fast_path,
+            metadata: QuoteMetadataV1 {
+                interactions: estimate.execution.interactions,
+                pre_interactions: estimate.execution.pre_interactions,
+                jit_orders: estimate.execution.jit_orders,
             }
-        })
-        .collect();
+            .into(),
+        }
+    };
 
-    QuoteCompetition {
-        request: QuoteRequest {
+    let (best, rest) = estimates.into_best_and_rest();
+
+    QuoteCompetition::new(
+        QuoteRequest {
             sell_token: parameters.sell_token,
             buy_token: parameters.buy_token,
             input_amount,
             quote_kind: quote_kind_from_signing_scheme(&parameters.signing_scheme),
             kind,
         },
-        quotes,
-        metadata: QuoteCompetitionMetadata {
+        into_quote_response(best),
+        rest.map(into_quote_response),
+        QuoteCompetitionMetadata {
             auction_id,
             expiration,
             gas_price: effective_gas_price as f64,
             buy_token_price,
             sell_token_price,
         },
-    }
+    )
 }
 
 /// Used to store quote metadata in the database.
@@ -1143,15 +1156,15 @@ mod tests {
         let mut storage = MockQuoteStoring::new();
         storage
             .expect_save()
-            .with(eq(QuoteCompetition {
-                request: QuoteRequest {
+            .with(eq(QuoteCompetition::new(
+                QuoteRequest {
                     sell_token: Address::repeat_byte(1),
                     buy_token: Address::repeat_byte(2),
                     input_amount: U256::from(100),
                     quote_kind: QuoteKind::Standard,
                     kind: OrderKind::Sell,
                 },
-                quotes: vec![QuoteResponse {
+                QuoteResponse {
                     solver: Address::repeat_byte(1),
                     quoted_sell_amount: U256::from(100),
                     quoted_buy_amount: U256::from(42),
@@ -1159,15 +1172,16 @@ mod tests {
                     verified: false,
                     supports_fast_path: false,
                     metadata: Default::default(),
-                }],
-                metadata: QuoteCompetitionMetadata {
+                },
+                [],
+                QuoteCompetitionMetadata {
                     auction_id: None,
                     expiration: now + Duration::seconds(60i64),
                     gas_price: 2.,
                     buy_token_price: 0.2,
                     sell_token_price: 0.2,
                 },
-            }))
+            )))
             .returning(|_| Ok(1337));
 
         let quoter = OrderQuoter {
@@ -1302,15 +1316,15 @@ mod tests {
         let mut storage = MockQuoteStoring::new();
         storage
             .expect_save()
-            .with(eq(QuoteCompetition {
-                request: QuoteRequest {
+            .with(eq(QuoteCompetition::new(
+                QuoteRequest {
                     sell_token: Address::repeat_byte(1),
                     buy_token: Address::repeat_byte(2),
                     input_amount: U256::from(100),
                     quote_kind: QuoteKind::Standard,
                     kind: OrderKind::Sell,
                 },
-                quotes: vec![QuoteResponse {
+                QuoteResponse {
                     solver: Address::repeat_byte(1),
                     quoted_sell_amount: U256::from(100),
                     quoted_buy_amount: U256::from(42),
@@ -1318,15 +1332,16 @@ mod tests {
                     verified: false,
                     supports_fast_path: false,
                     metadata: Default::default(),
-                }],
-                metadata: QuoteCompetitionMetadata {
+                },
+                [],
+                QuoteCompetitionMetadata {
                     auction_id: None,
                     expiration: now + chrono::Duration::seconds(60i64),
                     gas_price: 2.,
                     buy_token_price: 0.2,
                     sell_token_price: 0.2,
                 },
-            }))
+            )))
             .returning(|_| Ok(1337));
 
         let quoter = OrderQuoter {
@@ -1456,15 +1471,15 @@ mod tests {
         let mut storage = MockQuoteStoring::new();
         storage
             .expect_save()
-            .with(eq(QuoteCompetition {
-                request: QuoteRequest {
+            .with(eq(QuoteCompetition::new(
+                QuoteRequest {
                     sell_token: Address::repeat_byte(1),
                     buy_token: Address::repeat_byte(2),
                     input_amount: U256::from(42),
                     quote_kind: QuoteKind::Standard,
                     kind: OrderKind::Buy,
                 },
-                quotes: vec![QuoteResponse {
+                QuoteResponse {
                     solver: Address::repeat_byte(1),
                     quoted_sell_amount: U256::from(100),
                     quoted_buy_amount: U256::from(42),
@@ -1472,15 +1487,16 @@ mod tests {
                     verified: false,
                     supports_fast_path: false,
                     metadata: Default::default(),
-                }],
-                metadata: QuoteCompetitionMetadata {
+                },
+                [],
+                QuoteCompetitionMetadata {
                     auction_id: None,
                     expiration: now + chrono::Duration::seconds(60i64),
                     gas_price: 2.,
                     buy_token_price: 0.2,
                     sell_token_price: 0.2,
                 },
-            }))
+            )))
             .returning(|_| Ok(1337));
 
         let quoter = OrderQuoter {
