@@ -7,9 +7,10 @@ use {
 };
 
 /// A row of `solana.settlements`, the indexer's record of one settlement
-/// transaction. `solution_uid` is filled in later by the indexer, so it is
-/// nullable. A settlement is finalized once its slot is at or below the
-/// watermark's `finalized_slot`.
+/// transaction. The transaction carries no solution uid, the indexer
+/// attributes it from the recorded competition, so `solution_uid` is `None`
+/// for settlements it cannot match. A settlement is finalized once its slot
+/// is at or below the watermark's `finalized_slot`.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct Settlement {
     pub slot: i64,
