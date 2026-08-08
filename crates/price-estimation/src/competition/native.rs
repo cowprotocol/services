@@ -1,14 +1,22 @@
 use {
-    super::{CompetitionEstimator, compare_error},
+    super::{CompetitionEstimator, EstimatorIndex, compare_error},
     crate::{
         PriceEstimationError,
         native::{NativePriceEstimateResult, NativePriceEstimating, is_price_malformed},
     },
     alloy::primitives::Address,
     anyhow::Context,
+    event_bus_dto::{
+        native_price_estimate::{NativePriceEstimateEvent, NativePriceResult},
+        winning_native_price_estimate::WinningNativePriceEstimateEvent,
+    },
     futures::{FutureExt, future::BoxFuture},
     model::order::OrderKind,
-    std::{cmp::Ordering, sync::Arc, time::Duration},
+    std::{
+        cmp::Ordering,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     tracing::instrument,
 };
 
@@ -19,11 +27,13 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
         token: Address,
         total_timeout: Duration,
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
-        let started_at = std::time::Instant::now();
+        let started_at = Instant::now();
+        let publish_events = self.publish_events;
 
         async move {
             let results = self
                 .produce_results(token, Result::is_ok, move |context| {
+                    let estimator_name = context.name;
                     async move {
                         // Computes timeout for current stage dynamically based on the total time
                         // left and the remaining stages. That means if some stage finishes early,
@@ -37,13 +47,26 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
                                 .unwrap_or_default()
                         };
 
+                        let estimated_at = Instant::now();
                         let res = context
                             .estimator
                             .estimate_native_price(context.query, stage_timeout)
                             .await;
-                        if res.as_ref().is_ok_and(|price| is_price_malformed(*price)) {
-                            let err = anyhow::anyhow!("estimator returned malformed price");
-                            return Err(PriceEstimationError::EstimatorInternal(err));
+                        let res = match res {
+                            Ok(price) if is_price_malformed(price) => {
+                                let err = anyhow::anyhow!("estimator returned malformed price");
+                                Err(PriceEstimationError::EstimatorInternal(err))
+                            }
+                            res => res,
+                        };
+                        if publish_events {
+                            emit_native_price_estimate_event(
+                                estimator_name,
+                                context.query,
+                                stage_timeout,
+                                estimated_at.elapsed(),
+                                &res,
+                            );
                         }
                         res
                     }
@@ -55,10 +78,45 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
                 .max_by(|a, b| compare_native_result(&a.1, &b.1))
                 .context("could not get any native price")?;
             self.report_winner(&token, OrderKind::Buy, &winner);
+            if publish_events && winner.1.is_ok() {
+                let EstimatorIndex(stage_index, estimator_index) = winner.0;
+                let (name, _) = &self.stages[stage_index][estimator_index];
+                emit_winning_native_price_estimate_event(name, token);
+            }
             winner.1
         }
         .boxed()
     }
+}
+
+fn emit_native_price_estimate_event(
+    estimator_name: &str,
+    token: Address,
+    timeout: Duration,
+    elapsed: Duration,
+    result: &NativePriceEstimateResult,
+) {
+    observe::event_bus::publish_event(NativePriceEstimateEvent {
+        token: token.to_string(),
+        // Neither value can realistically exceed JSON's 53 bit limit, so
+        // truncating the u128 to u64 is safe.
+        timeout: timeout.as_millis() as u64,
+        elapsed: elapsed.as_millis() as u64,
+        estimator: estimator_name.to_owned(),
+        result: match result {
+            Ok(price) => NativePriceResult::Ok { price: *price },
+            Err(err) => NativePriceResult::Err {
+                error: err.to_string(),
+            },
+        },
+    });
+}
+
+fn emit_winning_native_price_estimate_event(estimator_name: &str, token: Address) {
+    observe::event_bus::publish_event(WinningNativePriceEstimateEvent {
+        token: token.to_string(),
+        estimator: estimator_name.to_owned(),
+    });
 }
 
 fn compare_native_result(
@@ -94,6 +152,15 @@ mod tests {
         ranking: PriceRanking,
         estimates: Vec<NativePriceFuture>,
     ) -> Result<f64, PriceEstimationError> {
+        best_response_publishing(ranking, estimates, false).await
+    }
+
+    /// Same as [`best_response`] but allows enabling event publishing.
+    async fn best_response_publishing(
+        ranking: PriceRanking,
+        estimates: Vec<NativePriceFuture>,
+        publish_events: bool,
+    ) -> Result<f64, PriceEstimationError> {
         fn estimator(estimate: NativePriceFuture) -> Arc<dyn NativePriceEstimating> {
             let mut estimator = MockNativePriceEstimating::new();
             estimator
@@ -103,7 +170,7 @@ mod tests {
             Arc::new(estimator)
         }
 
-        let priority: CompetitionEstimator<Arc<dyn NativePriceEstimating>> =
+        let mut priority: CompetitionEstimator<Arc<dyn NativePriceEstimating>> =
             CompetitionEstimator::new(
                 vec![
                     estimates
@@ -114,6 +181,9 @@ mod tests {
                 ],
                 ranking.clone(),
             );
+        if publish_events {
+            priority = priority.with_event_publishing();
+        }
 
         priority
             .estimate_native_price(Default::default(), HEALTHY_PRICE_ESTIMATION_TIME)
@@ -128,6 +198,23 @@ mod tests {
         let best = best_response(
             PriceRanking::MaxOutAmount,
             vec![async { Ok(1.) }.boxed(), async { Ok(2.) }.boxed()],
+        )
+        .await;
+        assert_eq!(best, Ok(2.));
+    }
+
+    /// Publishing is best-effort and a no-op while the event bus is
+    /// uninitialized, so it must not affect the result of the competition.
+    #[tokio::test]
+    async fn publishing_events_does_not_affect_result() {
+        let best = best_response_publishing(
+            PriceRanking::MaxOutAmount,
+            vec![
+                async { Ok(1.) }.boxed(),
+                async { Ok(2.) }.boxed(),
+                async { Err(PriceEstimationError::RateLimited) }.boxed(),
+            ],
+            true,
         )
         .await;
         assert_eq!(best, Ok(2.));
