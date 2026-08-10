@@ -1193,8 +1193,7 @@ impl Test {
     }
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
-        self.settle_request(solver_name, solution_id, None, None)
-            .await
+        self.settle_request(solver_name, solution_id, None).await
     }
 
     /// The /solve-shaped JSON for the single quoted order.
@@ -1217,14 +1216,30 @@ impl Test {
         )
     }
 
-    /// Call /settle including `order` and its native `prices`.
+    /// The fast-path limit prices for the single quoted order.
+    pub fn limit_prices_json(&self) -> serde_json::Value {
+        driver::limit_prices_json(
+            self.quoted_orders
+                .first()
+                .expect("limit_prices_json requires a quoted order"),
+        )
+    }
+
+    /// Call /settle with the fast-path bundle: the real `order`, its
+    /// `limit_prices`, and native `prices`.
     pub async fn settle_with_order(
         &self,
         solution_id: u64,
         order: serde_json::Value,
+        limit_prices: serde_json::Value,
         prices: serde_json::Value,
     ) -> Settle {
-        self.settle_request(solver::NAME, solution_id, Some(order), Some(prices))
+        let fast_path = serde_json::json!({
+            "order": order,
+            "limitPrices": limit_prices,
+            "nativePrices": prices,
+        });
+        self.settle_request(solver::NAME, solution_id, Some(fast_path))
             .await
     }
 
@@ -1232,8 +1247,7 @@ impl Test {
         &self,
         solver_name: &str,
         solution_id: u64,
-        order: Option<serde_json::Value>,
-        prices: Option<serde_json::Value>,
+        fast_path: Option<serde_json::Value>,
     ) -> Settle {
         let submission_deadline_latest_block: u64 =
             self.web3().provider.get_block_number().await.unwrap()
@@ -1249,8 +1263,7 @@ impl Test {
                 submission_deadline_latest_block,
                 solution_id,
                 &self.auction_id.to_string(),
-                order,
-                prices,
+                fast_path,
             ))
             .send()
             .await

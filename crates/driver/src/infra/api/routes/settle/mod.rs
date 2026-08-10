@@ -2,7 +2,11 @@ mod dto;
 
 use {
     crate::{
-        domain::competition::{auction, order::app_data::AppDataHash},
+        domain::competition::{
+            auction,
+            order::app_data::{AppData, AppDataHash},
+            solution,
+        },
         infra::{
             api::{self, Error, State, extract::LoggingJson},
             observe,
@@ -25,31 +29,21 @@ async fn route(
 
     async move {
         observe::settling();
-        if let Some(order) = req.order {
-            let app_data = state
-                .competition()
-                .resolve_app_data(AppDataHash::from(order.app_data))
-                .await;
-            let prices = req
-                .prices
-                .into_iter()
-                .filter_map(
-                    |(token, price)| match auction::Price::try_new(price.into()) {
-                        Ok(price) => Some((token.into(), price)),
-                        Err(_) => {
-                            tracing::warn!(?token, "dropping invalid fast-path native price");
-                            None
-                        }
-                    },
-                )
-                .collect();
+        if let Some(fast_path) = req.fast_path {
+            let app_data = AppData::Hash(AppDataHash::from(fast_path.order.app_data));
+            let order = fast_path.order.into_domain(app_data);
+            let limit_prices = solution::LimitPrices {
+                sell: fast_path.limit_prices.sell,
+                buy: fast_path.limit_prices.buy,
+            };
             state
                 .competition()
                 .reencode_quote_solution(
                     auction_id,
                     req.solution_id,
-                    order.into_domain(app_data),
-                    prices,
+                    order,
+                    limit_prices,
+                    fast_path.native_prices,
                 )
                 .await?;
         }

@@ -565,24 +565,15 @@ impl Competition {
         }
     }
 
-    pub async fn resolve_app_data(
-        &self,
-        hash: order::app_data::AppDataHash,
-    ) -> order::app_data::AppData {
-        match self.fetcher.resolve_app_data(&hash).await {
-            Some(doc) => doc.into(),
-            None => hash.into(),
-        }
-    }
-
     /// Re-encode a cached quote solution against the real signed `order` and
     /// promote it into the regular settle queue for `/settle`.
     pub async fn reencode_quote_solution(
         &self,
         auction_id: auction::Id,
         solution_id: u64,
-        order: Order,
-        prices: auction::Prices,
+        mut order: Order,
+        limit_prices: solution::LimitPrices,
+        prices: HashMap<eth::Address, eth::U256>,
     ) -> Result<(), Error> {
         let cached = self
             .quote_solutions
@@ -590,10 +581,23 @@ impl Competition {
             .unwrap()
             .shift_remove(&(auction_id.0, solution_id))
             .ok_or(Error::SolutionNotAvailable)?;
+        self.fetcher.resolve_app_data(&mut order).await;
         let solution = cached
             .solution
-            .rebind_quote_order(order.clone(), self.solver.config().flashloans_enabled)
+            .finalize_fast_path_solution(order.clone(), limit_prices)
             .map_err(Error::FastPathInvalidOrder)?;
+        let prices: auction::Prices = prices
+            .into_iter()
+            .filter_map(
+                |(token, price)| match auction::Price::try_new(price.into()) {
+                    Ok(price) => Some((token.into(), price)),
+                    Err(_) => {
+                        tracing::warn!(?token, "dropping invalid fast-path native price");
+                        None
+                    }
+                },
+            )
+            .collect();
         let tokens = Arc::new(cached.auction.tokens.with_native_prices(&prices));
         let auction = Auction {
             orders: vec![order],

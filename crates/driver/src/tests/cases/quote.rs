@@ -155,12 +155,17 @@ async fn fast_path_test() -> setup::Test {
 async fn fast_path_settle() {
     let test = fast_path_test().await;
     let solution_id = test.quote().await.ok().solution_id();
-    test.settle_with_order(solution_id, test.order_json(), test.prices_json())
-        .await
-        .ok()
-        .await
-        .ab_order_executed(&test)
-        .await;
+    test.settle_with_order(
+        solution_id,
+        test.order_json(),
+        test.limit_prices_json(),
+        test.prices_json(),
+    )
+    .await
+    .ok()
+    .await
+    .ab_order_executed(&test)
+    .await;
 }
 
 /// Without the real order there is nothing to re-encode, so `/settle` finds no
@@ -185,10 +190,15 @@ async fn fast_path_settle_rejects_mismatched_order() {
     let solution_id = test.quote().await.ok().solution_id();
     let mut order = test.order_json();
     order["buyToken"] = serde_json::json!("0x0101010101010101010101010101010101010101");
-    test.settle_with_order(solution_id, order, test.prices_json())
-        .await
-        .err()
-        .kind("InvalidFastPathOrder");
+    test.settle_with_order(
+        solution_id,
+        order,
+        test.limit_prices_json(),
+        test.prices_json(),
+    )
+    .await
+    .err()
+    .kind("InvalidFastPathOrder");
 }
 
 /// A settle order for a different amount than the quote is rejected.
@@ -199,10 +209,35 @@ async fn fast_path_settle_rejects_wrong_amount() {
     let solution_id = test.quote().await.ok().solution_id();
     let mut order = test.order_json();
     order["sellAmount"] = serde_json::json!("1");
-    test.settle_with_order(solution_id, order, test.prices_json())
-        .await
-        .err()
-        .kind("InvalidFastPathOrder");
+    test.settle_with_order(
+        solution_id,
+        order,
+        test.limit_prices_json(),
+        test.prices_json(),
+    )
+    .await
+    .err()
+    .kind("InvalidFastPathOrder");
+}
+
+/// A settle whose limit prices demand more than the cached quote can deliver is
+/// rejected, so the order falls back to the normal auction.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_rejects_tight_limit() {
+    let test = fast_path_test().await;
+    let solution_id = test.quote().await.ok().solution_id();
+    let mut limit_prices = test.limit_prices_json();
+    limit_prices["buy"] = serde_json::json!("1000000000000000000000000000000");
+    test.settle_with_order(
+        solution_id,
+        test.order_json(),
+        limit_prices,
+        test.prices_json(),
+    )
+    .await
+    .err()
+    .kind("InvalidFastPathOrder");
 }
 
 /// Test that quote haircut correctly reduces the executed amount for quotes

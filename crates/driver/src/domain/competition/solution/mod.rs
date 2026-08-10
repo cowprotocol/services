@@ -81,6 +81,14 @@ pub struct GasFeeOverride {
     pub max_priority_fee_per_gas: u128,
 }
 
+/// The sell/buy amounts a fast-path order was quoted and signed at. The cached
+/// solution must fill at least as well as these for the fast path to proceed.
+#[derive(Clone, Copy, Debug)]
+pub struct LimitPrices {
+    pub sell: eth::U256,
+    pub buy: eth::U256,
+}
+
 impl Solution {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
@@ -508,61 +516,75 @@ impl Solution {
     /// Swap this quote solution's single user order for the real signed
     /// `order`, keeping the cached route and clearing prices, and recover the
     /// order's flashloans/wrappers from its app-data.
-    pub fn rebind_quote_order(
+    pub fn finalize_fast_path_solution(
         &self,
         order: competition::Order,
-        flashloans_enabled: bool,
+        limit_prices: LimitPrices,
     ) -> Result<Self, error::Error> {
-        let user_trades = self.user_trades().count();
-        if user_trades != 1 {
-            return Err(error::Error::FastPathTradeCount(user_trades));
-        }
         let mut solution = self.clone();
-        let (flashloans, wrappers) = {
-            let user = solution
-                .trades
-                .iter_mut()
-                .find_map(|trade| match trade {
-                    Trade::Fulfillment(fulfillment) => Some(fulfillment),
-                    Trade::Jit(_) => None,
-                })
-                .expect("exactly one user trade counted above");
-            let quoted = user.order();
-            if (
-                order.sell.token,
-                order.buy.token,
-                order.side,
-                order.target(),
-            ) != (
-                quoted.sell.token,
-                quoted.buy.token,
-                quoted.side,
-                quoted.target(),
-            ) {
-                return Err(error::Error::FastPathOrderMismatch);
-            }
-            let flashloans = order
-                .app_data
-                .flashloan()
-                .filter(|_| flashloans_enabled)
-                .map(|f| {
-                    let flashloan = domain::flashloan::Flashloan::from(f);
-                    (order.uid, (&flashloan).into())
-                })
-                .into_iter()
-                .collect();
-            let wrappers = order
-                .app_data
-                .wrappers()
-                .iter()
-                .map(|w| WrapperCall {
-                    address: w.address,
-                    data: w.data.clone().into(),
-                })
-                .collect();
-            *user = user.with_order(order)?;
-            (flashloans, wrappers)
+        let Ok(user) = solution
+            .trades
+            .iter_mut()
+            .filter_map(|trade| match trade {
+                Trade::Fulfillment(fulfillment) => Some(fulfillment),
+                Trade::Jit(_) => None,
+            })
+            .exactly_one()
+        else {
+            return Err(error::Error::FastPathTradeCount(self.user_trades().count()));
         };
+
+        let quoted = user.order();
+        if (
+            order.sell.token,
+            order.buy.token,
+            order.side,
+            order.target(),
+        ) != (
+            quoted.sell.token,
+            quoted.buy.token,
+            quoted.side,
+            quoted.target(),
+        ) {
+            return Err(error::Error::FastPathOrderMismatch);
+        }
+
+        // read prices from `self`: the clone is mutably borrowed by `user`.
+        let clearing = ClearingPrices {
+            sell: self
+                .clearing_price(order.sell.token)
+                .ok_or(error::Error::FastPathOrderMismatch)?,
+            buy: self
+                .clearing_price(order.buy.token)
+                .ok_or(error::Error::FastPathOrderMismatch)?,
+        };
+        let within_limit = match order.side {
+            order::Side::Sell => user.buy_amount(&clearing)?.0 >= limit_prices.buy,
+            order::Side::Buy => user.sell_amount(&clearing)?.0 <= limit_prices.sell,
+        };
+        if !within_limit {
+            return Err(error::Error::FastPathLimitNotMet);
+        }
+
+        let flashloans = order
+            .app_data
+            .flashloan()
+            .map(|f| {
+                let flashloan = domain::flashloan::Flashloan::from(f);
+                (order.uid, (&flashloan).into())
+            })
+            .into_iter()
+            .collect();
+        let wrappers = order
+            .app_data
+            .wrappers()
+            .iter()
+            .map(|w| WrapperCall {
+                address: w.address,
+                data: w.data.clone().into(),
+            })
+            .collect();
+        *user = user.with_order(order)?;
         solution.flashloans = flashloans;
         solution.wrappers = wrappers;
         Ok(solution)
@@ -766,6 +788,10 @@ pub mod error {
         DifferentSolvers,
         #[error("encoding error: {0:?}")]
         Encoding(#[from] encoding::Error),
+        #[error("fast-path fill would not meet the order's signed limit")]
+        FastPathLimitNotMet,
+        #[error("math error: {0:?}")]
+        Math(#[from] Math),
     }
 
     // Custom conversion function because clippy wants us to box this

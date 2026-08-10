@@ -17,13 +17,33 @@ pub struct SettleRequest {
     /// Auction ID in which this solution is competing.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub auction_id: i64,
-    /// Real signed order for fast-path settlements. When present, the cached
-    /// quote solution is re-encoded against it before settling.
+    /// Fast-path (out-of-competition) inputs, present only when re-encoding a
+    /// cached quote solution against the real signed order.
     #[serde(default)]
-    pub order: Option<Order>,
-    /// Native prices (wei per 10**18 of the token) for the order's tokens, used
-    /// to size the re-encoded settlement's slippage buffer.
+    pub fast_path: Option<FastPath>,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FastPath {
+    /// The real signed order the cached solution is re-encoded against.
+    pub order: Order,
+    /// The sell/buy amounts the order was quoted and signed at; the cached
+    /// solution must fill at least this well or the settle is rejected.
+    pub limit_prices: LimitPrices,
+    /// Native prices (wei per 10**18) for the order's tokens, sizing the
+    /// re-encoded settlement's slippage buffer.
     #[serde_as(as = "HashMap<_, serde_ext::U256>")]
-    #[serde(default)]
-    pub prices: HashMap<eth::Address, eth::U256>,
+    pub native_prices: HashMap<eth::Address, eth::U256>,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LimitPrices {
+    #[serde_as(as = "serde_ext::U256")]
+    pub sell: eth::U256,
+    #[serde_as(as = "serde_ext::U256")]
+    pub buy: eth::U256,
 }

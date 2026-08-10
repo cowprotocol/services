@@ -186,21 +186,25 @@ pub fn settle_req(
     submission_deadline_latest_block: u64,
     solution_id: u64,
     auction_id: &str,
-    order: Option<serde_json::Value>,
-    prices: Option<serde_json::Value>,
+    fast_path: Option<serde_json::Value>,
 ) -> serde_json::Value {
     let mut req = json!({
         "solutionId": solution_id,
         "submissionDeadlineLatestBlock": submission_deadline_latest_block,
         "auctionId": auction_id,
     });
-    if let Some(order) = order {
-        req["order"] = order;
-    }
-    if let Some(prices) = prices {
-        req["prices"] = prices;
+    if let Some(fast_path) = fast_path {
+        req["fastPath"] = fast_path;
     }
     req
+}
+
+/// The quoted sell/buy amounts, used as the fast-path limit prices.
+pub fn limit_prices_json(quote: &super::blockchain::QuotedOrder) -> serde_json::Value {
+    json!({
+        "sell": quote.sell_amount().to_string(),
+        "buy": quote.buy_amount().to_string(),
+    })
 }
 
 /// Create a request for the driver /quote endpoint.
