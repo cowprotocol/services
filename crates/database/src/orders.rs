@@ -1195,6 +1195,8 @@ mod tests {
         assert_eq!(order.settlement_contract, full_order.settlement_contract);
         assert_eq!(order.sell_token_balance, full_order.sell_token_balance);
         assert_eq!(order.buy_token_balance, full_order.buy_token_balance);
+        // Never filled, so it has no gas cost rather than one of zero.
+        assert_eq!(full_order.gas_cost, None);
     }
 
     #[tokio::test]
@@ -2357,20 +2359,9 @@ mod tests {
         }
     }
 
-    /// Two settlements in one block, the first settling `order_a` and
-    /// `order_b`, the second settling `order_a` again — so `order_a` has
-    /// two fills whose shares come from different settlements.
-    ///
-    /// ```text
-    /// log 0: trade (order_a)  ┐
-    /// log 1: trade (order_b)  ┴─ settled by tx 0, 100 gas at price 10 -> 500 each
-    /// log 2: settlement
-    /// log 3: trade (order_a)  ─  settled by tx 1, 300 gas at price 10 -> 3000
-    /// log 4: settlement
-    /// ```
-    async fn setup_order_gas_costs(db: &mut PgTransaction<'_>) -> (OrderUid, OrderUid) {
+    /// Inserts the two orders the gas-cost tests fill, in a cleared database.
+    async fn two_orders(db: &mut PgTransaction<'_>) -> (OrderUid, OrderUid) {
         crate::clear_DANGER_(db).await.unwrap();
-
         let (order_a, order_b) = (ByteArray([1; 56]), ByteArray([2; 56]));
         for uid in [order_a, order_b] {
             insert_order(
@@ -2383,8 +2374,14 @@ mod tests {
             .await
             .unwrap();
         }
-        let trade = |log_index, order_uid| {
-            (
+        (order_a, order_b)
+    }
+
+    /// Fills `order_uid` at `log_index` of block 0.
+    async fn fill(db: &mut PgTransaction<'_>, order_uid: OrderUid, log_index: i64) {
+        crate::events::append(
+            db,
+            &[(
                 EventIndex {
                     block_number: 0,
                     log_index,
@@ -2393,33 +2390,33 @@ mod tests {
                     order_uid,
                     ..Default::default()
                 }),
-            )
-        };
-        let settlement = |log_index, transaction_hash| {
-            (
+            )],
+        )
+        .await
+        .unwrap();
+    }
+
+    /// Settles every fill since the previous settlement, at `log_index` of
+    /// block
+    /// 0. `gas_used` is recorded at a price of 10; `None` leaves it unrecorded,
+    /// as for a settlement observed before V116.
+    async fn settle(db: &mut PgTransaction<'_>, log_index: i64, tx: u8, gas_used: Option<u64>) {
+        crate::events::append(
+            db,
+            &[(
                 EventIndex {
                     block_number: 0,
                     log_index,
                 },
                 Event::Settlement(Settlement {
-                    transaction_hash,
+                    transaction_hash: ByteArray([tx; 32]),
                     ..Default::default()
                 }),
-            )
-        };
-        crate::events::append(
-            db,
-            &[
-                trade(0, order_a),
-                trade(1, order_b),
-                settlement(2, ByteArray([0; 32])),
-                trade(3, order_a),
-                settlement(4, ByteArray([1; 32])),
-            ],
+            )],
         )
         .await
         .unwrap();
-        for (log_index, gas_used) in [(2, 100), (4, 300)] {
+        if let Some(gas_used) = gas_used {
             crate::settlements::update_settlement_solver_and_gas(
                 db,
                 0,
@@ -2432,34 +2429,46 @@ mod tests {
             .await
             .unwrap();
         }
-        (order_a, order_b)
     }
 
-    /// An order's gas cost sums its share of every settlement it was filled in,
-    /// and the batch query agrees with the single-order one.
+    async fn order_gas(db: &mut PgConnection, uid: OrderUid) -> Option<u64> {
+        single_full_order_with_quote(db, &uid)
+            .await
+            .unwrap()
+            .unwrap()
+            .full_order
+            .gas_cost
+            .as_ref()
+            .and_then(BigDecimal::to_u64)
+    }
+
+    /// An order's gas cost is its share of each settlement that filled it,
+    /// summed — and becomes unknown as soon as one of those settlements has no
+    /// recorded gas, since summing only the known fills would understate the
+    /// order while looking like a complete total.
     #[tokio::test]
     #[ignore]
-    async fn postgres_order_gas_cost_summed_across_fills() {
+    async fn postgres_order_gas_cost_across_fills() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
-        let (order_a, order_b) = setup_order_gas_costs(&mut db).await;
+        let (order_a, order_b) = two_orders(&mut db).await;
 
-        // order_a: 1000 / 2 from the first settlement + all 3000 of the second.
-        for (uid, expected) in [(order_a, Some(3500)), (order_b, Some(500))] {
-            let order = single_full_order_with_quote(&mut db, &uid)
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(
-                order
-                    .full_order
-                    .gas_cost
-                    .as_ref()
-                    .and_then(BigDecimal::to_u64),
-                expected
-            );
-        }
+        // Half-filled: one settlement of 100 gas at price 10, split over the two
+        // trades it settled.
+        fill(&mut db, order_a, 0).await;
+        fill(&mut db, order_b, 1).await;
+        settle(&mut db, 2, 0, Some(100)).await;
+        assert_eq!(order_gas(&mut db, order_a).await, Some(500));
+        assert_eq!(order_gas(&mut db, order_b).await, Some(500));
 
+        // order_a fills again, alone in a settlement of 300 gas, so it takes all
+        // 3000 of that one on top of its first 500.
+        fill(&mut db, order_a, 3).await;
+        settle(&mut db, 4, 1, Some(300)).await;
+        assert_eq!(order_gas(&mut db, order_a).await, Some(3500));
+        assert_eq!(order_gas(&mut db, order_b).await, Some(500));
+
+        // The batch query agrees with the single-order one.
         let mut batch = many_full_orders_with_quotes(&mut db, &[order_a, order_b])
             .await
             .unwrap();
@@ -2478,92 +2487,13 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(order_a, Some(3500)), (order_b, Some(500))]
         );
-    }
 
-    /// An order that has not been filled has *no* gas cost, which must stay
-    /// distinguishable from having been filled at a cost of zero.
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_order_gas_cost_absent_when_never_filled() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        setup_order_gas_costs(&mut db).await;
-
-        // Same fixture, plus an order with no trades at all.
-        let unfilled = ByteArray([3; 56]);
-        insert_order(
-            &mut db,
-            &Order {
-                uid: unfilled,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-        let order = single_full_order_with_quote(&mut db, &unfilled)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(order.full_order.gas_cost, None);
-    }
-
-    /// An order is only given a gas cost when *every* one of its fills has one.
-    /// Summing the known fills alone would understate the order while looking
-    /// like a complete total.
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_order_gas_cost_absent_when_any_fill_unrecorded() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        let (order_a, order_b) = setup_order_gas_costs(&mut db).await;
-
-        // A third fill of order_a, settled without recorded gas — as happens for
-        // an order filled either side of V116's deployment.
-        crate::events::append(
-            &mut db,
-            &[
-                (
-                    EventIndex {
-                        block_number: 0,
-                        log_index: 5,
-                    },
-                    Event::Trade(Trade {
-                        order_uid: order_a,
-                        ..Default::default()
-                    }),
-                ),
-                (
-                    EventIndex {
-                        block_number: 0,
-                        log_index: 6,
-                    },
-                    Event::Settlement(Settlement {
-                        transaction_hash: ByteArray([2; 32]),
-                        ..Default::default()
-                    }),
-                ),
-            ],
-        )
-        .await
-        .unwrap();
-
-        // order_a now has a fill of unknown cost, so its total is unknown too.
-        let a = single_full_order_with_quote(&mut db, &order_a)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(a.full_order.gas_cost, None);
-
-        // order_b's only fill is still recorded, so it is unaffected.
-        let b = single_full_order_with_quote(&mut db, &order_b)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            b.full_order.gas_cost.as_ref().and_then(BigDecimal::to_u64),
-            Some(500)
-        );
+        // A third fill settled without recorded gas makes order_a's total
+        // unknown, while order_b's fills remain fully known.
+        fill(&mut db, order_a, 5).await;
+        settle(&mut db, 6, 2, None).await;
+        assert_eq!(order_gas(&mut db, order_a).await, None);
+        assert_eq!(order_gas(&mut db, order_b).await, Some(500));
     }
 
     /// [`full_orders_in_tx`] joins `trades` itself, which the gas-cost join
@@ -2576,10 +2506,18 @@ mod tests {
     async fn postgres_orders_in_tx_gas_cost() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
-        let (order_a, order_b) = setup_order_gas_costs(&mut db).await;
+        let (order_a, order_b) = two_orders(&mut db).await;
 
-        // The first transaction settled one fill of order_a, but its reported
-        // cost still covers the fill from the second transaction as well.
+        // Two settlements: the first splits 1000 over order_a and order_b, the
+        // second gives order_a's next fill all of its 3000.
+        fill(&mut db, order_a, 0).await;
+        fill(&mut db, order_b, 1).await;
+        settle(&mut db, 2, 0, Some(100)).await;
+        fill(&mut db, order_a, 3).await;
+        settle(&mut db, 4, 1, Some(300)).await;
+
+        // The first transaction settled only one fill of order_a, but the cost
+        // reported for it covers the fill from the second transaction too.
         let first_tx = full_orders_in_tx(&mut db, &ByteArray([0; 32]))
             .map_ok(|order| {
                 (

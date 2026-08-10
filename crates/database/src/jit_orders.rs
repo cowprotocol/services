@@ -245,23 +245,24 @@ mod tests {
         assert!(read_jit_order.is_none());
     }
 
-    /// JIT orders carry the same gas-cost attribution as regular ones; without
-    /// an assertion here the gas-cost column could be dropped from these
-    /// queries unnoticed, since `FullOrder::gas_cost` defaults to `None`.
     #[tokio::test]
     #[ignore]
-    async fn postgres_get_by_id_gas_cost() {
+    async fn postgres_get_by_id() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let jit_order = JitOrder::default();
+
+        // insert a jit order and make sure "SELECT" query works properly
         insert(&mut db, std::slice::from_ref(&jit_order))
             .await
             .unwrap();
+        get_by_id(&mut db, &jit_order.uid).await.unwrap().unwrap();
 
-        // One trade for the order, settled by a settlement recording 100 gas at
-        // price 10, so the order's sole fill takes the whole 1000.
+        // JIT orders carry the same gas-cost attribution as regular ones. One
+        // trade settled by a settlement recording 100 gas at price 10, so the
+        // order's sole fill takes the whole 1000.
         let event = |log_index| crate::events::EventIndex {
             block_number: 0,
             log_index,
@@ -307,21 +308,5 @@ mod tests {
                 .and_then(bigdecimal::ToPrimitive::to_u64),
             Some(1000)
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_get_by_id() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let jit_order = JitOrder::default();
-
-        // insert a jit order and make sure "SELECT" query works properly
-        insert(&mut db, std::slice::from_ref(&jit_order))
-            .await
-            .unwrap();
-        get_by_id(&mut db, &jit_order.uid).await.unwrap().unwrap();
     }
 }
