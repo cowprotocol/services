@@ -25,6 +25,16 @@ struct Entry {
     last_updated: Instant,
 }
 
+impl Entry {
+    /// Creates a new [`Entry`] with `last_updated` set to [`Instant::now`]-
+    fn new(is_banned: bool) -> Self {
+        Self {
+            is_banned,
+            last_updated: Instant::now(),
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub(super) enum BackendError {
     #[error("chainalysis lookup failed")]
@@ -134,13 +144,7 @@ impl Cached {
     /// positive confirmation and at least one backend failed.
     async fn refresh(&self, address: Address) -> Option<(Address, Entry)> {
         let is_banned = self.fetch_all(address).await?;
-        Some((
-            address,
-            Entry {
-                is_banned,
-                last_updated: Instant::now(),
-            },
-        ))
+        Some((address, Entry::new(is_banned)))
     }
 
     /// Spawns a background task that periodically refreshes near-expiry cache
