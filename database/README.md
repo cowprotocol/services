@@ -517,22 +517,6 @@ Indexes:
 
 The `pool-indexer` service uses its own per-network database, not these shared DBs. Its tables (`pool_indexer_checkpoints`, `uniswap_v3_pools`, `uniswap_v3_pool_states`, `uniswap_v3_ticks`) and migrations live in [`sql-pool-indexer/`](sql-pool-indexer/).
 
-### cow\_amms
-
-Stores information about indexed CoW AMMs that have been discovered through blockchain events. Each row represents a CoW AMM pool with its associated factory contract and tradeable tokens.
-
- Column             | Type     | Nullable | Details
---------------------|----------|----------|--------
- address            | bytea    | not null | Address of the CoW AMM pool contract
- factory\_address   | bytea    | not null | Address of the factory contract associated with this AMM
- tradeable\_tokens  | bytea[]  | not null | Token addresses that can be traded through this AMM
- block\_number      | bigint   | not null | Block number in which the AMM was deployed/finalized
- tx\_hash           | bytea    | not null | Transaction hash in which the AMM was deployed/finalized
-
-Indexes:
-- PRIMARY KEY: btree (`address`)
-- cow\_amms\_factory\_block: btree (`factory_address`, `block_number`)
-
 ### Enums
 
 #### executiontime

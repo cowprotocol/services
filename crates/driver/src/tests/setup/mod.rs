@@ -1623,17 +1623,10 @@ impl QuoteOk<'_> {
         body.get("solutionId").unwrap().as_u64().unwrap()
     }
 
-    /// The auction id the cached fast-path solution was cached under.
-    pub fn auction_id(&self) -> i64 {
-        let body: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        body.get("auctionId").unwrap().as_i64().unwrap()
-    }
-
     /// Assert the quote carries no fast-path settle info (regular quote).
     pub fn no_fast_path_settle_info(self) -> Self {
         let body: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(body.get("solutionId").is_none());
-        assert!(body.get("auctionId").is_none());
         self
     }
 

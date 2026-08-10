@@ -453,12 +453,6 @@ components:
           description: >-
             For fast-path quotes: id of the cached solution, to later submit it
             via `/settle`. Present only when the solution was successfully cached.
-        auctionId:
-          type: integer
-          description: >-
-            For fast-path quotes: the auction id the solution was cached under,
-            to later submit it via `/settle`. Present only when the solution was
-            successfully cached.
       required:
         - clearingPrices
         - solver

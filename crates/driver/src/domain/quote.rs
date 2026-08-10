@@ -35,6 +35,7 @@ pub struct Quote {
     pub tx_origin: Option<eth::Address>,
     #[debug(ignore)]
     pub jit_orders: Vec<solution::trade::Jit>,
+    pub solution_id: Option<u64>,
 }
 
 impl Quote {
@@ -63,6 +64,7 @@ impl Quote {
                     _ => None,
                 })
                 .collect(),
+            solution_id: None,
         })
     }
 
@@ -135,7 +137,7 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
         competition: &Competition,
-    ) -> Result<(Quote, Option<u64>), Error> {
+    ) -> Result<Quote, Error> {
         if self.enable_fast_path && !solver.fast_path_enabled() {
             return Err(Error::QuotingFailed(QuotingFailed::FastPathNotSupported));
         }
@@ -166,23 +168,22 @@ impl Order {
             .into_iter()
             .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
             .ok_or(QuotingFailed::NoSolutions)?;
-        let quote = Quote::try_new(eth, &solution)?;
+        let mut quote = Quote::try_new(eth, &solution)?;
 
-        // Cache the solution so it can be settled later; return its id so the
-        // caller can reference it.
-        let cached_solution_id = match (self.enable_fast_path, self.auction_id) {
+        // Cache the fast-path solution so the autopilot can settle it during the
+        // exclusivity window. The quote's order is synthetic (unsigned), so the
+        // settlement is re-encoded against the real order at settle time.
+        quote.solution_id = match (self.enable_fast_path, self.auction_id) {
             (true, Some(auction_id)) => {
                 let solution_id = solution.id().get();
-                competition.cache_quote_solution(
-                    auction::Id(auction_id),
-                    auction.clone(),
-                    solution,
-                );
+                competition
+                    .cache_quote_solution(auction::Id(auction_id), auction.clone(), solution)
+                    .await;
                 Some(solution_id)
             }
             _ => None,
         };
-        Ok((quote, cached_solution_id))
+        Ok(quote)
     }
 
     /// The single-order auction a quote is solved in. Token prices are unset
