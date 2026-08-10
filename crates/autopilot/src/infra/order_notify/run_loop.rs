@@ -3,6 +3,8 @@ use {
     std::sync::Arc,
 };
 
+/// "Wakes" up (i.e. notifies) the run-loop to start when a new block or order
+/// appears.
 pub struct RunLoopWaker(pub Arc<tokio::sync::Notify>);
 
 #[async_trait::async_trait]
