@@ -36,23 +36,31 @@ pub struct ListenSession {
 }
 
 impl ListenSession {
-    pub fn new(pool: PgPool, channel: impl Into<String>) -> Self {
-        Self {
+    /// Spawns the listen loop as a task. It reconnects with capped
+    /// exponential backoff and runs until the returned handle is aborted.
+    pub fn spawn(
+        pool: PgPool,
+        channel: impl Into<String>,
+        handler: impl NotifyHandler + 'static,
+    ) -> tokio::task::JoinHandle<()> {
+        let session = Self {
             pool,
             channel: channel.into(),
             min_backoff: Duration::from_millis(200),
             max_backoff: Duration::from_secs(30),
-        }
+        };
+        tokio::spawn(session.run(handler))
     }
 
-    /// Runs until the task is dropped. Each connection loss backs off and
-    /// reconnects, re-seeding on the new connection.
-    pub async fn run(self, mut handler: impl NotifyHandler) {
+    async fn run(self, mut handler: impl NotifyHandler) {
         let mut backoff = self.min_backoff;
         loop {
-            // `session` loops until it fails, so there is no Ok value to
-            // handle.
-            let err = self.session(&mut handler, &mut backoff).await.unwrap_err();
+            // `run_connection` loops until it fails, so there is no Ok value
+            // to handle.
+            let err = self
+                .run_connection(&mut handler, &mut backoff)
+                .await
+                .unwrap_err();
             tracing::warn!(channel = %self.channel, ?err, "listen session lost");
             tokio::time::sleep(backoff).await;
             backoff = (backoff * 2).min(self.max_backoff);
@@ -63,7 +71,7 @@ impl ListenSession {
     /// connection drops. When the listener silently reconnects, `try_recv`
     /// yields `None` and the seed re-runs in place to recover any missed
     /// NOTIFY.
-    async fn session(
+    async fn run_connection(
         &self,
         handler: &mut impl NotifyHandler,
         backoff: &mut Duration,
@@ -152,12 +160,15 @@ mod tests {
         let (started_tx, started_rx) = oneshot::channel();
         let (gate_tx, gate_rx) = oneshot::channel();
 
-        let session = ListenSession::new(pool.clone(), CHANNEL);
-        let task = tokio::spawn(session.run(Recorder {
-            log: log.clone(),
-            started: Some(started_tx),
-            gate: Some(gate_rx),
-        }));
+        let task = ListenSession::spawn(
+            pool.clone(),
+            CHANNEL,
+            Recorder {
+                log: log.clone(),
+                started: Some(started_tx),
+                gate: Some(gate_rx),
+            },
+        );
 
         // LISTEN is active once seed starts: fire the gap NOTIFY now.
         started_rx.await.unwrap();
