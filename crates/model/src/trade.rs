@@ -31,10 +31,8 @@ pub struct Trade {
     // Settlement Data
     pub tx_hash: Option<B256>,
     pub executed_protocol_fees: Vec<ExecutedProtocolFee>,
-    /// On-chain gas cost (in native token wei) attributed to this trade: its
-    /// share of the settlement transaction's gas cost, split equally across all
-    /// trades settled in the same transaction. `None` for trades settled before
-    /// this data was recorded.
+    /// The trade's estimated share of its settlement's gas cost, in native
+    /// token wei. `None` if the settlement's gas was not recorded.
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gas_cost: Option<U256>,

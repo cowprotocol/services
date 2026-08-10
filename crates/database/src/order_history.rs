@@ -69,16 +69,14 @@ pub fn user_orders<'a>(
         ") ",
         // Phase 2: fetch full rows for the relevant UIDs only
         " (",
-        "  SELECT ", orders::SELECT, crate::trades::ORDER_GAS_COST_COLUMN,
+        "  SELECT ", orders::SELECT,
         "  FROM ", orders::FROM,
-        crate::trades::ORDER_GAS_COST_JOIN,
         "  WHERE o.uid IN (SELECT uid FROM page_uids)",
         " )",
         " UNION ALL",
         " (",
-        "  SELECT ", jit_orders::SELECT, crate::trades::ORDER_GAS_COST_COLUMN,
+        "  SELECT ", jit_orders::SELECT,
         "  FROM ", jit_orders::FROM,
-        crate::trades::ORDER_GAS_COST_JOIN,
         "  WHERE o.uid IN (SELECT uid FROM page_uids)",
         // despite already handling duplicates in phase 1 we need to handle
         // them here again. Because JIT orders are very rare we check that
@@ -101,12 +99,12 @@ mod tests {
         super::*,
         crate::{
             byte_array::ByteArray,
-            events::EventIndex,
+            events::{Event, EventIndex, Settlement, Trade},
             onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
         },
         chrono::{DateTime, Duration, Utc},
         futures::StreamExt,
-        sqlx::Connection,
+        sqlx::{Connection, types::BigDecimal},
     };
 
     type Data = ([u8; 56], Address, DateTime<Utc>);
@@ -361,5 +359,57 @@ mod tests {
         // Unrelated address returns nothing.
         let none = user_orders(&mut db, &ByteArray([0xabu8; 20]), 0, Some(100)).await;
         assert!(none.is_empty());
+
+        // gas_cost flows through this query too: fill uid_a and settle it with
+        // 100 gas recorded at price 10, its sole fill taking the whole 1000.
+        crate::events::append(
+            &mut db,
+            &[
+                (
+                    EventIndex::default(),
+                    Event::Trade(Trade {
+                        order_uid: uid_a,
+                        ..Default::default()
+                    }),
+                ),
+                (
+                    EventIndex {
+                        block_number: 0,
+                        log_index: 1,
+                    },
+                    Event::Settlement(Settlement::default()),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+        crate::settlements::update_settlement_solver_and_gas(
+            &mut db,
+            0,
+            1,
+            Default::default(),
+            0,
+            BigDecimal::from(100),
+            BigDecimal::from(10),
+        )
+        .await
+        .unwrap();
+        let gas_costs = super::user_orders(&mut db, &owner, 0, Some(100))
+            .map(|order| {
+                let order = order.unwrap();
+                (order.uid, order.gas_cost)
+            })
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(
+            gas_costs,
+            vec![
+                (uid_a, Some(BigDecimal::from(1000))),
+                (uid_b, None),
+                (uid_c, None),
+                (uid_d, None),
+                (uid_e, None),
+            ]
+        );
     }
 }

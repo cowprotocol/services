@@ -6,7 +6,6 @@ use {
         TransactionHash,
         onchain_broadcasted_orders::OnchainOrderPlacementError,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
-        trades::{ORDER_GAS_COST_COLUMN, ORDER_GAS_COST_JOIN},
     },
     futures::stream::BoxStream,
     sqlx::{
@@ -533,8 +532,10 @@ pub struct FullOrder {
     pub executed_fee: BigDecimal,
     pub executed_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
-    /// Estimated on-chain gas cost (native token wei) attributed to the order.
-    #[sqlx(default)]
+    /// The order's share of its settlements' gas costs (native token wei),
+    /// summed across fills — see `crate::trades::ORDER_GAS_COST`. `None` when
+    /// any fill's cost is unknown; hot-path queries that don't need it select
+    /// a literal `NULL`.
     pub gas_cost: Option<BigDecimal>,
 }
 
@@ -623,7 +624,8 @@ impl FullOrderWithQuote {
 // SET enable_nestloop = false;
 // to get a better idea of what indexes postgres *could* use even if it decides
 // that with the current amount of data this wouldn't be better.
-pub const SELECT: &str = r#"
+pub const SELECT: &str = const_format::concatcp!(
+    r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.valid_from, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
@@ -651,14 +653,14 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
 COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
-(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
-"#;
+(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data"#,
+    crate::trades::ORDER_GAS_COST,
+);
 
 pub const FROM: &str = "orders o";
 const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
     "SELECT ",
     SELECT,
-    ORDER_GAS_COST_COLUMN,
     ", o_quotes.sell_amount as quote_sell_amount",
     ", o_quotes.buy_amount as quote_buy_amount",
     ", o_quotes.gas_amount as quote_gas_amount",
@@ -670,7 +672,6 @@ const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
     " FROM ",
     FROM,
     " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
-    ORDER_GAS_COST_JOIN,
 );
 
 #[instrument(skip_all)]
@@ -728,10 +729,9 @@ pub fn full_orders_in_tx<'a>(
     const QUERY: &str = const_format::formatcp!(
         r#"
 {SETTLEMENT_LOG_INDICES}
-SELECT {SELECT}{ORDER_GAS_COST_COLUMN}
+SELECT {SELECT}
 FROM {FROM}
 JOIN trades t ON t.order_uid = o.uid
-{ORDER_GAS_COST_JOIN}
 WHERE
     t.block_number = (SELECT block_number FROM settlement) AND
     -- BETWEEN is inclusive
@@ -826,7 +826,8 @@ pub fn solvable_orders(
         NULL AS onchain_placement_error,
         COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
         COALESCE(fee_agg.executed_fee_token, lo.sell_token) AS executed_fee_token,
-        ad.full_app_data
+        ad.full_app_data,
+        NULL AS gas_cost
     FROM live_orders lo
     LEFT JOIN LATERAL (
         SELECT NOT signed AS unsigned
@@ -954,7 +955,8 @@ SELECT
     opo.onchain_placement_error,
     COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
     COALESCE(fee_agg.executed_fee_token, so.sell_token) AS executed_fee_token,
-    ad.full_app_data
+    ad.full_app_data,
+    NULL AS gas_cost
 FROM selected_orders so
 LEFT JOIN LATERAL (
     SELECT NOT signed AS unsigned
@@ -2359,9 +2361,8 @@ mod tests {
         }
     }
 
-    /// Inserts the two orders the gas-cost tests fill, in a cleared database.
+    /// Inserts the two orders the gas-cost tests fill.
     async fn two_orders(db: &mut PgTransaction<'_>) -> (OrderUid, OrderUid) {
-        crate::clear_DANGER_(db).await.unwrap();
         let (order_a, order_b) = (ByteArray([1; 56]), ByteArray([2; 56]));
         for uid in [order_a, order_b] {
             insert_order(
@@ -2397,9 +2398,8 @@ mod tests {
     }
 
     /// Settles every fill since the previous settlement, at `log_index` of
-    /// block
-    /// 0. `gas_used` is recorded at a price of 10; `None` leaves it unrecorded,
-    /// as for a settlement observed before V116.
+    /// block 0. `gas_used` is recorded at a price of 10; `None` leaves it
+    /// unrecorded, as for a settlement observed before V116.
     async fn settle(db: &mut PgTransaction<'_>, log_index: i64, tx: u8, gas_used: Option<u64>) {
         crate::events::append(
             db,
@@ -2422,7 +2422,7 @@ mod tests {
                 0,
                 log_index,
                 Default::default(),
-                log_index,
+                0,
                 BigDecimal::from(gas_used),
                 BigDecimal::from(10),
             )
@@ -2451,6 +2451,7 @@ mod tests {
     async fn postgres_order_gas_cost_across_fills() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
         let (order_a, order_b) = two_orders(&mut db).await;
 
         // Half-filled: one settlement of 100 gas at price 10, split over the two
@@ -2506,6 +2507,7 @@ mod tests {
     async fn postgres_orders_in_tx_gas_cost() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
         let (order_a, order_b) = two_orders(&mut db).await;
 
         // Two settlements: the first splits 1000 over order_a and order_b, the

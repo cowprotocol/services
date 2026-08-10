@@ -17,7 +17,8 @@ use {
     tracing::instrument,
 };
 
-pub const SELECT: &str = r#"
+pub const SELECT: &str = const_format::concatcp!(
+    r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, NULL AS valid_from, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, '\x9008d19f58aabd9ed0d60971565aa8510560ab41'::bytea AS settlement_contract, o.sell_token_balance, o.buy_token_balance,
@@ -34,8 +35,9 @@ NULL AS onchain_user,
 NULL AS onchain_placement_error,
 COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
 COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
-NULL AS full_app_data
-"#;
+NULL AS full_app_data"#,
+    crate::trades::ORDER_GAS_COST,
+);
 
 pub const FROM: &str = "jit_orders o";
 
@@ -48,9 +50,7 @@ pub async fn get_by_id(
         const QUERY: &str = const_format::concatcp!(
 "SELECT ",
 SELECT,
-crate::trades::ORDER_GAS_COST_COLUMN,
 " FROM ", FROM,
-crate::trades::ORDER_GAS_COST_JOIN,
 " WHERE o.uid = $1 ",
         );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
@@ -61,15 +61,8 @@ pub async fn get_many_by_uid<'a>(
     ex: &'a mut PgConnection,
     order_uids: &'a [OrderUid],
 ) -> Result<Vec<orders::FullOrder>, sqlx::Error> {
-    const QUERY: &str = const_format::concatcp!(
-        "SELECT ",
-        SELECT,
-        crate::trades::ORDER_GAS_COST_COLUMN,
-        " FROM ",
-        FROM,
-        crate::trades::ORDER_GAS_COST_JOIN,
-        " WHERE o.uid = ANY($1)"
-    );
+    const QUERY: &str =
+        const_format::concatcp!("SELECT ", SELECT, " FROM ", FROM, " WHERE o.uid = ANY($1)");
     sqlx::query_as(QUERY).bind(order_uids).fetch_all(ex).await
 }
 
@@ -82,11 +75,9 @@ pub async fn get_by_tx(
         orders::SETTLEMENT_LOG_INDICES,
         "SELECT ",
         SELECT,
-        crate::trades::ORDER_GAS_COST_COLUMN,
         " FROM ",
         FROM,
         " JOIN trades t ON t.order_uid = o.uid",
-        crate::trades::ORDER_GAS_COST_JOIN,
         " WHERE
         t.block_number = (SELECT block_number FROM settlement) AND
         -- BETWEEN is inclusive
@@ -206,7 +197,10 @@ mod tests {
 
     use {
         super::*,
-        crate::byte_array::ByteArray,
+        crate::{
+            byte_array::ByteArray,
+            events::{Event, EventIndex, Settlement, Trade},
+        },
         sqlx::{Connection, PgConnection},
     };
 
@@ -263,7 +257,7 @@ mod tests {
         // JIT orders carry the same gas-cost attribution as regular ones. One
         // trade settled by a settlement recording 100 gas at price 10, so the
         // order's sole fill takes the whole 1000.
-        let event = |log_index| crate::events::EventIndex {
+        let event = |log_index| EventIndex {
             block_number: 0,
             log_index,
         };
@@ -272,18 +266,12 @@ mod tests {
             &[
                 (
                     event(0),
-                    crate::events::Event::Trade(crate::events::Trade {
+                    Event::Trade(Trade {
                         order_uid: jit_order.uid,
                         ..Default::default()
                     }),
                 ),
-                (
-                    event(1),
-                    crate::events::Event::Settlement(crate::events::Settlement {
-                        transaction_hash: ByteArray([1; 32]),
-                        ..Default::default()
-                    }),
-                ),
+                (event(1), Event::Settlement(Settlement::default())),
             ],
         )
         .await
@@ -301,12 +289,6 @@ mod tests {
         .unwrap();
 
         let order = get_by_id(&mut db, &jit_order.uid).await.unwrap().unwrap();
-        assert_eq!(
-            order
-                .gas_cost
-                .as_ref()
-                .and_then(bigdecimal::ToPrimitive::to_u64),
-            Some(1000)
-        );
+        assert_eq!(order.gas_cost, Some(BigDecimal::from(1000)));
     }
 }
