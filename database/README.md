@@ -423,14 +423,18 @@ Indexes:
 
 Stores data and metadata of [`Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68) events emitted from the settlement contract.
 
- Column        | Type   | Nullable | Details
----------------|--------|----------|--------
- block\_number | bigint | not null | block in which the settlement happened
- log\_index    | bigint | not null | index in which the event was emitted
- solver        | bytea  | not null | public address of the executing solver
- tx\_hash      | bytea  | not null | transaction hash in which the settlement got executed
- auction\_id    | bigint | nullable | corresponding auction ID that initiated the settlement
- solution\_uid  | bigint | nullable | corresponding winning solver's solution UID, which is also used to identify settlements from the current environment
+ Column                | Type           | Nullable | Details
+-----------------------|----------------|----------|--------
+block\_number          | bigint         | not null | block in which the settlement happened
+log\_index             | bigint         | not null | index in which the event was emitted
+solver                 | bytea          | not null | public address of the executing solver
+tx\_hash               | bytea          | not null | transaction hash in which the settlement got executed
+auction\_id            | bigint         | nullable | corresponding auction ID that initiated the settlement
+solution\_uid          | bigint         | nullable | corresponding winning solver's solution UID, which is also used to identify settlements from the current environment
+gas\_used              | numeric(78, 0) | nullable | gas consumed by the settlement transaction, read from the transaction receipt
+ effective\_gas\_price | numeric(78, 0) | nullable | gas price actually paid per unit of gas (in wei), read from the transaction receipt
+
+The total on-chain cost of a settlement is `gas_used * effective_gas_price`. Both columns are populated by the `autopilot`'s settlement observer and are only set for settlements observed after the migration that added them; historical rows were not backfilled, so consumers (e.g. the `orderbook` attributing gas cost to individual trades and orders) must handle `NULL`.
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`,`log_index`)
