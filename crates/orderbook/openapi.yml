@@ -1420,6 +1420,13 @@ components:
             `OrderCreation` for more information.
           type: string
           nullable: true
+        validFrom:
+          description: >
+            Earliest time (unix seconds) at which the order may enter a batch
+            auction, taken from the order's `appData`. Omitted when the order
+            has no lower bound (eligible immediately).
+          type: integer
+          nullable: true
         settlementContract:
           description: >
             The address of the CoW Protocol settlement contract that this order
