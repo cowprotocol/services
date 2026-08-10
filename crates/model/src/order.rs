@@ -715,8 +715,9 @@ pub struct OrderMetadata {
     /// On-chain gas cost (in native token wei) attributed to this order: its
     /// share of the settlement transaction(s)' gas cost, split equally across
     /// all trades in each settlement and summed across the order's fills.
-    /// `None` for orders settled before this data was recorded, or not yet
-    /// settled.
+    /// `None` unless every fill's cost is known, so an order that is not yet
+    /// settled, or any of whose fills predate this data being recorded, has no
+    /// gas cost rather than a partial one.
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gas_cost: Option<U256>,

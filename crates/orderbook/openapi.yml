@@ -1408,9 +1408,11 @@ components:
           nullable: false
         gasCost:
           description: >
-            Estimated gas cost attributed to this order, in native token wei.
-            `null` if the order is not yet settled or its gas cost was not
-            recorded.
+            Estimated gas cost attributed to this order, in native token wei,
+            summed across its fills. `null` unless the cost of every fill is
+            known, so an order that is not yet settled, or any of whose fills
+            predate this data being recorded, reports no cost rather than a
+            partial one.
           allOf:
             - $ref: "#/components/schemas/BigUint"
           nullable: true

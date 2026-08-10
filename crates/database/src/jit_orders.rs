@@ -245,6 +245,70 @@ mod tests {
         assert!(read_jit_order.is_none());
     }
 
+    /// JIT orders carry the same gas-cost attribution as regular ones; without
+    /// an assertion here the gas-cost column could be dropped from these
+    /// queries unnoticed, since `FullOrder::gas_cost` defaults to `None`.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_get_by_id_gas_cost() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let jit_order = JitOrder::default();
+        insert(&mut db, std::slice::from_ref(&jit_order))
+            .await
+            .unwrap();
+
+        // One trade for the order, settled by a settlement recording 100 gas at
+        // price 10, so the order's sole fill takes the whole 1000.
+        let event = |log_index| crate::events::EventIndex {
+            block_number: 0,
+            log_index,
+        };
+        crate::events::append(
+            &mut db,
+            &[
+                (
+                    event(0),
+                    crate::events::Event::Trade(crate::events::Trade {
+                        order_uid: jit_order.uid,
+                        ..Default::default()
+                    }),
+                ),
+                (
+                    event(1),
+                    crate::events::Event::Settlement(crate::events::Settlement {
+                        transaction_hash: ByteArray([1; 32]),
+                        ..Default::default()
+                    }),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+        crate::settlements::update_settlement_solver_and_gas(
+            &mut db,
+            0,
+            1,
+            Default::default(),
+            1,
+            BigDecimal::from(100),
+            BigDecimal::from(10),
+        )
+        .await
+        .unwrap();
+
+        let order = get_by_id(&mut db, &jit_order.uid).await.unwrap().unwrap();
+        assert_eq!(
+            order
+                .gas_cost
+                .as_ref()
+                .and_then(bigdecimal::ToPrimitive::to_u64),
+            Some(1000)
+        );
+    }
+
     #[tokio::test]
     #[ignore]
     async fn postgres_get_by_id() {

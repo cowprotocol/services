@@ -26,54 +26,53 @@ pub struct TradesQueryRow {
 
 /// `LEFT OUTER JOIN LATERAL` clause resolving, for each row of a `trades t`
 /// alias, the settlement that included the trade and the trade's share of its
-/// on-chain gas cost. A trade belongs to the first settlement following it in
-/// the same block; that settlement's cost is split equally across the trades
-/// between it and the previous settlement of the block. `gas_cost` is `NULL`
-/// for settlements whose gas was not persisted (see migration V116).
+/// on-chain gas cost:
+///
+/// - A trade belongs to the first settlement following it in the same block.
+/// - A settlement's cost is split equally across the trades between it and the
+///   previous settlement of the block.
+/// - `gas_cost` is `NULL` for settlements whose gas was not persisted (see
+///   migration V116).
 pub(crate) const SETTLEMENT_JOIN: &str = r#"
 LEFT OUTER JOIN LATERAL (
-    WITH settlement AS (
-        -- The settlement that included the trade, its total cost, and the
-        -- exclusive lower bound of the log indices it settled.
-        SELECT
-            s.tx_hash,
-            s.auction_id,
-            s.block_number,
-            s.log_index,
-            s.gas_used * s.effective_gas_price AS cost,
-            COALESCE((
-                SELECT MAX(previous.log_index)
-                FROM settlements previous
-                WHERE previous.block_number = s.block_number
-                AND   previous.log_index < s.log_index
-            ), -1) AS previous_log_index
-        FROM settlements s
-        WHERE s.block_number = t.block_number
-        AND   s.log_index > t.log_index
-        ORDER BY s.log_index ASC
-        LIMIT 1
-    )
     SELECT
-        tx_hash,
-        auction_id,
-        FLOOR(cost / NULLIF((
-            SELECT COUNT(*)
-            FROM trades settled
-            WHERE settled.block_number = settlement.block_number
-            AND   settled.log_index < settlement.log_index
-            AND   settled.log_index > settlement.previous_log_index
-        ), 0)) AS gas_cost
-    FROM settlement
+        s.tx_hash,
+        s.auction_id,
+        FLOOR(
+            (s.gas_used * s.effective_gas_price)
+            / NULLIF((
+                SELECT COUNT(*)
+                FROM trades settled
+                WHERE settled.block_number = s.block_number
+                AND   settled.log_index < s.log_index
+                AND   settled.log_index > COALESCE((
+                    SELECT MAX(previous.log_index)
+                    FROM settlements previous
+                    WHERE previous.block_number = s.block_number
+                    AND   previous.log_index < s.log_index
+                ), -1)
+            ), 0)
+        ) AS gas_cost
+    FROM settlements s
+    WHERE s.block_number = t.block_number
+    AND   s.log_index > t.log_index
+    ORDER BY s.log_index ASC
+    LIMIT 1
 ) AS settlement ON true"#;
 
 /// `FROM`-clause join exposing an order's gas cost summed across all of its
 /// fills as `order_gas.gas_cost`. Correlates on the order alias `o`, so it goes
 /// after `o` is in scope and before any `WHERE`, paired with
-/// [`ORDER_GAS_COST_COLUMN`] in the select list. Its
-/// `trades t` shadows the `t` of the tx-scoped queries on purpose: the sum
-/// spans *all* fills, not just the ones that query selected.
+/// [`ORDER_GAS_COST_COLUMN`] in the select list. Its `trades t` shadows the `t`
+/// of the tx-scoped queries on purpose: the sum spans *all* fills, not just the
+/// ones that query selected.
+///
+/// The sum is `NULL` unless *every* fill's cost is known — `SUM` alone would
+/// skip the unknown ones and report a total that looks complete but understates
+/// the order (see the `CASE`).
 pub(crate) const ORDER_GAS_COST_JOIN: &str = const_format::concatcp!(
-    " LEFT OUTER JOIN LATERAL (SELECT SUM(settlement.gas_cost) AS gas_cost FROM trades t",
+    " LEFT OUTER JOIN LATERAL (SELECT CASE WHEN COUNT(*) = COUNT(settlement.gas_cost) THEN \
+     SUM(settlement.gas_cost) END AS gas_cost FROM trades t",
     SETTLEMENT_JOIN,
     " WHERE t.order_uid = o.uid) AS order_gas ON true",
 );
@@ -244,7 +243,6 @@ mod tests {
             orders::Order,
         },
         bigdecimal::ToPrimitive,
-        futures::TryStreamExt,
         sqlx::Connection,
     };
 
@@ -798,42 +796,197 @@ mod tests {
         );
     }
 
+    struct GasCosts {
+        owner: Address,
+        orders: Vec<OrderUid>,
+        settlements: Vec<Settlement>,
+    }
+
+    /// `gas_used` recorded for the settlement at `index`, which settled
+    /// `trades` trades. Varied per settlement so a mix-up between two of them
+    /// cannot pass unnoticed.
+    fn settlement_gas_used(index: usize, trades: usize) -> u64 {
+        100 * (index as u64 + 1) + trades as u64 * 10
+    }
+
+    /// What each of the settlement's trades should be attributed, i.e.
+    /// `gas_used * effective_gas_price` split equally and rounded down.
+    fn expected_share(index: usize, trades: usize) -> u64 {
+        settlement_gas_used(index, trades) * GAS_PRICE / trades as u64
+    }
+
+    const GAS_PRICE: u64 = 10;
+
+    /// Builds one block of trades and settlements from `trades_per_settlement`:
+    /// each position is a settlement and the value is how many trades it
+    /// settled. Every settlement gets gas recorded via [`settlement_gas_used`].
+    ///
+    /// Trade `k` of *every* settlement belongs to `orders[k]`, so an order that
+    /// appears in several settlements models a partially fillable order filled
+    /// repeatedly — `&[1, 1, 1]` is one order with three fills. `orders` holds
+    /// the largest count's worth of orders, so a settlement with more trades
+    /// than its predecessors introduces orders unique to it.
+    ///
+    /// For `&[2, 3]` that lays out:
+    ///
+    /// ```text
+    /// log 0: trade (orders[0])  ┐
+    /// log 1: trade (orders[1])  ┴─ settled by settlements[0], gas_used 120
+    /// log 2: settlement
+    /// log 3: trade (orders[0])  ┐
+    /// log 4: trade (orders[1])  │  settled by settlements[1], gas_used 230
+    /// log 5: trade (orders[2])  ┘
+    /// log 6: settlement
+    /// ```
+    async fn setup_gas_costs(
+        db: &mut PgTransaction<'_>,
+        trades_per_settlement: &[usize],
+    ) -> GasCosts {
+        let order_count = trades_per_settlement.iter().copied().max().unwrap_or(0);
+        let mut users_and_orders = generate_owners_and_order_ids(&[order_count]).await;
+        let (owner, orders) = users_and_orders
+            .pop()
+            .expect("users_and_orders should have 1 element");
+
+        let mut settlements = Vec::with_capacity(trades_per_settlement.len());
+        let mut log_index = 0;
+        let mut placed = vec![false; order_count];
+        for (index, &trades) in trades_per_settlement.iter().enumerate() {
+            let auction_id = i64::try_from(index).unwrap() + 1;
+            for order in 0..trades {
+                let event = EventIndex {
+                    block_number: 0,
+                    log_index,
+                };
+                // The order row must be inserted once, on the order's first fill.
+                if std::mem::replace(&mut placed[order], true) {
+                    add_trade(db, owner, orders[order], event, None, None).await;
+                } else {
+                    add_order_and_trade(db, owner, orders[order], event, None, None).await;
+                }
+                log_index += 1;
+            }
+            let settlement = add_settlement(
+                db,
+                EventIndex {
+                    block_number: 0,
+                    log_index,
+                },
+                Default::default(),
+                ByteArray([u8::try_from(index).unwrap() + 1; 32]),
+                auction_id,
+            )
+            .await;
+            crate::settlements::update_settlement_solver_and_gas(
+                db,
+                0,
+                log_index,
+                Default::default(),
+                auction_id,
+                BigDecimal::from(settlement_gas_used(index, trades)),
+                BigDecimal::from(GAS_PRICE),
+            )
+            .await
+            .unwrap();
+            settlements.push(settlement);
+            log_index += 1;
+        }
+
+        GasCosts {
+            owner,
+            orders,
+            settlements,
+        }
+    }
+
+    /// A settlement's cost is split equally across the trades it settled, and
+    /// each trade resolves the transaction that settled it.
     #[tokio::test]
     #[ignore]
-    async fn postgres_gas_cost_attribution() {
+    async fn postgres_gas_cost_split_across_trades_of_a_settlement() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        // 1 user with 4 orders.
-        let mut users_and_orders = generate_owners_and_order_ids(&[4]).await;
-        let (owner, orders) = users_and_orders
-            .pop()
-            .expect("users_and_orders should have 1 element");
-        let order_a = orders[0];
-        let order_b = orders[1];
-        let order_c = orders[2];
-        let order_d = orders[3];
+        // Distinct trade counts so no two settlements attribute the same share,
+        // and the middle one divides unevenly. The last settlement has a trade
+        // for an order the earlier two lack.
+        let counts = [2, 3, 4];
+        let f = setup_gas_costs(&mut db, &counts).await;
 
-        let index = |block: i64, log: i64| EventIndex {
-            block_number: block,
-            log_index: log,
+        let mut rows = trades(&mut db, None, None, 0, 1000)
+            .into_inner()
+            .await
+            .unwrap();
+        rows.sort_by_key(|row| (row.block_number, row.log_index));
+
+        let expected: Vec<_> = counts
+            .iter()
+            .enumerate()
+            .flat_map(|(index, &trades)| {
+                let (orders, settlements) = (&f.orders, &f.settlements);
+                (0..trades).map(move |order| {
+                    (
+                        orders[order],
+                        Some(expected_share(index, trades)),
+                        Some(settlements[index].transaction_hash),
+                    )
+                })
+            })
+            .collect();
+        let actual: Vec<_> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row.order_uid,
+                    row.gas_cost.as_ref().and_then(BigDecimal::to_u64),
+                    row.tx_hash,
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected);
+        // Spelled out so the shares are pinned independently of the helpers:
+        // gas_used 120, 230 and 340 at price 10, split 2, 3 and 4 ways.
+        assert_eq!(
+            actual
+                .iter()
+                .map(|(_, gas, _)| gas.unwrap())
+                .collect::<Vec<_>>(),
+            vec![600, 600, 766, 766, 766, 850, 850, 850, 850]
+        );
+        // 2300 / 3 does not divide evenly. The share has to be rounded to a
+        // whole number of wei, or `big_decimal_to_u256` rejects it further up
+        // and the API silently reports no gas cost at all.
+        assert!(
+            rows.iter()
+                .all(|row| row.gas_cost.as_ref().is_some_and(BigDecimal::is_integer)),
+            "shares must be whole wei, got {:?}",
+            rows.iter().map(|row| &row.gas_cost).collect::<Vec<_>>()
+        );
+    }
+
+    /// Only settlements from the trade's own block can settle it, and only that
+    /// settlement's own block counts towards the divisor.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_gas_cost_ignores_settlements_of_other_blocks() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let mut users_and_orders = generate_owners_and_order_ids(&[2]).await;
+        let (owner, orders) = users_and_orders.pop().unwrap();
+        let event = |block_number, log_index| EventIndex {
+            block_number,
+            log_index,
         };
 
-        // Block 0 holds two settlements in different transactions. Trades before
-        // each settlement event belong to it.
-        //
-        //   log 0: trade (order_a)  ┐
-        //   log 1: trade (order_b)  ┴─ settled by A
-        //   log 2: settlement A     -> gas_used * price = 100 * 10 = 1000
-        //   log 3: trade (order_a)  ┐
-        //   log 4: trade (order_c)  ┴─ settled by B
-        //   log 5: settlement B     -> gas_used * price = 300 * 10 = 3000
-        add_order_and_trade(&mut db, owner, order_a, index(0, 0), None, None).await;
-        add_order_and_trade(&mut db, owner, order_b, index(0, 1), None, None).await;
-        let settlement_a = add_settlement(
+        // Block 0: two trades settled by one settlement, 100 gas -> 500 each.
+        add_order_and_trade(&mut db, owner, orders[0], event(0, 0), None, None).await;
+        add_order_and_trade(&mut db, owner, orders[1], event(0, 1), None, None).await;
+        let first = add_settlement(
             &mut db,
-            index(0, 2),
+            event(0, 2),
             Default::default(),
             ByteArray([1; 32]),
             1,
@@ -844,18 +997,20 @@ mod tests {
             0,
             2,
             Default::default(),
-            0,
+            1,
             BigDecimal::from(100),
-            BigDecimal::from(10),
+            BigDecimal::from(GAS_PRICE),
         )
         .await
         .unwrap();
-        // order_a fills a second time, in settlement B.
-        add_trade(&mut db, owner, order_a, index(0, 3), None, None).await;
-        add_order_and_trade(&mut db, owner, order_c, index(0, 4), None, None).await;
-        let settlement_b = add_settlement(
+
+        // Block 1: a single trade at a *lower* log index than block 0's
+        // settlement, so ignoring `block_number` would attribute it to `first`
+        // and divide by the wrong block's trade count.
+        add_trade(&mut db, owner, orders[0], event(1, 0), None, None).await;
+        let second = add_settlement(
             &mut db,
-            index(0, 5),
+            event(1, 1),
             Default::default(),
             ByteArray([2; 32]),
             2,
@@ -863,134 +1018,188 @@ mod tests {
         .await;
         crate::settlements::update_settlement_solver_and_gas(
             &mut db,
-            0,
-            5,
-            Default::default(),
             1,
-            BigDecimal::from(300),
-            BigDecimal::from(10),
+            1,
+            Default::default(),
+            2,
+            BigDecimal::from(700),
+            BigDecimal::from(GAS_PRICE),
         )
         .await
         .unwrap();
 
-        // A settlement whose gas was never recorded (e.g. observed before V116)
-        // contributes no gas cost.
-        add_order_and_trade(&mut db, owner, order_d, index(1, 0), None, None).await;
-        let settlement_c = add_settlement(
-            &mut db,
-            index(1, 1),
-            Default::default(),
-            ByteArray([3; 32]),
-            3,
-        )
-        .await;
-
-        // Each trade gets an equal share of its settlement's gas cost.
         let mut rows = trades(&mut db, None, None, 0, 1000)
             .into_inner()
             .await
             .unwrap();
         rows.sort_by_key(|row| (row.block_number, row.log_index));
-        let gas = |row: &TradesQueryRow| row.gas_cost.as_ref().and_then(|cost| cost.to_u64());
+        assert_eq!(
+            rows.iter()
+                .map(|row| (
+                    row.gas_cost.as_ref().and_then(BigDecimal::to_u64),
+                    row.tx_hash
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (Some(500), Some(first.transaction_hash)),
+                (Some(500), Some(first.transaction_hash)),
+                // Block 1's sole trade takes all of its own settlement's cost.
+                (Some(7000), Some(second.transaction_hash)),
+            ]
+        );
+    }
 
-        assert_eq!(rows.len(), 5);
-        // Settlement A: 1000 / 2 trades = 500 each.
-        assert_eq!(rows[0].order_uid, order_a);
-        assert_eq!(gas(&rows[0]), Some(500));
-        assert_eq!(rows[0].tx_hash, Some(settlement_a.transaction_hash));
-        assert_eq!(rows[1].order_uid, order_b);
-        assert_eq!(gas(&rows[1]), Some(500));
-        assert_eq!(rows[1].tx_hash, Some(settlement_a.transaction_hash));
-        // Settlement B: 3000 / 2 trades = 1500 each.
-        assert_eq!(rows[2].order_uid, order_a);
-        assert_eq!(gas(&rows[2]), Some(1500));
-        assert_eq!(rows[2].tx_hash, Some(settlement_b.transaction_hash));
-        assert_eq!(rows[3].order_uid, order_c);
-        assert_eq!(gas(&rows[3]), Some(1500));
-        assert_eq!(rows[3].tx_hash, Some(settlement_b.transaction_hash));
-        // Settlement C: gas not recorded -> no share, but still resolves its tx.
-        assert_eq!(rows[4].order_uid, order_d);
-        assert_eq!(gas(&rows[4]), None);
-        assert_eq!(rows[4].tx_hash, Some(settlement_c.transaction_hash));
+    /// The divisor counts a settlement's *trades*, so an order filled twice in
+    /// one settlement takes two shares of it rather than one.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_gas_cost_counts_repeated_fills_within_a_settlement() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
 
-        // The order-detail queries attribute the same cost per order, summed
-        // across the order's fills (see `crate::trades::ORDER_GAS_COST_JOIN`).
-        async fn order_gas(ex: &mut PgConnection, uid: &OrderUid) -> Option<u64> {
-            crate::orders::single_full_order_with_quote(ex, uid)
-                .await
-                .unwrap()
-                .unwrap()
-                .full_order
-                .gas_cost
-                .and_then(|cost| cost.to_u64())
-        }
-        assert_eq!(order_gas(&mut db, &order_a).await, Some(2000)); // 500 + 1500
-        assert_eq!(order_gas(&mut db, &order_b).await, Some(500));
-        assert_eq!(order_gas(&mut db, &order_c).await, Some(1500));
-        // order_d's only settlement has no recorded gas.
-        assert_eq!(order_gas(&mut db, &order_d).await, None);
+        let mut users_and_orders = generate_owners_and_order_ids(&[2]).await;
+        let (owner, orders) = users_and_orders.pop().unwrap();
+        let event = |log_index| EventIndex {
+            block_number: 0,
+            log_index,
+        };
 
-        // The batch variant agrees with the single-order one.
-        let mut batch = crate::orders::many_full_orders_with_quotes(
+        // One settlement, three trades, but only two distinct orders: counting
+        // orders instead of trades would divide by 2 and over-attribute the
+        // transaction by half.
+        add_order_and_trade(&mut db, owner, orders[0], event(0), None, None).await;
+        add_trade(&mut db, owner, orders[0], event(1), None, None).await;
+        add_order_and_trade(&mut db, owner, orders[1], event(2), None, None).await;
+        add_settlement(&mut db, event(3), Default::default(), ByteArray([1; 32]), 1).await;
+        crate::settlements::update_settlement_solver_and_gas(
             &mut db,
-            &[order_a, order_b, order_c, order_d],
+            0,
+            3,
+            Default::default(),
+            1,
+            BigDecimal::from(300),
+            BigDecimal::from(GAS_PRICE),
         )
         .await
         .unwrap();
-        batch.sort_by_key(|order| order.full_order.uid.0);
-        let mut expected = vec![
-            (order_a, Some(2000)),
-            (order_b, Some(500)),
-            (order_c, Some(1500)),
-            (order_d, None),
-        ];
-        expected.sort_by_key(|(uid, _)| uid.0);
-        assert_eq!(
-            batch
-                .iter()
-                .map(|order| (
-                    order.full_order.uid,
-                    order.full_order.gas_cost.as_ref().and_then(|c| c.to_u64())
-                ))
-                .collect::<Vec<_>>(),
-            expected
-        );
 
-        // The tx-scoped query joins `trades` itself, which the gas-cost join
-        // shadows. It must still report each order's total across all fills and,
-        // aggregating without `GROUP BY`, must not duplicate any row.
-        let in_tx = crate::orders::full_orders_in_tx(&mut db, &settlement_a.transaction_hash)
-            .map_ok(|order| {
-                (
-                    order.uid,
-                    order.gas_cost.as_ref().and_then(|cost| cost.to_u64()),
-                )
-            })
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap();
-        assert_eq!(in_tx, vec![(order_a, Some(2000)), (order_b, Some(500))]);
-
-        // Filtering must not change the divisor: `order_b` is one of settlement
-        // A's 2 trades, so its share stays 1000 / 2 even though the query returns
-        // a single row. Dividing by the number of *returned* rows would report
-        // the whole settlement's cost instead.
-        let filtered = trades(&mut db, None, Some(&order_b), 0, 1000)
+        let mut rows = trades(&mut db, None, None, 0, 1000)
             .into_inner()
             .await
             .unwrap();
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(gas(&filtered[0]), Some(500));
+        rows.sort_by_key(|row| (row.block_number, row.log_index));
+        // 3000 split three ways, and the whole cost accounted for exactly once.
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.gas_cost.as_ref().and_then(BigDecimal::to_u64))
+                .collect::<Vec<_>>(),
+            vec![Some(1000), Some(1000), Some(1000)]
+        );
+    }
 
-        // Same for pagination: a page holding one of settlement B's 2 trades
-        // still reports half of its 3000.
-        let paginated = trades(&mut db, Some(&owner), None, 2, 1)
+    /// The divisor is the number of trades in the whole settlement, so
+    /// filtering or paginating the query must not change a trade's share.
+    /// Dividing by the number of *returned* rows would report the whole
+    /// settlement's cost.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_gas_cost_divisor_ignores_filter_and_pagination() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        // Different trade counts, so a divisor pinned to one constant cannot
+        // satisfy both settlements.
+        let f = setup_gas_costs(&mut db, &[2, 3]).await;
+
+        // 1200 split 2 ways, then 2300 split 3 ways and rounded down.
+        let (first, second) = (600, 766);
+        assert_eq!(
+            (expected_share(0, 2), expected_share(1, 3)),
+            (first, second)
+        );
+
+        // Filtering to a single order still divides by 2.
+        let filtered = trades(&mut db, None, Some(&f.orders[1]), 0, 1000)
+            .into_inner()
+            .await
+            .unwrap();
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|row| row.gas_cost.as_ref().and_then(BigDecimal::to_u64))
+                .collect::<Vec<_>>(),
+            vec![Some(second), Some(first)]
+        );
+
+        // So does a page holding one of the second settlement's 2 trades.
+        let paginated = trades(&mut db, Some(&f.owner), None, 1, 1)
             .into_inner()
             .await
             .unwrap();
         assert_eq!(paginated.len(), 1);
-        assert_eq!(paginated[0].order_uid, order_a);
-        assert_eq!(gas(&paginated[0]), Some(1500));
+        assert_eq!(
+            paginated[0].gas_cost.as_ref().and_then(BigDecimal::to_u64),
+            Some(second)
+        );
+    }
+
+    /// A settlement whose gas was never recorded (e.g. observed before V116)
+    /// contributes no cost, but still resolves its transaction. The recorded
+    /// settlement alongside it keeps this from passing on a query that reports
+    /// `NULL` for everything.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_gas_cost_null_when_settlement_gas_missing() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        // One settlement of one trade, gas recorded: 110 gas at price 10.
+        let f = setup_gas_costs(&mut db, &[1]).await;
+
+        // A second fill of the same order, settled without recorded gas.
+        add_trade(
+            &mut db,
+            f.owner,
+            f.orders[0],
+            EventIndex {
+                block_number: 0,
+                log_index: 2,
+            },
+            None,
+            None,
+        )
+        .await;
+        // No `update_settlement_solver_and_gas` call, so gas stays NULL.
+        let missing = add_settlement(
+            &mut db,
+            EventIndex {
+                block_number: 0,
+                log_index: 3,
+            },
+            Default::default(),
+            ByteArray([9; 32]),
+            9,
+        )
+        .await;
+
+        let mut rows = trades(&mut db, None, None, 0, 1000)
+            .into_inner()
+            .await
+            .unwrap();
+        rows.sort_by_key(|row| (row.block_number, row.log_index));
+        assert_eq!(
+            rows.iter()
+                .map(|row| (
+                    row.gas_cost.as_ref().and_then(BigDecimal::to_u64),
+                    row.tx_hash
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (Some(1100), Some(f.settlements[0].transaction_hash)),
+                (None, Some(missing.transaction_hash)),
+            ]
+        );
     }
 
     #[tokio::test]
