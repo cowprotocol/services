@@ -533,7 +533,7 @@ pub struct FullOrder {
     pub executed_fee: BigDecimal,
     pub executed_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
-    /// Estimate on-chain gas cost (native token wei) attributed to the order.
+    /// Estimated on-chain gas cost (native token wei) attributed to the order.
     #[sqlx(default)]
     pub gas_cost: Option<BigDecimal>,
 }
