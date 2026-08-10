@@ -7,7 +7,7 @@ use {
     sqlx::PgExecutor,
 };
 
-/// A row of `solana.orders`, the columns an order needs to be solvable.
+/// The `solana.orders` columns auction assembly reads.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct OrderRow {
     pub uid: ByteArray<32>,
@@ -24,10 +24,11 @@ pub struct OrderRow {
     pub order_pda: ByteArray<32>,
 }
 
-/// Orders open for solving: unexpired, carrying a signed intent or a
-/// presigned transaction, and without a cancelled order PDA. An order whose
-/// PDA does not exist yet is still open, the PDA is only created on chain at
-/// settlement time.
+/// Orders open for solving: unexpired, settleable by a driver, not cancelled
+/// and not fully filled. Settleable means the driver can produce the order
+/// PDA: it already exists on chain (an order placed via `CreateOrder`
+/// directly), or the driver can create it at settlement time from a signed
+/// intent or a presigned transaction.
 pub async fn open_orders(ex: impl PgExecutor<'_>, now_unix: i64) -> Result<Vec<OrderRow>> {
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
@@ -36,8 +37,15 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.valid_to >= $1
-  AND (o.intent_signature IS NOT NULL OR o.presigned_transaction IS NOT NULL)
-  AND (p.order_uid IS NULL OR p.cancellation_timestamp IS NULL)
+  AND (o.intent_signature IS NOT NULL
+       OR o.presigned_transaction IS NOT NULL
+       OR p.order_uid IS NOT NULL)
+  AND (p.order_uid IS NULL
+       OR (p.cancellation_timestamp IS NULL
+           AND CASE o.kind
+               WHEN 'sell' THEN p.amount_withdrawn < o.sell_amount
+               ELSE p.amount_received < o.buy_amount
+               END))
 ORDER BY o.uid
     "#;
     sqlx::query_as(QUERY)
@@ -98,13 +106,19 @@ mod tests {
         sqlx::{PgPool, PgTransaction},
     };
 
-    async fn insert_order(tx: &mut PgTransaction<'_>, n: u8, valid_to: i64, signed: bool) {
+    async fn insert_order(
+        tx: &mut PgTransaction<'_>,
+        n: u8,
+        valid_to: i64,
+        signed: bool,
+        kind: &str,
+    ) {
         sqlx::query(
             r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, fee_amount, valid_to, kind,
     partially_fillable, app_data, intent_signature, creation_timestamp, class, order_pda)
-VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 0, $3, 'sell', false, $2, $4, now(), 'market', $5)
+VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 0, $3, $6::OrderKind, false, $2, $4, now(), 'market', $5)
             "#,
         )
         .bind(ByteArray([n; 32]))
@@ -112,21 +126,31 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 0, $3, 'sell', false, $2, $4, now(),
         .bind(valid_to)
         .bind(signed.then_some(ByteArray([0xBB; 64])))
         .bind(ByteArray([n | 0x80; 32]))
+        .bind(kind)
         .execute(&mut **tx)
         .await
         .unwrap();
     }
 
-    async fn insert_pda(tx: &mut PgTransaction<'_>, n: u8, cancelled: bool) {
+    async fn insert_pda(
+        tx: &mut PgTransaction<'_>,
+        n: u8,
+        cancelled: bool,
+        withdrawn: i64,
+        received: i64,
+    ) {
         sqlx::query(
             r#"
-INSERT INTO solana.order_pda (order_uid, created_by, cancellation_timestamp)
-VALUES ($1, $2, CASE WHEN $3 THEN now() END)
+INSERT INTO solana.order_pda (order_uid, created_by, cancellation_timestamp,
+    amount_withdrawn, amount_received)
+VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
             "#,
         )
         .bind(ByteArray([n; 32]))
         .bind(ByteArray([0xCC; 32]))
         .bind(cancelled)
+        .bind(withdrawn)
+        .bind(received)
         .execute(&mut **tx)
         .await
         .unwrap();
@@ -139,21 +163,30 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END)
         let mut tx = pool.begin().await.unwrap();
 
         // Kept: signed and unexpired, no PDA yet.
-        insert_order(&mut tx, 1, 2_000, true).await;
+        insert_order(&mut tx, 1, 2_000, true, "sell").await;
         // Dropped: expired.
-        insert_order(&mut tx, 2, 500, true).await;
-        // Dropped: nothing to submit with.
-        insert_order(&mut tx, 3, 2_000, false).await;
+        insert_order(&mut tx, 2, 500, true, "sell").await;
+        // Dropped: no PDA and nothing for the driver to create it from.
+        insert_order(&mut tx, 3, 2_000, false, "sell").await;
         // Dropped: cancelled on chain.
-        insert_order(&mut tx, 4, 2_000, true).await;
-        insert_pda(&mut tx, 4, true).await;
-        // Kept: live PDA.
-        insert_order(&mut tx, 5, 2_000, true).await;
-        insert_pda(&mut tx, 5, false).await;
+        insert_order(&mut tx, 4, 2_000, true, "sell").await;
+        insert_pda(&mut tx, 4, true, 0, 0).await;
+        // Kept: live PDA, partially filled.
+        insert_order(&mut tx, 5, 2_000, true, "sell").await;
+        insert_pda(&mut tx, 5, false, 999, 0).await;
+        // Kept: created directly on chain, no off-chain material.
+        insert_order(&mut tx, 6, 2_000, false, "sell").await;
+        insert_pda(&mut tx, 6, false, 0, 0).await;
+        // Dropped: sell side fully withdrawn.
+        insert_order(&mut tx, 7, 2_000, true, "sell").await;
+        insert_pda(&mut tx, 7, false, 1_000, 0).await;
+        // Dropped: buy side fully received.
+        insert_order(&mut tx, 8, 2_000, true, "buy").await;
+        insert_pda(&mut tx, 8, false, 0, 2_000).await;
 
         let orders = open_orders(&mut *tx, 1_000).await.unwrap();
         let uids: Vec<u8> = orders.iter().map(|order| order.uid.0[0]).collect();
-        assert_eq!(uids, vec![1, 5]);
+        assert_eq!(uids, vec![1, 5, 6]);
     }
 
     #[tokio::test]
