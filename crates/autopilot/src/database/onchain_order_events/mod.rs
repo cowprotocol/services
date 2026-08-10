@@ -10,7 +10,7 @@ use {
         rpc::types::Log,
     },
     anyhow::{Context, Result, anyhow, bail},
-    app_data::AppDataHash,
+    app_data::{AppDataHash, ProtocolAppData},
     chrono::{TimeZone, Utc},
     contracts::{
         CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
@@ -318,7 +318,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             .collect();
         let invalidation_events = get_invalidation_events(events)?;
         let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
-        let (custom_onchain_data, quotes, broadcasted_order_data, orders, tx_hashes) = self
+        let (custom_onchain_data, quotes, broadcasted_order_data, mut orders, tx_hashes) = self
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
 
@@ -356,9 +356,9 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         .await
         .context("appending quotes for onchain orders failed")?;
 
-        insert_order_hooks(transaction, &orders, &self.trampoline)
+        handle_app_data(transaction, &mut orders, &self.trampoline)
             .await
-            .context("failed to insert hooks")?;
+            .context("failed to handle app data")?;
 
         database::orders::insert_orders_and_ignore_conflicts(transaction, orders.as_slice())
             .await
@@ -628,6 +628,9 @@ fn convert_onchain_order_placement(
             true => OrderClass::Limit,
             false => OrderClass::Market,
         },
+        // Backfilled from the order's app-data in `handle_app_data` before the
+        // order is persisted; the full app-data isn't available at this point.
+        valid_from: None,
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -680,30 +683,16 @@ fn extract_order_data_from_onchain_order_placement_event(
     Ok((order_data, owner, signing_scheme, order_uid))
 }
 
-async fn insert_order_hooks(
+/// Populates all app-data-derived order fields before the orders are persisted:
+/// backfills each order's `valid_from` and indexes its pre/post hook
+/// interactions. Must run before the orders are inserted (it mutates them).
+/// Orders whose app-data is unknown or unparseable are left unchanged.
+async fn handle_app_data(
     db: &mut PgConnection,
-    orders: &[Order],
+    orders: &mut [Order],
     trampoline: &HooksTrampoline::Instance,
 ) -> Result<()> {
-    let mut interactions_to_insert = vec![];
-
-    let execute_via_trampoline = |hooks: Vec<app_data::Hook>| {
-        trampoline
-            .execute(
-                hooks
-                    .into_iter()
-                    .map(|hook| Hook {
-                        target: hook.target,
-                        callData: alloy::primitives::Bytes::from(hook.call_data.clone()),
-                        gasLimit: U256::from(hook.gas_limit),
-                    })
-                    .collect(),
-            )
-            .calldata()
-            .to_vec()
-    };
-
-    for order in orders {
+    for order in orders.iter_mut() {
         let appdata_json = database::app_data::fetch(db, &order.app_data)
             .await
             .context("failed to fetch appdata")?;
@@ -715,40 +704,72 @@ async fn insert_order_hooks(
             tracing::debug!(appdata = %String::from_utf8_lossy(&appdata_json), "could not parse appdata");
             continue;
         };
-        if parsed.hooks.pre.is_empty() && parsed.hooks.post.is_empty() {
-            continue; // no additional interactions to index
-        }
 
-        let interactions_count = database::orders::next_free_interaction_indices(db, order.uid)
-            .await
-            .context("failed to fetch interaction count")?;
+        store_hooks(db, order, &parsed, trampoline).await?;
+        order.valid_from = parsed.valid_from.map(i64::from);
+    }
+    Ok(())
+}
 
-        if !parsed.hooks.pre.is_empty() {
-            let interaction = database::orders::Interaction {
-                target: ByteArray(trampoline.address().0.0),
-                value: 0.into(),
-                data: execute_via_trampoline(parsed.hooks.pre),
-                index: interactions_count.next_pre_interaction_index,
-                execution: database::orders::ExecutionTime::Pre,
-            };
-            interactions_to_insert.push((order.uid, interaction));
-        }
-
-        if !parsed.hooks.post.is_empty() {
-            let interaction = database::orders::Interaction {
-                target: ByteArray(trampoline.address().0.0),
-                value: 0.into(),
-                data: execute_via_trampoline(parsed.hooks.post),
-                index: interactions_count.next_post_interaction_index,
-                execution: database::orders::ExecutionTime::Post,
-            };
-            interactions_to_insert.push((order.uid, interaction));
-        }
+async fn store_hooks(
+    db: &mut PgConnection,
+    order: &Order,
+    parsed: &ProtocolAppData,
+    trampoline: &HooksTrampoline::Instance,
+) -> Result<()> {
+    if parsed.hooks.pre.is_empty() && parsed.hooks.post.is_empty() {
+        return Ok(());
     }
 
-    database::orders::insert_or_overwrite_interactions(db, &interactions_to_insert)
+    let interactions_count = database::orders::next_free_interaction_indices(db, order.uid)
         .await
-        .context("could not insert interactions for orders")
+        .context("failed to fetch interaction count")?;
+
+    let execute_via_trampoline = |hooks: &[app_data::Hook]| {
+        trampoline
+            .execute(
+                hooks
+                    .iter()
+                    .map(|hook| Hook {
+                        target: hook.target,
+                        callData: alloy::primitives::Bytes::from(hook.call_data.clone()),
+                        gasLimit: U256::from(hook.gas_limit),
+                    })
+                    .collect(),
+            )
+            .calldata()
+            .to_vec()
+    };
+
+    let mut interactions = vec![];
+    if !parsed.hooks.pre.is_empty() {
+        interactions.push((
+            order.uid,
+            database::orders::Interaction {
+                target: ByteArray(trampoline.address().0.0),
+                value: 0.into(),
+                data: execute_via_trampoline(&parsed.hooks.pre),
+                index: interactions_count.next_pre_interaction_index,
+                execution: database::orders::ExecutionTime::Pre,
+            },
+        ));
+    }
+    if !parsed.hooks.post.is_empty() {
+        interactions.push((
+            order.uid,
+            database::orders::Interaction {
+                target: ByteArray(trampoline.address().0.0),
+                value: 0.into(),
+                data: execute_via_trampoline(&parsed.hooks.post),
+                index: interactions_count.next_post_interaction_index,
+                execution: database::orders::ExecutionTime::Post,
+            },
+        ));
+    }
+
+    database::orders::insert_or_overwrite_interactions(db, &interactions)
+        .await
+        .context("could not insert interactions for order")
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -1025,6 +1046,7 @@ mod test {
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
+            valid_from: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1138,6 +1160,7 @@ mod test {
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
+            valid_from: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);

@@ -99,6 +99,11 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
+        valid_from: order
+            .valid_from
+            .map(u32::try_from)
+            .transpose()
+            .context("valid_from is not u32")?,
         quote: None,
     };
     let data = OrderData {

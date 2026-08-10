@@ -21,18 +21,19 @@ async fn route(
     let handle_request = async {
         let order = order.into_domain();
         observe::quoting(&order);
-        let quote = order
+        let result = order
             .quote(
                 state.eth(),
                 state.solver(),
                 state.liquidity(),
                 state.tokens(),
-                &state.competition().risk_detector,
+                state.competition(),
             )
             .await;
-        observe::quoted(state.solver().name(), &order, &quote);
+        observe::quoted(state.solver().name(), &order, &result);
+        let quote = result?;
         Ok(axum::response::Json(dto::Quote::new(
-            quote?,
+            quote,
             state.solver().fast_path_enabled(),
         )))
     };
