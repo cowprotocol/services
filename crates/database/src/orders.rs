@@ -6,6 +6,7 @@ use {
         TransactionHash,
         onchain_broadcasted_orders::OnchainOrderPlacementError,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
+        trades::{ORDER_GAS_COST_COLUMN, ORDER_GAS_COST_JOIN},
     },
     futures::stream::BoxStream,
     sqlx::{
@@ -532,10 +533,7 @@ pub struct FullOrder {
     pub executed_fee: BigDecimal,
     pub executed_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
-    /// Total on-chain gas cost (native token wei) attributed to the order,
-    /// summed across its fills. Populated by the order-detail queries that
-    /// select it (see [`crate::trades::ORDER_GAS_COST`]); `None` for queries
-    /// that don't, such as the solvable-orders queries.
+    /// Estimate on-chain gas cost (native token wei) attributed to the order.
     #[sqlx(default)]
     pub gas_cost: Option<BigDecimal>,
 }
@@ -660,7 +658,7 @@ pub const FROM: &str = "orders o";
 const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
     "SELECT ",
     SELECT,
-    crate::trades::ORDER_GAS_COST_COLUMN,
+    ORDER_GAS_COST_COLUMN,
     ", o_quotes.sell_amount as quote_sell_amount",
     ", o_quotes.buy_amount as quote_buy_amount",
     ", o_quotes.gas_amount as quote_gas_amount",
@@ -672,6 +670,7 @@ const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
     " FROM ",
     FROM,
     " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
+    ORDER_GAS_COST_JOIN,
 );
 
 #[instrument(skip_all)]
@@ -726,13 +725,13 @@ pub fn full_orders_in_tx<'a>(
     ex: &'a mut PgConnection,
     tx_hash: &'a TransactionHash,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
-    use crate::trades::ORDER_GAS_COST_COLUMN;
     const QUERY: &str = const_format::formatcp!(
         r#"
 {SETTLEMENT_LOG_INDICES}
 SELECT {SELECT}{ORDER_GAS_COST_COLUMN}
 FROM {FROM}
 JOIN trades t ON t.order_uid = o.uid
+{ORDER_GAS_COST_JOIN}
 WHERE
     t.block_number = (SELECT block_number FROM settlement) AND
     -- BETWEEN is inclusive

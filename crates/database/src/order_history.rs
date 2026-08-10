@@ -71,12 +71,14 @@ pub fn user_orders<'a>(
         " (",
         "  SELECT ", orders::SELECT, crate::trades::ORDER_GAS_COST_COLUMN,
         "  FROM ", orders::FROM,
+        crate::trades::ORDER_GAS_COST_JOIN,
         "  WHERE o.uid IN (SELECT uid FROM page_uids)",
         " )",
         " UNION ALL",
         " (",
         "  SELECT ", jit_orders::SELECT, crate::trades::ORDER_GAS_COST_COLUMN,
         "  FROM ", jit_orders::FROM,
+        crate::trades::ORDER_GAS_COST_JOIN,
         "  WHERE o.uid IN (SELECT uid FROM page_uids)",
         // despite already handling duplicates in phase 1 we need to handle
         // them here again. Because JIT orders are very rare we check that

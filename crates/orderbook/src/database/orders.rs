@@ -298,7 +298,7 @@ impl OrderStoring for Postgres {
 
         let mut ex = self.pool.acquire().await?;
 
-        let order = match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
+        match orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await? {
             Some(order_with_quote) => {
                 let (order, quote) = order_with_quote.into_order_and_quote();
                 Some(full_order_with_quote_into_model_order(
@@ -313,9 +313,7 @@ impl OrderStoring for Postgres {
                     .map(full_order_into_model_order)
             }
         }
-        .transpose()?;
-
-        Ok(order)
+        .transpose()
     }
 
     async fn many_orders(&self, uids: &[OrderUid]) -> Result<Vec<(OrderUid, Result<Order>)>> {
@@ -339,7 +337,6 @@ impl OrderStoring for Postgres {
             // time
             database::jit_orders::get_many_by_uid(&mut ex_jit_orders, &uids)
         )?;
-
         Ok(orders
             .into_iter()
             .map(|order| {

@@ -50,6 +50,7 @@ pub async fn get_by_id(
 SELECT,
 crate::trades::ORDER_GAS_COST_COLUMN,
 " FROM ", FROM,
+crate::trades::ORDER_GAS_COST_JOIN,
 " WHERE o.uid = $1 ",
         );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
@@ -66,6 +67,7 @@ pub async fn get_many_by_uid<'a>(
         crate::trades::ORDER_GAS_COST_COLUMN,
         " FROM ",
         FROM,
+        crate::trades::ORDER_GAS_COST_JOIN,
         " WHERE o.uid = ANY($1)"
     );
     sqlx::query_as(QUERY).bind(order_uids).fetch_all(ex).await
@@ -84,6 +86,7 @@ pub async fn get_by_tx(
         " FROM ",
         FROM,
         " JOIN trades t ON t.order_uid = o.uid",
+        crate::trades::ORDER_GAS_COST_JOIN,
         " WHERE
         t.block_number = (SELECT block_number FROM settlement) AND
         -- BETWEEN is inclusive

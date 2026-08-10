@@ -24,78 +24,61 @@ pub struct TradesQueryRow {
     pub gas_cost: Option<BigDecimal>,
 }
 
-/// CTE definition (to be placed in a `WITH` list) mapping every trade to the
-/// settlement that included it and to its share of that settlement's on-chain
-/// gas cost. A trade belongs to the first settlement following it in the same
-/// block, and a settlement's cost (`gas_used * effective_gas_price`) is split
-/// equally across the trades between it and the previous settlement of the
-/// block. `gas_cost` is `NULL` for settlements whose gas was not persisted (see
-/// migration V116).
-///
-/// `NOT MATERIALIZED` is load-bearing: the CTE spans the whole `trades` table,
-/// so it is only affordable if Postgres inlines it into the referencing query
-/// and pushes the caller's filters down into the index scans. A materialized
-/// version (the default as soon as a query references the CTE more than once)
-/// sequentially scans `trades`.
-pub(crate) const TRADE_GAS_COSTS_CTE: &str = r#"trade_gas_costs AS NOT MATERIALIZED (
-    SELECT
-        t.order_uid,
-        t.block_number,
-        t.log_index,
-        settlement.tx_hash,
-        settlement.auction_id,
-        FLOOR(
-            (settlement.gas_used * settlement.effective_gas_price)
-            / NULLIF(settlement.trades_in_settlement, 0)
-        ) AS gas_cost
-    FROM trades t
-    JOIN LATERAL (
+/// `LEFT OUTER JOIN LATERAL` clause resolving, for each row of a `trades t`
+/// alias, the settlement that included the trade and the trade's share of its
+/// on-chain gas cost. A trade belongs to the first settlement following it in
+/// the same block; that settlement's cost is split equally across the trades
+/// between it and the previous settlement of the block. `gas_cost` is `NULL`
+/// for settlements whose gas was not persisted (see migration V116).
+pub(crate) const SETTLEMENT_JOIN: &str = r#"
+LEFT OUTER JOIN LATERAL (
+    WITH settlement AS (
+        -- The settlement that included the trade, its total cost, and the
+        -- exclusive lower bound of the log indices it settled.
         SELECT
             s.tx_hash,
             s.auction_id,
-            s.gas_used,
-            s.effective_gas_price,
-            (
-                SELECT COUNT(*)
-                FROM trades tc
-                WHERE tc.block_number = s.block_number
-                AND   tc.log_index < s.log_index
-                AND   tc.log_index > COALESCE((
-                    SELECT MAX(sp.log_index)
-                    FROM settlements sp
-                    WHERE sp.block_number = s.block_number
-                    AND   sp.log_index < s.log_index
-                ), -1)
-            ) AS trades_in_settlement
+            s.block_number,
+            s.log_index,
+            s.gas_used * s.effective_gas_price AS cost,
+            COALESCE((
+                SELECT MAX(previous.log_index)
+                FROM settlements previous
+                WHERE previous.block_number = s.block_number
+                AND   previous.log_index < s.log_index
+            ), -1) AS previous_log_index
         FROM settlements s
         WHERE s.block_number = t.block_number
         AND   s.log_index > t.log_index
         ORDER BY s.log_index ASC
         LIMIT 1
-    ) AS settlement ON true
-)"#;
+    )
+    SELECT
+        tx_hash,
+        auction_id,
+        FLOOR(cost / NULLIF((
+            SELECT COUNT(*)
+            FROM trades settled
+            WHERE settled.block_number = settlement.block_number
+            AND   settled.log_index < settlement.log_index
+            AND   settled.log_index > settlement.previous_log_index
+        ), 0)) AS gas_cost
+    FROM settlement
+) AS settlement ON true"#;
 
-/// Scalar subquery yielding a single order's total on-chain gas cost (native
-/// token wei) summed across all of its fills, or `NULL` when none of its
-/// settlements have persisted gas (see V116). Carries its own copy of
-/// [`TRADE_GAS_COSTS_CTE`] so it stays a self-contained expression, and
-/// correlates on the order alias `o`, so it can be embedded in the
-/// `orders`/`jit_orders` order-detail queries to fetch the gas cost in the same
-/// round-trip.
-pub(crate) const ORDER_GAS_COST: &str = const_format::concatcp!(
-    "(WITH ",
-    TRADE_GAS_COSTS_CTE,
-    r#"
-    SELECT SUM(gas.gas_cost)
-    FROM trade_gas_costs gas
-    WHERE gas.order_uid = o.uid
-)"#,
+/// `FROM`-clause join exposing an order's gas cost summed across all of its
+/// fills as `order_gas.gas_cost`. Correlates on the order alias `o`, so it goes
+/// after `o` is in scope and before any `WHERE`, paired with
+/// [`ORDER_GAS_COST_COLUMN`] in the select list. Its
+/// `trades t` shadows the `t` of the tx-scoped queries on purpose: the sum
+/// spans *all* fills, not just the ones that query selected.
+pub(crate) const ORDER_GAS_COST_JOIN: &str = const_format::concatcp!(
+    " LEFT OUTER JOIN LATERAL (SELECT SUM(settlement.gas_cost) AS gas_cost FROM trades t",
+    SETTLEMENT_JOIN,
+    " WHERE t.order_uid = o.uid) AS order_gas ON true",
 );
 
-/// Kept out of the shared `SELECT` fragments so only the queries that need the
-/// gas cost pay for it.
-pub(crate) const ORDER_GAS_COST_COLUMN: &str =
-    const_format::concatcp!(", ", ORDER_GAS_COST, " AS gas_cost");
+pub(crate) const ORDER_GAS_COST_COLUMN: &str = ", order_gas.gas_cost";
 
 pub fn trades<'a>(
     ex: &'a mut PgConnection,
@@ -117,9 +100,7 @@ SELECT
     o.sell_token"#;
 
     const QUERY: &str = const_format::concatcp!(
-        "WITH ",
-        TRADE_GAS_COSTS_CTE,
-        ", page AS (",
+        "WITH page AS (",
         "(",
         SELECT,
         " FROM trades t",
@@ -175,27 +156,10 @@ SELECT
         " LIMIT $3",
         " OFFSET $4",
         ")",
-        // Joined onto the paginated `page` CTE (not the UNION branches) so the
-        // settlement lookup and gas attribution only run for the returned rows.
-        r#"
-SELECT
-    page.block_number,
-    page.log_index,
-    page.order_uid,
-    page.buy_amount,
-    page.sell_amount,
-    page.sell_amount_before_fees,
-    page.owner,
-    page.buy_token,
-    page.sell_token,
-    gas.tx_hash,
-    gas.auction_id,
-    gas.gas_cost
-FROM page
-LEFT OUTER JOIN trade_gas_costs gas
-    ON  gas.block_number = page.block_number
-    AND gas.log_index = page.log_index"#,
-        " ORDER BY page.block_number DESC, page.log_index DESC",
+        " SELECT t.*, settlement.tx_hash, settlement.auction_id, settlement.gas_cost",
+        " FROM page t",
+        SETTLEMENT_JOIN,
+        " ORDER BY t.block_number DESC, t.log_index DESC",
     );
 
     sqlx::query_as(QUERY)
@@ -280,6 +244,7 @@ mod tests {
             orders::Order,
         },
         bigdecimal::ToPrimitive,
+        futures::TryStreamExt,
         sqlx::Connection,
     };
 
@@ -874,10 +839,12 @@ mod tests {
             1,
         )
         .await;
-        crate::settlements::update_settlement_gas(
+        crate::settlements::update_settlement_solver_and_gas(
             &mut db,
             0,
             2,
+            Default::default(),
+            0,
             BigDecimal::from(100),
             BigDecimal::from(10),
         )
@@ -894,10 +861,12 @@ mod tests {
             2,
         )
         .await;
-        crate::settlements::update_settlement_gas(
+        crate::settlements::update_settlement_solver_and_gas(
             &mut db,
             0,
             5,
+            Default::default(),
+            1,
             BigDecimal::from(300),
             BigDecimal::from(10),
         )
@@ -944,8 +913,8 @@ mod tests {
         assert_eq!(gas(&rows[4]), None);
         assert_eq!(rows[4].tx_hash, Some(settlement_c.transaction_hash));
 
-        // The order-detail query attributes the same cost per order, summed
-        // across the order's fills (see `crate::trades::ORDER_GAS_COST`).
+        // The order-detail queries attribute the same cost per order, summed
+        // across the order's fills (see `crate::trades::ORDER_GAS_COST_JOIN`).
         async fn order_gas(ex: &mut PgConnection, uid: &OrderUid) -> Option<u64> {
             crate::orders::single_full_order_with_quote(ex, uid)
                 .await
@@ -960,6 +929,68 @@ mod tests {
         assert_eq!(order_gas(&mut db, &order_c).await, Some(1500));
         // order_d's only settlement has no recorded gas.
         assert_eq!(order_gas(&mut db, &order_d).await, None);
+
+        // The batch variant agrees with the single-order one.
+        let mut batch = crate::orders::many_full_orders_with_quotes(
+            &mut db,
+            &[order_a, order_b, order_c, order_d],
+        )
+        .await
+        .unwrap();
+        batch.sort_by_key(|order| order.full_order.uid.0);
+        let mut expected = vec![
+            (order_a, Some(2000)),
+            (order_b, Some(500)),
+            (order_c, Some(1500)),
+            (order_d, None),
+        ];
+        expected.sort_by_key(|(uid, _)| uid.0);
+        assert_eq!(
+            batch
+                .iter()
+                .map(|order| (
+                    order.full_order.uid,
+                    order.full_order.gas_cost.as_ref().and_then(|c| c.to_u64())
+                ))
+                .collect::<Vec<_>>(),
+            expected
+        );
+
+        // The tx-scoped query joins `trades` itself, which the gas-cost join
+        // shadows. It must still report each order's total across all fills and,
+        // aggregating without `GROUP BY`, must not duplicate any row.
+        let in_tx = crate::orders::full_orders_in_tx(&mut db, &settlement_a.transaction_hash)
+            .map_ok(|order| {
+                (
+                    order.uid,
+                    order.gas_cost.as_ref().and_then(|cost| cost.to_u64()),
+                )
+            })
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        assert_eq!(in_tx, vec![(order_a, Some(2000)), (order_b, Some(500))]);
+
+        // Filtering must not change the divisor: `order_b` is one of settlement
+        // A's 2 trades, so its share stays 1000 / 2 even though the query returns
+        // a single row. Dividing by the number of *returned* rows would report
+        // the whole settlement's cost instead.
+        let filtered = trades(&mut db, None, Some(&order_b), 0, 1000)
+            .into_inner()
+            .await
+            .unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(gas(&filtered[0]), Some(500));
+
+        // Same for pagination: a page holding one of settlement B's 2 trades
+        // still reports half of its 3000.
+        let paginated = trades(&mut db, Some(&owner), None, 2, 1)
+            .into_inner()
+            .await
+            .unwrap();
+        assert_eq!(paginated.len(), 1);
+        assert_eq!(paginated[0].order_uid, order_a);
+        assert_eq!(gas(&paginated[0]), Some(1500));
     }
 
     #[tokio::test]
