@@ -249,9 +249,9 @@ struct ResolvedOrder {
 struct SlotBuffer {
     slot: Slot,
     events: Vec<DecodedEvent>,
-    /// Failed transactions with their own slot: an out-of-order transaction
-    /// folds into a later slot's buffer but its dead-letter row keeps the
-    /// slot it actually landed in.
+    /// Failed transactions and the slot each belongs to. A late transaction
+    /// lands in a newer slot's buffer, so the buffer's slot would be wrong
+    /// for its dead-letter row.
     dead_letters: Vec<(Signature, Slot)>,
 }
 
