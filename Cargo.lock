@@ -1567,6 +1567,7 @@ dependencies = [
  "bigdecimal",
  "chain-types",
  "database",
+ "hex",
  "sqlx",
  "tokio",
  "tracing",

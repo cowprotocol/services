@@ -10,6 +10,7 @@ async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 chain-types = { workspace = true }
 database = { workspace = true }
+hex = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["time"] }
 tracing = { workspace = true }

@@ -56,12 +56,25 @@ impl AuctionInfo for Auction {
 
 /// Cut an auction from the orders currently open for solving.
 pub async fn cut(ex: impl PgExecutor<'_>, id: i64, now_unix: i64) -> Result<Auction> {
-    let orders = db::open_orders(ex, now_unix)
-        .await?
-        .into_iter()
-        .map(Order::from_row)
-        .collect::<Result<_>>()?;
+    let orders = orders_from_rows(db::open_orders(ex, now_unix).await?);
     Ok(Auction { id, orders })
+}
+
+/// A row the indexer wrote always converts (on-chain values fit the domain
+/// types), so a failure means corrupt data. The corrupt order is skipped
+/// instead of failing the cut, which would block solving for every other
+/// order.
+fn orders_from_rows(rows: Vec<db::OrderRow>) -> Vec<Order> {
+    rows.into_iter()
+        .filter_map(|row| {
+            let uid = row.uid;
+            Order::from_row(row)
+                .map_err(|err| {
+                    tracing::warn!(uid = %hex::encode(uid.0), ?err, "skipping corrupt order row")
+                })
+                .ok()
+        })
+        .collect()
 }
 
 impl Order {
@@ -133,6 +146,14 @@ mod tests {
         let mut bad_kind = row();
         bad_kind.kind = "liquidity".to_owned();
         assert!(Order::from_row(bad_kind).is_err());
+    }
+
+    #[test]
+    fn a_corrupt_row_is_skipped_not_fatal() {
+        let mut corrupt = row();
+        corrupt.sell_amount = BigDecimal::from(u64::MAX) + BigDecimal::from(1u64);
+        let orders = super::orders_from_rows(vec![row(), corrupt]);
+        assert_eq!(orders.len(), 1);
     }
 
     #[test]
