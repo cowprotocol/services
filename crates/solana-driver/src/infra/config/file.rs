@@ -2,7 +2,7 @@
 
 use {
     crate::infra::config::{Chain, Config, Http, Rpc, Solver},
-    serde::Deserialize,
+    serde::{Deserialize, Deserializer},
     std::{net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
 };
@@ -27,11 +27,6 @@ pub async fn load(path: &Path) -> Config {
             )
         }
     });
-
-    assert!(
-        !config.rpc.endpoints.is_empty(),
-        "at least one RPC endpoint must be configured"
-    );
 
     Config {
         chain: Chain {
@@ -61,12 +56,26 @@ pub async fn load(path: &Path) -> Config {
     }
 }
 
+/// Deserializes a sequence, erroring if it is empty.
+fn deserialize_nonempty<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let vec = Vec::<T>::deserialize(deserializer)?;
+    if vec.is_empty() {
+        return Err(serde::de::Error::custom("expected at least one element"));
+    }
+    Ok(vec)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct FileConfig {
     chain: ChainConfig,
     rpc: RpcConfig,
     http: HttpConfig,
+    #[serde(deserialize_with = "deserialize_nonempty")]
     solvers: Vec<SolverConfig>,
 }
 
@@ -79,6 +88,7 @@ struct ChainConfig {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RpcConfig {
+    #[serde(deserialize_with = "deserialize_nonempty")]
     endpoints: Vec<url::Url>,
     #[serde(with = "humantime_serde")]
     request_timeout: Duration,
@@ -119,14 +129,11 @@ mod tests {
         assert_eq!(config.solvers[0].max_in_flight, 1);
     }
 
-    #[tokio::test]
-    #[should_panic(expected = "at least one RPC endpoint")]
-    async fn missing_endpoints() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        std::fs::write(
-            &path,
-            r#"
+    /// Rejecting an empty list happens at deserialization (via
+    /// `deserialize_nonempty`), so we assert on the TOML parse error directly.
+    #[test]
+    fn empty_endpoints_rejected() {
+        let config = r#"
             [chain]
             settlement-program-id = "11111111111111111111111111111111"
 
@@ -142,9 +149,36 @@ mod tests {
             name = "baseline"
             endpoint = "http://localhost:8001"
             max-in-flight = 1
-            "#,
-        )
-        .unwrap();
-        load(&path).await;
+        "#;
+        let err = toml::de::from_str::<FileConfig>(config)
+            .expect_err("empty endpoints should be rejected");
+        assert!(
+            err.to_string().contains("expected at least one element"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn empty_solvers_rejected() {
+        let config = r#"
+            solvers = []
+
+            [chain]
+            settlement-program-id = "11111111111111111111111111111111"
+
+            [rpc]
+            endpoints = ["https://api.mainnet.solana.com"]
+            request-timeout = "10s"
+            confirm-transaction-initial-timeout = "10s"
+
+            [http]
+            bind-address = "0.0.0.0:8080"
+        "#;
+        let err =
+            toml::de::from_str::<FileConfig>(config).expect_err("empty solvers should be rejected");
+        assert!(
+            err.to_string().contains("expected at least one element"),
+            "unexpected error: {err}"
+        );
     }
 }
