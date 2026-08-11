@@ -18,7 +18,6 @@ path = "src/main.rs"
 [dependencies]
 clap = { workspace = true }
 futures = { workspace = true }
-mimalloc = { workspace = true, optional = true }
 observe = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
@@ -26,7 +25,6 @@ tracing = { workspace = true }
 
 [features]
 default = []
-mimalloc-allocator = ["dep:mimalloc"]
 
 [lints]
 workspace = true

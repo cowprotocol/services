@@ -9799,7 +9799,6 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "futures",
- "mimalloc",
  "observe",
  "tikv-jemallocator",
  "tokio",
