@@ -325,10 +325,16 @@ pub struct Metrics {
     last_block_number: prometheus::core::GenericGauge<prometheus::core::AtomicU64>,
 
     /// Measures how much time passes between 2 blocks
+    // buckets were chosen to have high resolution around target block times of various
+    // chains (250ms, 500ms, 1s, 2s, 5s, 12s)
     #[metric(buckets(
-        0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1., 1.25, 1.5, 1.75, 2., 2.25, 2.5, 3., 4., 5., 10.,
+        0., 0.1, 0.2, 0.25, 0.3, // 250ms
+        0.4, 0.5, // 500ms
+        0.75, 1., 1.25, // 1s
+        1.5, 1.75, 2., 2.25, 2.5, // 2s
+        4.25, 4.5, 5., 5.25, 5.5, // 5s
         10.25, 10.5, 10.75, 11., 11.25, 11.5, 11.75, 12., 12.25, 12.5, 12.75, 13., 13.25, 13.5,
-        13.75, 14.
+        13.75, 14. // 12s
     ))]
     time_since_last_block: prometheus::Histogram,
 }
