@@ -2,6 +2,7 @@
 
 use {
     crate::infra::config::{Chain, Config, Http, Rpc, Solver},
+    configs::shared::LoggingConfig,
     serde::{Deserialize, Deserializer},
     std::{net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
@@ -41,6 +42,7 @@ pub async fn load(path: &Path) -> Config {
         http: Http {
             bind_address: config.http.bind_address,
         },
+        logging: config.logging,
         solvers: config
             .solvers
             .into_iter()
@@ -72,6 +74,8 @@ struct FileConfig {
     chain: ChainConfig,
     rpc: RpcConfig,
     http: HttpConfig,
+    #[serde(default)]
+    logging: LoggingConfig,
     #[serde(deserialize_with = "deserialize_nonempty")]
     solvers: Vec<SolverConfig>,
 }

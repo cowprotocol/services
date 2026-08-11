@@ -10,10 +10,6 @@ use {
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
 pub struct Args {
-    /// Log filter for the tracing framework.
-    #[arg(long, env, default_value = "info,solana_driver=debug")]
-    log: String,
-
     /// Path to the TOML configuration file.
     #[arg(long, env)]
     config: PathBuf,
@@ -27,12 +23,12 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
 /// Runs the driver, blocking until the shutdown signal is received.
 pub async fn run(args: Args) {
-    infra_observe::init(observe::Config::default().with_env_filter(&args.log));
+    let config = config::file::load(&args.config).await;
+
+    infra_observe::init(config.observe_config());
 
     let version = observe::version::git_version();
     tracing::info!(%version, "running solana driver");
-
-    let config = config::file::load(&args.config).await;
     tracing::info!(?config, "loaded config");
 
     tracing::info!("awaiting shutdown signal");

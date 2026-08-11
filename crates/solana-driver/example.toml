@@ -11,6 +11,11 @@ request-timeout = "10s"
 [http]
 bind-address = "0.0.0.0:8080"
 
+[logging]
+filter = "info,solana_driver=debug"
+# stderr-threshold = "warn"
+# use-json = false
+
 [[solvers]]
 name = "baseline"
 endpoint = "http://localhost:8001"

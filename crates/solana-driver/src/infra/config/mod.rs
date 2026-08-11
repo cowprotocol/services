@@ -3,6 +3,7 @@
 pub mod file;
 
 use {
+    configs::shared::LoggingConfig,
     solana_sdk::pubkey::Pubkey,
     std::{net::SocketAddr, time::Duration},
 };
@@ -16,8 +17,23 @@ pub struct Config {
     pub rpc: Rpc,
     /// HTTP API server configuration.
     pub http: Http,
+    /// Logging configuration.
+    pub logging: LoggingConfig,
     /// Configured solver engines to query for solutions.
     pub solvers: Vec<Solver>,
+}
+
+impl Config {
+    /// Build the `observe::Config` for the tracing framework from the logging
+    /// configuration.
+    pub fn observe_config(&self) -> observe::Config {
+        observe::Config::new(
+            &self.logging.filter,
+            self.logging.stderr_threshold,
+            self.logging.use_json,
+            None,
+        )
+    }
 }
 
 /// Solana chain configuration.

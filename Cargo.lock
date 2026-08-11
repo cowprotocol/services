@@ -9798,6 +9798,7 @@ name = "solana-driver"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "configs",
  "futures",
  "humantime-serde",
  "observe",
