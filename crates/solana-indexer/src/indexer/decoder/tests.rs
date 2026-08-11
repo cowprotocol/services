@@ -23,6 +23,7 @@ use {
                 InnerInstructions,
                 Message,
                 SubscribeUpdate,
+                SubscribeUpdateSlot,
                 SubscribeUpdateTransaction,
                 SubscribeUpdateTransactionInfo,
                 Transaction,
@@ -315,6 +316,17 @@ fn test_decoder(settlement: Pubkey, solflow: Pubkey) -> (Decoder, Sender<StreamU
     let (sender, rx) = tokio::sync::mpsc::channel(16);
     let decoder = Decoder::new(Persistence::default(), rx, settlement, solflow);
     (decoder, sender)
+}
+
+/// A slot-status message in the proto envelope the ingester reads.
+fn slot_status_update(slot: u64) -> SubscribeUpdate {
+    SubscribeUpdate {
+        update_oneof: Some(UpdateOneof::Slot(SubscribeUpdateSlot {
+            slot,
+            ..Default::default()
+        })),
+        ..Default::default()
+    }
 }
 
 /// Wrap a transaction fixture in the proto envelope the ingester reads.
@@ -621,7 +633,8 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 /// only test spanning the channel, so it pins that what the ingester forwards
 /// is what the decoder can consume, and it drives all three persistence
 /// writes: the bare watermark for a slot with no events, the dead letter for
-/// a failed decode, and the event batch of a slot cut off by the stream end.
+/// a failed decode, and the event batch flushed once a slot status moves the
+/// stream past the hold-back window.
 #[tokio::test]
 async fn ingester_to_decoder_persists_decoded_events() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
@@ -662,7 +675,11 @@ async fn ingester_to_decoder_persists_decoded_events() {
     let (sender, receiver) = tokio::sync::mpsc::channel(16);
     let persistence = Persistence::default();
     let mut ingester = Ingester::new(
-        stream::iter([Ok(tx_update(42, reverted)), Ok(tx_update(43, partial))]),
+        stream::iter([
+            Ok(tx_update(42, reverted)),
+            Ok(tx_update(43, partial)),
+            Ok(slot_status_update(45)),
+        ]),
         sender,
         Arc::new(AtomicU64::new(0)),
     );
@@ -686,15 +703,15 @@ async fn ingester_to_decoder_persists_decoded_events() {
                 signature: signature(10),
                 slot: Slot(43),
             },
-            // The stream ends inside slot 43, so its events persist with the
-            // watermark held at the previous slot and a restart replays it.
+            // The slot-45 status moves the stream two past 43, so slot 43
+            // flushes as complete and the watermark reaches it.
             Call::PersistEvents {
                 events: vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
                     order_uid: expected_uid,
                     owner: Pubkey::new_from_array([0x11; 32]),
                     created_by,
                 })],
-                watermark: Slot(42),
+                watermark: Slot(43),
             },
         ]
     );
