@@ -6,10 +6,12 @@ use {
     database::{byte_array::ByteArray, order_events},
     sqlx::{Acquire, Error, PgConnection},
     tokio::time::Instant,
+    tracing::instrument,
 };
 
 impl super::Postgres {
     /// Deletes events before the provided timestamp.
+    #[instrument(skip_all)]
     pub async fn delete_order_events_before(&self, timestamp: DateTime<Utc>) -> Result<u64, Error> {
         order_events::delete_order_events_before(&self.pool, timestamp).await
     }

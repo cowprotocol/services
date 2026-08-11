@@ -13,7 +13,7 @@ use {
     },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
-    tracing::{Instrument, instrument},
+    tracing::instrument,
     url::Url,
 };
 
@@ -142,47 +142,31 @@ pub async fn current_block_ws_stream(
         // Process incoming blocks. WsConnect handles reconnection automatically,
         // so we don't need manual reconnection logic here.
         while let Some(block) = stream.next().await {
-            let block_info = match BlockInfo::try_from(block.clone()) {
-                Ok(info) => info,
-                Err(err) => {
-                    tracing::error!(?err, ?block, "failed to parse block, skipping");
-                    continue;
-                }
-            };
-
-            update_current_block_metrics(block_info.number);
-
-            // If the block is exactly the same as the previous one, ignore it.
-            if previous_block.hash == block_info.hash {
-                continue;
-            }
-
-            tracing::debug!(number=%block_info.number, hash=?block_info.hash, "received block");
-            update_block_metrics(previous_block.number, block_info.number);
-
-            // Only update the stream if the number has increased.
-            if block_info.number <= previous_block.number {
-                continue;
-            }
-
-            tracing::info!(number=%block_info.number, hash=?block_info.hash, "noticed a new block");
-            if let Err(err) = sender.send(block_info) {
-                tracing::error!(
-                    ?err,
-                    "failed to send block to stream, aborting subscription loop"
-                );
-                panic!("subscription loop terminated due to sender failure");
-            }
-
-            previous_block = block_info;
+            convert_block_and_process(block, &mut previous_block, &sender);
         }
 
         // If we reach here, the stream ended permanently
         tracing::error!("block stream ended after max reconnection attempts");
     };
 
-    tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
+    tokio::task::spawn(update_future);
     Ok(receiver)
+}
+
+#[instrument(skip_all)]
+fn convert_block_and_process(
+    block: alloy_rpc_types::Header,
+    previous_block: &mut BlockInfo,
+    sender: &watch::Sender<BlockInfo>,
+) {
+    let block_info = match BlockInfo::try_from(block.clone()) {
+        Ok(info) => info,
+        Err(err) => {
+            tracing::error!(?err, ?block, "failed to parse block, skipping");
+            return;
+        }
+    };
+    handle_new_block(previous_block, block_info, sender);
 }
 
 /// Creates a cloneable stream that yields the current block whenever it
@@ -218,46 +202,58 @@ pub async fn current_block_stream(
         let mut previous_block = first_block;
         loop {
             tokio::time::sleep(poll_interval).await;
-            let block = match get_block_at_id(&provider, BlockId::latest()).await {
-                Ok(block) => block,
-                Err(err) => {
-                    tracing::warn!("failed to get current block: {:?}", err);
-                    continue;
-                }
-            };
-
-            update_current_block_metrics(block.number);
-
-            // If the block is exactly the same, ignore it.
-            if previous_block.hash == block.hash {
-                continue;
-            }
-
-            // The new block is different but might still have the same number.
-
-            tracing::debug!(number=%block.number, hash=?block.hash, "polled block");
-            update_block_metrics(previous_block.number, block.number);
-
-            // Only update the stream if the number has increased.
-            if block.number <= previous_block.number {
-                continue;
-            }
-
-            tracing::info!(number=%block.number, hash=?block.hash, "noticed a new block");
-            if let Err(err) = sender.send(block) {
-                tracing::error!(
-                    ?err,
-                    "failed to send block to stream, aborting polling loop"
-                );
-                panic!("polling loop terminated due to sender failure");
-            }
-
-            previous_block = block;
+            fetch_block_and_process(&provider, &mut previous_block, &sender).await;
         }
     };
 
-    tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
+    tokio::task::spawn(update_future);
     Ok(receiver)
+}
+
+#[instrument(skip_all)]
+async fn fetch_block_and_process(
+    provider: &AlloyProvider,
+    previous_block: &mut BlockInfo,
+    sender: &watch::Sender<BlockInfo>,
+) {
+    let block = match get_block_at_id(provider, BlockId::latest()).await {
+        Ok(block) => block,
+        Err(err) => {
+            tracing::warn!("failed to get current block: {:?}", err);
+            return;
+        }
+    };
+    handle_new_block(previous_block, block, sender);
+}
+
+/// Applies a freshly observed block to the shared watcher, updating metrics
+/// and forwarding it if it represents progress relative to `previous_block`.
+fn handle_new_block(
+    previous_block: &mut BlockInfo,
+    new_block: BlockInfo,
+    sender: &watch::Sender<BlockInfo>,
+) {
+    // If the block is exactly the same as the previous one, ignore it.
+    if previous_block.hash == new_block.hash {
+        return;
+    }
+
+    tracing::debug!(number=%new_block.number, hash=?new_block.hash, "observed new block");
+
+    // Only update the stream if the number has increased.
+    if new_block.number <= previous_block.number {
+        return;
+    }
+
+    update_block_metrics(previous_block, &new_block);
+
+    tracing::info!(number=%new_block.number, hash=?new_block.hash, "noticed a new block");
+    if let Err(err) = sender.send(new_block) {
+        tracing::error!(?err, "failed to send block to stream, aborting loop");
+        panic!("block stream loop terminated due to sender failure");
+    }
+
+    *previous_block = new_block;
 }
 
 /// A method for creating a block stream with an initial value that never
@@ -327,30 +323,42 @@ pub struct Metrics {
 
     /// Records newly observed block number.
     last_block_number: prometheus::core::GenericGauge<prometheus::core::AtomicU64>,
+
+    /// Measures how much time passes between 2 blocks
+    // buckets were chosen to have high resolution around target block times of various
+    // chains (250ms, 500ms, 1s, 2s, 5s, 12s)
+    #[metric(buckets(
+        0., 0.1, 0.2, 0.25, 0.3, // 250ms
+        0.4, 0.5, // 500ms
+        0.75, 1., 1.25, // 1s
+        1.5, 1.75, 2., 2.25, 2.5, // 2s
+        4.25, 4.5, 5., 5.25, 5.5, // 5s
+        10.25, 10.5, 10.75, 11., 11.25, 11.5, 11.75, 12., 12.25, 12.5, 12.75, 13., 13.25, 13.5,
+        13.75, 14. // 12s
+    ))]
+    time_since_last_block: prometheus::Histogram,
 }
 
-/// Updates metrics about the difference of the new block number compared to the
-/// current block.
-fn update_block_metrics(current_block: u64, new_block: u64) {
-    let metric = &Metrics::instance(observe::metrics::get_storage_registry())
-        .unwrap()
-        .block_stream_update_delta;
+fn update_block_metrics(previous_block: &BlockInfo, new_block: &BlockInfo) {
+    let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
-    let delta = (i128::from(new_block) - i128::from(current_block)) as f64;
+    let delta = (i128::from(new_block.number) - i128::from(previous_block.number)) as f64;
     if delta <= 0. {
-        metric.with_label_values(&["negative"]).observe(delta.abs());
+        metrics
+            .block_stream_update_delta
+            .with_label_values(&["negative"])
+            .observe(delta.abs());
     } else {
-        metric.with_label_values(&["positive"]).observe(delta.abs());
+        metrics
+            .block_stream_update_delta
+            .with_label_values(&["positive"])
+            .observe(delta.abs());
     }
-}
 
-/// Records newly observed block number in the metrics.
-fn update_current_block_metrics(block_number: u64) {
-    let metric = &Metrics::instance(observe::metrics::get_storage_registry())
-        .unwrap()
-        .last_block_number;
-
-    metric.set(block_number);
+    metrics.last_block_number.set(new_block.number);
+    metrics
+        .time_since_last_block
+        .observe(previous_block.observed_at.elapsed().as_secs_f64());
 }
 
 /// Awaits and returns the next block that will be pushed into the stream.

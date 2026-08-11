@@ -32,7 +32,6 @@ chain = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["clock"] }
 configs = { workspace = true }
 const-hex = { workspace = true }
-cow-amm = { workspace = true }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
 eth-domain-types = { workspace = true }
@@ -44,6 +43,7 @@ hex-literal = { workspace = true }
 http-client = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
+indexmap = { workspace = true }
 itertools = { workspace = true }
 liquidity-sources = { workspace = true }
 mimalloc = { workspace = true, optional = true }

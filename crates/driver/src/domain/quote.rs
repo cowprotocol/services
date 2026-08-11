@@ -1,5 +1,5 @@
 use {
-    super::competition::{auction, risk_detector, solution},
+    super::competition::{Competition, auction, solution},
     crate::{
         boundary,
         domain::{
@@ -35,11 +35,12 @@ pub struct Quote {
     pub tx_origin: Option<eth::Address>,
     #[debug(ignore)]
     pub jit_orders: Vec<solution::trade::Jit>,
+    pub solution_id: Option<u64>,
 }
 
 impl Quote {
-    fn try_new(eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
-        let clearing_prices = Self::compute_clearing_prices(&solution)?;
+    fn try_new(eth: &Ethereum, solution: &competition::Solution) -> Result<Self, Error> {
+        let clearing_prices = Self::compute_clearing_prices(solution)?;
 
         Ok(Self {
             clearing_prices,
@@ -63,6 +64,7 @@ impl Quote {
                     _ => None,
                 })
                 .collect(),
+            solution_id: None,
         })
     }
 
@@ -119,6 +121,8 @@ pub struct Order {
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
     pub enable_fast_path: bool,
+    /// Unique auction id for a fast-path quote. `None` for regular quotes.
+    pub auction_id: Option<i64>,
 }
 
 impl Order {
@@ -132,7 +136,7 @@ impl Order {
         solver: &Solver,
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
-        risk_detector: &risk_detector::Detector,
+        competition: &Competition,
     ) -> Result<Quote, Error> {
         if self.enable_fast_path && !solver.fast_path_enabled() {
             return Err(Error::QuotingFailed(QuotingFailed::FastPathNotSupported));
@@ -150,22 +154,36 @@ impl Order {
         let auction = self
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
-        let auction = risk_detector
+        let auction = competition
+            .risk_detector
             .filter_unsupported_orders_in_auction(auction)
             .await;
         if auction.orders.is_empty() {
             return Err(QuotingFailed::UnsupportedToken.into());
         }
         let solutions = solver.solve(&auction, &liquidity).await?;
-        Quote::try_new(
-            eth,
-            // TODO(#1468): choose the best solution in the future, but for now just pick the
-            // first solution
-            solutions
-                .into_iter()
-                .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
-                .ok_or(QuotingFailed::NoSolutions)?,
-        )
+        // TODO(#1468): choose the best solution in the future, but for now just pick
+        // the first solution.
+        let solution = solutions
+            .into_iter()
+            .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
+            .ok_or(QuotingFailed::NoSolutions)?;
+        let mut quote = Quote::try_new(eth, &solution)?;
+
+        // Cache the fast-path solution so the autopilot can settle it during the
+        // exclusivity window. The quote's order is synthetic (unsigned), so the
+        // settlement is re-encoded against the real order at settle time.
+        quote.solution_id = match (self.enable_fast_path, self.auction_id) {
+            (true, Some(auction_id)) => {
+                let solution_id = solution.id().get();
+                competition
+                    .cache_quote_solution(auction::Id(auction_id), solution)
+                    .await;
+                Some(solution_id)
+            }
+            _ => None,
+        };
+        Ok(quote)
     }
 
     async fn fake_auction(
@@ -180,7 +198,7 @@ impl Order {
         let sell_token_metadata = tokens.get(&self.sell().token);
 
         competition::Auction::new(
-            None,
+            self.auction_id.map(auction::Id),
             vec![competition::Order {
                 data: std::sync::Arc::new(competition::order::OrderData {
                     uid: Default::default(),

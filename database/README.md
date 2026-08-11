@@ -236,6 +236,7 @@ Quotes that an order was created with. These quotes get stored persistently and 
  verified            | boolean     | not null | information if quote was verified
  metadata            | json        | not null | additional data associated with the quote in json format
  creation\_timestamp | timestamptz | not null | when the entry was created (DEFAULT NOW() for new and 1970-01-01 for historical data)
+ auction\_id         | bigint      | nullable | the auction competition that was the basis for this quote, the limit price of fast path executions will be derived from this competition
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
@@ -267,7 +268,8 @@ Column                    | Type                         | Nullable | Details
  sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
- true_valid_to | timestamptz                  | not null | timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
+ true_valid_to | bigint                       | not null | UNIX timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
+ valid\_from               | bigint                       | nullable | earliest UNIX timestamp (in seconds) at which the order may enter a batch auction. Taken from the order's app-data (`validFrom`). NULL means no lower bound, i.e. the order is eligible immediately (the default for all existing orders).
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)
@@ -279,6 +281,7 @@ Indexes:
 - user_order_creation_timestamp: btree(`owner`, `creation_timestamp` DESC)
 - version_idx: btree(`settlement_contract`)
 - orders\_true\_valid\_to: btree(`true_valid_to`)
+- orders\_valid\_from: btree(`valid_from`) WHERE valid_from IS NOT NULL
 - orders_owner_covering: btree(`owner`) INCLUDE (`uid`, `kind`, `buy_amount`, `sell_amount`, `fee_amount`, `buy_token`, `sell_token`)
 - orders_owner_class_valid_composite: btree(`owner`, `class`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL
 
@@ -349,6 +352,7 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  solver                | bytea              | not null | public address of the solver that provided this quote
  verified              | boolean            | not null | information if quote was verified
  metadata              | json               | not null | additional data associated with the quote in json format
+ auction\_id           | bigint             | nullable | the auction competition that was the basis for this quote, the limit price of fast path executions will be derived from this competition
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
@@ -423,14 +427,18 @@ Indexes:
 
 Stores data and metadata of [`Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68) events emitted from the settlement contract.
 
- Column        | Type   | Nullable | Details
----------------|--------|----------|--------
- block\_number | bigint | not null | block in which the settlement happened
- log\_index    | bigint | not null | index in which the event was emitted
- solver        | bytea  | not null | public address of the executing solver
- tx\_hash      | bytea  | not null | transaction hash in which the settlement got executed
- auction\_id    | bigint | nullable | corresponding auction ID that initiated the settlement
- solution\_uid  | bigint | nullable | corresponding winning solver's solution UID, which is also used to identify settlements from the current environment
+ Column                | Type           | Nullable | Details
+-----------------------|----------------|----------|--------
+block\_number          | bigint         | not null | block in which the settlement happened
+log\_index             | bigint         | not null | index in which the event was emitted
+solver                 | bytea          | not null | public address of the executing solver
+tx\_hash               | bytea          | not null | transaction hash in which the settlement got executed
+auction\_id            | bigint         | nullable | corresponding auction ID that initiated the settlement
+solution\_uid          | bigint         | nullable | corresponding winning solver's solution UID, which is also used to identify settlements from the current environment
+gas\_used              | numeric(78, 0) | nullable | gas consumed by the settlement transaction, read from the transaction receipt
+ effective\_gas\_price | numeric(78, 0) | nullable | gas price actually paid per unit of gas (in wei), read from the transaction receipt
+
+The total on-chain cost of a settlement is `gas_used * effective_gas_price`. Both columns are populated by the `autopilot`'s settlement observer and are only set for settlements observed after the migration that added them; historical rows were not backfilled, so consumers (e.g. the `orderbook` attributing gas cost to individual trades and orders) must handle `NULL`.
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`,`log_index`)
@@ -456,18 +464,6 @@ outcome          | text        | nullable | outcome of the settlement execution
 Indexes:
 - PRIMARY KEY: btree(`auction_id`, `solver`, `solution_uid`)
 - settlement\_executions\_time\_range\_index: btree(`start_timestamp`, `end_timestamp`)
-
-### solver\_competitions
-
-Stores an overview of the solver competition. It contains orders in the auction along with prices for every relevant token as well as all valid solutions submitted by solvers together with their quality.
-
- Column | Type   | Nullable | Details
---------|--------|----------|--------
- id     | bigint | not null | id of the auction that the solver competition belongs to
- json   | jsonb  | nullable | overview of the solver competition with unspecified format
-
-Indexes:
-- PRIMARY KEY: btree(`id`)
 
 ### trades
 
@@ -522,22 +518,6 @@ Indexes:
 - jit\_event\_id: btree(`block_number`, `log_index`)
 
 The `pool-indexer` service uses its own per-network database, not these shared DBs. Its tables (`pool_indexer_checkpoints`, `uniswap_v3_pools`, `uniswap_v3_pool_states`, `uniswap_v3_ticks`) and migrations live in [`sql-pool-indexer/`](sql-pool-indexer/).
-
-### cow\_amms
-
-Stores information about indexed CoW AMMs that have been discovered through blockchain events. Each row represents a CoW AMM pool with its associated factory contract and tradeable tokens.
-
- Column             | Type     | Nullable | Details
---------------------|----------|----------|--------
- address            | bytea    | not null | Address of the CoW AMM pool contract
- factory\_address   | bytea    | not null | Address of the factory contract associated with this AMM
- tradeable\_tokens  | bytea[]  | not null | Token addresses that can be traded through this AMM
- block\_number      | bigint   | not null | Block number in which the AMM was deployed/finalized
- tx\_hash           | bytea    | not null | Transaction hash in which the AMM was deployed/finalized
-
-Indexes:
-- PRIMARY KEY: btree (`address`)
-- cow\_amms\_factory\_block: btree (`factory_address`, `block_number`)
 
 ### Enums
 

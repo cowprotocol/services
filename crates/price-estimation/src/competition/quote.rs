@@ -1,12 +1,14 @@
 use {
     super::{CompetitionEstimator, EstimatorIndex, PriceRanking, compare_error},
     crate::{
+        CompetitionPriceEstimating,
         Estimate,
         PriceEstimateResult,
         PriceEstimating,
         PriceEstimationError,
         Query,
         QuoteVerificationMode,
+        RankedEstimates,
         StreamingPriceEstimating,
     },
     alloy::primitives::{Address, U256},
@@ -28,9 +30,12 @@ use {
     tracing::instrument,
 };
 
-impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
+impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
     #[instrument(skip_all)]
-    fn estimate(&self, mut query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
+    fn estimates(
+        &self,
+        mut query: Arc<Query>,
+    ) -> BoxFuture<'_, Result<RankedEstimates, PriceEstimationError>> {
         Arc::make_mut(&mut query).timeout /= self.stages.len() as u32;
 
         async move {
@@ -65,25 +70,32 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 })
                 .map(Result::Ok);
 
-            let (context, results) = futures::try_join!(get_context, get_results)?;
+            let (context, mut results) = futures::try_join!(get_context, get_results)?;
 
-            let winner = results
-                .into_iter()
-                .filter(|(_index, r)| r.is_err() || is_reasonable(r))
-                .max_by(|a, b| {
-                    compare_quote_result(&query, &a.1, &b.1, &context, self.verification_mode)
-                })
-                .ok_or_else(unreasonable_estimates_error)?;
+            // Keep all errors, but drop unreasonable Ok results.
+            results.retain(|(_, r)| r.is_err() || is_reasonable(r));
 
-            if winner.1.is_ok() {
-                let EstimatorIndex(stage_index, estimator_index) = winner.0;
-                let (name, _) = &self.stages[stage_index][estimator_index];
-                emit_winning_price_estimate_event(name, &query);
+            // Rank all estimates from best to worst so callers can inspect the
+            // full ordering (e.g. the reference score of the winner).
+            results.sort_by(|(_, a), (_, b)| {
+                compare_quote_result(&query, a, b, &context, self.verification_mode).reverse()
+            });
+
+            let mut results = results.into_iter();
+            let Some(winner) = results.next() else {
+                return Err(unreasonable_estimates_error());
+            };
+
+            self.report_winner(&query, query.kind, &winner);
+            match winner {
+                (_, Err(err)) => Err(err),
+                (EstimatorIndex(stage_index, estimator_index), Ok(quote)) => {
+                    let (name, _) = &self.stages[stage_index][estimator_index];
+                    emit_winning_price_estimate_event(name, &query);
+                    let rest = results.filter_map(|(_, r)| r.ok());
+                    Ok(RankedEstimates::new(quote, rest))
+                }
             }
-            // the winner.is_ok check is repeated inside report_winner
-            // but due to the return, the simplest way to handle this is keep it here
-            // TODO: clean this up
-            self.report_winner(&query, query.kind, winner)
         }
         .boxed()
     }
@@ -96,13 +108,13 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
     /// regresses. The first successful quote goes out as soon as the
     /// fastest solver answers. The caller stops by dropping the stream.
     ///
-    /// "Better" is the same ranking the one-shot [`Self::estimate`] uses.
+    /// "Better" is the same ranking the one-shot [`Self::estimates`] uses.
     /// A verified quote outranks an unverified one regardless of `out_amount`,
     /// so a later verified quote can supersede an earlier unverified one that
     /// had a higher nominal amount.
     ///
     /// Errors are not forwarded as they arrive. If no quote is ever produced,
-    /// the stream ends with the single error the one-shot [`Self::estimate`]
+    /// the stream ends with the single error the one-shot [`Self::estimates`]
     /// would return for the same query: the highest-priority estimator error,
     /// or the "unreasonable estimates" error when every quote had 0 gas or 0
     /// out_amount.
@@ -278,7 +290,8 @@ impl RankingContext {
             // Note on truncation: previously we used primitive_types::U256::from_f64_lossy which
             // truncated the floating point, while alloy is slightly more faithful to the original
             // value and rounds to closest integer: [0, 0.5) => 0, [0.5, 1] => 1
-            v => U256::from(v.trunc()),
+            // Source: https://github.com/paritytech/parity-common/blob/2b887751f2bd3aafe7d6b33197f5a4a35ae61d34/primitive-types/src/fp_conversion.rs#L4-L13
+            v => U256::saturating_from(v.trunc()),
         }
     }
 }
@@ -335,7 +348,13 @@ fn emit_quote_event(
 mod tests {
     use {
         super::*,
-        crate::{MockPriceEstimating, QuoteVerificationMode, native::MockNativePriceEstimating},
+        crate::{
+            CompetitionPriceEstimating,
+            Estimate,
+            MockPriceEstimating,
+            QuoteVerificationMode,
+            native::MockNativePriceEstimating,
+        },
         alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
         gas_price_estimation::FakeGasPriceEstimator,
         model::order::OrderKind,
@@ -374,14 +393,14 @@ mod tests {
         }
     }
 
-    /// Returns the best estimate with respect to the provided ranking and order
-    /// kind.
-    async fn best_response(
+    /// Runs all provided estimators and returns all ranked quotes best-first,
+    /// or the highest-priority error if every estimator failed.
+    async fn competition_results(
         ranking: PriceRanking,
         kind: OrderKind,
         estimates: Vec<PriceEstimateResult>,
         verification: QuoteVerificationMode,
-    ) -> PriceEstimateResult {
+    ) -> Result<Vec<Estimate>, PriceEstimationError> {
         fn estimator(estimate: PriceEstimateResult) -> Arc<dyn PriceEstimating> {
             let mut estimator = MockPriceEstimating::new();
             estimator
@@ -404,21 +423,23 @@ mod tests {
         .with_verification(verification);
 
         priority
-            .estimate(Arc::new(Query {
+            .estimates(Arc::new(Query {
                 kind,
                 ..Default::default()
             }))
             .await
+            .map(|r| r.into_vec())
     }
 
     /// Verifies that `PriceRanking::BestBangForBuck` correctly adjusts
     /// `out_amount` of quotes based on the `gas` used for the quote. E.g.
     /// if a quote requires a significantly more complex execution but does
     /// not provide a significantly better `out_amount` than a simpler quote
-    /// the simpler quote will be preferred.
+    /// the simpler quote will be preferred, and both quotes appear in the
+    /// ranked output in that order.
     #[tokio::test]
     async fn best_bang_for_buck_adjusts_for_complexity() {
-        let best = best_response(
+        let quotes = competition_results(
             bang_for_buck_ranking(),
             OrderKind::Sell,
             vec![
@@ -429,10 +450,17 @@ mod tests {
             ],
             QuoteVerificationMode::Unverified,
         )
-        .await;
-        assert_eq!(best, price(104_000, 1_000));
+        .await
+        .unwrap();
+        assert_eq!(
+            quotes,
+            vec![
+                price(104_000, 1_000).unwrap(),
+                price(107_999, 2_000).unwrap(),
+            ]
+        );
 
-        let best = best_response(
+        let quotes = competition_results(
             bang_for_buck_ranking(),
             OrderKind::Buy,
             vec![
@@ -443,8 +471,12 @@ mod tests {
             ],
             QuoteVerificationMode::Unverified,
         )
-        .await;
-        assert_eq!(best, price(96_000, 1_000));
+        .await
+        .unwrap();
+        assert_eq!(
+            quotes,
+            vec![price(96_000, 1_000).unwrap(), price(92_002, 2_000).unwrap(),]
+        );
     }
 
     /// Same test as above but now we also add an estimate that should
@@ -453,7 +485,7 @@ mod tests {
     /// low fees for user orders.
     #[tokio::test]
     async fn discards_low_gas_cost_estimates() {
-        let best = best_response(
+        let quotes = competition_results(
             bang_for_buck_ranking(),
             OrderKind::Sell,
             vec![
@@ -461,16 +493,22 @@ mod tests {
                 price(104_000, 1_000),
                 // User effectively receives `99_999` `buy_token`.
                 price(107_999, 2_000),
-                // User effectively receives `104_000` `buy_token` but the estimate
-                // gets discarded because it quotes 0 gas.
+                // Would win on raw out_amount, but discarded because gas=0.
                 price(104_000, 0),
             ],
             QuoteVerificationMode::Unverified,
         )
-        .await;
-        assert_eq!(best, price(104_000, 1_000));
+        .await
+        .unwrap();
+        assert_eq!(
+            quotes,
+            vec![
+                price(104_000, 1_000).unwrap(),
+                price(107_999, 2_000).unwrap(),
+            ]
+        );
 
-        let best = best_response(
+        let quotes = competition_results(
             bang_for_buck_ranking(),
             OrderKind::Buy,
             vec![
@@ -478,22 +516,24 @@ mod tests {
                 price(96_000, 1_000),
                 // User effectively pays `100_002` `sell_token`.
                 price(92_002, 2_000),
-                // User effectively pays `99_000` `sell_token` but the estimate
-                // gets discarded because it quotes 0 gas.
+                // Would win on raw out_amount, but discarded because gas=0.
                 price(99_000, 0),
             ],
             QuoteVerificationMode::Unverified,
         )
-        .await;
-        assert_eq!(best, price(96_000, 1_000));
+        .await
+        .unwrap();
+        assert_eq!(
+            quotes,
+            vec![price(96_000, 1_000).unwrap(), price(92_002, 2_000).unwrap(),]
+        );
     }
 
     /// If all estimators returned an error we return the one with the highest
     /// priority.
     #[tokio::test]
     async fn returns_highest_priority_error() {
-        // Returns errors with highest priority.
-        let best = best_response(
+        let err = competition_results(
             PriceRanking::MaxOutAmount,
             OrderKind::Sell,
             vec![
@@ -502,14 +542,16 @@ mod tests {
             ],
             QuoteVerificationMode::Unverified,
         )
-        .await;
-        assert_eq!(best, error(PriceEstimationError::RateLimited));
+        .await
+        .unwrap_err();
+        assert_eq!(err, PriceEstimationError::RateLimited);
     }
 
     /// Any price estimate, no matter how bad, is preferred over an error.
+    /// The error is not included in the ranked output.
     #[tokio::test]
     async fn prefer_estimate_over_error() {
-        let best = best_response(
+        let quotes = competition_results(
             PriceRanking::MaxOutAmount,
             OrderKind::Sell,
             vec![
@@ -518,8 +560,9 @@ mod tests {
             ],
             QuoteVerificationMode::Unverified,
         )
-        .await;
-        assert_eq!(best, price(1, 1_000_000));
+        .await
+        .unwrap();
+        assert_eq!(quotes, vec![price(1, 1_000_000).unwrap()]);
     }
 
     #[tokio::test]
@@ -537,7 +580,8 @@ mod tests {
             ..Default::default()
         });
 
-        let best = best_response(
+        // With Prefer: verified quote leads even though price is worse.
+        let quotes = competition_results(
             PriceRanking::MaxOutAmount,
             OrderKind::Sell,
             vec![
@@ -546,10 +590,19 @@ mod tests {
             ],
             QuoteVerificationMode::Prefer,
         )
-        .await;
-        assert_eq!(best, worse_verified_quote.clone());
+        .await
+        .unwrap();
+        assert_eq!(
+            quotes,
+            vec![
+                worse_verified_quote.clone().unwrap(),
+                better_unverified_quote.clone().unwrap(),
+            ]
+        );
 
-        let best = best_response(
+        // Without verification preference: better price leads regardless of
+        // verification status.
+        let quotes = competition_results(
             PriceRanking::MaxOutAmount,
             OrderKind::Sell,
             vec![
@@ -558,7 +611,14 @@ mod tests {
             ],
             QuoteVerificationMode::Unverified,
         )
-        .await;
-        assert_eq!(best, better_unverified_quote);
+        .await
+        .unwrap();
+        assert_eq!(
+            quotes,
+            vec![
+                better_unverified_quote.clone().unwrap(),
+                worse_verified_quote.clone().unwrap(),
+            ]
+        );
     }
 }

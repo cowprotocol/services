@@ -132,6 +132,12 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .validate()
         .expect("failed to validate configuration file");
 
+    let chain_name = config
+        .shared
+        .chain_id
+        .and_then(|id| Chain::try_from(id).ok())
+        .map(|chain| chain.name())
+        .unwrap_or("unknown");
     let tracing_config = config
         .shared
         .tracing
@@ -140,7 +146,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .map(|endpoint| {
             observe::TracingConfig::new(
                 endpoint.clone(),
-                "autopilot".into(),
+                format!("autopilot-{chain_name}"),
                 config.shared.tracing.exporter_timeout,
                 config.shared.tracing.level,
             )
@@ -343,7 +349,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
-                config.native_price_estimation.eip4626,
+                &config.native_price_estimation.eip4626,
             )
             .instrument(info_span!("api_native_price_estimator"))
             .await,
@@ -356,7 +362,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
-                config.native_price_estimation.eip4626,
+                &config.native_price_estimation.eip4626,
             )
             .instrument(info_span!("competition_native_price_updater"))
             .await;
@@ -426,27 +432,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         skip_event_sync_start,
     );
 
-    let archive_node_web3 = config
-        .cow_amm
-        .archive_node_url
-        .as_ref()
-        .map_or(web3.clone(), |url| boundary::web3_client(url, &ethrpc_args));
-
-    let mut cow_amm_registry = cow_amm::Registry::new(Arc::new(BlockRetriever {
-        provider: archive_node_web3.provider,
-        block_stream: eth.current_block().clone(),
-    }));
-    for cow_amm_config in &config.cow_amm.contracts {
-        cow_amm_registry
-            .add_listener(
-                cow_amm_config.index_start,
-                cow_amm_config.factory,
-                cow_amm_config.helper,
-                db_write.pool.clone(),
-            )
-            .await;
-    }
-
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
         api_native_price_estimator.clone(),
@@ -470,23 +455,29 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         config.price_estimation.max_quote_timeout,
     ));
 
-    let solvable_orders_cache = SolvableOrdersCache::new(
-        config.min_order_validity_period,
-        persistence.clone(),
-        infra::banned::Users::new(
+    let banned_users =
+        Arc::new(order_validation::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
-            config
-                .banned_users
-                .hermod
-                .clone()
-                .map(|hermod| infra::banned::HermodConfig {
+            config.banned_users.hermod.clone().map(|hermod| {
+                order_validation::banned::HermodConfig {
                     url: hermod.url,
                     hmac_key: hermod.hmac_key,
                     api_key: hermod.api_key,
-                }),
+                }
+            }),
             config.banned_users.addresses,
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
-        ),
+        ));
+
+    // Wakes the run loop on new orders (via the notifier) and new blocks.
+    let wake_runloop = Arc::new(tokio::sync::Notify::new());
+    infra::order_notify::Notifier::new(banned_users.clone(), wake_runloop.clone())
+        .spawn(db_write.pool.clone());
+
+    let solvable_orders_cache = SolvableOrdersCache::new(
+        config.min_order_validity_period,
+        persistence.clone(),
+        banned_users.clone(),
         balance_fetcher.clone(),
         deny_listed_tokens.clone(),
         competition_native_price_updater.clone(),
@@ -502,7 +493,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             config.shared.enable_sell_equals_buy_volume_fee,
             *eth.contracts().weth().address(),
         ),
-        cow_amm_registry.clone(),
+        config.surplus_capturing_jit_order_owners,
         config.native_price_timeout,
         *eth.contracts().settlement().address(),
         config.disable_order_balance_filter,
@@ -535,11 +526,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         db_write.clone(),
     );
 
-    tokio::task::spawn(
-        order_events_cleaner
-            .run_forever()
-            .instrument(tracing::info_span!("order_events_cleaner")),
-    );
+    tokio::task::spawn(order_events_cleaner.run_forever());
 
     let market_makable_token_list_configuration = TokenListConfiguration {
         url: config.trusted_tokens.url.clone(),
@@ -559,7 +546,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         db_write.clone(),
         settlement_observer,
     );
-    maintenance.add_cow_amm_indexer(&cow_amm_registry);
 
     if !config.ethflow.contracts.is_empty() {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
@@ -652,6 +638,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             startup,
         },
         awaiter,
+        wake_runloop,
     );
     run.run_forever(shutdown_controller).await;
 

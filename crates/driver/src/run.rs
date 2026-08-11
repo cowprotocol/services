@@ -15,6 +15,8 @@ use {
             solver::Solver,
         },
     },
+    alloy::providers::Provider,
+    chain::Chain,
     clap::Parser,
     futures::future::join_all,
     http_client::HttpClientFactory,
@@ -22,6 +24,7 @@ use {
     simulator::{self, Simulator},
     std::{net::SocketAddr, time::Duration},
     tokio::sync::oneshot,
+    url::Url,
 };
 
 /// The driver entry-point. This function exists in order to be able to run the
@@ -48,11 +51,16 @@ pub async fn run(
 /// Run the driver. This function exists to avoid multiple monomorphizations of
 /// the `run` code, which bloats the binaries and increases compile times.
 async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
+    // use dedicated function instead of reading this from `ethrpc` to make
+    // sure we fully initialize the metrics registry before calling any code
+    // that populates those metrics
+    let chain_name = get_chain_name(args.ethrpc.clone()).await;
+
     infra::observe::init(observe::Config::new(
         &args.log,
         args.stderr_threshold,
         args.use_json_logs,
-        tracing_config(&args.tracing, "driver".into()),
+        tracing_config(&args.tracing, format!("driver-{chain_name}")),
     ));
 
     let ethrpc = ethrpc(&args).await;
@@ -228,4 +236,15 @@ fn liquidity_sources_notifier(
         .unwrap_or(&notify::liquidity_sources::config::Config { liquorice: None });
     notify::liquidity_sources::Notifier::try_new(notifier_config, eth.chain())
         .expect("initialize notify sources notifier")
+}
+
+async fn get_chain_name(rpc: Url) -> &'static str {
+    let provider = alloy::providers::builder::<alloy::network::Ethereum>().connect_http(rpc);
+    provider
+        .get_chain_id()
+        .await
+        .ok()
+        .and_then(|id| Chain::try_from(id).ok())
+        .map(|chain| chain.name())
+        .unwrap_or("unknown")
 }

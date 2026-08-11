@@ -163,6 +163,10 @@ pub struct Query {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
     pub timeout: Duration,
+    /// Only populated for fast path requests and used to later tell the
+    /// driver which solution to execute.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auction_id: Option<i64>,
 }
 
 /// Conditions under which a given price estimate needs to work in order to be
@@ -235,6 +239,44 @@ pub trait PriceEstimating: Send + Sync + 'static {
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 pub trait StreamingPriceEstimating: Send + Sync + 'static {
     fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult>;
+}
+
+/// All estimates returned by a [`CompetitionPriceEstimating`] call, ordered
+/// best to worst. Guaranteed to be non-empty.
+#[derive(Debug)]
+pub struct RankedEstimates {
+    values: Vec<Estimate>,
+}
+
+impl RankedEstimates {
+    /// Constructs from a guaranteed best estimate plus any remaining estimates
+    /// in best-to-worst order.
+    pub fn new(best: Estimate, rest: impl IntoIterator<Item = Estimate>) -> Self {
+        let values = std::iter::once(best).chain(rest).collect();
+        Self { values }
+    }
+
+    /// Returns all estimates ordered best to worst.
+    #[cfg(test)]
+    pub fn into_vec(self) -> Vec<Estimate> {
+        self.values
+    }
+
+    pub fn into_best_and_rest(self) -> (Estimate, impl Iterator<Item = Estimate>) {
+        let mut iter = self.values.into_iter();
+        let best = iter.next().expect("non-empty by construction");
+        (best, iter)
+    }
+}
+
+/// Like `PriceEstimating`, but returns all estimates collected from all inner
+/// estimators as a [`RankedEstimates`], ordered best to worst.
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
+pub trait CompetitionPriceEstimating: Send + Sync + 'static {
+    fn estimates(
+        &self,
+        query: Arc<Query>,
+    ) -> BoxFuture<'_, Result<RankedEstimates, PriceEstimationError>>;
 }
 
 pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);
