@@ -1,4 +1,5 @@
 mod banned;
+mod fast_path;
 mod run_loop;
 
 use {
@@ -9,6 +10,8 @@ use {
     sqlx::PgPool,
     std::{sync::Arc, time::Duration},
 };
+
+pub use self::fast_path::FastPathSettler;
 
 /// A system interested in every order arriving in the orderbook.
 ///
@@ -26,11 +29,16 @@ pub struct Notifier {
 }
 
 impl Notifier {
-    pub fn new(banned_users: Arc<Users>, run_loop_wake: Arc<tokio::sync::Notify>) -> Self {
+    pub fn new(
+        banned_users: Arc<Users>,
+        run_loop_wake: Arc<tokio::sync::Notify>,
+        fast_path_settler: FastPathSettler,
+    ) -> Self {
         Self {
             listeners: vec![
                 Box::new(RunLoopWaker(run_loop_wake)),
                 Box::new(CachePrewarmer(banned_users)),
+                Box::new(fast_path_settler),
             ],
         }
     }

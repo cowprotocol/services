@@ -1037,6 +1037,67 @@ impl Persistence {
             .map(|o| crate::domain::OrderUid(o.0))
             .collect())
     }
+
+    /// Recover everything needed to settle a fast-path (out-of-competition)
+    /// order via the driver's `/settle`, or `None` when `uid` is not a
+    /// fast-path order: no auction linked to its quote, or the quote's
+    /// competition (solution id + solver) has not been persisted yet.
+    pub async fn fast_path_order(
+        &self,
+        uid: domain::OrderUid,
+    ) -> anyhow::Result<Option<FastPathOrder>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["fast_path_order"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let key = ByteArray(uid.0);
+
+        let Some(quote) = database::orders::read_quote(&mut ex, &key).await? else {
+            return Ok(None);
+        };
+        let Some(auction_id) = quote.auction_id else {
+            return Ok(None);
+        };
+        let Some(solution) =
+            solver_competition_v2::fast_path_solution(&mut ex, auction_id, &key).await?
+        else {
+            return Ok(None);
+        };
+        let Some(order) = database::orders::single_full_order_with_quote(&mut ex, &key).await?
+        else {
+            return Ok(None);
+        };
+
+        let model_order = full_order_into_model_order(order.full_order)?;
+        // Fast-path re-encodes the cached solution at the quoted fill, so its
+        // own fees and quote apply; the order carries neither here.
+        let order = boundary::order::to_domain(&model_order, vec![], None);
+
+        Ok(Some(FastPathOrder {
+            order,
+            auction_id,
+            solution_id: u64::try_from(solution.solution_uid).context("negative solution id")?,
+            solver: eth::Address::from(solution.solver.0),
+            limit_sell: big_decimal_to_u256(&solution.executed_sell)
+                .context("invalid executed sell amount")?,
+            limit_buy: big_decimal_to_u256(&solution.executed_buy)
+                .context("invalid executed buy amount")?,
+        }))
+    }
+}
+
+/// The data the autopilot needs to settle a fast-path order out of competition.
+pub struct FastPathOrder {
+    pub order: domain::Order,
+    pub auction_id: database::auction::AuctionId,
+    pub solution_id: u64,
+    pub solver: eth::Address,
+    /// The sell/buy amounts the winning solution fills the order at — the exact
+    /// price the fast-path settlement must reproduce.
+    pub limit_sell: eth::U256,
+    pub limit_buy: eth::U256,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
