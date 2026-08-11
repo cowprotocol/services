@@ -89,6 +89,39 @@ pub struct LimitPrices {
     pub buy: eth::U256,
 }
 
+/// Whether `order` describes the same trade as `quoted`: same tokens, side and
+/// target amount. A partial check, not full order equality.
+fn compare_orders(order: &competition::Order, quoted: &competition::Order) -> bool {
+    order.sell.token == quoted.sell.token
+        && order.buy.token == quoted.buy.token
+        && order.side == quoted.side
+        && order.target() == quoted.target()
+}
+
+fn recover_flashloans_and_wrappers(
+    order: &competition::Order,
+) -> (HashMap<order::Uid, Flashloan>, Vec<WrapperCall>) {
+    let flashloans = order
+        .app_data
+        .flashloan()
+        .map(|f| {
+            let flashloan = domain::flashloan::Flashloan::from(f);
+            (order.uid, (&flashloan).into())
+        })
+        .into_iter()
+        .collect();
+    let wrappers = order
+        .app_data
+        .wrappers()
+        .iter()
+        .map(|w| WrapperCall {
+            address: w.address,
+            data: w.data.clone().into(),
+        })
+        .collect();
+    (flashloans, wrappers)
+}
+
 impl Solution {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
@@ -534,22 +567,10 @@ impl Solution {
             return Err(error::Error::FastPathTradeCount(self.user_trades().count()));
         };
 
-        let quoted = user.order();
-        if (
-            order.sell.token,
-            order.buy.token,
-            order.side,
-            order.target(),
-        ) != (
-            quoted.sell.token,
-            quoted.buy.token,
-            quoted.side,
-            quoted.target(),
-        ) {
+        if !compare_orders(&order, user.order()) {
             return Err(error::Error::FastPathOrderMismatch);
         }
 
-        // read prices from `self`: the clone is mutably borrowed by `user`.
         let clearing = ClearingPrices {
             sell: self
                 .clearing_price(order.sell.token)
@@ -566,24 +587,7 @@ impl Solution {
             return Err(error::Error::FastPathLimitNotMet);
         }
 
-        let flashloans = order
-            .app_data
-            .flashloan()
-            .map(|f| {
-                let flashloan = domain::flashloan::Flashloan::from(f);
-                (order.uid, (&flashloan).into())
-            })
-            .into_iter()
-            .collect();
-        let wrappers = order
-            .app_data
-            .wrappers()
-            .iter()
-            .map(|w| WrapperCall {
-                address: w.address,
-                data: w.data.clone().into(),
-            })
-            .collect();
+        let (flashloans, wrappers) = recover_flashloans_and_wrappers(&order);
         *user = user.with_order(order)?;
         solution.flashloans = flashloans;
         solution.wrappers = wrappers;
@@ -785,7 +789,7 @@ pub mod error {
         FastPathTradeCount(usize),
         #[error("fast-path order does not match the quoted order")]
         FastPathOrderMismatch,
-        #[error("invalid fast-path trade: {0:?}")]
+        #[error(transparent)]
         FastPathTrade(#[from] Trade),
         #[error("Gas estimate of {0:?} exceeded the per settlement limit of {1:?}")]
         GasLimitExceeded(eth::Gas, eth::Gas),
@@ -797,7 +801,7 @@ pub mod error {
         Encoding(#[from] encoding::Error),
         #[error("fast-path fill would not meet the order's signed limit")]
         FastPathLimitNotMet,
-        #[error("math error: {0:?}")]
+        #[error(transparent)]
         Math(#[from] Math),
     }
 

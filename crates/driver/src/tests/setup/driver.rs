@@ -115,14 +115,17 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
 /// The native-price map (`{token: wei}`, 1 ETH each) for a quoted order's
 /// tokens, in the shape the driver expects on the /settle request.
 pub fn prices_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_json::Value {
-    let mut prices = serde_json::Map::new();
-    for token in [quote.order.sell_token, quote.order.buy_token] {
-        prices.insert(
-            test.blockchain.get_token(token).encode_hex_with_prefix(),
-            json!("1000000000000000000"),
-        );
-    }
-    serde_json::Value::Object(prices)
+    let prices: std::collections::BTreeMap<String, &str> =
+        [quote.order.sell_token, quote.order.buy_token]
+            .into_iter()
+            .map(|token| {
+                (
+                    test.blockchain.get_token(token).encode_hex_with_prefix(),
+                    "1000000000000000000",
+                )
+            })
+            .collect();
+    json!(prices)
 }
 
 /// Create a request for the driver /solve endpoint.

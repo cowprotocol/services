@@ -600,7 +600,11 @@ impl Competition {
         let solution = cached
             .solution
             .finalize_fast_path_solution(order.clone(), limit_prices)
-            .map_err(Error::FastPathInvalidOrder)?;
+            .map_err(|err| match err {
+                solution::Error::FastPathOrderMismatch => Error::FastPathOrderMismatch,
+                solution::Error::FastPathLimitNotMet => Error::FastPathLimitNotMet,
+                other => Error::FastPathInvalidOrder(other),
+            })?;
         let prices: auction::Prices = native_prices
             .into_iter()
             .filter_map(
@@ -1191,7 +1195,11 @@ pub enum Error {
     NoValidOrdersFound,
     #[error("could not parse the request")]
     MalformedRequest,
-    #[error("fast-path order does not match the quoted solution: {0:?}")]
+    #[error("fast-path settle order does not match the quote")]
+    FastPathOrderMismatch,
+    #[error("fast-path fill would not meet the order's signed limit")]
+    FastPathLimitNotMet,
+    #[error(transparent)]
     FastPathInvalidOrder(solution::Error),
     #[error("failed to build fast-path settlement: {0:?}")]
     FastPathSettlement(#[from] solution::Error),

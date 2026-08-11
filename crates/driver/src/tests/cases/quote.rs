@@ -215,7 +215,7 @@ async fn fast_path_settle_rejects_mismatched_order() {
     )
     .await
     .err()
-    .kind("InvalidFastPathOrder");
+    .kind("FastPathOrderMismatch");
 }
 
 /// A settle order for a different amount than the quote is rejected.
@@ -234,7 +234,7 @@ async fn fast_path_settle_rejects_wrong_amount() {
     )
     .await
     .err()
-    .kind("InvalidFastPathOrder");
+    .kind("FastPathOrderMismatch");
 }
 
 /// A settle whose limit prices demand more than the cached quote can deliver is
@@ -254,7 +254,7 @@ async fn fast_path_settle_rejects_tight_limit() {
     )
     .await
     .err()
-    .kind("InvalidFastPathOrder");
+    .kind("FastPathLimitNotMet");
 }
 
 /// Test that quote haircut correctly reduces the executed amount for quotes
