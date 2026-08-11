@@ -37,7 +37,6 @@ pub async fn load(path: &Path) -> Config {
         rpc: Rpc {
             endpoints: config.rpc.endpoints,
             request_timeout: config.rpc.request_timeout,
-            confirm_transaction_initial_timeout: config.rpc.confirm_transaction_initial_timeout,
         },
         http: Http {
             bind_address: config.http.bind_address,
@@ -90,8 +89,6 @@ struct RpcConfig {
     endpoints: Vec<url::Url>,
     #[serde(with = "humantime_serde")]
     request_timeout: Duration,
-    #[serde(with = "humantime_serde")]
-    confirm_transaction_initial_timeout: Duration,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,10 +115,6 @@ mod tests {
         let config = load(&path).await;
 
         assert_eq!(config.rpc.endpoints.len(), 1);
-        assert_eq!(
-            config.rpc.confirm_transaction_initial_timeout,
-            Duration::from_secs(10)
-        );
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");
         assert_eq!(config.solvers[0].max_in_flight, 1);
@@ -138,7 +131,6 @@ mod tests {
             [rpc]
             endpoints = []
             request-timeout = "10s"
-            confirm-transaction-initial-timeout = "10s"
 
             [http]
             bind-address = "0.0.0.0:8080"
@@ -167,7 +159,6 @@ mod tests {
             [rpc]
             endpoints = ["https://api.mainnet.solana.com"]
             request-timeout = "10s"
-            confirm-transaction-initial-timeout = "10s"
 
             [http]
             bind-address = "0.0.0.0:8080"

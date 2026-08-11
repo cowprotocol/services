@@ -27,7 +27,6 @@ pub struct Chain {
 pub struct Rpc {
     pub endpoints: Vec<url::Url>,
     pub request_timeout: Duration,
-    pub confirm_transaction_initial_timeout: Duration,
 }
 
 /// HTTP API server configuration.
