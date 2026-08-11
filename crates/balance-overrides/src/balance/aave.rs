@@ -194,13 +194,13 @@ mod tests {
     use {
         super::*,
         crate::balance::Strategy,
-        alloy_primitives::{address, b256, hex},
+        alloy_primitives::{address, b256},
         alloy_provider::mock::Asserter,
         alloy_sol_types::SolValue,
     };
 
     fn encode_address(addr: Address) -> String {
-        hex::encode_prefixed(addr.into_word())
+        const_hex::encode_prefixed(addr.into_word())
     }
 
     /// Encodes a `ReserveData` struct as the ABI return payload the pool
@@ -224,7 +224,7 @@ mod tests {
             unbacked: 0,
             isolationModeTotalDebt: 0,
         };
-        hex::encode_prefixed(data.abi_encode())
+        const_hex::encode_prefixed(data.abi_encode())
     }
 
     /// Builds an `Asserter` primed with the three responses the probe

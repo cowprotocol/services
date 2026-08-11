@@ -33,6 +33,7 @@ ethrpc = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+const-hex = { workspace = true }
 
 [lints]
 workspace = true

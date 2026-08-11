@@ -2242,6 +2242,7 @@ dependencies = [
  "async-trait",
  "clap",
  "configs",
+ "const-hex",
  "contracts",
  "ethrpc",
  "maplit",

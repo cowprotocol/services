@@ -1,5 +1,5 @@
 use {
-    alloy_primitives::{U256, address, hex},
+    alloy_primitives::{U256, address},
     app_data::{AppDataHash, hash_full_app_data},
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -171,7 +171,7 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
     .await
     .expect("failed to create SettlementSimulator");
 
-    let signature_bytes = hex::decode(SIGNATURE_HEX.trim_start_matches("0x"))
+    let signature_bytes = const_hex::decode(SIGNATURE_HEX.trim_start_matches("0x"))
         .expect("SIGNATURE_HEX must be valid hex");
     let app_data_hash = AppDataHash(hash_full_app_data(full_app_data.as_bytes()));
 
@@ -283,8 +283,9 @@ async fn build_naturally_failing_replay_simulation(
     .await
     .expect("failed to create SettlementSimulator");
 
-    let signature_bytes = hex::decode(NATURALLY_FAILING_SIGNATURE_HEX.trim_start_matches("0x"))
-        .expect("NATURALLY_FAILING_SIGNATURE_HEX must be valid hex");
+    let signature_bytes =
+        const_hex::decode(NATURALLY_FAILING_SIGNATURE_HEX.trim_start_matches("0x"))
+            .expect("NATURALLY_FAILING_SIGNATURE_HEX must be valid hex");
     let app_data_hash = AppDataHash(hash_full_app_data(full_app_data.as_bytes()));
 
     let order_data = OrderData {
