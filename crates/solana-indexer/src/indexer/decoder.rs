@@ -155,9 +155,10 @@ impl<P: Persistence> Decoder<P> {
 
     /// Persist one slot's batch. Dead letters go first: once the watermark
     /// passes a slot it is never replayed wholesale, so its replay markers
-    /// must already be durable. A slot cut off by the stream end
-    /// (`complete = false`) keeps the watermark behind itself and writes
-    /// nothing when it also has no events.
+    /// must already be durable. Events and the watermark advance ride one
+    /// call so the adapter can apply both in one SQL transaction. A slot cut
+    /// off by the stream end (`complete = false`) keeps the watermark behind
+    /// itself.
     async fn flush_slot(
         &self,
         slot: Slot,
@@ -172,7 +173,11 @@ impl<P: Persistence> Decoder<P> {
         } else {
             Slot(u64::from(slot).saturating_sub(1))
         };
-        if complete || !buffer.events.is_empty() {
+        if buffer.events.is_empty() {
+            if complete {
+                self.persistence.write_watermark(watermark).await?;
+            }
+        } else {
             self.persistence
                 .persist_events(buffer.events, watermark)
                 .await?;

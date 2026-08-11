@@ -316,12 +316,13 @@ fn signature(n: u8) -> Signature {
 /// contract without a database behind it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Call {
-    /// Events plus the watermark they ride with. An empty batch is a bare
-    /// watermark advance.
+    /// Events plus the watermark they ride with.
     PersistEvents {
         events: Vec<DecodedEvent>,
         watermark: Slot,
     },
+    /// A watermark advance on a slot that decoded to no events.
+    Watermark(Slot),
     /// A transaction whose decode failed.
     DeadLetter { signature: Signature, slot: Slot },
 }
@@ -356,6 +357,14 @@ impl Persistence for Recorder {
             events,
             watermark: new_watermark,
         });
+        Ok(())
+    }
+
+    async fn write_watermark(
+        &self,
+        slot: Slot,
+    ) -> Result<(), crate::types::errors::PersistenceError> {
+        self.record(Call::Watermark(slot));
         Ok(())
     }
 
@@ -765,10 +774,7 @@ async fn ingester_to_decoder_persists_decoded_events() {
         vec![
             // Slot 42 produced no events and is flushed as a bare watermark
             // once slot 43 starts.
-            Call::PersistEvents {
-                events: vec![],
-                watermark: Slot(42),
-            },
+            Call::Watermark(Slot(42)),
             // The unknown discriminator dead-letters the slot 43 transaction.
             Call::DeadLetter {
                 signature: signature(10),

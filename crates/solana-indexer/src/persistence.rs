@@ -16,13 +16,15 @@ use {
 #[async_trait]
 pub(crate) trait Persistence: Send + Sync {
     /// Save one slot's decoded events and advance the slot watermark in one
-    /// transaction. An empty batch is a bare watermark advance. A backward
-    /// watermark write is a no-op.
+    /// transaction.
     async fn persist_events(
         &self,
         events: Vec<DecodedEvent>,
         new_watermark: Slot,
     ) -> Result<(), PersistenceError>;
+
+    /// Record a slot checkpoint. A backward write is a no-op.
+    async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError>;
 
     /// Record a transaction whose decode failed so recovery can replay it by
     /// signature. One row per transaction, idempotent on the signature.
@@ -209,15 +211,16 @@ impl Persistence for Postgres {
         events: Vec<DecodedEvent>,
         new_watermark: Slot,
     ) -> Result<(), PersistenceError> {
-        if events.is_empty() {
-            return Self::upsert_watermark(&self.pool, new_watermark).await;
-        }
         let mut tx = self.pool.begin().await?;
         for event in events {
             Self::apply(&mut tx, event).await?;
         }
         Self::upsert_watermark(&mut *tx, new_watermark).await?;
         Ok(tx.commit().await?)
+    }
+
+    async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
+        Self::upsert_watermark(&self.pool, slot).await
     }
 
     async fn write_dead_letter(
@@ -329,11 +332,11 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
         let postgres = Postgres::new(pool);
 
         assert_eq!(postgres.read_watermark().await.unwrap(), None);
-        postgres.persist_events(vec![], Slot(10)).await.unwrap();
+        postgres.write_watermark(Slot(10)).await.unwrap();
         assert_eq!(postgres.read_watermark().await.unwrap(), Some(Slot(10)));
-        postgres.persist_events(vec![], Slot(7)).await.unwrap();
+        postgres.write_watermark(Slot(7)).await.unwrap();
         assert_eq!(postgres.read_watermark().await.unwrap(), Some(Slot(10)));
-        postgres.persist_events(vec![], Slot(11)).await.unwrap();
+        postgres.write_watermark(Slot(11)).await.unwrap();
         assert_eq!(postgres.read_watermark().await.unwrap(), Some(Slot(11)));
     }
 
