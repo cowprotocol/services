@@ -1,7 +1,7 @@
 use {
     super::{
+        DecodeFailed,
         Decoder,
-        PartialDecode,
         ResolvedOrder,
         build_account_keys,
         decode_settlement,
@@ -418,16 +418,16 @@ fn decode_wraps_events_and_gates_on_transaction_meta() {
 
     tx.meta = None;
     let result = decoder.decode(tx.clone(), Slot(5), signature(6));
-    assert_eq!(result, Err(PartialDecode { events: vec![] }));
+    assert_eq!(result, Err(DecodeFailed));
 }
 
-/// A settlement instruction with an unknown discriminator sets the failure
-/// flag and yields no event, while an instruction that decodes cleanly in the
-/// same transaction still emits its event.
+/// A settlement instruction with an unknown discriminator fails the whole
+/// transaction, the cleanly decoding instruction next to it does not rescue
+/// it.
 #[test]
-fn unknown_discriminator_sets_failure_flag_and_keeps_good_events() {
+fn unknown_discriminator_fails_the_whole_transaction() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut tx, expected_uid, created_by) = create_order_tx();
+    let (mut tx, _, _) = create_order_tx();
     // Prepend a settlement instruction whose discriminator byte matches no
     // known instruction.
     let message = tx.transaction.as_mut().unwrap().message.as_mut().unwrap();
@@ -452,18 +452,9 @@ fn unknown_discriminator_sets_failure_flag_and_keeps_good_events() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, &solflow);
-    let result = decode_settlement(&instructions, &ctx, |_| None);
-
-    let Err(PartialDecode { events }) = result else {
-        panic!("expected a partial decode, got {result:?}");
-    };
     assert_eq!(
-        events,
-        vec![SettlementEvent::OrderCreated {
-            order_uid: expected_uid,
-            owner: Pubkey::new_from_array([0x11; 32]),
-            created_by,
-        }]
+        decode_settlement(&instructions, &ctx, |_| None),
+        Err(DecodeFailed)
     );
 }
 
@@ -501,9 +492,10 @@ fn unpaired_begin_settle_sets_failure_flag() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, &solflow);
-    let result = decode_settlement(&instructions, &ctx, |_| None);
-
-    assert_eq!(result, Err(PartialDecode { events: vec![] }));
+    assert_eq!(
+        decode_settlement(&instructions, &ctx, |_| None),
+        Err(DecodeFailed)
+    );
 }
 
 /// A `BeginSettle` + `FinalizeSettle` pair built by the client crate decodes
