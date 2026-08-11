@@ -153,7 +153,7 @@ where
         };
         match update {
             UpdateOneof::Transaction(tx_msg) => Self::handle_transaction(tx, tx_msg).await,
-            UpdateOneof::Slot(slot) => Self::handle_slot(latest_chain_slot, slot).await,
+            UpdateOneof::Slot(slot) => Self::handle_slot(tx, latest_chain_slot, slot).await,
 
             // Ping/Pong frames carry no data the ingester needs; the library passes them through,
             // and we drop them here.
@@ -195,14 +195,21 @@ where
         .await
     }
 
-    /// Consume a slot message: advance the in-memory chain-tip counter. Slot
-    /// messages never enter the channel, so this always continues.
+    /// Consume a slot message: advance the in-memory chain-tip counter and
+    /// forward the slot to the decoder so it can flush a finished buffer.
     async fn handle_slot(
+        tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
         slot: SubscribeUpdateSlot,
     ) -> ControlFlow<()> {
         latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
-        ControlFlow::Continue(())
+        Self::forward(
+            tx,
+            StreamUpdate::Slot {
+                slot: Slot(slot.slot),
+            },
+        )
+        .await
     }
 
     /// Push one update into the decoder channel. A full channel is the intended
