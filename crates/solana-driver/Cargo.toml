@@ -18,10 +18,18 @@ path = "src/main.rs"
 [dependencies]
 clap = { workspace = true }
 futures = { workspace = true }
+humantime-serde = { workspace = true }
 observe = { workspace = true }
+serde = { workspace = true }
+solana-sdk = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+toml = { workspace = true }
 tracing = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [features]
 default = []

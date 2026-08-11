@@ -1,6 +1,10 @@
 //! Driver entry-point logic.
 
-use {crate::infra::observe as infra_observe, clap::Parser};
+use {
+    crate::infra::{config, observe as infra_observe},
+    clap::Parser,
+    std::path::PathBuf,
+};
 
 /// The Solana driver command line arguments.
 #[derive(Debug, Parser)]
@@ -9,6 +13,10 @@ pub struct Args {
     /// Log filter for the tracing framework.
     #[arg(long, env, default_value = "info,solana_driver=debug")]
     log: String,
+
+    /// Path to the TOML configuration file.
+    #[arg(long, env)]
+    config: PathBuf,
 }
 
 /// The driver entry-point. Parses command-line arguments and runs the driver.
@@ -23,6 +31,9 @@ pub async fn run(args: Args) {
 
     let version = observe::version::git_version();
     tracing::info!(%version, "running solana driver");
+
+    let config = config::file::load(&args.config).await;
+    tracing::info!(?config, "loaded config");
 
     tracing::info!("awaiting shutdown signal");
     shutdown_signal().await;

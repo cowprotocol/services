@@ -9799,10 +9799,16 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "futures",
+ "humantime-serde",
  "observe",
+ "serde",
+ "solana-sdk",
+ "tempfile",
  "tikv-jemallocator",
  "tokio",
+ "toml",
  "tracing",
+ "url",
 ]
 
 [[package]]
