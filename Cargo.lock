@@ -2245,6 +2245,7 @@ dependencies = [
  "const-hex",
  "contracts",
  "ethrpc",
+ "hex-literal",
  "maplit",
  "moka",
  "serde",

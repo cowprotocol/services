@@ -1,6 +1,7 @@
 use {
-    alloy_primitives::{U256, address, hex},
+    alloy_primitives::{U256, address},
     app_data::{AppDataHash, hash_full_app_data},
+    hex_literal::hex,
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::Signature,
