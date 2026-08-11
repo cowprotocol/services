@@ -233,20 +233,19 @@ fn handle_new_block(
     new_block: BlockInfo,
     sender: &watch::Sender<BlockInfo>,
 ) {
-    update_current_block_metrics(new_block.number);
-
     // If the block is exactly the same as the previous one, ignore it.
     if previous_block.hash == new_block.hash {
         return;
     }
 
     tracing::debug!(number=%new_block.number, hash=?new_block.hash, "observed new block");
-    update_block_metrics(previous_block.number, new_block.number);
 
     // Only update the stream if the number has increased.
     if new_block.number <= previous_block.number {
         return;
     }
+
+    update_block_metrics(previous_block, &new_block);
 
     tracing::info!(number=%new_block.number, hash=?new_block.hash, "noticed a new block");
     if let Err(err) = sender.send(new_block) {
@@ -324,30 +323,42 @@ pub struct Metrics {
 
     /// Records newly observed block number.
     last_block_number: prometheus::core::GenericGauge<prometheus::core::AtomicU64>,
+
+    /// Measures how much time passes between 2 blocks
+    // buckets were chosen to have high resolution around target block times of various
+    // chains (250ms, 500ms, 1s, 2s, 5s, 12s)
+    #[metric(buckets(
+        0., 0.1, 0.2, 0.25, 0.3, // 250ms
+        0.4, 0.5, // 500ms
+        0.75, 1., 1.25, // 1s
+        1.5, 1.75, 2., 2.25, 2.5, // 2s
+        4.25, 4.5, 5., 5.25, 5.5, // 5s
+        10.25, 10.5, 10.75, 11., 11.25, 11.5, 11.75, 12., 12.25, 12.5, 12.75, 13., 13.25, 13.5,
+        13.75, 14. // 12s
+    ))]
+    time_since_last_block: prometheus::Histogram,
 }
 
-/// Updates metrics about the difference of the new block number compared to the
-/// current block.
-fn update_block_metrics(current_block: u64, new_block: u64) {
-    let metric = &Metrics::instance(observe::metrics::get_storage_registry())
-        .unwrap()
-        .block_stream_update_delta;
+fn update_block_metrics(previous_block: &BlockInfo, new_block: &BlockInfo) {
+    let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
-    let delta = (i128::from(new_block) - i128::from(current_block)) as f64;
+    let delta = (i128::from(new_block.number) - i128::from(previous_block.number)) as f64;
     if delta <= 0. {
-        metric.with_label_values(&["negative"]).observe(delta.abs());
+        metrics
+            .block_stream_update_delta
+            .with_label_values(&["negative"])
+            .observe(delta.abs());
     } else {
-        metric.with_label_values(&["positive"]).observe(delta.abs());
+        metrics
+            .block_stream_update_delta
+            .with_label_values(&["positive"])
+            .observe(delta.abs());
     }
-}
 
-/// Records newly observed block number in the metrics.
-fn update_current_block_metrics(block_number: u64) {
-    let metric = &Metrics::instance(observe::metrics::get_storage_registry())
-        .unwrap()
-        .last_block_number;
-
-    metric.set(block_number);
+    metrics.last_block_number.set(new_block.number);
+    metrics
+        .time_since_last_block
+        .observe(previous_block.observed_at.elapsed().as_secs_f64());
 }
 
 /// Awaits and returns the next block that will be pushed into the stream.
