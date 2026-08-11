@@ -514,8 +514,8 @@ impl Solution {
     }
 
     /// Swap this quote solution's single user order for the real signed
-    /// `order`, keeping the cached route and clearing prices, and recover the
-    /// order's flashloans/wrappers from its app-data.
+    /// `order`, pin the fill to the signed limit, and recover the order's
+    /// flashloans/wrappers from its app-data.
     pub fn finalize_fast_path_solution(
         &self,
         order: competition::Order,
@@ -587,6 +587,13 @@ impl Solution {
         *user = user.with_order(order)?;
         solution.flashloans = flashloans;
         solution.wrappers = wrappers;
+
+        // Pin the fill to the signed limit so it settles at exactly
+        // the price the autopilot expects.
+        let sell = user.order().sell.token.as_erc20(self.weth);
+        let buy = user.order().buy.token.as_erc20(self.weth);
+        solution.prices.insert(sell, limit_prices.buy);
+        solution.prices.insert(buy, limit_prices.sell);
         Ok(solution)
     }
 

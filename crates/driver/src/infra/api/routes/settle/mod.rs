@@ -2,11 +2,7 @@ mod dto;
 
 use {
     crate::{
-        domain::competition::{
-            auction,
-            order::app_data::{AppData, AppDataHash},
-            solution,
-        },
+        domain::competition::{auction, solution},
         infra::{
             api::{self, Error, State, extract::LoggingJson},
             observe,
@@ -30,8 +26,7 @@ async fn route(
     async move {
         observe::settling();
         if let Some(fast_path) = req.fast_path {
-            let app_data = AppData::Hash(AppDataHash::from(fast_path.order.app_data));
-            let order = fast_path.order.into_domain(app_data);
+            let order = fast_path.order.into_domain(None);
             let limit_prices = solution::LimitPrices {
                 sell: fast_path.limit_prices.sell,
                 buy: fast_path.limit_prices.buy,

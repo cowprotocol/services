@@ -54,10 +54,9 @@ impl SolveRequest {
             self.orders
                 .into_iter()
                 .map(|order| {
-                    let app_data = match app_data.get(&AppDataHash::from(order.app_data)) {
-                        Some(data) => AppData::Full(data.clone()),
-                        None => AppData::Hash(AppDataHash::from(order.app_data)),
-                    };
+                    let app_data = app_data
+                        .get(&AppDataHash::from(order.app_data))
+                        .map(|data| AppData::Full(data.clone()));
                     order.into_domain(app_data)
                 })
                 .collect(),
@@ -179,7 +178,8 @@ pub(crate) struct Order {
 
 impl Order {
     #[expect(deprecated)]
-    pub(crate) fn into_domain(self, app_data: AppData) -> competition::Order {
+    pub(crate) fn into_domain(self, app_data: Option<AppData>) -> competition::Order {
+        let app_data = app_data.unwrap_or_else(|| AppData::Hash(AppDataHash::from(self.app_data)));
         let partial = if self.partially_fillable {
             competition::order::Partial::Yes {
                 available: match self.kind {

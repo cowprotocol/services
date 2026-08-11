@@ -87,11 +87,10 @@ impl DataAggregator {
         let AppData::Hash(hash) = &order.app_data else {
             return;
         };
-        let hash = *hash;
         let Some(retriever) = self.utilities.app_data_retriever.as_ref() else {
             return;
         };
-        if let Ok(Some(doc)) = retriever.get_cached_or_fetch(&hash).await {
+        if let Ok(Some(doc)) = retriever.get_cached_or_fetch(hash).await {
             order.app_data = doc.into();
         }
     }

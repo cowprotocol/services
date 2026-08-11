@@ -613,9 +613,8 @@ components:
                 - $ref: "#/components/schemas/Order"
             limitPrices:
               description: >
-                The sell/buy amounts the order was quoted and signed at. The
-                cached solution must fill at least this well, otherwise the
-                settle is rejected and the order falls back to the normal auction.
+                The sell/buy amounts defining the exact price at which the order
+                must be filled.
               type: object
               properties:
                 sell:
@@ -625,7 +624,7 @@ components:
             nativePrices:
               description: >
                 Native prices (wei per 10**18 of the token), keyed by token
-                address, sizing the re-encoded settlement's slippage buffer.
+                address.
               type: object
               additionalProperties:
                 $ref: "#/components/schemas/TokenAmount"

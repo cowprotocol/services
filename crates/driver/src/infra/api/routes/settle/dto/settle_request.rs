@@ -29,11 +29,9 @@ pub struct SettleRequest {
 pub struct FastPath {
     /// The real signed order the cached solution is re-encoded against.
     pub order: Order,
-    /// The sell/buy amounts the order was quoted and signed at; the cached
-    /// solution must fill at least this well or the settle is rejected.
+    /// The sell/buy amounts defining the exact price the order must fill at.
     pub limit_prices: LimitPrices,
-    /// Native prices (wei per 10**18) for the order's tokens, sizing the
-    /// re-encoded settlement's slippage buffer.
+    /// Native prices (wei per 10**18) for the order's tokens.
     #[serde_as(as = "HashMap<_, serde_ext::U256>")]
     pub native_prices: HashMap<eth::Address, eth::U256>,
 }

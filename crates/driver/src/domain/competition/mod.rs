@@ -586,7 +586,7 @@ impl Competition {
         solution_id: u64,
         mut order: Order,
         limit_prices: solution::LimitPrices,
-        prices: HashMap<eth::Address, eth::U256>,
+        native_prices: HashMap<eth::Address, eth::U256>,
     ) -> Result<(), Error> {
         let cached = self
             .quote_solutions
@@ -601,7 +601,7 @@ impl Competition {
             .solution
             .finalize_fast_path_solution(order.clone(), limit_prices)
             .map_err(Error::FastPathInvalidOrder)?;
-        let prices: auction::Prices = prices
+        let prices: auction::Prices = native_prices
             .into_iter()
             .filter_map(
                 |(token, price)| match auction::Price::try_new(price.into()) {

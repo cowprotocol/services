@@ -1777,6 +1777,8 @@ impl OrderQuote {
 pub enum Balance {
     /// The balance should be greater than before.
     Greater,
+    /// The balance should be greater than before by an exact amount.
+    GreaterBy(eth::U256),
     /// The balance should be smaller than before by an exact amount.
     SmallerBy(eth::U256),
 }
@@ -1835,6 +1837,7 @@ impl SettleOk {
         let old_balance = self.old_balances.get(token).unwrap();
         match balance {
             Balance::Greater => assert!(new_balance > old_balance),
+            Balance::GreaterBy(diff) => assert_eq!(*new_balance, old_balance + diff),
             Balance::SmallerBy(diff) => assert_eq!(*new_balance, old_balance - diff),
         }
         self

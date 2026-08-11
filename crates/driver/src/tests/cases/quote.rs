@@ -163,6 +163,28 @@ async fn fast_path_settle() {
     .await;
 }
 
+/// The re-encoded settlement fills the order at exactly the signed limit, not
+/// the surplus the cached route would otherwise deliver.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_fills_at_limit() {
+    let test = fast_path_test().await;
+    let solution_id = test.quote().await.ok().solution_id();
+    let limit_prices = test.limit_prices_json();
+    let expected_buy: eth::U256 = limit_prices["buy"].as_str().unwrap().parse().unwrap();
+    test.settle_with_order(
+        solution_id,
+        test.order_json(),
+        limit_prices,
+        test.prices_json(),
+    )
+    .await
+    .ok()
+    .await
+    .balance(&test, "B", setup::Balance::GreaterBy(expected_buy))
+    .await;
+}
+
 /// Without the real order there is nothing to re-encode, so `/settle` finds no
 /// settlement.
 #[tokio::test]
