@@ -278,20 +278,50 @@ mod tests {
         }
     }
 
-    async fn seed_order(pool: &PgPool, uid: [u8; 32]) {
-        sqlx::query(
-            r#"
+    /// The `solana.orders` columns a seeded test order writes.
+    struct SeedOrder {
+        uid: [u8; 32],
+        owner: [u8; 32],
+        sell_amount: i64,
+        buy_amount: i64,
+        valid_to: i64,
+        kind: &'static str,
+        order_pda: [u8; 32],
+    }
+
+    impl SeedOrder {
+        fn new(uid: [u8; 32]) -> Self {
+            Self {
+                uid,
+                owner: [0xAA; 32],
+                sell_amount: 1_000,
+                buy_amount: 2_000,
+                valid_to: 42,
+                kind: "sell",
+                order_pda: uid,
+            }
+        }
+
+        async fn insert(self, pool: &PgPool) {
+            sqlx::query(
+                r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, fee_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, class, order_pda)
-VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 0, 42, 'sell', false, $2, now(), 'market', $1)
-            "#,
-        )
-        .bind(uid)
-        .bind([0xAA_u8; 32])
-        .execute(pool)
-        .await
-        .unwrap();
+VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 'market', $7)
+                "#,
+            )
+            .bind(self.uid)
+            .bind(self.owner)
+            .bind(self.sell_amount)
+            .bind(self.buy_amount)
+            .bind(self.valid_to)
+            .bind(self.kind)
+            .bind(self.order_pda)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
     }
 
     #[tokio::test]
@@ -342,7 +372,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 0, 42, 'sell', false, $2, now(), 'ma
         let postgres = Postgres::new(pool.clone());
 
         let uid = [1_u8; 32];
-        seed_order(&pool, uid).await;
+        SeedOrder::new(uid).insert(&pool).await;
         let events = vec![
             DecodedEvent::Settlement(SettlementEvent::OrderCreated(Box::new(
                 crate::types::events::CreatedOrder {
