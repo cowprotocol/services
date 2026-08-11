@@ -178,8 +178,9 @@ impl RunLoop {
             // order, new block). We only update the cache afterwards to update
             // to the most recent state.
             self_arc.wake_notify.notified().await;
-            let start_block = self_arc
-                .update_caches(&mut last_block, leader_lock_tracker.is_leader())
+            let start_block = self_arc.wait_until_auction_start(&mut last_block).await;
+            self_arc
+                .update_caches(start_block, leader_lock_tracker.is_leader())
                 .await;
 
             // caches are warmed up, we're ready to do leader work
@@ -199,7 +200,7 @@ impl RunLoop {
             {
                 let auction_id = auction.id;
                 self_arc
-                    .single_run(auction)
+                    .single_run(auction, start_block)
                     .instrument(tracing::info_span!("auction", auction_id))
                     .await
             }
@@ -234,10 +235,10 @@ impl RunLoop {
     }
 
     #[instrument(skip_all)]
-    async fn update_caches(&self, prev_block: &mut Option<B256>, is_leader: bool) -> BlockInfo {
+    async fn wait_until_auction_start(&self, prev_block: &mut Option<B256>) -> BlockInfo {
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
-        let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
+        if time_since_last_block > self.config.max_run_loop_delay {
             if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
                 // don't emit warning if we finished prev run loop within the same block
                 tracing::warn!(
@@ -248,8 +249,11 @@ impl RunLoop {
             ethrpc::block_stream::next_block(self.eth.current_block()).await
         } else {
             current_block
-        };
+        }
+    }
 
+    #[instrument(skip_all)]
+    async fn update_caches(&self, auction_block: BlockInfo, is_leader: bool) {
         {
             let _timer = Metrics::get().service_maintenance_time.start_timer();
             self.maintenance
@@ -271,7 +275,6 @@ impl RunLoop {
                 tracing::warn!(?err, "failed to update auction");
             }
         }
-        auction_block
     }
 
     /// Sleeps until the next auction is supposed to start, builds it and
@@ -333,8 +336,7 @@ impl RunLoop {
     }
 
     #[instrument(skip_all)]
-    async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
-        let single_run_start = Instant::now();
+    async fn single_run(self: &Arc<Self>, auction: domain::Auction, start_block: BlockInfo) {
         tracing::info!(auction_id = ?auction.id, "solving");
 
         // Mark all auction orders as `Ready` for competition
@@ -393,6 +395,7 @@ impl RunLoop {
             OrderEventLabel::Considered,
         );
         tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
+        Metrics::winner_declared(start_block.observed_at.elapsed());
 
         for (solution_uid, winner) in ranking.enumerated().filter(|(_, bid)| bid.is_winner()) {
             let (driver, solution) = (winner.driver(), winner.solution());
@@ -400,7 +403,7 @@ impl RunLoop {
 
             self.start_settlement_execution(
                 auction.id,
-                single_run_start,
+                start_block.observed_at,
                 driver,
                 solution,
                 solution_uid,
@@ -1029,6 +1032,13 @@ struct Metrics {
     #[metric(buckets(0.01, 0.05, 0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 5))]
     service_maintenance_time: prometheus::Histogram,
 
+    /// Total time between seeing the start block of the auction and declaring
+    /// a winning driver.
+    #[metric(buckets(
+        0, 1, 2, 3, 4, 5, 6, 7, 7.5, 8, 8.25, 8.5, 8.75, 9, 9.25, 9.5, 9.75, 10
+    ))]
+    winner_declared: prometheus::Histogram,
+
     /// Total time spent in a single run of the run loop.
     #[metric(buckets(0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48))]
     single_run_time: prometheus::Histogram,
@@ -1118,6 +1128,10 @@ impl Metrics {
 
     fn single_run_completed(elapsed: Duration) {
         Self::get().single_run_time.observe(elapsed.as_secs_f64());
+    }
+
+    fn winner_declared(elapsed: Duration) {
+        Self::get().winner_declared.observe(elapsed.as_secs_f64());
     }
 
     fn auction_ready(init_block_timestamp: Instant) {
