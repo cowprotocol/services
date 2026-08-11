@@ -7,11 +7,7 @@ use {crate::infra::observe as infra_observe, clap::Parser};
 #[command(author, version, about)]
 pub struct Args {
     /// Log filter for the tracing framework.
-    #[arg(
-        long,
-        env = "RUST_LOG",
-        default_value = "info,warn,solana_driver=debug"
-    )]
+    #[arg(long, env, default_value = "info,solana_driver=debug")]
     log: String,
 }
 
