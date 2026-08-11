@@ -122,6 +122,9 @@ mod tests {
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");
         assert_eq!(config.solvers[0].max_in_flight, 1);
+        assert_eq!(config.logging.filter, "info,solana_driver=debug");
+        assert_eq!(config.logging.stderr_threshold, None);
+        assert!(!config.logging.use_json);
     }
 
     /// Rejecting an empty list happens at deserialization (via
