@@ -472,10 +472,9 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
         ));
 
-    // Wakes the run loop on new orders (via the notifier) and new blocks.
+    // Wakes the run loop on new blocks; the order notifier (spawned below, once
+    // the drivers are available) also wakes it on new orders.
     let wake_runloop = Arc::new(tokio::sync::Notify::new());
-    infra::order_notify::Notifier::new(banned_users.clone(), wake_runloop.clone())
-        .spawn(db_write.pool.clone());
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         config.min_order_validity_period,
@@ -508,7 +507,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
     let api_task = tokio::spawn(infra::api::serve(
         config.api_address,
-        api_native_price_estimator,
+        api_native_price_estimator.clone(),
         config.price_estimation.quote_timeout,
         api_shutdown_receiver,
     ));
@@ -625,6 +624,22 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .await
         .into_iter()
         .collect();
+
+    let fast_path_settler = infra::order_notify::FastPathSettler::new(
+        persistence.clone(),
+        drivers.clone(),
+        api_native_price_estimator.clone(),
+        eth.current_block().clone(),
+        run_loop_config.submission_deadline,
+        run_loop_config.max_settlement_transaction_wait,
+        config.native_price_timeout,
+    );
+    infra::order_notify::Notifier::new(
+        banned_users.clone(),
+        wake_runloop.clone(),
+        fast_path_settler,
+    )
+    .spawn(db_write.pool.clone());
 
     let awaiter = maintenance
         .spawn_maintenance_task(eth.current_block().clone(), config.max_maintenance_timeout);
