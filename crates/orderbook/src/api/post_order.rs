@@ -251,6 +251,14 @@ impl IntoResponse for ValidationErrorWrapper {
                 error("ZeroAmount", "Buy or sell amount is zero."),
             )
                 .into_response(),
+            ValidationError::InvalidValidFrom => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "InvalidValidFrom",
+                    "appData validFrom must be earlier than the order's validTo.",
+                ),
+            )
+                .into_response(),
             ValidationError::IncompatibleSigningScheme => (
                 StatusCode::BAD_REQUEST,
                 error(

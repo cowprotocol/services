@@ -126,18 +126,22 @@ impl QuoteHandler {
 
         let quote = match request.price_quality {
             PriceQuality::Optimal | PriceQuality::Verified => {
-                let quote = self.optimal_quoter.calculate_quote(params).await?;
-                self.optimal_quoter
-                    .store_quote(quote)
+                let competition = self.optimal_quoter.calculate_quote(params.clone()).await?;
+                let id = self
+                    .optimal_quoter
+                    .store_quote(competition.clone())
                     .await
-                    .map_err(CalculateQuoteError::Other)?
+                    .map_err(CalculateQuoteError::Other)?;
+                let mut quote = competition.to_final_quote(&params);
+                quote.id = Some(id);
+                quote
             }
             PriceQuality::Fast => {
-                let mut quote = self.fast_quoter.calculate_quote(params).await?;
+                let mut competition = self.fast_quoter.calculate_quote(params.clone()).await?;
                 // Fast quotes always have an expiry of zero because they're not
                 // very accurate and can be considered to expire immediately.
-                quote.data.expiration = Utc.timestamp_millis_opt(0).unwrap();
-                quote
+                competition.metadata.expiration = Utc.timestamp_millis_opt(0).unwrap();
+                competition.to_final_quote(&params)
             }
         };
 
@@ -274,11 +278,6 @@ impl QuoteHandler {
         if app_data.inner.protocol.enable_fast_path {
             return Err(OrderQuoteError::AppData(AppDataValidationError::Invalid(
                 anyhow::anyhow!("'enableFastPath' is not yet supported"),
-            )));
-        }
-        if app_data.inner.protocol.valid_from.is_some() {
-            return Err(OrderQuoteError::AppData(AppDataValidationError::Invalid(
-                anyhow::anyhow!("'validFrom' is not yet supported"),
             )));
         }
 
@@ -541,6 +540,7 @@ mod tests {
                 verified: false,
                 supports_fast_path: false,
                 metadata: Default::default(),
+                auction_id: None,
             },
             sell_amount,
             buy_amount,

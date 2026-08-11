@@ -275,6 +275,9 @@ pub enum ValidationError {
     /// reverted or did not return the expected value.
     InvalidEip1271Signature(B256),
     ZeroAmount,
+    /// `valid_from` leaves too small a window before `valid_to` for the order
+    /// to be settled.
+    InvalidValidFrom,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
     TooMuchGas,
@@ -765,11 +768,6 @@ impl OrderValidating for OrderValidator {
                 "'enableFastPath' is not yet supported"
             )));
         }
-        if app_data.protocol.valid_from.is_some() {
-            return Err(AppDataValidationError::Invalid(anyhow::anyhow!(
-                "'validFrom' is not yet supported"
-            )));
-        }
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
@@ -1023,6 +1021,13 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
+        if let Some(valid_from) = app_data.inner.protocol.valid_from {
+            let min = self.validity_configuration.min.as_secs();
+            if u64::from(data.valid_to) < u64::from(valid_from) + min {
+                return Err(ValidationError::InvalidValidFrom);
+            }
+        }
+
         let order = Order {
             metadata: OrderMetadata {
                 owner,
@@ -1040,6 +1045,7 @@ impl OrderValidating for OrderValidator {
                     .map(|q| q.try_to_model_order_quote())
                     .transpose()
                     .map_err(ValidationError::Other)?,
+                valid_from: app_data.inner.protocol.valid_from,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -1171,11 +1177,13 @@ async fn get_or_create_quote(
                 timeout: None, // let &dyn OrderQuoting chose default
             };
 
-            let quote = quoter.calculate_quote(parameters).await?;
-            let quote = quoter
-                .store_quote(quote)
+            let competition = quoter.calculate_quote(parameters.clone()).await?;
+            let id = quoter
+                .store_quote(competition.clone())
                 .await
                 .map_err(ValidationError::Other)?;
+            let mut quote = competition.to_final_quote(&parameters);
+            quote.id = Some(id);
 
             tracing::debug!(
                 original_quote_id = ?quote_id,
@@ -1261,7 +1269,14 @@ mod tests {
         super::*,
         crate::{
             order_creation_simulation::MockOrderSimulating,
-            order_quoting::{FindQuoteError, MockOrderQuoting},
+            order_quoting::{
+                FindQuoteError,
+                MockOrderQuoting,
+                QuoteCompetition,
+                QuoteCompetitionMetadata,
+                QuoteRequest,
+                QuoteResponse,
+            },
         },
         account_balances::MockBalanceFetching,
         alloy::{
@@ -1440,17 +1455,6 @@ mod tests {
                 .await,
             Err(PartialValidationError::UnsupportedSellTokenSource(
                 SellTokenSource::External
-            ))
-        );
-        std::assert_matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: 0,
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::ValidTo(
-                OrderValidToError::Insufficient,
             ))
         );
         std::assert_matches!(
@@ -1755,6 +1759,100 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn enforces_minimum_validity_window() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Ok(()));
+        let mut signature_validating = MockSignatureValidating::new();
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .never();
+        let hooks = HooksTrampoline::Instance::new(
+            Address::from([0xcf; 20]),
+            ProviderBuilder::new()
+                .connect_mocked_client(Asserter::new())
+                .erased(),
+        );
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let validator = OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(60),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
+            false,
+            Default::default(),
+            hooks,
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validating),
+            None,
+            Arc::new(limit_order_counter),
+            1,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+        );
+
+        let now = time::now_in_epoch_seconds();
+        let plain = |valid_to: u32| OrderCreation {
+            valid_to,
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(0),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
+            ..Default::default()
+        };
+        let delayed = |valid_from: u32, valid_to: u32| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "validFrom": valid_from } }).to_string(),
+            },
+            ..plain(valid_to)
+        };
+        let validate = async |creation| {
+            validator
+                .validate_and_construct_order(
+                    creation,
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await
+        };
+
+        // No `valid_from`: the window is measured from `now`.
+        std::assert_matches!(
+            validate(plain(now + 30)).await,
+            Err(ValidationError::Partial(PartialValidationError::ValidTo(
+                OrderValidToError::Insufficient
+            )))
+        );
+        validate(plain(now + 150)).await.unwrap();
+
+        // With `valid_from`: the window is measured from `valid_from`, so a far-future
+        // `valid_to` doesn't help.
+        std::assert_matches!(
+            validate(delayed(now + 50, now + 90)).await,
+            Err(ValidationError::InvalidValidFrom)
+        );
+        validate(delayed(now + 50, now + 150)).await.unwrap();
     }
 
     #[tokio::test]
@@ -2800,10 +2898,25 @@ mod tests {
             verification: verification.clone(),
             ..Default::default()
         };
-        let quote_data = Quote {
-            fee_amount: alloy::primitives::U256::from(6),
-            ..Default::default()
-        };
+        // Craft a QuoteCompetition whose winner + metadata produce
+        // fee_amount = 6 via `FeeParameters::fee()`
+        // (gas_amount * gas_price / sell_token_price = 6 * 1 / 1).
+        let competition = QuoteCompetition::new(
+            QuoteRequest {
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            QuoteResponse {
+                gas_amount: 6.,
+                ..Default::default()
+            },
+            [],
+            QuoteCompetitionMetadata {
+                gas_price: 1.,
+                sell_token_price: 1.,
+                ..Default::default()
+            },
+        );
         let fee_amount = U256::ZERO;
         order_quoter
             .expect_calculate_quote()
@@ -2822,18 +2935,13 @@ mod tests {
                 timeout: None,
             }))
             .returning({
-                let quote_data = quote_data.clone();
-                move |_| Ok(quote_data.clone())
+                let competition = competition.clone();
+                move |_| Ok(competition.clone())
             });
         order_quoter
             .expect_store_quote()
-            .with(eq(quote_data.clone()))
-            .returning(|quote| {
-                Ok(Quote {
-                    id: Some(42),
-                    ..quote
-                })
-            });
+            .with(eq(competition.clone()))
+            .returning(|_| Ok(42));
 
         let quote = get_quote_and_check_fee(
             &order_quoter,
@@ -2848,6 +2956,7 @@ mod tests {
             quote,
             Quote {
                 id: Some(42),
+                data: competition.to_quote_data(),
                 fee_amount: alloy::primitives::U256::from(6),
                 ..Default::default()
             }
