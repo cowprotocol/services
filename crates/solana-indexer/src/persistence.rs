@@ -186,7 +186,7 @@ WHERE order_uid = $1
     /// Upsert the watermark, ignoring backward writes so the table's monotone
     /// trigger never fires.
     async fn upsert_watermark(
-        tx: &mut PgTransaction<'_>,
+        ex: impl sqlx::PgExecutor<'_>,
         slot: Slot,
     ) -> Result<(), PersistenceError> {
         sqlx::query(
@@ -198,7 +198,7 @@ WHERE indexer_state.slot < EXCLUDED.slot
             "#,
         )
         .bind(to_db_slot(slot))
-        .execute(&mut **tx)
+        .execute(ex)
         .await?;
         Ok(())
     }
@@ -215,14 +215,12 @@ impl Persistence for Postgres {
         for event in events {
             Self::apply(&mut tx, event).await?;
         }
-        Self::upsert_watermark(&mut tx, new_watermark).await?;
+        Self::upsert_watermark(&mut *tx, new_watermark).await?;
         Ok(tx.commit().await?)
     }
 
     async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
-        let mut tx = self.pool.begin().await?;
-        Self::upsert_watermark(&mut tx, slot).await?;
-        Ok(tx.commit().await?)
+        Self::upsert_watermark(&self.pool, slot).await
     }
 
     async fn write_dead_letter(
