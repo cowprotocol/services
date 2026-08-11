@@ -9804,7 +9804,6 @@ dependencies = [
  "observe",
  "serde",
  "solana-sdk",
- "tempfile",
  "tikv-jemallocator",
  "tokio",
  "toml",
