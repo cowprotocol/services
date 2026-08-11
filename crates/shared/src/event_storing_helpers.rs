@@ -1,7 +1,7 @@
 use {
     crate::{
         db_order_conversions::order_kind_into,
-        order_quoting::{QuoteData, QuoteSearchParameters, quote_kind_from_signing_scheme},
+        order_quoting::{QuoteCompetition, QuoteSearchParameters, quote_kind_from_signing_scheme},
     },
     anyhow::Result,
     chrono::{DateTime, Utc},
@@ -12,7 +12,8 @@ use {
     number::conversions::u256_to_big_decimal,
 };
 
-pub fn create_quote_row(data: QuoteData) -> Result<DbQuote> {
+pub fn create_quote_row(competition: &QuoteCompetition) -> Result<DbQuote> {
+    let data = competition.to_quote_data();
     Ok(DbQuote {
         id: Default::default(),
         sell_token: ByteArray(*data.sell_token.0),
