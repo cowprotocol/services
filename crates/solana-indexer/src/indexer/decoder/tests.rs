@@ -625,8 +625,8 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 /// only test spanning the channel, so it pins that what the ingester forwards
 /// is what the decoder can consume, and it drives all three persistence
 /// writes: the bare watermark for a slot with no events, the dead letter for
-/// a failed decode, and the event batch flushed once a slot status moves the
-/// stream past the hold-back window.
+/// a failed decode (which suppresses that transaction's events entirely),
+/// and the flush driven by a slot status moving past the hold-back window.
 #[tokio::test]
 async fn ingester_to_decoder_persists_decoded_events() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
@@ -638,10 +638,10 @@ async fn ingester_to_decoder_persists_decoded_events() {
     reverted.signature = signature(9).as_ref().to_vec();
     reverted.meta.as_mut().unwrap().err = Some(TransactionError { err: vec![1] });
 
-    // Slot 43: a good `CreateOrder` plus a settlement instruction with an
-    // unknown discriminator, so the slot persists its event and the
-    // transaction is dead-lettered.
-    let mut partial = info;
+    // Slot 43, first transaction: a good `CreateOrder` plus an unknown
+    // discriminator, so the whole transaction is dead-lettered and none of
+    // its events persist.
+    let mut partial = info.clone();
     partial.signature = signature(10).as_ref().to_vec();
     let message = partial
         .transaction
@@ -664,12 +664,18 @@ async fn ingester_to_decoder_persists_decoded_events() {
         },
     );
 
+    // Slot 43, second transaction: a clean `CreateOrder`, its event persists
+    // with the slot even though its sibling transaction failed.
+    let mut healthy = info;
+    healthy.signature = signature(11).as_ref().to_vec();
+
     let (sender, receiver) = tokio::sync::mpsc::channel(16);
     let persistence = Persistence::default();
     let mut ingester = Ingester::new(
         stream::iter([
             Ok(tx_update(42, reverted)),
             Ok(tx_update(43, partial)),
+            Ok(tx_update(43, healthy)),
             Ok(slot_status_update(45)),
         ]),
         sender,
@@ -695,8 +701,9 @@ async fn ingester_to_decoder_persists_decoded_events() {
                 signature: signature(10),
                 slot: Slot(43),
             },
-            // The slot-45 status moves the stream two past 43, so slot 43
-            // flushes as complete and the watermark reaches it.
+            // The slot-45 status moves the stream two past 43, flushing it as
+            // complete: the failed transaction contributes only its dead
+            // letter, the clean sibling's event persists with the slot.
             Call::PersistEvents {
                 events: vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
                     order_uid: expected_uid,
