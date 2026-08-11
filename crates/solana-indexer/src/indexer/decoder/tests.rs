@@ -346,6 +346,11 @@ async fn run_drains_transactions_until_the_sender_drops() {
         .send(stream_tx(Slot(7), signature(3), settlement))
         .await
         .unwrap();
+    // A later slot-status message flushes the buffered slot 7.
+    sender
+        .send(StreamUpdate::Slot { slot: Slot(8) })
+        .await
+        .unwrap();
     drop(sender);
 
     assert!(decoder.run().await.is_ok());

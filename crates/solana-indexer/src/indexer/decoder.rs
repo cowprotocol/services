@@ -79,11 +79,22 @@ impl Decoder {
     pub async fn run(&mut self) -> Result<(), PersistenceError> {
         let mut pending: Option<SlotBuffer> = None;
         while let Some(update) = self.rx.recv().await {
-            let StreamUpdate::Tx {
-                slot,
-                signature,
-                inner,
-            } = update;
+            let (slot, signature, inner) = match update {
+                StreamUpdate::Tx {
+                    slot,
+                    signature,
+                    inner,
+                } => (slot, signature, inner),
+                // A status message for a later slot proves the pending slot is
+                // fully delivered. Settlement transactions can be minutes
+                // apart, this keeps the flush latency at one slot instead.
+                StreamUpdate::Slot { slot } => {
+                    if let Some(buffer) = pending.take_if(|buffer| slot > buffer.slot) {
+                        self.flush(buffer, true).await?;
+                    }
+                    continue;
+                }
+            };
             // A transaction of a later slot proves the pending slot is fully
             // delivered, so it is safe to flush and mark done.
             if let Some(buffer) = pending.take_if(|buffer| slot > buffer.slot) {
