@@ -265,7 +265,7 @@ pub struct QuoteResponse {
 
 impl QuoteCompetition {
     /// Constructor enforcing that there is at least 1 quote.
-    pub fn new(
+    pub(crate) fn new(
         request: QuoteRequest,
         best: QuoteResponse,
         rest: impl IntoIterator<Item = QuoteResponse>,
@@ -305,14 +305,9 @@ impl QuoteCompetition {
     }
 
     /// Produces the final `Quote` for this competition. Applies
-    /// additional-cost adjustments, and scales sell/buy amounts
-    /// when the caller asked for a `SellAmount::BeforeFee` sell
-    /// order. Returns [`CalculateQuoteError::SellAmountDoesNotCoverFee`]
-    /// when the fee exceeds the requested input.
-    pub fn to_final_quote(
-        &self,
-        parameters: &QuoteParameters,
-    ) -> Result<Quote, CalculateQuoteError> {
+    /// additional-cost adjustments, and scales sell/buy amounts when the
+    /// caller asked for a `SellAmount::BeforeFee` sell order.
+    pub fn to_final_quote(&self, parameters: &QuoteParameters) -> Quote {
         let mut quote = Quote::new(None, self.to_quote_data())
             .with_additional_cost(parameters.additional_cost());
 
@@ -326,15 +321,10 @@ impl QuoteCompetition {
             let sell_amount = sell_amount_before_fee
                 .get()
                 .saturating_sub(quote.fee_amount);
-            if sell_amount.is_zero() {
-                return Err(CalculateQuoteError::SellAmountDoesNotCoverFee {
-                    fee_amount: quote.fee_amount,
-                });
-            }
             quote = quote.with_scaled_sell_amount(sell_amount);
         }
 
-        Ok(quote)
+        quote
     }
 }
 
@@ -633,7 +623,7 @@ impl OrderQuoter {
                 .map_err(|err| (EstimatorKind::NativeBuy, err).into()),
         )?;
 
-        let quote = assemble_quote_data(
+        assemble_quote_data(
             parameters,
             trade_estimates,
             effective_gas_price,
@@ -641,9 +631,7 @@ impl OrderQuoter {
             buy_token_price,
             expiration,
             auction_id,
-        );
-
-        Ok(quote)
+        )
     }
 }
 
@@ -655,10 +643,6 @@ impl OrderQuoting for OrderQuoter {
         parameters: QuoteParameters,
     ) -> Result<QuoteCompetition, CalculateQuoteError> {
         let competition = self.compute_quote_data(&parameters).await?;
-        // Validate the fee doesn't exceed the requested input by deriving the
-        // final quote once. Callers can re-derive it later via
-        // `QuoteCompetition::to_final_quote`.
-        let _ = competition.to_final_quote(&parameters)?;
         tracing::debug!(?competition, "computed quote");
         Ok(competition)
     }
@@ -815,18 +799,18 @@ impl StreamingQuoting for OrderQuoter {
                 if new_best_quote.gas == 0 || new_best_quote.out_amount.is_zero() {
                     continue;
                 }
-                let competition = assemble_quote_data(
+                quotes.push(new_best_quote.clone());
+                let competition = match assemble_quote_data(
                     &parameters,
-                    RankedEstimates::new(new_best_quote.clone(), quotes.iter().rev().cloned()),
+                    // skip 1 item in reverse iter to not clone best quote twice
+                    RankedEstimates::new(new_best_quote, quotes.iter().rev().skip(1).cloned()),
                     effective_gas_price,
                     sell_token_price,
                     buy_token_price,
                     expiration,
                     auction_id,
-                );
-                quotes.push(new_best_quote);
-                let mut quote = match competition.to_final_quote(&parameters) {
-                    Ok(q) => q,
+                ) {
+                    Ok(c) => c,
                     Err(err @ CalculateQuoteError::SellAmountDoesNotCoverFee { .. }) => {
                         // A more actionable error than a generic inner one.
                         deferred_err = Some(err);
@@ -837,6 +821,7 @@ impl StreamingQuoting for OrderQuoter {
                         continue;
                     }
                 };
+                let mut quote = competition.to_final_quote(&parameters);
                 // Store latest state of the quote competition. (later iterations of
                 // the loop will update the DB state)
                 match storage.save(competition).await {
@@ -892,7 +877,11 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
 }
 
 /// Assembles a `QuoteCompetition` from every ranked estimate plus the
-/// competition-level context (native prices, gas price, expiration).
+/// competition-level context (native prices, gas price, expiration). Fails
+/// with [`CalculateQuoteError::SellAmountDoesNotCoverFee`] when the winner's
+/// fee would consume the entire requested `SellAmount::BeforeFee` amount, so
+/// the returned competition is guaranteed to produce a usable `Quote` via
+/// `QuoteCompetition::to_final_quote`.
 fn assemble_quote_data(
     parameters: &QuoteParameters,
     estimates: RankedEstimates,
@@ -901,7 +890,7 @@ fn assemble_quote_data(
     buy_token_price: f64,
     expiration: DateTime<Utc>,
     auction_id: Option<AuctionId>,
-) -> QuoteCompetition {
+) -> Result<QuoteCompetition, CalculateQuoteError> {
     let kind = match &parameters.side {
         OrderQuoteSide::Sell { .. } => OrderKind::Sell,
         OrderQuoteSide::Buy { .. } => OrderKind::Buy,
@@ -945,7 +934,7 @@ fn assemble_quote_data(
 
     let (best, rest) = estimates.into_best_and_rest();
 
-    QuoteCompetition::new(
+    let competition = QuoteCompetition::new(
         QuoteRequest {
             sell_token: parameters.sell_token,
             buy_token: parameters.buy_token,
@@ -962,7 +951,22 @@ fn assemble_quote_data(
             buy_token_price,
             sell_token_price,
         },
-    )
+    );
+
+    if let OrderQuoteSide::Sell {
+        sell_amount: SellAmount::BeforeFee { value: sell_amount },
+    } = &parameters.side
+    {
+        let fee_amount = competition
+            .to_quote_data()
+            .fee_parameters
+            .fee_with_additional_cost(parameters.additional_cost());
+        if sell_amount.get().saturating_sub(fee_amount).is_zero() {
+            return Err(CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount });
+        }
+    }
+
+    Ok(competition)
 }
 
 /// Used to store quote metadata in the database.
@@ -1198,7 +1202,7 @@ mod tests {
 
         let competition = quoter.calculate_quote(parameters.clone()).await.unwrap();
         let id = quoter.store_quote(competition.clone()).await.unwrap();
-        let mut quote = competition.to_final_quote(&parameters).unwrap();
+        let mut quote = competition.to_final_quote(&parameters);
         quote.id = Some(id);
 
         assert_eq!(
@@ -1358,7 +1362,7 @@ mod tests {
 
         let competition = quoter.calculate_quote(parameters.clone()).await.unwrap();
         let id = quoter.store_quote(competition.clone()).await.unwrap();
-        let mut quote = competition.to_final_quote(&parameters).unwrap();
+        let mut quote = competition.to_final_quote(&parameters);
         quote.id = Some(id);
 
         assert_eq!(
@@ -1513,7 +1517,7 @@ mod tests {
 
         let competition = quoter.calculate_quote(parameters.clone()).await.unwrap();
         let id = quoter.store_quote(competition.clone()).await.unwrap();
-        let mut quote = competition.to_final_quote(&parameters).unwrap();
+        let mut quote = competition.to_final_quote(&parameters);
         quote.id = Some(id);
 
         assert_eq!(
@@ -2157,7 +2161,8 @@ mod tests {
             0.5,
             expiration,
             None,
-        );
+        )
+        .unwrap();
         let data = competition.to_quote_data();
 
         assert_eq!(data.sell_token, Address::repeat_byte(1));
@@ -2214,7 +2219,8 @@ mod tests {
             0.5,
             expiration,
             None,
-        );
+        )
+        .unwrap();
         let data = competition.to_quote_data();
 
         assert_eq!(data.quoted_sell_amount, AlloyU256::from(42));

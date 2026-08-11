@@ -1182,7 +1182,7 @@ async fn get_or_create_quote(
                 .store_quote(competition.clone())
                 .await
                 .map_err(ValidationError::Other)?;
-            let mut quote = competition.to_final_quote(&parameters)?;
+            let mut quote = competition.to_final_quote(&parameters);
             quote.id = Some(id);
 
             tracing::debug!(

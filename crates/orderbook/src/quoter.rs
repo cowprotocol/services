@@ -132,7 +132,7 @@ impl QuoteHandler {
                     .store_quote(competition.clone())
                     .await
                     .map_err(CalculateQuoteError::Other)?;
-                let mut quote = competition.to_final_quote(&params)?;
+                let mut quote = competition.to_final_quote(&params);
                 quote.id = Some(id);
                 quote
             }
@@ -141,7 +141,7 @@ impl QuoteHandler {
                 // Fast quotes always have an expiry of zero because they're not
                 // very accurate and can be considered to expire immediately.
                 competition.metadata.expiration = Utc.timestamp_millis_opt(0).unwrap();
-                competition.to_final_quote(&params)?
+                competition.to_final_quote(&params)
             }
         };
 
