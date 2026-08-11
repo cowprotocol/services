@@ -61,7 +61,9 @@ impl QuoteStoring for Postgres {
     }
 
     async fn get_next_auction_id(&self) -> Result<i64> {
-        self.get_next_auction_id().await
+        // explicitly DON'T call the trait method to protect against
+        // endless recursion after a botched function rename
+        Postgres::get_next_auction_id(self).await
     }
 }
 
