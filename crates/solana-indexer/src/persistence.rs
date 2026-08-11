@@ -120,13 +120,9 @@ ON CONFLICT (tx_signature) DO NOTHING
                 }
             }
             DecodedEvent::Settlement(other) => {
-                // No table maps these yet (buffers are informational, the
-                // state-PDA mirror and order lifecycle arrive with their
-                // decoder support).
                 tracing::debug!(event = ?other, "settlement event without a persistence mapping");
             }
             DecodedEvent::SolFlow(event) => {
-                // The SolFlow program is post-launch scoped.
                 tracing::debug!(event = ?event, "solflow event without a persistence mapping");
             }
         }
@@ -143,8 +139,8 @@ ON CONFLICT (tx_signature) DO NOTHING
         inner_ix_path: &[i32],
         trade: TradeDelta,
     ) -> Result<(), PersistenceError> {
-        // The fee is not on-chain data, it arrives from the off-chain solution
-        // and is reconciled by the autopilot. Zero until that wiring exists.
+        // The fee is not on-chain data (it comes from the off-chain solution),
+        // so the column holds zero.
         let inserted = sqlx::query(
             r#"
 INSERT INTO solana.trades (settlement_tx_signature, instruction_index, inner_ix_path,
