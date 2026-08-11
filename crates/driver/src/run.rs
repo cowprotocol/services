@@ -145,7 +145,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     futures::pin_mut!(serve);
     tokio::select! {
         result = &mut serve => panic!("serve task exited: {result:?}"),
-        _ = shutdown_signal() => {
+        _ = observe::shutdown::shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");
             // Shutdown timeout needs to be larger than the auction deadline
@@ -228,31 +228,4 @@ fn liquidity_sources_notifier(
         .unwrap_or(&notify::liquidity_sources::config::Config { liquorice: None });
     notify::liquidity_sources::Notifier::try_new(notifier_config, eth.chain())
         .expect("initialize notify sources notifier")
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Intercept signals for graceful shutdown. Kubernetes sends sigterm, Ctrl-C
-    // sends sigint.
-    let sigterm = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .unwrap()
-            .recv()
-            .await
-    };
-    let sigint = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-            .unwrap()
-            .recv()
-            .await;
-    };
-    futures::pin_mut!(sigint);
-    futures::pin_mut!(sigterm);
-    futures::future::select(sigterm, sigint).await;
-}
-
-#[cfg(windows)]
-async fn shutdown_signal() {
-    // No support for signal handling on Windows.
-    std::future::pending().await
 }

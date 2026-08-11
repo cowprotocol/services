@@ -1,7 +1,5 @@
 //! Binary entry: parse args, initialize observability, dispatch to the engine.
 
-#[cfg(unix)]
-use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
         api::Api,
@@ -32,26 +30,9 @@ pub async fn start(args: impl IntoIterator<Item = String>) {
                 addr: args.addr,
                 config,
             };
-            if let Err(err) = api.serve(shutdown_signal()).await {
+            if let Err(err) = api.serve(observe::shutdown::shutdown_signal()).await {
                 tracing::error!(?err, "server error");
             }
         }
     }
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Kubernetes sends SIGTERM; locally SIGINT (ctrl-c) is most common.
-    let mut interrupt = unix::signal(SignalKind::interrupt()).expect("install SIGINT handler");
-    let mut terminate = unix::signal(SignalKind::terminate()).expect("install SIGTERM handler");
-    tokio::select! {
-        _ = interrupt.recv() => (),
-        _ = terminate.recv() => (),
-    };
-}
-
-#[cfg(windows)]
-async fn shutdown_signal() {
-    // Signal handling is not supported on Windows.
-    std::future::pending().await
 }
