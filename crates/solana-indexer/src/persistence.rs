@@ -71,14 +71,11 @@ impl Postgres {
         event: DecodedEvent,
     ) -> Result<(), PersistenceError> {
         match event {
-            DecodedEvent::Settlement(SettlementEvent::OrderCreated {
-                order_uid,
-                created_by,
-                ..
-            }) => {
-                // The order row itself is written by the orderbook at intake.
+            DecodedEvent::Settlement(SettlementEvent::OrderCreated(order)) => {
                 // TODO: also insert the `solana.orders` row, so orders created
-                // directly on chain become solvable.
+                // directly on chain become solvable. Needs the token mints,
+                // which only an account lookup can provide, the intent carries
+                // token accounts.
                 sqlx::query(
                     r#"
 INSERT INTO solana.order_pda (order_uid, created_by)
@@ -86,8 +83,8 @@ VALUES ($1, $2)
 ON CONFLICT (order_uid) DO NOTHING
                     "#,
                 )
-                .bind(order_uid.0)
-                .bind(created_by.to_bytes())
+                .bind(order.order_uid.0)
+                .bind(order.created_by.to_bytes())
                 .execute(&mut **tx)
                 .await?;
             }
@@ -339,11 +336,22 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 0, 42, 'sell', false, $2, now(), 'ma
         let uid = [1_u8; 32];
         seed_order(&pool, uid).await;
         let events = vec![
-            DecodedEvent::Settlement(SettlementEvent::OrderCreated {
-                order_uid: OrderUid(uid),
-                owner: Pubkey::new_from_array([0xAA; 32]),
-                created_by: Pubkey::new_from_array([0xBB; 32]),
-            }),
+            DecodedEvent::Settlement(SettlementEvent::OrderCreated(Box::new(
+                crate::types::events::CreatedOrder {
+                    order_uid: OrderUid(uid),
+                    owner: Pubkey::new_from_array([0xAA; 32]),
+                    created_by: Pubkey::new_from_array([0xBB; 32]),
+                    order_pda: Pubkey::new_from_array([0xDD; 32]),
+                    sell_token_account: Pubkey::new_from_array([4; 32]),
+                    buy_token_account: Pubkey::new_from_array([5; 32]),
+                    sell_amount: 1_000,
+                    buy_amount: 2_000,
+                    valid_to: 42,
+                    kind: crate::types::events::OrderKind::Sell,
+                    partially_fillable: false,
+                    app_data: [0; 32],
+                },
+            ))),
             DecodedEvent::Settlement(SettlementEvent::SettlementFinalized {
                 auction_id: 77,
                 solver: Pubkey::new_from_array([0xCC; 32]),

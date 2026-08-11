@@ -12,7 +12,7 @@ use {
             Signature,
             channel::StreamUpdate,
             errors::{DecodeError, PersistenceError},
-            events::{DecodedEvent, SettlementEvent, TradeDelta},
+            events::{CreatedOrder, DecodedEvent, OrderKind, SettlementEvent, TradeDelta},
             order::OrderUid,
             slot::Slot,
             tx::{ResolvedInstruction, TxContext},
@@ -23,7 +23,7 @@ use {
     settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::EncodedOrderIntent,
+        data::intent::{EncodedOrderIntent, OrderKind as InterfaceOrderKind},
         instruction::{
             InstructionInputParsing,
             create_buffer::CreateBufferInput,
@@ -372,8 +372,9 @@ fn decode_settlement(
 }
 
 /// `CreateOrder` -> `OrderCreated`. The parser recovers the encoded order
-/// intent and the `created_by` account. The intent's hash is the order UID,
-/// and the intent carries the owner.
+/// intent and the accounts; the intent's hash is the order UID. The event
+/// carries the whole intent: for orders placed directly on chain the indexer
+/// is the only writer of the `solana.orders` row.
 fn decode_order_created(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
@@ -383,11 +384,23 @@ fn decode_order_created(
         .map_err(|_| DecodeError::SchemaMismatch)?;
     let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
         .map_err(|_| DecodeError::SchemaMismatch)?;
-    Ok(SettlementEvent::OrderCreated {
+    Ok(SettlementEvent::OrderCreated(Box::new(CreatedOrder {
         order_uid: OrderUid(uid.to_bytes()),
         owner: to_sdk_pubkey(intent.owner),
         created_by: *input.created_by,
-    })
+        order_pda: *input.order_pda,
+        sell_token_account: to_sdk_pubkey(intent.sell_token_account),
+        buy_token_account: to_sdk_pubkey(intent.buy_token_account),
+        sell_amount: intent.sell_amount,
+        buy_amount: intent.buy_amount,
+        valid_to: intent.valid_to,
+        kind: match intent.kind {
+            InterfaceOrderKind::Sell => OrderKind::Sell,
+            InterfaceOrderKind::Buy => OrderKind::Buy,
+        },
+        partially_fillable: intent.partially_fillable,
+        app_data: intent.app_data,
+    })))
 }
 
 /// `CreateBuffer` -> one `BufferCreated` per created buffer. The parser groups

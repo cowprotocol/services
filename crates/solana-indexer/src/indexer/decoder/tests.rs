@@ -13,7 +13,7 @@ use {
         types::{
             Signature,
             channel::StreamUpdate,
-            events::{DecodedEvent, SettlementEvent, TradeDelta},
+            events::{CreatedOrder, DecodedEvent, OrderKind, SettlementEvent, TradeDelta},
             order::OrderUid,
             slot::Slot,
             tx::TxContext,
@@ -38,7 +38,7 @@ use {
     settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{OrderIntent, OrderKind},
+        data::intent::{OrderIntent, OrderKind as IntentOrderKind},
         pda::order::find_order_pda,
     },
     solana_sdk::pubkey::Pubkey,
@@ -452,11 +452,10 @@ async fn run_drains_transactions_until_the_sender_drops() {
 }
 
 /// Build a `CreateOrder` transaction fixture with the client crate. Returns
-/// the tx, the expected order UID (the hash of the encoded intent), and the
-/// `created_by` account. The account-list owner (`pubkey(11)`) differs from
-/// the intent owner (`[0x11; 32]`) so callers can pin that the event owner
-/// comes from the intent data, not the accounts.
-fn create_order_tx() -> (SubscribeUpdateTransactionInfo, OrderUid, Pubkey) {
+/// the tx and the full event its decode must produce. The account-list owner
+/// (`pubkey(11)`) differs from the intent owner (`[0x11; 32]`) so callers can
+/// pin that the event owner comes from the intent data, not the accounts.
+fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     let settlement = pubkey(1);
     let created_by = pubkey(12);
     let intent = OrderIntent {
@@ -466,7 +465,7 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, OrderUid, Pubkey) {
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
-        kind: OrderKind::Sell,
+        kind: IntentOrderKind::Sell,
         partially_fillable: false,
         app_data: [0x44; 32],
     };
@@ -478,7 +477,21 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, OrderUid, Pubkey) {
     }
     .into();
     let tx = tx_from_instructions(pubkey(9), &[instruction]);
-    (tx, OrderUid(intent.uid().to_bytes()), created_by)
+    let expected = CreatedOrder {
+        order_uid: OrderUid(intent.uid().to_bytes()),
+        owner: Pubkey::new_from_array([0x11; 32]),
+        created_by,
+        order_pda: find_order_pda(&settlement, &intent.uid()).0,
+        sell_token_account: Pubkey::new_from_array([0x33; 32]),
+        buy_token_account: Pubkey::new_from_array([0x22; 32]),
+        sell_amount: 1_000,
+        buy_amount: 2_000,
+        valid_to: 42,
+        kind: OrderKind::Sell,
+        partially_fillable: false,
+        app_data: [0x44; 32],
+    };
+    (tx, expected)
 }
 
 /// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run`
@@ -490,7 +503,7 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, OrderUid, Pubkey) {
 #[test]
 fn decode_wraps_events_and_gates_on_transaction_meta() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut tx, expected_uid, created_by) = create_order_tx();
+    let (mut tx, expected) = create_order_tx();
     let (decoder, _sender) = test_decoder(settlement, solflow);
 
     let events = decoder
@@ -498,11 +511,9 @@ fn decode_wraps_events_and_gates_on_transaction_meta() {
         .expect("clean decode");
     assert_eq!(
         events,
-        vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
-            order_uid: expected_uid,
-            owner: Pubkey::new_from_array([0x11; 32]),
-            created_by,
-        })]
+        vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+            Box::new(expected.clone())
+        ))]
     );
 
     tx.meta.as_mut().unwrap().err = Some(TransactionError { err: vec![1] });
@@ -522,7 +533,7 @@ fn decode_wraps_events_and_gates_on_transaction_meta() {
 #[test]
 fn unknown_discriminator_fails_the_whole_transaction() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut tx, _, _) = create_order_tx();
+    let (mut tx, _) = create_order_tx();
     // Prepend a settlement instruction whose discriminator byte matches no
     // known instruction.
     let message = tx.transaction.as_mut().unwrap().message.as_mut().unwrap();
@@ -615,7 +626,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         sell_amount: 1_000,
         buy_amount: 1_234,
         valid_to: 42,
-        kind: OrderKind::Sell,
+        kind: IntentOrderKind::Sell,
         partially_fillable: false,
         app_data: [0x44; 32],
     };
@@ -698,7 +709,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 #[tokio::test]
 async fn ingester_to_decoder_persists_decoded_events() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (info, expected_uid, created_by) = create_order_tx();
+    let (info, expected) = create_order_tx();
 
     // Slot 42: a reverted transaction, so the slot decodes to no events.
     // The ingester drops transactions without a well-formed signature.
@@ -773,11 +784,9 @@ async fn ingester_to_decoder_persists_decoded_events() {
             // complete: the failed transaction contributes only its dead
             // letter, the clean sibling's event persists with the slot.
             Call::PersistEvents {
-                events: vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
-                    order_uid: expected_uid,
-                    owner: Pubkey::new_from_array([0x11; 32]),
-                    created_by,
-                })],
+                events: vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+                    Box::new(expected)
+                ))],
                 watermark: Slot(43),
             },
         ]

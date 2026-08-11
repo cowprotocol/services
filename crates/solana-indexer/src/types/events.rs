@@ -30,18 +30,50 @@ pub(crate) struct TradeDelta {
     pub order_fulfilled: bool,
 }
 
+/// Whether an order sells an exact amount or buys an exact amount.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OrderKind {
+    Sell,
+    Buy,
+}
+
+/// A created order's full intent. The indexer is the only writer of the
+/// `solana.orders` row for orders placed directly on chain, so the event
+/// carries everything that row needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreatedOrder {
+    /// Order UID this order is identified by.
+    pub order_uid: OrderUid,
+    /// Owner of the order.
+    pub owner: Pubkey,
+    /// Address that created the order (relayer / solver).
+    pub created_by: Pubkey,
+    /// Canonical order PDA address.
+    pub order_pda: Pubkey,
+    /// Account the sell amount is pulled from. The intent names token
+    /// accounts, not mints: mints require an account lookup.
+    pub sell_token_account: Pubkey,
+    /// Account the buy amount is pushed to.
+    pub buy_token_account: Pubkey,
+    /// Amount sold, in the sell token's native units.
+    pub sell_amount: u64,
+    /// Amount bought, in the buy token's native units.
+    pub buy_amount: u64,
+    /// Expiry as unix seconds.
+    pub valid_to: u32,
+    /// Sell or buy order.
+    pub kind: OrderKind,
+    /// Whether partial fills are allowed.
+    pub partially_fillable: bool,
+    /// App-data hash carried by the intent.
+    pub app_data: [u8; 32],
+}
+
 /// Settlement-program events decoded from on-chain instructions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SettlementEvent {
     /// A new order was created on-chain.
-    OrderCreated {
-        /// Order UID this order is identified by.
-        order_uid: OrderUid,
-        /// Owner of the order.
-        owner: Pubkey,
-        /// Address that created the order (relayer / solver).
-        created_by: Pubkey,
-    },
+    OrderCreated(Box<CreatedOrder>),
     /// An order was closed.
     OrderClosed {
         /// Order UID this order is identified by.
