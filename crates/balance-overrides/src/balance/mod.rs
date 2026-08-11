@@ -15,6 +15,7 @@ use {
     alloy_transport::TransportErrorKind,
     contracts::ERC20,
     ethrpc::Web3,
+    hex_literal::hex,
     moka::sync::Cache,
     std::{collections::HashMap, iter, time::Duration},
 };
@@ -32,8 +33,7 @@ const BALANCE_SLOT_SEED: &[u8] = &[0x87, 0xa2, 0x11, 0xa2];
 /// the slot is not the balance. The full 32 bytes cover any byte-aligned shift,
 /// including narrow fields: a `uint96` balance (UNI, COMP) reads back as the
 /// low-byte suffix and resolves to `shift_bits == 0`.
-const SENTINEL: [u8; 32] =
-    alloy_primitives::hex!("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20");
+const SENTINEL: [u8; 32] = hex!("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20");
 
 /// Marker address for native ETH - the non-ERC20 gas token on many chains.
 const NATIVE_ETH: Address = address!("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
