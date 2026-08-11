@@ -59,6 +59,12 @@ impl QuoteStoring for Postgres {
             .map(|quote| Ok((quote.id, quote.try_into()?)))
             .transpose()
     }
+
+    async fn get_next_auction_id(&self) -> Result<i64> {
+        // explicitly DON'T call the trait method to protect against
+        // endless recursion after a botched function rename
+        Postgres::get_next_auction_id(self).await
+    }
 }
 
 impl Postgres {
