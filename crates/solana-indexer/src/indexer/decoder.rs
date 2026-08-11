@@ -111,18 +111,16 @@ impl Decoder {
                 );
             }
 
-            let (events, decode_failed) = match self.decode(*inner, slot, signature) {
-                Ok(events) => (events, false),
-                Err(PartialDecode { events }) => (events, true),
-            };
-            tracing::debug!(slot = %slot, event_count = events.len(), "decoded events");
             let buffer = pending.entry(slot).or_default();
-            buffer.events.extend(events);
-            if decode_failed {
-                // Partial decode is expected: events that did decode persist
-                // and recovery replays the whole transaction by signature,
-                // idempotent writes absorb the overlap.
-                buffer.dead_letters.push(signature);
+            match self.decode(*inner, slot, signature) {
+                Ok(events) => {
+                    tracing::debug!(slot = %slot, event_count = events.len(), "decoded events");
+                    buffer.events.extend(events);
+                }
+                // Recovery replays the whole transaction by signature and
+                // persists its events then, idempotent writes absorb any
+                // overlap with a re-streamed delivery.
+                Err(DecodeFailed) => buffer.dead_letters.push(signature),
             }
         }
         // The stream ended. Only the newest buffer may be missing
@@ -188,16 +186,16 @@ impl Decoder {
     }
 
     /// Decode one transaction's tracked instructions into domain events.
-    /// `Err` means at least one settlement instruction failed to decode and
-    /// carries the events that did decode. The settlement half runs through
-    /// the pure [`decode_settlement`], the SolFlow half is a stub.
+    /// `Err` means the transaction failed to decode and must be dead-lettered
+    /// whole. The settlement half runs through the pure [`decode_settlement`],
+    /// the SolFlow half is a stub.
     #[tracing::instrument(skip_all, fields(slot = %slot, signature = %signature))]
     fn decode(
         &self,
         tx: SubscribeUpdateTransactionInfo,
         slot: Slot,
         signature: Signature,
-    ) -> Result<Vec<DecodedEvent>, PartialDecode<DecodedEvent>> {
+    ) -> Result<Vec<DecodedEvent>, DecodeFailed> {
         // `meta` carries whether the transaction succeeded, so without it there is
         // no way to tell, and emitting events for a transaction that may have
         // reverted is the failure this guard exists to prevent. Dead-letter it
@@ -205,7 +203,7 @@ impl Decoder {
         // `getTransaction` returns the meta.
         let Some(meta) = tx.meta.as_ref() else {
             tracing::warn!("transaction update without meta");
-            return Err(PartialDecode { events: Vec::new() });
+            return Err(DecodeFailed);
         };
 
         // A failed Solana transaction rolls back every account write, so no
@@ -244,21 +242,13 @@ impl Decoder {
         // TODO: resolve order PDAs against persisted order rows. Without a
         // resolver backend nothing resolves, so `SettlementFinalized` events
         // carry the tx-level fields with empty trades.
-        let (events, decode_failed) = match decode_settlement(&settlement, &ctx, |_order_pda| None)
-        {
-            Ok(events) => (events, false),
-            Err(PartialDecode { events }) => (events, true),
-        };
+        let events = decode_settlement(&settlement, &ctx, |_order_pda| None)?;
 
         for instruction in &solflow {
             self.decode_solflow(instruction);
         }
 
-        let events = events.into_iter().map(DecodedEvent::Settlement).collect();
-        if decode_failed {
-            return Err(PartialDecode { events });
-        }
-        Ok(events)
+        Ok(events.into_iter().map(DecodedEvent::Settlement).collect())
     }
 
     /// TODO: decode the SolFlow instruction data. The on-chain program does not
@@ -296,18 +286,17 @@ struct SlotBuffer {
     dead_letters: Vec<Signature>,
 }
 
-/// The events that did decode from a transaction in which at least one
-/// instruction failed to decode. The caller persists them and dead-letters
-/// the transaction for replay.
+/// At least one instruction of the transaction failed to decode. None of the
+/// transaction's events persist: its effects are not independent of each
+/// other, so the dead-letter replay restores them all at once instead of
+/// leaving half a transaction visible.
 #[derive(Debug, PartialEq, Eq)]
-struct PartialDecode<T> {
-    events: Vec<T>,
-}
+struct DecodeFailed;
 
 /// Decode the settlement-program instructions of one transaction into domain
-/// events. `Err` means at least one instruction failed to decode, and carries
-/// the events that did decode so the caller has to acknowledge the failure to
-/// get at them.
+/// events. `Err` means at least one instruction failed to decode and the
+/// whole transaction must be dead-lettered, every instruction is still
+/// scanned so each failure gets logged.
 ///
 /// Pure: every tx-level input arrives through `ctx`, and any order field the
 /// `BeginSettle` wire does not carry is resolved through `resolve_order` (keyed
@@ -317,7 +306,7 @@ fn decode_settlement(
     instructions: &[ResolvedInstruction],
     ctx: &TxContext,
     resolve_order: impl Fn(&Pubkey) -> Option<ResolvedOrder>,
-) -> Result<Vec<SettlementEvent>, PartialDecode<SettlementEvent>> {
+) -> Result<Vec<SettlementEvent>, DecodeFailed> {
     let mut events = Vec::new();
     let mut decode_failed = false;
 
@@ -377,7 +366,7 @@ fn decode_settlement(
         &mut decode_failed,
     ));
     if decode_failed {
-        return Err(PartialDecode { events });
+        return Err(DecodeFailed);
     }
     Ok(events)
 }
