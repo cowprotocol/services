@@ -85,14 +85,19 @@ CREATE TRIGGER solana_order_pda_changed_notify
     AFTER INSERT OR UPDATE ON solana.order_pda
     FOR EACH ROW EXECUTE FUNCTION solana.notify_order_pda_changed();
 
+-- One transaction can carry several settlements (one BeginSettle/
+-- FinalizeSettle pair each), so the key includes the BeginSettle's top-level
+-- instruction index.
 CREATE TABLE solana.settlements (
-    slot         bigint NOT NULL,
-    tx_signature bytea PRIMARY KEY CHECK (length(tx_signature) = 64),
-    solver       bytea NOT NULL CHECK (length(solver) = 32),
-    auction_id   bigint NOT NULL,
+    slot              bigint NOT NULL,
+    tx_signature      bytea NOT NULL CHECK (length(tx_signature) = 64),
+    instruction_index integer NOT NULL,
+    solver            bytea NOT NULL CHECK (length(solver) = 32),
+    auction_id        bigint NOT NULL,
     -- NULL only via the unmatched-attribution path; decode failures land in
     -- solana.dead_letter instead.
-    solution_uid bigint
+    solution_uid      bigint,
+    PRIMARY KEY (tx_signature, instruction_index)
 );
 
 CREATE INDEX solana_settlements_auction_id ON solana.settlements (auction_id);
@@ -129,7 +134,7 @@ CREATE TRIGGER solana_settlement_finalized_notify
 -- One row per TradeDelta: order_uid is part of the key because one
 -- FinalizeSettle instruction emits one delta per affected order PDA.
 CREATE TABLE solana.trades (
-    settlement_tx_signature bytea NOT NULL REFERENCES solana.settlements(tx_signature),
+    settlement_tx_signature bytea NOT NULL,
     instruction_index       integer NOT NULL,
     -- '{}' = top-level; '{0,2,1}' = CPI path.
     inner_ix_path           integer[] NOT NULL DEFAULT '{}',
@@ -140,7 +145,9 @@ CREATE TABLE solana.trades (
     buy_amount              numeric(78,0) NOT NULL,
     -- From the off-chain proposed-solution data.
     fee_amount              numeric(78,0) NOT NULL,
-    PRIMARY KEY (settlement_tx_signature, instruction_index, inner_ix_path, order_uid)
+    PRIMARY KEY (settlement_tx_signature, instruction_index, inner_ix_path, order_uid),
+    FOREIGN KEY (settlement_tx_signature, instruction_index)
+        REFERENCES solana.settlements (tx_signature, instruction_index)
 );
 
 -- Covers fill-summary queries by order_uid without a heap fetch;
