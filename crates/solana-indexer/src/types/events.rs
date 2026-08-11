@@ -72,7 +72,8 @@ pub(crate) struct CreatedOrder {
 /// Settlement-program events decoded from on-chain instructions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SettlementEvent {
-    /// A new order was created on-chain.
+    /// A new order was created on-chain. Boxed: the full intent dwarfs the
+    /// other variants.
     OrderCreated(Box<CreatedOrder>),
     /// An order was closed.
     OrderClosed {

@@ -372,7 +372,7 @@ fn decode_settlement(
 }
 
 /// `CreateOrder` -> `OrderCreated`. The parser recovers the encoded order
-/// intent and the accounts; the intent's hash is the order UID. The event
+/// intent and the accounts, and the intent's hash is the order UID. The event
 /// carries the whole intent: for orders placed directly on chain the indexer
 /// is the only writer of the `solana.orders` row.
 fn decode_order_created(

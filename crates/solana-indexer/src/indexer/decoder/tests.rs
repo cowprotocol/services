@@ -13,6 +13,7 @@ use {
         types::{
             Signature,
             channel::StreamUpdate,
+            errors::PersistenceError,
             events::{CreatedOrder, DecodedEvent, OrderKind, SettlementEvent, TradeDelta},
             order::OrderUid,
             slot::Slot,
@@ -352,7 +353,7 @@ impl Persistence for Recorder {
         &self,
         events: Vec<DecodedEvent>,
         new_watermark: Slot,
-    ) -> Result<(), crate::types::errors::PersistenceError> {
+    ) -> Result<(), PersistenceError> {
         self.record(Call::PersistEvents {
             events,
             watermark: new_watermark,
@@ -360,10 +361,7 @@ impl Persistence for Recorder {
         Ok(())
     }
 
-    async fn write_watermark(
-        &self,
-        slot: Slot,
-    ) -> Result<(), crate::types::errors::PersistenceError> {
+    async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
         self.record(Call::Watermark(slot));
         Ok(())
     }
@@ -372,7 +370,7 @@ impl Persistence for Recorder {
         &self,
         signature: Signature,
         slot: Slot,
-    ) -> Result<(), crate::types::errors::PersistenceError> {
+    ) -> Result<(), PersistenceError> {
         self.record(Call::DeadLetter { signature, slot });
         Ok(())
     }

@@ -35,10 +35,21 @@ pub(crate) trait Persistence: Send + Sync {
     ) -> Result<(), PersistenceError>;
 }
 
-/// Slots stay far below `i64::MAX`, the cast to the database's `bigint` is
-/// lossless.
+/// Slots stay far below `i64::MAX`, the conversion to the database's
+/// `bigint` is lossless.
 fn to_db_slot(slot: Slot) -> i64 {
     i64::try_from(u64::from(slot)).expect("slot exceeds i64")
+}
+
+/// A transaction holds far fewer instructions than `i32::MAX`.
+fn to_db_instruction_index(index: u32) -> i32 {
+    i32::try_from(index).expect("instruction index exceeds i32")
+}
+
+/// The database never stores a negative slot, `to_db_slot` is the only
+/// writer.
+fn from_db_slot(slot: i64) -> Slot {
+    Slot(u64::try_from(slot).expect("negative slot in the database"))
 }
 
 /// Postgres implementation over the `solana.*` schema.
@@ -62,7 +73,7 @@ impl Postgres {
         let slot: Option<i64> = sqlx::query_scalar("SELECT slot FROM solana.indexer_state")
             .fetch_optional(&self.pool)
             .await?;
-        Ok(slot.map(|slot| Slot(slot as u64)))
+        Ok(slot.map(from_db_slot))
     }
 
     async fn apply(
@@ -105,7 +116,7 @@ ON CONFLICT (tx_signature, instruction_index) DO NOTHING
                 )
                 .bind(to_db_slot(slot))
                 .bind(tx_signature.as_ref())
-                .bind(i32::try_from(instruction_index).expect("instruction index fits i32"))
+                .bind(to_db_instruction_index(instruction_index))
                 .bind(solver.to_bytes())
                 .bind(auction_id)
                 .execute(&mut **tx)
@@ -146,7 +157,7 @@ ON CONFLICT DO NOTHING
             "#,
         )
         .bind(tx_signature.as_ref())
-        .bind(i32::try_from(instruction_index).expect("instruction index fits i32"))
+        .bind(to_db_instruction_index(instruction_index))
         .bind(inner_ix_path)
         .bind(trade.order_uid.0)
         .bind(BigDecimal::from(trade.amount_withdrawn_delta))
