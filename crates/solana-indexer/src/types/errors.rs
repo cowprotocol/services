@@ -18,8 +18,8 @@ pub(crate) enum DecodeError {
     /// on-chain layout. Carries the parser's error rendered as text, which
     /// names the failed check. Nothing branches on it, and the interface does
     /// not re-export its error type.
-    #[error("schema mismatch: {0}")]
-    SchemaMismatch(String),
+    #[error("schema mismatch")]
+    SchemaMismatch,
 }
 
 /// Failures surfaced from the persistence boundary.

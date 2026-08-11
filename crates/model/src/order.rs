@@ -727,6 +727,10 @@ pub struct OrderMetadata {
     /// Full app data that `OrderData::app_data` is a hash of. Can be None if
     /// the backend doesn't know about the full app data.
     pub full_app_data: Option<String>,
+    /// Earliest time (unix seconds) at which the order may enter a batch
+    /// auction. `None` means no lower bound (eligible immediately).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<u32>,
     /// If the order was created with a quote, then this field contains that
     /// quote data for reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]

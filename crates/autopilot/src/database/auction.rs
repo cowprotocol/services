@@ -10,21 +10,21 @@ use {
     shared::{
         db_order_conversions::full_order_into_model_order,
         event_storing_helpers::{create_db_search_parameters, create_quote_row},
-        order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
+        order_quoting::{QuoteCompetition, QuoteData, QuoteSearchParameters, QuoteStoring},
     },
     std::{collections::HashMap, ops::DerefMut, sync::Arc},
 };
 
 #[async_trait::async_trait]
 impl QuoteStoring for Postgres {
-    async fn save(&self, data: QuoteData) -> Result<QuoteId> {
+    async fn save(&self, data: QuoteCompetition) -> Result<QuoteId> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["save_quote"])
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let row = create_quote_row(data)?;
+        let row = create_quote_row(&data)?;
         let id = database::quotes::save(&mut ex, &row).await?;
         Ok(id)
     }
@@ -59,6 +59,12 @@ impl QuoteStoring for Postgres {
             .map(|quote| Ok((quote.id, quote.try_into()?)))
             .transpose()
     }
+
+    async fn get_next_auction_id(&self) -> Result<i64> {
+        // explicitly DON'T call the trait method to protect against
+        // endless recursion after a botched function rename
+        Postgres::get_next_auction_id(self).await
+    }
 }
 
 impl Postgres {
@@ -77,7 +83,7 @@ impl Postgres {
             .execute(ex.deref_mut())
             .await?;
         let orders: HashMap<domain::OrderUid, Arc<Order>> =
-            database::orders::solvable_orders(&mut ex, i64::from(min_valid_to))
+            database::orders::solvable_orders(&mut ex, i64::from(min_valid_to), start.timestamp())
                 .map(|result| match result {
                     Ok(order) => full_order_into_model_order(order)
                         .map(|order| (domain::OrderUid(order.metadata.uid.0), Arc::new(order))),

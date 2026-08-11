@@ -52,7 +52,7 @@ impl Arbitrator {
         let token: eth::TokenAddress = *wrapped_native_token;
         Self(winsel::Arbitrator {
             max_winners,
-            weth: *token,
+            wrapped_native: *token,
         })
     }
 

@@ -380,9 +380,9 @@ fn decode_order_created(
 ) -> Result<SettlementEvent, DecodeError> {
     let mut accounts = instruction_account_keys(instruction, account_keys)?;
     let input = CreateOrderInput::parse(&instruction.data, &mut accounts)
-        .map_err(|err| DecodeError::SchemaMismatch(err.to_string()))?;
+        .map_err(|_| DecodeError::SchemaMismatch)?;
     let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
-        .map_err(|err| DecodeError::SchemaMismatch(err.to_string()))?;
+        .map_err(|_| DecodeError::SchemaMismatch)?;
     Ok(SettlementEvent::OrderCreated {
         order_uid: OrderUid(uid.to_bytes()),
         owner: to_sdk_pubkey(intent.owner),
@@ -399,7 +399,7 @@ fn decode_buffers_created(
 ) -> Result<Vec<SettlementEvent>, DecodeError> {
     let mut accounts = instruction_account_keys(instruction, account_keys)?;
     let input = CreateBufferInput::parse(&instruction.data, &mut accounts)
-        .map_err(|err| DecodeError::SchemaMismatch(err.to_string()))?;
+        .map_err(|_| DecodeError::SchemaMismatch)?;
     Ok(input
         .buffers
         .iter()
