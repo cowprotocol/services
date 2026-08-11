@@ -2,7 +2,7 @@ use {
     crate::{
         boundary::{self, SolvableOrders},
         domain::{self, auction::Price},
-        infra::{self, banned},
+        infra::{self},
     },
     account_balances::{BalanceFetching, Query},
     alloy::primitives::{Address, U256},
@@ -131,7 +131,7 @@ impl Metrics {
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
     persistence: infra::Persistence,
-    banned_users: banned::Users,
+    banned_users: Arc<order_validation::banned::Users>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     deny_listed_tokens: DenyListedTokens,
     cache: Mutex<Option<Inner>>,
@@ -157,7 +157,7 @@ impl SolvableOrdersCache {
     pub fn new(
         min_order_validity_period: Duration,
         persistence: infra::Persistence,
-        banned_users: banned::Users,
+        banned_users: Arc<order_validation::banned::Users>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         deny_listed_tokens: DenyListedTokens,
         native_price_estimator: Arc<NativePriceUpdater>,
@@ -499,7 +499,10 @@ impl SolvableOrdersCache {
 
 /// Finds all orders whose owners or receivers are in the set of "banned"
 /// users.
-async fn find_banned_user_orders(orders: &[&Order], banned_users: &banned::Users) -> Vec<OrderUid> {
+async fn find_banned_user_orders(
+    orders: &[&Order],
+    banned_users: &order_validation::banned::Users,
+) -> Vec<OrderUid> {
     let banned = banned_users
         .banned(
             orders

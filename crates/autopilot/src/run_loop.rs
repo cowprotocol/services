@@ -129,16 +129,12 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
         maintenance: MaintenanceSync,
+        wake_runloop: Arc<tokio::sync::Notify>,
     ) -> Self {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
 
-        // Create notifier that wakes the main loop on new blocks or orders
-        let wake_notify = Arc::new(tokio::sync::Notify::new());
-
-        // Spawn background tasks to listen for events
-        persistence.spawn_order_listener(wake_notify.clone());
-        Self::spawn_block_listener(eth.current_block().clone(), wake_notify.clone());
+        Self::spawn_block_listener(eth.current_block().clone(), wake_runloop.clone());
 
         Self {
             config,
@@ -150,7 +146,7 @@ impl RunLoop {
             probes,
             maintenance,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
-            wake_notify,
+            wake_notify: wake_runloop,
         }
     }
 
