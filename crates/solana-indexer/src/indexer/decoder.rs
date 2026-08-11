@@ -33,6 +33,7 @@ use {
         recover_discriminator,
     },
     solana_sdk::pubkey::Pubkey,
+    std::collections::BTreeMap,
     tokio::sync::mpsc::Receiver,
 };
 
@@ -77,7 +78,8 @@ impl Decoder {
     /// whose transactions have all been delivered. Buffering also makes it
     /// one persistence batch per slot instead of one per transaction.
     pub async fn run(&mut self) -> Result<(), PersistenceError> {
-        let mut pending: Option<SlotBuffer> = None;
+        let mut pending: BTreeMap<Slot, SlotBuffer> = BTreeMap::new();
+        let mut flushed_through: Option<Slot> = None;
         while let Some(update) = self.rx.recv().await {
             let (slot, signature, inner) = match update {
                 StreamUpdate::Tx {
@@ -85,20 +87,28 @@ impl Decoder {
                     signature,
                     inner,
                 } => (slot, signature, inner),
-                // A status message for a later slot proves the pending slot is
-                // fully delivered. Settlement transactions can be minutes
-                // apart, this keeps the flush latency at one slot instead.
+                // Slot statuses bound the flush latency: the next settlement
+                // transaction can be minutes away.
                 StreamUpdate::Slot { slot } => {
-                    if let Some(buffer) = pending.take_if(|buffer| slot > buffer.slot) {
-                        self.flush(buffer, true).await?;
-                    }
+                    self.flush_up_to(&mut pending, slot, &mut flushed_through)
+                        .await?;
                     continue;
                 }
             };
-            // A transaction of a later slot proves the pending slot is fully
-            // delivered, so it is safe to flush and mark done.
-            if let Some(buffer) = pending.take_if(|buffer| slot > buffer.slot) {
-                self.flush(buffer, true).await?;
+            self.flush_up_to(&mut pending, slot, &mut flushed_through)
+                .await?;
+
+            if let Some(flushed) = flushed_through
+                && slot <= flushed
+            {
+                // The events below still persist, and the backward watermark
+                // write is a no-op, but a crash before this batch flushes
+                // would lose the transaction: resume starts past its slot.
+                tracing::warn!(
+                    %slot,
+                    flushed_through = %flushed,
+                    "transaction arrived for an already flushed slot"
+                );
             }
 
             let (events, decode_failed) = match self.decode(*inner, slot, signature) {
@@ -106,30 +116,41 @@ impl Decoder {
                 Err(PartialDecode { events }) => (events, true),
             };
             tracing::debug!(slot = %slot, event_count = events.len(), "decoded events");
-            let buffer = pending.get_or_insert_with(|| SlotBuffer::new(slot));
-            if slot < buffer.slot {
-                // The buffered slot's watermark would claim this transaction's
-                // slot as done. Its events still persist with the batch, so
-                // nothing is lost, but the delivery-order assumption broke.
-                tracing::warn!(
-                    %slot,
-                    buffered_slot = %buffer.slot,
-                    "transaction arrived below the buffered slot"
-                );
-            }
+            let buffer = pending.entry(slot).or_default();
             buffer.events.extend(events);
             if decode_failed {
                 // Partial decode is expected: events that did decode persist
                 // and recovery replays the whole transaction by signature,
                 // idempotent writes absorb the overlap.
-                buffer.dead_letters.push((signature, slot));
+                buffer.dead_letters.push(signature);
             }
         }
-        // The stream ended, so the buffered slot may be missing transactions.
-        // Keep the watermark at the previous slot: a restart redelivers the
-        // whole slot and idempotent writes absorb the overlap.
-        if let Some(buffer) = pending {
-            self.flush(buffer, false).await?;
+        // The stream ended. Only the newest buffer may be missing
+        // transactions, everything below it was already proven complete by
+        // later stream activity.
+        let mut leftover = pending.into_iter().peekable();
+        while let Some((slot, buffer)) = leftover.next() {
+            let complete = leftover.peek().is_some();
+            self.flush_slot(slot, buffer, complete).await?;
+        }
+        Ok(())
+    }
+
+    /// Flushes every buffer at least [`FLUSH_HOLDBACK_SLOTS`] behind the
+    /// observed slot. The hold-back gives late-delivered transactions a
+    /// window to join their slot's still unflushed buffer, keeping them
+    /// crash-safe: resume replays everything from the watermark on.
+    async fn flush_up_to(
+        &self,
+        pending: &mut BTreeMap<Slot, SlotBuffer>,
+        observed: Slot,
+        flushed_through: &mut Option<Slot>,
+    ) -> Result<(), PersistenceError> {
+        let cutoff = u64::from(observed).saturating_sub(FLUSH_HOLDBACK_SLOTS);
+        let keep = pending.split_off(&Slot(cutoff.saturating_add(1)));
+        for (slot, buffer) in std::mem::replace(pending, keep) {
+            self.flush_slot(slot, buffer, true).await?;
+            *flushed_through = (*flushed_through).max(Some(slot));
         }
         Ok(())
     }
@@ -140,14 +161,19 @@ impl Decoder {
     /// call so the adapter can apply both in one SQL transaction. A slot cut
     /// off by the stream end (`complete = false`) keeps the watermark behind
     /// itself.
-    async fn flush(&self, buffer: SlotBuffer, complete: bool) -> Result<(), PersistenceError> {
-        for (signature, slot) in buffer.dead_letters {
+    async fn flush_slot(
+        &self,
+        slot: Slot,
+        buffer: SlotBuffer,
+        complete: bool,
+    ) -> Result<(), PersistenceError> {
+        for signature in buffer.dead_letters {
             self.persistence.write_dead_letter(signature, slot).await?;
         }
         let watermark = if complete {
-            buffer.slot
+            slot
         } else {
-            Slot(u64::from(buffer.slot).saturating_sub(1))
+            Slot(u64::from(slot).saturating_sub(1))
         };
         if buffer.events.is_empty() {
             if complete {
@@ -256,24 +282,18 @@ struct ResolvedOrder {
     order_fulfilled: bool,
 }
 
-/// One slot's accumulated output, flushed when the slot is over.
-struct SlotBuffer {
-    slot: Slot,
-    events: Vec<DecodedEvent>,
-    /// Failed transactions and the slot each belongs to. A late transaction
-    /// lands in a newer slot's buffer, so the buffer's slot would be wrong
-    /// for its dead-letter row.
-    dead_letters: Vec<(Signature, Slot)>,
-}
+/// Slots stay buffered until the stream reports a slot this far past them.
+/// A transaction delivered up to this many slots late still joins its own
+/// unflushed buffer instead of racing the watermark.
+const FLUSH_HOLDBACK_SLOTS: u64 = 2;
 
-impl SlotBuffer {
-    fn new(slot: Slot) -> Self {
-        Self {
-            slot,
-            events: Vec::new(),
-            dead_letters: Vec::new(),
-        }
-    }
+/// One slot's accumulated output, flushed once the stream moves past the
+/// hold-back window.
+#[derive(Default)]
+struct SlotBuffer {
+    events: Vec<DecodedEvent>,
+    /// Transactions that failed to decode, dead-lettered at flush time.
+    dead_letters: Vec<Signature>,
 }
 
 /// The events that did decode from a transaction in which at least one
