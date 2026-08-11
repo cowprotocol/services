@@ -7,7 +7,7 @@ use {
         infra::{
             self,
             Api,
-            blockchain::{self, Ethereum, RpcError, gas},
+            blockchain::{self, Ethereum, gas},
             cli,
             config,
             liquidity,
@@ -15,6 +15,8 @@ use {
             solver::Solver,
         },
     },
+    alloy::providers::Provider,
+    chain::Chain,
     clap::Parser,
     futures::future::join_all,
     http_client::HttpClientFactory,
@@ -22,6 +24,7 @@ use {
     simulator::{self, Simulator},
     std::{net::SocketAddr, time::Duration},
     tokio::sync::oneshot,
+    url::Url,
 };
 
 /// The driver entry-point. This function exists in order to be able to run the
@@ -48,11 +51,10 @@ pub async fn run(
 /// Run the driver. This function exists to avoid multiple monomorphizations of
 /// the `run` code, which bloats the binaries and increases compile times.
 async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
-    let ethrpc_res = ethrpc(&args).await;
-    let chain_name = ethrpc_res
-        .as_ref()
-        .map(|ethrpc| ethrpc.chain().name())
-        .unwrap_or("unknown");
+    // use dedicated function instead of reading this from `ethrpc` to make
+    // sure we fully initialize the metrics registry before calling any code
+    // that populates those metrics
+    let chain_name = get_chain_name(args.ethrpc.clone()).await;
 
     infra::observe::init(observe::Config::new(
         &args.log,
@@ -61,7 +63,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         tracing_config(&args.tracing, format!("driver-{chain_name}")),
     ));
 
-    let ethrpc = ethrpc_res.expect("connect ethereum RPC");
+    let ethrpc = ethrpc(&args).await;
     let config = config::file::load(ethrpc.chain(), &args.config).await;
 
     let version = observe::version::git_version();
@@ -194,13 +196,15 @@ fn simulator(
     simulator
 }
 
-async fn ethrpc(args: &cli::Args) -> Result<blockchain::Rpc, RpcError> {
+async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
     let args = blockchain::RpcArgs {
         url: args.ethrpc.clone(),
         max_batch_size: args.ethrpc_max_batch_size,
         max_concurrent_requests: args.ethrpc_max_concurrent_requests,
     };
-    blockchain::Rpc::try_new(args).await
+    blockchain::Rpc::try_new(args)
+        .await
+        .expect("connect ethereum RPC")
 }
 
 async fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {
@@ -232,6 +236,17 @@ fn liquidity_sources_notifier(
         .unwrap_or(&notify::liquidity_sources::config::Config { liquorice: None });
     notify::liquidity_sources::Notifier::try_new(notifier_config, eth.chain())
         .expect("initialize notify sources notifier")
+}
+
+async fn get_chain_name(rpc: Url) -> &'static str {
+    let provider = alloy::providers::builder::<alloy::network::Ethereum>().connect_http(rpc);
+    provider
+        .get_chain_id()
+        .await
+        .ok()
+        .and_then(|id| Chain::try_from(id).ok())
+        .map(|chain| chain.name())
+        .unwrap_or("unknown")
 }
 
 #[cfg(unix)]
