@@ -77,9 +77,8 @@ impl Postgres {
                 ..
             }) => {
                 // The order row itself is written by the orderbook at intake.
-                // TODO: insert `solana.orders` here too for orders created
-                // directly on chain, which needs the intent fields on the
-                // event.
+                // TODO: also insert the `solana.orders` row, so orders created
+                // directly on chain become solvable.
                 sqlx::query(
                     r#"
 INSERT INTO solana.order_pda (order_uid, created_by)
