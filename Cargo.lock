@@ -9794,6 +9794,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-driver"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "futures",
+ "mimalloc",
+ "observe",
+ "tikv-jemallocator",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "solana-epoch-info"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
