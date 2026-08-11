@@ -12,8 +12,7 @@ use {
     sqlx::{PgPool, PgTransaction},
 };
 
-/// The decoder's persistence seam. The Postgres implementation is the one
-/// production backend, tests drive the decoder through a recording double.
+/// The decoder's persistence seam.
 #[async_trait]
 pub(crate) trait Persistence: Send + Sync {
     /// Save one slot's decoded events and advance the slot watermark in one
@@ -99,13 +98,14 @@ ON CONFLICT (order_uid) DO NOTHING
             }) => {
                 sqlx::query(
                     r#"
-INSERT INTO solana.settlements (slot, tx_signature, solver, auction_id, solution_uid)
-VALUES ($1, $2, $3, $4, NULL)
-ON CONFLICT (tx_signature) DO NOTHING
+INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, auction_id, solution_uid)
+VALUES ($1, $2, $3, $4, $5, NULL)
+ON CONFLICT (tx_signature, instruction_index) DO NOTHING
                     "#,
                 )
                 .bind(to_db_slot(slot))
                 .bind(tx_signature.as_ref())
+                .bind(i32::try_from(instruction_index).expect("instruction index fits i32"))
                 .bind(solver.to_bytes())
                 .bind(auction_id)
                 .execute(&mut **tx)
@@ -157,7 +157,7 @@ ON CONFLICT DO NOTHING
         if inserted == 0 {
             return Ok(());
         }
-        sqlx::query(
+        let updated = sqlx::query(
             r#"
 UPDATE solana.order_pda
 SET amount_withdrawn = amount_withdrawn + $2,
@@ -169,7 +169,17 @@ WHERE order_uid = $1
         .bind(BigDecimal::from(trade.amount_withdrawn_delta))
         .bind(BigDecimal::from(trade.amount_received_delta))
         .execute(&mut **tx)
-        .await?;
+        .await?
+        .rows_affected();
+        if updated == 0 {
+            // The trade row keeps the deltas, so the sums are reconstructible
+            // once the order PDA row appears, but nothing applies them
+            // automatically.
+            tracing::warn!(
+                order_uid = %trade.order_uid,
+                "trade for an order without an order_pda row, sums not applied"
+            );
+        }
         Ok(())
     }
 
@@ -366,6 +376,16 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 0, 42, 'sell', false, $2, now(), 'ma
                     order_fulfilled: false,
                 }],
             }),
+            // A second settlement in the same transaction keeps its own row.
+            DecodedEvent::Settlement(SettlementEvent::SettlementFinalized {
+                auction_id: 78,
+                solver: Pubkey::new_from_array([0xCC; 32]),
+                tx_signature: Signature::from([9; 64]),
+                slot: Slot(20),
+                instruction_index: 3,
+                inner_ix_path: vec![],
+                trades: vec![],
+            }),
         ];
 
         // Twice: the second run must change nothing, replay is idempotent.
@@ -401,7 +421,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 0, 42, 'sell', false, $2, now(), 'ma
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!((settlements, trades), (1, 1));
+        assert_eq!((settlements, trades), (2, 1));
         assert_eq!(postgres.read_watermark().await.unwrap(), Some(Slot(20)));
     }
 }
