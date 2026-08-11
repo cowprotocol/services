@@ -22,7 +22,7 @@
 
 use {
     crate::{
-        persistence::Persistence,
+        persistence::Postgres,
         types::{
             Signature,
             channel::StreamUpdate,
@@ -80,7 +80,7 @@ where
     pub tx: Sender<StreamUpdate>,
 
     /// Latest chain slot seen on the slot filter. The ingester is the sole
-    /// writer. The `Arc` is taken from the caller so the finalization worker
+    /// writer. The `Arc` is taken from the caller so other components
     /// can share it as a read handle once it is wired up; it doesn't read it
     /// yet. Cold start is zero (`AtomicU64::default`).
     pub latest_chain_slot: Arc<AtomicU64>,
@@ -92,7 +92,7 @@ where
 {
     /// Construct a new ingester over an already-open update stream. The caller
     /// supplies `latest_chain_slot` so it can share the same `Arc<AtomicU64>`
-    /// with the finalization worker, and reuse it across restarts. The caller
+    /// with other components, and reuse it across restarts. The caller
     /// also owns building the stream, the
     /// subscription request, the resume slot, and the reconnect policy that
     /// come with it. Production wiring lives in [`Ingester::serve`].
@@ -264,11 +264,11 @@ impl Ingester<GeyserStream> {
     /// client is consumed and dropped with the ingester.
     ///
     /// `latest_chain_slot` is taken from the caller so the same `Arc` can be
-    /// shared with the finalization worker and reused across restarts.
+    /// shared with other components and reused across restarts.
     pub async fn serve(
         mut client: GeyserGrpcClient,
         tx: Sender<StreamUpdate>,
-        persistence: Persistence,
+        persistence: Postgres,
         latest_chain_slot: Arc<AtomicU64>,
         settlement_program: Pubkey,
         solflow_program: Pubkey,
@@ -300,7 +300,7 @@ impl Ingester<GeyserStream> {
 fn assert_serve_future_is_send(
     client: GeyserGrpcClient,
     tx: Sender<StreamUpdate>,
-    persistence: Persistence,
+    persistence: Postgres,
     latest_chain_slot: Arc<AtomicU64>,
     settlement_program: Pubkey,
     solflow_program: Pubkey,

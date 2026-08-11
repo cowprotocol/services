@@ -9,7 +9,7 @@ use {
     },
     crate::{
         indexer::ingester::Ingester,
-        persistence::{Call, Persistence},
+        persistence::Persistence,
         types::{
             Signature,
             channel::StreamUpdate,
@@ -312,9 +312,75 @@ fn signature(n: u8) -> Signature {
     Signature::from([n; 64])
 }
 
-fn test_decoder(settlement: Pubkey, solflow: Pubkey) -> (Decoder, Sender<StreamUpdate>) {
+/// One write the decoder asked for, captured so tests can assert the persist
+/// contract without a database behind it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Call {
+    /// Events plus the watermark they ride with.
+    PersistEvents {
+        events: Vec<DecodedEvent>,
+        watermark: Slot,
+    },
+    /// A watermark advance on a slot that decoded to no events.
+    Watermark(Slot),
+    /// A transaction whose decode failed.
+    DeadLetter { signature: Signature, slot: Slot },
+}
+
+/// Recording double for the persistence seam.
+#[derive(Clone, Default)]
+struct Recorder {
+    /// Shared with every clone, so a test can read what the decoder wrote
+    /// after handing its own clone to the component.
+    calls: std::sync::Arc<std::sync::Mutex<Vec<Call>>>,
+}
+
+impl Recorder {
+    /// The writes this instance received, in order.
+    fn calls(&self) -> Vec<Call> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    fn record(&self, call: Call) {
+        self.calls.lock().unwrap().push(call);
+    }
+}
+
+#[async_trait::async_trait]
+impl Persistence for Recorder {
+    async fn persist_events(
+        &self,
+        events: Vec<DecodedEvent>,
+        new_watermark: Slot,
+    ) -> Result<(), crate::types::errors::PersistenceError> {
+        self.record(Call::PersistEvents {
+            events,
+            watermark: new_watermark,
+        });
+        Ok(())
+    }
+
+    async fn write_watermark(
+        &self,
+        slot: Slot,
+    ) -> Result<(), crate::types::errors::PersistenceError> {
+        self.record(Call::Watermark(slot));
+        Ok(())
+    }
+
+    async fn write_dead_letter(
+        &self,
+        signature: Signature,
+        slot: Slot,
+    ) -> Result<(), crate::types::errors::PersistenceError> {
+        self.record(Call::DeadLetter { signature, slot });
+        Ok(())
+    }
+}
+
+fn test_decoder(settlement: Pubkey, solflow: Pubkey) -> (Decoder<Recorder>, Sender<StreamUpdate>) {
     let (sender, rx) = tokio::sync::mpsc::channel(16);
-    let decoder = Decoder::new(Persistence::default(), rx, settlement, solflow);
+    let decoder = Decoder::new(Recorder::default(), rx, settlement, solflow);
     (decoder, sender)
 }
 
@@ -610,6 +676,8 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
             solver,
             tx_signature: signature(6),
             slot: Slot(5),
+            instruction_index: 0,
+            inner_ix_path: vec![],
             trades: vec![TradeDelta {
                 order_uid: expected_uid,
                 amount_withdrawn_delta: 1_000,
@@ -670,7 +738,7 @@ async fn ingester_to_decoder_persists_decoded_events() {
     healthy.signature = signature(11).as_ref().to_vec();
 
     let (sender, receiver) = tokio::sync::mpsc::channel(16);
-    let persistence = Persistence::default();
+    let persistence = Recorder::default();
     let mut ingester = Ingester::new(
         stream::iter([
             Ok(tx_update(42, reverted)),

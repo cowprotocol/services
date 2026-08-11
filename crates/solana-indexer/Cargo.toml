@@ -17,6 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 async-trait = { workspace = true }
+bigdecimal = { workspace = true }
 bytes = { workspace = true }
 derive_more = { workspace = true }
 futures = { workspace = true }
@@ -27,6 +28,7 @@ settlement-interface = {
 }
 solana-client = { workspace = true }
 solana-sdk = { workspace = true }
+sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
 tracing = { workspace = true }

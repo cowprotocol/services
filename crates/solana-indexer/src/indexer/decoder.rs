@@ -38,9 +38,9 @@ use {
 };
 
 /// Decoder component.
-pub(crate) struct Decoder {
+pub(crate) struct Decoder<P> {
     /// Persistence layer.
-    pub persistence: Persistence,
+    pub persistence: P,
 
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
@@ -52,10 +52,10 @@ pub(crate) struct Decoder {
     pub solflow_program: Pubkey,
 }
 
-impl Decoder {
+impl<P: Persistence> Decoder<P> {
     /// Construct a new decoder. The caller owns the channel capacity decision.
     pub fn new(
-        persistence: Persistence,
+        persistence: P,
         rx: Receiver<StreamUpdate>,
         settlement_program: Pubkey,
         solflow_program: Pubkey,
@@ -551,6 +551,8 @@ fn decode_settlements_finalized(
             solver,
             tx_signature: ctx.signature,
             slot: ctx.slot,
+            instruction_index: begin.instruction_index,
+            inner_ix_path: begin.inner_ix_path.clone(),
             trades,
         });
     }

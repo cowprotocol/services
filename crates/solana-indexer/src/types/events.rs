@@ -62,6 +62,11 @@ pub(crate) enum SettlementEvent {
         tx_signature: Signature,
         /// Slot the settlement was observed at.
         slot: Slot,
+        /// Top-level index of the `BeginSettle` instruction, part of the
+        /// trade rows' primary key.
+        instruction_index: u32,
+        /// CPI path of the `BeginSettle` instruction, empty for top-level.
+        inner_ix_path: Vec<u8>,
         /// Per-order accounting deltas.
         trades: Vec<TradeDelta>,
     },

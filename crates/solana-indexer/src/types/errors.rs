@@ -33,6 +33,9 @@ pub(crate) enum PersistenceError {
     /// pool exhausted). The caller is expected to retry.
     #[error("persistence unavailable")]
     Unavailable,
+    /// The database rejected or failed a statement.
+    #[error("database: {0}")]
+    Database(#[from] sqlx::Error),
 }
 
 /// Failures surfaced from the stream boundary.
