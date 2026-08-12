@@ -72,14 +72,3 @@ CREATE TABLE solana.settlement_state_pda (
     manager         bytea NOT NULL CHECK (length(manager) = 32),
     pending_manager bytea CHECK (length(pending_manager) = 32)
 );
-
-CREATE FUNCTION solana.notify_settlement_state_pda_changed() RETURNS trigger AS $$
-BEGIN
-    PERFORM pg_notify('solana_settlement_state_pda_changed', '');
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER solana_settlement_state_pda_changed_notify
-    AFTER INSERT ON solana.settlement_state_pda
-    FOR EACH ROW EXECUTE FUNCTION solana.notify_settlement_state_pda_changed();

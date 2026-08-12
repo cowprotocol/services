@@ -35,21 +35,6 @@ CREATE TABLE solana.orders (
 CREATE INDEX solana_orders_valid_to ON solana.orders (valid_to);
 CREATE UNIQUE INDEX solana_orders_order_pda ON solana.orders (order_pda);
 
--- Only orders the autopilot can act on wake the auction loop: off-chain
--- intents carry a signature, gasless ones a presigned transaction.
-CREATE FUNCTION solana.notify_new_solana_order() RETURNS trigger AS $$
-BEGIN
-    PERFORM pg_notify('solana_new_order', encode(NEW.uid, 'hex'));
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER solana_order_insert_notify
-    AFTER INSERT ON solana.orders
-    FOR EACH ROW
-    WHEN (NEW.intent_signature IS NOT NULL OR NEW.presigned_transaction IS NOT NULL)
-    EXECUTE FUNCTION solana.notify_new_solana_order();
-
 -- Mutable on-chain order state, split from the immutable intent row above.
 -- amount_withdrawn / amount_received are running sums the indexer folds
 -- trades into.
@@ -64,17 +49,6 @@ CREATE TABLE solana.order_pda (
     -- NULL while the order PDA is live.
     cancellation_timestamp timestamp with time zone
 );
-
-CREATE FUNCTION solana.notify_order_pda_changed() RETURNS trigger AS $$
-BEGIN
-    PERFORM pg_notify('solana_order_pda_changed', encode(NEW.order_uid, 'hex'));
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER solana_order_pda_changed_notify
-    AFTER INSERT OR UPDATE ON solana.order_pda
-    FOR EACH ROW EXECUTE FUNCTION solana.notify_order_pda_changed();
 
 -- One transaction can carry several settlements (one BeginSettle/
 -- FinalizeSettle pair each), so the key includes the BeginSettle's top-level
@@ -91,36 +65,6 @@ CREATE TABLE solana.settlements (
 );
 
 CREATE INDEX solana_settlements_auction_id ON solana.settlements (auction_id);
--- The finalization trigger below scans settlements by slot on every
--- watermark advance.
-CREATE INDEX solana_settlements_slot ON solana.settlements (slot);
-
--- A settlement counts as finalized once the watermark passes its slot, so
--- the NOTIFY fires from the indexer_state.finalized_slot advance, covering
--- every settlement the advance newly finalized.
-CREATE FUNCTION solana.notify_settlements_finalized() RETURNS trigger AS $$
-DECLARE
-    settlement record;
-BEGIN
-    FOR settlement IN
-        SELECT auction_id, tx_signature FROM solana.settlements
-        WHERE slot > OLD.finalized_slot AND slot <= NEW.finalized_slot
-    LOOP
-        PERFORM pg_notify(
-            'solana_settlement_finalized',
-            settlement.auction_id::text || ':' || encode(settlement.tx_signature, 'hex')
-        );
-    END LOOP;
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER solana_settlement_finalized_notify
-    AFTER UPDATE OF finalized_slot ON solana.indexer_state
-    FOR EACH ROW
-    WHEN (NEW.finalized_slot > OLD.finalized_slot)
-    EXECUTE FUNCTION solana.notify_settlements_finalized();
-
 -- Per-order accounting deltas of a settlement. order_uid completes the key
 -- because one settlement moves several orders.
 CREATE TABLE solana.trades (
