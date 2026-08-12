@@ -41,15 +41,13 @@ CREATE UNLOGGED TABLE solana.chain_tip (
 );
 
 -- Transactions the decoder could not decode, kept for replay by signature.
--- The unique index dedupes re-streamed payloads.
+-- The signature key dedupes re-streamed payloads.
 CREATE TABLE solana.dead_letter (
+    tx_signature bytea PRIMARY KEY CHECK (length(tx_signature) = 64),
     slot         bigint NOT NULL,
-    tx_signature bytea NOT NULL CHECK (length(tx_signature) = 64),
     reason       text NOT NULL,
     inserted_at  timestamp with time zone NOT NULL DEFAULT now()
 );
-
-CREATE UNIQUE INDEX solana_dead_letter_signature ON solana.dead_letter (tx_signature);
 
 -- Slot ranges skipped wholesale (outage past the provider replay window).
 -- Coarser than dead_letter: "no data for slots N..M at all", aimed at ops.
