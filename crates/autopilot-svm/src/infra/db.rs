@@ -59,7 +59,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
-    async fn postgres_last_indexed_slot_roundtrip() {
+    async fn solana_db_last_indexed_slot_roundtrip() {
         let pool = PgPool::connect("postgresql://").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
 
@@ -78,7 +78,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
-    async fn postgres_settlements_by_auction_roundtrip() {
+    async fn solana_db_settlements_by_auction_roundtrip() {
         let pool = PgPool::connect("postgresql://").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
 
