@@ -81,27 +81,6 @@ CREATE TABLE solana.trades (
 
 CREATE INDEX solana_trades_order_uid ON solana.trades (order_uid);
 
--- No foreign key to solana.orders, matching the base order_quotes: a quote
--- write never depends on the intent row's existence.
-CREATE TABLE solana.order_quotes (
-    order_uid            bytea PRIMARY KEY CHECK (length(order_uid) = 32),
-    compute_units        bigint NOT NULL,
-    -- Priority fee, microlamports per compute unit.
-    compute_unit_price   bigint NOT NULL,
-    -- Fractional, lamports per raw sell-token unit.
-    sell_token_price     double precision NOT NULL,
-    sell_amount          numeric(20,0) NOT NULL,
-    buy_amount           numeric(20,0) NOT NULL,
-    solver               bytea NOT NULL CHECK (length(solver) = 32),
-    verified             boolean NOT NULL DEFAULT false,
-    metadata             jsonb,
-    creation_timestamp   timestamptz NOT NULL DEFAULT now(),
-    expiration_timestamp timestamptz,
-    -- Text on purpose: the EVM QuoteKind variants are signature-scheme
-    -- specific.
-    quote_kind           text NOT NULL DEFAULT 'standard'
-);
-
 -- The autopilot's settlement observation windows, one per dispatched winner.
 CREATE TABLE solana.settlement_executions (
     auction_id               bigint NOT NULL,
