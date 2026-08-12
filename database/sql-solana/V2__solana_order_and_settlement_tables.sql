@@ -12,9 +12,9 @@ CREATE TABLE solana.orders (
     buy_token             bytea NOT NULL CHECK (length(buy_token) = 32),
     sell_token_account    bytea NOT NULL CHECK (length(sell_token_account) = 32),
     buy_token_account     bytea NOT NULL CHECK (length(buy_token_account) = 32),
-    sell_amount           numeric(78,0) NOT NULL,
-    buy_amount            numeric(78,0) NOT NULL,
-    fee_amount            numeric(78,0) NOT NULL,
+    sell_amount           numeric(20,0) NOT NULL,
+    buy_amount            numeric(20,0) NOT NULL,
+    fee_amount            numeric(20,0) NOT NULL,
     -- Unix seconds, u32 on chain.
     valid_to              bigint NOT NULL,
     kind                  OrderKind NOT NULL,
@@ -45,8 +45,8 @@ CREATE TABLE solana.order_pda (
     created_by             bytea NOT NULL CHECK (length(created_by) = 32),
     -- Owner of buy_token_account, resolved by the indexer.
     receiver_owner         bytea CHECK (length(receiver_owner) = 32),
-    amount_withdrawn       numeric(78,0) NOT NULL DEFAULT 0,
-    amount_received        numeric(78,0) NOT NULL DEFAULT 0,
+    amount_withdrawn       numeric(20,0) NOT NULL DEFAULT 0,
+    amount_received        numeric(20,0) NOT NULL DEFAULT 0,
     -- NULL while the order PDA is live.
     cancellation_timestamp timestamp with time zone
 );
@@ -75,11 +75,11 @@ CREATE TABLE solana.trades (
     inner_ix_path           integer[] NOT NULL DEFAULT '{}',
     order_uid               bytea NOT NULL CHECK (length(order_uid) = 32),
     -- Per-order pull from the BeginSettle instruction data, fee included.
-    sell_amount             numeric(78,0) NOT NULL,
+    sell_amount             numeric(20,0) NOT NULL,
     -- Per-order push from the FinalizeSettle instruction data.
-    buy_amount              numeric(78,0) NOT NULL,
+    buy_amount              numeric(20,0) NOT NULL,
     -- From the off-chain proposed-solution data.
-    fee_amount              numeric(78,0) NOT NULL,
+    fee_amount              numeric(20,0) NOT NULL,
     PRIMARY KEY (settlement_tx_signature, instruction_index, inner_ix_path, order_uid),
     FOREIGN KEY (settlement_tx_signature, instruction_index)
         REFERENCES solana.settlements (tx_signature, instruction_index)
@@ -107,13 +107,14 @@ CREATE TABLE solana.interactions (
 
 CREATE TABLE solana.order_quotes (
     order_uid            bytea PRIMARY KEY REFERENCES solana.orders(uid),
-    -- Compute units.
-    gas_amount           numeric(78,0) NOT NULL,
-    -- Priority fee, lamports per compute unit.
-    gas_price            numeric(78,0) NOT NULL,
-    sell_token_price     numeric(78,0) NOT NULL,
-    sell_amount          numeric(78,0) NOT NULL,
-    buy_amount           numeric(78,0) NOT NULL,
+    -- Compute units, an integer on chain.
+    gas_amount           bigint NOT NULL,
+    -- Priority fee, microlamports per compute unit.
+    gas_price            bigint NOT NULL,
+    -- Fractional, lamports per raw sell-token unit.
+    sell_token_price     double precision NOT NULL,
+    sell_amount          numeric(20,0) NOT NULL,
+    buy_amount           numeric(20,0) NOT NULL,
     solver               bytea NOT NULL CHECK (length(solver) = 32),
     verified             boolean NOT NULL DEFAULT false,
     metadata             jsonb,
