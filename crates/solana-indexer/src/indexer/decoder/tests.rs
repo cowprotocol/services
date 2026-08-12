@@ -604,7 +604,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 /// ingester and come out of the decoder as persistence writes. This is the
 /// only test spanning the channel, so it pins that what the ingester forwards
 /// is what the decoder can consume, and it drives all three persistence
-/// writes: the bare watermark for a slot with no events, the dead letter for
+/// writes: the bare slot advance for a slot with no events, the dead letter for
 /// a failed decode (which suppresses that transaction's events entirely),
 /// and the flush driven by a slot status moving past the hold-back window.
 #[tokio::test]
@@ -675,7 +675,7 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     // is not two past either of them, so nothing may be persisted yet.
     let reader = Postgres::new(pool.clone());
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert_eq!(reader.read_watermark().await.unwrap(), None);
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), None);
 
     // The slot-45 status moves the stream two past 43 and flushes both slots.
     // Closing the channel ends the ingester (a terminal stream end) and the
@@ -686,7 +686,7 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     assert!(ingester_task.await.unwrap().is_err());
     assert!(decoder_task.await.unwrap().is_ok());
 
-    assert_eq!(reader.read_watermark().await.unwrap(), Some(Slot(43)));
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(43)));
 
     // Slot 42 held only the reverted transaction: no dead letter, no rows.
     // The slot-43 transaction with the unknown discriminator is dead-lettered

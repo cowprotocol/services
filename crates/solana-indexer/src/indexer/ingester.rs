@@ -11,7 +11,7 @@
 //! unrecoverable error) or when the decoder hangs up.
 //!
 //! [`Ingester::serve`] is the production entrypoint — the "actual caller" —
-//! that builds the subscription request, resumes from the persisted watermark,
+//! that builds the subscription request, resumes past the last indexed slot,
 //! opens the `GeyserStream`, and runs the drain loop. It expects the
 //! [`GeyserGrpcClient`] it receives to have been built with a reconnect config
 //! (via `set_reconnect_config`), otherwise the `AutoReconnect` wrapper won't
@@ -234,9 +234,9 @@ where
 /// Why the ingester stopped.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
-    /// The persisted watermark could not be read.
-    #[error("failed to read the resume watermark: {0}")]
-    CantReadWatermark(#[from] PersistenceError),
+    /// The persisted last indexed slot could not be read.
+    #[error("failed to read the last indexed slot: {0}")]
+    CantReadLastIndexedSlot(#[from] PersistenceError),
     /// The yellowstone subscription could not be opened.
     #[error("failed to open the yellowstone subscription: {0}")]
     Subscribe(#[from] GeyserGrpcClientError),
@@ -250,14 +250,14 @@ pub(crate) enum Error {
 }
 
 impl Ingester<GeyserStream> {
-    /// Production entrypoint: build the subscription request, resume from the
-    /// persisted watermark, open an `AutoReconnect`-backed `GeyserStream`, and
-    /// run the drain loop.
+    /// Production entrypoint: build the subscription request, resume past
+    /// the persisted last indexed slot, open an `AutoReconnect`-backed
+    /// `GeyserStream`, and run the drain loop.
     ///
-    /// The initial `from_slot` is `watermark + 1`, or `None` on a cold start
-    /// (the provider subscribes from the live tip). Reconnect `from_slot` is
-    /// driven by the `AutoReconnect` wrapper's `BlockMeta` checkpoint, not this
-    /// method.
+    /// The initial `from_slot` is `last_indexed_slot + 1`, or `None` on a cold
+    /// start (the provider subscribes from the live tip). Reconnect
+    /// `from_slot` is driven by the `AutoReconnect` wrapper's `BlockMeta`
+    /// checkpoint, not this method.
     ///
     /// Returns `Ok(())` on a clean shutdown (the decoder dropped its receiver),
     /// or `Err(Error)` if setup failed or the stream ended terminally. The
@@ -276,9 +276,9 @@ impl Ingester<GeyserStream> {
         // The proto field is a bare slot number, and `from_slot` is inclusive, so
         // resume one past the last fully persisted slot.
         let from_slot = persistence
-            .read_watermark()
+            .last_indexed_slot()
             .await?
-            .map(|watermark| u64::from(watermark) + 1);
+            .map(|last_indexed| u64::from(last_indexed) + 1);
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
@@ -319,7 +319,7 @@ fn assert_serve_future_is_send(
 /// The wire-level filter shape: the two named transaction filters and the
 /// `chain_tip` slot filter, multiplexed into a single subscription at
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
-/// [`Ingester::serve`] (watermark + 1, or `None` for the live tip).
+/// [`Ingester::serve`] (`last_indexed_slot + 1`, or `None` for the live tip).
 ///
 /// The library auto-adds a `BlockMeta` + `slot` filter (under its
 /// `__autoreconnect` key) so the `AutoReconnect` wrapper can checkpoint and
