@@ -77,8 +77,8 @@ ON CONFLICT (singleton) DO UPDATE SET slot = EXCLUDED.slot
 
         sqlx::query(
             r#"
-INSERT INTO solana.settlements (slot, tx_signature, solver, auction_id, solution_uid)
-VALUES (7, $1, $2, 123, NULL)
+INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, auction_id, solution_uid)
+VALUES (7, $1, 0, $2, 123, NULL)
             "#,
         )
         .bind(ByteArray([9u8; 64]))
