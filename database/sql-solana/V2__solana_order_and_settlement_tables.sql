@@ -1,9 +1,7 @@
 -- Order and settlement tables, the solana.* counterparts of the EVM tables.
--- Schema source: solana-services-specifications backend/database section 4,
--- adjusted to the finalized-watermark model: the per-row commitment columns
--- are gone, a row is finalized once its slot is at or below
--- solana.indexer_state.finalized_slot, and the settlement-finalized NOTIFY
--- fires from the watermark advance instead of a per-row commitment flip.
+-- A row is final once its slot is at or below
+-- solana.indexer_state.finalized_slot, the settlement-finalized NOTIFY fires
+-- from that watermark's advance.
 -- Reuses the OrderKind, OrderClass and ExecutionTime enums.
 
 CREATE TABLE solana.orders (
@@ -16,27 +14,23 @@ CREATE TABLE solana.orders (
     sell_amount           numeric(78,0) NOT NULL,
     buy_amount            numeric(78,0) NOT NULL,
     fee_amount            numeric(78,0) NOT NULL,
-    -- u32 unix seconds on chain, wider here for safety.
+    -- Unix seconds, u32 on chain.
     valid_to              bigint NOT NULL,
     kind                  OrderKind NOT NULL,
     partially_fillable    boolean NOT NULL,
     app_data              bytea NOT NULL CHECK (length(app_data) = 32),
-    intent_signature      bytea CHECK (intent_signature IS NULL OR length(intent_signature) = 64),
-    -- Partially signed CreateOrder transaction bytes for gasless orders,
-    -- written by the orderbook at intake, read by the autopilot at submission.
+    intent_signature      bytea CHECK (length(intent_signature) = 64),
+    -- Partially signed CreateOrder transaction bytes for gasless orders.
     presigned_transaction bytea,
     creation_timestamp    timestamp with time zone NOT NULL,
-    -- market | limit on Solana.
+    -- market or limit, the liquidity class does not exist on Solana.
     class                 OrderClass NOT NULL,
     -- Canonical order PDA address, the reverse-lookup key during settlement
     -- decoding.
     order_pda             bytea NOT NULL CHECK (length(order_pda) = 32)
 );
 
-CREATE INDEX solana_orders_owner ON solana.orders USING hash (owner);
-CREATE INDEX solana_orders_sell_buy_tokens ON solana.orders (sell_token, buy_token);
 CREATE INDEX solana_orders_valid_to ON solana.orders (valid_to);
-CREATE INDEX solana_orders_user_creation ON solana.orders (owner, creation_timestamp DESC);
 CREATE UNIQUE INDEX solana_orders_order_pda ON solana.orders (order_pda);
 
 -- Only orders the autopilot can act on wake the auction loop: off-chain
@@ -55,24 +49,19 @@ CREATE TRIGGER solana_order_insert_notify
     EXECUTE FUNCTION solana.notify_new_solana_order();
 
 -- Mutable on-chain order state, split from the immutable intent row above.
--- amount_withdrawn / amount_received are materialized running sums the
--- decoder maintains from TradeDelta events.
+-- amount_withdrawn / amount_received are running sums the indexer folds
+-- trades into.
 CREATE TABLE solana.order_pda (
     order_uid              bytea PRIMARY KEY REFERENCES solana.orders(uid),
     -- Rent payer of the order PDA.
     created_by             bytea NOT NULL CHECK (length(created_by) = 32),
     -- Owner of buy_token_account, resolved by the indexer.
-    receiver_owner         bytea CHECK (receiver_owner IS NULL OR length(receiver_owner) = 32),
+    receiver_owner         bytea CHECK (length(receiver_owner) = 32),
     amount_withdrawn       numeric(78,0) NOT NULL DEFAULT 0,
     amount_received        numeric(78,0) NOT NULL DEFAULT 0,
     -- NULL while the order PDA is live.
     cancellation_timestamp timestamp with time zone
 );
-
-CREATE INDEX solana_order_pda_receiver_owner
-    ON solana.order_pda USING hash (receiver_owner) WHERE receiver_owner IS NOT NULL;
-CREATE INDEX solana_order_pda_open
-    ON solana.order_pda (order_uid) WHERE cancellation_timestamp IS NULL;
 
 CREATE FUNCTION solana.notify_order_pda_changed() RETURNS trigger AS $$
 BEGIN
@@ -94,8 +83,7 @@ CREATE TABLE solana.settlements (
     instruction_index integer NOT NULL,
     solver            bytea NOT NULL CHECK (length(solver) = 32),
     auction_id        bigint NOT NULL,
-    -- NULL only via the unmatched-attribution path; decode failures land in
-    -- solana.dead_letter instead.
+    -- NULL when the settlement matches no recorded competition solution.
     solution_uid      bigint,
     PRIMARY KEY (tx_signature, instruction_index)
 );
@@ -131,12 +119,12 @@ CREATE TRIGGER solana_settlement_finalized_notify
     WHEN (NEW.finalized_slot > OLD.finalized_slot)
     EXECUTE FUNCTION solana.notify_settlements_finalized();
 
--- One row per TradeDelta: order_uid is part of the key because one
--- FinalizeSettle instruction emits one delta per affected order PDA.
+-- Per-order accounting deltas of a settlement. order_uid completes the key
+-- because one settlement moves several orders.
 CREATE TABLE solana.trades (
     settlement_tx_signature bytea NOT NULL,
     instruction_index       integer NOT NULL,
-    -- '{}' = top-level; '{0,2,1}' = CPI path.
+    -- '{}' = top-level, '{0,2,1}' = CPI path.
     inner_ix_path           integer[] NOT NULL DEFAULT '{}',
     order_uid               bytea NOT NULL CHECK (length(order_uid) = 32),
     -- Per-order pull from the BeginSettle instruction data, fee included.
@@ -150,11 +138,7 @@ CREATE TABLE solana.trades (
         REFERENCES solana.settlements (tx_signature, instruction_index)
 );
 
--- Covers fill-summary queries by order_uid without a heap fetch;
--- settlement_tx_signature is included as the join key to solana.settlements.
-CREATE INDEX solana_trades_order_uid_cover
-    ON solana.trades (order_uid)
-    INCLUDE (buy_amount, sell_amount, fee_amount, settlement_tx_signature);
+CREATE INDEX solana_trades_order_uid ON solana.trades (order_uid);
 
 CREATE TYPE solana.account_meta AS (
     pubkey      bytea,
@@ -162,6 +146,8 @@ CREATE TYPE solana.account_meta AS (
     is_writable bool
 );
 
+-- Pre/post interactions attached to an order, the solana.* counterpart of
+-- the EVM interactions table.
 CREATE TABLE solana.interactions (
     order_uid  bytea NOT NULL CHECK (length(order_uid) = 32),
     index      integer NOT NULL,
@@ -186,6 +172,8 @@ CREATE TABLE solana.order_quotes (
     metadata             jsonb,
     creation_timestamp   timestamptz NOT NULL DEFAULT now(),
     expiration_timestamp timestamptz,
+    -- Text on purpose: the EVM QuoteKind variants are signature-scheme
+    -- specific.
     quote_kind           text NOT NULL DEFAULT 'standard'
 );
 
@@ -200,17 +188,14 @@ CREATE TABLE solana.settlement_executions (
     end_slot                 bigint,
     -- Driver-retry deadline slot.
     deadline_slot            bigint NOT NULL,
-    -- 'landed' | 'rejected' | 'timeout'.
-    outcome                  text,
-    -- Signature from the indexer's settlement-finalized event, NULL until
-    -- finalization.
-    submitted_signature      bytea CHECK (submitted_signature IS NULL OR length(submitted_signature) = 64),
+    -- NULL while the observation window is open.
+    outcome                  text CHECK (outcome IN ('landed', 'rejected', 'timeout')),
+    -- NULL until the settlement is finalized.
+    submitted_signature      bytea CHECK (length(submitted_signature) = 64),
     -- Grace-slots snapshot at window creation.
     finalization_grace_slots integer,
-    -- Provenance marker; only 'unreconciled' is written today.
+    -- 'unreconciled' marks rows reconstructed by the recovery scan.
     recovery_status          text,
     PRIMARY KEY (auction_id, solver, solution_uid)
 );
 
-CREATE INDEX solana_settlement_executions_time_range
-    ON solana.settlement_executions (start_timestamp, end_timestamp);

@@ -1,13 +1,12 @@
 -- The solana.* namespace and the indexer-owned bookkeeping tables.
--- Schema source: solana-services-specifications backend/database sections 1 and 3,
--- on the finalized-watermark model: rows are finalized once their slot is at or
--- below solana.indexer_state.finalized_slot, there is no per-row commitment column.
+-- Finality is a watermark: a row is final once its slot is at or below
+-- solana.indexer_state.finalized_slot.
 
 CREATE SCHEMA solana;
 
 -- Single-row watermark state. `slot` is the highest fully-processed slot the
 -- stream resumes from, `finalized_slot` the highest slot the stream reported
--- finalized. Both are monotone non-decreasing; operator repair that must move
+-- finalized. Both are monotone non-decreasing. Operator repair that must move
 -- them backward deletes and re-inserts the row, bypassing the trigger.
 CREATE TABLE solana.indexer_state (
     singleton      boolean PRIMARY KEY DEFAULT true CHECK (singleton),
@@ -41,9 +40,8 @@ CREATE UNLOGGED TABLE solana.chain_tip (
     slot      bigint NOT NULL
 );
 
--- Transactions the decoder could not decode, kept for replay by signature via
--- getTransaction. The unique index makes re-streamed payloads idempotent
--- (INSERT ON CONFLICT (tx_signature) DO NOTHING).
+-- Transactions the decoder could not decode, kept for replay by signature.
+-- The unique index dedupes re-streamed payloads.
 CREATE TABLE solana.dead_letter (
     slot         bigint NOT NULL,
     tx_signature bytea NOT NULL CHECK (length(tx_signature) = 64),
@@ -52,7 +50,6 @@ CREATE TABLE solana.dead_letter (
 );
 
 CREATE UNIQUE INDEX solana_dead_letter_signature ON solana.dead_letter (tx_signature);
-CREATE INDEX solana_dead_letter_inserted_at ON solana.dead_letter (inserted_at);
 
 -- Slot ranges skipped wholesale (outage past the provider replay window).
 -- Coarser than dead_letter: "no data for slots N..M at all", aimed at ops.
@@ -69,14 +66,13 @@ ALTER TABLE solana.lost_slot_ranges
     EXCLUDE USING gist (int8range(from_slot, to_slot, '[]') WITH &&);
 
 -- Append-only snapshot history of the settlement program state PDA (solver
--- allowlist + manager). The latest row (highest slot) is authoritative; the
--- autopilot re-reads it on LISTEN solana_settlement_state_pda_changed.
+-- allowlist + manager). The latest row (highest slot) is authoritative.
 CREATE TABLE solana.settlement_state_pda (
     slot            bigint PRIMARY KEY,
     observed_at     timestamp with time zone NOT NULL DEFAULT now(),
     allowlist       bytea[] NOT NULL,
     manager         bytea NOT NULL CHECK (length(manager) = 32),
-    pending_manager bytea CHECK (pending_manager IS NULL OR length(pending_manager) = 32)
+    pending_manager bytea CHECK (length(pending_manager) = 32)
 );
 
 CREATE FUNCTION solana.notify_settlement_state_pda_changed() RETURNS trigger AS $$
