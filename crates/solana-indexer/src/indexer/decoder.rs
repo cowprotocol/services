@@ -12,7 +12,14 @@ use {
             Signature,
             channel::StreamUpdate,
             errors::{DecodeError, PersistenceError},
-            events::{CreatedOrder, DecodedEvent, OrderKind, SettlementEvent, TradeDelta},
+            events::{
+                CreatedOrder,
+                DecodedEvent,
+                FinalizedSettlement,
+                OrderKind,
+                SettlementEvent,
+                TradeDelta,
+            },
             order::OrderUid,
             slot::Slot,
             tx::{ResolvedInstruction, TxContext},
@@ -559,7 +566,7 @@ fn decode_settlements_finalized(
             });
         }
 
-        events.push(SettlementEvent::SettlementFinalized {
+        events.push(SettlementEvent::SettlementFinalized(FinalizedSettlement {
             auction_id: begin_input.auction_id,
             solver,
             tx_signature: ctx.signature,
@@ -567,7 +574,7 @@ fn decode_settlements_finalized(
             instruction_index: begin.instruction_index,
             inner_ix_path: begin.inner_ix_path.clone(),
             trades,
-        });
+        }));
     }
     events
 }

@@ -4,7 +4,7 @@ use {
     crate::types::{
         Signature,
         errors::PersistenceError,
-        events::{DecodedEvent, SettlementEvent, TradeDelta},
+        events::{CreatedOrder, DecodedEvent, FinalizedSettlement, SettlementEvent, TradeDelta},
         slot::Slot,
     },
     async_trait::async_trait,
@@ -82,56 +82,76 @@ impl Postgres {
     ) -> Result<(), PersistenceError> {
         match event {
             DecodedEvent::Settlement(SettlementEvent::OrderCreated(order)) => {
-                // TODO: also insert the `solana.orders` row, so orders created
-                // directly on chain become solvable. Needs the token mints,
-                // which only an account lookup can provide, the intent carries
-                // token accounts.
-                sqlx::query(
-                    r#"
-INSERT INTO solana.order_pda (order_uid, created_by)
-VALUES ($1, $2)
-ON CONFLICT (order_uid) DO NOTHING
-                    "#,
-                )
-                .bind(order.order_uid.0)
-                .bind(order.created_by.to_bytes())
-                .execute(&mut **tx)
-                .await?;
+                Self::apply_order_created(tx, &order).await
             }
-            DecodedEvent::Settlement(SettlementEvent::SettlementFinalized {
-                auction_id,
-                solver,
-                tx_signature,
-                slot,
-                instruction_index,
-                inner_ix_path,
-                trades,
-            }) => {
-                sqlx::query(
-                    r#"
-INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, auction_id, solution_uid)
-VALUES ($1, $2, $3, $4, $5, NULL)
-ON CONFLICT (tx_signature, instruction_index) DO NOTHING
-                    "#,
-                )
-                .bind(to_db_slot(slot))
-                .bind(tx_signature.as_ref())
-                .bind(to_db_instruction_index(instruction_index))
-                .bind(solver.to_bytes())
-                .bind(auction_id)
-                .execute(&mut **tx)
-                .await?;
-                let path: Vec<i32> = inner_ix_path.iter().map(|&step| i32::from(step)).collect();
-                for trade in trades {
-                    Self::apply_trade(tx, tx_signature, instruction_index, &path, trade).await?;
-                }
+            DecodedEvent::Settlement(SettlementEvent::SettlementFinalized(settlement)) => {
+                Self::apply_settlement_finalized(tx, settlement).await
             }
             DecodedEvent::Settlement(other) => {
                 tracing::debug!(event = ?other, "settlement event without a persistence mapping");
+                Ok(())
             }
             DecodedEvent::SolFlow(event) => {
                 tracing::debug!(event = ?event, "solflow event without a persistence mapping");
+                Ok(())
             }
+        }
+    }
+
+    async fn apply_order_created(
+        tx: &mut PgTransaction<'_>,
+        order: &CreatedOrder,
+    ) -> Result<(), PersistenceError> {
+        // TODO: also insert the `solana.orders` row, so orders created
+        // directly on chain become solvable. Needs the token mints,
+        // which only an account lookup can provide, the intent carries
+        // token accounts.
+        sqlx::query(
+            r#"
+INSERT INTO solana.order_pda (order_uid, created_by)
+VALUES ($1, $2)
+ON CONFLICT (order_uid) DO NOTHING
+            "#,
+        )
+        .bind(order.order_uid.0)
+        .bind(order.created_by.to_bytes())
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    async fn apply_settlement_finalized(
+        tx: &mut PgTransaction<'_>,
+        settlement: FinalizedSettlement,
+    ) -> Result<(), PersistenceError> {
+        sqlx::query(
+            r#"
+INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, auction_id, solution_uid)
+VALUES ($1, $2, $3, $4, $5, NULL)
+ON CONFLICT (tx_signature, instruction_index) DO NOTHING
+            "#,
+        )
+        .bind(to_db_slot(settlement.slot))
+        .bind(settlement.tx_signature.as_ref())
+        .bind(to_db_instruction_index(settlement.instruction_index))
+        .bind(settlement.solver.to_bytes())
+        .bind(settlement.auction_id)
+        .execute(&mut **tx)
+        .await?;
+        let path: Vec<i32> = settlement
+            .inner_ix_path
+            .iter()
+            .map(|&step| i32::from(step))
+            .collect();
+        for trade in settlement.trades {
+            Self::apply_trade(
+                tx,
+                settlement.tx_signature,
+                settlement.instruction_index,
+                &path,
+                trade,
+            )
+            .await?;
         }
         Ok(())
     }
@@ -260,7 +280,7 @@ mod tests {
         super::{Persistence, Postgres},
         crate::types::{
             Signature,
-            events::{DecodedEvent, SettlementEvent, TradeDelta},
+            events::{DecodedEvent, FinalizedSettlement, SettlementEvent, TradeDelta},
             order::OrderUid,
             slot::Slot,
         },
@@ -401,7 +421,7 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
                     app_data: [0; 32],
                 },
             ))),
-            DecodedEvent::Settlement(SettlementEvent::SettlementFinalized {
+            DecodedEvent::Settlement(SettlementEvent::SettlementFinalized(FinalizedSettlement {
                 auction_id: 77,
                 solver: Pubkey::new_from_array([0xCC; 32]),
                 tx_signature: Signature::from([9; 64]),
@@ -414,9 +434,9 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
                     amount_received_delta: 500,
                     order_fulfilled: false,
                 }],
-            }),
+            })),
             // A second settlement in the same transaction keeps its own row.
-            DecodedEvent::Settlement(SettlementEvent::SettlementFinalized {
+            DecodedEvent::Settlement(SettlementEvent::SettlementFinalized(FinalizedSettlement {
                 auction_id: 78,
                 solver: Pubkey::new_from_array([0xCC; 32]),
                 tx_signature: Signature::from([9; 64]),
@@ -424,7 +444,7 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
                 instruction_index: 3,
                 inner_ix_path: vec![],
                 trades: vec![],
-            }),
+            })),
         ];
 
         // Twice: the second run must change nothing, replay is idempotent.

@@ -14,7 +14,14 @@ use {
             Signature,
             channel::StreamUpdate,
             errors::PersistenceError,
-            events::{CreatedOrder, DecodedEvent, OrderKind, SettlementEvent, TradeDelta},
+            events::{
+                CreatedOrder,
+                DecodedEvent,
+                FinalizedSettlement,
+                OrderKind,
+                SettlementEvent,
+                TradeDelta,
+            },
             order::OrderUid,
             slot::Slot,
             tx::TxContext,
@@ -680,7 +687,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 
     assert_eq!(
         events,
-        vec![SettlementEvent::SettlementFinalized {
+        vec![SettlementEvent::SettlementFinalized(FinalizedSettlement {
             auction_id: 4242,
             solver,
             tx_signature: signature(6),
@@ -693,7 +700,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
                 amount_received_delta: 1_234,
                 order_fulfilled: true,
             }],
-        }]
+        })]
     );
 }
 
