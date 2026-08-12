@@ -161,6 +161,13 @@ impl UniswapV3Indexer {
         db::set_checkpoint(&mut tx, &self.factory, from_block).await?;
         tx.commit().await.context("commit checkpoint tx")?;
 
+        self.catch_up_to_finalized().await
+    }
+
+    /// Indexes until the checkpoint reaches the finalized head. A checkpoint
+    /// already at the head returns at once; one left behind (e.g. by an
+    /// interrupted cold-seed) is driven the rest of the way.
+    pub(crate) async fn catch_up_to_finalized(&self) -> Result<()> {
         loop {
             let finalized_block = self.finalized_block().await?;
             let last_indexed_block = self.last_indexed_block().await?;
