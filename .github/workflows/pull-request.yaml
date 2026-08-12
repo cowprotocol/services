@@ -132,16 +132,18 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p orderbook -p database -p autopilot --tests &
+      - run: cargo build -p orderbook -p database -p autopilot -p autopilot-svm -p solana-indexer --tests &
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
       - run: docker compose -f docker-compose.yaml up -d db
       - run: docker compose -f docker-compose.yaml up migrations --abort-on-container-failure
+      - run: docker compose -f docker-compose.yaml up migrations-solana --abort-on-container-failure
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
       - run: just test-db
+      - run: just test-db-solana
 
   test-local-node:
     timeout-minutes: 60
