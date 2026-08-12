@@ -1,12 +1,12 @@
 -- The solana.* namespace and the indexer-owned bookkeeping tables.
--- Finality is a watermark: a row is final once its slot is at or below
+-- A row is final once its slot is at or below
 -- solana.indexer_state.finalized_slot.
 
 CREATE SCHEMA solana;
 
--- Single-row watermark state. `slot` is the highest fully-processed slot the
--- stream resumes from, `finalized_slot` the highest slot the stream reported
--- finalized. Both are monotone non-decreasing. Operator repair that must move
+-- Single-row indexer progress. `slot` is the last fully indexed slot, the
+-- stream resumes one past it. `finalized_slot` is the highest slot the
+-- stream reported finalized. Both are monotone non-decreasing. Operator repair that must move
 -- them backward deletes and re-inserts the row, bypassing the trigger.
 CREATE TABLE solana.indexer_state (
     singleton      boolean PRIMARY KEY DEFAULT true CHECK (singleton),
