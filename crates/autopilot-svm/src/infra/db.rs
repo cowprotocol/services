@@ -20,14 +20,14 @@ pub struct Settlement {
     pub solution_uid: Option<i64>,
 }
 
-/// Latest fully processed slot, the indexer's resume watermark. `None` before
-/// the indexer's first write. `solana.indexer_state` is a single-row table.
-pub async fn slot_watermark(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
+/// Latest slot the indexer fully processed. `None` before the indexer's first
+/// write. `solana.indexer_state` is a single-row table.
+pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
     const QUERY: &str = r#"SELECT slot FROM solana.indexer_state"#;
     sqlx::query_scalar(QUERY)
         .fetch_optional(ex)
         .await
-        .context("read solana.indexer_state watermark")
+        .context("read solana.indexer_state slot")
 }
 
 /// Settlements the indexer recorded for an auction. More than one row when the
@@ -52,29 +52,40 @@ ORDER BY slot, tx_signature
 #[cfg(test)]
 mod tests {
     use {
-        super::{settlements_by_auction, slot_watermark},
+        super::{last_indexed_slot, settlements_by_auction},
         database::byte_array::ByteArray,
         sqlx::PgPool,
     };
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
-    async fn reads_round_trip() {
+    async fn postgres_last_indexed_slot_roundtrip() {
         let pool = PgPool::connect("postgresql://").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
 
-        sqlx::query(
-            r#"
-INSERT INTO solana.indexer_state (slot, finalized_slot)
-VALUES (42, 0)
-ON CONFLICT (singleton) DO UPDATE SET slot = EXCLUDED.slot
-            "#,
-        )
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-        assert_eq!(slot_watermark(&mut *tx).await.unwrap(), Some(42));
+        sqlx::query(r#"DELETE FROM solana.indexer_state"#)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(last_indexed_slot(&mut *tx).await.unwrap(), None);
 
+        sqlx::query(r#"INSERT INTO solana.indexer_state (slot, finalized_slot) VALUES (42, 0)"#)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(last_indexed_slot(&mut *tx).await.unwrap(), Some(42));
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn postgres_settlements_by_auction_roundtrip() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+
+        sqlx::query(r#"DELETE FROM solana.settlements"#)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         sqlx::query(
             r#"
 INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, auction_id, solution_uid)
