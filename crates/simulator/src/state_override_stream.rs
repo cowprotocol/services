@@ -4,6 +4,17 @@
 //! state during settlement gas estimation and trade verification so pAMM
 //! routes simulate against their current in-memory state instead of stale
 //! previous-block state.
+//!
+//! Terminology used below, none of which the venue's own docs name:
+//! * *frame* — one websocket message: one venue's overrides for the block the
+//!   builder is about to build.
+//! * *lane* — one storage slot of the shared registry, holding one venue's live
+//!   quote for one token pair and direction. Venues quote a lane at most once
+//!   per block and leave the ones they aren't quoting alone.
+//! * *stamp* — the leading four bytes of a lane's word, holding the timestamp
+//!   of the block the quote is meant for. The venue reverts `StaleUpdate()`
+//!   unless it equals the timestamp of the block the call runs in; the
+//!   remaining 28 bytes are the maker's price.
 
 use {
     alloy_primitives::{Address, B256, map::B256Map},
@@ -15,10 +26,9 @@ use {
     std::{
         collections::BTreeMap,
         sync::Arc,
-        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant},
     },
     tokio::sync::watch,
-    tracing::{debug, warn},
 };
 
 /// Number of leading bytes of a storage word holding the venue's freshness
@@ -26,9 +36,14 @@ use {
 /// restamping untouched.
 const STAMP_LEN: usize = 4;
 
-/// How far a word's leading bytes may sit from the time its frame was
-/// published and still be read as a freshness stamp.
-const STAMP_TOLERANCE: u64 = 120;
+/// Beacon chain genesis and slot spacing, which turn the slot a frame names
+/// into the timestamp its freshly quoted lanes are stamped with.
+///
+/// These are mainnet's, which is the only chain the venues stream for. On any
+/// other chain the derived stamp matches no word, so no lane is recognised as
+/// freshly quoted and nothing is restamped.
+const BEACON_GENESIS: u64 = 1_606_824_023;
+const SLOT_DURATION: u64 = 12;
 
 /// State overrides delivered some point in time.
 #[derive(Clone)]
@@ -37,8 +52,8 @@ struct Snapshot {
     /// Block the frames describe. This is the block the builder is about to
     /// build (chain head + 1), not the block a simulation runs against.
     block_number: u64,
-    /// Freshness stamp of the newest frame folded into `overrides`. Only words
-    /// carrying it belong to a lane the maker requoted for `block_number`.
+    /// Stamp of the newest slot any venue quoted for. Only words carrying it
+    /// belong to a lane a maker is quoting for `block_number`.
     stamp: Option<u32>,
     received_at: Option<Instant>,
 }
@@ -72,56 +87,48 @@ impl SimulationOverrides {
     /// it carries.
     pub fn overrides_for(&self, block: u64, timestamp: u64) -> Option<StateOverride> {
         let metrics = Metrics::get();
-        let snapshot = self.0.snapshots.borrow();
-        let Some(received_at) = snapshot.received_at else {
-            metrics.record_override_result(OverrideResult::Empty);
-            return None;
+        // Holding this borrow blocks the stream task from publishing, so it is
+        // released before the copy is restamped.
+        let (overrides, stamp) = {
+            let snapshot = self.0.snapshots.borrow();
+            let Some(received_at) = snapshot.received_at else {
+                metrics.record_override_result(OverrideResult::Empty);
+                return None;
+            };
+            if received_at.elapsed() > self.0.max_age {
+                metrics.record_override_result(OverrideResult::TooOld);
+                return None;
+            }
+            if snapshot.block_number < block {
+                metrics.record_override_result(OverrideResult::WrongBlock);
+                return None;
+            }
+            if snapshot.overrides.is_empty() {
+                metrics.record_override_result(OverrideResult::Empty);
+                return None;
+            }
+            (snapshot.overrides.clone(), snapshot.stamp)
         };
-        if received_at.elapsed() > self.0.max_age {
-            metrics.record_override_result(OverrideResult::TooOld);
-            return None;
-        }
-        if snapshot.block_number < block {
-            metrics.record_override_result(OverrideResult::WrongBlock);
-            return None;
-        }
-        if snapshot.overrides.is_empty() {
-            metrics.record_override_result(OverrideResult::Empty);
-            return None;
-        }
         metrics.record_override_result(OverrideResult::Fresh);
-        Some(restamp(&snapshot.overrides, snapshot.stamp, timestamp))
+        let overrides = restamp(overrides, stamp, timestamp);
+        Some(overrides)
     }
 }
 
-/// Reads the freshness stamp out of a storage word published at
-/// `published_at`, if it carries one.
-///
-/// A word only counts as stamped when its leading bytes land near the time its
-/// frame was published. Words that carry no stamp hold unrelated values in the
-/// same position: mostly zero, but a sample of the live stream also shows a few
-/// hundred words leading with values that read as plausible unix timestamps
-/// years in the past. Anchoring to the publish time is what tells the two
-/// apart; a bare plausible-range check cannot.
-fn stamp_of(word: &B256, published_at: u64) -> Option<u32> {
-    let stamp = u32::from_be_bytes(word[..STAMP_LEN].try_into().expect("4 bytes"));
-    (u64::from(stamp).abs_diff(published_at) <= STAMP_TOLERANCE).then_some(stamp)
-}
-
-/// Moves the words quoted by the newest frame into the simulated block by
-/// rewriting their freshness stamp to `timestamp`.
+/// Moves the lanes quoted for `stamp` into the simulated block by rewriting
+/// their stamp to `timestamp`.
 ///
 /// Only words carrying `stamp` are rewritten. A lane the maker did not requote
 /// keeps its older stamp and stays dead, so the venue rejects it exactly as it
 /// would on chain; rewriting it too would forge liveness for a price nobody is
 /// quoting. Only the stamp bytes are touched, never the price bytes next to
 /// them.
-fn restamp(overrides: &StateOverride, stamp: Option<u32>, timestamp: u64) -> StateOverride {
-    let mut overrides = overrides.clone();
+fn restamp(mut overrides: StateOverride, stamp: Option<u32>, timestamp: u64) -> StateOverride {
     let Some(stamp) = stamp else {
         return overrides;
     };
-    let (stamp, timestamp) = (stamp.to_be_bytes(), (timestamp as u32).to_be_bytes());
+    let stamp = stamp.to_be_bytes();
+    let timestamp = (timestamp as u32).to_be_bytes();
     for account in overrides.values_mut() {
         let words = [account.state.as_mut(), account.state_diff.as_mut()];
         for word in words.into_iter().flatten().flat_map(B256Map::values_mut) {
@@ -136,9 +143,8 @@ fn restamp(overrides: &StateOverride, stamp: Option<u32>, timestamp: u64) -> Sta
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Frame {
+    slot: Option<u64>,
     block_number: Option<u64>,
-    /// Nanosecond wall clock of when the venue published the frame.
-    timestamp: Option<u64>,
     // Venue keys are addresses flattened alongside the metadata fields above;
     // unknown non-address keys (e.g. future schema additions) are skipped by
     // the address parse inside the deserializer.
@@ -147,19 +153,13 @@ struct Frame {
 }
 
 impl Frame {
-    /// Second-resolution wall clock the frame's stamps are expected to sit
-    /// near. Frames are consumed live, so the local clock stands in fine when
-    /// the venue doesn't say.
-    fn published_at(&self) -> u64 {
-        self.timestamp.map_or_else(
-            || {
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs()
-            },
-            |nanos| nanos / 1_000_000_000,
-        )
+    /// Timestamp of the block this frame quotes for, which is the stamp its
+    /// freshly quoted lanes carry.
+    fn quoted_at(&self) -> Option<u32> {
+        let timestamp = SLOT_DURATION
+            .checked_mul(self.slot?)?
+            .checked_add(BEACON_GENESIS)?;
+        u32::try_from(timestamp).ok()
     }
 }
 
@@ -226,22 +226,21 @@ pub fn spawn(cfg: &Config) -> SimulationOverrides {
 
 async fn run_stream(ws_url: url::Url, sender: watch::Sender<Snapshot>) {
     let mut backoff = Duration::from_millis(250);
-    let mut overrides = StateOverride::default();
+    let mut venues = Venues::default();
     let mut last_block_number = 0u64;
-    let mut stamp = None;
 
     loop {
         match tokio_tungstenite::connect_async(ws_url.as_str()).await {
             Ok((ws_stream, _)) => {
                 backoff = Duration::from_millis(250);
                 let (mut write, mut read) = ws_stream.split();
-                debug!(url = %ws_url, "state-override stream connected");
+                tracing::debug!(url = %ws_url, "state-override stream connected");
 
                 while let Some(message) = read.next().await {
                     let message = match message {
                         Ok(message) => message,
                         Err(err) => {
-                            warn!(?err, "state-override stream read error");
+                            tracing::warn!(?err, "state-override stream read error");
                             break;
                         }
                     };
@@ -256,14 +255,12 @@ async fn run_stream(ws_url: url::Url, sender: watch::Sender<Snapshot>) {
                             if let Some(block_number) = frame.block_number {
                                 last_block_number = block_number;
                             }
-                            if let Some(newest) = apply_frame(&mut overrides, frame) {
-                                stamp = Some(newest);
-                            }
-                            publish(&overrides, last_block_number, stamp, &sender);
+                            venues.update(frame);
+                            publish(&venues, last_block_number, &sender);
                         }
                         Err(err) => {
                             Metrics::get().parse_failures.inc();
-                            debug!(?err, "state-override stream frame parse error");
+                            tracing::debug!(?err, "state-override stream frame parse error");
                         }
                     }
                 }
@@ -271,39 +268,80 @@ async fn run_stream(ws_url: url::Url, sender: watch::Sender<Snapshot>) {
                 let _ = write.close().await;
             }
             Err(err) => {
-                warn!(?err, url = %ws_url, "state-override stream connect failed");
+                tracing::warn!(?err, url = %ws_url, "state-override stream connect failed");
             }
         }
 
         Metrics::get().reconnects.inc();
-        debug!(?backoff, "state-override stream reconnecting");
+        tracing::debug!(?backoff, "state-override stream reconnecting");
         tokio::time::sleep(backoff).await;
         backoff = (backoff * 2).min(Duration::from_secs(15));
     }
 }
 
-/// Folds a frame into the merged overrides, returning the freshness stamp it
-/// carries if it quoted any lane.
-///
-/// Every venue keeps its lanes in the same shared registry account and a frame
-/// only ever carries its own, so storage is merged word by word: inserting the
-/// account wholesale would drop the other venues' lanes. Balance, nonce and
-/// code stay last-write-wins.
-fn apply_frame(overrides: &mut StateOverride, frame: Frame) -> Option<u32> {
-    let published_at = frame.published_at();
-    let mut stamp = None;
-    for update in frame.venues.into_values() {
-        for (account, account_override) in update.state_override {
-            let words = [&account_override.state, &account_override.state_diff];
-            for word in words.into_iter().flatten().flat_map(B256Map::values) {
-                stamp = stamp.max(stamp_of(word, published_at));
-            }
-            merge_account(overrides.entry(account).or_default(), account_override);
-        }
-    }
-    stamp
+struct Quotes {
+    overrides: StateOverride,
+    /// Block timestamp this venue's freshly quoted lanes are stamped with,
+    /// when its newest frame quoted any.
+    stamp: Option<u32>,
 }
 
+/// The newest frame of every venue seen so far.
+#[derive(Default)]
+struct Venues(BTreeMap<Address, Quotes>);
+
+impl Venues {
+    /// Replaces each venue's quotes with the ones the frame carries. A frame
+    /// holds the venue's whole set of lanes, including the ones it did not
+    /// requote this block, so the previous frame is dropped rather than merged:
+    /// accumulating would keep lanes of a venue that has gone away alive
+    /// forever.
+    fn update(&mut self, frame: Frame) {
+        let quoted_at = frame.quoted_at();
+        for (venue, update) in frame.venues {
+            let overrides = update.state_override;
+            let stamp = quoted_at.filter(|stamp| {
+                let stamp = stamp.to_be_bytes();
+                words(&overrides).any(|word| word[..STAMP_LEN] == stamp)
+            });
+            self.0.insert(venue, Quotes { overrides, stamp });
+        }
+    }
+
+    /// Folds every venue's newest frame into one override set, along with the
+    /// newest stamp any of them quoted.
+    ///
+    /// Every venue keeps its lanes in the same shared registry account and a
+    /// frame only ever carries its own, so storage is merged word by word:
+    /// inserting the account wholesale would drop the other venues' lanes.
+    fn fold(&self) -> (StateOverride, Option<u32>) {
+        let mut overrides = StateOverride::default();
+        let mut stamp = None;
+        for quotes in self.0.values() {
+            stamp = stamp.max(quotes.stamp);
+            for (account, account_override) in &quotes.overrides {
+                merge_account(
+                    overrides.entry(*account).or_default(),
+                    account_override.clone(),
+                );
+            }
+        }
+        (overrides, stamp)
+    }
+}
+
+fn words(overrides: &StateOverride) -> impl Iterator<Item = &B256> {
+    overrides.values().flat_map(|account| {
+        [account.state.as_ref(), account.state_diff.as_ref()]
+            .into_iter()
+            .flatten()
+            .flat_map(B256Map::values)
+    })
+}
+
+/// Folds `update` into `target`. A frame only ever carries the fields its own
+/// venue set, so a field it leaves out means "unchanged", not "cleared" — the
+/// same account is described by several venues' frames.
 fn merge_account(target: &mut AccountOverride, update: AccountOverride) {
     let AccountOverride {
         balance,
@@ -313,10 +351,10 @@ fn merge_account(target: &mut AccountOverride, update: AccountOverride) {
         state_diff,
         move_precompile_to,
     } = update;
-    target.balance = balance;
-    target.nonce = nonce;
-    target.code = code;
-    target.move_precompile_to = move_precompile_to;
+    target.balance = balance.or(target.balance);
+    target.nonce = nonce.or(target.nonce);
+    target.code = code.or_else(|| target.code.take());
+    target.move_precompile_to = move_precompile_to.or(target.move_precompile_to);
     merge_words(&mut target.state, state);
     merge_words(&mut target.state_diff, state_diff);
 }
@@ -328,15 +366,11 @@ fn merge_words(target: &mut Option<B256Map<B256>>, update: Option<B256Map<B256>>
     target.get_or_insert_default().extend(update);
 }
 
-fn publish(
-    overrides: &StateOverride,
-    block_number: u64,
-    stamp: Option<u32>,
-    sender: &watch::Sender<Snapshot>,
-) {
+fn publish(venues: &Venues, block_number: u64, sender: &watch::Sender<Snapshot>) {
+    let (overrides, stamp) = venues.fold();
     Metrics::get().venue_count.set(overrides.len() as i64);
     let snapshot = Snapshot {
-        overrides: overrides.clone(),
+        overrides,
         block_number,
         stamp,
         received_at: Some(Instant::now()),
@@ -403,6 +437,8 @@ mod tests {
     use {
         super::*,
         alloy_primitives::{U256, address},
+        alloy_provider::{Provider, network::TransactionBuilder},
+        alloy_sol_types::SolValue,
         futures::StreamExt,
         std::time::Duration,
         tokio::time::timeout,
@@ -411,29 +447,34 @@ mod tests {
 
     /// Shared `PrioUpdateRegistry` every venue writes its lanes into.
     const REGISTRY: Address = address!("da7afeed01fe625cf15d187a19f94b45f00b8c5f");
-    /// Wall clock of the captured frames below, in seconds.
-    const PUBLISHED_AT: u64 = 1_783_363_067;
+    /// Slot the captured frames below quote for.
+    const QUOTED_SLOT: u64 = 14_711_587;
+
+    /// Timestamp of `slot`, which is the stamp lanes quoted for it carry.
+    fn quoted_at(slot: u64) -> u32 {
+        u32::try_from(BEACON_GENESIS + SLOT_DURATION * slot).unwrap()
+    }
 
     fn frame_with(
         venue: Address,
         account: Address,
         balance: Option<U256>,
-        slot: Option<B256>,
+        storage_slot: Option<B256>,
     ) -> Frame {
         let mut account_override = AccountOverride::default();
         if let Some(balance) = balance {
             account_override.balance = Some(balance);
         }
-        if let Some(slot) = slot {
+        if let Some(storage_slot) = storage_slot {
             let mut diff = B256Map::default();
-            diff.insert(slot, B256::ZERO);
+            diff.insert(storage_slot, B256::ZERO);
             account_override.state_diff = Some(diff);
         }
         let mut state_override = StateOverride::default();
         state_override.insert(account, account_override);
         Frame {
+            slot: None,
             block_number: None,
-            timestamp: None,
             venues: BTreeMap::from([(venue, VenueUpdate { state_override })]),
         }
     }
@@ -446,8 +487,8 @@ mod tests {
         word
     }
 
-    /// A frame writing `lanes` of the shared registry on behalf of `venue`.
-    fn registry_frame(venue: Address, published_at: u64, lanes: &[(B256, B256)]) -> Frame {
+    /// A frame quoting `lanes` of the shared registry on behalf of `venue`.
+    fn registry_frame(venue: Address, slot: u64, lanes: &[(B256, B256)]) -> Frame {
         let account_override = AccountOverride {
             state_diff: Some(lanes.iter().copied().collect()),
             ..Default::default()
@@ -455,8 +496,8 @@ mod tests {
         let mut state_override = StateOverride::default();
         state_override.insert(REGISTRY, account_override);
         Frame {
+            slot: Some(slot),
             block_number: None,
-            timestamp: Some(published_at * 1_000_000_000),
             venues: BTreeMap::from([(venue, VenueUpdate { state_override })]),
         }
     }
@@ -506,65 +547,59 @@ mod tests {
         assert!(override_entry.state_diff.is_some());
     }
 
-    #[test]
-    fn apply_frame_keeps_storage_across_frames() {
-        let venue = address!("1111111111111111111111111111111111111111");
-        let account = address!("2222222222222222222222222222222222222222");
-
-        let mut overrides = StateOverride::default();
-        apply_frame(
-            &mut overrides,
-            frame_with(venue, account, None, Some(B256::ZERO)),
-        );
-        assert!(overrides.get(&account).unwrap().state_diff.is_some());
-        assert!(overrides.get(&account).unwrap().balance.is_none());
-
-        // Balance and nonce are last-write-wins, but storage a later frame
-        // doesn't mention survives.
-        apply_frame(
-            &mut overrides,
-            frame_with(venue, account, Some(U256::ZERO), None),
-        );
-        assert_eq!(overrides.get(&account).unwrap().balance, Some(U256::ZERO));
-        assert!(overrides.get(&account).unwrap().state_diff.is_some());
+    fn fold(frames: Vec<Frame>) -> StateOverride {
+        let mut venues = Venues::default();
+        for frame in frames {
+            venues.update(frame);
+        }
+        venues.fold().0
     }
 
     #[test]
-    fn apply_frame_merges_disjoint_accounts() {
+    fn a_venues_frame_replaces_its_previous_one() {
+        let venue = address!("1111111111111111111111111111111111111111");
+        let account = address!("2222222222222222222222222222222222222222");
+
+        // A frame carries the venue's whole set of lanes, so what the newest
+        // one leaves out is no longer being quoted and has to fall back to
+        // committed on-chain state.
+        let overrides = fold(vec![
+            frame_with(venue, account, None, Some(B256::ZERO)),
+            frame_with(venue, account, Some(U256::ZERO), None),
+        ]);
+        assert_eq!(overrides[&account].balance, Some(U256::ZERO));
+        assert!(overrides[&account].state_diff.is_none());
+    }
+
+    #[test]
+    fn venues_keep_each_others_accounts() {
         let venue_a = address!("1111111111111111111111111111111111111111");
         let venue_b = address!("3333333333333333333333333333333333333333");
         let account_a = address!("2222222222222222222222222222222222222222");
         let account_b = address!("4444444444444444444444444444444444444444");
 
-        let mut overrides = StateOverride::default();
-        apply_frame(
-            &mut overrides,
+        let overrides = fold(vec![
             frame_with(venue_a, account_a, None, Some(B256::ZERO)),
-        );
-        apply_frame(
-            &mut overrides,
             frame_with(venue_b, account_b, None, Some(B256::ZERO)),
-        );
+        ]);
         assert!(overrides.contains_key(&account_a));
         assert!(overrides.contains_key(&account_b));
     }
 
     #[test]
-    fn apply_frame_conflict_latest_wins() {
+    fn a_venue_omitting_a_field_does_not_clear_anothers() {
         let venue_a = address!("1111111111111111111111111111111111111111");
         let venue_b = address!("3333333333333333333333333333333333333333");
         let shared = address!("2222222222222222222222222222222222222222");
 
-        let mut overrides = StateOverride::default();
-        apply_frame(
-            &mut overrides,
+        // Venue B describes the shared account without a balance, which means
+        // "unchanged", not "cleared": it only ever states what it set itself.
+        let overrides = fold(vec![
             frame_with(venue_a, shared, Some(U256::from(1)), None),
-        );
-        apply_frame(
-            &mut overrides,
-            frame_with(venue_b, shared, Some(U256::from(2)), None),
-        );
-        assert_eq!(overrides.get(&shared).unwrap().balance, Some(U256::from(2)));
+            frame_with(venue_b, shared, None, Some(B256::ZERO)),
+        ]);
+        assert_eq!(overrides[&shared].balance, Some(U256::from(1)));
+        assert!(overrides[&shared].state_diff.is_some());
     }
 
     fn handle(receiver: watch::Receiver<Snapshot>, max_age: Duration) -> SimulationOverrides {
@@ -576,13 +611,11 @@ mod tests {
 
     /// Handle over a snapshot built by folding `frames` in order.
     fn handle_for(frames: Vec<Frame>, block_number: u64, max_age: Duration) -> SimulationOverrides {
-        let mut overrides = StateOverride::default();
-        let mut stamp = None;
+        let mut venues = Venues::default();
         for frame in frames {
-            if let Some(newest) = apply_frame(&mut overrides, frame) {
-                stamp = Some(newest);
-            }
+            venues.update(frame);
         }
+        let (overrides, stamp) = venues.fold();
         let (_sender, receiver) = watch::channel(Snapshot {
             overrides,
             block_number,
@@ -607,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn overrides_withheld_when_context_cannot_be_served() {
+    fn overrides_withheld_when_stream_fell_behind() {
         // No frame arrived recently enough.
         let (_sender, receiver) = watch::channel(non_empty_snapshot(
             100,
@@ -627,7 +660,10 @@ mod tests {
                 .overrides_for(105, 1000)
                 .is_none()
         );
+    }
 
+    #[test]
+    fn overrides_withheld_when_nothing_published() {
         // Nothing published yet.
         let (_sender, receiver) = watch::channel(Snapshot {
             overrides: StateOverride::default(),
@@ -655,73 +691,67 @@ mod tests {
     }
 
     #[test]
-    fn newest_lanes_are_restamped_to_the_simulated_block() {
+    fn quoted_lanes_are_restamped_to_the_simulated_block() {
         let venue = address!("1111111111111111111111111111111111111111");
-        let simulated_at = PUBLISHED_AT - 12;
+        let stamp = quoted_at(QUOTED_SLOT);
+        let simulated_at = stamp - 12;
 
         let handle = handle_for(
             vec![registry_frame(
                 venue,
-                PUBLISHED_AT,
+                QUOTED_SLOT,
+                &[(lane(1), word(stamp, 0xaa)), (lane(2), word(stamp, 0xbb))],
+            )],
+            100,
+            Duration::from_secs(30),
+        );
+
+        let overrides = handle.overrides_for(99, simulated_at.into()).unwrap();
+        let lanes = lanes_of(&overrides);
+        assert_eq!(lanes[&lane(1)], word(simulated_at, 0xaa));
+        assert_eq!(lanes[&lane(2)], word(simulated_at, 0xbb));
+    }
+
+    #[test]
+    fn lane_not_requoted_keeps_its_stale_stamp() {
+        let venue = address!("1111111111111111111111111111111111111111");
+        let stamp = quoted_at(QUOTED_SLOT);
+        let previous = quoted_at(QUOTED_SLOT - 1);
+        let simulated_at = stamp - 12;
+
+        // The venue still carries lane 2 in its frame, but stamped for the
+        // previous slot: it is not quoting that pair for this block.
+        let handle = handle_for(
+            vec![registry_frame(
+                venue,
+                QUOTED_SLOT,
                 &[
-                    (lane(1), word(PUBLISHED_AT as u32, 0xaa)),
-                    (lane(2), word(PUBLISHED_AT as u32, 0xbb)),
+                    (lane(1), word(stamp, 0xcc)),
+                    (lane(2), word(previous, 0xbb)),
                 ],
             )],
             100,
             Duration::from_secs(30),
         );
 
-        let overrides = handle.overrides_for(99, simulated_at).unwrap();
+        let overrides = handle.overrides_for(99, simulated_at.into()).unwrap();
         let lanes = lanes_of(&overrides);
-        assert_eq!(lanes[&lane(1)], word(simulated_at as u32, 0xaa));
-        assert_eq!(lanes[&lane(2)], word(simulated_at as u32, 0xbb));
-    }
-
-    #[test]
-    fn lane_not_requoted_keeps_its_stale_stamp() {
-        let venue = address!("1111111111111111111111111111111111111111");
-        let previous = PUBLISHED_AT - 12;
-        let simulated_at = PUBLISHED_AT - 12;
-
-        // Both lanes were quoted for the previous block, only lane 1 was
-        // requoted for this one.
-        let handle = handle_for(
-            vec![
-                registry_frame(
-                    venue,
-                    previous,
-                    &[
-                        (lane(1), word(previous as u32, 0xaa)),
-                        (lane(2), word(previous as u32, 0xbb)),
-                    ],
-                ),
-                registry_frame(
-                    venue,
-                    PUBLISHED_AT,
-                    &[(lane(1), word(PUBLISHED_AT as u32, 0xcc))],
-                ),
-            ],
-            100,
-            Duration::from_secs(30),
-        );
-
-        let overrides = handle.overrides_for(99, simulated_at).unwrap();
-        let lanes = lanes_of(&overrides);
-        assert_eq!(lanes[&lane(1)], word(simulated_at as u32, 0xcc));
+        assert_eq!(lanes[&lane(1)], word(simulated_at, 0xcc));
         // Lane 2 must stay dead: forging liveness for it would quote a price
         // the maker is no longer offering.
-        assert_eq!(lanes[&lane(2)], word(previous as u32, 0xbb));
+        assert_eq!(lanes[&lane(2)], word(previous, 0xbb));
     }
 
     #[test]
     fn restamping_leaves_every_other_byte_untouched() {
-        let mut overrides = StateOverride::default();
-        let stamp = apply_frame(&mut overrides, serde_json::from_str(FERMI_FRAME).unwrap());
-        assert_eq!(stamp, Some(PUBLISHED_AT as u32));
+        let mut venues = Venues::default();
+        venues.update(serde_json::from_str(FERMI_FRAME).unwrap());
+        let (overrides, stamp) = venues.fold();
+        assert_eq!(stamp, Some(quoted_at(QUOTED_SLOT)));
 
-        let simulated_at = PUBLISHED_AT - 12;
-        let restamped = restamp(&overrides, stamp, simulated_at);
+        let simulated_at = quoted_at(QUOTED_SLOT) - 12;
+        let mut restamped = overrides.clone();
+        let overrides = restamp(overrides, stamp, simulated_at.into());
 
         // Only the stamp bytes of the registry words moved; the maker's price
         // bytes and every other account are byte-identical.
@@ -729,7 +759,7 @@ mod tests {
         assert_eq!(before.len(), after.len());
         for (slot, before) in before {
             let after = after[slot];
-            assert_eq!(&after[..STAMP_LEN], &(simulated_at as u32).to_be_bytes());
+            assert_eq!(&after[..STAMP_LEN], &simulated_at.to_be_bytes());
             assert_eq!(after[STAMP_LEN..], before[STAMP_LEN..]);
         }
         for (account, before) in &overrides {
@@ -742,55 +772,53 @@ mod tests {
     #[test]
     fn unrelated_words_are_never_mistaken_for_a_stamp() {
         // This venue's word leads with bytes that read as a perfectly plausible
-        // unix timestamp (2019-07-25) — just not one near the time the frame
-        // was published.
-        let mut overrides = StateOverride::default();
-        assert_eq!(
-            apply_frame(&mut overrides, serde_json::from_str(OTHER_FRAME).unwrap()),
-            None
-        );
-
+        // unix timestamp (2019-07-25) — just not the one its slot is quoting
+        // for, so the frame is recognised as quoting no lane at all and the
+        // word survives the accessor untouched.
+        let frame: Frame = serde_json::from_str(OTHER_FRAME).unwrap();
         let venue = address!("28d9ccedf1b7ac9b3f090f4f0292837de87c1d39");
-        let before = overrides.clone();
-        assert_eq!(
-            restamp(&overrides, Some(PUBLISHED_AT as u32), PUBLISHED_AT - 12)[&venue],
-            before[&venue]
+        let mut venues = Venues::default();
+        venues.update(frame);
+        assert_eq!(venues.fold().1, None);
+
+        let handle = handle_for(
+            vec![serde_json::from_str(OTHER_FRAME).unwrap()],
+            100,
+            Duration::from_secs(30),
         );
+        let simulated_at = quoted_at(QUOTED_SLOT) - 12;
+        let overrides = handle.overrides_for(99, simulated_at.into()).unwrap();
+        assert_eq!(overrides[&venue], venues.fold().0[&venue]);
     }
 
     #[test]
     fn venues_sharing_the_registry_keep_each_others_lanes() {
         let venue_a = address!("1111111111111111111111111111111111111111");
         let venue_b = address!("3333333333333333333333333333333333333333");
-        let simulated_at = PUBLISHED_AT - 12;
+        let stamp = quoted_at(QUOTED_SLOT);
+        let simulated_at = stamp - 12;
 
-        // Each venue only ever sends its own lanes of the shared registry.
+        // Both venues write the *same* registry account, each frame carrying
+        // only its own lanes, so overriding the account per frame would drop
+        // the other's.
         let handle = handle_for(
             vec![
-                registry_frame(
-                    venue_a,
-                    PUBLISHED_AT,
-                    &[(lane(1), word(PUBLISHED_AT as u32, 0xaa))],
-                ),
-                registry_frame(
-                    venue_b,
-                    PUBLISHED_AT,
-                    &[(lane(2), word(PUBLISHED_AT as u32, 0xbb))],
-                ),
+                registry_frame(venue_a, QUOTED_SLOT, &[(lane(1), word(stamp, 0xaa))]),
+                registry_frame(venue_b, QUOTED_SLOT, &[(lane(2), word(stamp, 0xbb))]),
             ],
             100,
             Duration::from_secs(30),
         );
 
-        let overrides = handle.overrides_for(99, simulated_at).unwrap();
+        let overrides = handle.overrides_for(99, simulated_at.into()).unwrap();
         let lanes = lanes_of(&overrides);
         assert_eq!(lanes.len(), 2);
-        assert_eq!(lanes[&lane(1)], word(simulated_at as u32, 0xaa));
-        assert_eq!(lanes[&lane(2)], word(simulated_at as u32, 0xbb));
+        assert_eq!(lanes[&lane(1)], word(simulated_at, 0xaa));
+        assert_eq!(lanes[&lane(2)], word(simulated_at, 0xbb));
     }
 
     #[tokio::test]
-    async fn reconnect_and_accumulate_against_in_process_server() {
+    async fn reconnects_and_serves_newest_frame_from_in_process_server() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
@@ -830,48 +858,116 @@ mod tests {
             }
         })
         .await;
-        assert!(got.is_ok(), "did not observe merged overrides in time");
+        assert!(got.is_ok(), "did not observe the newest overrides in time");
     }
 
     // Real frames captured from wss://eu.rpc.titanbuilder.xyz/ws/pamm_quote_stream.
-    const FERMI_FRAME: &str = r#"{"slot":14711587,"blockNumber":25475333,"timestamp":1783363067584411872,"0xb1076fe3ab5e28005c7c323bac5ac06a680d452e":{"stateOverride":{"0xa048e0c08b7acb48363711800ac9d49de8e58d13":{"balance":"0x10848dc44f1e140","nonce":"0x42ee"},"0x14e870f0a7c764ca71289952006d6bf130058927":{"balance":"0x10aaf167cb7dbea","nonce":"0x23da"},"0x69939a6c590c9cd0bf8efbe9b3df2cdac4a4906b":{"balance":"0x88ecb0471d376e","nonce":"0x2fad"},"0xfc42be9494f1af6b03adad71811c62ada2d6f3c3":{"balance":"0x10e7e3c0b4f8ba0","nonce":"0x1d99"},"0xda7afeed01fe625cf15d187a19f94b45f00b8c5f":{"balance":"0x0","nonce":"0x1","stateDiff":{"0x6d3af688dd77e4167e6ad8613dea4a162f5e340043b2c026e3d2b5b40d12c92d":"0x6a4bf5fb010000000000000000000000000000000000000000000029cdbee960","0x9a965d2bccf7f891d58fe85acac20d9de58c11ac1d222dfff7973a09ad71143a":"0x6a4bf5fb010000000000000000000000000000000000000000000029c8581698","0xe25ff9533ce41163d3738b63c7d954cd7449a0ba0dd0dac8db25ae29536b4961":"0x6a4bf5fb010000000000000000000000000000000000000000000029cdbee960","0x939ee2e42000f154d3be2302ab4d3cb916e4b2852ef6a0caa2fd76c417120248":"0x6a4bf5fb010000000000000000000000000000000000000000000029c8581698"}}}}}"#;
-    const OTHER_FRAME: &str = r#"{"slot":14711587,"blockNumber":25475333,"timestamp":1783363067506613546,"0x28d9ccedf1b7ac9b3f090f4f0292837de87c1d39":{"stateOverride":{"0x28d9ccedf1b7ac9b3f090f4f0292837de87c1d39":{"balance":"0x0","nonce":"0x1","stateDiff":{"0xe3ffa73f3a3b56e693c2ed775464cb3fbe78307b000000000000000000000000":"0x5d393a1348485d39e6f3484885cda948444485cd9644363600019f38b8de3300"}},"0xe3ffa73f3a3b56e693c2ed775464cb3fbe78307b":{"balance":"0x12e8705b8c388ab1","nonce":"0xdda1"}}}}"#;
+    const FERMI_FRAME: &str = r#"{
+        "slot":14711587,
+        "blockNumber":25475333,
+        "timestamp":1783363067584411872,
+        "0xb1076fe3ab5e28005c7c323bac5ac06a680d452e":{
+            "stateOverride":{
+                "0xa048e0c08b7acb48363711800ac9d49de8e58d13":{
+                    "balance":"0x10848dc44f1e140",
+                    "nonce":"0x42ee"
+                },
+                "0x14e870f0a7c764ca71289952006d6bf130058927":{
+                    "balance":"0x10aaf167cb7dbea",
+                    "nonce":"0x23da"
+                },
+                "0x69939a6c590c9cd0bf8efbe9b3df2cdac4a4906b":{
+                    "balance":"0x88ecb0471d376e",
+                    "nonce":"0x2fad"
+                },
+                "0xfc42be9494f1af6b03adad71811c62ada2d6f3c3":{
+                    "balance":"0x10e7e3c0b4f8ba0",
+                    "nonce":"0x1d99"
+                },
+                "0xda7afeed01fe625cf15d187a19f94b45f00b8c5f":{
+                    "balance":"0x0",
+                    "nonce":"0x1",
+                    "stateDiff":{
+                        "0x6d3af688dd77e4167e6ad8613dea4a162f5e340043b2c026e3d2b5b40d12c92d":"0x6a4bf5fb010000000000000000000000000000000000000000000029cdbee960",
+                        "0x9a965d2bccf7f891d58fe85acac20d9de58c11ac1d222dfff7973a09ad71143a":"0x6a4bf5fb010000000000000000000000000000000000000000000029c8581698",
+                        "0xe25ff9533ce41163d3738b63c7d954cd7449a0ba0dd0dac8db25ae29536b4961":"0x6a4bf5fb010000000000000000000000000000000000000000000029cdbee960",
+                        "0x939ee2e42000f154d3be2302ab4d3cb916e4b2852ef6a0caa2fd76c417120248":"0x6a4bf5fb010000000000000000000000000000000000000000000029c8581698"
+                    }
+                }
+            }
+        }
+    }"#;
+
+    const OTHER_FRAME: &str = r#"{
+        "slot":14711587,
+        "blockNumber":25475333,
+        "timestamp":1783363067506613546,
+        "0x28d9ccedf1b7ac9b3f090f4f0292837de87c1d39":{
+            "stateOverride":{
+                "0x28d9ccedf1b7ac9b3f090f4f0292837de87c1d39":{
+                    "balance":"0x0",
+                    "nonce":"0x1",
+                    "stateDiff":{
+                        "0xe3ffa73f3a3b56e693c2ed775464cb3fbe78307b000000000000000000000000":"0x5d393a1348485d39e6f3484885cda948444485cd9644363600019f38b8de3300"
+                    }
+                },
+                "0xe3ffa73f3a3b56e693c2ed775464cb3fbe78307b":{
+                    "balance":"0x12e8705b8c388ab1",
+                    "nonce":"0xdda1"
+                }
+            }
+        }
+    }"#;
 
     #[test]
     fn parses_real_titan_frames() {
         let fermi: Frame = serde_json::from_str(FERMI_FRAME).unwrap();
         assert_eq!(fermi.block_number, Some(25475333));
-        assert_eq!(fermi.published_at(), PUBLISHED_AT);
+        assert_eq!(fermi.slot, Some(QUOTED_SLOT));
         assert_eq!(fermi.venues.len(), 1);
 
-        let mut overrides = StateOverride::default();
-        assert_eq!(
-            apply_frame(&mut overrides, fermi),
-            Some(PUBLISHED_AT as u32)
-        );
+        let mut venues = Venues::default();
+        venues.update(fermi);
+        let (overrides, stamp) = venues.fold();
+        assert_eq!(stamp, Some(quoted_at(QUOTED_SLOT)));
         assert_eq!(overrides.len(), 5);
 
-        let venue_account = address!("da7afeed01fe625cf15d187a19f94b45f00b8c5f");
-        let entry = overrides.get(&venue_account).unwrap();
+        let entry = &overrides[&REGISTRY];
         assert_eq!(entry.balance, Some(U256::ZERO));
         assert_eq!(entry.nonce, Some(1));
         let diff = entry.state_diff.as_ref().unwrap();
         assert_eq!(diff.len(), 4);
-        let slot: alloy_primitives::B256 =
-            "0x6d3af688dd77e4167e6ad8613dea4a162f5e340043b2c026e3d2b5b40d12c92d"
-                .parse()
-                .unwrap();
+        let slot: B256 = "0x6d3af688dd77e4167e6ad8613dea4a162f5e340043b2c026e3d2b5b40d12c92d"
+            .parse()
+            .unwrap();
         assert!(diff.contains_key(&slot));
     }
 
     #[test]
-    fn accumulates_real_frames_across_venues() {
-        let mut overrides = StateOverride::default();
-        apply_frame(&mut overrides, serde_json::from_str(FERMI_FRAME).unwrap());
-        apply_frame(&mut overrides, serde_json::from_str(OTHER_FRAME).unwrap());
+    fn a_lanes_stamp_is_the_timestamp_of_the_slot_its_frame_quotes_for() {
+        // The whole restamping rule rests on this: the leading bytes of a
+        // freshly quoted lane are the slot's timestamp, so which words are
+        // stamps never has to be guessed from their contents.
+        let mut venues = Venues::default();
+        venues.update(serde_json::from_str(FERMI_FRAME).unwrap());
+        let overrides = venues.fold().0;
+        let stamp = quoted_at(QUOTED_SLOT).to_be_bytes();
+        assert!(
+            lanes_of(&overrides)
+                .values()
+                .all(|word| word[..STAMP_LEN] == stamp)
+        );
+    }
+
+    #[test]
+    fn real_frames_of_different_venues_are_folded_together() {
+        let overrides = fold(vec![
+            serde_json::from_str(FERMI_FRAME).unwrap(),
+            serde_json::from_str(OTHER_FRAME).unwrap(),
+        ]);
 
         assert_eq!(overrides.len(), 7);
-        assert!(overrides.contains_key(&address!("da7afeed01fe625cf15d187a19f94b45f00b8c5f")));
+        assert!(overrides.contains_key(&REGISTRY));
         assert!(overrides.contains_key(&address!("e3ffa73f3a3b56e693c2ed775464cb3fbe78307b")));
     }
 
@@ -884,11 +980,16 @@ mod tests {
         );
 
         // The frame names 25475333, so it serves a simulation on head 25475332.
-        let overrides = handle.overrides_for(25475332, PUBLISHED_AT - 12).unwrap();
+        let head_timestamp = u64::from(quoted_at(QUOTED_SLOT)) - 12;
+        let overrides = handle.overrides_for(25475332, head_timestamp).unwrap();
         assert_eq!(overrides.len(), 5);
 
         // ...but not one on a block the stream has already fallen behind.
-        assert!(handle.overrides_for(25475335, PUBLISHED_AT + 24).is_none());
+        assert!(
+            handle
+                .overrides_for(25475335, head_timestamp + 36)
+                .is_none()
+        );
     }
 
     /// Titan's Fermi router. Its pAMM reverts `StaleUpdate()` unless the
@@ -903,17 +1004,33 @@ mod tests {
     /// selector rather than by name.
     const QUOTE: [u8; 4] = hex_literal::hex!("300aa47f");
 
+    /// The workspace links more than one `rustls` crypto provider, so one has
+    /// to be chosen before any TLS handshake. The binaries get this for free:
+    /// the alloy websocket transport installs a provider while opening the
+    /// block stream, long before this stream connects. A test process does
+    /// not, so it picks one itself — and tolerates a provider already being
+    /// installed, which is what happens once anything else in the process has
+    /// opened a TLS connection.
+    fn install_crypto_provider() {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    }
+
+    fn live_stream_config() -> Config {
+        Config {
+            ws_url: std::env::var("PAMM_QUOTE_STREAM_URL")
+                .unwrap()
+                .parse()
+                .unwrap(),
+            max_age: Duration::from_secs(30),
+        }
+    }
+
     /// Quotes 1000 USDT into WETH, returning the amount out.
     async fn quote_amounts(
         provider: &ethrpc::AlloyProvider,
         block: u64,
         overrides: Option<StateOverride>,
     ) -> Result<U256, alloy_transport::TransportError> {
-        use {
-            alloy_provider::{Provider, network::TransactionBuilder},
-            alloy_sol_types::SolValue,
-        };
-
         let args = (USDT, WETH, U256::from(1_000_000_000u64));
         let output = provider
             .call(
@@ -936,36 +1053,18 @@ mod tests {
     /// very same overrides are rejected there, because `pending`'s timestamp is
     /// the node's wall clock rather than the block they were stamped for.
     ///
-    /// Needs `NODE_URL`, `NODE_WS_URL` and `PAMM_QUOTE_STREAM_URL`:
-    ///
-    /// ```text
-    /// NODE_URL=... NODE_WS_URL=... PAMM_QUOTE_STREAM_URL=wss://.../ws/pamm_quote_stream \
-    ///   cargo nextest run -p simulator --run-ignored ignored-only \
-    ///   estimates_gas_for_pamm_call
-    /// ```
+    /// See `crates/simulator/README.md` for how to run this.
     #[tokio::test]
     #[ignore]
-    async fn estimates_gas_for_pamm_call() {
-        use {
-            alloy_provider::{Provider, network::TransactionBuilder},
-            alloy_sol_types::SolValue,
-        };
-
-        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    async fn pamm_estimates_gas_for_call() {
+        install_crypto_provider();
 
         let web3 = ethrpc::Web3::new_from_env();
         let ws_url: url::Url = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
         let blocks = ethrpc::block_stream::current_block_ws_stream(web3.provider.clone(), ws_url)
             .await
             .unwrap();
-        let cfg = Config {
-            ws_url: std::env::var("PAMM_QUOTE_STREAM_URL")
-                .unwrap()
-                .parse()
-                .unwrap(),
-            max_age: Duration::from_secs(30),
-        };
-        let overrides = spawn(&cfg);
+        let overrides = super::spawn(&live_stream_config());
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         let eth = crate::Ethereum::new(
@@ -1031,17 +1130,11 @@ mod tests {
     /// several blocks and requires virtually all samples to be served; the
     /// block-number gate this replaced scored about 5% here.
     ///
-    /// Needs `NODE_URL`, `NODE_WS_URL` and `PAMM_QUOTE_STREAM_URL`:
-    ///
-    /// ```text
-    /// NODE_URL=... NODE_WS_URL=... PAMM_QUOTE_STREAM_URL=wss://.../ws/pamm_quote_stream \
-    ///   cargo nextest run -p simulator --run-ignored ignored-only \
-    ///   serves_overrides_across_blocks
-    /// ```
+    /// See `crates/simulator/README.md` for how to run this.
     #[tokio::test]
     #[ignore]
-    async fn serves_overrides_across_blocks() {
-        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    async fn pamm_serves_overrides_across_blocks() {
+        install_crypto_provider();
 
         // A real block watcher, as the binaries build it.
         let provider = ethrpc::Web3::new_from_env().provider;
@@ -1050,14 +1143,7 @@ mod tests {
             .await
             .unwrap();
 
-        let cfg = Config {
-            ws_url: std::env::var("PAMM_QUOTE_STREAM_URL")
-                .unwrap()
-                .parse()
-                .unwrap(),
-            max_age: Duration::from_secs(30),
-        };
-        let handle = spawn(&cfg);
+        let handle = super::spawn(&live_stream_config());
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         // ~60s, several blocks' worth.
@@ -1089,33 +1175,13 @@ mod tests {
     /// actually make a Titan pAMM quote, in the exact context they are applied
     /// in. Nothing short of a real stream against a real node catches a frame
     /// that describes a different block than the one being simulated.
-    ///
-    /// Requires a mainnet node and the venue's quote stream:
-    ///
-    /// ```text
-    /// NODE_URL=... PAMM_QUOTE_STREAM_URL=wss://.../ws/pamm_quote_stream \
-    ///   cargo nextest run -p simulator --run-ignored ignored-only \
-    ///   quotes_pamm_against_live_stream
-    /// ```
     #[tokio::test]
     #[ignore]
-    async fn quotes_pamm_against_live_stream() {
-        // The workspace links more than one `rustls` crypto provider, so one
-        // has to be chosen before any TLS handshake. The binaries get this for
-        // free: the alloy websocket transport installs a provider while opening
-        // the block stream, long before this stream connects. A test process
-        // does not, so it picks one itself.
-        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    async fn pamm_quotes_against_live_stream() {
+        install_crypto_provider();
 
         let provider = ethrpc::Web3::new_from_env().provider;
-        let cfg = Config {
-            ws_url: std::env::var("PAMM_QUOTE_STREAM_URL")
-                .unwrap()
-                .parse()
-                .unwrap(),
-            max_age: Duration::from_secs(30),
-        };
-        let overrides = spawn(&cfg);
+        let overrides = super::spawn(&live_stream_config());
 
         let quoted = timeout(Duration::from_secs(60), async {
             loop {

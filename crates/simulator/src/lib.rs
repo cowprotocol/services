@@ -124,7 +124,7 @@ impl Simulator {
             let block = self.eth.current_block().borrow();
             (block.number, block.timestamp)
         };
-        let block: eth::BlockNo = block_number.into();
+        let block = eth::BlockNo::from(block_number);
         let state_overrides = self
             .simulation_overrides
             .as_ref()
