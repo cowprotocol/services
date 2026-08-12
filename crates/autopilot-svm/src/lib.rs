@@ -5,6 +5,6 @@
     reason = "no binary target yet, the wiring PR consumes these modules"
 )]
 
-mod auction;
+mod domain;
 mod infra;
 mod run_loop;
