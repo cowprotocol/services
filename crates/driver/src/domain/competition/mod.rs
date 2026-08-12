@@ -17,6 +17,7 @@ use {
         },
         infra::{
             self,
+            api::routes::solve::dto,
             blockchain::Ethereum,
             notify,
             observe::{self, OrderExcludedFromAuctionReason, metrics},
@@ -360,7 +361,11 @@ impl Competition {
             .await
             .map_err(|err| {
                 tracing::error!(?err, "pre-processing auction failed");
-                Error::MalformedRequest
+                if err.downcast_ref::<dto::DeltaBaseMismatch>().is_some() {
+                    Error::DeltaBaseMismatch
+                } else {
+                    Error::MalformedRequest
+                }
             })?;
 
         let auction = self.assemble_auction(&tasks).await;
@@ -1203,4 +1208,6 @@ pub enum Error {
     FastPathInvalidOrder(solution::Error),
     #[error("failed to build fast-path settlement: {0:?}")]
     FastPathSettlement(#[from] solution::Error),
+    #[error("the delta request's base auction is unknown")]
+    DeltaBaseMismatch,
 }

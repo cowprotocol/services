@@ -91,12 +91,19 @@ paths:
 
         Autopilot will call this endpoint at most once for the same auction id
         and the following call will have a larger id.
+
+        The request body is either the full auction (`SolveRequest`, the
+        `kind` tag is `full` or absent) or - if the driver opted into
+        incremental auctions - only the difference to the previously received
+        auction (`SolveRequestDelta`, `kind` tag `delta`).
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SolveRequest"
+              oneOf:
+                - $ref: "#/components/schemas/SolveRequest"
+                - $ref: "#/components/schemas/SolveRequestDelta"
       responses:
         "200":
           description: Auction successfully solved.
@@ -106,6 +113,10 @@ paths:
                 $ref: "#/components/schemas/SolveResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "409":
+          description: >
+            The delta request referenced a base auction the driver doesn't
+            have. The caller re-sends the full auction.
         "500":
           $ref: "#/components/responses/InternalServerError"
   /reveal:
@@ -479,19 +490,84 @@ components:
           type: string
           example: "0x1234567890"
     SolveRequest:
-      description: Request to the solve endpoint.
+      description: Request to the solve endpoint containing the full auction.
       type: object
+      required: [id, orders, tokens, deadline]
       properties:
-        id:
-          type: integer
+        kind:
+          type: string
+          enum: [full]
           description: |
-            The unique identifier of the auction.
+            Distinguishes the request kinds. Absent on full auctions for
+            backwards compatibility.
+        id:
+          type: string
+          example: "1234"
+          description: |
+            The unique identifier of the auction, encoded as a decimal
+            string.
         orders:
           type: array
           items:
             $ref: "#/components/schemas/Order"
           description: |
             The solvable orders included in the auction.
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/Token"
+          description: |
+            Information about tokens used in the auction.
+        deadline:
+          $ref: "#/components/schemas/DateTime"
+        surplusCapturingJitOrderOwners:
+          type: array
+          items:
+            $ref: "#/components/schemas/Address"
+          description: >
+            List of addresses on whose surplus will count towards the objective
+            value of their solution (unlike other orders that were created by
+            the solver).
+    SolveRequestDelta:
+      description: >
+        Request to the solve endpoint containing only the difference to the
+        previously received auction. Only orders are diffed; tokens and all
+        scalar fields are always sent whole. The receiver reconstructs the
+        full auction by replacing/appending each updated order (matched by
+        uid) in the base auction and dropping the removed ones. If the driver
+        doesn't have the base auction it responds with HTTP 409 and the
+        caller re-sends the full auction.
+      type: object
+      required:
+        [kind, id, baseId, updatedOrders, removedOrders, tokens, deadline]
+      properties:
+        kind:
+          type: string
+          enum: [delta]
+        id:
+          type: string
+          example: "1234"
+          description: |
+            The unique identifier of the auction, encoded as a decimal
+            string.
+        baseId:
+          type: string
+          example: "1233"
+          description: |
+            The identifier of the previously received auction this delta
+            applies to, encoded as a decimal string.
+        updatedOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+          description: |
+            Orders that were added or modified since the base auction.
+        removedOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderUID"
+          description: |
+            Uids of orders that were removed since the base auction.
         tokens:
           type: array
           items:

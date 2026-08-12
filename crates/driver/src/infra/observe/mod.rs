@@ -451,6 +451,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::FastPathLimitNotMet => "FastPathLimitNotMet",
         competition::Error::FastPathInvalidOrder(_) => "FastPathInvalidOrder",
         competition::Error::FastPathSettlement(_) => "FastPathSettlement",
+        competition::Error::DeltaBaseMismatch => "DeltaBaseMismatch",
     }
 }
 

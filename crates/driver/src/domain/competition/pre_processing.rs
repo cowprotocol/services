@@ -5,7 +5,12 @@ use {
             competition::order::{SellTokenBalance, app_data::AppData},
             liquidity,
         },
-        infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
+        infra::{
+            self,
+            api::routes::solve::dto::{self, SolveRequest},
+            observe::metrics,
+            tokens,
+        },
     },
     account_balances::{BalanceFetching, Query},
     anyhow::{Context, Result},
@@ -56,6 +61,19 @@ pub struct Utilities {
     liquidity_fetcher: infra::liquidity::Fetcher,
     tokens: tokens::Fetcher,
     balance_fetcher: Arc<dyn BalanceFetching>,
+    /// Orders of the most recently received auction, used to reconstruct
+    /// full auctions from delta requests. `Arc`ed so it can be accessed
+    /// from the blocking parse task.
+    delta_base: Arc<std::sync::Mutex<DeltaBaseCache>>,
+}
+
+/// Cache of the auction which delta requests are applied to. Only starts
+/// retaining auctions once the first delta request arrives so that drivers
+/// which never receive deltas don't pay for keeping a copy of every auction.
+#[derive(Debug, Default)]
+struct DeltaBaseCache {
+    enabled: bool,
+    base: Option<dto::DeltaBase>,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -147,6 +165,7 @@ impl DataAggregator {
                 liquidity_fetcher,
                 tokens,
                 balance_fetcher,
+                delta_base: Default::default(),
             }),
             control: Mutex::new(ControlBlock {
                 auction_id: Default::default(),
@@ -210,13 +229,40 @@ impl Utilities {
             let _timer = metrics::get().processing_stage_timer("parse_dto");
             let _timer2 =
                 observe::metrics::metrics().on_auction_overhead_start("driver", "parse_dto");
+            let delta_base = Arc::clone(&self.delta_base);
             // deserialization takes tens of milliseconds so run it on a blocking task
             tokio::task::spawn_blocking(move || {
-                serde_json::from_slice(&solve_request)
+                let body = dto::solve_request::parse(&solve_request)
                     .inspect_err(|err| {
                         tracing::warn!(?err, "failed to parse /solve request body");
                     })
-                    .context("could not parse solve request")
+                    .context("could not parse solve request")?;
+                let mut cache = delta_base.lock().unwrap();
+                let request = match body {
+                    dto::solve_request::SolveRequestBody::Full(request) => request,
+                    dto::solve_request::SolveRequestBody::Delta(delta) => {
+                        cache.enabled = true;
+                        delta
+                            .apply(cache.base.as_ref())
+                            .inspect_err(|err| {
+                                tracing::warn!(?err, "failed to apply /solve request delta");
+                            })
+                            .map_err(anyhow::Error::from)?
+                    }
+                };
+                // Deltas are relative to the previously received auction, so
+                // the base advances every auction. The id check keeps an
+                // aborted request whose parse task finishes late from
+                // rewinding the base.
+                if cache.enabled
+                    && cache
+                        .base
+                        .as_ref()
+                        .is_none_or(|base| base.auction_id() < request.id())
+                {
+                    cache.base = Some(dto::DeltaBase::snapshot(&request));
+                }
+                Ok::<_, anyhow::Error>(request)
             })
             .await
             .context("failed to await blocking task")??

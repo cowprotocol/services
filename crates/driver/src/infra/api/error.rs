@@ -32,6 +32,7 @@ enum Kind {
     TokenTemporarilySuspended,
     InsufficientLiquidity,
     CustomSolverError,
+    DeltaBaseMismatch,
 }
 
 #[derive(Debug, Serialize)]
@@ -79,9 +80,18 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::TokenTemporarilySuspended => "Token is temporarily suspended from trading",
             Kind::InsufficientLiquidity => "Insufficient liquidity for the requested trade size",
             Kind::CustomSolverError => "Solver returned a custom error",
+            Kind::DeltaBaseMismatch => {
+                "The delta request's base auction is unknown, re-send the full auction"
+            }
+        };
+        let status = match value {
+            // Distinguishable status so the autopilot knows to re-send the
+            // full auction.
+            Kind::DeltaBaseMismatch => axum::http::StatusCode::CONFLICT,
+            _ => axum::http::StatusCode::BAD_REQUEST,
         };
         (
-            axum::http::StatusCode::BAD_REQUEST,
+            status,
             axum::Json(Error {
                 kind: value,
                 description: description.into(),
@@ -160,6 +170,7 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::FastPathLimitNotMet => Kind::FastPathLimitNotMet,
             competition::Error::FastPathInvalidOrder(_) => Kind::InvalidFastPathOrder,
             competition::Error::FastPathSettlement(_) => Kind::Unknown,
+            competition::Error::DeltaBaseMismatch => Kind::DeltaBaseMismatch,
         };
         error.into()
     }

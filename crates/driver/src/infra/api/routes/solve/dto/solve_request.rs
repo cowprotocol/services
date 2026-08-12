@@ -129,6 +129,145 @@ impl SolveRequest {
     }
 }
 
+/// The two kinds of `/solve` request bodies, distinguished by an internal
+/// `kind` tag: the full auction or - if the driver opted in - only the
+/// difference to the previously received auction. Bodies without the tag are
+/// full auctions since they predate delta requests.
+#[derive(Debug)]
+pub enum SolveRequestBody {
+    Full(SolveRequest),
+    Delta(SolveRequestDelta),
+}
+
+/// Parses a `/solve` request body.
+///
+/// Bodies are parsed as full auctions first so the overwhelmingly common
+/// multi-MB full bodies are only scanned once; only when that fails is the
+/// `kind` tag probed to dispatch to another request kind. An internally
+/// tagged serde enum can't be used because the tag may be absent (backwards
+/// compatibility) and because serde buffers the entire document to find the
+/// tag. Note that this requires any future request kind to not also parse
+/// as a valid full auction (deltas don't: they have no `orders` field).
+pub fn parse(body: &[u8]) -> serde_json::Result<SolveRequestBody> {
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    enum RequestKind {
+        Delta,
+    }
+    #[derive(Debug, Deserialize)]
+    struct Probe {
+        #[serde(default)]
+        kind: Option<RequestKind>,
+    }
+    let full_err = match serde_json::from_slice(body) {
+        Ok(request) => return Ok(SolveRequestBody::Full(request)),
+        Err(err) => err,
+    };
+    match serde_json::from_slice::<Probe>(body).map(|probe| probe.kind) {
+        Ok(Some(RequestKind::Delta)) => Ok(SolveRequestBody::Delta(serde_json::from_slice(body)?)),
+        // The body is not of another known request kind, so report why it
+        // doesn't parse as a full auction.
+        _ => Err(full_err),
+    }
+}
+
+/// Difference of an auction relative to the auction `base_id` which this
+/// driver received earlier. Only orders are diffed; tokens and all scalar
+/// fields are sent whole.
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SolveRequestDelta {
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    id: i64,
+    /// Id of the auction this delta applies to.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    base_id: i64,
+    tokens: Vec<Token>,
+    /// Orders that were added or modified since the base auction.
+    updated_orders: Vec<Order>,
+    /// Uids of orders that were removed since the base auction.
+    #[serde_as(as = "Vec<serde_ext::Hex>")]
+    removed_orders: Vec<[u8; order::UID_LEN]>,
+    deadline: chrono::DateTime<chrono::Utc>,
+    #[serde(default)]
+    surplus_capturing_jit_order_owners: Vec<eth::Address>,
+}
+
+impl SolveRequestDelta {
+    /// Reconstructs the full auction by applying this delta to the base
+    /// auction.
+    pub fn apply(self, base: Option<&DeltaBase>) -> Result<SolveRequest, DeltaBaseMismatch> {
+        let base =
+            base.filter(|base| base.auction_id == self.base_id)
+                .ok_or(DeltaBaseMismatch {
+                    expected: self.base_id,
+                    actual: base.map(|base| base.auction_id),
+                })?;
+
+        let base_uids: HashSet<_> = base.orders.iter().map(|order| order.uid).collect();
+        let (changed, added): (Vec<_>, Vec<_>) = self
+            .updated_orders
+            .into_iter()
+            .partition(|order| base_uids.contains(&order.uid));
+        let mut changed: HashMap<_, _> = changed
+            .into_iter()
+            .map(|order| (order.uid, order))
+            .collect();
+        let removed: HashSet<_> = self.removed_orders.into_iter().collect();
+
+        let mut orders = Vec::with_capacity(base.orders.len() + added.len());
+        for order in &base.orders {
+            if removed.contains(&order.uid) {
+                continue;
+            }
+            orders.push(match changed.remove(&order.uid) {
+                Some(updated) => updated,
+                None => order.clone(),
+            });
+        }
+        orders.extend(added);
+
+        Ok(SolveRequest {
+            id: self.id,
+            tokens: self.tokens,
+            orders,
+            deadline: self.deadline,
+            surplus_capturing_jit_order_owners: self.surplus_capturing_jit_order_owners,
+        })
+    }
+}
+
+/// Orders of the most recently received auction; the base which delta
+/// requests are applied to.
+#[derive(Debug)]
+pub struct DeltaBase {
+    auction_id: i64,
+    orders: Vec<Order>,
+}
+
+impl DeltaBase {
+    pub fn snapshot(request: &SolveRequest) -> Self {
+        Self {
+            auction_id: request.id,
+            orders: request.orders.clone(),
+        }
+    }
+
+    pub fn auction_id(&self) -> i64 {
+        self.auction_id
+    }
+}
+
+/// A delta request referenced a base auction this driver doesn't have.
+/// Reported as HTTP 409 so the autopilot re-sends the full auction.
+#[derive(Debug, thiserror::Error)]
+#[error("delta request expects base auction {expected} but the driver has {actual:?}")]
+pub struct DeltaBaseMismatch {
+    expected: i64,
+    actual: Option<i64>,
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -140,7 +279,7 @@ struct Token {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Order {
     #[serde_as(as = "serde_ext::Hex")]
@@ -284,7 +423,7 @@ impl Order {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
@@ -292,7 +431,7 @@ enum Kind {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Interaction {
     target: eth::Address,
@@ -302,7 +441,7 @@ struct Interaction {
     call_data: Vec<u8>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum SellTokenBalance {
     #[default]
@@ -319,7 +458,7 @@ enum SellTokenBalance {
     External,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum BuyTokenBalance {
     #[default]
@@ -331,7 +470,7 @@ enum BuyTokenBalance {
     Internal,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum SigningScheme {
     Eip712,
@@ -340,14 +479,14 @@ enum SigningScheme {
     Eip1271,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum Class {
     Market,
     Limit,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum FeePolicy {
     #[serde(rename_all = "camelCase")]
@@ -363,7 +502,7 @@ enum FeePolicy {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "serde_ext::U256")]
@@ -396,5 +535,160 @@ impl Quote {
             },
             solver: self.solver,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// JSON of a minimal order as the autopilot serializes it, with all
+    /// bytes of the uid set to `uid_byte`.
+    fn order_json(uid_byte: u8, executed: u64) -> serde_json::Value {
+        serde_json::json!({
+            "uid": format!("0x{}", format!("{uid_byte:02x}").repeat(56)),
+            "sellToken": "0x2222222222222222222222222222222222222222",
+            "buyToken": "0x3333333333333333333333333333333333333333",
+            "sellAmount": "1000",
+            "buyAmount": "2000",
+            "protocolFees": [],
+            "created": 1,
+            "validTo": 2,
+            "kind": "sell",
+            "receiver": null,
+            "owner": "0x4444444444444444444444444444444444444444",
+            "partiallyFillable": true,
+            "executed": executed.to_string(),
+            "preInteractions": [],
+            "postInteractions": [],
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20",
+            "class": "limit",
+            "appData": format!("0x{}", "00".repeat(32)),
+            "signingScheme": "eip712",
+            "signature": format!("0x{}1c", "01".repeat(64)),
+            "quote": null,
+        })
+    }
+
+    fn full_request_json() -> serde_json::Value {
+        serde_json::json!({
+            "id": "1",
+            "tokens": [{
+                "address": "0x5555555555555555555555555555555555555555",
+                "price": "1000000000000000000",
+                "trusted": true,
+            }],
+            "orders": [order_json(0x11, 0), order_json(0x22, 0), order_json(0x33, 0)],
+            "deadline": "2023-11-14T22:13:20Z",
+            "surplusCapturingJitOrderOwners": [],
+        })
+    }
+
+    /// The shape of this request is pinned by the autopilot's tests
+    /// (crates/autopilot/src/infra/solvers/dto/solve.rs); both sides must
+    /// agree on the wire format.
+    fn delta_request_json() -> serde_json::Value {
+        serde_json::json!({
+            "kind": "delta",
+            "id": "2",
+            "baseId": "1",
+            "tokens": [{
+                "address": "0x6666666666666666666666666666666666666666",
+                "price": "2000000000000000000",
+                "trusted": false,
+            }],
+            "updatedOrders": [order_json(0x22, 100), order_json(0x44, 0)],
+            "removedOrders": [format!("0x{}", "33".repeat(56))],
+            "deadline": "2023-11-14T22:15:44Z",
+            "surplusCapturingJitOrderOwners": [],
+        })
+    }
+
+    fn parse_value(value: serde_json::Value) -> serde_json::Result<SolveRequestBody> {
+        parse(&serde_json::to_vec(&value).unwrap())
+    }
+
+    #[test]
+    fn parses_full_request_without_kind_tag() {
+        let SolveRequestBody::Full(request) = parse_value(full_request_json()).unwrap() else {
+            panic!("expected full request");
+        };
+        assert_eq!(request.id, 1);
+        assert_eq!(request.orders.len(), 3);
+    }
+
+    #[test]
+    fn parses_full_request_with_kind_tag() {
+        let mut json = full_request_json();
+        json["kind"] = "full".into();
+        let SolveRequestBody::Full(request) = parse_value(json).unwrap() else {
+            panic!("expected full request");
+        };
+        assert_eq!(request.id, 1);
+    }
+
+    #[test]
+    fn rejects_unknown_kind_tag() {
+        // A future request kind (not parseable as a full auction) must fail
+        // loudly instead of being misinterpreted.
+        let mut json = delta_request_json();
+        json["kind"] = "somethingElse".into();
+        assert!(parse_value(json).is_err());
+    }
+
+    #[test]
+    fn applies_delta_to_base() {
+        let SolveRequestBody::Full(full) = parse_value(full_request_json()).unwrap() else {
+            panic!("expected full request");
+        };
+        let base = DeltaBase::snapshot(&full);
+
+        let SolveRequestBody::Delta(delta) = parse_value(delta_request_json()).unwrap() else {
+            panic!("expected delta request");
+        };
+        let request = delta.apply(Some(&base)).unwrap();
+
+        assert_eq!(request.id, 2);
+        // Modified orders are replaced in place, removed orders dropped and
+        // added orders appended.
+        let uids: Vec<u8> = request.orders.iter().map(|order| order.uid[0]).collect();
+        assert_eq!(uids, vec![0x11, 0x22, 0x44]);
+        assert_eq!(request.orders[1].executed, eth::U256::from(100));
+        // Everything that is not an order is taken from the delta.
+        assert_eq!(request.tokens.len(), 1);
+        assert_eq!(
+            request.tokens[0].address,
+            "0x6666666666666666666666666666666666666666"
+                .parse::<eth::Address>()
+                .unwrap()
+        );
+        assert_eq!(
+            request.deadline,
+            "2023-11-14T22:15:44Z"
+                .parse::<chrono::DateTime<chrono::Utc>>()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn rejects_delta_on_base_mismatch() {
+        let SolveRequestBody::Full(full) = parse_value(full_request_json()).unwrap() else {
+            panic!("expected full request");
+        };
+        let mut json = delta_request_json();
+        json["baseId"] = "7".into();
+        let SolveRequestBody::Delta(delta) = parse_value(json).unwrap() else {
+            panic!("expected delta request");
+        };
+        assert!(delta.apply(Some(&DeltaBase::snapshot(&full))).is_err());
+    }
+
+    #[test]
+    fn rejects_delta_without_base() {
+        let SolveRequestBody::Delta(delta) = parse_value(delta_request_json()).unwrap() else {
+            panic!("expected delta request");
+        };
+        assert!(delta.apply(None).is_err());
     }
 }
