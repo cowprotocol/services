@@ -26,6 +26,16 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// How often the transport sends HTTP/2 keepalive pings.
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
 
+/// First reconnect delay, doubled per attempt.
+const RECONNECT_BACKOFF_INITIAL: Duration = Duration::from_millis(200);
+
+/// Reconnect delay growth factor.
+const RECONNECT_BACKOFF_MULTIPLIER: f64 = 2.0;
+
+/// Dial attempts per outage, about 3.5 minutes in total. Exhausting them ends
+/// the stream, the process restart resumes from the last indexed slot.
+const RECONNECT_MAX_RETRIES: u32 = 10;
+
 /// Upper bound on a single decoded gRPC message. Transaction updates carry
 /// the full transaction plus its meta (logs, balances, inner instructions),
 /// so the tonic default of 4 MiB is too tight for pathological cases.
@@ -59,9 +69,8 @@ fn builder(
         .keep_alive_while_idle(true)
         .max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
     if tls {
-        // rustls needs exactly one process-level crypto provider, and the
-        // build graph can enable several. Installing one explicitly keeps
-        // sibling crates' feature choices from breaking the TLS setup.
+        // rustls requires exactly one crypto provider, and the build graph
+        // can enable several.
         let _ = rustls::crypto::ring::default_provider().install_default();
         builder = builder.tls_config(ClientTlsConfig::new().with_native_roots())?;
     }
