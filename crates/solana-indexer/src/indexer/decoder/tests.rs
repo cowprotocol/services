@@ -608,9 +608,9 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 /// a failed decode (which suppresses that transaction's events entirely),
 /// and the flush driven by a slot status moving past the hold-back window.
 /// Poll the database until `probe` returns true.
-async fn wait_for_db(pool: &sqlx::PgPool, probe: impl AsyncFn(&sqlx::PgPool) -> bool) {
+async fn wait_for_db(probe: impl AsyncFn() -> bool) {
     for _ in 0..200 {
-        if probe(pool).await {
+        if probe().await {
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
@@ -618,30 +618,11 @@ async fn wait_for_db(pool: &sqlx::PgPool, probe: impl AsyncFn(&sqlx::PgPool) -> 
     panic!("timed out waiting for the expected database state");
 }
 
-async fn watermark(pool: &sqlx::PgPool) -> Option<i64> {
-    sqlx::query_scalar("SELECT slot FROM solana.indexer_state")
-        .fetch_optional(pool)
-        .await
-        .unwrap()
-}
-
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
 async fn solana_db_ingester_to_decoder_persists_decoded_events() {
-    let pool = sqlx::PgPool::connect("postgresql://").await.unwrap();
-    for table in [
-        "solana.trades",
-        "solana.settlements",
-        "solana.order_pda",
-        "solana.orders",
-        "solana.dead_letter",
-        "solana.indexer_state",
-    ] {
-        sqlx::query(&format!("DELETE FROM {table}"))
-            .execute(&pool)
-            .await
-            .unwrap();
-    }
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
 
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     let (info, expected) = create_order_tx();
@@ -703,12 +684,13 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     }
     // The hold-back keeps both slots buffered: the newest observed slot (43)
     // is not two past either of them, so nothing may be persisted yet.
+    let reader = Postgres::new(pool.clone());
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert_eq!(watermark(&pool).await, None);
+    assert_eq!(reader.read_watermark().await.unwrap(), None);
 
     // The slot-45 status moves the stream two past 43 and flushes both slots.
     geyser_tx.send(Ok(slot_status_update(45))).await.unwrap();
-    wait_for_db(&pool, async |pool| watermark(pool).await == Some(43)).await;
+    wait_for_db(async || reader.read_watermark().await.unwrap() == Some(Slot(43))).await;
 
     // Slot 42 held only the reverted transaction: no dead letter, no rows.
     // The slot-43 transaction with the unknown discriminator is dead-lettered
