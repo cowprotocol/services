@@ -38,8 +38,10 @@ CREATE UNIQUE INDEX solana_orders_order_pda ON solana.orders (order_pda);
 -- Mutable on-chain order state, split from the immutable intent row above.
 -- amount_withdrawn / amount_received are running sums the indexer folds
 -- trades into.
+-- No foreign key to solana.orders: the indexer records on-chain order
+-- activity even when the intent row is not written yet.
 CREATE TABLE solana.order_pda (
-    order_uid              bytea PRIMARY KEY REFERENCES solana.orders(uid),
+    order_uid              bytea PRIMARY KEY CHECK (length(order_uid) = 32),
     -- Rent payer of the order PDA.
     created_by             bytea NOT NULL CHECK (length(created_by) = 32),
     -- Owner of buy_token_account, resolved by the indexer.
