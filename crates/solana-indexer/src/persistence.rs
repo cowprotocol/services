@@ -43,9 +43,9 @@ impl Postgres {
         Self { pool }
     }
 
-    /// The watermark the stream resumes from after a restart. `None` before
-    /// the first write.
-    pub(crate) async fn read_watermark(&self) -> Result<Option<Slot>, PersistenceError> {
+    /// The last fully indexed slot, the stream resumes one past it. `None`
+    /// before the first write.
+    pub(crate) async fn last_indexed_slot(&self) -> Result<Option<Slot>, PersistenceError> {
         let slot: Option<i64> = sqlx::query_scalar("SELECT slot FROM solana.indexer_state")
             .fetch_optional(&self.pool)
             .await?;
@@ -190,9 +190,9 @@ WHERE order_uid = $1
         Ok(())
     }
 
-    /// Upsert the watermark, ignoring backward writes so the table's monotone
-    /// trigger never fires.
-    async fn upsert_watermark(
+    /// Upsert the last indexed slot, ignoring backward writes so the table's
+    /// monotone trigger never fires.
+    async fn upsert_last_indexed_slot(
         ex: impl sqlx::PgExecutor<'_>,
         slot: Slot,
     ) -> Result<(), PersistenceError> {
@@ -210,24 +210,24 @@ WHERE indexer_state.slot < EXCLUDED.slot
         Ok(())
     }
 
-    /// Save one slot's decoded events and advance the slot watermark in one
-    /// transaction.
+    /// Save one slot's decoded events and advance the last indexed slot in
+    /// one transaction.
     pub(crate) async fn persist_events(
         &self,
         events: Vec<DecodedEvent>,
-        new_watermark: Slot,
+        last_indexed_slot: Slot,
     ) -> Result<(), PersistenceError> {
         let mut tx = self.pool.begin().await?;
         for event in events {
             Self::apply(&mut tx, event).await?;
         }
-        Self::upsert_watermark(&mut *tx, new_watermark).await?;
+        Self::upsert_last_indexed_slot(&mut *tx, last_indexed_slot).await?;
         Ok(tx.commit().await?)
     }
 
-    /// Record a slot checkpoint. A backward write is a no-op.
-    pub(crate) async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
-        Self::upsert_watermark(&self.pool, slot).await
+    /// Record a slot as fully indexed. A backward write is a no-op.
+    pub(crate) async fn write_last_indexed_slot(&self, slot: Slot) -> Result<(), PersistenceError> {
+        Self::upsert_last_indexed_slot(&self.pool, slot).await
     }
 
     /// Record a transaction whose decode failed so recovery can replay it by
@@ -318,18 +318,18 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
-    async fn solana_db_watermark_upserts_forward_and_ignores_backward() {
+    async fn solana_db_last_indexed_slot_upserts_forward_and_ignores_backward() {
         let pool = pool().await;
         wipe(&pool).await;
         let postgres = Postgres::new(pool);
 
-        assert_eq!(postgres.read_watermark().await.unwrap(), None);
-        postgres.write_watermark(Slot(10)).await.unwrap();
-        assert_eq!(postgres.read_watermark().await.unwrap(), Some(Slot(10)));
-        postgres.write_watermark(Slot(7)).await.unwrap();
-        assert_eq!(postgres.read_watermark().await.unwrap(), Some(Slot(10)));
-        postgres.write_watermark(Slot(11)).await.unwrap();
-        assert_eq!(postgres.read_watermark().await.unwrap(), Some(Slot(11)));
+        assert_eq!(postgres.last_indexed_slot().await.unwrap(), None);
+        postgres.write_last_indexed_slot(Slot(10)).await.unwrap();
+        assert_eq!(postgres.last_indexed_slot().await.unwrap(), Some(Slot(10)));
+        postgres.write_last_indexed_slot(Slot(7)).await.unwrap();
+        assert_eq!(postgres.last_indexed_slot().await.unwrap(), Some(Slot(10)));
+        postgres.write_last_indexed_slot(Slot(11)).await.unwrap();
+        assert_eq!(postgres.last_indexed_slot().await.unwrap(), Some(Slot(11)));
     }
 
     #[tokio::test]
@@ -442,6 +442,6 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
             .await
             .unwrap();
         assert_eq!((settlements, trades), (2, 1));
-        assert_eq!(postgres.read_watermark().await.unwrap(), Some(Slot(20)));
+        assert_eq!(postgres.last_indexed_slot().await.unwrap(), Some(Slot(20)));
     }
 }
