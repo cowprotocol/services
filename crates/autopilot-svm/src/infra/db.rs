@@ -1,8 +1,10 @@
 //! Database access for the Solana autopilot.
 
 use {
-    anyhow::{Context, Result},
-    bigdecimal::BigDecimal,
+    crate::domain::auction::{Auction, Order, OrderKind},
+    anyhow::{Context, Result, bail},
+    bigdecimal::{BigDecimal, ToPrimitive},
+    chain_types::solana::{IntentHash, Pubkey},
     database::byte_array::ByteArray,
     sqlx::PgExecutor,
 };
@@ -100,13 +102,105 @@ ORDER BY slot, tx_signature
         .context("read solana.settlements by auction")
 }
 
+/// Cut an auction from the orders currently open for solving.
+pub async fn cut(ex: impl PgExecutor<'_>, id: i64, now_unix: i64) -> Result<Auction> {
+    let orders = orders_from_rows(open_orders(ex, now_unix).await?);
+    Ok(Auction { id, orders })
+}
+
+/// A row the indexer wrote always converts (on-chain values fit the domain
+/// types), so a failure means corrupt data. The corrupt order is skipped
+/// instead of failing the cut, which would block solving for every other
+/// order.
+fn orders_from_rows(rows: Vec<OrderRow>) -> Vec<Order> {
+    rows.into_iter()
+        .filter_map(|row| {
+            let uid = row.uid;
+            order_from_row(row)
+                .map_err(|err| {
+                    tracing::warn!(uid = %const_hex::encode(uid.0), ?err, "skipping corrupt order row")
+                })
+                .ok()
+        })
+        .collect()
+}
+
+fn order_from_row(row: OrderRow) -> Result<Order> {
+    Ok(Order {
+        uid: IntentHash(row.uid.0),
+        owner: Pubkey(row.owner.0),
+        sell_token: Pubkey(row.sell_token.0),
+        buy_token: Pubkey(row.buy_token.0),
+        sell_token_account: Pubkey(row.sell_token_account.0),
+        buy_token_account: Pubkey(row.buy_token_account.0),
+        sell_amount: to_amount(&row.sell_amount).context("sell_amount")?,
+        buy_amount: to_amount(&row.buy_amount).context("buy_amount")?,
+        valid_to: row.valid_to.try_into().context("valid_to")?,
+        kind: match row.kind.as_str() {
+            "sell" => OrderKind::Sell,
+            "buy" => OrderKind::Buy,
+            other => bail!("unknown order kind {other:?}"),
+        },
+        partially_fillable: row.partially_fillable,
+        order_pda: Pubkey(row.order_pda.0),
+    })
+}
+
+/// Token amounts are `numeric(20,0)` in the database, u64 on chain.
+fn to_amount(value: &BigDecimal) -> Result<u64> {
+    value
+        .to_u64()
+        .with_context(|| format!("amount {value} does not fit u64"))
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::{last_indexed_slot, open_orders, settlements_by_auction},
+        bigdecimal::BigDecimal,
         database::byte_array::ByteArray,
         sqlx::{PgPool, PgTransaction},
     };
+
+    fn conversion_row() -> super::OrderRow {
+        super::OrderRow {
+            uid: ByteArray([1; 32]),
+            owner: ByteArray([2; 32]),
+            sell_token: ByteArray([3; 32]),
+            buy_token: ByteArray([4; 32]),
+            sell_token_account: ByteArray([5; 32]),
+            buy_token_account: ByteArray([6; 32]),
+            sell_amount: BigDecimal::from(u64::MAX),
+            buy_amount: BigDecimal::from(1_000u64),
+            valid_to: 42,
+            kind: "sell".to_owned(),
+            partially_fillable: false,
+            order_pda: ByteArray([7; 32]),
+        }
+    }
+
+    #[test]
+    fn converts_a_row_and_rejects_out_of_range_values() {
+        let order = super::order_from_row(conversion_row()).unwrap();
+        assert_eq!(order.sell_amount, u64::MAX);
+        assert_eq!(order.kind, crate::domain::auction::OrderKind::Sell);
+
+        let mut too_big = conversion_row();
+        too_big.sell_amount = BigDecimal::from(u64::MAX) + BigDecimal::from(1u64);
+        assert!(super::order_from_row(too_big).is_err());
+
+        let mut bad_kind = conversion_row();
+        bad_kind.kind = "liquidity".to_owned();
+        assert!(super::order_from_row(bad_kind).is_err());
+    }
+
+    #[test]
+    fn a_corrupt_row_is_skipped_not_fatal() {
+        let mut corrupt = conversion_row();
+        corrupt.sell_amount = BigDecimal::from(u64::MAX) + BigDecimal::from(1u64);
+        let orders = super::orders_from_rows(vec![conversion_row(), corrupt]);
+        assert_eq!(orders.len(), 1);
+    }
 
     async fn insert_order(
         tx: &mut PgTransaction<'_>,
