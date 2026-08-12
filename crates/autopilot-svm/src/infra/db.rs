@@ -37,6 +37,7 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.valid_to >= $1
+  AND (o.valid_from IS NULL OR o.valid_from <= $1)
   AND (o.intent_signature IS NOT NULL
        OR o.presigned_transaction IS NOT NULL
        OR p.order_uid IS NOT NULL)
@@ -179,6 +180,13 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         // Dropped: cancelled on chain.
         insert_order(&mut tx, 4, 2_000, true, "sell").await;
         insert_pda(&mut tx, 4, true, 0, 0).await;
+        // Dropped: not yet valid.
+        insert_order(&mut tx, 9, 2_000, true, "sell").await;
+        sqlx::query(r#"UPDATE solana.orders SET valid_from = 1_500 WHERE uid = $1"#)
+            .bind(database::byte_array::ByteArray([9u8; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         // Kept: live PDA, partially filled.
         insert_order(&mut tx, 5, 2_000, true, "sell").await;
         insert_pda(&mut tx, 5, false, 999, 0).await;
