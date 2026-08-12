@@ -5,6 +5,7 @@
 
 use {
     std::time::Duration,
+    url::Url,
     yellowstone_grpc_client::{
         GeyserGrpcBuilder,
         GeyserGrpcBuilderError,
@@ -31,11 +32,12 @@ const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 
 /// Connect to a Yellowstone gRPC endpoint.
 ///
-/// `endpoint` decides TLS by scheme: `https://` endpoints get TLS with the
-/// system's native root certificates. `x_token` is the provider's
-/// authentication token, sent as the `x-token` header on every request.
+/// `endpoint` decides TLS by scheme: `https` endpoints get TLS with the
+/// system's native root certificates (the transport never infers TLS on its
+/// own). `x_token` is the provider's authentication token, sent as the
+/// `x-token` header on every request.
 pub async fn connect(
-    endpoint: String,
+    endpoint: Url,
     x_token: Option<String>,
 ) -> Result<GeyserGrpcClient, GeyserGrpcBuilderError> {
     builder(endpoint, x_token)?.connect().await
@@ -43,10 +45,11 @@ pub async fn connect(
 
 /// Assemble the configured builder without dialing.
 fn builder(
-    endpoint: String,
+    endpoint: Url,
     x_token: Option<String>,
 ) -> Result<GeyserGrpcBuilder, GeyserGrpcBuilderError> {
-    let tls = endpoint.starts_with("https://");
+    let tls = endpoint.scheme() == "https";
+    let endpoint = String::from(endpoint);
     let mut builder = GeyserGrpcBuilder::from_shared(endpoint)?
         .x_token(x_token)?
         .connect_timeout(CONNECT_TIMEOUT)
@@ -71,10 +74,14 @@ fn builder(
 mod tests {
     use super::*;
 
+    fn url(s: &str) -> Url {
+        Url::parse(s).unwrap()
+    }
+
     #[test]
     fn builds_with_tls_and_token() {
         let builder = builder(
-            "https://yellowstone.example.com:443".to_owned(),
+            url("https://yellowstone.example.com:443"),
             Some("secret".to_owned()),
         )
         .unwrap();
@@ -83,20 +90,11 @@ mod tests {
 
     #[test]
     fn builds_plaintext_without_token() {
-        builder("http://localhost:10000".to_owned(), None).unwrap();
-    }
-
-    #[test]
-    fn rejects_malformed_endpoint() {
-        builder("not a url".to_owned(), None).unwrap_err();
+        builder(url("http://localhost:10000"), None).unwrap();
     }
 
     #[test]
     fn rejects_malformed_token() {
-        builder(
-            "http://localhost:10000".to_owned(),
-            Some("tok\nen".to_owned()),
-        )
-        .unwrap_err();
+        builder(url("http://localhost:10000"), Some("tok\nen".to_owned())).unwrap_err();
     }
 }
