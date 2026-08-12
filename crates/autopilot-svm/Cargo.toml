@@ -12,11 +12,8 @@ chain-types = { workspace = true }
 const-hex = { workspace = true }
 database = { workspace = true }
 sqlx = { workspace = true }
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 
 [lints]
 workspace = true

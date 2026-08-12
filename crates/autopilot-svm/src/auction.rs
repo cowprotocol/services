@@ -2,7 +2,7 @@
 //! vocabulary and their assembly from database rows.
 
 use {
-    crate::{db, run_loop::AuctionInfo},
+    crate::{infra::db, run_loop::AuctionInfo},
     anyhow::{Context, Result, bail},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{IntentHash, Pubkey},
@@ -111,7 +111,7 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
 mod tests {
     use {
         super::{Auction, Order, OrderKind},
-        crate::db::OrderRow,
+        crate::infra::db::OrderRow,
         bigdecimal::BigDecimal,
         database::byte_array::ByteArray,
     };
