@@ -19,8 +19,8 @@ pub struct Solver {
     pub submission_account: Account,
     /// Whether the driver understands incremental auctions: `/solve` request
     /// bodies that only contain the difference to the previously sent
-    /// auction, with a full auction every
-    /// `auction-delta-checkpoint-interval` auctions.
+    /// auction, with a full auction sent every
+    /// `auction-delta-checkpoint-interval`.
     #[serde(default)]
     pub supports_auction_deltas: bool,
 }

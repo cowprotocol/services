@@ -1,9 +1,6 @@
 use {
     serde::Deserialize,
-    std::{
-        num::{NonZeroU64, NonZeroUsize},
-        time::Duration,
-    },
+    std::{num::NonZeroUsize, time::Duration},
 };
 
 const fn default_max_delay() -> Duration {
@@ -30,8 +27,8 @@ const fn default_min_solve_time() -> Duration {
     Duration::from_secs(10)
 }
 
-const fn default_auction_delta_checkpoint_interval() -> NonZeroU64 {
-    NonZeroU64::new(10).unwrap()
+const fn default_auction_delta_checkpoint_interval() -> Duration {
+    Duration::from_mins(2)
 }
 
 /// Configuration for the autopilot run loop timing.
@@ -63,11 +60,15 @@ pub struct RunLoopConfig {
     pub compress_solve_request: bool,
 
     /// How often a full auction (checkpoint) is sent to drivers that opted
-    /// into incremental auctions (`supports-auction-deltas`). Such drivers
-    /// receive a full auction every this many auctions and deltas relative
-    /// to the previously sent auction in between.
-    #[serde(default = "default_auction_delta_checkpoint_interval")]
-    pub auction_delta_checkpoint_interval: NonZeroU64,
+    /// into incremental auctions (`supports-auction-deltas`). The first
+    /// auction that starts after this much time passed since the last
+    /// checkpoint is sent in full; the auctions in between are sent as
+    /// deltas relative to the previously sent auction.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_auction_delta_checkpoint_interval"
+    )]
+    pub auction_delta_checkpoint_interval: Duration,
 
     /// The maximum number of blocks to wait for a settlement to appear on
     /// chain.
@@ -150,7 +151,7 @@ mod tests {
         assert_eq!(config.max_delay, Duration::from_secs(2));
         assert_eq!(
             config.auction_delta_checkpoint_interval,
-            NonZeroU64::new(10).unwrap()
+            Duration::from_mins(2)
         );
     }
 
@@ -158,12 +159,17 @@ mod tests {
     fn deserialize_full() {
         let toml = r#"
         max-delay = "5s"
+        auction-delta-checkpoint-interval = "30s"
         [sync-solve-deadline-to-blockchain]
             slot-length = "12s"
             tx-propagation-latency = "2s"
         "#;
         let config: RunLoopConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.max_delay, Duration::from_secs(5));
+        assert_eq!(
+            config.auction_delta_checkpoint_interval,
+            Duration::from_secs(30)
+        );
         assert_eq!(
             config
                 .sync_solve_deadline_to_blockchain
