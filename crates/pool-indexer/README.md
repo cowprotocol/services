@@ -1,34 +1,34 @@
 # pool-indexer
 
 Indexes Uniswap V3 pools, ticks, and pool state into Postgres and serves
-the data over HTTP. The driver consumes this API in place of a
-third-party Uniswap V3 subgraph.
+the data over HTTP. The driver consumes this API for its Uniswap V3
+liquidity.
 
-For each (chain, factory) pair, the indexer seeds its DB from a subgraph
-at a fixed block, catches up to the chain tip via RPC events, then stays
-live by polling new blocks. Drivers consume it via the `pool-indexer-url`
-field in their Uniswap V3 liquidity config.
+For each (chain, factory) pair, the indexer cold-seeds its DB by replaying the
+factory's on-chain events from its deploy block, catches up to the finalized
+head, then stays live by polling new blocks. Drivers consume it via the
+`pool-indexer-url` field in their Uniswap V3 liquidity config.
 
 ## Bootstrap and serve
 
 Startup has two phases:
 
-- **Bootstrap** — initial subgraph seed plus catch-up to the finalized head.
-  One-time and slow (minutes on a large chain).
+- **Bootstrap** — on-chain cold-seed from the factory's deploy block, catching
+  up to the finalized head. One-time and slow (minutes on a large chain).
 - **Serve** — live block polling and the HTTP API. No long startup cost.
 
 `pool-indexer --config <toml>` runs both in one process: it bootstraps when the
 DB has no checkpoint, then serves. This is the single-container deployment.
 
 `pool-indexer --bootstrap-only true --config <toml>` runs only the bootstrap
-phase and then exits 0, binding no HTTP ports. It is **idempotent**: on a DB
-that already has a checkpoint it skips the seed and catch-up entirely (never
-touching the subgraph) and returns immediately, so re-running it is a fast, safe
-no-op.
+phase and then exits 0, binding no HTTP ports. It is **idempotent**: a DB
+already caught up to the head returns at once, while one left partially seeded by
+an interrupted run resumes from its checkpoint to completion, so re-running is a
+safe no-op.
 
 Running bootstrap as a separate step ahead of serving keeps serve startup fast:
-the serve process finds the checkpoint already present and flips `/startup` ready
-almost immediately.
+the serve process finds the DB already caught up and flips `/startup` ready
+promptly.
 
 ## Running locally
 

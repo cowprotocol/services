@@ -35,10 +35,10 @@ pub async fn start(args: impl Iterator<Item = String>) {
 /// head) for every factory, then returns. Binds no HTTP ports; meant to run as
 /// a separate step ahead of serving.
 ///
-/// Idempotent: each factory with an existing checkpoint is skipped (see
-/// [`bootstrap_factory`]), so re-running on an already-seeded DB is a fast
-/// no-op. On return, a subsequent `run` finds the checkpoints present and flips
-/// `/startup` ready almost immediately.
+/// Idempotent: a factory already at the head is a fast no-op and an interrupted
+/// seed resumes from its checkpoint (see [`bootstrap_factory`]). On return
+/// every factory is indexed to the finalized head, so a later `run` flips
+/// `/startup` ready promptly.
 pub async fn bootstrap(config: Configuration) {
     let db = connect_db(&config).await;
     let network = config.network;
@@ -234,8 +234,11 @@ async fn run_factory_indexer(
     indexer.run(network.poll_interval()).await;
 }
 
-/// Cold-seed a fresh factory by replaying its on-chain history, then hand off
-/// to live indexing. If a checkpoint already exists, skip straight to live.
+/// Indexes a factory up to the finalized head before it's considered ready. A
+/// fresh factory cold-seeds from its deploy block; one with a checkpoint (from
+/// a finished seed, or one interrupted partway) resumes from there. Either way
+/// it returns only once caught up, so `/startup` never flips ready on a partial
+/// DB.
 async fn bootstrap_factory(
     db: &PgPool,
     indexer: &UniswapV3Indexer,
@@ -245,20 +248,26 @@ async fn bootstrap_factory(
     let checkpoint = crate::db::uniswap_v3::get_checkpoint(db, &factory.address)
         .await
         .expect("failed to read checkpoint");
-    if let Some(block) = checkpoint {
-        tracing::info!(
-            chain_id = network.chain_id,
-            factory = %factory.address,
-            block,
-            "existing checkpoint found, skipping bootstrap",
-        );
-        return;
+    match checkpoint {
+        Some(block) => {
+            tracing::info!(
+                chain_id = network.chain_id,
+                factory = %factory.address,
+                block,
+                "resuming from checkpoint",
+            );
+            indexer
+                .catch_up_to_finalized()
+                .await
+                .expect("on-chain catch-up failed");
+        }
+        None => {
+            indexer
+                .catch_up(factory.deploy_block.saturating_sub(1))
+                .await
+                .expect("on-chain cold-seed failed");
+        }
     }
-
-    indexer
-        .catch_up(factory.deploy_block.saturating_sub(1))
-        .await
-        .expect("on-chain cold-seed failed");
 }
 
 fn build_provider(network: &NetworkConfig) -> AlloyProvider {

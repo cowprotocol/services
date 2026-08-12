@@ -1,7 +1,5 @@
-//! End-to-end check that the driver consumes pool data from `pool-indexer`
-//! when `pool-indexer-url` is set. Pre-seeds the indexer checkpoint so the
-//! subgraph_seeder bootstrap is skipped (Anvil has no subgraph); only the
-//! live-indexing and HTTP-serving paths are exercised.
+//! End-to-end tests for `pool-indexer`: on-chain cold-seed and catch-up, the
+//! HTTP API, and the driver consuming pool data from it.
 
 use {
     alloy::{
@@ -656,16 +654,16 @@ async fn local_node_pool_indexer_bootstrap_idempotent() {
     run_test(bootstrap_idempotent).await;
 }
 
-/// `--bootstrap-only` on an already-seeded DB must be a fast no-op: detect the
-/// existing checkpoint, skip the cold-seed, and return without binding any
-/// ports — mirroring a re-run of the bootstrap initContainer on a pod restart.
+/// `--bootstrap-only` on an already-caught-up DB must be a fast no-op: the
+/// catch-up loop sees the checkpoint is already at the head and returns without
+/// binding any ports, like a bootstrap initContainer re-run on a pod restart.
 async fn bootstrap_idempotent(web3: Web3) {
     let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
-    // A pre-seeded checkpoint marks the DB as already bootstrapped. No on-chain
-    // factory is needed: bootstrap reads the checkpoint and returns before any
-    // seeding or catch-up. The RPC is only used for the chain_id sanity check.
+    // A checkpoint at the head means the DB is already caught up, so the
+    // catch-up loop finds nothing to do. No on-chain factory is needed; the RPC
+    // only serves the chain_id check and reading the finalized head.
     let factory = Address::repeat_byte(0x11);
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory, head).await;
