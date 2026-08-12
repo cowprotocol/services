@@ -32,9 +32,18 @@ CREATE TABLE solana.orders (
     order_pda             bytea NOT NULL CHECK (length(order_pda) = 32)
 );
 
+-- The btree/hash split and the column sets mirror the base orders indexes,
+-- the queries they serve are the same.
 CREATE INDEX solana_orders_valid_to ON solana.orders (valid_to);
 CREATE INDEX solana_orders_valid_from ON solana.orders (valid_from)
     WHERE valid_from IS NOT NULL;
+CREATE INDEX solana_orders_owner ON solana.orders USING hash (owner);
+CREATE INDEX solana_orders_creation_timestamp ON solana.orders (creation_timestamp);
+CREATE INDEX solana_orders_user_creation
+    ON solana.orders (owner, creation_timestamp DESC);
+CREATE INDEX solana_orders_sell_buy_tokens ON solana.orders (sell_token, buy_token);
+CREATE INDEX solana_orders_quoting_parameters
+    ON solana.orders (sell_token, buy_token, sell_amount);
 CREATE UNIQUE INDEX solana_orders_order_pda ON solana.orders (order_pda);
 
 -- Mutable on-chain order state, split from the immutable intent row above.
