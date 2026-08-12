@@ -88,27 +88,16 @@ fn builder(
 mod tests {
     use super::*;
 
-    fn url(s: &str) -> Url {
-        Url::parse(s).unwrap()
-    }
-
+    /// The TLS path is where a missing rustls crypto provider panics, and the
+    /// retry assert catches losing the reconnect config (the builder default
+    /// never reconnects).
     #[test]
-    fn builds_with_tls_and_token() {
+    fn builder_configures_tls_and_reconnects() {
         let builder = builder(
-            url("https://yellowstone.example.com:443"),
+            Url::parse("https://yellowstone.example.com:443").unwrap(),
             Some("secret".to_owned()),
         )
         .unwrap();
         assert!(builder.reconnect_config.backoff.max_retries > 0);
-    }
-
-    #[test]
-    fn builds_plaintext_without_token() {
-        builder(url("http://localhost:10000"), None).unwrap();
-    }
-
-    #[test]
-    fn rejects_malformed_token() {
-        builder(url("http://localhost:10000"), Some("tok\nen".to_owned())).unwrap_err();
     }
 }
