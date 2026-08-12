@@ -9,11 +9,9 @@ use {
     },
     crate::{
         indexer::ingester::Ingester,
-        persistence::Persistence,
+        persistence::Postgres,
         types::{
             Signature,
-            channel::StreamUpdate,
-            errors::PersistenceError,
             events::{
                 CreatedOrder,
                 DecodedEvent,
@@ -42,7 +40,7 @@ use {
         },
     },
     bytes::Bytes,
-    futures::stream,
+    futures::StreamExt,
     settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
@@ -51,7 +49,6 @@ use {
     },
     solana_sdk::pubkey::Pubkey,
     std::sync::{Arc, atomic::AtomicU64},
-    tokio::sync::mpsc::Sender,
 };
 
 fn pubkey(n: u8) -> Pubkey {
@@ -320,75 +317,6 @@ fn signature(n: u8) -> Signature {
     Signature::from([n; 64])
 }
 
-/// One write the decoder asked for, captured so tests can assert the persist
-/// contract without a database behind it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Call {
-    /// Events plus the watermark they ride with.
-    PersistEvents {
-        events: Vec<DecodedEvent>,
-        watermark: Slot,
-    },
-    /// A watermark advance on a slot that decoded to no events.
-    Watermark(Slot),
-    /// A transaction whose decode failed.
-    DeadLetter { signature: Signature, slot: Slot },
-}
-
-/// Recording double for the persistence seam.
-#[derive(Clone, Default)]
-struct Recorder {
-    /// Shared with every clone, so a test can read what the decoder wrote
-    /// after handing its own clone to the component.
-    calls: std::sync::Arc<std::sync::Mutex<Vec<Call>>>,
-}
-
-impl Recorder {
-    /// The writes this instance received, in order.
-    fn calls(&self) -> Vec<Call> {
-        self.calls.lock().unwrap().clone()
-    }
-
-    fn record(&self, call: Call) {
-        self.calls.lock().unwrap().push(call);
-    }
-}
-
-#[async_trait::async_trait]
-impl Persistence for Recorder {
-    async fn persist_events(
-        &self,
-        events: Vec<DecodedEvent>,
-        new_watermark: Slot,
-    ) -> Result<(), PersistenceError> {
-        self.record(Call::PersistEvents {
-            events,
-            watermark: new_watermark,
-        });
-        Ok(())
-    }
-
-    async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
-        self.record(Call::Watermark(slot));
-        Ok(())
-    }
-
-    async fn write_dead_letter(
-        &self,
-        signature: Signature,
-        slot: Slot,
-    ) -> Result<(), PersistenceError> {
-        self.record(Call::DeadLetter { signature, slot });
-        Ok(())
-    }
-}
-
-fn test_decoder(settlement: Pubkey, solflow: Pubkey) -> (Decoder<Recorder>, Sender<StreamUpdate>) {
-    let (sender, rx) = tokio::sync::mpsc::channel(16);
-    let decoder = Decoder::new(Recorder::default(), rx, settlement, solflow);
-    (decoder, sender)
-}
-
 /// A slot-status message in the proto envelope the ingester reads.
 fn slot_status_update(slot: u64) -> SubscribeUpdate {
     SubscribeUpdate {
@@ -411,51 +339,11 @@ fn tx_update(slot: u64, info: SubscribeUpdateTransactionInfo) -> SubscribeUpdate
     }
 }
 
-/// A transaction carrying one settlement instruction, so draining it also
-/// routes into `decode_settlement`.
-fn stream_tx(slot: Slot, signature: Signature, settlement: Pubkey) -> StreamUpdate {
-    let info = tx_info(
-        vec![settlement, pubkey(8)],
-        vec![],
-        vec![],
-        vec![CompiledInstruction {
-            program_id_index: 0,
-            accounts: vec![1],
-            data: vec![0],
-        }],
-        vec![],
-    );
-    StreamUpdate::Tx {
-        slot,
-        signature,
-        inner: Box::new(info),
-    }
-}
-
 /// Verifies the run loop drains buffered updates and returns Ok when the
 /// sender drops. Event content is not asserted here: the persistence bodies
 /// are no-ops, so nothing is observable through them. Decode output is
 /// asserted directly in
 /// `decode_wraps_settlement_events_as_decoded`.
-#[tokio::test]
-async fn run_drains_transactions_until_the_sender_drops() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut decoder, sender) = test_decoder(settlement, solflow);
-
-    sender
-        .send(stream_tx(Slot(7), signature(3), settlement))
-        .await
-        .unwrap();
-    // A later slot-status message flushes the buffered slot 7.
-    sender
-        .send(StreamUpdate::Slot { slot: Slot(8) })
-        .await
-        .unwrap();
-    drop(sender);
-
-    assert!(decoder.run().await.is_ok());
-}
-
 /// Build a `CreateOrder` transaction fixture with the client crate. Returns
 /// the tx and the full event its decode must produce. The account-list owner
 /// (`pubkey(11)`) differs from the intent owner (`[0x11; 32]`) so callers can
@@ -499,17 +387,25 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     (tx, expected)
 }
 
+/// A decoder over a lazy pool that never connects: `decode` is pure, tests
+/// of it stay database-free.
+fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
+    let pool = sqlx::PgPool::connect_lazy("postgresql://").unwrap();
+    let (_sender, rx) = tokio::sync::mpsc::channel(1);
+    Decoder::new(Postgres::new(pool), rx, settlement, solflow)
+}
+
 /// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run`
 /// to persist, and gates on the transaction meta: a set `meta.err` means a
 /// revert that rolled back every account write, so nothing is emitted and
 /// nothing is dead-lettered, while an absent meta carries no success flag at
 /// all, so nothing is emitted and the transaction is dead-lettered. One
 /// fixture throughout, the meta is the only difference.
-#[test]
-fn decode_wraps_events_and_gates_on_transaction_meta() {
+#[tokio::test]
+async fn decode_wraps_events_and_gates_on_transaction_meta() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     let (mut tx, expected) = create_order_tx();
-    let (decoder, _sender) = test_decoder(settlement, solflow);
+    let decoder = pure_decoder(settlement, solflow);
 
     let events = decoder
         .decode(tx.clone(), Slot(5), signature(6))
@@ -711,8 +607,42 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 /// writes: the bare watermark for a slot with no events, the dead letter for
 /// a failed decode (which suppresses that transaction's events entirely),
 /// and the flush driven by a slot status moving past the hold-back window.
+/// Poll the database until `probe` returns true.
+async fn wait_for_db(pool: &sqlx::PgPool, probe: impl AsyncFn(&sqlx::PgPool) -> bool) {
+    for _ in 0..200 {
+        if probe(pool).await {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    panic!("timed out waiting for the expected database state");
+}
+
+async fn watermark(pool: &sqlx::PgPool) -> Option<i64> {
+    sqlx::query_scalar("SELECT slot FROM solana.indexer_state")
+        .fetch_optional(pool)
+        .await
+        .unwrap()
+}
+
 #[tokio::test]
-async fn ingester_to_decoder_persists_decoded_events() {
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_ingester_to_decoder_persists_decoded_events() {
+    let pool = sqlx::PgPool::connect("postgresql://").await.unwrap();
+    for table in [
+        "solana.trades",
+        "solana.settlements",
+        "solana.order_pda",
+        "solana.orders",
+        "solana.dead_letter",
+        "solana.indexer_state",
+    ] {
+        sqlx::query(&format!("DELETE FROM {table}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     let (info, expected) = create_order_tx();
 
@@ -753,47 +683,58 @@ async fn ingester_to_decoder_persists_decoded_events() {
     let mut healthy = info;
     healthy.signature = signature(11).as_ref().to_vec();
 
+    // A live channel drives the ingester so the test can interleave sends
+    // with database assertions.
+    let (geyser_tx, mut geyser_rx) = tokio::sync::mpsc::channel(16);
+    let geyser_stream = futures::stream::poll_fn(move |cx| geyser_rx.poll_recv(cx)).boxed();
+
     let (sender, receiver) = tokio::sync::mpsc::channel(16);
-    let persistence = Recorder::default();
-    let mut ingester = Ingester::new(
-        stream::iter([
-            Ok(tx_update(42, reverted)),
-            Ok(tx_update(43, partial)),
-            Ok(tx_update(43, healthy)),
-            Ok(slot_status_update(45)),
-        ]),
-        sender,
-        Arc::new(AtomicU64::new(0)),
-    );
-    let mut decoder = Decoder::new(persistence.clone(), receiver, settlement, solflow);
+    let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
+    let mut decoder = Decoder::new(Postgres::new(pool.clone()), receiver, settlement, solflow);
+    let ingester_task = tokio::spawn(async move { ingester.run().await });
+    let decoder_task = tokio::spawn(async move { decoder.run().await });
 
-    // Drive the ingester to the canned stream's end, which it reports as an
-    // error. `clean_stream_end_returns_stream_ended` pins which one.
-    ingester.run().await.unwrap_err();
-    // Dropping the ingester closes the channel so the decoder's drain returns.
-    drop(ingester);
-    assert!(decoder.run().await.is_ok());
+    for update in [
+        Ok(tx_update(42, reverted)),
+        Ok(tx_update(43, partial)),
+        Ok(tx_update(43, healthy)),
+    ] {
+        geyser_tx.send(update).await.unwrap();
+    }
+    // The hold-back keeps both slots buffered: the newest observed slot (43)
+    // is not two past either of them, so nothing may be persisted yet.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(watermark(&pool).await, None);
 
+    // The slot-45 status moves the stream two past 43 and flushes both slots.
+    geyser_tx.send(Ok(slot_status_update(45))).await.unwrap();
+    wait_for_db(&pool, async |pool| watermark(pool).await == Some(43)).await;
+
+    // Slot 42 held only the reverted transaction: no dead letter, no rows.
+    // The slot-43 transaction with the unknown discriminator is dead-lettered
+    // whole, while its clean sibling's `CreateOrder` persists.
+    let dead: Vec<(Vec<u8>, i64)> =
+        sqlx::query_as("SELECT tx_signature, slot FROM solana.dead_letter")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(dead, vec![(signature(10).as_ref().to_vec(), 43)]);
+    let pda: Vec<(Vec<u8>, Vec<u8>)> =
+        sqlx::query_as("SELECT order_uid, created_by FROM solana.order_pda")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
     assert_eq!(
-        persistence.calls(),
-        vec![
-            // Slot 42 produced no events and is flushed as a bare watermark
-            // once slot 43 starts.
-            Call::Watermark(Slot(42)),
-            // The unknown discriminator dead-letters the slot 43 transaction.
-            Call::DeadLetter {
-                signature: signature(10),
-                slot: Slot(43),
-            },
-            // The slot-45 status moves the stream two past 43, flushing it as
-            // complete: the failed transaction contributes only its dead
-            // letter, the clean sibling's event persists with the slot.
-            Call::PersistEvents {
-                events: vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
-                    Box::new(expected)
-                ))],
-                watermark: Slot(43),
-            },
-        ]
+        pda,
+        vec![(
+            expected.order_uid.0.to_vec(),
+            expected.created_by.to_bytes().to_vec()
+        )]
     );
+
+    // Closing the channel ends the ingester (a terminal stream end) and the
+    // decoder drains cleanly behind it.
+    drop(geyser_tx);
+    assert!(ingester_task.await.unwrap().is_err());
+    assert!(decoder_task.await.unwrap().is_ok());
 }

@@ -3,11 +3,11 @@
 //! settlement-program and SolFlow transactions, and persists typed events.
 
 // TODO: `decode_solflow` is a stub (the on-chain SolFlow program does not
-// exist), and the `Persistence` write bodies are no-ops (no Postgres adapter).
+// exist).
 
 use {
     crate::{
-        persistence::Persistence,
+        persistence::Postgres,
         types::{
             Signature,
             channel::StreamUpdate,
@@ -45,9 +45,9 @@ use {
 };
 
 /// Decoder component.
-pub(crate) struct Decoder<P> {
+pub(crate) struct Decoder {
     /// Persistence layer.
-    pub persistence: P,
+    pub persistence: Postgres,
 
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
@@ -59,10 +59,10 @@ pub(crate) struct Decoder<P> {
     pub solflow_program: Pubkey,
 }
 
-impl<P: Persistence> Decoder<P> {
+impl Decoder {
     /// Construct a new decoder. The caller owns the channel capacity decision.
     pub fn new(
-        persistence: P,
+        persistence: Postgres,
         rx: Receiver<StreamUpdate>,
         settlement_program: Pubkey,
         solflow_program: Pubkey,
@@ -76,8 +76,8 @@ impl<P: Persistence> Decoder<P> {
     }
 
     /// Main loop. Drains the channel, decodes each transaction's tracked
-    /// instructions, and hands the results to the persistence seam. Returns
-    /// when the ingester drops the sender.
+    /// instructions, and persists the results. Returns when the ingester
+    /// drops the sender.
     ///
     /// Events and dead letters are buffered per slot and flushed once a
     /// transaction of a later slot arrives: stream resume is slot-granular
