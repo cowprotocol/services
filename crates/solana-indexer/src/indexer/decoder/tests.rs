@@ -589,7 +589,6 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
             tx_signature: signature(6),
             slot: Slot(5),
             instruction_index: 0,
-            inner_ix_path: vec![],
             trades: vec![TradeDelta {
                 order_uid: expected_uid,
                 amount_withdrawn_delta: 1_000,
