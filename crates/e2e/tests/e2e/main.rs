@@ -7,6 +7,7 @@
 mod api_version;
 mod app_data;
 mod app_data_signer;
+mod auction_deltas;
 mod autopilot_leader;
 mod banned_users;
 mod buffers;
