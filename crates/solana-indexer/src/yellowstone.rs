@@ -1,12 +1,7 @@
 //! Yellowstone gRPC client construction.
 //!
-//! [`Ingester::serve`](crate::indexer::ingester) relies on the client it
-//! receives for two things it does not do itself: reconnecting (the drain
-//! loop has no backoff of its own, the `AutoReconnect` wrapper inside the
-//! stream handles it) and holding an otherwise idle connection open (the
-//! ingester ignores server `Ping` frames, so the HTTP/2 transport keepalive
-//! is what keeps the link alive). This module builds clients that satisfy
-//! both expectations.
+//! The ingester neither reconnects nor answers server pings, so every client
+//! built here has reconnect configured and HTTP/2 keepalive enabled.
 
 use {
     std::time::Duration,
@@ -28,10 +23,6 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// How often the transport sends HTTP/2 keepalive pings.
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
-
-/// How long to wait for a keepalive ack before the transport considers the
-/// connection dead and tears it down (which triggers a reconnect).
-const KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Upper bound on a single decoded gRPC message. Transaction updates carry
 /// the full transaction plus its meta (logs, balances, inner instructions),
@@ -61,7 +52,6 @@ fn builder(
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)
         .http2_keep_alive_interval(KEEP_ALIVE_INTERVAL)
-        .keep_alive_timeout(KEEP_ALIVE_TIMEOUT)
         .keep_alive_while_idle(true)
         .max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
     if tls {
