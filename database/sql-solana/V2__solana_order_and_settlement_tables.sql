@@ -1,7 +1,6 @@
 -- Order and settlement tables, the solana.* counterparts of the EVM tables.
 -- A row is final once its slot is at or below
--- solana.indexer_state.finalized_slot, the settlement-finalized NOTIFY fires
--- from that watermark's advance.
+-- solana.indexer_state.finalized_slot.
 -- Runs on top of the base sql/ series in the same database: it reuses the
 -- base OrderKind, OrderClass and ExecutionTime enums, so a solana database
 -- applies the base series first.
