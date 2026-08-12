@@ -40,12 +40,13 @@ WHERE o.valid_to >= $1
   AND (o.intent_signature IS NOT NULL
        OR o.presigned_transaction IS NOT NULL
        OR p.order_uid IS NOT NULL)
-  AND (p.order_uid IS NULL
-       OR (p.cancellation_timestamp IS NULL
-           AND CASE o.kind
-               WHEN 'sell' THEN p.amount_withdrawn < o.sell_amount
-               ELSE p.amount_received < o.buy_amount
-               END))
+  AND p.cancellation_timestamp IS NULL
+  AND COALESCE(
+      CASE o.kind
+          WHEN 'sell' THEN p.amount_withdrawn < o.sell_amount
+          ELSE p.amount_received < o.buy_amount
+      END,
+      true)
 ORDER BY o.uid
     "#;
     sqlx::query_as(QUERY)

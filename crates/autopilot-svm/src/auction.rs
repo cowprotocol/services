@@ -70,7 +70,7 @@ fn orders_from_rows(rows: Vec<db::OrderRow>) -> Vec<Order> {
             let uid = row.uid;
             Order::from_row(row)
                 .map_err(|err| {
-                    tracing::warn!(uid = %hex::encode(uid.0), ?err, "skipping corrupt order row")
+                    tracing::warn!(uid = %const_hex::encode(uid.0), ?err, "skipping corrupt order row")
                 })
                 .ok()
         })
