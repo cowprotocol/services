@@ -25,35 +25,6 @@ pub async fn run(args: Args) {
     tracing::info!(%version, "running solana driver");
 
     tracing::info!("awaiting shutdown signal");
-    shutdown_signal().await;
+    observe::shutdown::shutdown_signal().await;
     tracing::info!("shutting down");
-}
-
-/// Wait for the shutdown signal.
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Intercept signals for graceful shutdown. Kubernetes sends sigterm, Ctrl-C
-    // sends sigint.
-    let sigterm = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
-    };
-    let sigint = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-            .expect("failed to install SIGINT handler")
-            .recv()
-            .await;
-    };
-    futures::pin_mut!(sigint);
-    futures::pin_mut!(sigterm);
-    futures::future::select(sigterm, sigint).await;
-}
-
-/// Wait for the shutdown signal.
-#[cfg(windows)]
-async fn shutdown_signal() {
-    // No support for signal handling on Windows.
-    std::future::pending().await
 }
