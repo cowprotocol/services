@@ -136,17 +136,16 @@ impl UniswapV3Indexer {
         }
     }
 
-    /// Brings a freshly-seeded factory up to the current finalized block
-    /// and returns. Loops in case more blocks finalize during a long
-    /// catch-up. Call exactly once, right after seeding.
+    /// Cold-seeds a factory by replaying on-chain history from `from_block` up
+    /// to the current finalized block, then returns. Loops in case more blocks
+    /// finalize during a long catch-up. Call exactly once, before live
+    /// indexing.
     ///
-    /// The subgraph's `block: { number: X }` returns state as of the end
-    /// of block `X` — events at `X` are included. The checkpoint stores
-    /// the last indexed block and `run_once` resumes at `checkpoint + 1`,
-    /// so we set the checkpoint to `from_block` itself to avoid replaying
-    /// (and double-applying) the seed block's Mint/Burn events.
+    /// `run_once` resumes at `checkpoint + 1`, so the checkpoint is set to
+    /// `from_block`; callers pass `deploy_block - 1` to include the deploy
+    /// block's `PoolCreated` events.
     ///
-    /// Bails if a checkpoint already exists — overwriting would silently
+    /// Bails if a checkpoint already exists; overwriting would silently
     /// regress and re-index history.
     pub async fn catch_up(&self, from_block: u64) -> Result<()> {
         if db::get_checkpoint(&self.db, &self.factory).await?.is_some() {
@@ -670,6 +669,13 @@ pub(crate) fn is_range_too_large(err: &alloy_transport::TransportError) -> bool 
 /// be the cause.
 const MAX_BISECTION_DEPTH: u32 = 8;
 
+/// Retry transient `eth_getLogs` failures (timeout, reset, throttle) with
+/// backoff, capped by a per-call timeout, so one blip can't abort a long
+/// cold-seed scan. Range-size rejections are bisected, not retried.
+const GETLOGS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+const MAX_GETLOGS_RETRIES: u32 = 6;
+const GETLOGS_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// Fetches logs for `[from, to]` filtered by the given contract addresses
 /// and `topic0` event signatures, sequentially bisecting the block range on
 /// "too large" rejections until each sub-range is tractable. An empty
@@ -700,12 +706,30 @@ fn bisecting_get_logs_with_depth(
             .from_block(from)
             .to_block(to);
 
-        let err = match provider.get_logs(&filter).await {
-            Ok(logs) => return Ok(logs),
-            Err(err) => err,
-        };
-        if !is_range_too_large(&err) || to <= from || depth >= MAX_BISECTION_DEPTH {
-            return Err(anyhow::Error::new(err).context(format!("get_logs({from}..={to})")));
+        let mut attempt = 0u32;
+        loop {
+            let err = match tokio::time::timeout(GETLOGS_TIMEOUT, provider.get_logs(&filter)).await
+            {
+                Ok(Ok(logs)) => return Ok(logs),
+                // Range-size rejection: bisect (below), not retried.
+                Ok(Err(err)) if is_range_too_large(&err) => {
+                    if to <= from || depth >= MAX_BISECTION_DEPTH {
+                        return Err(
+                            anyhow::Error::new(err).context(format!("get_logs({from}..={to})"))
+                        );
+                    }
+                    break;
+                }
+                Ok(Err(err)) => anyhow::Error::new(err).context(format!("get_logs({from}..={to})")),
+                Err(_elapsed) => anyhow::anyhow!("get_logs({from}..={to}) timed out"),
+            };
+            // Transient failure: retry with backoff, then give up.
+            if attempt >= MAX_GETLOGS_RETRIES {
+                return Err(err);
+            }
+            attempt += 1;
+            tracing::warn!(%err, attempt, from, to, "get_logs failed, retrying");
+            tokio::time::sleep(GETLOGS_RETRY_BACKOFF * attempt).await;
         }
 
         let mid = (from + to) / 2;

@@ -31,14 +31,14 @@ pub async fn start(args: impl Iterator<Item = String>) {
     }
 }
 
-/// Runs the bootstrap phase (seed + catch-up to the finalized head) for every
-/// factory, then returns. Binds no HTTP ports — meant to run as a separate step
-/// ahead of serving.
+/// Runs the bootstrap phase (on-chain cold-seed + catch-up to the finalized
+/// head) for every factory, then returns. Binds no HTTP ports; meant to run as
+/// a separate step ahead of serving.
 ///
 /// Idempotent: each factory with an existing checkpoint is skipped (see
 /// [`bootstrap_factory`]), so re-running on an already-seeded DB is a fast
-/// no-op that never touches the subgraph. On return, a subsequent `run` finds
-/// the checkpoints present and flips `/startup` ready almost immediately.
+/// no-op. On return, a subsequent `run` finds the checkpoints present and flips
+/// `/startup` ready almost immediately.
 pub async fn bootstrap(config: Configuration) {
     let db = connect_db(&config).await;
     let network = config.network;
@@ -234,8 +234,8 @@ async fn run_factory_indexer(
     indexer.run(network.poll_interval()).await;
 }
 
-/// Seed + catch-up for a fresh factory. If a checkpoint already exists,
-/// skip straight to live indexing.
+/// Cold-seed a fresh factory by replaying its on-chain history, then hand off
+/// to live indexing. If a checkpoint already exists, skip straight to live.
 async fn bootstrap_factory(
     db: &PgPool,
     indexer: &UniswapV3Indexer,
@@ -255,20 +255,10 @@ async fn bootstrap_factory(
         return;
     }
 
-    let seeded_block = crate::subgraph_seeder::seed(
-        db,
-        network.name.as_str(),
-        network.chain_id,
-        factory.address,
-        &network.subgraph_url,
-        network.seed_block,
-    )
-    .await
-    .expect("subgraph seeding failed");
     indexer
-        .catch_up(seeded_block)
+        .catch_up(factory.deploy_block.saturating_sub(1))
         .await
-        .expect("catch-up indexing failed");
+        .expect("on-chain cold-seed failed");
 }
 
 fn build_provider(network: &NetworkConfig) -> AlloyProvider {
