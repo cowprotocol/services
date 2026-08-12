@@ -14,28 +14,10 @@ CREATE TABLE solana.indexer_state (
     finalized_slot bigint NOT NULL DEFAULT 0
 );
 
-CREATE FUNCTION solana.indexer_state_monotone() RETURNS trigger AS $$
-BEGIN
-    IF NEW.slot < OLD.slot THEN
-        RAISE EXCEPTION 'solana.indexer_state.slot is monotone non-decreasing; refusing % < %', NEW.slot, OLD.slot;
-    END IF;
-    IF NEW.finalized_slot < OLD.finalized_slot THEN
-        RAISE EXCEPTION 'solana.indexer_state.finalized_slot is monotone non-decreasing; refusing % < %', NEW.finalized_slot, OLD.finalized_slot;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER indexer_state_monotone
-    BEFORE UPDATE OF slot, finalized_slot ON solana.indexer_state
-    FOR EACH ROW
-    EXECUTE FUNCTION solana.indexer_state_monotone();
-
 -- Last observed chain tip, written by the ingester on every slot (~400ms).
--- Unlogged: WAL overhead is unacceptable at that frequency, and a crash only
--- loses a value the live slot subscription re-derives. Tips can go backward
--- on reorgs and provider reconnects, so no monotone guard.
-CREATE UNLOGGED TABLE solana.chain_tip (
+-- Separate from indexer_state: the tip streams before the first flush writes
+-- that row, and reorgs move it backward, so it shares no monotone guarantee.
+CREATE TABLE solana.chain_tip (
     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
     slot      bigint NOT NULL
 );
@@ -49,10 +31,10 @@ CREATE TABLE solana.dead_letter (
     inserted_at  timestamp with time zone NOT NULL DEFAULT now()
 );
 
--- Append-only snapshot history of the settlement program state PDA (solver
--- allowlist + manager). The latest row (highest slot) is authoritative.
+-- Latest observed settlement program state PDA (solver allowlist + manager).
 CREATE TABLE solana.settlement_state_pda (
-    slot            bigint PRIMARY KEY,
+    singleton       boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+    slot            bigint NOT NULL,
     observed_at     timestamp with time zone NOT NULL DEFAULT now(),
     allowlist       bytea[] NOT NULL,
     manager         bytea NOT NULL CHECK (length(manager) = 32),

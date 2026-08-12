@@ -24,8 +24,6 @@ CREATE TABLE solana.orders (
     -- Partially signed CreateOrder transaction bytes for gasless orders.
     presigned_transaction bytea,
     creation_timestamp    timestamp with time zone NOT NULL,
-    -- market or limit, the liquidity class does not exist on Solana.
-    class                 OrderClass NOT NULL,
     -- Canonical order PDA address, the reverse-lookup key during settlement
     -- decoding.
     order_pda             bytea NOT NULL CHECK (length(order_pda) = 32)
@@ -69,10 +67,8 @@ CREATE INDEX solana_settlements_auction_id ON solana.settlements (auction_id);
 -- Per-order accounting deltas of a settlement. order_uid completes the key
 -- because one settlement moves several orders.
 CREATE TABLE solana.trades (
-    settlement_tx_signature bytea NOT NULL,
+    tx_signature            bytea NOT NULL,
     instruction_index       integer NOT NULL,
-    -- '{}' = top-level, '{0,2,1}' = CPI path.
-    inner_ix_path           integer[] NOT NULL DEFAULT '{}',
     order_uid               bytea NOT NULL CHECK (length(order_uid) = 32),
     -- Per-order pull from the BeginSettle instruction data, fee included.
     sell_amount             numeric(20,0) NOT NULL,
@@ -80,30 +76,12 @@ CREATE TABLE solana.trades (
     buy_amount              numeric(20,0) NOT NULL,
     -- From the off-chain proposed-solution data.
     fee_amount              numeric(20,0) NOT NULL,
-    PRIMARY KEY (settlement_tx_signature, instruction_index, inner_ix_path, order_uid),
-    FOREIGN KEY (settlement_tx_signature, instruction_index)
+    PRIMARY KEY (tx_signature, instruction_index, order_uid),
+    FOREIGN KEY (tx_signature, instruction_index)
         REFERENCES solana.settlements (tx_signature, instruction_index)
 );
 
 CREATE INDEX solana_trades_order_uid ON solana.trades (order_uid);
-
-CREATE TYPE solana.account_meta AS (
-    pubkey      bytea,
-    is_signer   bool,
-    is_writable bool
-);
-
--- Pre/post interactions attached to an order, the solana.* counterpart of
--- the EVM interactions table.
-CREATE TABLE solana.interactions (
-    order_uid  bytea NOT NULL CHECK (length(order_uid) = 32),
-    index      integer NOT NULL,
-    execution  ExecutionTime NOT NULL,
-    program_id bytea NOT NULL CHECK (length(program_id) = 32),
-    accounts   solana.account_meta[] NOT NULL,
-    data       bytea NOT NULL,
-    PRIMARY KEY (order_uid, index, execution)
-);
 
 -- No foreign key to solana.orders, matching the base order_quotes: a quote
 -- write never depends on the intent row's existence.
@@ -141,10 +119,6 @@ CREATE TABLE solana.settlement_executions (
     outcome                  text CHECK (outcome IN ('landed', 'rejected', 'timeout')),
     -- NULL until the settlement is finalized.
     submitted_signature      bytea CHECK (length(submitted_signature) = 64),
-    -- Grace-slots snapshot at window creation.
-    finalization_grace_slots integer,
-    -- 'unreconciled' marks rows reconstructed by the recovery scan.
-    recovery_status          text,
     PRIMARY KEY (auction_id, solver, solution_uid)
 );
 
