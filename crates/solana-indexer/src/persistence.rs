@@ -256,36 +256,19 @@ ON CONFLICT (tx_signature) DO NOTHING
 mod tests {
     use {
         super::Postgres,
-        crate::types::{
-            Signature,
-            events::{DecodedEvent, FinalizedSettlement, SettlementEvent, TradeDelta},
-            order::OrderUid,
-            slot::Slot,
+        crate::{
+            test_db::{pool, wipe},
+            types::{
+                Signature,
+                events::{DecodedEvent, FinalizedSettlement, SettlementEvent, TradeDelta},
+                order::OrderUid,
+                slot::Slot,
+            },
         },
         bigdecimal::BigDecimal,
         solana_sdk::pubkey::Pubkey,
         sqlx::{PgPool, Row},
     };
-
-    async fn pool() -> PgPool {
-        PgPool::connect("postgresql://").await.unwrap()
-    }
-
-    async fn wipe(pool: &PgPool) {
-        for table in [
-            "solana.trades",
-            "solana.settlements",
-            "solana.order_pda",
-            "solana.orders",
-            "solana.dead_letter",
-            "solana.indexer_state",
-        ] {
-            sqlx::query(&format!("DELETE FROM {table}"))
-                .execute(pool)
-                .await
-                .unwrap();
-        }
-    }
 
     /// The `solana.orders` columns a seeded test order writes.
     struct SeedOrder {
