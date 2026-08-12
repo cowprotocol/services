@@ -105,8 +105,10 @@ CREATE TABLE solana.interactions (
     PRIMARY KEY (order_uid, index, execution)
 );
 
+-- No foreign key to solana.orders, matching the base order_quotes: a quote
+-- write never depends on the intent row's existence.
 CREATE TABLE solana.order_quotes (
-    order_uid            bytea PRIMARY KEY REFERENCES solana.orders(uid),
+    order_uid            bytea PRIMARY KEY CHECK (length(order_uid) = 32),
     -- Compute units, an integer on chain.
     gas_amount           bigint NOT NULL,
     -- Priority fee, microlamports per compute unit.
