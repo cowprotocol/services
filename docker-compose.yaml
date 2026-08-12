@@ -52,9 +52,9 @@ services:
       - -c
       - "psql -tc \"SELECT 1 FROM pg_database WHERE datname='pool_indexer'\" | grep -q 1 || psql -c \"CREATE DATABASE pool_indexer\""
 
-  # Applies the solana.* migration set on top of the base schema. Local dev
-  # runs it against the shared DB; a Solana deployment points it at the
-  # Solana network's database, so EVM databases never receive the set.
+  # Applies the solana.* migration series to the local/CI database. Which
+  # series a deployed database gets is decided by the deployment's flyway
+  # config, not this file.
   migrations-solana:
     build:
       context: .
