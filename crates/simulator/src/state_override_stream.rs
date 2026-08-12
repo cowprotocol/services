@@ -1128,15 +1128,11 @@ mod tests {
     /// selector rather than by name.
     const QUOTE: [u8; 4] = hex_literal::hex!("300aa47f");
 
-    /// The workspace links more than one `rustls` crypto provider, so one has
-    /// to be chosen before any TLS handshake. The binaries get this for free:
-    /// the alloy websocket transport installs a provider while opening the
-    /// block stream, long before this stream connects. A test process does
-    /// not, so it picks one itself — and tolerates a provider already being
-    /// installed, which is what happens once anything else in the process has
-    /// opened a TLS connection.
-    fn install_crypto_provider() {
-        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    async fn live_block_watcher(provider: ethrpc::AlloyProvider) -> CurrentBlockWatcher {
+        let ws_url: url::Url = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
+        ethrpc::block_stream::current_block_ws_stream(provider, ws_url)
+            .await
+            .unwrap()
     }
 
     fn live_stream_config() -> Config {
@@ -1194,13 +1190,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn pamm_estimates_gas_for_call() {
-        install_crypto_provider();
-
         let web3 = ethrpc::Web3::new_from_env();
-        let ws_url: url::Url = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
-        let blocks = ethrpc::block_stream::current_block_ws_stream(web3.provider.clone(), ws_url)
-            .await
-            .unwrap();
+        let blocks = live_block_watcher(web3.provider.clone()).await;
         let overrides = super::spawn_pamm_stream(&live_stream_config(), blocks.clone());
         wait_for_warm_up(&blocks).await;
 
@@ -1269,15 +1260,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn pamm_serves_overrides_across_blocks() {
-        install_crypto_provider();
-
-        // A real block watcher, as the binaries build it.
         let provider = ethrpc::Web3::new_from_env().provider;
-        let ws_url: url::Url = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
-        let blocks = ethrpc::block_stream::current_block_ws_stream(provider, ws_url)
-            .await
-            .unwrap();
-
+        let blocks = live_block_watcher(provider).await;
         let handle = super::spawn_pamm_stream(&live_stream_config(), blocks.clone());
         wait_for_warm_up(&blocks).await;
 
@@ -1313,13 +1297,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn pamm_quotes_against_live_stream() {
-        install_crypto_provider();
-
         let provider = ethrpc::Web3::new_from_env().provider;
-        let ws_url: url::Url = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
-        let blocks = ethrpc::block_stream::current_block_ws_stream(provider.clone(), ws_url)
-            .await
-            .unwrap();
+        let blocks = live_block_watcher(provider.clone()).await;
         let overrides = super::spawn_pamm_stream(&live_stream_config(), blocks.clone());
         wait_for_warm_up(&blocks).await;
 
