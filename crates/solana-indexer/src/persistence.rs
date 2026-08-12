@@ -7,33 +7,9 @@ use {
         events::{CreatedOrder, DecodedEvent, FinalizedSettlement, SettlementEvent, TradeDelta},
         slot::Slot,
     },
-    async_trait::async_trait,
     bigdecimal::BigDecimal,
     sqlx::{PgPool, PgTransaction},
 };
-
-/// The decoder's persistence seam.
-#[async_trait]
-pub(crate) trait Persistence: Send + Sync {
-    /// Save one slot's decoded events and advance the slot watermark in one
-    /// transaction.
-    async fn persist_events(
-        &self,
-        events: Vec<DecodedEvent>,
-        new_watermark: Slot,
-    ) -> Result<(), PersistenceError>;
-
-    /// Record a slot checkpoint. A backward write is a no-op.
-    async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError>;
-
-    /// Record a transaction whose decode failed so recovery can replay it by
-    /// signature. One row per transaction, idempotent on the signature.
-    async fn write_dead_letter(
-        &self,
-        signature: Signature,
-        slot: Slot,
-    ) -> Result<(), PersistenceError>;
-}
 
 /// Slots stay far below `i64::MAX`, the conversion to the database's
 /// `bigint` is lossless.
@@ -233,11 +209,10 @@ WHERE indexer_state.slot < EXCLUDED.slot
         .await?;
         Ok(())
     }
-}
 
-#[async_trait]
-impl Persistence for Postgres {
-    async fn persist_events(
+    /// Save one slot's decoded events and advance the slot watermark in one
+    /// transaction.
+    pub(crate) async fn persist_events(
         &self,
         events: Vec<DecodedEvent>,
         new_watermark: Slot,
@@ -250,11 +225,14 @@ impl Persistence for Postgres {
         Ok(tx.commit().await?)
     }
 
-    async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
+    /// Record a slot checkpoint. A backward write is a no-op.
+    pub(crate) async fn write_watermark(&self, slot: Slot) -> Result<(), PersistenceError> {
         Self::upsert_watermark(&self.pool, slot).await
     }
 
-    async fn write_dead_letter(
+    /// Record a transaction whose decode failed so recovery can replay it by
+    /// signature. One row per transaction, idempotent on the signature.
+    pub(crate) async fn write_dead_letter(
         &self,
         signature: Signature,
         slot: Slot,
@@ -277,7 +255,7 @@ ON CONFLICT (tx_signature) DO NOTHING
 #[cfg(test)]
 mod tests {
     use {
-        super::{Persistence, Postgres},
+        super::Postgres,
         crate::types::{
             Signature,
             events::{DecodedEvent, FinalizedSettlement, SettlementEvent, TradeDelta},
