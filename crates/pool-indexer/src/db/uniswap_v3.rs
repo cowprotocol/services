@@ -611,13 +611,15 @@ pub async fn batch_set_token_symbols(
     Ok(())
 }
 
+/// The block every factory is indexed through, so every served pool is current
+/// at least to here.
 pub async fn get_latest_indexed_block(pool: &PgPool) -> Result<Option<u64>> {
-    let row = sqlx::query("SELECT MAX(block_number) AS max_block FROM pool_indexer_checkpoints")
+    let row = sqlx::query("SELECT MIN(block_number) AS block FROM pool_indexer_checkpoints")
         .fetch_one(pool)
         .await
         .context("get_latest_indexed_block")?;
 
     Ok(row
-        .get::<Option<i64>, _>("max_block")
+        .get::<Option<i64>, _>("block")
         .map(|b| b.cast_unsigned()))
 }

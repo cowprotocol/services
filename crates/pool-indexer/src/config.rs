@@ -3,6 +3,7 @@ use {
     anyhow::{Context, Result},
     serde::Deserialize,
     std::{
+        collections::HashSet,
         fmt,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         num::NonZeroU32,
@@ -82,8 +83,7 @@ pub struct NetworkConfig {
     pub chain_id: u64,
     #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
     pub rpc_url: Url,
-    /// Uniswap V3 factories to index. Exactly one is allowed in this release
-    /// (see [`NetworkConfig::validate`]); multi-factory is a follow-up.
+    /// Uniswap V3 factories to index
     pub factories: Vec<FactoryConfig>,
     /// Blocks per `eth_getLogs` chunk during catch-up.
     #[serde(default = "default_chunk_size")]
@@ -124,11 +124,21 @@ impl NetworkConfig {
     /// Post-parse sanity checks.
     fn validate(&self) -> Result<()> {
         anyhow::ensure!(
-            self.factories.len() == 1,
-            "network {}: exactly one factory per network is supported in this release, got {}",
+            !self.factories.is_empty(),
+            "network {}: at least one factory is required",
             self.name,
-            self.factories.len(),
         );
+        // Checkpoints and pool rows are keyed by factory address, so a repeated
+        // address would put two indexer loops on the same rows.
+        let mut seen = HashSet::new();
+        for factory in &self.factories {
+            anyhow::ensure!(
+                seen.insert(factory.address),
+                "network {}: duplicate factory {}",
+                self.name,
+                factory.address,
+            );
+        }
         Ok(())
     }
 }
