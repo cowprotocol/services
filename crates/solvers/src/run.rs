@@ -1,5 +1,3 @@
-#[cfg(unix)]
-use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
         domain::solver,
@@ -70,25 +68,7 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
         addr: args.addr,
         solver,
     }
-    .serve(bind, shutdown_signal())
+    .serve(bind, observe::shutdown::shutdown_signal())
     .await
     .unwrap();
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Intercept main signals for graceful shutdown.
-    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common.
-    let mut interrupt = unix::signal(SignalKind::interrupt()).unwrap();
-    let mut terminate = unix::signal(SignalKind::terminate()).unwrap();
-    tokio::select! {
-        _ = interrupt.recv() => (),
-        _ = terminate.recv() => (),
-    };
-}
-
-#[cfg(windows)]
-async fn shutdown_signal() {
-    // We don't support signal handling on Windows.
-    std::future::pending().await
 }

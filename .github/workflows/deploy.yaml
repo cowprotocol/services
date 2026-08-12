@@ -10,7 +10,6 @@ on:
         type: choice
         options:
           - 'None'
-          - 'mimalloc-allocator'
           - 'tokio-console'
         default: 'None'
         required: false
