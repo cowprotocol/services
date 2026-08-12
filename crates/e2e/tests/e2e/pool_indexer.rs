@@ -804,19 +804,23 @@ async fn local_node_pool_indexer_min_envelope() {
     run_test(min_envelope).await;
 }
 
-/// The envelope block is the MIN across factory checkpoints, so the union is
-/// never advertised as fresher than its slowest factory. Freezes two
-/// checkpoints above the head at different blocks; the API returns the lower
-/// one.
+/// The envelope block is the MIN across the configured factories' checkpoints,
+/// so the union is never advertised as fresher than its slowest factory. The
+/// MIN is scoped to configured factories: a decommissioned factory's leftover
+/// checkpoint (nothing deletes it) must not pin the envelope.
 async fn min_envelope(_web3: Web3) {
     let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
     let factory_ahead = Address::from([0x11; 20]);
     let factory_behind = Address::from([0x22; 20]);
+    // A leftover checkpoint from a factory no longer in config, far behind. If
+    // the envelope weren't scoped to configured factories it would pin here.
+    let decommissioned = Address::from([0x33; 20]);
     // Above the head, so the live loops stay put at the seeded blocks.
     seed_checkpoint(&db, factory_ahead, 1_000_000).await;
     seed_checkpoint(&db, factory_behind, 999_999).await;
+    seed_checkpoint(&db, decommissioned, 1).await;
 
     with_pool_indexer_at(
         &[factory_ahead, factory_behind],
@@ -832,7 +836,8 @@ async fn min_envelope(_web3: Web3) {
             .unwrap();
             assert_eq!(
                 resp.block_number, 999_999,
-                "envelope should be the MIN checkpoint"
+                "envelope should be the MIN across configured factories, ignoring the \
+                 decommissioned one"
             );
         },
     )

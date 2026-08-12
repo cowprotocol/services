@@ -611,13 +611,18 @@ pub async fn batch_set_token_symbols(
     Ok(())
 }
 
-/// The block every factory is indexed through, so every served pool is current
-/// at least to here.
-pub async fn get_latest_indexed_block(pool: &PgPool) -> Result<Option<u64>> {
-    let row = sqlx::query("SELECT MIN(block_number) AS block FROM pool_indexer_checkpoints")
-        .fetch_one(pool)
-        .await
-        .context("get_latest_indexed_block")?;
+/// The block every configured factory is indexed through, so every served pool
+/// is current at least to here. Scoped to `factories` so a decommissioned
+/// factory's leftover checkpoint row can't pin the value.
+pub async fn get_latest_indexed_block(pool: &PgPool, factories: &[Address]) -> Result<Option<u64>> {
+    let row = sqlx::query(
+        "SELECT MIN(block_number) AS block FROM pool_indexer_checkpoints
+         WHERE contract_address = ANY($1)",
+    )
+    .bind(address_bytes_list(factories))
+    .fetch_one(pool)
+    .await
+    .context("get_latest_indexed_block")?;
 
     Ok(row
         .get::<Option<i64>, _>("block")
