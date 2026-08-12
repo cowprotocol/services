@@ -259,7 +259,7 @@ where
 ///
 /// `blocks` is read to learn the timestamp the block a frame quotes for will
 /// carry, which is the stamp its fresh lanes hold.
-pub fn spawn(cfg: &Config, blocks: CurrentBlockWatcher) -> SimulationOverrides {
+pub fn spawn_pamm_stream(cfg: &Config, blocks: CurrentBlockWatcher) -> SimulationOverrides {
     let (sender, receiver) = watch::channel(Snapshot {
         overrides: StateOverride::default(),
         block_number: 0,
@@ -935,7 +935,7 @@ mod tests {
             timestamp: 1000,
             ..Default::default()
         });
-        let handle = spawn(&cfg, blocks);
+        let handle = spawn_pamm_stream(&cfg, blocks);
 
         let _ = server_handle.await;
 
@@ -1201,7 +1201,7 @@ mod tests {
         let blocks = ethrpc::block_stream::current_block_ws_stream(web3.provider.clone(), ws_url)
             .await
             .unwrap();
-        let overrides = super::spawn(&live_stream_config(), blocks.clone());
+        let overrides = super::spawn_pamm_stream(&live_stream_config(), blocks.clone());
         wait_for_warm_up(&blocks).await;
 
         let eth = crate::Ethereum::new(
@@ -1278,7 +1278,7 @@ mod tests {
             .await
             .unwrap();
 
-        let handle = super::spawn(&live_stream_config(), blocks.clone());
+        let handle = super::spawn_pamm_stream(&live_stream_config(), blocks.clone());
         wait_for_warm_up(&blocks).await;
 
         // ~60s, several blocks' worth.
@@ -1320,7 +1320,7 @@ mod tests {
         let blocks = ethrpc::block_stream::current_block_ws_stream(provider.clone(), ws_url)
             .await
             .unwrap();
-        let overrides = super::spawn(&live_stream_config(), blocks.clone());
+        let overrides = super::spawn_pamm_stream(&live_stream_config(), blocks.clone());
         wait_for_warm_up(&blocks).await;
 
         let quoted = timeout(Duration::from_secs(60), async {

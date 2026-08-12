@@ -189,7 +189,7 @@ fn simulator(
         simulator.disable_gas(gas);
     }
     if let Some(cfg) = &config.simulator.state_override_stream {
-        simulator.set_simulation_overrides(simulator::state_override_stream::spawn(cfg, blocks));
+        simulator.set_simulation_overrides(simulator::state_override_stream::spawn_pamm_stream(cfg, blocks));
     }
 
     simulator
