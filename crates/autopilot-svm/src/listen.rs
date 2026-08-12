@@ -55,9 +55,6 @@ impl ListenSession {
     async fn run(self, mut handler: impl NotifyHandler) {
         let mut backoff = self.min_backoff;
         loop {
-            // `run_connection`'s Ok type is uninhabited, so this pattern is
-            // exhaustive. If it ever gains a real Ok value, this stops
-            // compiling.
             let Err(err) = self.run_connection(&mut handler, &mut backoff).await;
             tracing::warn!(channel = %self.channel, ?err, "listen session lost");
             tokio::time::sleep(backoff).await;
