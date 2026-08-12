@@ -15,16 +15,22 @@
 //!   of the block the quote is meant for. The venue reverts `StaleUpdate()`
 //!   unless it equals the timestamp of the block the call runs in; the
 //!   remaining 28 bytes are the maker's price.
+//!
+//! Which words are stamps is never guessed from their contents: the block a
+//! frame quotes for is named in the frame, and the timestamp that block will
+//! carry is projected from the chain itself, so the value to look for is known
+//! before the words are read.
 
 use {
     alloy_primitives::{Address, B256, map::B256Map},
     alloy_rpc_types::state::{AccountOverride, StateOverride},
     configs::simulator::StateOverrideStream as Config,
+    ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     futures::{SinkExt, StreamExt},
     prometheus::{IntCounter, IntCounterVec, IntGauge},
     serde::Deserialize,
     std::{
-        collections::BTreeMap,
+        collections::{BTreeMap, VecDeque},
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -36,14 +42,10 @@ use {
 /// restamping untouched.
 const STAMP_LEN: usize = 4;
 
-/// Beacon chain genesis and slot spacing, which turn the slot a frame names
-/// into the timestamp its freshly quoted lanes are stamped with.
-///
-/// These are mainnet's, which is the only chain the venues stream for. On any
-/// other chain the derived stamp matches no word, so no lane is recognised as
-/// freshly quoted and nothing is restamped.
-const BEACON_GENESIS: u64 = 1_606_824_023;
-const SLOT_DURATION: u64 = 12;
+/// How many recent block gaps are kept to infer the chain's block spacing. A
+/// handful is enough to see past a slot nobody proposed, and few enough that a
+/// chain which respaces its blocks is followed within a few of them.
+const SPACING_SAMPLES: usize = 4;
 
 /// State overrides delivered some point in time.
 #[derive(Clone)]
@@ -52,8 +54,8 @@ struct Snapshot {
     /// Block the frames describe. This is the block the builder is about to
     /// build (chain head + 1), not the block a simulation runs against.
     block_number: u64,
-    /// Stamp of the newest slot any venue quoted for. Only words carrying it
-    /// belong to a lane a maker is quoting for `block_number`.
+    /// Newest stamp any venue quoted for. Only words carrying it belong to a
+    /// lane a maker is quoting for `block_number`.
     stamp: Option<u32>,
     received_at: Option<Instant>,
 }
@@ -143,7 +145,6 @@ fn restamp(mut overrides: StateOverride, stamp: Option<u32>, timestamp: u64) -> 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Frame {
-    slot: Option<u64>,
     block_number: Option<u64>,
     // Venue keys are addresses flattened alongside the metadata fields above;
     // unknown non-address keys (e.g. future schema additions) are skipped by
@@ -152,15 +153,65 @@ struct Frame {
     venues: BTreeMap<Address, VenueUpdate>,
 }
 
-impl Frame {
-    /// Timestamp of the block this frame quotes for, which is the stamp its
-    /// freshly quoted lanes carry.
-    fn quoted_at(&self) -> Option<u32> {
-        let timestamp = SLOT_DURATION
-            .checked_mul(self.slot?)?
-            .checked_add(BEACON_GENESIS)?;
-        u32::try_from(timestamp).ok()
+/// Infers how far apart the chain spaces its blocks — 12s on mainnet, 5s on
+/// Gnosis, 2s on Base — from the blocks it actually produces.
+///
+/// Consecutive blocks are one spacing apart; the exception is a slot nobody
+/// proposed, which widens that one gap to a multiple without moving either
+/// block off the grid. Taking the smallest of the last few gaps rather than the
+/// newest is what keeps such a slot from being mistaken for a wider chain: a
+/// widened gap never wins while a normal one is still in the window.
+///
+/// An estimate that is nonetheless too wide — every gap seen so far widened —
+/// only makes the projected stamp overshoot and match no word, which withholds
+/// restamping rather than corrupting it.
+#[derive(Default)]
+struct BlockSpacing {
+    gaps: VecDeque<u64>,
+    last: Option<BlockInfo>,
+}
+
+impl BlockSpacing {
+    /// Records the gap `head` opened over the block seen before it. Repeats of
+    /// the same head, and blocks arriving out of order, carry no gap to learn
+    /// from and are dropped.
+    fn observe(&mut self, head: &BlockInfo) {
+        let Some(last) = self.last.replace(*head) else {
+            return;
+        };
+        if head.number <= last.number {
+            return;
+        }
+        let Some(gap) = head.timestamp.checked_sub(last.timestamp) else {
+            return;
+        };
+        if gap == 0 {
+            return;
+        }
+        if self.gaps.len() == SPACING_SAMPLES {
+            self.gaps.pop_front();
+        }
+        self.gaps.push_back(gap);
     }
+
+    /// The inferred spacing, or `None` until a gap has been seen.
+    fn get(&self) -> Option<u64> {
+        self.gaps.iter().copied().min()
+    }
+}
+
+/// Timestamp the lanes quoted for `block` carry, projected from the newest
+/// block seen and the chain's spacing.
+///
+/// A stamp is just the timestamp the block being built will have, so a recent
+/// block is enough to project it. Going through block numbers rather than the
+/// slot a frame names is what keeps this chain-agnostic: it needs no beacon
+/// genesis to anchor slots against, and stays meaningful on chains that have no
+/// slots at all.
+fn quoted_at(head: &BlockInfo, block: u64, spacing: u64) -> Option<u32> {
+    let ahead = block.checked_sub(head.number)?;
+    let timestamp = ahead.checked_mul(spacing)?.checked_add(head.timestamp)?;
+    u32::try_from(timestamp).ok()
 }
 
 #[derive(Debug, Deserialize)]
@@ -205,7 +256,10 @@ where
 
 /// Spawns a new background task that streams state override updates
 /// into the return [`SimulationOverrides`] instance.
-pub fn spawn(cfg: &Config) -> SimulationOverrides {
+///
+/// `blocks` is read to learn the timestamp the block a frame quotes for will
+/// carry, which is the stamp its fresh lanes hold.
+pub fn spawn(cfg: &Config, blocks: CurrentBlockWatcher) -> SimulationOverrides {
     let (sender, receiver) = watch::channel(Snapshot {
         overrides: StateOverride::default(),
         block_number: 0,
@@ -215,7 +269,7 @@ pub fn spawn(cfg: &Config) -> SimulationOverrides {
 
     let ws_url = cfg.ws_url.clone();
     tokio::spawn(async move {
-        run_stream(ws_url, sender).await;
+        run_stream(ws_url, blocks, sender).await;
     });
 
     SimulationOverrides(Arc::new(Inner {
@@ -224,9 +278,14 @@ pub fn spawn(cfg: &Config) -> SimulationOverrides {
     }))
 }
 
-async fn run_stream(ws_url: url::Url, sender: watch::Sender<Snapshot>) {
+async fn run_stream(
+    ws_url: url::Url,
+    blocks: CurrentBlockWatcher,
+    sender: watch::Sender<Snapshot>,
+) {
     let mut backoff = Duration::from_millis(250);
     let mut venues = Venues::default();
+    let mut spacing = BlockSpacing::default();
     let mut last_block_number = 0u64;
 
     loop {
@@ -255,7 +314,15 @@ async fn run_stream(ws_url: url::Url, sender: watch::Sender<Snapshot>) {
                             if let Some(block_number) = frame.block_number {
                                 last_block_number = block_number;
                             }
-                            venues.update(frame);
+                            // Frames arrive many times a second, so sampling
+                            // the watcher here sees every block the node
+                            // reports without a stream of its own to poll.
+                            let head = *blocks.borrow();
+                            spacing.observe(&head);
+                            let quoted_at = spacing
+                                .get()
+                                .and_then(|spacing| quoted_at(&head, last_block_number, spacing));
+                            venues.update(frame, quoted_at);
                             publish(&venues, last_block_number, &sender);
                         }
                         Err(err) => {
@@ -291,13 +358,15 @@ struct Quotes {
 struct Venues(BTreeMap<Address, Quotes>);
 
 impl Venues {
-    /// Replaces each venue's quotes with the ones the frame carries. A frame
-    /// holds the venue's whole set of lanes, including the ones it did not
-    /// requote this block, so the previous frame is dropped rather than merged:
-    /// accumulating would keep lanes of a venue that has gone away alive
-    /// forever.
-    fn update(&mut self, frame: Frame) {
-        let quoted_at = frame.quoted_at();
+    /// Replaces each venue's quotes with the ones the frame carries, recording
+    /// which of them are stamped `quoted_at` — the timestamp of the block the
+    /// frame quotes for.
+    ///
+    /// A frame holds the venue's whole set of lanes, including the ones it did
+    /// not requote this block, so the previous frame is dropped rather than
+    /// merged: accumulating would keep lanes of a venue that has gone away
+    /// alive forever.
+    fn update(&mut self, frame: Frame, quoted_at: Option<u32>) {
         for (venue, update) in frame.venues {
             let overrides = update.state_override;
             let stamp = quoted_at.filter(|stamp| {
@@ -447,12 +516,32 @@ mod tests {
 
     /// Shared `PrioUpdateRegistry` every venue writes its lanes into.
     const REGISTRY: Address = address!("da7afeed01fe625cf15d187a19f94b45f00b8c5f");
-    /// Slot the captured frames below quote for.
-    const QUOTED_SLOT: u64 = 14_711_587;
+    /// Block the captured frames below quote for.
+    const QUOTED_BLOCK: u64 = 25_475_333;
+    /// Stamp their freshly quoted lanes carry: the timestamp `QUOTED_BLOCK`
+    /// will have.
+    const QUOTED_AT: u32 = 1_783_363_067;
+    /// Mainnet's block spacing, which the captured frames were streamed at.
+    const SPACING: u32 = 12;
 
-    /// Timestamp of `slot`, which is the stamp lanes quoted for it carry.
-    fn quoted_at(slot: u64) -> u32 {
-        u32::try_from(BEACON_GENESIS + SLOT_DURATION * slot).unwrap()
+    /// The chain head a frame quoting `QUOTED_BLOCK` is streamed against: the
+    /// block before it, one spacing earlier.
+    fn head() -> BlockInfo {
+        BlockInfo {
+            number: QUOTED_BLOCK - 1,
+            timestamp: u64::from(QUOTED_AT - SPACING),
+            ..Default::default()
+        }
+    }
+
+    /// A block `number` blocks after `head()`, spaced as mainnet spaces them.
+    fn block_after_head(number: u64) -> BlockInfo {
+        let head = head();
+        BlockInfo {
+            number: head.number + number,
+            timestamp: head.timestamp + number * u64::from(SPACING),
+            ..Default::default()
+        }
     }
 
     fn frame_with(
@@ -473,7 +562,6 @@ mod tests {
         let mut state_override = StateOverride::default();
         state_override.insert(account, account_override);
         Frame {
-            slot: None,
             block_number: None,
             venues: BTreeMap::from([(venue, VenueUpdate { state_override })]),
         }
@@ -488,7 +576,7 @@ mod tests {
     }
 
     /// A frame quoting `lanes` of the shared registry on behalf of `venue`.
-    fn registry_frame(venue: Address, slot: u64, lanes: &[(B256, B256)]) -> Frame {
+    fn registry_frame(venue: Address, lanes: &[(B256, B256)]) -> Frame {
         let account_override = AccountOverride {
             state_diff: Some(lanes.iter().copied().collect()),
             ..Default::default()
@@ -496,7 +584,6 @@ mod tests {
         let mut state_override = StateOverride::default();
         state_override.insert(REGISTRY, account_override);
         Frame {
-            slot: Some(slot),
             block_number: None,
             venues: BTreeMap::from([(venue, VenueUpdate { state_override })]),
         }
@@ -550,7 +637,7 @@ mod tests {
     fn fold(frames: Vec<Frame>) -> StateOverride {
         let mut venues = Venues::default();
         for frame in frames {
-            venues.update(frame);
+            venues.update(frame, Some(QUOTED_AT));
         }
         venues.fold().0
     }
@@ -609,11 +696,14 @@ mod tests {
         }))
     }
 
-    /// Handle over a snapshot built by folding `frames` in order.
+    /// Handle over a snapshot built by folding `frames` in order, as if every
+    /// frame were quoting for `QUOTED_BLOCK`. Frames whose words carry no
+    /// `QUOTED_AT` stamp are recognised as quoting nothing, exactly as in the
+    /// stream.
     fn handle_for(frames: Vec<Frame>, block_number: u64, max_age: Duration) -> SimulationOverrides {
         let mut venues = Venues::default();
         for frame in frames {
-            venues.update(frame);
+            venues.update(frame, Some(QUOTED_AT));
         }
         let (overrides, stamp) = venues.fold();
         let (_sender, receiver) = watch::channel(Snapshot {
@@ -693,13 +783,12 @@ mod tests {
     #[test]
     fn quoted_lanes_are_restamped_to_the_simulated_block() {
         let venue = address!("1111111111111111111111111111111111111111");
-        let stamp = quoted_at(QUOTED_SLOT);
+        let stamp = QUOTED_AT;
         let simulated_at = stamp - 12;
 
         let handle = handle_for(
             vec![registry_frame(
                 venue,
-                QUOTED_SLOT,
                 &[(lane(1), word(stamp, 0xaa)), (lane(2), word(stamp, 0xbb))],
             )],
             100,
@@ -715,8 +804,8 @@ mod tests {
     #[test]
     fn lane_not_requoted_keeps_its_stale_stamp() {
         let venue = address!("1111111111111111111111111111111111111111");
-        let stamp = quoted_at(QUOTED_SLOT);
-        let previous = quoted_at(QUOTED_SLOT - 1);
+        let stamp = QUOTED_AT;
+        let previous = QUOTED_AT - SPACING;
         let simulated_at = stamp - 12;
 
         // The venue still carries lane 2 in its frame, but stamped for the
@@ -724,7 +813,6 @@ mod tests {
         let handle = handle_for(
             vec![registry_frame(
                 venue,
-                QUOTED_SLOT,
                 &[
                     (lane(1), word(stamp, 0xcc)),
                     (lane(2), word(previous, 0xbb)),
@@ -745,24 +833,24 @@ mod tests {
     #[test]
     fn restamping_leaves_every_other_byte_untouched() {
         let mut venues = Venues::default();
-        venues.update(serde_json::from_str(FERMI_FRAME).unwrap());
+        venues.update(serde_json::from_str(FERMI_FRAME).unwrap(), Some(QUOTED_AT));
         let (overrides, stamp) = venues.fold();
-        assert_eq!(stamp, Some(quoted_at(QUOTED_SLOT)));
+        assert_eq!(stamp, Some(QUOTED_AT));
 
-        let simulated_at = quoted_at(QUOTED_SLOT) - 12;
-        let mut restamped = overrides.clone();
-        let overrides = restamp(overrides, stamp, simulated_at.into());
+        let simulated_at = QUOTED_AT - SPACING;
+        let original = overrides.clone();
+        let restamped = restamp(overrides, stamp, simulated_at.into());
 
         // Only the stamp bytes of the registry words moved; the maker's price
         // bytes and every other account are byte-identical.
-        let (before, after) = (lanes_of(&overrides), lanes_of(&restamped));
+        let (before, after) = (lanes_of(&original), lanes_of(&restamped));
         assert_eq!(before.len(), after.len());
-        for (slot, before) in before {
-            let after = after[slot];
+        for (lane, before) in before {
+            let after = after[lane];
             assert_eq!(&after[..STAMP_LEN], &simulated_at.to_be_bytes());
             assert_eq!(after[STAMP_LEN..], before[STAMP_LEN..]);
         }
-        for (account, before) in &overrides {
+        for (account, before) in &original {
             if *account != REGISTRY {
                 assert_eq!(&restamped[account], before);
             }
@@ -772,13 +860,13 @@ mod tests {
     #[test]
     fn unrelated_words_are_never_mistaken_for_a_stamp() {
         // This venue's word leads with bytes that read as a perfectly plausible
-        // unix timestamp (2019-07-25) — just not the one its slot is quoting
+        // unix timestamp (2019-07-25) — just not the one the frame is quoting
         // for, so the frame is recognised as quoting no lane at all and the
         // word survives the accessor untouched.
         let frame: Frame = serde_json::from_str(OTHER_FRAME).unwrap();
         let venue = address!("28d9ccedf1b7ac9b3f090f4f0292837de87c1d39");
         let mut venues = Venues::default();
-        venues.update(frame);
+        venues.update(frame, Some(QUOTED_AT));
         assert_eq!(venues.fold().1, None);
 
         let handle = handle_for(
@@ -786,7 +874,7 @@ mod tests {
             100,
             Duration::from_secs(30),
         );
-        let simulated_at = quoted_at(QUOTED_SLOT) - 12;
+        let simulated_at = QUOTED_AT - SPACING;
         let overrides = handle.overrides_for(99, simulated_at.into()).unwrap();
         assert_eq!(overrides[&venue], venues.fold().0[&venue]);
     }
@@ -795,7 +883,7 @@ mod tests {
     fn venues_sharing_the_registry_keep_each_others_lanes() {
         let venue_a = address!("1111111111111111111111111111111111111111");
         let venue_b = address!("3333333333333333333333333333333333333333");
-        let stamp = quoted_at(QUOTED_SLOT);
+        let stamp = QUOTED_AT;
         let simulated_at = stamp - 12;
 
         // Both venues write the *same* registry account, each frame carrying
@@ -803,8 +891,8 @@ mod tests {
         // the other's.
         let handle = handle_for(
             vec![
-                registry_frame(venue_a, QUOTED_SLOT, &[(lane(1), word(stamp, 0xaa))]),
-                registry_frame(venue_b, QUOTED_SLOT, &[(lane(2), word(stamp, 0xbb))]),
+                registry_frame(venue_a, &[(lane(1), word(stamp, 0xaa))]),
+                registry_frame(venue_b, &[(lane(2), word(stamp, 0xbb))]),
             ],
             100,
             Duration::from_secs(30),
@@ -840,7 +928,14 @@ mod tests {
             ws_url: server_url,
             max_age: Duration::from_secs(30),
         };
-        let handle = spawn(&cfg);
+        // Held for the test's lifetime: a dropped sender would leave the stream
+        // task reading a closed watcher.
+        let (_blocks, blocks) = watch::channel(BlockInfo {
+            number: 10,
+            timestamp: 1000,
+            ..Default::default()
+        });
+        let handle = spawn(&cfg, blocks);
 
         let _ = server_handle.await;
 
@@ -922,14 +1017,13 @@ mod tests {
     #[test]
     fn parses_real_titan_frames() {
         let fermi: Frame = serde_json::from_str(FERMI_FRAME).unwrap();
-        assert_eq!(fermi.block_number, Some(25475333));
-        assert_eq!(fermi.slot, Some(QUOTED_SLOT));
+        assert_eq!(fermi.block_number, Some(QUOTED_BLOCK));
         assert_eq!(fermi.venues.len(), 1);
 
         let mut venues = Venues::default();
-        venues.update(fermi);
+        venues.update(fermi, Some(QUOTED_AT));
         let (overrides, stamp) = venues.fold();
-        assert_eq!(stamp, Some(quoted_at(QUOTED_SLOT)));
+        assert_eq!(stamp, Some(QUOTED_AT));
         assert_eq!(overrides.len(), 5);
 
         let entry = &overrides[&REGISTRY];
@@ -944,19 +1038,49 @@ mod tests {
     }
 
     #[test]
-    fn a_lanes_stamp_is_the_timestamp_of_the_slot_its_frame_quotes_for() {
+    fn a_lanes_stamp_is_the_timestamp_of_the_block_its_frame_quotes_for() {
         // The whole restamping rule rests on this: the leading bytes of a
-        // freshly quoted lane are the slot's timestamp, so which words are
-        // stamps never has to be guessed from their contents.
+        // freshly quoted lane are the timestamp the block being built will
+        // have, so which words are stamps is projected from the chain rather
+        // than guessed from their contents.
+        let projected = quoted_at(&head(), QUOTED_BLOCK, SPACING.into()).unwrap();
+        assert_eq!(projected, QUOTED_AT);
+
         let mut venues = Venues::default();
-        venues.update(serde_json::from_str(FERMI_FRAME).unwrap());
-        let overrides = venues.fold().0;
-        let stamp = quoted_at(QUOTED_SLOT).to_be_bytes();
+        venues.update(serde_json::from_str(FERMI_FRAME).unwrap(), Some(projected));
+        let (overrides, stamp) = venues.fold();
+        assert_eq!(stamp, Some(QUOTED_AT));
+        let stamp = projected.to_be_bytes();
         assert!(
             lanes_of(&overrides)
                 .values()
                 .all(|word| word[..STAMP_LEN] == stamp)
         );
+    }
+
+    #[test]
+    fn block_spacing_is_inferred_from_the_blocks_the_chain_produces() {
+        let mut spacing = BlockSpacing::default();
+        // Nothing to infer from a single block.
+        spacing.observe(&block_after_head(0));
+        assert_eq!(spacing.get(), None);
+
+        spacing.observe(&block_after_head(1));
+        assert_eq!(spacing.get(), Some(SPACING.into()));
+
+        // A slot nobody proposed widens that one gap, which must not be read as
+        // the chain having respaced itself.
+        spacing.observe(&block_after_head(3));
+        assert_eq!(spacing.get(), Some(SPACING.into()));
+    }
+
+    #[test]
+    fn a_frame_the_chain_has_already_passed_projects_no_stamp() {
+        // The head has moved beyond the block the frame quotes for, so there is
+        // no timestamp to project forward to. The snapshot's block gate drops
+        // such a frame anyway; this only has to not invent a stamp for it.
+        let head = block_after_head(5);
+        assert_eq!(quoted_at(&head, QUOTED_BLOCK, SPACING.into()), None);
     }
 
     #[test]
@@ -980,7 +1104,7 @@ mod tests {
         );
 
         // The frame names 25475333, so it serves a simulation on head 25475332.
-        let head_timestamp = u64::from(quoted_at(QUOTED_SLOT)) - 12;
+        let head_timestamp = u64::from(QUOTED_AT - SPACING);
         let overrides = handle.overrides_for(25475332, head_timestamp).unwrap();
         assert_eq!(overrides.len(), 5);
 
@@ -1025,6 +1149,21 @@ mod tests {
         }
     }
 
+    /// Waits until the stream can project a stamp, which takes one block: the
+    /// spacing it needs is inferred from the gap between two heads, so until a
+    /// second one lands there is nothing to restamp with and the venue rejects
+    /// every lane. Production wears the same warm-up, once per process.
+    async fn wait_for_warm_up(blocks: &CurrentBlockWatcher) {
+        let mut blocks = blocks.clone();
+        timeout(Duration::from_secs(60), blocks.changed())
+            .await
+            .expect("no block arrived to infer the spacing from")
+            .unwrap();
+        // The gap is recorded on the first frame after that block, microseconds
+        // later at the rate frames arrive.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+
     /// Quotes 1000 USDT into WETH, returning the amount out.
     async fn quote_amounts(
         provider: &ethrpc::AlloyProvider,
@@ -1052,8 +1191,6 @@ mod tests {
     /// Also pins down why the estimate is no longer run against `pending`: the
     /// very same overrides are rejected there, because `pending`'s timestamp is
     /// the node's wall clock rather than the block they were stamped for.
-    ///
-    /// See `crates/simulator/README.md` for how to run this.
     #[tokio::test]
     #[ignore]
     async fn pamm_estimates_gas_for_call() {
@@ -1064,8 +1201,8 @@ mod tests {
         let blocks = ethrpc::block_stream::current_block_ws_stream(web3.provider.clone(), ws_url)
             .await
             .unwrap();
-        let overrides = super::spawn(&live_stream_config());
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        let overrides = super::spawn(&live_stream_config(), blocks.clone());
+        wait_for_warm_up(&blocks).await;
 
         let eth = crate::Ethereum::new(
             web3.clone(),
@@ -1129,8 +1266,6 @@ mod tests {
     /// right after a block lands. Samples the accessor at chain head across
     /// several blocks and requires virtually all samples to be served; the
     /// block-number gate this replaced scored about 5% here.
-    ///
-    /// See `crates/simulator/README.md` for how to run this.
     #[tokio::test]
     #[ignore]
     async fn pamm_serves_overrides_across_blocks() {
@@ -1143,8 +1278,8 @@ mod tests {
             .await
             .unwrap();
 
-        let handle = super::spawn(&live_stream_config());
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        let handle = super::spawn(&live_stream_config(), blocks.clone());
+        wait_for_warm_up(&blocks).await;
 
         // ~60s, several blocks' worth.
         let (mut served, mut withheld) = (0u32, 0u32);
@@ -1181,14 +1316,16 @@ mod tests {
         install_crypto_provider();
 
         let provider = ethrpc::Web3::new_from_env().provider;
-        let overrides = super::spawn(&live_stream_config());
+        let ws_url: url::Url = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();
+        let blocks = ethrpc::block_stream::current_block_ws_stream(provider.clone(), ws_url)
+            .await
+            .unwrap();
+        let overrides = super::spawn(&live_stream_config(), blocks.clone());
+        wait_for_warm_up(&blocks).await;
 
         let quoted = timeout(Duration::from_secs(60), async {
             loop {
-                let head =
-                    ethrpc::block_stream::get_block_at_id(&provider, alloy_eips::BlockId::latest())
-                        .await
-                        .unwrap();
+                let head = *blocks.borrow();
                 if let Some(state) = overrides.overrides_for(head.number, head.timestamp) {
                     // Without the overrides the pool has nothing fresh to
                     // quote from and reverts `StaleUpdate()` (0x666a2814);
