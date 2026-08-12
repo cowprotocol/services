@@ -607,17 +607,6 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 /// writes: the bare watermark for a slot with no events, the dead letter for
 /// a failed decode (which suppresses that transaction's events entirely),
 /// and the flush driven by a slot status moving past the hold-back window.
-/// Poll the database until `probe` returns true.
-async fn wait_for_db(probe: impl AsyncFn() -> bool) {
-    for _ in 0..200 {
-        if probe().await {
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-    }
-    panic!("timed out waiting for the expected database state");
-}
-
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
 async fn solana_db_ingester_to_decoder_persists_decoded_events() {
@@ -689,8 +678,15 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     assert_eq!(reader.read_watermark().await.unwrap(), None);
 
     // The slot-45 status moves the stream two past 43 and flushes both slots.
+    // Closing the channel ends the ingester (a terminal stream end) and the
+    // decoder drains cleanly behind it, so joining both tasks is the
+    // guarantee that every write below has landed.
     geyser_tx.send(Ok(slot_status_update(45))).await.unwrap();
-    wait_for_db(async || reader.read_watermark().await.unwrap() == Some(Slot(43))).await;
+    drop(geyser_tx);
+    assert!(ingester_task.await.unwrap().is_err());
+    assert!(decoder_task.await.unwrap().is_ok());
+
+    assert_eq!(reader.read_watermark().await.unwrap(), Some(Slot(43)));
 
     // Slot 42 held only the reverted transaction: no dead letter, no rows.
     // The slot-43 transaction with the unknown discriminator is dead-lettered
@@ -713,10 +709,4 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
             expected.created_by.to_bytes().to_vec()
         )]
     );
-
-    // Closing the channel ends the ingester (a terminal stream end) and the
-    // decoder drains cleanly behind it.
-    drop(geyser_tx);
-    assert!(ingester_task.await.unwrap().is_err());
-    assert!(decoder_task.await.unwrap().is_ok());
 }
