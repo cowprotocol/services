@@ -1,0 +1,108 @@
+//! Yellowstone gRPC client construction.
+//!
+//! [`Ingester::serve`](crate::indexer::ingester) relies on the client it
+//! receives for two things it does not do itself: reconnecting (the drain
+//! loop has no backoff of its own, the `AutoReconnect` wrapper inside the
+//! stream handles it) and holding an otherwise idle connection open (the
+//! ingester ignores server `Ping` frames, so the HTTP/2 transport keepalive
+//! is what keeps the link alive). This module builds clients that satisfy
+//! both expectations.
+
+use {
+    std::time::Duration,
+    yellowstone_grpc_client::{
+        GeyserGrpcBuilder,
+        GeyserGrpcBuilderError,
+        GeyserGrpcClient,
+        ReconnectConfig,
+    },
+    yellowstone_grpc_proto::tonic::transport::ClientTlsConfig,
+};
+
+/// Deadline for establishing the TCP + TLS connection.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Deadline for a request to produce its response headers. Streams are
+/// unaffected once they start delivering.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How often the transport sends HTTP/2 keepalive pings.
+const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
+
+/// How long to wait for a keepalive ack before the transport considers the
+/// connection dead and tears it down (which triggers a reconnect).
+const KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Upper bound on a single decoded gRPC message. Transaction updates carry
+/// the full transaction plus its meta (logs, balances, inner instructions),
+/// so the tonic default of 4 MiB is too tight for pathological cases.
+const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
+
+/// Connect to a Yellowstone gRPC endpoint.
+///
+/// `endpoint` decides TLS by scheme: `https://` endpoints get TLS with the
+/// system's native root certificates. `x_token` is the provider's
+/// authentication token, sent as the `x-token` header on every request.
+pub async fn connect(
+    endpoint: String,
+    x_token: Option<String>,
+) -> Result<GeyserGrpcClient, GeyserGrpcBuilderError> {
+    builder(endpoint, x_token)?.connect().await
+}
+
+/// Assemble the configured builder without dialing.
+fn builder(
+    endpoint: String,
+    x_token: Option<String>,
+) -> Result<GeyserGrpcBuilder, GeyserGrpcBuilderError> {
+    let tls = endpoint.starts_with("https://");
+    let mut builder = GeyserGrpcBuilder::from_shared(endpoint)?
+        .x_token(x_token)?
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        .http2_keep_alive_interval(KEEP_ALIVE_INTERVAL)
+        .keep_alive_timeout(KEEP_ALIVE_TIMEOUT)
+        .keep_alive_while_idle(true)
+        .max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
+    if tls {
+        builder = builder.tls_config(ClientTlsConfig::new().with_native_roots())?;
+    }
+    // The builder default is `no_reconnect`, under which the `AutoReconnect`
+    // wrapper gives up on the first stream error.
+    builder.reconnect_config = ReconnectConfig::default();
+    Ok(builder)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_with_tls_and_token() {
+        let builder = builder(
+            "https://yellowstone.example.com:443".to_owned(),
+            Some("secret".to_owned()),
+        )
+        .unwrap();
+        assert!(builder.reconnect_config.backoff.max_retries > 0);
+    }
+
+    #[test]
+    fn builds_plaintext_without_token() {
+        builder("http://localhost:10000".to_owned(), None).unwrap();
+    }
+
+    #[test]
+    fn rejects_malformed_endpoint() {
+        builder("not a url".to_owned(), None).unwrap_err();
+    }
+
+    #[test]
+    fn rejects_malformed_token() {
+        builder(
+            "http://localhost:10000".to_owned(),
+            Some("tok\nen".to_owned()),
+        )
+        .unwrap_err();
+    }
+}
