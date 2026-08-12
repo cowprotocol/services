@@ -76,9 +76,7 @@ CREATE TABLE solana.trades (
     buy_amount              numeric(20,0) NOT NULL,
     -- From the off-chain proposed-solution data.
     fee_amount              numeric(20,0) NOT NULL,
-    PRIMARY KEY (tx_signature, instruction_index, order_uid),
-    FOREIGN KEY (tx_signature, instruction_index)
-        REFERENCES solana.settlements (tx_signature, instruction_index)
+    PRIMARY KEY (tx_signature, instruction_index, order_uid)
 );
 
 CREATE INDEX solana_trades_order_uid ON solana.trades (order_uid);
