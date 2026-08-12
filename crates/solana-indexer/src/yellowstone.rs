@@ -36,9 +36,10 @@ const RECONNECT_BACKOFF_MULTIPLIER: f64 = 2.0;
 /// the stream, the process restart resumes from the last indexed slot.
 const RECONNECT_MAX_RETRIES: u32 = 10;
 
-/// Upper bound on a single decoded gRPC message. Transaction updates carry
-/// the full transaction plus its meta (logs, balances, inner instructions),
-/// so the tonic default of 4 MiB is too tight for pathological cases.
+/// Cap on one decoded gRPC message, a limit, not an allocation. Our largest
+/// message is a single transaction with meta, far below this, but a message
+/// over the cap is a stream error that every reconnect replays, wedging the
+/// indexer. Generous beats stuck.
 const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 
 /// Connect to a Yellowstone gRPC endpoint.
