@@ -7,6 +7,7 @@ use {
     std::time::Duration,
     url::Url,
     yellowstone_grpc_client::{
+        Backoff,
         GeyserGrpcBuilder,
         GeyserGrpcBuilderError,
         GeyserGrpcClient,
@@ -65,8 +66,12 @@ fn builder(
         builder = builder.tls_config(ClientTlsConfig::new().with_native_roots())?;
     }
     // The builder default is `no_reconnect`, under which the `AutoReconnect`
-    // wrapper gives up on the first stream error.
-    builder.reconnect_config = ReconnectConfig::default();
+    // wrapper gives up on the first stream error. Every stream drop gets a
+    // fresh retry budget: ten doubling attempts from 200ms cover an outage of
+    // a few minutes, anything longer ends the stream and the process restart
+    // resumes from the last indexed slot.
+    builder.reconnect_config =
+        ReconnectConfig::default().with_backoff(Backoff::new(Duration::from_millis(200), 2.0, 10));
     Ok(builder)
 }
 
