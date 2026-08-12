@@ -337,7 +337,7 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
-    async fn watermark_upserts_forward_and_ignores_backward() {
+    async fn solana_db_watermark_upserts_forward_and_ignores_backward() {
         let pool = pool().await;
         wipe(&pool).await;
         let postgres = Postgres::new(pool);
@@ -353,7 +353,7 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
-    async fn dead_letter_is_idempotent_on_the_signature() {
+    async fn solana_db_dead_letter_is_idempotent_on_the_signature() {
         let pool = pool().await;
         wipe(&pool).await;
         let postgres = Postgres::new(pool.clone());
@@ -377,7 +377,7 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
-    async fn persist_events_writes_the_batch_once() {
+    async fn solana_db_persist_events_writes_the_batch_once() {
         let pool = pool().await;
         wipe(&pool).await;
         let postgres = Postgres::new(pool.clone());
