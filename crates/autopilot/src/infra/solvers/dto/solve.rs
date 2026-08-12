@@ -46,33 +46,32 @@ impl Request {
         deadline: chrono::DateTime<chrono::Utc>,
         compress: bool,
     ) -> Self {
-        let _timer =
-            observe::metrics::metrics().on_auction_overhead_start("autopilot", "serialize_request");
         let helper = RequestHelper {
             id: auction.id,
             orders: auction.orders.iter().map(dto::order::from_domain).collect(),
-            tokens: auction
-                .prices
-                .iter()
-                .map(|(address, price)| Token {
-                    address: *address.to_owned(),
-                    price: Some(price.get().0),
-                    trusted: trusted_tokens.contains(&Address::from(*address)),
-                })
-                .chain(trusted_tokens.iter().map(|&address| Token {
-                    address,
-                    price: None,
-                    trusted: true,
-                }))
-                .unique_by(|token| token.address)
-                .collect(),
+            tokens: tokens(auction, trusted_tokens),
             deadline,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
         };
-        let auction_id = auction.id;
+        Self::from_body(RequestBody::Full(helper), compress).await
+    }
+
+    /// Builds a request containing only the difference to a previously sent
+    /// auction. Use [`DeltaBase::delta`] to compute the payload.
+    pub async fn new_delta(delta: Delta, compress: bool) -> Self {
+        Self::from_body(RequestBody::Delta(delta.0), compress).await
+    }
+
+    async fn from_body(body: RequestBody, compress: bool) -> Self {
+        let _timer =
+            observe::metrics::metrics().on_auction_overhead_start("autopilot", "serialize_request");
+        let (auction_id, deadline) = match &body {
+            RequestBody::Full(helper) => (helper.id, helper.deadline),
+            RequestBody::Delta(helper) => (helper.id, helper.deadline),
+        };
 
         let (body, content_encoding) = tokio::task::spawn_blocking(move || {
-            let serialized = serde_json::to_vec(&helper).expect("type should be JSON serializable");
+            let serialized = body.serialize();
 
             if !compress {
                 return (Bytes::from(serialized), None);
@@ -126,6 +125,114 @@ impl Request {
             .unwrap_or(Duration::ZERO)
     }
 }
+
+/// The two kinds of `/solve` request bodies, distinguished by an internal
+/// `kind` tag: the full auction or - for drivers that opted in - only the
+/// difference to a previously sent auction.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum RequestBody {
+    Full(RequestHelper),
+    Delta(DeltaHelper),
+}
+
+impl RequestBody {
+    /// Full requests are serialized without the `kind` tag so their JSON
+    /// stays byte-compatible with drivers that predate delta requests. Only
+    /// new request kinds carry the tag.
+    fn serialize(&self) -> Vec<u8> {
+        match self {
+            Self::Full(helper) => serde_json::to_vec(helper),
+            Self::Delta(_) => serde_json::to_vec(self),
+        }
+        .expect("type should be JSON serializable")
+    }
+}
+
+/// Builds the token list of an auction: all tokens with a known price plus
+/// all trusted tokens.
+fn tokens(auction: &domain::Auction, trusted_tokens: &HashSet<Address>) -> Vec<Token> {
+    auction
+        .prices
+        .iter()
+        .map(|(address, price)| Token {
+            address: *address.to_owned(),
+            price: Some(price.get().0),
+            trusted: trusted_tokens.contains(&Address::from(*address)),
+        })
+        .chain(trusted_tokens.iter().map(|&address| Token {
+            address,
+            price: None,
+            trusted: true,
+        }))
+        .unique_by(|token| token.address)
+        .collect()
+}
+
+/// Orders of the most recently sent auction. Used as the base to compute the
+/// next auction's delta request against.
+pub struct DeltaBase {
+    auction_id: i64,
+    orders: HashMap<domain::OrderUid, domain::Order>,
+}
+
+impl DeltaBase {
+    pub fn new(auction: &domain::Auction) -> Self {
+        Self {
+            auction_id: auction.id,
+            orders: auction
+                .orders
+                .iter()
+                .map(|order| (order.uid, order.clone()))
+                .collect(),
+        }
+    }
+
+    /// Computes the payload of a delta request for `auction` against this
+    /// base. Only orders are diffed since they make up ~99% of the auction's
+    /// bytes; everything else is always sent whole. Returns `None` when so
+    /// many orders changed that sending the full auction is cheaper.
+    pub fn delta(
+        &self,
+        auction: &domain::Auction,
+        trusted_tokens: &HashSet<Address>,
+        deadline: chrono::DateTime<chrono::Utc>,
+    ) -> Option<Delta> {
+        let mut updated_orders = Vec::new();
+        let mut current_uids = HashSet::with_capacity(auction.orders.len());
+        for order in &auction.orders {
+            current_uids.insert(order.uid);
+            if self.orders.get(&order.uid) != Some(order) {
+                updated_orders.push(dto::order::from_domain(order));
+            }
+        }
+        let removed_orders: Vec<boundary::OrderUid> = self
+            .orders
+            .keys()
+            .filter(|uid| !current_uids.contains(uid))
+            .map(|&uid| uid.into())
+            .collect();
+        // Rough byte heuristic to detect that the delta would not be
+        // meaningfully smaller than the full auction: an updated order
+        // weighs like a full one and a removed order's uid ~1/10th of that.
+        if updated_orders.len() + removed_orders.len() / 10 > auction.orders.len() / 2 {
+            return None;
+        }
+        Some(Delta(DeltaHelper {
+            id: auction.id,
+            base_id: self.auction_id,
+            tokens: tokens(auction, trusted_tokens),
+            updated_orders,
+            removed_orders,
+            deadline,
+            surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
+        }))
+    }
+}
+
+/// Opaque payload of a delta request, built by [`DeltaBase::delta`].
+#[derive(Clone)]
+pub struct Delta(DeltaHelper);
 
 impl InjectIntoHttpRequest for Request {
     fn inject(&self, request: RequestBuilder) -> RequestBuilder {
@@ -182,6 +289,27 @@ struct RequestHelper {
     pub id: i64,
     pub tokens: Vec<Token>,
     pub orders: Vec<Order>,
+    pub deadline: DateTime<Utc>,
+    pub surplus_capturing_jit_order_owners: Vec<Address>,
+}
+
+/// Difference of an auction relative to the auction `base_id` which the
+/// receiving driver is expected to still have. Only orders are diffed;
+/// tokens and all scalar fields are sent whole.
+#[serde_as]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeltaHelper {
+    #[serde_as(as = "DisplayFromStr")]
+    pub id: i64,
+    /// Id of the auction this delta applies to.
+    #[serde_as(as = "DisplayFromStr")]
+    pub base_id: i64,
+    pub tokens: Vec<Token>,
+    /// Orders that were added or modified since the base auction.
+    pub updated_orders: Vec<Order>,
+    /// Uids of orders that were removed since the base auction.
+    pub removed_orders: Vec<boundary::OrderUid>,
     pub deadline: DateTime<Utc>,
     pub surplus_capturing_jit_order_owners: Vec<Address>,
 }
@@ -362,5 +490,280 @@ mod tests {
 
         assert_eq!(request.content_encoding, None);
         assert_eq!(request.body.as_ref(), json.as_slice());
+    }
+
+    /// JSON of a minimal order as serialized by [`RequestHelper`], with all
+    /// bytes of the uid set to `uid_byte`.
+    fn order_json(uid_byte: u8, executed: u64) -> serde_json::Value {
+        serde_json::json!({
+            "uid": format!("0x{}", format!("{uid_byte:02x}").repeat(56)),
+            "sellToken": "0x2222222222222222222222222222222222222222",
+            "buyToken": "0x3333333333333333333333333333333333333333",
+            "sellAmount": "1000",
+            "buyAmount": "2000",
+            "protocolFees": [],
+            "created": 1,
+            "validTo": 2,
+            "kind": "sell",
+            "receiver": null,
+            "owner": "0x4444444444444444444444444444444444444444",
+            "partiallyFillable": true,
+            "executed": executed.to_string(),
+            "preInteractions": [],
+            "postInteractions": [],
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20",
+            "class": "limit",
+            "appData": format!("0x{}", "00".repeat(32)),
+            "signingScheme": "eip712",
+            "signature": format!("0x{}1c", "01".repeat(64)),
+            "quote": null,
+        })
+    }
+
+    fn test_order(uid_byte: u8, executed: u64) -> domain::Order {
+        dto::order::to_domain(serde_json::from_value(order_json(uid_byte, executed)).unwrap())
+    }
+
+    fn test_auction(id: i64, orders: Vec<domain::Order>) -> domain::Auction {
+        domain::Auction {
+            id,
+            block: 1,
+            orders,
+            prices: Default::default(),
+            surplus_capturing_jit_order_owners: vec![],
+        }
+    }
+
+    fn test_deadline() -> DateTime<Utc> {
+        DateTime::from_timestamp(1_700_000_000, 0).unwrap()
+    }
+
+    #[tokio::test]
+    async fn full_request_is_not_tagged() {
+        let auction = test_auction(1, vec![test_order(0x11, 0)]);
+        let request = Request::new(&auction, &HashSet::new(), test_deadline(), false).await;
+        let body: serde_json::Value = serde_json::from_str(&request.body_to_string()).unwrap();
+
+        // Drivers that predate delta requests must keep receiving the exact
+        // JSON they got before.
+        assert_eq!(body.get("kind"), None);
+        assert_eq!(body.get("id"), Some(&serde_json::json!("1")));
+    }
+
+    /// The shape of this request is mirrored in the driver's tests
+    /// (crates/driver/src/infra/api/routes/solve/dto/solve_request.rs) to
+    /// pin the wire format both sides agree on.
+    #[tokio::test]
+    async fn delta_request_contains_order_diff_and_kind_tag() {
+        let unchanged = [test_order(0x11, 0), test_order(0x55, 0)];
+        let modified = test_order(0x22, 0);
+        let removed = test_order(0x33, 0);
+
+        let base_auction = test_auction(
+            1,
+            vec![
+                unchanged[0].clone(),
+                unchanged[1].clone(),
+                modified,
+                removed,
+            ],
+        );
+        let auction = test_auction(
+            2,
+            vec![
+                unchanged[0].clone(),
+                unchanged[1].clone(),
+                test_order(0x22, 100),
+                test_order(0x44, 0),
+            ],
+        );
+
+        let delta = DeltaBase::new(&base_auction)
+            .delta(&auction, &HashSet::new(), test_deadline())
+            .unwrap();
+        let request = Request::new_delta(delta, false).await;
+
+        let actual: serde_json::Value = serde_json::from_str(&request.body_to_string()).unwrap();
+        let expected = serde_json::json!({
+            "kind": "delta",
+            "id": "2",
+            "baseId": "1",
+            "tokens": [],
+            "updatedOrders": [order_json(0x22, 100), order_json(0x44, 0)],
+            "removedOrders": [format!("0x{}", "33".repeat(56))],
+            "deadline": "2023-11-14T22:13:20Z",
+            "surplusCapturingJitOrderOwners": [],
+        });
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn no_delta_when_too_many_orders_changed() {
+        let base_auction = test_auction(1, vec![test_order(0x11, 0), test_order(0x22, 0)]);
+        // 2 out of 3 orders changed, more than half the auction.
+        let auction = test_auction(
+            2,
+            vec![
+                test_order(0x11, 0),
+                test_order(0x22, 100),
+                test_order(0x33, 0),
+            ],
+        );
+
+        let base = DeltaBase::new(&base_auction);
+        assert!(
+            base.delta(&auction, &HashSet::new(), test_deadline())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn no_delta_when_too_many_orders_removed() {
+        // 28 of 30 orders removed: the delta (a long list of removed uids)
+        // would not be meaningfully smaller than the tiny full auction.
+        let base_auction = test_auction(1, (1..=30).map(|uid| test_order(uid, 0)).collect());
+        let auction = test_auction(2, vec![test_order(1, 0), test_order(2, 0)]);
+
+        let base = DeltaBase::new(&base_auction);
+        assert!(
+            base.delta(&auction, &HashSet::new(), test_deadline())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn empty_delta_for_identical_auction() {
+        let orders = vec![test_order(0x11, 0), test_order(0x22, 0)];
+        let base_auction = test_auction(1, orders.clone());
+        let auction = test_auction(2, orders);
+
+        let base = DeltaBase::new(&base_auction);
+        let delta = base
+            .delta(&auction, &HashSet::new(), test_deadline())
+            .unwrap();
+        assert!(delta.0.updated_orders.is_empty());
+        assert!(delta.0.removed_orders.is_empty());
+        assert_eq!(delta.0.base_id, 1);
+        assert_eq!(delta.0.id, 2);
+    }
+
+    /// Measures full vs delta request sizes over real consecutive auctions.
+    ///
+    /// Point `AUCTION_DATA_DIR` at a directory of `<auction_id>.json` files
+    /// containing the `auctions.json` DB column of consecutive auctions
+    /// (e.g. collected by polling the live table) and run with:
+    ///
+    /// AUCTION_DATA_DIR=... cargo nextest run -p autopilot \
+    ///   delta_request_size_benchmark --run-ignored ignored-only \
+    ///   --no-capture
+    #[tokio::test]
+    #[ignore]
+    async fn delta_request_size_benchmark() {
+        let dir = std::env::var("AUCTION_DATA_DIR")
+            .expect("set AUCTION_DATA_DIR to a directory of <auction_id>.json files");
+        let mut files: Vec<(i64, std::path::PathBuf)> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|entry| {
+                let path = entry.unwrap().path();
+                let id = path.file_stem()?.to_str()?.parse().ok()?;
+                (path.extension()? == "json").then_some((id, path))
+            })
+            .collect();
+        files.sort();
+        assert!(files.len() >= 2, "need at least 2 auctions to diff");
+
+        let auctions: Vec<domain::Auction> = files
+            .iter()
+            .map(|(id, path)| {
+                let raw: dto::auction::RawAuctionData =
+                    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+                dto::auction::Auction {
+                    id: *id,
+                    auction: raw,
+                }
+                .try_into_domain()
+                .unwrap()
+            })
+            .collect();
+        println!(
+            "loaded {} auctions, ids {}..{}",
+            auctions.len(),
+            auctions.first().unwrap().id,
+            auctions.last().unwrap().id
+        );
+
+        let trusted = HashSet::new();
+        let deadline = test_deadline();
+        let mut stats: Vec<[usize; 4]> = Vec::new();
+        let mut churn = (0usize, 0usize);
+        for pair in auctions.windows(2) {
+            let [prev, curr] = pair else { unreachable!() };
+            if curr.id != prev.id + 1 {
+                println!("skipping non-consecutive pair {} -> {}", prev.id, curr.id);
+                continue;
+            }
+            let full_raw = Request::new(curr, &trusted, deadline, false).await;
+            let full_br = Request::new(curr, &trusted, deadline, true).await;
+            let base = DeltaBase::new(prev);
+            let Some(delta) = base.delta(curr, &trusted, deadline) else {
+                println!(
+                    "skipping heavy-churn pair {} -> {} (full auction would be sent)",
+                    prev.id, curr.id
+                );
+                continue;
+            };
+            churn.0 += delta.0.updated_orders.len();
+            churn.1 += delta.0.removed_orders.len();
+            let delta_raw = Request::new_delta(delta.clone(), false).await;
+            let delta_br = Request::new_delta(delta, true).await;
+            stats.push([
+                full_raw.body_size(),
+                full_br.body_size(),
+                delta_raw.body_size(),
+                delta_br.body_size(),
+            ]);
+        }
+
+        let n = stats.len();
+        assert!(n > 0, "no consecutive auction pairs to measure");
+        let col = |i: usize| {
+            let mut values: Vec<usize> = stats.iter().map(|row| row[i]).collect();
+            values.sort();
+            (
+                values.iter().sum::<usize>() / n,
+                values[n / 2],
+                values[n * 9 / 10],
+                values[n - 1],
+            )
+        };
+        println!(
+            "pairs: {n}, orders updated/removed per pair: {:.1}/{:.1}",
+            churn.0 as f64 / n as f64,
+            churn.1 as f64 / n as f64
+        );
+        println!(
+            "{:<14} {:>12} {:>12} {:>12} {:>12}",
+            "", "mean", "p50", "p90", "max"
+        );
+        for (name, i) in [
+            ("full raw", 0),
+            ("full brotli", 1),
+            ("delta raw", 2),
+            ("delta brotli", 3),
+        ] {
+            let (mean, p50, p90, max) = col(i);
+            println!("{name:<14} {mean:>12} {p50:>12} {p90:>12} {max:>12}");
+        }
+        let (full_br_mean, ..) = col(1);
+        let (delta_br_mean, ..) = col(3);
+        println!("\navg bytes/auction at checkpoint interval X (brotli):");
+        for x in [5usize, 10, 20, 50, 100] {
+            let avg = (full_br_mean + (x - 1) * delta_br_mean) / x;
+            println!(
+                "  X={x:<4} {avg:>12}  ({:.1}% of full)",
+                100.0 * avg as f64 / full_br_mean as f64
+            );
+        }
     }
 }

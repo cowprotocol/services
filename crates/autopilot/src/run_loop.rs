@@ -67,6 +67,7 @@ pub struct Config {
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
     pub compress_solve_request: bool,
+    pub auction_delta_checkpoint_interval: Duration,
 }
 
 impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
@@ -80,6 +81,7 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
             max_solutions_per_solver: value.max_solutions_per_solver,
             enable_leader_lock: value.enable_leader_lock,
             compress_solve_request: value.compress_solve_request,
+            auction_delta_checkpoint_interval: value.auction_delta_checkpoint_interval,
             sync_solve_deadline_to_blockchain: value.sync_solve_deadline_to_blockchain.map(|cfg| {
                 SlotConfig {
                     slot_length: cfg.slot_length,
@@ -116,6 +118,44 @@ pub struct RunLoop {
     winner_selection: winner_selection::Arbitrator,
     /// Notifier that wakes the main loop on new blocks or orders
     wake_notify: Arc<tokio::sync::Notify>,
+    /// State for building delta requests for drivers that opted into
+    /// incremental auctions.
+    delta_state: std::sync::Mutex<DeltaState>,
+}
+
+/// Tracks the last auction sent to drivers so the next one can be sent as a
+/// delta, and when the last full auction (checkpoint) was sent.
+#[derive(Default)]
+struct DeltaState {
+    base: Option<solve::DeltaBase>,
+    last_checkpoint: Option<Instant>,
+}
+
+impl DeltaState {
+    /// Builds the delta payload for the next auction via `build` unless a
+    /// full auction (checkpoint) is due, and advances the state: the base is
+    /// always the most recently sent auction and every full auction restarts
+    /// the checkpoint interval.
+    fn next_delta<T>(
+        &mut self,
+        interval: Duration,
+        now: Instant,
+        auction: &domain::Auction,
+        build: impl FnOnce(&solve::DeltaBase) -> Option<T>,
+    ) -> Option<T> {
+        let delta = self
+            .last_checkpoint
+            .is_some_and(|checkpoint| now.duration_since(checkpoint) < interval)
+            .then_some(self.base.as_ref())
+            .flatten()
+            .and_then(build);
+        if delta.is_none() {
+            // The full auction sent instead acts as the new checkpoint.
+            self.last_checkpoint = Some(now);
+        }
+        self.base = Some(solve::DeltaBase::new(auction));
+        delta
+    }
 }
 
 impl RunLoop {
@@ -147,6 +187,7 @@ impl RunLoop {
             maintenance,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify: wake_runloop,
+            delta_state: Default::default(),
         }
     }
 
@@ -185,6 +226,10 @@ impl RunLoop {
             }
 
             if !leader_lock_tracker.is_leader() {
+                // While not leading another instance sends the auctions, so
+                // any delta base this instance accumulated is stale; start
+                // from a checkpoint when leadership is (re)gained.
+                *self_arc.delta_state.lock().unwrap() = Default::default();
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
@@ -590,20 +635,30 @@ impl RunLoop {
     async fn fetch_solutions(&self, auction: &domain::Auction) -> Vec<competition::Bid<Unscored>> {
         let deadline = self.pick_solve_deadline();
 
+        // Sample the trusted tokens once so the full and the delta request
+        // are guaranteed to contain the same token list.
+        let trusted_tokens = self.trusted_tokens.all();
         let request = solve::Request::new(
             auction,
-            &self.trusted_tokens.all(),
+            &trusted_tokens,
             deadline,
             self.config.compress_solve_request,
         )
         .await;
         Metrics::solve_request_body_size(request.body_size());
 
-        let mut bids = futures::future::join_all(
-            self.drivers
-                .iter()
-                .map(|driver| self.solve(driver.clone(), request.clone())),
-        )
+        let delta_request = self.delta_request(auction, &trusted_tokens, deadline).await;
+
+        let mut bids = futures::future::join_all(self.drivers.iter().map(|driver| {
+            // Drivers that opted into incremental auctions get the delta
+            // request (if one could be built) and the full request as a
+            // fallback in case they don't know the delta's base auction.
+            let (request, fallback) = match (&delta_request, driver.supports_auction_deltas) {
+                (Some(delta), true) => (delta.clone(), Some(request.clone())),
+                _ => (request.clone(), None),
+            };
+            self.solve(driver.clone(), request, fallback)
+        }))
         .await
         .into_iter()
         .flatten()
@@ -637,6 +692,36 @@ impl RunLoop {
         bids
     }
 
+    /// Builds the delta request for this auction, shared by all drivers that
+    /// opted into incremental auctions. Returns `None` when a full auction
+    /// (checkpoint) is due instead: on the very first auction, on the first
+    /// auction after `auction_delta_checkpoint_interval` passed since the
+    /// last checkpoint, and when the auction diverged too much from the
+    /// previous one.
+    async fn delta_request(
+        &self,
+        auction: &domain::Auction,
+        trusted_tokens: &HashSet<Address>,
+        deadline: chrono::DateTime<chrono::Utc>,
+    ) -> Option<solve::Request> {
+        if !self
+            .drivers
+            .iter()
+            .any(|driver| driver.supports_auction_deltas)
+        {
+            return None;
+        }
+        let delta = self.delta_state.lock().unwrap().next_delta(
+            self.config.auction_delta_checkpoint_interval,
+            Instant::now(),
+            auction,
+            |base| base.delta(auction, trusted_tokens, deadline),
+        )?;
+        let request = solve::Request::new_delta(delta, self.config.compress_solve_request).await;
+        Metrics::solve_request_delta_body_size(request.body_size());
+        Some(request)
+    }
+
     /// Sends a `/solve` request to the driver and manages all error cases and
     /// records metrics and logs appropriately.
     #[instrument(skip_all, fields(driver = driver.name))]
@@ -644,9 +729,27 @@ impl RunLoop {
         &self,
         driver: Arc<infra::Driver>,
         request: solve::Request,
+        fallback: Option<solve::Request>,
     ) -> Vec<competition::Bid<Unscored>> {
         let start = Instant::now();
-        let result = self.try_solve(Arc::clone(&driver), request).await;
+        let mut result = self.try_solve(Arc::clone(&driver), request).await;
+        // The driver rejected the delta request (e.g. it restarted and
+        // doesn't know the base auction, or it doesn't understand delta
+        // requests at all); re-send the full auction.
+        if let Some(fallback) = fallback
+            && matches!(
+                &result,
+                Err(SolveError::Failure(err))
+                    if infra::solvers::ResponseStatus::suggests_retrying_with_full_request(err)
+            )
+        {
+            tracing::warn!(
+                driver = %driver.name,
+                "driver rejected the delta request; re-sending the full auction"
+            );
+            Metrics::delta_request_fallback(&driver);
+            result = self.try_solve(Arc::clone(&driver), fallback).await;
+        }
         let solutions = match result {
             Ok(solutions) => {
                 Metrics::solve_ok(&driver, start.elapsed());
@@ -1049,6 +1152,17 @@ struct Metrics {
         1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000
     ))]
     solve_request_body_size: prometheus::Histogram,
+
+    /// Tracks the size of `/solve` delta request bodies in bytes.
+    #[metric(buckets(
+        1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000
+    ))]
+    solve_request_delta_body_size: prometheus::Histogram,
+
+    /// Number of delta `/solve` requests a driver rejected (e.g. because it
+    /// didn't know the base auction) that were re-sent as full auctions.
+    #[metric(labels("driver"))]
+    delta_request_fallbacks: prometheus::IntCounterVec,
 }
 
 impl Metrics {
@@ -1138,6 +1252,19 @@ impl Metrics {
 
     fn solve_request_body_size(size: usize) {
         Self::get().solve_request_body_size.observe(size as f64)
+    }
+
+    fn solve_request_delta_body_size(size: usize) {
+        Self::get()
+            .solve_request_delta_body_size
+            .observe(size as f64)
+    }
+
+    fn delta_request_fallback(driver: &infra::Driver) {
+        Self::get()
+            .delta_request_fallbacks
+            .with_label_values(&[driver.name.as_str()])
+            .inc();
     }
 }
 
@@ -1291,5 +1418,54 @@ mod tests {
         let deadline =
             pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
         assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());
+    }
+
+    #[test]
+    fn delta_checkpoint_cadence() {
+        let auction = |id| domain::Auction {
+            id,
+            block: 0,
+            orders: vec![],
+            prices: Default::default(),
+            surplus_capturing_jit_order_owners: vec![],
+        };
+        let interval = Duration::from_secs(30);
+        let start = Instant::now();
+        let mut state = DeltaState::default();
+
+        // The very first auction has no base yet, so it is sent in full and
+        // starts the interval. Auctions that follow within it are deltas; the
+        // first one past it is a full auction again and becomes the new
+        // checkpoint.
+        let mut sent_delta = vec![];
+        for id in 0..5 {
+            let now = start + Duration::from_secs(id as u64 * 20);
+            sent_delta.push(
+                state
+                    .next_delta(interval, now, &auction(id), |_base| Some(()))
+                    .is_some(),
+            );
+        }
+        assert_eq!(sent_delta, [false, true, false, true, false]);
+
+        // A failed delta build (e.g. heavy churn) sends a full auction, which
+        // restarts the interval even though it had not elapsed yet.
+        let now = start + Duration::from_secs(85);
+        assert!(
+            state
+                .next_delta(interval, now, &auction(5), |_base| None::<()>)
+                .is_none()
+        );
+        assert_eq!(state.last_checkpoint, Some(now));
+        assert!(
+            state
+                .next_delta(
+                    interval,
+                    now + Duration::from_secs(5),
+                    &auction(6),
+                    |_base| { Some(()) }
+                )
+                .is_some()
+        );
     }
 }

@@ -22,6 +22,9 @@ pub struct Driver {
     pub name: String,
     pub url: Url,
     pub submission_address: eth::Address,
+    /// Whether the driver understands `/solve` requests that only contain
+    /// the difference to the previously sent auction.
+    pub supports_auction_deltas: bool,
     client: Client,
 }
 
@@ -33,12 +36,32 @@ pub enum Error {
     FailedToBuildClient(#[source] reqwest::Error),
 }
 
+/// HTTP status of a failed driver response, attached to the error chain so
+/// callers can react to specific statuses.
+#[derive(Error, Debug)]
+#[error("driver responded with status {0}")]
+pub struct ResponseStatus(pub u16);
+
+impl ResponseStatus {
+    /// Whether the driver rejected this request for a reason specific to the
+    /// request itself (as opposed to failing internally or timing out), in
+    /// which case re-sending a delta `/solve` request as a full one may
+    /// succeed. Most notably 409, with which a driver signals that it
+    /// doesn't know the delta's base auction, but also e.g. 400 from a
+    /// driver that doesn't understand delta requests at all.
+    pub fn suggests_retrying_with_full_request(err: &anyhow::Error) -> bool {
+        err.downcast_ref::<Self>()
+            .is_some_and(|status| (400..500).contains(&status.0))
+    }
+}
+
 impl Driver {
     #[instrument(skip_all)]
     pub async fn try_new(
         url: Url,
         name: String,
         submission_account: Account,
+        supports_auction_deltas: bool,
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
@@ -54,7 +77,13 @@ impl Driver {
             }
             Account::Address(address) => address,
         };
-        tracing::info!(?name, ?url, ?submission_address, "Creating solver");
+        tracing::info!(
+            ?name,
+            ?url,
+            ?submission_address,
+            supports_auction_deltas,
+            "Creating solver"
+        );
 
         Ok(Self {
             name,
@@ -65,6 +94,7 @@ impl Driver {
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
             submission_address,
+            supports_auction_deltas,
         })
     }
 
@@ -142,7 +172,8 @@ impl Driver {
         tracing::trace!(%status, body=%text, "solver response");
         let context = || format!("url {url}, body {text:?}");
         if status != 200 {
-            return Err(anyhow!("bad status {status}, {}", context()));
+            let err = anyhow!("bad status {status}, {}", context());
+            return Err(err.context(ResponseStatus(status)));
         }
         serde_json::from_slice(&body).with_context(|| format!("bad json {}", context()))
     }
@@ -182,5 +213,27 @@ where
     fn body_to_string(&self) -> Cow<'_, str> {
         let serialized = serde_json::to_string(&self).expect("type should be JSON serializable");
         Cow::Owned(serialized)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_errors_suggest_retrying_with_full_request() {
+        let with_status = |status| anyhow!("bad status").context(ResponseStatus(status));
+        assert!(ResponseStatus::suggests_retrying_with_full_request(
+            &with_status(409)
+        ));
+        assert!(ResponseStatus::suggests_retrying_with_full_request(
+            &with_status(400)
+        ));
+        assert!(!ResponseStatus::suggests_retrying_with_full_request(
+            &with_status(500)
+        ));
+        assert!(!ResponseStatus::suggests_retrying_with_full_request(
+            &anyhow!("timed out")
+        ));
     }
 }
