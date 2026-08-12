@@ -1,11 +1,19 @@
-//! The auction run loop parametrized over a chain vocabulary.
+//! The chain-generic auction run loop.
 //!
-//! `AuctionLoop` drives one settlement competition per cycle through a fixed
-//! phase order, generic over the settlement chain. A chain supplies its type
-//! vocabulary through the `Cycle` trait and its behaviour through six seam
-//! traits. The loop owns the phase ordering and the auction dedupe and knows
-//! nothing chain specific. Leadership is a chain agnostic concern handled by
-//! the caller, so the loop always runs as if it were the leader.
+//! One cycle runs a fixed sequence: wait for a new chain tip, refresh the
+//! order caches, cut an auction from the open orders, skip it if nothing
+//! changed since the previous cycle, fan it out to the solvers, rank their
+//! solutions, persist the competition outcome, dispatch the winners for
+//! settlement, and report the results.
+//!
+//! [`AuctionLoop`] owns that sequence and the auction dedupe, and it is the
+//! only concrete code here. Everything chain-specific enters through traits:
+//! [`Cycle`] names the handful of types the loop must store and compare (the
+//! tip, the auction, order ids, solutions, the ranking), and the seam traits
+//! ([`CycleTrigger`], [`AuctionProvider`], [`SolverCompetition`],
+//! [`WinnerSelection`], [`SettlementExecutor`], [`SettlementObserver`]) carry
+//! the per-chain behaviour behind each phase. Leadership is chain-agnostic
+//! and belongs to the caller, the loop always runs as if it were the leader.
 
 use {
     async_trait::async_trait,
@@ -19,8 +27,11 @@ pub trait Cycle: Sized + Send + Sync + 'static {
     /// Chain progress marker (EVM block, Solana slot).
     type Tip: Clone + PartialEq + Debug + Send + Sync + 'static;
 
-    /// Order id. Collected into the Executing and Considered sets, hence
-    /// `Eq + Hash`.
+    /// Order id. After ranking, the loop partitions the ranked orders into
+    /// two sets for order-event bookkeeping: orders of winning solutions
+    /// (reported as executing) and orders that only appear in ranked
+    /// non-winning solutions (reported as considered). Set membership is why
+    /// the id must be `Eq + Hash`.
     type OrderUid: Copy + Eq + Hash + Debug + Send + Sync + 'static;
 
     /// The cut auction fanned out to solvers. Its `PartialEq` drives the
@@ -64,8 +75,8 @@ pub trait CycleTrigger<C: Cycle>: Send {
 /// Produces the cut auction for a tip.
 #[async_trait]
 pub trait AuctionProvider<C: Cycle>: Send + Sync {
-    /// Brings caches up to date with the tip. Errors do not stop the cycle:
-    /// the auction is then cut from slightly stale caches.
+    /// Brings the order caches up to date with the tip. An error does not
+    /// stop the cycle, the auction is then cut from slightly stale caches.
     async fn sync_to_tip(&self, tip: &C::Tip) -> anyhow::Result<()>;
 
     /// Cuts the auction for the tip. None when there is nothing to solve.
@@ -99,11 +110,11 @@ pub trait SettlementExecutor<C: Cycle>: Send + Sync {
 #[async_trait]
 pub trait SettlementObserver<C: Cycle>: Send + Sync {
     /// All auction orders entered the competition.
-    fn orders_ready(&self, auction: &C::Auction);
+    fn on_orders_ready(&self, auction: &C::Auction);
 
     /// Persists the competition outcome (auction, solutions, scores, fees).
-    /// Errors abort the cycle before any settlement is dispatched.
-    async fn competition_ranked(
+    /// An error aborts the cycle before any settlement is dispatched.
+    async fn persist_competition_ranking(
         &self,
         auction: &C::Auction,
         tip: &C::Tip,
@@ -111,11 +122,12 @@ pub trait SettlementObserver<C: Cycle>: Send + Sync {
         deadline: u64,
     ) -> anyhow::Result<()>;
 
-    /// Winning orders are Executing, other ranked orders Considered.
-    fn orders_matched(&self, executing: HashSet<C::OrderUid>, considered: HashSet<C::OrderUid>);
+    /// Orders of winning solutions are executing, other ranked orders are
+    /// considered.
+    fn on_orders_matched(&self, executing: HashSet<C::OrderUid>, considered: HashSet<C::OrderUid>);
 
-    /// Final per cycle reporting after settlements were dispatched.
-    fn competition_ended(&self, auction: &C::Auction, ranking: &C::Ranking);
+    /// Final per-cycle reporting after settlements were dispatched.
+    fn on_competition_ended(&self, auction: &C::Auction, ranking: &C::Ranking);
 }
 
 /// Chain generic auction loop. Owns the seams and the dedupe state, drives
@@ -188,7 +200,7 @@ impl<C: Cycle> AuctionLoop<C> {
 
     /// Runs one competition for the auction.
     async fn single_run(&self, auction: &C::Auction) {
-        self.observer.orders_ready(auction);
+        self.observer.on_orders_ready(auction);
 
         let solutions = self.competition.solve(auction).await;
         if solutions.is_empty() {
@@ -205,7 +217,7 @@ impl<C: Cycle> AuctionLoop<C> {
         // storing the outcome must finish before any settlement starts
         if let Err(err) = self
             .observer
-            .competition_ranked(auction, &ranking_tip, &ranking, deadline)
+            .persist_competition_ranking(auction, &ranking_tip, &ranking, deadline)
             .await
         {
             tracing::error!(?err, "failed to post-process competition");
@@ -220,12 +232,12 @@ impl<C: Cycle> AuctionLoop<C> {
             .into_iter()
             .filter(|uid| !executing.contains(uid))
             .collect();
-        self.observer.orders_matched(executing, considered);
+        self.observer.on_orders_matched(executing, considered);
 
         self.executor
             .execute(auction.id(), &ranking, deadline)
             .await;
 
-        self.observer.competition_ended(auction, &ranking);
+        self.observer.on_competition_ended(auction, &ranking);
     }
 }
