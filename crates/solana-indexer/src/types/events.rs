@@ -69,6 +69,26 @@ pub(crate) struct CreatedOrder {
     pub app_data: [u8; 32],
 }
 
+/// A finalized settlement: one `BeginSettle`/`FinalizeSettle` pair.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FinalizedSettlement {
+    /// Auction id this settlement belongs to.
+    pub auction_id: i64,
+    /// Solver that won the auction.
+    pub solver: Pubkey,
+    /// Transaction signature.
+    pub tx_signature: Signature,
+    /// Slot the settlement was observed at.
+    pub slot: Slot,
+    /// Top-level index of the `BeginSettle` instruction, part of the
+    /// trade rows' primary key.
+    pub instruction_index: u32,
+    /// CPI path of the `BeginSettle` instruction, empty for top-level.
+    pub inner_ix_path: Vec<u8>,
+    /// Per-order accounting deltas.
+    pub trades: Vec<TradeDelta>,
+}
+
 /// Settlement-program events decoded from on-chain instructions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SettlementEvent {
@@ -86,23 +106,7 @@ pub(crate) enum SettlementEvent {
         order_uid: OrderUid,
     },
     /// A settlement was finalized on-chain.
-    SettlementFinalized {
-        /// Auction id this settlement belongs to.
-        auction_id: i64,
-        /// Solver that won the auction.
-        solver: Pubkey,
-        /// Transaction signature.
-        tx_signature: Signature,
-        /// Slot the settlement was observed at.
-        slot: Slot,
-        /// Top-level index of the `BeginSettle` instruction, part of the
-        /// trade rows' primary key.
-        instruction_index: u32,
-        /// CPI path of the `BeginSettle` instruction, empty for top-level.
-        inner_ix_path: Vec<u8>,
-        /// Per-order accounting deltas.
-        trades: Vec<TradeDelta>,
-    },
+    SettlementFinalized(FinalizedSettlement),
     /// A new buffer PDA was created.
     BufferCreated {
         /// Token the buffer is denominated in.
