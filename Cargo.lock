@@ -9957,6 +9957,7 @@ dependencies = [
  "bytes",
  "derive_more 1.0.0",
  "futures",
+ "rustls",
  "settlement-client",
  "settlement-interface",
  "solana-client",

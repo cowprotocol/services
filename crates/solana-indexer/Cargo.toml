@@ -21,6 +21,7 @@ bigdecimal = { workspace = true }
 bytes = { workspace = true }
 derive_more = { workspace = true }
 futures = { workspace = true }
+rustls = { workspace = true }
 settlement-interface = {
   package = "settlement-interface",
   git = "https://github.com/cowprotocol/solana-programs",

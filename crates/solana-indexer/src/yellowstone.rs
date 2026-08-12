@@ -65,6 +65,10 @@ fn builder(
         .keep_alive_while_idle(true)
         .max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
     if tls {
+        // rustls needs exactly one process-level crypto provider, and the
+        // build graph can enable several. Installing one explicitly keeps
+        // sibling crates' feature choices from breaking the TLS setup.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         builder = builder.tls_config(ClientTlsConfig::new().with_native_roots())?;
     }
     // The builder default is `no_reconnect`, under which the `AutoReconnect`

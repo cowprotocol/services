@@ -102,6 +102,7 @@ proc-macro2 = "1.0.103"
 prometheus = "0.14"
 prometheus-metric-storage = "0.6"
 quote = "1.0.41"
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rand = "0.9.4"
 rate-limit = { path = "crates/rate-limit" }
 refunder = { path = "crates/refunder" }
