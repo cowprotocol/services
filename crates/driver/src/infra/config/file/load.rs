@@ -229,10 +229,10 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         indexer_config,
                         reinit_interval,
                     } => {
-                        let pool_source = uniswap_v3_pool_source(indexer_config);
+                        let pool_indexer = uniswap_v3_pool_indexer(indexer_config);
                         let preset_defaults = match preset {
                             file::UniswapV3Preset::UniswapV3 => {
-                                liquidity::config::UniswapV3::uniswap_v3(pool_source, chain)
+                                liquidity::config::UniswapV3::uniswap_v3(pool_indexer, chain)
                             }
                         }
                         .expect("no Uniswap V3 preset for current network");
@@ -250,7 +250,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
-                        pool_source: uniswap_v3_pool_source(indexer_config),
+                        pool_indexer: uniswap_v3_pool_indexer(indexer_config),
                         reinit_interval,
                     },
                 })
@@ -362,25 +362,11 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
     }
 }
 
-fn uniswap_v3_pool_source(
+fn uniswap_v3_pool_indexer(
     indexer_config: file::IndexerConfig,
-) -> liquidity::config::UniswapV3PoolSource {
-    match indexer_config {
-        file::IndexerConfig::Subgraph {
-            url,
-            max_pools_per_tick_query,
-        } => {
-            liquidity::config::UniswapV3PoolSource::Subgraph(liquidity::config::UniswapV3Subgraph {
-                url,
-                max_pools_per_tick_query,
-            })
-        }
-        file::IndexerConfig::PoolIndexer { url } => {
-            liquidity::config::UniswapV3PoolSource::PoolIndexer(
-                liquidity::config::UniswapV3PoolIndexer { url },
-            )
-        }
-    }
+) -> liquidity::config::UniswapV3PoolIndexer {
+    let file::IndexerConfig::PoolIndexer { url } = indexer_config;
+    liquidity::config::UniswapV3PoolIndexer { url }
 }
 
 async fn load_account(account: file::Account, chain_id: Option<u64>) -> Account {
