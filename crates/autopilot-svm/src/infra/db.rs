@@ -222,10 +222,12 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         let pool = PgPool::connect("postgresql://").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
 
-        sqlx::query(r#"DELETE FROM solana.settlements"#)
-            .execute(&mut *tx)
-            .await
-            .unwrap();
+        for table in ["trades", "settlements"] {
+            sqlx::query(&format!("DELETE FROM solana.{table}"))
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
         sqlx::query(
             r#"
 INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, auction_id, solution_uid)
