@@ -1,6 +1,9 @@
 use {
     serde::Deserialize,
-    std::{num::NonZeroUsize, time::Duration},
+    std::{
+        num::{NonZeroU64, NonZeroUsize},
+        time::Duration,
+    },
 };
 
 const fn default_max_delay() -> Duration {
@@ -25,6 +28,10 @@ const fn default_max_settlement_transaction_wait() -> Duration {
 
 const fn default_min_solve_time() -> Duration {
     Duration::from_secs(10)
+}
+
+const fn default_auction_delta_checkpoint_interval() -> NonZeroU64 {
+    NonZeroU64::new(10).unwrap()
 }
 
 /// Configuration for the autopilot run loop timing.
@@ -54,6 +61,13 @@ pub struct RunLoopConfig {
     /// Enable brotli compression of `/solve` request bodies sent to drivers.
     #[serde(default)]
     pub compress_solve_request: bool,
+
+    /// How often a full auction (checkpoint) is sent to drivers that opted
+    /// into incremental auctions (`supports-auction-deltas`). Such drivers
+    /// receive a full auction every this many auctions and deltas relative
+    /// to the previously sent auction in between.
+    #[serde(default = "default_auction_delta_checkpoint_interval")]
+    pub auction_delta_checkpoint_interval: NonZeroU64,
 
     /// The maximum number of blocks to wait for a settlement to appear on
     /// chain.
@@ -107,6 +121,7 @@ impl Default for RunLoopConfig {
             max_solutions_per_solver: default_max_solutions_per_solver(),
             enable_leader_lock: false,
             compress_solve_request: false,
+            auction_delta_checkpoint_interval: default_auction_delta_checkpoint_interval(),
             submission_deadline: default_submission_deadline(),
             max_settlement_transaction_wait: default_max_settlement_transaction_wait(),
             min_solve_time: default_min_solve_time(),
@@ -133,6 +148,10 @@ mod tests {
     fn deserialize_defaults() {
         let config: RunLoopConfig = toml::from_str("").unwrap();
         assert_eq!(config.max_delay, Duration::from_secs(2));
+        assert_eq!(
+            config.auction_delta_checkpoint_interval,
+            NonZeroU64::new(10).unwrap()
+        );
     }
 
     #[test]

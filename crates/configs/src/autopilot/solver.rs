@@ -17,6 +17,12 @@ pub struct Solver {
     /// Account used to submit settlement transactions on-chain.
     #[serde(flatten)]
     pub submission_account: Account,
+    /// Whether the driver understands incremental auctions: `/solve` request
+    /// bodies that only contain the difference to the previously sent
+    /// auction, with a full auction every
+    /// `auction-delta-checkpoint-interval` auctions.
+    #[serde(default)]
+    pub supports_auction_deltas: bool,
 }
 
 impl Solver {
@@ -25,6 +31,7 @@ impl Solver {
             name,
             url,
             submission_account: account,
+            supports_auction_deltas: false,
         }
     }
 }
@@ -72,6 +79,7 @@ impl Solver {
             name: name.to_string(),
             url: format!("http://localhost:11088/{name}").parse().unwrap(),
             submission_account: Account::Address(address),
+            supports_auction_deltas: false,
         }
     }
 }
@@ -112,6 +120,21 @@ mod test {
             Account::Kms(Arn("arn:aws:kms:supersecretstuff".into())),
         );
         assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn auction_deltas_are_opt_in() {
+        let toml = r#"
+        name = "name1"
+        url = "http://localhost:8080"
+        address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+        "#;
+        let driver = toml::from_str::<Solver>(toml).unwrap();
+        assert!(!driver.supports_auction_deltas);
+
+        let toml = format!("{toml}\nsupports-auction-deltas = true");
+        let driver = toml::from_str::<Solver>(&toml).unwrap();
+        assert!(driver.supports_auction_deltas);
     }
 
     #[test]
