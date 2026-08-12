@@ -159,7 +159,7 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
-    async fn postgres_open_orders_applies_the_solvability_predicates() {
+    async fn solana_db_open_orders_applies_the_solvability_predicates() {
         let pool = PgPool::connect("postgresql://").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
 
