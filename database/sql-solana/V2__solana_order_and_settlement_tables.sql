@@ -2,7 +2,9 @@
 -- A row is final once its slot is at or below
 -- solana.indexer_state.finalized_slot, the settlement-finalized NOTIFY fires
 -- from that watermark's advance.
--- Reuses the OrderKind, OrderClass and ExecutionTime enums.
+-- Runs on top of the base sql/ series in the same database: it reuses the
+-- base OrderKind, OrderClass and ExecutionTime enums, so a solana database
+-- applies the base series first.
 
 CREATE TABLE solana.orders (
     uid                   bytea PRIMARY KEY CHECK (length(uid) = 32),

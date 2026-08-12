@@ -62,7 +62,11 @@ services:
     restart: on-failure
     command: migrate
     depends_on:
-      - db
+      db:
+        condition: service_started
+      # V2 references enums the base series creates.
+      migrations:
+        condition: service_completed_successfully
     environment:
       FLYWAY_URL: jdbc:postgresql://db/?user=$USER&password=
       FLYWAY_TABLE: flyway_schema_history_solana
