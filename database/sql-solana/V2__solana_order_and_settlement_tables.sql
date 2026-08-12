@@ -109,10 +109,9 @@ CREATE TABLE solana.interactions (
 -- write never depends on the intent row's existence.
 CREATE TABLE solana.order_quotes (
     order_uid            bytea PRIMARY KEY CHECK (length(order_uid) = 32),
-    -- Compute units, an integer on chain.
-    gas_amount           bigint NOT NULL,
+    compute_units        bigint NOT NULL,
     -- Priority fee, microlamports per compute unit.
-    gas_price            bigint NOT NULL,
+    compute_unit_price   bigint NOT NULL,
     -- Fractional, lamports per raw sell-token unit.
     sell_token_price     double precision NOT NULL,
     sell_amount          numeric(20,0) NOT NULL,

@@ -49,20 +49,6 @@ CREATE TABLE solana.dead_letter (
     inserted_at  timestamp with time zone NOT NULL DEFAULT now()
 );
 
--- Slot ranges skipped wholesale (outage past the provider replay window).
--- Coarser than dead_letter: "no data for slots N..M at all", aimed at ops.
-CREATE TABLE solana.lost_slot_ranges (
-    from_slot   bigint PRIMARY KEY,
-    to_slot     bigint NOT NULL,
-    detected_at timestamp with time zone NOT NULL DEFAULT now(),
-    reason      text NOT NULL,
-    CONSTRAINT from_not_after_to CHECK (to_slot >= from_slot)
-);
-
-ALTER TABLE solana.lost_slot_ranges
-    ADD CONSTRAINT solana_lost_slot_ranges_no_overlap
-    EXCLUDE USING gist (int8range(from_slot, to_slot, '[]') WITH &&);
-
 -- Append-only snapshot history of the settlement program state PDA (solver
 -- allowlist + manager). The latest row (highest slot) is authoritative.
 CREATE TABLE solana.settlement_state_pda (
