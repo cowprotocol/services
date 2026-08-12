@@ -9,11 +9,11 @@
 //! [`AuctionLoop`] owns that sequence and the auction dedupe, and it is the
 //! only concrete code here. Everything chain-specific enters through traits:
 //! [`Cycle`] names the handful of types the loop must store and compare (the
-//! tip, the auction, order ids, solutions, the ranking), and the seam traits
-//! ([`CycleTrigger`], [`AuctionProvider`], [`SolverCompetition`],
-//! [`WinnerSelection`], [`SettlementExecutor`], [`SettlementObserver`]) carry
-//! the per-chain behaviour behind each phase. Leadership is chain-agnostic
-//! and belongs to the caller, the loop always runs as if it were the leader.
+//! tip, the auction, order ids, solutions, the ranking), and [`CycleTrigger`],
+//! [`AuctionProvider`], [`SolverCompetition`], [`WinnerSelection`],
+//! [`SettlementExecutor`], and [`SettlementObserver`] carry the per-chain
+//! behaviour behind each phase. Leadership is chain-agnostic and belongs to
+//! the caller, the loop always runs as if it were the leader.
 
 use {
     async_trait::async_trait,
