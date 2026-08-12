@@ -17,6 +17,9 @@ CREATE TABLE solana.orders (
     fee_amount            numeric(20,0) NOT NULL,
     -- Unix seconds, u32 on chain.
     valid_to              bigint NOT NULL,
+    -- Earliest unix second the order may enter an auction. NULL means no
+    -- lower bound.
+    valid_from            bigint,
     kind                  OrderKind NOT NULL,
     partially_fillable    boolean NOT NULL,
     app_data              bytea NOT NULL CHECK (length(app_data) = 32),
@@ -30,6 +33,8 @@ CREATE TABLE solana.orders (
 );
 
 CREATE INDEX solana_orders_valid_to ON solana.orders (valid_to);
+CREATE INDEX solana_orders_valid_from ON solana.orders (valid_from)
+    WHERE valid_from IS NOT NULL;
 CREATE UNIQUE INDEX solana_orders_order_pda ON solana.orders (order_pda);
 
 -- Mutable on-chain order state, split from the immutable intent row above.
