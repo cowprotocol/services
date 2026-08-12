@@ -94,6 +94,7 @@ pub struct UniswapV3Indexer {
     network: NetworkName,
     chain_id: u64,
     factory: Address,
+    factory_label: String,
     chunk_size: u64,
     finality_tag: BlockNumberOrTag,
     fetch_concurrency: usize,
@@ -108,6 +109,7 @@ impl UniswapV3Indexer {
             network: config.network.clone(),
             chain_id: config.chain_id,
             factory: config.factory_address,
+            factory_label: format!("{:#x}", config.factory_address),
             chunk_size: config.chunk_size,
             finality_tag: if config.use_latest {
                 BlockNumberOrTag::Latest
@@ -129,7 +131,7 @@ impl UniswapV3Indexer {
             if let Err(err) = self.run_once().await {
                 crate::metrics::Metrics::get()
                     .indexer_errors
-                    .with_label_values(&[self.network.as_str()])
+                    .with_label_values(&[self.network.as_str(), self.factory_label.as_str()])
                     .inc();
                 tracing::error!(?err, "indexer error, retrying after poll interval");
             }
@@ -179,7 +181,7 @@ impl UniswapV3Indexer {
         let lag = finalized_block.saturating_sub(last_indexed_block);
         crate::metrics::Metrics::get()
             .indexer_lag_blocks
-            .with_label_values(&[self.network.as_str()])
+            .with_label_values(&[self.network.as_str(), self.factory_label.as_str()])
             .set(i64::try_from(lag).unwrap_or(i64::MAX));
 
         if last_indexed_block >= finalized_block {
@@ -281,7 +283,7 @@ impl UniswapV3Indexer {
         use crate::metrics::HistogramVecExt;
 
         let metrics = crate::metrics::Metrics::get();
-        let chunk_timer_labels = [self.network.as_str()];
+        let chunk_timer_labels = [self.network.as_str(), self.factory_label.as_str()];
         let _chunk_timer = metrics.chunk_commit_seconds.timer(&chunk_timer_labels);
         let mint_burn_pools = mint_burn_pool_addresses(&logs);
         let pool_event_emitters = pool_event_emitters(&logs);
@@ -312,6 +314,7 @@ impl UniswapV3Indexer {
         );
 
         let network = self.network.as_str();
+        let factory = self.factory_label.as_str();
         for (kind, count) in [
             ("new_pool", changes.new_pools.len()),
             ("pool_state", changes.pool_states.len()),
@@ -320,7 +323,7 @@ impl UniswapV3Indexer {
         ] {
             metrics
                 .events_applied
-                .with_label_values(&[network, kind])
+                .with_label_values(&[network, factory, kind])
                 .inc_by(count as u64);
         }
 
@@ -328,7 +331,7 @@ impl UniswapV3Indexer {
 
         metrics
             .indexed_block
-            .with_label_values(&[network])
+            .with_label_values(&[network, factory])
             .set(i64::try_from(chunk.end).unwrap_or(i64::MAX));
         // `target_block` is the finalized tip from the start of this
         // `run_once`. Refreshing the lag metric per chunk lets dashboards
@@ -336,7 +339,7 @@ impl UniswapV3Indexer {
         let lag = target_block.saturating_sub(chunk.end);
         metrics
             .indexer_lag_blocks
-            .with_label_values(&[network])
+            .with_label_values(&[network, factory])
             .set(i64::try_from(lag).unwrap_or(i64::MAX));
         Ok(())
     }

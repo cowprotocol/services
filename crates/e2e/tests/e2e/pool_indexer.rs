@@ -187,7 +187,7 @@ async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
     .unwrap();
 }
 
-fn pool_indexer_config(factory: Address, metrics_port: u16) -> Configuration {
+fn pool_indexer_config(factories: &[Address], metrics_port: u16) -> Configuration {
     Configuration {
         database: DatabaseConfig {
             url: POOL_INDEXER_DB_URL.parse().unwrap(),
@@ -197,10 +197,13 @@ fn pool_indexer_config(factory: Address, metrics_port: u16) -> Configuration {
             name: NetworkName::new("mainnet"),
             chain_id: 1,
             rpc_url: "http://127.0.0.1:8545".parse().unwrap(),
-            factories: vec![FactoryConfig {
-                address: factory,
-                deploy_block: 0,
-            }],
+            factories: factories
+                .iter()
+                .map(|&address| FactoryConfig {
+                    address,
+                    deploy_block: 0,
+                })
+                .collect(),
             chunk_size: 1000,
             poll_interval_secs: 1,
             use_latest: true,
@@ -218,8 +221,11 @@ fn pool_indexer_config(factory: Address, metrics_port: u16) -> Configuration {
 
 /// Spawns the pool-indexer task and waits for its `/health` endpoint to come
 /// up.
-async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task::JoinHandle<()> {
-    let config = pool_indexer_config(factory, metrics_port);
+async fn spawn_pool_indexer(
+    factories: &[Address],
+    metrics_port: u16,
+) -> tokio::task::JoinHandle<()> {
+    let config = pool_indexer_config(factories, metrics_port);
     let handle = tokio::task::spawn(pool_indexer::run(config));
     wait_for_condition(TIMEOUT, || async {
         reqwest::get(format!("{POOL_INDEXER_HOST}/health"))
@@ -234,12 +240,12 @@ async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task:
 /// Runs `body` with a freshly-started pool-indexer. The indexer is spawned
 /// before the closure runs, then `abort`ed and `await`ed after — so the port
 /// is fully released before this returns, and a follow-up call can re-bind it.
-async fn with_pool_indexer_at<F, Fut, T>(factory: Address, metrics_port: u16, body: F) -> T
+async fn with_pool_indexer_at<F, Fut, T>(factories: &[Address], metrics_port: u16, body: F) -> T
 where
     F: FnOnce() -> Fut,
     Fut: Future<Output = T>,
 {
-    let handle = spawn_pool_indexer(factory, metrics_port).await;
+    let handle = spawn_pool_indexer(factories, metrics_port).await;
     let result = body().await;
     handle.abort();
     let _ = handle.await;
@@ -408,7 +414,7 @@ async fn driver_integration(web3: Web3) {
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
 
-    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
+    with_pool_indexer_at(&[factory_addr], POOL_INDEXER_METRICS_PORT, || async {
         // Without the min_pools=1 gate the driver could race against an empty
         // set and skip the ticks fetch this test asserts on.
         wait_for_indexer(head, 1).await;
@@ -523,7 +529,7 @@ async fn indexer_pass_snapshot(
     db: &PgPool,
     pool_addr: Address,
 ) -> (i64, String, i32, String) {
-    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
+    with_pool_indexer_at(&[factory_addr], POOL_INDEXER_METRICS_PORT, || async {
         wait_for_indexer(head, 0).await;
         snapshot_pool_state(db, pool_addr).await
     })
@@ -548,7 +554,7 @@ async fn api_errors(web3: Web3) {
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
 
-    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
+    with_pool_indexer_at(&[factory_addr], POOL_INDEXER_METRICS_PORT, || async {
         wait_for_indexer(head, 0).await;
         invalid_address_returns_400().await;
         unknown_address_returns_empty_ticks().await;
@@ -602,7 +608,7 @@ async fn pagination(web3: Web3) {
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
 
-    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
+    with_pool_indexer_at(&[factory_addr], POOL_INDEXER_METRICS_PORT, || async {
         wait_for_indexer(head, 3).await;
 
         let mut all_ids: Vec<String> = Vec::new();
@@ -672,7 +678,7 @@ async fn bootstrap_idempotent(web3: Web3) {
 
     tokio::time::timeout(
         TIMEOUT,
-        pool_indexer::bootstrap(pool_indexer_config(factory, POOL_INDEXER_METRICS_PORT)),
+        pool_indexer::bootstrap(pool_indexer_config(&[factory], POOL_INDEXER_METRICS_PORT)),
     )
     .await
     .expect("bootstrap-only did not exit on an already-seeded DB");
@@ -709,7 +715,7 @@ async fn onchain_cold_seed(web3: Web3) {
     let head = web3.provider.get_block_number().await.unwrap();
 
     // No seed_checkpoint: bootstrap must cold-seed on-chain (deploy_block = 0).
-    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
+    with_pool_indexer_at(&[factory_addr], POOL_INDEXER_METRICS_PORT, || async {
         wait_for_indexer(head, 1).await;
 
         // Pool discovered + state rebuilt from the Initialize (sqrt_price) and
@@ -729,5 +735,108 @@ async fn onchain_cold_seed(web3: Web3) {
             "liquidity reconstructed from the Mint event"
         );
     })
+    .await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_pool_indexer_two_factories() {
+    run_test(two_factories).await;
+}
+
+/// Two factories on one network are served as a single union: each factory's
+/// pools show up in `/pools`, attributed to that factory.
+async fn two_factories(web3: Web3) {
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
+    clear_pool_indexer_tables(&db).await;
+
+    // One pool per factory, at distinct addresses.
+    let (factory_a, pool_a) = deploy_univ3(&web3).await;
+    let (factory_b, pool_b) = deploy_univ3(&web3).await;
+    let factory_a_addr = *factory_a.address();
+    let factory_b_addr = *factory_b.address();
+    let head = web3.provider.get_block_number().await.unwrap();
+
+    seed_checkpoint(&db, factory_a_addr, 0).await;
+    seed_checkpoint(&db, factory_b_addr, 0).await;
+
+    with_pool_indexer_at(
+        &[factory_a_addr, factory_b_addr],
+        POOL_INDEXER_METRICS_PORT,
+        || async {
+            wait_for_indexer(head, 2).await;
+
+            let resp: PoolsListResponse = reqwest::get(format!(
+                "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
+            ))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+            assert_eq!(
+                resp.pools.len(),
+                2,
+                "both factories' pools should be served as one union"
+            );
+
+            // Each pool is owned by its factory.
+            for (factory, pool) in [(factory_a_addr, pool_a), (factory_b_addr, pool_b)] {
+                let owned: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM uniswap_v3_pools WHERE factory = $1 AND address = $2",
+                )
+                .bind(factory.as_slice())
+                .bind(pool.as_slice())
+                .fetch_one(&db)
+                .await
+                .unwrap();
+                assert_eq!(
+                    owned, 1,
+                    "pool {pool:#x} should be owned by factory {factory:#x}"
+                );
+            }
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_pool_indexer_min_envelope() {
+    run_test(min_envelope).await;
+}
+
+/// The envelope block is the MIN across factory checkpoints, so the union is
+/// never advertised as fresher than its slowest factory. Freezes two
+/// checkpoints above the head at different blocks; the API returns the lower
+/// one.
+async fn min_envelope(_web3: Web3) {
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
+    clear_pool_indexer_tables(&db).await;
+
+    let factory_ahead = Address::from([0x11; 20]);
+    let factory_behind = Address::from([0x22; 20]);
+    // Above the head, so the live loops stay put at the seeded blocks.
+    seed_checkpoint(&db, factory_ahead, 1_000_000).await;
+    seed_checkpoint(&db, factory_behind, 999_999).await;
+
+    with_pool_indexer_at(
+        &[factory_ahead, factory_behind],
+        POOL_INDEXER_METRICS_PORT,
+        || async {
+            let resp: PoolsListResponse = reqwest::get(format!(
+                "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools?limit=1"
+            ))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+            assert_eq!(
+                resp.block_number, 999_999,
+                "envelope should be the MIN checkpoint"
+            );
+        },
+    )
     .await;
 }
