@@ -575,7 +575,6 @@ fn decode_settlements_finalized(
             tx_signature: ctx.signature,
             slot: ctx.slot,
             instruction_index: begin.instruction_index,
-            inner_ix_path: begin.inner_ix_path.clone(),
             trades,
         }));
     }

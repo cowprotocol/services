@@ -83,8 +83,6 @@ pub(crate) struct FinalizedSettlement {
     /// Top-level index of the `BeginSettle` instruction, part of the
     /// trade rows' primary key.
     pub instruction_index: u32,
-    /// CPI path of the `BeginSettle` instruction, empty for top-level.
-    pub inner_ix_path: Vec<u8>,
     /// Per-order accounting deltas.
     pub trades: Vec<TradeDelta>,
 }

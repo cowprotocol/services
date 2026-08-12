@@ -114,17 +114,11 @@ ON CONFLICT (tx_signature, instruction_index) DO NOTHING
         .bind(settlement.auction_id)
         .execute(&mut **tx)
         .await?;
-        let path: Vec<i32> = settlement
-            .inner_ix_path
-            .iter()
-            .map(|&step| i32::from(step))
-            .collect();
         for trade in settlement.trades {
             Self::apply_trade(
                 tx,
                 settlement.tx_signature,
                 settlement.instruction_index,
-                &path,
                 trade,
             )
             .await?;
@@ -139,22 +133,20 @@ ON CONFLICT (tx_signature, instruction_index) DO NOTHING
         tx: &mut PgTransaction<'_>,
         tx_signature: Signature,
         instruction_index: u32,
-        inner_ix_path: &[i32],
         trade: TradeDelta,
     ) -> Result<(), PersistenceError> {
         // The fee is not on-chain data (it comes from the off-chain solution),
         // so the column holds zero.
         let inserted = sqlx::query(
             r#"
-INSERT INTO solana.trades (settlement_tx_signature, instruction_index, inner_ix_path,
-    order_uid, sell_amount, buy_amount, fee_amount)
-VALUES ($1, $2, $3, $4, $5, $6, 0)
+INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount,
+    buy_amount, fee_amount)
+VALUES ($1, $2, $3, $4, $5, 0)
 ON CONFLICT DO NOTHING
             "#,
         )
         .bind(tx_signature.as_ref())
         .bind(to_db_instruction_index(instruction_index))
-        .bind(inner_ix_path)
         .bind(trade.order_uid.0)
         .bind(BigDecimal::from(trade.amount_withdrawn_delta))
         .bind(BigDecimal::from(trade.amount_received_delta))
@@ -299,8 +291,8 @@ mod tests {
                 r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, fee_amount, valid_to, kind,
-    partially_fillable, app_data, creation_timestamp, class, order_pda)
-VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 'market', $7)
+    partially_fillable, app_data, creation_timestamp, order_pda)
+VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), $7)
                 "#,
             )
             .bind(self.uid)
@@ -388,7 +380,6 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
                 tx_signature: Signature::from([9; 64]),
                 slot: Slot(20),
                 instruction_index: 1,
-                inner_ix_path: vec![],
                 trades: vec![TradeDelta {
                     order_uid: OrderUid(uid),
                     amount_withdrawn_delta: 300,
@@ -403,7 +394,6 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
                 tx_signature: Signature::from([9; 64]),
                 slot: Slot(20),
                 instruction_index: 3,
-                inner_ix_path: vec![],
                 trades: vec![],
             })),
         ];
