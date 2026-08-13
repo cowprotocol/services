@@ -39,13 +39,15 @@ impl Rpc {
     ) -> Result<HashMap<Pubkey, Account>, ClientError> {
         let unique: Vec<Pubkey> = keys.iter().copied().unique().collect();
         let fetched = future::try_join_all(unique.chunks(MAX_MULTIPLE_ACCOUNTS).map(|chunk| {
-            self.client.get_multiple_accounts(chunk).map_ok(|accounts| {
-                accounts
-                    .into_iter()
-                    .zip(chunk)
-                    .filter_map(|(account, key)| Some((*key, account?)))
-                    .collect::<Vec<_>>()
-            })
+            self.client
+                .get_multiple_accounts(chunk)
+                .map_ok(move |accounts| {
+                    accounts
+                        .into_iter()
+                        .zip(chunk)
+                        .filter_map(|(account, key)| Some((*key, account?)))
+                        .collect::<Vec<_>>()
+                })
         }))
         .await?;
         Ok(fetched.into_iter().flatten().collect())
