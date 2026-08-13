@@ -122,7 +122,7 @@ impl NetworkConfig {
     }
 
     /// Post-parse sanity checks.
-    fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         anyhow::ensure!(
             !self.factories.is_empty(),
             "network {}: at least one factory is required",
