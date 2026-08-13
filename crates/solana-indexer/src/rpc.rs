@@ -5,7 +5,10 @@
 use {
     futures::future,
     itertools::Itertools,
-    solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient},
+    solana_client::{
+        client_error::{ClientError, ClientErrorKind},
+        nonblocking::rpc_client::RpcClient,
+    },
     solana_commitment_config::CommitmentConfig,
     solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
     solana_sdk::{account::Account, pubkey::Pubkey},
@@ -38,16 +41,25 @@ impl Rpc {
         keys: &[Pubkey],
     ) -> Result<HashMap<Pubkey, Account>, ClientError> {
         let unique: Vec<Pubkey> = keys.iter().copied().unique().collect();
-        let fetched = future::try_join_all(
-            unique
-                .chunks(MAX_MULTIPLE_ACCOUNTS)
-                .map(|chunk| self.client.get_multiple_accounts(chunk)),
-        )
+        let fetched = future::try_join_all(unique.chunks(MAX_MULTIPLE_ACCOUNTS).map(
+            |chunk| async move {
+                let accounts = self.client.get_multiple_accounts(chunk).await?;
+                if accounts.len() != chunk.len() {
+                    return Err(ClientErrorKind::Custom(format!(
+                        "getMultipleAccounts returned {} entries for {} keys",
+                        accounts.len(),
+                        chunk.len()
+                    ))
+                    .into());
+                }
+                Ok(chunk
+                    .iter()
+                    .zip(accounts)
+                    .filter_map(|(key, account)| Some((*key, account?)))
+                    .collect::<Vec<_>>())
+            },
+        ))
         .await?;
-        Ok(unique
-            .iter()
-            .zip(fetched.into_iter().flatten())
-            .filter_map(|(key, account)| Some((*key, account?)))
-            .collect())
+        Ok(fetched.into_iter().flatten().collect())
     }
 }
