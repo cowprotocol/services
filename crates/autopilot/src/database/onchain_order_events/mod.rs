@@ -1270,6 +1270,7 @@ mod test {
             db: Postgres {
                 pool: PgPool::connect_lazy("postgresql://").unwrap(),
                 config: Default::default(),
+                domain_separator: Default::default(),
             },
             trampoline: HooksTrampoline::Instance::deployed(&web3.provider)
                 .await

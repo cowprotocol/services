@@ -12,7 +12,7 @@ use {
     crate::database::orders::InsertionError,
     anyhow::Result,
     database::byte_array::ByteArray,
-    model::order::Order,
+    model::{DomainSeparator, order::Order},
     shared::arguments::DB_MAX_CONNECTIONS_DEFAULT,
     sqlx::{Executor, PgConnection, PgPool, postgres::PgPoolOptions},
     std::time::Duration,
@@ -46,6 +46,10 @@ impl Default for Config {
 pub struct Postgres {
     pub pool: PgPool,
     pub config: Config,
+    /// Used to recover JIT order owners and compute their `order_uid`
+    /// before persisting fast-path quote competitions. Defaults to zero;
+    /// production callers must set it via `with_domain_separator`.
+    pub domain_separator: DomainSeparator,
 }
 
 // The implementation is split up into several modules which contain more public
@@ -58,6 +62,7 @@ impl Postgres {
                 .max_connections(config.max_pool_size)
                 .connect_lazy(uri)?,
             config,
+            domain_separator: DomainSeparator::default(),
         })
     }
 
@@ -79,7 +84,13 @@ impl Postgres {
                 })
                 .connect_lazy(uri)?,
             config,
+            domain_separator: DomainSeparator::default(),
         })
+    }
+
+    pub fn with_domain_separator(mut self, domain_separator: DomainSeparator) -> Self {
+        self.domain_separator = domain_separator;
+        self
     }
 
     async fn insert_order_app_data(
