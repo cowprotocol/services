@@ -772,11 +772,6 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Full { full } => validate(full)?,
         };
 
-        if app_data.protocol.enable_fast_path {
-            return Err(AppDataValidationError::Invalid(anyhow::anyhow!(
-                "'enableFastPath' is not yet supported"
-            )));
-        }
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
