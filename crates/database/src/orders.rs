@@ -4,6 +4,7 @@ use {
         AppId,
         OrderUid,
         TransactionHash,
+        auction::AuctionId,
         onchain_broadcasted_orders::OnchainOrderPlacementError,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
     },
@@ -360,6 +361,7 @@ pub struct Quote {
     pub solver: Address,
     pub verified: bool,
     pub metadata: serde_json::Value,
+    pub auction_id: Option<AuctionId>,
 }
 
 #[instrument(skip_all)]
@@ -380,9 +382,10 @@ INSERT INTO order_quotes (
     buy_amount,
     solver,
     verified,
-    metadata
+    metadata,
+    auction_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#;
 
 #[instrument(skip_all)]
 pub async fn insert_quote_and_update_on_conflict(
@@ -397,7 +400,8 @@ pub async fn insert_quote_and_update_on_conflict(
         " ON CONFLICT (order_uid) DO UPDATE
 SET gas_amount = $2, gas_price = $3,
 sell_token_price = $4, sell_amount = $5,
-buy_amount = $6, verified = $8, metadata = $9
+buy_amount = $6, verified = $8, metadata = $9,
+auction_id = $10
     "
     );
     sqlx::query(QUERY)
@@ -410,6 +414,7 @@ buy_amount = $6, verified = $8, metadata = $9
         .bind(quote.solver)
         .bind(quote.verified)
         .bind(&quote.metadata)
+        .bind(quote.auction_id)
         .execute(ex)
         .await?;
     Ok(())
@@ -427,6 +432,7 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
         .bind(quote.solver)
         .bind(quote.verified)
         .bind(&quote.metadata)
+        .bind(quote.auction_id)
         .execute(ex)
         .await?;
     Ok(())
@@ -557,6 +563,7 @@ pub struct FullOrderWithQuote {
     pub quote_verified: Option<bool>,
     pub quote_metadata: Option<serde_json::Value>,
     pub solver: Option<Address>,
+    pub quote_auction_id: Option<AuctionId>,
 }
 
 impl FullOrderWithQuote {
@@ -590,6 +597,7 @@ impl FullOrderWithQuote {
                 solver,
                 verified,
                 metadata,
+                auction_id: self.quote_auction_id,
             }),
             _ => None,
         };
@@ -662,6 +670,7 @@ const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
     ", o_quotes.verified as quote_verified",
     ", o_quotes.metadata as quote_metadata",
     ", o_quotes.solver as solver",
+    ", o_quotes.auction_id as quote_auction_id",
     " FROM ",
     FROM,
     " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
@@ -1564,6 +1573,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+            auction_id: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         insert_quote_and_update_on_conflict(&mut db, &quote)
@@ -1640,6 +1650,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: true,
             metadata,
+            auction_id: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let quote_ = read_quote(&mut db, &quote.order_uid)
@@ -1668,6 +1679,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+            auction_id: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let order_with_quote = single_full_order_with_quote(&mut db, &quote.order_uid)
@@ -2701,6 +2713,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+            auction_id: None,
         };
 
         // insert quote with verified and metadata fields stored as NULL

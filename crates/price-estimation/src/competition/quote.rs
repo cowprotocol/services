@@ -290,7 +290,8 @@ impl RankingContext {
             // Note on truncation: previously we used primitive_types::U256::from_f64_lossy which
             // truncated the floating point, while alloy is slightly more faithful to the original
             // value and rounds to closest integer: [0, 0.5) => 0, [0.5, 1] => 1
-            v => U256::from(v.trunc()),
+            // Source: https://github.com/paritytech/parity-common/blob/2b887751f2bd3aafe7d6b33197f5a4a35ae61d34/primitive-types/src/fp_conversion.rs#L4-L13
+            v => U256::saturating_from(v.trunc()),
         }
     }
 }

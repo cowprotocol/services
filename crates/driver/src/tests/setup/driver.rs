@@ -63,6 +63,71 @@ impl Driver {
     }
 }
 
+/// Serialize a quoted order in the shape the driver expects for /solve orders.
+pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_json::Value {
+    let mut order = json!({
+        "uid": quote.order_uid(&test.blockchain),
+        "sellToken": test.blockchain.get_token(quote.order.sell_token).encode_hex_with_prefix(),
+        "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
+        "sellAmount": quote.sell_amount().to_string(),
+        "buyAmount": quote.buy_amount().to_string(),
+        "protocolFees": match quote.order.kind {
+            order::Kind::Market => json!([]),
+            order::Kind::Limit => {
+                let fee_policies_json: Vec<serde_json::Value> = quote
+                    .order
+                    .fee_policy
+                    .iter()
+                    .map(|policy| policy.to_json_value())
+                    .collect();
+                json!(fee_policies_json)
+            }
+        },
+        "created": quote.order.created,
+        "validTo": quote.order.valid_to,
+        "kind": match quote.order.side {
+            order::Side::Sell => "sell",
+            order::Side::Buy => "buy",
+        },
+        "owner": (test.trader_address.encode_hex_with_prefix()),
+        "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
+        "executed": match quote.order.partial {
+            Partial::Yes { executed } => executed.to_string(),
+            Partial::No => "0".to_owned(),
+        },
+        "preInteractions": [],
+        "postInteractions": [],
+        "class": match quote.order.kind {
+            order::Kind::Market => "market",
+            order::Kind::Limit => "limit",
+        },
+        "appData": app_data::AppDataHash(quote.order.app_data.hash().0 .0),
+        "signingScheme": "eip712",
+        "signature": const_hex::encode_prefixed(quote.order_signature(&test.blockchain)),
+        "quote": quote.order.quote,
+    });
+    if let Some(receiver) = quote.order.receiver {
+        order["receiver"] = json!((receiver.encode_hex_with_prefix()));
+    }
+    order
+}
+
+/// The native-price map (`{token: wei}`, 1 ETH each) for a quoted order's
+/// tokens, in the shape the driver expects on the /settle request.
+pub fn prices_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_json::Value {
+    let prices: std::collections::BTreeMap<String, &str> =
+        [quote.order.sell_token, quote.order.buy_token]
+            .into_iter()
+            .map(|token| {
+                (
+                    test.blockchain.get_token(token).encode_hex_with_prefix(),
+                    "1000000000000000000",
+                )
+            })
+            .collect();
+    json!(prices)
+}
+
 /// Create a request for the driver /solve endpoint.
 pub fn solve_req(test: &Test) -> serde_json::Value {
     let mut tokens_json = Vec::new();
@@ -72,51 +137,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     let mut quotes = test.quoted_orders.clone();
     quotes.shuffle(&mut rand::rng());
     for quote in quotes.iter() {
-        let mut order = json!({
-            "uid": quote.order_uid(&test.blockchain),
-            "sellToken": test.blockchain.get_token(quote.order.sell_token).encode_hex_with_prefix(),
-            "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
-            "sellAmount": quote.sell_amount().to_string(),
-            "buyAmount": quote.buy_amount().to_string(),
-            "protocolFees": match quote.order.kind {
-                order::Kind::Market => json!([]),
-                        order::Kind::Limit => {
-                            let fee_policies_json: Vec<serde_json::Value> = quote
-                                .order
-                                .fee_policy
-                                .iter()
-                                .map(|policy| policy.to_json_value())
-                                .collect();
-                            json!(fee_policies_json)
-                        }
-            },
-            "created": quote.order.created,
-            "validTo": quote.order.valid_to,
-            "kind": match quote.order.side {
-                order::Side::Sell => "sell",
-                order::Side::Buy => "buy",
-            },
-            "owner": (test.trader_address.encode_hex_with_prefix()),
-            "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
-            "executed": match quote.order.partial {
-                Partial::Yes { executed } => executed.to_string(),
-                Partial::No => "0".to_owned(),
-            },
-            "preInteractions": [],
-            "postInteractions": [],
-            "class": match quote.order.kind {
-                order::Kind::Market => "market",
-                order::Kind::Limit => "limit",
-            },
-            "appData": app_data::AppDataHash(quote.order.app_data.hash().0 .0),
-            "signingScheme": "eip712",
-            "signature": const_hex::encode_prefixed(quote.order_signature(&test.blockchain)),
-            "quote": quote.order.quote,
-        });
-        if let Some(receiver) = quote.order.receiver {
-            order["receiver"] = json!((receiver.encode_hex_with_prefix()));
-        }
-        orders_json.push(order);
+        orders_json.push(order_json(test, quote));
     }
     for trade in test.trades.iter() {
         match trade {
@@ -168,11 +189,24 @@ pub fn settle_req(
     submission_deadline_latest_block: u64,
     solution_id: u64,
     auction_id: &str,
+    fast_path: Option<serde_json::Value>,
 ) -> serde_json::Value {
-    json!({
+    let mut req = json!({
         "solutionId": solution_id,
         "submissionDeadlineLatestBlock": submission_deadline_latest_block,
         "auctionId": auction_id,
+    });
+    if let Some(fast_path) = fast_path {
+        req["fastPath"] = fast_path;
+    }
+    req
+}
+
+/// The quoted sell/buy amounts, used as the fast-path limit prices.
+pub fn limit_prices_json(quote: &super::blockchain::QuotedOrder) -> serde_json::Value {
+    json!({
+        "sell": quote.sell_amount().to_string(),
+        "buy": quote.buy_amount().to_string(),
     })
 }
 
@@ -183,7 +217,7 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
     }
 
     let quote = test.quoted_orders.first().unwrap();
-    json!({
+    let mut req = json!({
         "sellToken": test.blockchain.get_token(quote.order.sell_token).encode_hex_with_prefix(),
         "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
         "amount": match quote.order.side {
@@ -195,7 +229,14 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
             order::Side::Buy => "buy",
         },
         "deadline": test.deadline,
-    })
+    });
+    if test.quote_fast_path {
+        // Mirrors what the orderbook does for fast-path quotes: request fast-path
+        // and hand over the real auction id it allocated from the shared sequence.
+        req["enableFastPath"] = json!(true);
+        req["auctionId"] = json!(test.auction_id);
+    }
+    req
 }
 
 /// Create the config file for the driver to use.
@@ -322,6 +363,7 @@ async fn create_config_file(
                merge-solutions = {}
                haircut-bps = {}
                max-solutions-to-propose = {}
+               fast-path-enabled = {}
                "#,
             solver.name,
             addr,
@@ -338,6 +380,7 @@ async fn create_config_file(
             solver.merge_solutions,
             solver.haircut_bps,
             solver.max_solutions_to_propose,
+            solver.fast_path_enabled,
         )
         .unwrap();
         if !solver.submission_accounts.is_empty() {

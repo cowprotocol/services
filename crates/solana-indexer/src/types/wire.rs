@@ -26,6 +26,7 @@ pub use yellowstone_grpc_proto::{
         Message,
         TokenBalance,
         Transaction,
+        TransactionError,
         TransactionStatusMeta,
     },
 };
