@@ -29,7 +29,9 @@ pub async fn run(args: Args) {
 
     let version = observe::version::git_version();
     tracing::info!(%version, "running solana driver");
-    tracing::info!(?config, "loaded config");
+    if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
+        tracing::info!(?config, "loaded config");
+    }
 
     tracing::info!("awaiting shutdown signal");
     shutdown_signal().await;
