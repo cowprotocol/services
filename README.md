@@ -116,8 +116,6 @@ tokio-console
 
 All binaries use jemalloc as the default memory allocator with built-in heap profiling support. Profiling is enabled at runtime via the `MALLOC_CONF` environment variable, allowing you to analyze memory usage in production environments without recompiling or restarting services.
 
-**Note:** You can optionally use mimalloc instead of jemalloc by building with `--features mimalloc-allocator`, but this disables heap profiling capability.
-
 ### Enabling Heap Profiling
 
 To enable heap profiling, run services with the `MALLOC_CONF` environment variable set:

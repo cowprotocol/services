@@ -455,23 +455,29 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         config.price_estimation.max_quote_timeout,
     ));
 
-    let solvable_orders_cache = SolvableOrdersCache::new(
-        config.min_order_validity_period,
-        persistence.clone(),
-        infra::banned::Users::new(
+    let banned_users =
+        Arc::new(order_validation::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
-            config
-                .banned_users
-                .hermod
-                .clone()
-                .map(|hermod| infra::banned::HermodConfig {
+            config.banned_users.hermod.clone().map(|hermod| {
+                order_validation::banned::HermodConfig {
                     url: hermod.url,
                     hmac_key: hermod.hmac_key,
                     api_key: hermod.api_key,
-                }),
+                }
+            }),
             config.banned_users.addresses,
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
-        ),
+        ));
+
+    // Wakes the run loop on new orders (via the notifier) and new blocks.
+    let wake_runloop = Arc::new(tokio::sync::Notify::new());
+    infra::order_notify::Notifier::new(banned_users.clone(), wake_runloop.clone())
+        .spawn(db_write.pool.clone());
+
+    let solvable_orders_cache = SolvableOrdersCache::new(
+        config.min_order_validity_period,
+        persistence.clone(),
+        banned_users.clone(),
         balance_fetcher.clone(),
         deny_listed_tokens.clone(),
         competition_native_price_updater.clone(),
@@ -632,6 +638,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             startup,
         },
         awaiter,
+        wake_runloop,
     );
     run.run_forever(shutdown_controller).await;
 

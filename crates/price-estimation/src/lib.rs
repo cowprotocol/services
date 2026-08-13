@@ -163,6 +163,10 @@ pub struct Query {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
     pub timeout: Duration,
+    /// Only populated for fast path requests and used to later tell the
+    /// driver which solution to execute.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auction_id: Option<i64>,
 }
 
 /// Conditions under which a given price estimate needs to work in order to be
@@ -252,16 +256,16 @@ impl RankedEstimates {
         Self { values }
     }
 
-    pub fn into_best(self) -> Estimate {
-        self.values
-            .into_iter()
-            .next()
-            .expect("non-empty by construction")
-    }
-
     /// Returns all estimates ordered best to worst.
+    #[cfg(test)]
     pub fn into_vec(self) -> Vec<Estimate> {
         self.values
+    }
+
+    pub fn into_best_and_rest(self) -> (Estimate, impl Iterator<Item = Estimate>) {
+        let mut iter = self.values.into_iter();
+        let best = iter.next().expect("non-empty by construction");
+        (best, iter)
     }
 }
 
