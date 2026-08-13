@@ -3,6 +3,7 @@
 #![expect(dead_code, reason = "consumed by the on-chain orders lookup")]
 
 use {
+    futures::future,
     solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient},
     solana_commitment_config::CommitmentConfig,
     solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
@@ -33,7 +34,7 @@ impl Rpc {
 
     /// Fetch accounts by key. Accounts that do not exist are absent from the
     /// map. Duplicate keys are fetched once, and batches above the server's
-    /// per-request cap are split transparently.
+    /// per-request cap are split into parallel requests.
     pub(crate) async fn multiple_accounts(
         &self,
         keys: &[Pubkey],
@@ -44,9 +45,14 @@ impl Rpc {
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
+        let fetched = future::try_join_all(unique.chunks(MAX_MULTIPLE_ACCOUNTS).map(
+            |chunk| async move {
+                Ok::<_, ClientError>((chunk, self.client.get_multiple_accounts(chunk).await?))
+            },
+        ))
+        .await?;
         let mut accounts = HashMap::with_capacity(unique.len());
-        for chunk in unique.chunks(MAX_MULTIPLE_ACCOUNTS) {
-            let fetched = self.client.get_multiple_accounts(chunk).await?;
+        for (chunk, fetched) in fetched {
             for (key, account) in chunk.iter().zip(fetched) {
                 if let Some(account) = account {
                     accounts.insert(*key, account);
