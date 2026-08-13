@@ -5,13 +5,11 @@
 use {
     solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient},
     solana_commitment_config::CommitmentConfig,
+    solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
     solana_sdk::{account::Account, pubkey::Pubkey},
     std::time::Duration,
     url::Url,
 };
-
-/// The server rejects `getMultipleAccounts` batches above this size.
-const MAX_ACCOUNTS_PER_REQUEST: usize = 100;
 
 /// JSON-RPC client over the indexer's RPC endpoint, at `confirmed`
 /// commitment to match the stream subscription.
@@ -37,7 +35,7 @@ impl Rpc {
         keys: &[Pubkey],
     ) -> Result<Vec<Option<Account>>, ClientError> {
         let mut accounts = Vec::with_capacity(keys.len());
-        for chunk in keys.chunks(MAX_ACCOUNTS_PER_REQUEST) {
+        for chunk in keys.chunks(MAX_MULTIPLE_ACCOUNTS) {
             accounts.extend(self.client.get_multiple_accounts(chunk).await?);
         }
         Ok(accounts)
