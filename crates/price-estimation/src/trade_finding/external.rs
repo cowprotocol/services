@@ -405,7 +405,8 @@ pub mod dto {
         pub amount: U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        // Renamed to match the driver's `enableFastPath` field name.
+        #[serde(rename = "enableFastPath", default, skip_serializing_if = "std::ops::Not::not")]
         pub fast_path: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub auction_id: Option<i64>,
