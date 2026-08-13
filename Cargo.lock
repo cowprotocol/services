@@ -9949,6 +9949,7 @@ dependencies = [
  "settlement-client",
  "settlement-interface",
  "solana-client",
+ "solana-commitment-config",
  "solana-sdk",
  "sqlx",
  "thiserror 1.0.69",
