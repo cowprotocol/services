@@ -218,6 +218,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         order_placement_events: Vec<(ContractEvent, Log)>,
     ) -> Result<(
         Vec<W>,
+        Vec<i64>,
         Vec<Option<database::orders::Quote>>,
         Vec<(database::events::EventIndex, OnchainOrderPlacement)>,
         Vec<Order>,
@@ -265,7 +266,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         .await;
 
         let data_tuple = onchain_order_data.into_iter().map(
-            |(event_index, quote, onchain_order_placement, order, tx_hash)| {
+            |(event_index, quote_id, quote, onchain_order_placement, order, tx_hash)| {
                 (
                     self.custom_onchain_data_parser
                         .customized_event_data_for_event_index(
@@ -274,6 +275,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
                             &custom_data_hashmap,
                             &onchain_order_placement,
                         ),
+                    quote_id,
                     quote,
                     (event_index, onchain_order_placement),
                     order,
@@ -318,9 +320,9 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             .collect();
         let invalidation_events = get_invalidation_events(events)?;
         let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
-        let (custom_onchain_data, quotes, broadcasted_order_data, mut orders, tx_hashes) = self
-            .extract_custom_and_general_order_data(order_placement_events)
-            .await?;
+        let (custom_onchain_data, quote_ids, quotes, broadcasted_order_data, mut orders, tx_hashes) =
+            self.extract_custom_and_general_order_data(order_placement_events)
+                .await?;
 
         database::onchain_invalidations::insert_onchain_invalidations(
             transaction,
@@ -363,6 +365,33 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         database::orders::insert_orders_and_ignore_conflicts(transaction, orders.as_slice())
             .await
             .context("insert_orders failed")?;
+
+        // Promote fast-path quotes for onchain orders (mirrors the trait-based
+        // path in the orderbook). For each successfully-quoted order tied to a
+        // fast-path `auction_id`, drop the transient `quotes` row and rewrite
+        // the placeholder `proposed_trade_executions.order_uid` to the real
+        // one.
+        for (quote_id, quote, order) in izip!(&quote_ids, &quotes, &orders) {
+            let Some(quote) = quote else {
+                continue;
+            };
+            let Some(auction_id) = quote.auction_id else {
+                continue;
+            };
+            // The order_quotes row already carries the auction_id (populated
+            // inline above by `insert_quotes`), so all that's left is to drop
+            // the transient `quotes` row and patch competition tables.
+            database::quotes::delete_and_return_row(transaction, *quote_id)
+                .await
+                .context("failed to delete promoted onchain quote")?;
+            database::solver_competition_v2::finalize_quote_competition(
+                transaction,
+                auction_id,
+                order.uid,
+            )
+            .await
+            .context("failed to patch competition rows for onchain order")?;
+        }
 
         for order in &invalided_order_uids {
             tracing::debug!(?order, "invalidated order");
@@ -442,6 +471,7 @@ fn extract_invalidated_order_uids(
 
 type GeneralOnchainOrderPlacementData = (
     EventIndex,
+    i64,
     Option<database::orders::Quote>,
     OnchainOrderPlacement,
     Order,
@@ -513,7 +543,14 @@ where
                     None
                 }
             };
-            Ok((event_index, quote, order_data.0, order_data.1, tx_hash))
+            Ok((
+                event_index,
+                quote_id,
+                quote,
+                order_data.0,
+                order_data.1,
+                tx_hash,
+            ))
         },
     );
     let onchain_order_placement_data: Vec<Result<GeneralOnchainOrderPlacementData>> =
@@ -1319,9 +1356,10 @@ mod test {
             metadata: quote.data.metadata.clone().try_into().unwrap(),
             auction_id: quote.data.auction_id,
         };
-        assert_eq!(result.1, vec![Some(expected_quote)]);
+        assert_eq!(result.1, vec![0i64]);
+        assert_eq!(result.2, vec![Some(expected_quote)]);
         assert_eq!(
-            result.2,
+            result.3,
             vec![(
                 expected_event_index,
                 OnchainOrderPlacement {
