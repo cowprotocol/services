@@ -4,7 +4,8 @@ use {
     crate::infra::config::{Chain, Config, Http, Rpc, Solver},
     configs::shared::LoggingConfig,
     serde::Deserialize,
-    serde_ext::deserialize_nonempty_vec,
+    serde_ext::{deserialize_nonempty_vec, deserialize_solana_pubkey_b58},
+    solana_sdk::pubkey::Pubkey,
     std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
     tokio::fs,
 };
@@ -32,11 +33,7 @@ pub async fn load(path: &Path) -> Config {
 
     Config {
         chain: Chain {
-            settlement_program_id: config
-                .chain
-                .settlement_program_id
-                .parse()
-                .expect("invalid settlement program id"),
+            settlement_program_id: config.chain.settlement_program_id,
         },
         rpc: Rpc {
             endpoints: config.rpc.endpoints,
@@ -73,7 +70,8 @@ struct FileConfig {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct ChainConfig {
-    settlement_program_id: String,
+    #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
+    settlement_program_id: Pubkey,
 }
 
 #[derive(Debug, Deserialize)]

@@ -8919,6 +8919,7 @@ dependencies = [
  "const-hex",
  "serde",
  "serde_with",
+ "solana-sdk",
 ]
 
 [[package]]
