@@ -8895,6 +8895,7 @@ dependencies = [
  "const-hex",
  "serde",
  "serde_with",
+ "solana-sdk",
 ]
 
 [[package]]
@@ -9774,11 +9775,17 @@ name = "solana-driver"
 version = "0.1.0"
 dependencies = [
  "clap",
- "futures",
+ "configs",
+ "humantime-serde",
  "observe",
+ "serde",
+ "serde-ext",
+ "solana-sdk",
  "tikv-jemallocator",
  "tokio",
+ "toml",
  "tracing",
+ "url",
 ]
 
 [[package]]
