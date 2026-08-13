@@ -107,13 +107,27 @@ pub struct Probes {
 
 /// The auction sent to the delta drivers in the previous run, and when the
 /// last full auction (checkpoint) was sent to them.
-#[derive(Default)]
 struct DeltaState {
     previous_auction: Option<Arc<domain::Auction>>,
     last_checkpoint: Option<Instant>,
+    interval: Duration,
 }
 
 impl DeltaState {
+    fn new(interval: Duration) -> Self {
+        Self {
+            previous_auction: Default::default(),
+            last_checkpoint: Default::default(),
+            interval,
+        }
+    }
+
+    /// Resets `previous_auction` and `last_checkpoint` to their default values.
+    fn reset(&mut self) {
+        self.last_checkpoint = Default::default();
+        self.last_checkpoint = Default::default();
+    }
+
     /// Returns the auction to diff `auction` against, and stores `auction`
     /// to be diffed against in the next cycle. A delta is always relative to
     /// the auction sent immediately before it.
@@ -123,13 +137,14 @@ impl DeltaState {
     /// passed since the last checkpoint.
     fn advance(
         &mut self,
-        interval: Duration,
         now: Instant,
         auction: &Arc<domain::Auction>,
     ) -> Option<Arc<domain::Auction>> {
         let previous = self.previous_auction.replace(auction.clone());
         match (previous, self.last_checkpoint) {
-            (Some(previous), Some(checkpoint)) if now.duration_since(checkpoint) < interval => {
+            (Some(previous), Some(checkpoint))
+                if now.duration_since(checkpoint) < self.interval =>
+            {
                 Some(previous)
             }
             _ => {
@@ -186,6 +201,8 @@ impl RunLoop {
             .into_iter()
             .partition(|driver| driver.supports_auction_deltas);
 
+        let interval = config.auction_delta_checkpoint_interval.clone();
+
         Self {
             config,
             eth,
@@ -196,7 +213,7 @@ impl RunLoop {
             maintenance,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify: wake_runloop,
-            delta_state: Default::default(),
+            delta_state: std::sync::Mutex::new(DeltaState::new(interval)),
             drivers,
             delta_drivers,
         }
@@ -241,7 +258,7 @@ impl RunLoop {
                 // the previous auction this instance recorded is not the one
                 // the drivers received; ensure we start from a checkpoint when
                 // leadership is (re)gained.
-                *self_arc.delta_state.lock().unwrap() = Default::default();
+                self_arc.delta_state.lock().unwrap().reset();
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
@@ -736,11 +753,11 @@ impl RunLoop {
         trusted_tokens: &HashSet<Address>,
         deadline: chrono::DateTime<chrono::Utc>,
     ) -> Option<solve::Request> {
-        let previous = self.delta_state.lock().unwrap().advance(
-            self.config.auction_delta_checkpoint_interval,
-            Instant::now(),
-            auction,
-        )?;
+        let previous = self
+            .delta_state
+            .lock()
+            .unwrap()
+            .advance(Instant::now(), auction)?;
         Some(
             solve::Request::new_delta(
                 &previous,
@@ -1433,7 +1450,7 @@ mod tests {
             surplus_capturing_jit_order_owners: vec![],
         };
         let interval = Duration::from_secs(30);
-        let mut state = DeltaState::default();
+        let mut state = DeltaState::new(interval);
         let start = Instant::now();
 
         // With a 30s interval the very first auction is sent in full (no
@@ -1444,11 +1461,7 @@ mod tests {
         for (id, offset) in (0..).zip([0, 10, 20, 30, 40, 50, 60, 70]) {
             diffed_against.push(
                 state
-                    .advance(
-                        interval,
-                        start + Duration::from_secs(offset),
-                        &Arc::new(auction(id)),
-                    )
+                    .advance(start + Duration::from_secs(offset), &Arc::new(auction(id)))
                     .map(|prev| prev.id),
             );
         }
