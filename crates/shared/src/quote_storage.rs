@@ -54,6 +54,7 @@ async fn write_competition_tables(
     // Without a solution id we can't expect the solver to actually execute
     // this solution, so storing any competition rows would be misleading.
     let Some(winner) = data.quotes().first() else {
+        tracing::error!(auction_id, "fast path quote competition without any quotes");
         return Ok(());
     };
     if winner.solution_id.is_none() {

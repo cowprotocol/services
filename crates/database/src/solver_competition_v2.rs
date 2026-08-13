@@ -357,26 +357,20 @@ async fn save_jit_orders(
 
 /// Deletes all competition rows associated with `auction_id` across
 /// `proposed_trade_executions`, `proposed_jit_orders`, `proposed_solutions`,
-/// and `competition_auctions`. No foreign keys are defined between these
-/// tables but children are deleted first for consistency.
+/// and `competition_auctions`.
 #[instrument(skip_all)]
 pub async fn delete_by_auction_id(
     ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM proposed_trade_executions WHERE auction_id = $1")
-        .bind(auction_id)
-        .execute(ex.deref_mut())
-        .await?;
-    sqlx::query("DELETE FROM proposed_jit_orders WHERE auction_id = $1")
-        .bind(auction_id)
-        .execute(ex.deref_mut())
-        .await?;
-    sqlx::query("DELETE FROM proposed_solutions WHERE auction_id = $1")
-        .bind(auction_id)
-        .execute(ex.deref_mut())
-        .await?;
-    sqlx::query("DELETE FROM competition_auctions WHERE id = $1")
+    const QUERY: &str = r#"
+WITH
+    del_te AS (DELETE FROM proposed_trade_executions WHERE auction_id = $1),
+    del_jo AS (DELETE FROM proposed_jit_orders       WHERE auction_id = $1),
+    del_ps AS (DELETE FROM proposed_solutions        WHERE auction_id = $1)
+DELETE FROM competition_auctions WHERE id = $1
+"#;
+    sqlx::query(QUERY)
         .bind(auction_id)
         .execute(ex.deref_mut())
         .await?;
