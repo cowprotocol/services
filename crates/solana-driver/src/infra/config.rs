@@ -1,7 +1,6 @@
-//! File-based configuration loading.
+//! Configuration of infrastructural components.
 
 use {
-    crate::infra::config::{Chain, Config, Http, Rpc, Solver},
     configs::shared::LoggingConfig,
     serde::Deserialize,
     serde_ext::{deserialize_nonempty_vec, deserialize_solana_pubkey_b58},
@@ -20,7 +19,7 @@ pub async fn load(path: &Path) -> Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
-    let config: FileConfig = toml::de::from_str(&data).unwrap_or_else(|err| {
+    toml::de::from_str(&data).unwrap_or_else(|err| {
         if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
             panic!("failed to parse TOML config at {path:?}: {err:#?}")
         } else {
@@ -29,72 +28,80 @@ pub async fn load(path: &Path) -> Config {
                  parsing error but this may leak secrets."
             )
         }
-    });
+    })
+}
 
-    Config {
-        chain: Chain {
-            settlement_program_id: config.chain.settlement_program_id,
-        },
-        rpc: Rpc {
-            endpoints: config.rpc.endpoints,
-            request_timeout: config.rpc.request_timeout,
-        },
-        http: Http {
-            bind_address: config.http.bind_address,
-        },
-        logging: config.logging,
-        solvers: config
-            .solvers
-            .into_iter()
-            .map(|solver| Solver {
-                name: solver.name,
-                endpoint: solver.endpoint,
-                max_in_flight: solver.max_in_flight.get(),
-            })
-            .collect(),
+/// Configuration of infrastructural components.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Config {
+    /// Chain and deployment-specific configuration.
+    pub chain: Chain,
+    /// RPC client configuration.
+    pub rpc: Rpc,
+    /// HTTP API server configuration.
+    pub http: Http,
+    /// Logging configuration.
+    #[serde(default)]
+    pub logging: LoggingConfig,
+    /// Configured solver engines to query for solutions.
+    #[serde(deserialize_with = "deserialize_nonempty_vec")]
+    pub solvers: Vec<Solver>,
+}
+
+impl Config {
+    /// Build the `observe::Config` for the tracing framework from the logging
+    /// configuration.
+    pub fn observe_config(&self) -> observe::Config {
+        observe::Config::new(
+            &self.logging.filter,
+            self.logging.stderr_threshold,
+            self.logging.use_json,
+            None,
+        )
     }
 }
 
+/// Solana chain configuration.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct FileConfig {
-    chain: ChainConfig,
-    rpc: RpcConfig,
-    http: HttpConfig,
-    #[serde(default)]
-    logging: LoggingConfig,
-    #[serde(deserialize_with = "deserialize_nonempty_vec")]
-    solvers: Vec<SolverConfig>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct ChainConfig {
+pub struct Chain {
+    /// On-chain program id of the settlement contract.
     #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
-    settlement_program_id: Pubkey,
+    pub settlement_program_id: Pubkey,
 }
 
+/// RPC client configuration.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct RpcConfig {
+pub struct Rpc {
+    /// RPC endpoints to connect to.
     #[serde(deserialize_with = "deserialize_nonempty_vec")]
-    endpoints: Vec<url::Url>,
+    pub endpoints: Vec<url::Url>,
+    /// Timeout for individual RPC requests.
     #[serde(with = "humantime_serde")]
-    request_timeout: Duration,
+    pub request_timeout: Duration,
 }
 
+/// HTTP API server configuration.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct HttpConfig {
-    bind_address: SocketAddr,
+pub struct Http {
+    /// Address the HTTP API server binds to and listens on.
+    pub bind_address: SocketAddr,
 }
 
+/// A configured solver engine.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct SolverConfig {
-    name: String,
-    endpoint: url::Url,
-    max_in_flight: NonZero<usize>,
+pub struct Solver {
+    /// Human-readable name identifying this solver, used for logging and
+    /// metrics.
+    pub name: String,
+    /// HTTP endpoint of the solver engine API.
+    pub endpoint: url::Url,
+    /// Maximum number of concurrent solve requests kept in flight per solver.
+    pub max_in_flight: NonZero<usize>,
 }
 
 #[cfg(test)]
@@ -109,7 +116,7 @@ mod tests {
         assert_eq!(config.rpc.endpoints.len(), 1);
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");
-        assert_eq!(config.solvers[0].max_in_flight, 1);
+        assert_eq!(config.solvers[0].max_in_flight.get(), 1);
         assert_eq!(config.logging.filter, "info,solana_driver=debug");
         assert_eq!(config.logging.stderr_threshold, None);
         assert!(!config.logging.use_json);
@@ -122,7 +129,7 @@ mod tests {
             endpoint = "http://localhost:8001"
             max-in-flight = 0
         "#;
-        let err = toml::de::from_str::<SolverConfig>(solver_config)
+        let err = toml::de::from_str::<Solver>(solver_config)
             .expect_err("zero max-in-flight should be rejected");
         assert!(
             err.to_string().contains("expected a nonzero usize"),

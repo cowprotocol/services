@@ -23,7 +23,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
 /// Runs the driver, blocking until the shutdown signal is received.
 pub async fn run(args: Args) {
-    let config = config::file::load(&args.config).await;
+    let config = config::load(&args.config).await;
 
     infra_observe::init(config.observe_config());
 
