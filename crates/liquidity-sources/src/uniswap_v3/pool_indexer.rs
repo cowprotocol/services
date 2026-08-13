@@ -1,13 +1,13 @@
 //! HTTP client for the Uniswap V3 pool-indexer service. Implements
 //! [`V3PoolDataSource`].
 //!
-//! The pool-indexer always serves at-head data. To give callers a consistent
-//! snapshot, each method takes a `target_block` and blocks (via
-//! [`PoolIndexerClient::wait_until`]) until the indexer's envelope reports a
-//! block at or after it. The actual snapshot block, which can be later than
-//! `target_block` if the indexer advanced during the call, is returned
-//! alongside the data so callers can anchor their event-replay at the right
-//! place.
+//! The pool-indexer doesn't support historical queries; it always serves
+//! at-head data. To give callers a consistent snapshot, each method takes a
+//! `target_block` and blocks (via [`PoolIndexerClient::wait_until`]) until the
+//! indexer's envelope reports a block at or after it. The actual snapshot
+//! block — which can be later than `target_block` if the indexer advanced
+//! during the call — is returned alongside the data so callers can anchor
+//! their event-replay at the right place.
 
 use {
     crate::uniswap_v3::{

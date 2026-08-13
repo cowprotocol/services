@@ -21,10 +21,9 @@ Startup has two phases:
 DB has no checkpoint, then serves. This is the single-container deployment.
 
 `pool-indexer --bootstrap-only true --config <toml>` runs only the bootstrap
-phase and then exits 0, binding no HTTP ports. It is **idempotent**: a DB
-already caught up to the head returns at once, while one left partially seeded by
-an interrupted run resumes from its checkpoint to completion, so re-running is a
-safe no-op.
+phase and then exits 0, binding no HTTP ports. A DB already caught up to the
+head returns at once, while one left partially seeded by an interrupted run
+resumes from its checkpoint to completion.
 
 Running bootstrap as a separate step ahead of serving keeps serve startup fast:
 the serve process finds the DB already caught up and flips `/startup` ready

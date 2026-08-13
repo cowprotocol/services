@@ -226,10 +226,11 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::UniswapV3Config::Preset {
                         preset,
                         max_pools_to_initialize,
-                        indexer_config,
+                        indexer_url,
                         reinit_interval,
                     } => {
-                        let pool_indexer = uniswap_v3_pool_indexer(indexer_config);
+                        let pool_indexer =
+                            liquidity::config::UniswapV3PoolIndexer { url: indexer_url };
                         let preset_defaults = match preset {
                             file::UniswapV3Preset::UniswapV3 => {
                                 liquidity::config::UniswapV3::uniswap_v3(pool_indexer, chain)
@@ -245,12 +246,12 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::UniswapV3Config::Manual {
                         router,
                         max_pools_to_initialize,
-                        indexer_config,
+                        indexer_url,
                         reinit_interval,
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
-                        pool_indexer: uniswap_v3_pool_indexer(indexer_config),
+                        pool_indexer: liquidity::config::UniswapV3PoolIndexer { url: indexer_url },
                         reinit_interval,
                     },
                 })
@@ -360,13 +361,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         tx_gas_limit: config.tx_gas_limit,
         http: config.http,
     }
-}
-
-fn uniswap_v3_pool_indexer(
-    indexer_config: file::IndexerConfig,
-) -> liquidity::config::UniswapV3PoolIndexer {
-    let file::IndexerConfig::PoolIndexer { url } = indexer_config;
-    liquidity::config::UniswapV3PoolIndexer { url }
 }
 
 async fn load_account(account: file::Account, chain_id: Option<u64>) -> Account {

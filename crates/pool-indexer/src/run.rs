@@ -35,10 +35,10 @@ pub async fn start(args: impl Iterator<Item = String>) {
 /// head) for every factory, then returns. Binds no HTTP ports; meant to run as
 /// a separate step ahead of serving.
 ///
-/// Idempotent: a factory already at the head is a fast no-op and an interrupted
-/// seed resumes from its checkpoint (see [`bootstrap_factory`]). On return
-/// every factory is indexed to the finalized head, so a later `run` flips
-/// `/startup` ready promptly.
+/// A factory already caught up to the head is a fast no-op, and an interrupted
+/// seed resumes from its checkpoint (see [`bootstrap_factory`]).
+/// On return every factory is indexed to the finalized head, so a later `run`
+/// flips `/startup` ready promptly.
 pub async fn bootstrap(config: Configuration) {
     let db = connect_db(&config).await;
     let network = config.network;

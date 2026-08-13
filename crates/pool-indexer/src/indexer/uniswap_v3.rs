@@ -18,7 +18,10 @@ use {
     futures::{StreamExt, TryStreamExt},
     itertools::Itertools,
     sqlx::PgPool,
-    std::collections::{HashMap, HashSet},
+    std::{
+        collections::{HashMap, HashSet},
+        time::Duration,
+    },
     tracing::instrument,
 };
 
@@ -123,7 +126,7 @@ impl UniswapV3Indexer {
 
     /// Per-factory live-indexing loop. Backfill tasks live at the network
     /// level (see `run_network_indexer`).
-    pub async fn run(self, poll_interval: std::time::Duration) -> ! {
+    pub async fn run(self, poll_interval: Duration) -> ! {
         let mut interval = tokio::time::interval(poll_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
@@ -453,7 +456,7 @@ pub(crate) async fn backfill_symbols(
     db: sqlx::PgPool,
     network: NetworkName,
     prefetch_concurrency: usize,
-    poll_interval: std::time::Duration,
+    poll_interval: Duration,
 ) {
     let mut interval = tokio::time::interval(poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -541,7 +544,7 @@ pub(crate) async fn backfill_decimals(
     db: sqlx::PgPool,
     network: NetworkName,
     prefetch_concurrency: usize,
-    poll_interval: std::time::Duration,
+    poll_interval: Duration,
 ) {
     let mut interval = tokio::time::interval(poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -682,9 +685,9 @@ const MAX_BISECTION_DEPTH: u32 = 8;
 /// Retry transient `eth_getLogs` failures (timeout, reset, throttle) with
 /// backoff, capped by a per-call timeout, so one blip can't abort a long
 /// cold-seed scan. Range-size rejections are bisected, not retried.
-const GETLOGS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+const GETLOGS_TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_GETLOGS_RETRIES: u32 = 6;
-const GETLOGS_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_secs(2);
+const GETLOGS_RETRY_BACKOFF: Duration = Duration::from_secs(2);
 
 /// Fetches logs for `[from, to]` filtered by the given contract addresses
 /// and `topic0` event signatures, sequentially bisecting the block range on

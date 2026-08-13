@@ -87,12 +87,12 @@ max-order-age = "1m"
 
 # [[liquidity.uniswap-v3]] # Uniswap V3 configuration (pool-indexer as data source)
 # preset = "uniswap-v3"
-# indexer-config = { pool-indexer = { url = "http://pool-indexer/" } }
+# indexer-url = "http://pool-indexer/"
 # max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
 
 # [[liquidity.uniswap-v3]] # Custom Uniswap V3 configuration
 # router = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-# indexer-config = { pool-indexer = { url = "http://pool-indexer/" } }
+# indexer-url = "http://pool-indexer/"
 # max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
 
 # [liquidity-sources-notifier] # Sends settlement notifications to third party liquidity sources used by solvers

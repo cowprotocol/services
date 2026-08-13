@@ -586,7 +586,7 @@ enum UniswapV3Config {
         max_pools_to_initialize: usize,
 
         /// Source of pool definitions and tick data.
-        indexer_config: IndexerConfig,
+        indexer_url: Url,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
@@ -604,21 +604,13 @@ enum UniswapV3Config {
         max_pools_to_initialize: usize,
 
         /// Source of pool definitions and tick data.
-        indexer_config: IndexerConfig,
+        indexer_url: Url,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
         #[serde(with = "humantime_serde", default = "default_reinit_interval")]
         reinit_interval: Option<Duration>,
     },
-}
-
-/// Where Uniswap V3 pool definitions and tick data are fetched from.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum IndexerConfig {
-    #[serde(rename_all = "kebab-case")]
-    PoolIndexer { url: Url },
 }
 
 #[derive(Clone, Debug, Deserialize)]

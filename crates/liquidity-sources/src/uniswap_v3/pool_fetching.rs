@@ -596,6 +596,7 @@ impl Maintaining for UniswapV3PoolFetcher {
 mod tests {
     use {
         super::*,
+        crate::uniswap_v3::models,
         alloy::primitives::{U160, address, aliases::I24},
         contracts::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
         serde_json::json,
@@ -827,7 +828,7 @@ mod tests {
         async fn get_registered_pools(
             &self,
             _target_block: BlockTarget,
-        ) -> Result<crate::uniswap_v3::models::RegisteredPools> {
+        ) -> Result<models::RegisteredPools> {
             Ok(Default::default())
         }
 
@@ -835,7 +836,7 @@ mod tests {
             &self,
             ids: &[Address],
             target_block: BlockTarget,
-        ) -> Result<crate::uniswap_v3::models::PoolsWithTicks> {
+        ) -> Result<models::PoolsWithTicks> {
             let target_block = match target_block {
                 BlockTarget::Latest => self.served_block,
                 BlockTarget::Number(n) => n,
@@ -849,7 +850,7 @@ mod tests {
                 .iter()
                 .filter_map(|id| self.with_ticks.get(id).cloned())
                 .collect();
-            Ok(crate::uniswap_v3::models::PoolsWithTicks {
+            Ok(models::PoolsWithTicks {
                 fetched_block_number: self.served_block,
                 pools,
             })
@@ -871,7 +872,7 @@ mod tests {
             liquidity: U256::from(1_000_000u64),
             sqrt_price: U256::from(1u64),
             tick: 0,
-            ticks: Some(vec![crate::uniswap_v3::models::TickData {
+            ticks: Some(vec![models::TickData {
                 tick_idx: -100,
                 liquidity_net: 1_000,
                 pool_address: id,
