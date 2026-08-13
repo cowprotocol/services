@@ -5,7 +5,7 @@
 settlement-program-id = "11111111111111111111111111111111"
 
 [rpc]
-endpoints = ["https://api.mainnet-beta.solana.com"]
+endpoint = "https://api.mainnet-beta.solana.com"
 request-timeout = "10s"
 
 [http]

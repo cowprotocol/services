@@ -75,9 +75,8 @@ pub struct Chain {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Rpc {
-    /// RPC endpoints to connect to.
-    #[serde(deserialize_with = "deserialize_nonempty_vec")]
-    pub endpoints: Vec<url::Url>,
+    /// RPC endpoint to connect to.
+    pub endpoint: url::Url,
     /// Timeout for individual RPC requests.
     #[serde(with = "humantime_serde")]
     pub request_timeout: Duration,
@@ -113,7 +112,10 @@ mod tests {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("example.toml");
         let config = load(&path).await;
 
-        assert_eq!(config.rpc.endpoints.len(), 1);
+        assert_eq!(
+            config.rpc.endpoint.as_str(),
+            "https://api.mainnet-beta.solana.com/"
+        );
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");
         assert_eq!(config.solvers[0].max_in_flight.get(), 1);
