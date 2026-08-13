@@ -14,6 +14,7 @@
 use {
     crate::{
         persistence::Postgres,
+        rpc::Rpc,
         types::{
             Signature,
             channel::StreamUpdate,
@@ -45,8 +46,8 @@ use {
         },
         recover_discriminator,
     },
-    solana_sdk::pubkey::Pubkey,
-    std::collections::BTreeMap,
+    solana_sdk::{account::Account, pubkey::Pubkey},
+    std::collections::{BTreeMap, HashMap},
     tokio::sync::mpsc::Receiver,
 };
 
@@ -54,6 +55,9 @@ use {
 pub(crate) struct Decoder {
     /// Persistence layer.
     pub persistence: Postgres,
+
+    /// Account lookups for data the stream does not carry.
+    pub rpc: Rpc,
 
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
@@ -69,12 +73,14 @@ impl Decoder {
     /// Construct a new decoder. The caller owns the channel capacity decision.
     pub fn new(
         persistence: Postgres,
+        rpc: Rpc,
         rx: Receiver<StreamUpdate>,
         settlement_program: Pubkey,
         solflow_program: Pubkey,
     ) -> Self {
         Self {
             persistence,
+            rpc,
             rx,
             settlement_program,
             solflow_program,
@@ -194,11 +200,41 @@ impl Decoder {
                     .await?;
             }
         } else {
+            let mints = self.resolve_mints(&buffer.events).await?;
             self.persistence
-                .persist_events(buffer.events, last_indexed)
+                .persist_events(buffer.events, &mints, last_indexed)
                 .await?;
         }
         Ok(())
+    }
+
+    /// Resolve the token accounts named by the batch's created orders to
+    /// their mints. The intent carries token accounts, the orders table
+    /// stores mints.
+    async fn resolve_mints(
+        &self,
+        events: &[DecodedEvent],
+    ) -> Result<HashMap<Pubkey, Pubkey>, PersistenceError> {
+        let accounts: Vec<Pubkey> = events
+            .iter()
+            .filter_map(|event| match event {
+                DecodedEvent::Settlement(SettlementEvent::OrderCreated(order)) => {
+                    Some([order.sell_token_account, order.buy_token_account])
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        if accounts.is_empty() {
+            return Ok(HashMap::new());
+        }
+        Ok(self
+            .rpc
+            .multiple_accounts(&accounts)
+            .await?
+            .iter()
+            .filter_map(|(key, account)| Some((*key, token_account_mint(account)?)))
+            .collect())
     }
 
     /// Decode one transaction's tracked instructions into domain events.
@@ -585,6 +621,14 @@ fn decode_settlements_finalized(
         }));
     }
     events
+}
+
+/// The mint an SPL token account holds, the first 32 bytes of its data.
+/// `None` when the data is too short to be a token account.
+fn token_account_mint(account: &Account) -> Option<Pubkey> {
+    Some(Pubkey::new_from_array(
+        account.data.get(..32)?.try_into().ok()?,
+    ))
 }
 
 /// Resolve an instruction's account-list indices to their pubkeys, in order, so

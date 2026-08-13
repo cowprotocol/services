@@ -1,7 +1,5 @@
 //! Solana JSON-RPC client.
 
-#![expect(dead_code, reason = "consumed by the on-chain orders lookup")]
-
 use {
     futures::{TryFutureExt, future},
     itertools::Itertools,
@@ -20,6 +18,7 @@ pub(crate) struct Rpc {
 }
 
 impl Rpc {
+    #[expect(dead_code, reason = "constructed by the binary wiring")]
     pub(crate) fn new(endpoint: Url, request_timeout: Duration) -> Self {
         Self {
             client: RpcClient::new_with_timeout_and_commitment(
@@ -27,6 +26,14 @@ impl Rpc {
                 request_timeout,
                 CommitmentConfig::confirmed(),
             ),
+        }
+    }
+
+    /// A client over a canned transport, for tests.
+    #[cfg(test)]
+    pub(crate) fn new_mock(mocks: solana_client::rpc_client::Mocks) -> Self {
+        Self {
+            client: RpcClient::new_mock_with_mocks("mock".to_owned(), mocks),
         }
     }
 
@@ -39,13 +46,15 @@ impl Rpc {
     ) -> Result<HashMap<Pubkey, Account>, ClientError> {
         let unique: Vec<Pubkey> = keys.iter().copied().unique().collect();
         let fetched = future::try_join_all(unique.chunks(MAX_MULTIPLE_ACCOUNTS).map(|chunk| {
-            self.client.get_multiple_accounts(chunk).map_ok(|accounts| {
-                accounts
-                    .into_iter()
-                    .zip(chunk)
-                    .filter_map(|(account, key)| Some((*key, account?)))
-                    .collect::<Vec<_>>()
-            })
+            self.client
+                .get_multiple_accounts(chunk)
+                .map_ok(move |accounts| {
+                    accounts
+                        .into_iter()
+                        .zip(chunk)
+                        .filter_map(|(account, key)| Some((*key, account?)))
+                        .collect::<Vec<_>>()
+                })
         }))
         .await?;
         Ok(fetched.into_iter().flatten().collect())

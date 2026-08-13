@@ -41,6 +41,7 @@ yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 settlement-client = {
   package = "settlement-client",
   git = "https://github.com/cowprotocol/solana-programs",

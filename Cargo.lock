@@ -9954,6 +9954,7 @@ dependencies = [
  "futures",
  "itertools 0.14.0",
  "rustls",
+ "serde_json",
  "settlement-client",
  "settlement-interface",
  "solana-client",
