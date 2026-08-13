@@ -152,7 +152,7 @@ impl Order {
         };
 
         let auction = self
-            .fake_auction(eth, tokens, solver.quote_using_limit_orders())
+            .single_order_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
         let auction = competition
             .risk_detector
@@ -177,7 +177,7 @@ impl Order {
             (true, Some(auction_id)) => {
                 let solution_id = solution.id().get();
                 competition
-                    .cache_quote_solution(auction::Id(auction_id), solution)
+                    .cache_quote_solution(auction::Id(auction_id), auction.clone(), solution)
                     .await;
                 Some(solution_id)
             }
@@ -186,7 +186,9 @@ impl Order {
         Ok(quote)
     }
 
-    async fn fake_auction(
+    /// The single-order auction a quote is solved in. Token prices are unset
+    /// (`None`): a quote carries no native prices.
+    async fn single_order_auction(
         &self,
         eth: &Ethereum,
         tokens: &infra::tokens::Fetcher,
