@@ -355,19 +355,13 @@ async fn save_jit_orders(
     Ok(())
 }
 
-/// Replaces the placeholder user-order rows written at fast-path quote time
-/// with the real `order_uid` — the placeholder is 56 zero bytes (the
-/// `OrderUid` `Default`). Also records the uid on the auction row.
-/// `deadline` stays unchanged; the autopilot sets it when it dispatches the
-/// solution to the driver via `/settle`.
-///
-/// The caller is expected to hold a transaction — the two UPDATEs are
-/// batched into one roundtrip via a DML CTE and must land atomically with
-/// the order insertion. `order_uids` is set to a fresh single-element array
-/// so re-runs are idempotent.
+/// Because the final order uid is not known when we store the quote
+/// competition data we use `0x000...000` as a sentinel value.
+/// When an order gets placed referencing a quote competition this function
+/// replaces the placeholder value with the now final order uid.
 #[instrument(skip_all)]
-pub async fn patch_placed_order(
-    ex: &mut PgConnection,
+pub async fn finalize_quote_competition(
+    ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
     order_uid: OrderUid,
 ) -> Result<(), sqlx::Error> {
@@ -385,7 +379,7 @@ WHERE id = $2
         .bind(order_uid)
         .bind(auction_id)
         .bind(OrderUid::default())
-        .execute(ex)
+        .execute(ex.deref_mut())
         .await?;
     Ok(())
 }
