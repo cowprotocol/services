@@ -22,6 +22,7 @@ futures = { workspace = true }
 humantime-serde = { workspace = true }
 observe = { workspace = true }
 serde = { workspace = true }
+serde-ext = { workspace = true }
 solana-sdk = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }

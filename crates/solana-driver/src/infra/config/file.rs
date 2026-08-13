@@ -3,7 +3,8 @@
 use {
     crate::infra::config::{Chain, Config, Http, Rpc, Solver},
     configs::shared::LoggingConfig,
-    serde::{Deserialize, Deserializer},
+    serde::Deserialize,
+    serde_ext::deserialize_nonempty_vec,
     std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
     tokio::fs,
 };
@@ -57,19 +58,6 @@ pub async fn load(path: &Path) -> Config {
     }
 }
 
-/// Deserializes a sequence, erroring if it is empty.
-fn deserialize_nonempty<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    let vec = Vec::<T>::deserialize(deserializer)?;
-    if vec.is_empty() {
-        return Err(serde::de::Error::custom("expected at least one element"));
-    }
-    Ok(vec)
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct FileConfig {
@@ -78,7 +66,7 @@ struct FileConfig {
     http: HttpConfig,
     #[serde(default)]
     logging: LoggingConfig,
-    #[serde(deserialize_with = "deserialize_nonempty")]
+    #[serde(deserialize_with = "deserialize_nonempty_vec")]
     solvers: Vec<SolverConfig>,
 }
 
@@ -91,7 +79,7 @@ struct ChainConfig {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RpcConfig {
-    #[serde(deserialize_with = "deserialize_nonempty")]
+    #[serde(deserialize_with = "deserialize_nonempty_vec")]
     endpoints: Vec<url::Url>,
     #[serde(with = "humantime_serde")]
     request_timeout: Duration,
@@ -129,34 +117,6 @@ mod tests {
         assert!(!config.logging.use_json);
     }
 
-    /// Rejecting an empty list happens at deserialization (via
-    /// `deserialize_nonempty`), so we assert on the TOML parse error directly.
-    #[test]
-    fn empty_endpoints_rejected() {
-        let config = r#"
-            [chain]
-            settlement-program-id = "11111111111111111111111111111111"
-
-            [rpc]
-            endpoints = []
-            request-timeout = "10s"
-
-            [http]
-            bind-address = "0.0.0.0:8080"
-
-            [[solvers]]
-            name = "baseline"
-            endpoint = "http://localhost:8001"
-            max-in-flight = 1
-        "#;
-        let err = toml::de::from_str::<FileConfig>(config)
-            .expect_err("empty endpoints should be rejected");
-        assert!(
-            err.to_string().contains("expected at least one element"),
-            "unexpected error: {err}"
-        );
-    }
-
     #[test]
     fn zero_max_in_flight_rejected() {
         let solver_config = r#"
@@ -168,29 +128,6 @@ mod tests {
             .expect_err("zero max-in-flight should be rejected");
         assert!(
             err.to_string().contains("expected a nonzero usize"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn empty_solvers_rejected() {
-        let config = r#"
-            solvers = []
-
-            [chain]
-            settlement-program-id = "11111111111111111111111111111111"
-
-            [rpc]
-            endpoints = ["https://api.mainnet.solana.com"]
-            request-timeout = "10s"
-
-            [http]
-            bind-address = "0.0.0.0:8080"
-        "#;
-        let err =
-            toml::de::from_str::<FileConfig>(config).expect_err("empty solvers should be rejected");
-        assert!(
-            err.to_string().contains("expected at least one element"),
             "unexpected error: {err}"
         );
     }

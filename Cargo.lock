@@ -9803,6 +9803,7 @@ dependencies = [
  "humantime-serde",
  "observe",
  "serde",
+ "serde-ext",
  "solana-sdk",
  "tikv-jemallocator",
  "tokio",
