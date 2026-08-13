@@ -5,9 +5,9 @@ use {
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
-    bigdecimal::ToPrimitive,
     chrono::{DateTime, Utc},
     database::{
+        PgTransaction,
         byte_array::ByteArray,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
         orders::{self, FullOrder, OrderKind as DbOrderKind},
@@ -127,7 +127,7 @@ async fn cancel_order(
 async fn insert_order(
     order: &Order,
     quote_id: Option<QuoteId>,
-    ex: &mut PgConnection,
+    ex: &mut PgTransaction<'_>,
 ) -> Result<(), InsertionError> {
     let order_uid = ByteArray(order.metadata.uid.0);
     insert_order_event(
@@ -206,41 +206,42 @@ async fn insert_order(
         .await
         .map_err(InsertionError::DbError)?;
 
-    // The transient row in `quotes` is replaced by the `order_quotes` row
-    // below — there should only be one source of truth for the (auction,
-    // order) mapping. The delete returns the previously stored `auction_id`
-    // so the caller doesn't need a follow-up SELECT to know whether this was
-    // a fast-path quote.
-    let auction_id = match quote_id {
-        Some(id) => database::quotes::delete(ex, id)
+    // delete the transient `quotes` row so every order is tied to exactly one
+    // quote — the data is then moved directly into permanent `order_quotes`
+    // table.
+    let quote = match quote_id {
+        Some(id) => database::quotes::delete_and_return_row(ex, id)
             .await
             .map_err(InsertionError::DbError)?,
         None => None,
     };
 
-    if let Some(quote) = order.metadata.quote.as_ref() {
+    if let Some(quote) = quote {
         let db_quote = database::orders::Quote {
             order_uid,
-            // safe to unwrap as these values were converted from f64 previously
-            gas_amount: quote.gas_amount.to_f64().unwrap(),
-            gas_price: quote.gas_price.to_f64().unwrap(),
-            sell_token_price: quote.sell_token_price.to_f64().unwrap(),
-            sell_amount: u256_to_big_decimal(&quote.sell_amount),
-            buy_amount: u256_to_big_decimal(&quote.buy_amount),
-            solver: ByteArray(quote.solver.0.0),
+            gas_amount: quote.gas_amount,
+            gas_price: quote.gas_price,
+            sell_token_price: quote.sell_token_price,
+            sell_amount: quote.sell_amount,
+            buy_amount: quote.buy_amount,
+            solver: quote.solver,
             verified: quote.verified,
-            metadata: quote.metadata.clone(),
-            auction_id,
+            metadata: quote.metadata,
+            auction_id: quote.auction_id,
         };
         database::orders::insert_quote(ex, &db_quote)
             .await
             .map_err(InsertionError::DbError)?;
-    }
 
-    if let Some(auction_id) = auction_id {
-        database::solver_competition_v2::patch_placed_order(ex, auction_id, order_uid)
-            .await
-            .map_err(InsertionError::DbError)?;
+        if let Some(auction_id) = quote.auction_id {
+            // the quote is associated with a auction competition indicating
+            // that this is going to be used for a fast path execution.
+            // not that we know the final order uid we can patch up the
+            // `proposed_trade_executions` rows.
+            database::solver_competition_v2::finalize_quote_competition(ex, auction_id, order_uid)
+                .await
+                .map_err(InsertionError::DbError)?;
+        }
     }
 
     Ok(())

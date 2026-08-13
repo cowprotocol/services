@@ -94,23 +94,17 @@ WHERE id = $1
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
-/// Deletes the row with the given id, if any, and returns the auction_id
-/// that was stored on it. Used when a quote is promoted to an `order_quotes`
-/// row at order-placement time so there's only ever one source of truth for
-/// the mapping — and so the caller can fold the auction_id into the fast-path
-/// competition patch without a follow-up SELECT.
-///
-/// `None` collapses two cases the caller doesn't need to distinguish: the
-/// quote row was already gone, or the row existed but wasn't a fast-path
-/// quote.
+/// Deletes the row from the transient `quotes` table and returns it.
+/// Used when a quote is promoted to an `order_quotes` row at order-placement
+/// time — the caller reuses the returned row's fields to build the
+/// `order_quotes` insert.
 #[instrument(skip_all)]
-pub async fn delete(ex: &mut PgConnection, id: QuoteId) -> Result<Option<AuctionId>, sqlx::Error> {
-    const QUERY: &str = "DELETE FROM quotes WHERE id = $1 RETURNING auction_id";
-    let row: Option<Option<AuctionId>> = sqlx::query_scalar(QUERY)
-        .bind(id)
-        .fetch_optional(ex)
-        .await?;
-    Ok(row.flatten())
+pub async fn delete_and_return_row(
+    ex: &mut PgConnection,
+    id: QuoteId,
+) -> Result<Option<Quote>, sqlx::Error> {
+    const QUERY: &str = "DELETE FROM quotes WHERE id = $1 RETURNING *";
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
 /// Fields for searching stored quotes.
