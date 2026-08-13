@@ -1,7 +1,6 @@
 //! Mock solver for testing purposes. It returns a custom solution.
 
 use {
-    crate::setup::solver::shutdown_signal,
     axum::Json,
     futures::{FutureExt, future::BoxFuture},
     reqwest::Url,
@@ -95,7 +94,7 @@ impl Mock {
 
         tokio::task::spawn(async move {
             axum::serve(listener, app)
-                .with_graceful_shutdown(shutdown_signal())
+                .with_graceful_shutdown(observe::shutdown::shutdown_signal())
                 .await
                 .unwrap();
         });

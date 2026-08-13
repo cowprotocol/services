@@ -1193,6 +1193,62 @@ impl Test {
     }
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
+        self.settle_request(solver_name, solution_id, None).await
+    }
+
+    /// The /solve-shaped JSON for the single quoted order.
+    pub fn order_json(&self) -> serde_json::Value {
+        driver::order_json(
+            self,
+            self.quoted_orders
+                .first()
+                .expect("order_json requires a quoted order"),
+        )
+    }
+
+    /// Native prices for the single quoted order's tokens.
+    pub fn prices_json(&self) -> serde_json::Value {
+        driver::prices_json(
+            self,
+            self.quoted_orders
+                .first()
+                .expect("prices_json requires a quoted order"),
+        )
+    }
+
+    /// The fast-path limit prices for the single quoted order.
+    pub fn limit_prices_json(&self) -> serde_json::Value {
+        driver::limit_prices_json(
+            self.quoted_orders
+                .first()
+                .expect("limit_prices_json requires a quoted order"),
+        )
+    }
+
+    /// Call /settle with the fast-path bundle: the real `order`, its
+    /// `limit_prices`, and native `prices`.
+    pub async fn settle_with_order(
+        &self,
+        solution_id: u64,
+        order: serde_json::Value,
+        limit_prices: serde_json::Value,
+        prices: serde_json::Value,
+    ) -> Settle {
+        let fast_path = serde_json::json!({
+            "order": order,
+            "limitPrices": limit_prices,
+            "nativePrices": prices,
+        });
+        self.settle_request(solver::NAME, solution_id, Some(fast_path))
+            .await
+    }
+
+    async fn settle_request(
+        &self,
+        solver_name: &str,
+        solution_id: u64,
+        fast_path: Option<serde_json::Value>,
+    ) -> Settle {
         let submission_deadline_latest_block: u64 =
             self.web3().provider.get_block_number().await.unwrap()
                 + self.settle_submission_deadline;
@@ -1207,6 +1263,7 @@ impl Test {
                 submission_deadline_latest_block,
                 solution_id,
                 &self.auction_id.to_string(),
+                fast_path,
             ))
             .send()
             .await
@@ -1720,6 +1777,8 @@ impl OrderQuote {
 pub enum Balance {
     /// The balance should be greater than before.
     Greater,
+    /// The balance should be greater than before by an exact amount.
+    GreaterBy(eth::U256),
     /// The balance should be smaller than before by an exact amount.
     SmallerBy(eth::U256),
 }
@@ -1778,6 +1837,7 @@ impl SettleOk {
         let old_balance = self.old_balances.get(token).unwrap();
         match balance {
             Balance::Greater => assert!(new_balance > old_balance),
+            Balance::GreaterBy(diff) => assert_eq!(*new_balance, old_balance + diff),
             Balance::SmallerBy(diff) => assert_eq!(*new_balance, old_balance - diff),
         }
         self

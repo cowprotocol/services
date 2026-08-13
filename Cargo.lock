@@ -1522,7 +1522,6 @@ dependencies = [
  "indexmap 2.14.0",
  "itertools 0.14.0",
  "maplit",
- "mimalloc",
  "mockall",
  "model",
  "num 0.4.3",
@@ -4491,7 +4490,6 @@ dependencies = [
  "itertools 0.14.0",
  "liquidity-sources",
  "maplit",
- "mimalloc",
  "model",
  "moka",
  "num 0.4.3",
@@ -6227,16 +6225,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
-name = "libmimalloc-sys"
-version = "0.1.44"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "667f4fec20f29dfc6bc7357c582d91796c169ad7e2fce709468aefeb2c099870"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
 name = "libredox"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6443,15 +6431,6 @@ dependencies = [
  "keccak",
  "rand_core 0.6.4",
  "zeroize",
-]
-
-[[package]]
-name = "mimalloc"
-version = "0.1.48"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1ee66a4b64c74f4ef288bcbb9192ad9c3feaad75193129ac8509af543894fd8"
-dependencies = [
- "libmimalloc-sys",
 ]
 
 [[package]]
@@ -7133,7 +7112,6 @@ dependencies = [
  "http-client",
  "humantime",
  "humantime-serde",
- "mimalloc",
  "mockall",
  "model",
  "multibase",
@@ -7414,7 +7392,6 @@ dependencies = [
  "ethrpc",
  "futures",
  "itertools 0.14.0",
- "mimalloc",
  "num 0.4.3",
  "number",
  "observe",
@@ -8232,7 +8209,6 @@ dependencies = [
  "gas-price-estimation",
  "http-client",
  "humantime",
- "mimalloc",
  "mockall",
  "number",
  "observe",
@@ -9791,6 +9767,18 @@ dependencies = [
  "derivation-path",
  "qstring",
  "uriparse",
+]
+
+[[package]]
+name = "solana-driver"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "futures",
+ "observe",
+ "tikv-jemallocator",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -11371,7 +11359,6 @@ dependencies = [
  "itertools 0.14.0",
  "liquidity-sources",
  "maplit",
- "mimalloc",
  "model",
  "moka",
  "num 0.4.3",
