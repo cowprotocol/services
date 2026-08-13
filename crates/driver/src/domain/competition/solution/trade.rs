@@ -177,6 +177,12 @@ impl Fulfillment {
         &self.order
     }
 
+    /// Rebuild this fulfillment for a different `order`, keeping the executed
+    /// amount, fee and haircut.
+    pub fn with_order(&self, order: competition::Order) -> Result<Self, error::Trade> {
+        Self::new(order, self.executed, self.fee, self.haircut_fee)
+    }
+
     pub fn executed(&self) -> order::TargetAmount {
         self.executed
     }

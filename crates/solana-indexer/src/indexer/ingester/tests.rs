@@ -127,11 +127,15 @@ async fn account_update_is_ignored() {
 }
 
 #[tokio::test]
-async fn slot_update_advances_latest_chain_slot() {
-    let (mut ingester, _rx, slot) = ingester(stream::iter([slot_update(9_001)]));
+async fn slot_update_advances_latest_chain_slot_and_is_forwarded() {
+    let (mut ingester, mut rx, slot) = ingester(stream::iter([slot_update(9_001)]));
 
     assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
     assert_eq!(slot.load(Ordering::Relaxed), 9_001);
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(StreamUpdate::Slot { slot: Slot(9_001) })
+    ));
 }
 
 #[tokio::test]

@@ -1,10 +1,15 @@
-#![expect(dead_code)]
+#![cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "dead in the lib build until the wiring consumes the decoder"
+    )
+)]
 //! The decoder pulls `StreamUpdate`s from the ingester, decodes
 //! settlement-program and SolFlow transactions, and persists typed events.
 
-// TODO: `decode_solflow` and the persist path are stubbed. `run` drains the
-// channel, decodes settlement instructions into `SettlementEvent`s, and drops
-// them until the persistence adapter lands.
+// TODO: `decode_solflow` is a stub (the on-chain SolFlow program does not
+// exist), and the `Persistence` write bodies are no-ops (no Postgres adapter).
 
 use {
     crate::{
@@ -13,7 +18,7 @@ use {
             Signature,
             channel::StreamUpdate,
             errors::{DecodeError, PersistenceError},
-            events::{SettlementEvent, TradeDelta},
+            events::{DecodedEvent, SettlementEvent, TradeDelta},
             order::OrderUid,
             slot::Slot,
             tx::{ResolvedInstruction, TxContext},
@@ -34,6 +39,7 @@ use {
         recover_discriminator,
     },
     solana_sdk::pubkey::Pubkey,
+    std::collections::BTreeMap,
     tokio::sync::mpsc::Receiver,
 };
 
@@ -68,77 +74,187 @@ impl Decoder {
         }
     }
 
-    /// Main loop. Drains the channel and decodes each transaction's tracked
-    /// instructions. Returns when the ingester drops the sender.
+    /// Main loop. Drains the channel, decodes each transaction's tracked
+    /// instructions, and hands the results to the persistence seam. Returns
+    /// when the ingester drops the sender.
+    ///
+    /// Events and dead letters are buffered per slot and flushed once a
+    /// transaction of a later slot arrives: stream resume is slot-granular
+    /// (`from_slot = watermark + 1`), so the watermark may only name slots
+    /// whose transactions have all been delivered. Buffering also makes it
+    /// one persistence batch per slot instead of one per transaction.
     pub async fn run(&mut self) -> Result<(), PersistenceError> {
+        let mut pending: BTreeMap<Slot, SlotBuffer> = BTreeMap::new();
+        let mut flushed_through: Option<Slot> = None;
         while let Some(update) = self.rx.recv().await {
-            let StreamUpdate::Tx {
-                slot,
-                signature,
-                inner,
-            } = update;
-            self.decode(&inner, slot, signature);
+            let (slot, signature, inner) = match update {
+                StreamUpdate::Tx {
+                    slot,
+                    signature,
+                    inner,
+                } => (slot, signature, inner),
+                // Slot statuses bound the flush latency: the next settlement
+                // transaction can be minutes away.
+                StreamUpdate::Slot { slot } => {
+                    self.flush_up_to(&mut pending, slot, &mut flushed_through)
+                        .await?;
+                    continue;
+                }
+            };
+            self.flush_up_to(&mut pending, slot, &mut flushed_through)
+                .await?;
+
+            if let Some(flushed) = flushed_through
+                && slot <= flushed
+            {
+                // The events below still persist, and the backward watermark
+                // write is a no-op, but a crash before this batch flushes
+                // would lose the transaction: resume starts past its slot.
+                tracing::warn!(
+                    %slot,
+                    flushed_through = %flushed,
+                    "transaction arrived for an already flushed slot"
+                );
+            }
+
+            let buffer = pending.entry(slot).or_default();
+            match self.decode(*inner, slot, signature) {
+                Ok(events) => {
+                    tracing::debug!(slot = %slot, event_count = events.len(), "decoded events");
+                    buffer.events.extend(events);
+                }
+                // Recovery replays the whole transaction by signature and
+                // persists its events then, idempotent writes absorb any
+                // overlap with a re-streamed delivery.
+                Err(DecodeFailed) => buffer.dead_letters.push(signature),
+            }
+        }
+        // The stream ended. Only the newest buffer may be missing
+        // transactions, everything below it was already proven complete by
+        // later stream activity.
+        let mut leftover = pending.into_iter().peekable();
+        while let Some((slot, buffer)) = leftover.next() {
+            let complete = leftover.peek().is_some();
+            self.flush_slot(slot, buffer, complete).await?;
         }
         Ok(())
     }
 
-    /// Decode one transaction's tracked instructions into domain events. The
-    /// settlement half runs through the pure [`decode_settlement`]; the SolFlow
-    /// half is still stubbed.
-    fn decode(&self, tx: &SubscribeUpdateTransactionInfo, slot: Slot, signature: Signature) {
+    /// Flushes every buffer at least [`FLUSH_HOLDBACK_SLOTS`] behind the
+    /// observed slot. The hold-back gives late-delivered transactions a
+    /// window to join their slot's still unflushed buffer, keeping them
+    /// crash-safe: resume replays everything from the watermark on.
+    async fn flush_up_to(
+        &self,
+        pending: &mut BTreeMap<Slot, SlotBuffer>,
+        observed: Slot,
+        flushed_through: &mut Option<Slot>,
+    ) -> Result<(), PersistenceError> {
+        let cutoff = u64::from(observed).saturating_sub(FLUSH_HOLDBACK_SLOTS);
+        let keep = pending.split_off(&Slot(cutoff.saturating_add(1)));
+        for (slot, buffer) in std::mem::replace(pending, keep) {
+            self.flush_slot(slot, buffer, true).await?;
+            *flushed_through = (*flushed_through).max(Some(slot));
+        }
+        Ok(())
+    }
+
+    /// Persist one slot's batch. Dead letters go first: once the watermark
+    /// passes a slot it is never replayed wholesale, so its replay markers
+    /// must already be durable. Events and the watermark advance ride one
+    /// call so the adapter can apply both in one SQL transaction. A slot cut
+    /// off by the stream end (`complete = false`) keeps the watermark behind
+    /// itself.
+    async fn flush_slot(
+        &self,
+        slot: Slot,
+        buffer: SlotBuffer,
+        complete: bool,
+    ) -> Result<(), PersistenceError> {
+        for signature in buffer.dead_letters {
+            self.persistence.write_dead_letter(signature, slot).await?;
+        }
+        let watermark = if complete {
+            slot
+        } else {
+            Slot(u64::from(slot).saturating_sub(1))
+        };
+        if buffer.events.is_empty() {
+            if complete {
+                self.persistence.write_watermark(watermark).await?;
+            }
+        } else {
+            self.persistence
+                .persist_events(buffer.events, watermark)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Decode one transaction's tracked instructions into domain events.
+    /// `Err` means the transaction failed to decode and must be dead-lettered
+    /// whole. The settlement half runs through the pure [`decode_settlement`],
+    /// the SolFlow half is a stub.
+    #[tracing::instrument(skip_all, fields(slot = %slot, signature = %signature))]
+    fn decode(
+        &self,
+        tx: SubscribeUpdateTransactionInfo,
+        slot: Slot,
+        signature: Signature,
+    ) -> Result<Vec<DecodedEvent>, DecodeFailed> {
+        // `meta` carries whether the transaction succeeded, so without it there is
+        // no way to tell, and emitting events for a transaction that may have
+        // reverted is the failure this guard exists to prevent. Dead-letter it
+        // instead of skipping: replay re-fetches by signature, and
+        // `getTransaction` returns the meta.
+        let Some(meta) = tx.meta.as_ref() else {
+            tracing::warn!("transaction update without meta");
+            return Err(DecodeFailed);
+        };
+
+        // A failed Solana transaction rolls back every account write, so no
+        // state-changing event may be emitted for it. Failed transactions are
+        // delivered on purpose (the revert is an attribution signal), and no
+        // event models the revert.
+        if meta.err.is_some() {
+            tracing::debug!("transaction reverted, skipping");
+            return Ok(Vec::new());
+        }
+
         let instructions =
-            relevant_instructions(tx, &self.settlement_program, &self.solflow_program);
+            relevant_instructions(&tx, &self.settlement_program, &self.solflow_program);
         if instructions.is_empty() {
-            return;
+            return Ok(Vec::new());
         }
 
         // `relevant_instructions` reconstructs the account list internally to
         // resolve program ids; rebuild it once here so the decode can resolve
         // account indices to pubkeys too.
-        let account_keys = build_account_keys(tx);
-        let post_token_balances = tx
-            .meta
-            .as_ref()
-            .map(|meta| meta.post_token_balances.clone())
-            .unwrap_or_default();
         let ctx = TxContext {
             slot,
             signature,
-            account_keys,
-            post_token_balances,
+            account_keys: build_account_keys(&tx),
+            post_token_balances: tx
+                .meta
+                .map(|meta| meta.post_token_balances)
+                .unwrap_or_default(),
         };
 
-        // `relevant_instructions` yields only settlement and SolFlow instructions.
-        // The settlement set is decoded here and the SolFlow set below, so the two
-        // filters are exhaustive and nothing is silently dropped.
-        let settlement: Vec<ResolvedInstruction> = instructions
-            .iter()
-            .filter(|instruction| instruction.program_id == self.settlement_program)
-            .cloned()
-            .collect();
+        let (settlement, solflow): (Vec<ResolvedInstruction>, Vec<ResolvedInstruction>) =
+            instructions
+                .into_iter()
+                .partition(|instruction| instruction.program_id == self.settlement_program);
 
-        // TODO: resolve order PDAs against persisted order rows once the store
-        // adapter lands. Until then nothing resolves, so `SettlementFinalized`
-        // events carry the tx-level fields with empty trades.
-        // TODO: skip transactions whose `meta.err` is set: a reverted settlement
-        // or order creation must not emit an event. Deferred until the persist
-        // path is wired (nothing is persisted yet).
-        let events = decode_settlement(&settlement, &ctx, |_order_pda| None);
+        // TODO: resolve order PDAs against persisted order rows. Without a
+        // resolver backend nothing resolves, so `SettlementFinalized` events
+        // carry the tx-level fields with empty trades.
+        let events = decode_settlement(&settlement, &ctx, |_order_pda| None)?;
 
-        for instruction in instructions
-            .iter()
-            .filter(|instruction| instruction.program_id == self.solflow_program)
-        {
+        for instruction in &solflow {
             self.decode_solflow(instruction);
         }
 
-        // TODO: persist `events` once the persistence adapter lands; for now the
-        // decode runs end to end but its output is dropped.
-        tracing::debug!(
-            slot = %ctx.slot,
-            event_count = events.len(),
-            "decoded settlement events"
-        );
+        Ok(events.into_iter().map(DecodedEvent::Settlement).collect())
     }
 
     /// TODO: decode the SolFlow instruction data. The on-chain program does not
@@ -162,8 +278,31 @@ struct ResolvedOrder {
     order_fulfilled: bool,
 }
 
+/// Slots stay buffered until the stream reports a slot this far past them.
+/// A transaction delivered up to this many slots late still joins its own
+/// unflushed buffer instead of racing the watermark.
+const FLUSH_HOLDBACK_SLOTS: u64 = 2;
+
+/// One slot's accumulated output, flushed once the stream moves past the
+/// hold-back window.
+#[derive(Default)]
+struct SlotBuffer {
+    events: Vec<DecodedEvent>,
+    /// Transactions that failed to decode, dead-lettered at flush time.
+    dead_letters: Vec<Signature>,
+}
+
+/// At least one instruction of the transaction failed to decode. None of the
+/// transaction's events persist: its effects are not independent of each
+/// other, so the dead-letter replay restores them all at once instead of
+/// leaving half a transaction visible.
+#[derive(Debug, PartialEq, Eq)]
+struct DecodeFailed;
+
 /// Decode the settlement-program instructions of one transaction into domain
-/// events.
+/// events. `Err` means at least one instruction failed to decode and the
+/// whole transaction must be dead-lettered, every instruction is still
+/// scanned so each failure gets logged.
 ///
 /// Pure: every tx-level input arrives through `ctx`, and any order field the
 /// `BeginSettle` wire does not carry is resolved through `resolve_order` (keyed
@@ -173,23 +312,27 @@ fn decode_settlement(
     instructions: &[ResolvedInstruction],
     ctx: &TxContext,
     resolve_order: impl Fn(&Pubkey) -> Option<ResolvedOrder>,
-) -> Vec<SettlementEvent> {
+) -> Result<Vec<SettlementEvent>, DecodeFailed> {
     let mut events = Vec::new();
+    let mut decode_failed = false;
 
     // Instructions decodable on their own, without tx-level pairing.
     for instruction in instructions {
         let Ok((discriminator, _)) = recover_discriminator(&instruction.data) else {
-            tracing::debug!(
+            decode_failed = true;
+            // Warn, not debug: this dead-letters the transaction, so it needs to
+            // be findable in the logs alongside the row.
+            tracing::warn!(
                 instruction_index = instruction.instruction_index,
+                err = %DecodeError::UnknownDiscriminator,
                 "settlement instruction with an unknown discriminator, skipping"
             );
             continue;
         };
         // A landed (non-reverted) transaction carries valid instruction data, so
         // a decode failure here means a decoder bug or an unannounced program
-        // layout change, not a normal case. Surface it as a warning rather than
-        // dropping it silently. Once the persistence adapter lands these route to
-        // the dead-letter table.
+        // layout change, not a normal case. Surface it as a warning and set the
+        // failure flag so the transaction is dead-lettered.
         let decoded = match discriminator {
             SettlementInstruction::CreateOrder => {
                 decode_order_created(instruction, &ctx.account_keys).map(|event| vec![event])
@@ -209,11 +352,14 @@ fn decode_settlement(
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
-            Err(err) => tracing::warn!(
-                instruction_index = instruction.instruction_index,
-                %err,
-                "failed to decode settlement instruction"
-            ),
+            Err(err) => {
+                decode_failed = true;
+                tracing::warn!(
+                        instruction_index = instruction.instruction_index,
+                    %err,
+                    "failed to decode settlement instruction"
+                );
+            }
         }
     }
 
@@ -223,8 +369,12 @@ fn decode_settlement(
         instructions,
         ctx,
         &resolve_order,
+        &mut decode_failed,
     ));
-    events
+    if decode_failed {
+        return Err(DecodeFailed);
+    }
+    Ok(events)
 }
 
 /// `CreateOrder` -> `OrderCreated`. The parser recovers the encoded order
@@ -269,11 +419,14 @@ fn decode_buffers_created(
 /// Pairing is by index: a parsed `BeginSettle` carries the top-level
 /// instruction index of its `FinalizeSettle` (`finalize_ix_index`), which must
 /// match a `FinalizeSettle` present in the same transaction. It is independent
-/// of the two instructions' relative order.
+/// of the two instructions' relative order. A pair that cannot be decoded (a
+/// parse failure, unresolvable account keys, or a `BeginSettle` whose named
+/// `FinalizeSettle` is missing) sets `decode_failed` and emits nothing.
 fn decode_settlements_finalized(
     instructions: &[ResolvedInstruction],
     ctx: &TxContext,
     resolve_order: &impl Fn(&Pubkey) -> Option<ResolvedOrder>,
+    decode_failed: &mut bool,
 ) -> Vec<SettlementEvent> {
     // The solver is the transaction fee payer: the first account key, which
     // Solana guarantees is the signer that submitted the transaction.
@@ -288,13 +441,23 @@ fn decode_settlements_finalized(
         };
         let mut begin_accounts = match instruction_account_keys(begin, &ctx.account_keys) {
             Ok(accounts) => accounts,
-            Err(_) => continue,
+            Err(err) => {
+                *decode_failed = true;
+                tracing::warn!(
+                        instruction_index = begin.instruction_index,
+                    %err,
+                    "BeginSettle account resolution failed, skipping"
+                );
+                continue;
+            }
         };
         let begin_input = match BeginSettleInput::parse(&begin.data, &mut begin_accounts) {
             Ok(input) => input,
-            Err(_) => {
+            Err(err) => {
+                *decode_failed = true;
                 tracing::warn!(
-                    instruction_index = begin.instruction_index,
+                        instruction_index = begin.instruction_index,
+                    %err,
                     "BeginSettle did not match the expected layout, skipping"
                 );
                 continue;
@@ -309,7 +472,8 @@ fn decode_settlements_finalized(
                     Ok((SettlementInstruction::FinalizeSettle, _))
                 )
         }) else {
-            tracing::debug!(
+            *decode_failed = true;
+            tracing::warn!(
                 instruction_index = begin.instruction_index,
                 finalize_ix_index = begin_input.finalize_ix_index,
                 "BeginSettle without a paired FinalizeSettle in the tx, skipping"
@@ -318,14 +482,24 @@ fn decode_settlements_finalized(
         };
         let mut finalize_accounts = match instruction_account_keys(finalize, &ctx.account_keys) {
             Ok(accounts) => accounts,
-            Err(_) => continue,
+            Err(err) => {
+                *decode_failed = true;
+                tracing::warn!(
+                        instruction_index = finalize.instruction_index,
+                    %err,
+                    "FinalizeSettle account resolution failed, skipping"
+                );
+                continue;
+            }
         };
         let finalize_input =
             match FinalizeSettleInput::parse(&finalize.data, &mut finalize_accounts) {
                 Ok(input) => input,
-                Err(_) => {
+                Err(err) => {
+                    *decode_failed = true;
                     tracing::warn!(
-                        instruction_index = finalize.instruction_index,
+                                instruction_index = finalize.instruction_index,
+                        %err,
                         "FinalizeSettle did not match the expected layout, skipping"
                     );
                     continue;
@@ -338,6 +512,7 @@ fn decode_settlements_finalized(
         let order_count = begin_input.orders.iter().count();
         let push_count = finalize_input.pushes.iter().count();
         if order_count != push_count {
+            *decode_failed = true;
             tracing::warn!(
                 instruction_index = begin.instruction_index,
                 order_count,
@@ -362,6 +537,7 @@ fn decode_settlements_finalized(
                 acc.checked_add(u64::from_le_bytes(*amount))
             });
             let Some(amount_withdrawn_delta) = sum else {
+                *decode_failed = true;
                 tracing::warn!(
                     instruction_index = begin.instruction_index,
                     "pull amounts overflow u64, skipping the settlement pair"
@@ -377,9 +553,7 @@ fn decode_settlements_finalized(
         }
 
         events.push(SettlementEvent::SettlementFinalized {
-            // The wire carries `auction_id` as i64. It is non-negative in
-            // practice.
-            auction_id: begin_input.auction_id as u64,
+            auction_id: begin_input.auction_id,
             solver,
             tx_signature: ctx.signature,
             slot: ctx.slot,
@@ -400,10 +574,12 @@ fn instruction_account_keys(
         .accounts
         .iter()
         .map(|&index| {
-            account_keys
-                .get(usize::from(index))
-                .copied()
-                .ok_or(DecodeError::SchemaMismatch)
+            account_keys.get(usize::from(index)).copied().ok_or(
+                DecodeError::AccountIndexOutOfRange {
+                    index,
+                    len: account_keys.len(),
+                },
+            )
         })
         .collect()
 }

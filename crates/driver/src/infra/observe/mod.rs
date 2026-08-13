@@ -447,6 +447,10 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::TooManyPendingSettlements => "TooManyPendingSettlements",
         competition::Error::NoValidOrdersFound => "NoValidOrdersFound",
         competition::Error::MalformedRequest => "MalformedRequest",
+        competition::Error::FastPathOrderMismatch => "FastPathOrderMismatch",
+        competition::Error::FastPathLimitNotMet => "FastPathLimitNotMet",
+        competition::Error::FastPathInvalidOrder(_) => "FastPathInvalidOrder",
+        competition::Error::FastPathSettlement(_) => "FastPathSettlement",
     }
 }
 

@@ -493,8 +493,12 @@ where
         // update storage regardless if it's a full update or partial update
         let range = RangeInclusive::try_new(blocks.first().unwrap().0, blocks.last().unwrap().0)?;
         if is_reorg {
+            // must also run with no events to delete reorged ones in the range
             self.store.replace_events(events, range.clone()).await?;
-        } else {
+        } else if !events.is_empty() {
+            // most blocks contain no events for the indexed contract; skipping
+            // the append then saves an empty write transaction per block for
+            // DB backed stores
             self.store.append_events(events).await?;
         }
         self.update_last_handled_blocks(&blocks);

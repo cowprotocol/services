@@ -18,7 +18,6 @@ path = "src/main.rs"
 [dependencies]
 clap = { workspace = true }
 configs = { workspace = true }
-futures = { workspace = true }
 humantime-serde = { workspace = true }
 observe = { workspace = true }
 serde = { workspace = true }
