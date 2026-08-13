@@ -4,7 +4,7 @@ use {
     crate::infra::config::{Chain, Config, Http, Rpc, Solver},
     configs::shared::LoggingConfig,
     serde::{Deserialize, Deserializer},
-    std::{net::SocketAddr, path::Path, time::Duration},
+    std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
     tokio::fs,
 };
 
@@ -51,7 +51,7 @@ pub async fn load(path: &Path) -> Config {
             .map(|solver| Solver {
                 name: solver.name,
                 endpoint: solver.endpoint,
-                max_in_flight: solver.max_in_flight,
+                max_in_flight: solver.max_in_flight.get(),
             })
             .collect(),
     }
@@ -108,7 +108,7 @@ struct HttpConfig {
 struct SolverConfig {
     name: String,
     endpoint: url::Url,
-    max_in_flight: usize,
+    max_in_flight: NonZero<usize>,
 }
 
 #[cfg(test)]
@@ -153,6 +153,21 @@ mod tests {
             .expect_err("empty endpoints should be rejected");
         assert!(
             err.to_string().contains("expected at least one element"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn zero_max_in_flight_rejected() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            max-in-flight = 0
+        "#;
+        let err = toml::de::from_str::<SolverConfig>(solver_config)
+            .expect_err("zero max-in-flight should be rejected");
+        assert!(
+            err.to_string().contains("expected a nonzero usize"),
             "unexpected error: {err}"
         );
     }
