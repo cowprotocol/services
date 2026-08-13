@@ -691,10 +691,11 @@ impl RunLoop {
         let (request, delta_request) = self.build_auction_requests(auction).await;
 
         let mut bids = futures::future::join_all(self.drivers.iter().cloned().map(|driver| {
-            let solve_request = driver
-                .supports_auction_deltas
-                .then(|| delta_request.clone())
-                .unwrap_or_else(|| request.clone());
+            let solve_request = if driver.supports_auction_deltas {
+                delta_request.clone()
+            } else {
+                request.clone()
+            };
             self.solve(driver, solve_request)
         }))
         .await
