@@ -19,7 +19,7 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut tx = self.pool.begin().await?;
-        let id = save_quote_competition(&mut tx, data).await?;
+        let id = save_quote_competition(&mut tx, data, &self.domain_separator).await?;
         tx.commit().await?;
         Ok(id)
     }

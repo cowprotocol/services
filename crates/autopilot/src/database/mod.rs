@@ -1,4 +1,5 @@
 use {
+    model::DomainSeparator,
     num::ToPrimitive,
     shared::arguments::DB_MAX_CONNECTIONS_DEFAULT,
     sqlx::{Executor, PgConnection, PgPool, postgres::PgPoolOptions},
@@ -40,6 +41,10 @@ impl Default for Config {
 pub struct Postgres {
     pub pool: PgPool,
     pub config: Config,
+    /// Used to recover JIT order owners and compute their `order_uid`
+    /// before persisting fast-path quote competitions. Defaults to zero;
+    /// production callers must set it via `with_domain_separator`.
+    pub domain_separator: DomainSeparator,
 }
 
 impl Postgres {
@@ -51,7 +56,16 @@ impl Postgres {
 
         Self::start_db_metrics_job(pool.clone());
 
-        Ok(Self { pool, config })
+        Ok(Self {
+            pool,
+            config,
+            domain_separator: DomainSeparator::default(),
+        })
+    }
+
+    pub fn with_domain_separator(mut self, domain_separator: DomainSeparator) -> Self {
+        self.domain_separator = domain_separator;
+        self
     }
 
     fn start_db_metrics_job(pool: PgPool) {
