@@ -35,6 +35,10 @@ test-doc:
 test-db:
     cargo nextest run postgres --test-threads 1 --run-ignored ignored-only
 
+# Run solana database tests (schema from database/sql-solana)
+test-db-solana:
+    cargo nextest run solana_db --test-threads 1 --run-ignored ignored-only --no-tests=pass
+
 # Run End-to-end tests on local node (this machine)
 test-e2e-local: (test-e2e "local_node")
 
