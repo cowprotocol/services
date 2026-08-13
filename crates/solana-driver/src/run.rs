@@ -1,9 +1,9 @@
 //! Driver entry-point logic.
 
 use {
-    crate::infra::{config, observe as infra_observe},
+    crate::infra::{Api, config, observe as infra_observe},
     clap::Parser,
-    std::path::PathBuf,
+    std::{path::PathBuf, time::Duration},
 };
 
 /// The Solana driver command line arguments.
@@ -33,7 +33,24 @@ pub async fn run(args: Args) {
         tracing::info!(?config, "loaded config");
     }
 
-    tracing::info!("awaiting shutdown signal");
-    observe::shutdown::shutdown_signal().await;
-    tracing::info!("shutting down");
+    let shutdown_token = tokio_util::sync::CancellationToken::new();
+    let api = Api {
+        addr: config.http.bind_address,
+    };
+    let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
+    let serve = Api::serve(listener, shutdown_token.clone());
+
+    futures::pin_mut!(serve);
+    tokio::select! {
+        result = &mut serve => panic!("serve task exited: {result:?}"),
+        _ = observe::shutdown::shutdown_signal() => {
+            tracing::info!("Gracefully shutting down API");
+            shutdown_token.cancel();
+            // Shutdown timeout needs to be larger than the auction deadline
+            match tokio::time::timeout(Duration::from_secs(20), serve).await {
+                Ok(inner) => inner.expect("API failed during shutdown"),
+                Err(_) => panic!("API shutdown exceeded timeout"),
+            }
+        }
+    }
 }
