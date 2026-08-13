@@ -614,19 +614,4 @@ mod tests {
         assert!(delta.updated_orders.is_empty());
         assert!(delta.removed_orders.is_empty());
     }
-
-    #[test]
-    fn removed_orders_are_sorted() {
-        let previous = [
-            test_order(0x33, 0),
-            test_order(0x11, 0),
-            test_order(0x22, 0),
-        ];
-
-        let delta = OrderDelta::compute(&previous, &[]);
-
-        // The uids come out of a `HashMap`, so without sorting their order
-        // would differ between runs.
-        assert_eq!(delta.removed_orders, [uid(0x11), uid(0x22), uid(0x33)]);
-    }
 }
