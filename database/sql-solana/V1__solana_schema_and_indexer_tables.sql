@@ -30,13 +30,3 @@ CREATE TABLE solana.dead_letter (
     reason       text NOT NULL,
     inserted_at  timestamp with time zone NOT NULL DEFAULT now()
 );
-
--- Latest observed settlement program state PDA (solver allowlist + manager).
-CREATE TABLE solana.settlement_state_pda (
-    singleton       boolean PRIMARY KEY DEFAULT true CHECK (singleton),
-    slot            bigint NOT NULL,
-    observed_at     timestamp with time zone NOT NULL DEFAULT now(),
-    allowlist       bytea[] NOT NULL,
-    manager         bytea NOT NULL CHECK (length(manager) = 32),
-    pending_manager bytea CHECK (length(pending_manager) = 32)
-);
