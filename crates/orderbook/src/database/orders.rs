@@ -5,9 +5,9 @@ use {
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
-    bigdecimal::ToPrimitive,
     chrono::{DateTime, Utc},
     database::{
+        PgTransaction,
         byte_array::ByteArray,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
         orders::{self, FullOrder, OrderKind as DbOrderKind},
@@ -25,6 +25,7 @@ use {
             OrderStatus,
             OrderUid,
         },
+        quote::QuoteId,
         signature::Signature,
         time::now_in_epoch_seconds,
     },
@@ -56,13 +57,22 @@ use {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait OrderStoring: Send + Sync {
-    async fn insert_order(&self, order: &Order) -> Result<(), InsertionError>;
+    /// When `quote_id` is `Some`, the transient row is dropped from `quotes`
+    /// and its `auction_id` (if any) drives the fast-path competition patch.
+    /// The `order_quotes` row inherits that `auction_id` so there's a single
+    /// source of truth for the (auction, order) mapping.
+    async fn insert_order(
+        &self,
+        order: &Order,
+        quote_id: Option<QuoteId>,
+    ) -> Result<(), InsertionError>;
     async fn cancel_orders(&self, order_uids: Vec<OrderUid>, now: DateTime<Utc>) -> Result<()>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
     async fn replace_order(
         &self,
         old_order: &OrderUid,
         new_order: &Order,
+        quote_id: Option<QuoteId>,
     ) -> Result<(), InsertionError>;
     async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>>;
     /// All orders of a single user ordered by creation date descending (newest
@@ -114,7 +124,11 @@ async fn cancel_order(
     Ok(())
 }
 
-async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), InsertionError> {
+async fn insert_order(
+    order: &Order,
+    quote_id: Option<QuoteId>,
+    ex: &mut PgTransaction<'_>,
+) -> Result<(), InsertionError> {
     let order_uid = ByteArray(order.metadata.uid.0);
     insert_order_event(
         ex,
@@ -192,23 +206,42 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         .await
         .map_err(InsertionError::DbError)?;
 
-    if let Some(quote) = order.metadata.quote.as_ref() {
+    // delete the transient `quotes` row so every order is tied to exactly one
+    // quote — the data is then moved directly into permanent `order_quotes`
+    // table.
+    let quote = match quote_id {
+        Some(id) => database::quotes::delete_and_return_row(ex, id)
+            .await
+            .map_err(InsertionError::DbError)?,
+        None => None,
+    };
+
+    if let Some(quote) = quote {
         let db_quote = database::orders::Quote {
             order_uid,
-            // safe to unwrap as these values were converted from f64 previously
-            gas_amount: quote.gas_amount.to_f64().unwrap(),
-            gas_price: quote.gas_price.to_f64().unwrap(),
-            sell_token_price: quote.sell_token_price.to_f64().unwrap(),
-            sell_amount: u256_to_big_decimal(&quote.sell_amount),
-            buy_amount: u256_to_big_decimal(&quote.buy_amount),
-            solver: ByteArray(quote.solver.0.0),
+            gas_amount: quote.gas_amount,
+            gas_price: quote.gas_price,
+            sell_token_price: quote.sell_token_price,
+            sell_amount: quote.sell_amount,
+            buy_amount: quote.buy_amount,
+            solver: quote.solver,
             verified: quote.verified,
-            metadata: quote.metadata.clone(),
-            auction_id: None,
+            metadata: quote.metadata,
+            auction_id: quote.auction_id,
         };
         database::orders::insert_quote(ex, &db_quote)
             .await
             .map_err(InsertionError::DbError)?;
+
+        if let Some(auction_id) = quote.auction_id {
+            // the quote is associated with a auction competition indicating
+            // that this is going to be used for a fast path execution.
+            // not that we know the final order uid we can patch up the
+            // `proposed_trade_executions` rows.
+            database::solver_competition_v2::finalize_quote_competition(ex, auction_id, order_uid)
+                .await
+                .map_err(InsertionError::DbError)?;
+        }
     }
 
     Ok(())
@@ -216,7 +249,11 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
 
 #[async_trait::async_trait]
 impl OrderStoring for Postgres {
-    async fn insert_order(&self, order: &Order) -> Result<(), InsertionError> {
+    async fn insert_order(
+        &self,
+        order: &Order,
+        quote_id: Option<QuoteId>,
+    ) -> Result<(), InsertionError> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["insert_order"])
@@ -225,7 +262,7 @@ impl OrderStoring for Postgres {
         let mut connection = self.pool.acquire().await?;
         let mut ex = connection.begin().await?;
 
-        insert_order(order, &mut ex).await?;
+        insert_order(order, quote_id, &mut ex).await?;
         Self::insert_order_app_data(order, &mut ex).await?;
 
         ex.commit().await?;
@@ -263,6 +300,7 @@ impl OrderStoring for Postgres {
         &self,
         old_order: &model::order::OrderUid,
         new_order: &model::order::Order,
+        quote_id: Option<QuoteId>,
     ) -> anyhow::Result<(), super::orders::InsertionError> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -281,7 +319,7 @@ impl OrderStoring for Postgres {
                         new_order.metadata.creation_date,
                     )
                     .await?;
-                    insert_order(&new_order, ex).await?;
+                    insert_order(&new_order, quote_id, ex).await?;
                     Self::insert_order_app_data(&new_order, ex).await?;
 
                     Ok(())
@@ -936,7 +974,7 @@ mod tests {
             },
             ..Default::default()
         };
-        db.insert_order(&old_order).await.unwrap();
+        db.insert_order(&old_order, None).await.unwrap();
 
         let new_order = Order {
             data: OrderData {
@@ -951,7 +989,7 @@ mod tests {
             },
             ..Default::default()
         };
-        db.replace_order(&old_order.metadata.uid, &new_order)
+        db.replace_order(&old_order.metadata.uid, &new_order, None)
             .await
             .unwrap();
 
@@ -998,7 +1036,7 @@ mod tests {
             },
             ..Default::default()
         };
-        db.insert_order(&old_order).await.unwrap();
+        db.insert_order(&old_order, None).await.unwrap();
 
         let new_order = Order {
             metadata: OrderMetadata {
@@ -1009,11 +1047,11 @@ mod tests {
             },
             ..Default::default()
         };
-        db.insert_order(&new_order).await.unwrap();
+        db.insert_order(&new_order, None).await.unwrap();
 
         // Attempt to replace an old order with one that already exists should fail.
         let err = db
-            .replace_order(&old_order.metadata.uid, &new_order)
+            .replace_order(&old_order.metadata.uid, &new_order, None)
             .await
             .unwrap_err();
         assert!(matches!(err, InsertionError::DuplicatedRecord));
@@ -1046,7 +1084,7 @@ mod tests {
             signature: Signature::default_with(SigningScheme::PreSign),
             ..Default::default()
         };
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, None).await.unwrap();
 
         let order_status = || async {
             db.single_order(&order.metadata.uid)
@@ -1133,9 +1171,9 @@ mod tests {
             }
         };
 
-        db.insert_order(&order(1)).await.unwrap();
-        db.insert_order(&order(2)).await.unwrap();
-        db.insert_order(&order(3)).await.unwrap();
+        db.insert_order(&order(1), None).await.unwrap();
+        db.insert_order(&order(2), None).await.unwrap();
+        db.insert_order(&order(3), None).await.unwrap();
 
         assert_eq!(order_status(1).await, OrderStatus::Open);
         assert_eq!(order_status(2).await, OrderStatus::Open);
@@ -1197,7 +1235,7 @@ mod tests {
             ..Default::default()
         };
 
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, None).await.unwrap();
 
         let single_order = db.single_order(&uid).await.unwrap().unwrap();
         assert_eq!(
@@ -1260,7 +1298,7 @@ mod tests {
             ..Default::default()
         };
 
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, None).await.unwrap();
 
         let single_order = db.single_order(&uid).await.unwrap().unwrap();
 
