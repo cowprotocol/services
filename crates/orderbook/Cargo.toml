@@ -42,7 +42,6 @@ hex-literal = { workspace = true }
 http-client = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
-mimalloc = { workspace = true, optional = true }
 model = { workspace = true }
 multibase = { workspace = true }
 num = { workspace = true }
@@ -81,7 +80,6 @@ tokio = { workspace = true, features = ["test-util"] }
 
 [features]
 e2e = []
-mimalloc-allocator = ["dep:mimalloc"]
 test-util = ["dep:tempfile", "shared/test-util"]
 tokio-console = ["observe/tokio-console"]
 

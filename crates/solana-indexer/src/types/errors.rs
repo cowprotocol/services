@@ -10,12 +10,14 @@ pub(crate) enum DecodeError {
     /// match any known instruction on either program.
     #[error("unknown instruction discriminator")]
     UnknownDiscriminator,
-    /// The ALT (Address Lookup Table) loaded-address list could not be resolved
-    /// against the full account list.
-    #[error("alt resolution failed")]
-    AltResolutionFailed,
-    /// The instruction was recognised but its schema did not match the on-chain
-    /// layout.
+    /// An account index did not resolve against the transaction's account list,
+    /// which includes the ALT (Address Lookup Table) loaded addresses.
+    #[error("account index {index} out of range for {len} account keys")]
+    AccountIndexOutOfRange { index: u8, len: usize },
+    /// The instruction was recognised but its schema did not match the
+    /// on-chain layout. Carries the parser's error rendered as text, which
+    /// names the failed check. Nothing branches on it, and the interface does
+    /// not re-export its error type.
     #[error("schema mismatch")]
     SchemaMismatch,
 }

@@ -13,6 +13,7 @@ use {
     alloy_rpc_types::state::AccountOverride,
     alloy_sol_types::sol,
     ethrpc::Web3,
+    hex_literal::hex,
     std::iter,
 };
 
@@ -89,7 +90,7 @@ const USER_STATE_SLOT: u64 = 52;
 /// the ray multiply and not fit the slot. This stays small enough to round-trip
 /// through both.
 pub(crate) const SENTINEL: [u8; 32] =
-    alloy_primitives::hex!("0x0000000000000000000000000000000000000000000000000102030405060708");
+    hex!("0000000000000000000000000000000000000000000000000102030405060708");
 
 /// Ray-division: `(a * RAY + b/2) / b`, round-half-up. Matches Aave's
 /// `WadRayMath.rayDiv` bit-for-bit so the scaled amount we write into
@@ -194,13 +195,13 @@ mod tests {
     use {
         super::*,
         crate::balance::Strategy,
-        alloy_primitives::{address, b256, hex},
+        alloy_primitives::{address, b256},
         alloy_provider::mock::Asserter,
         alloy_sol_types::SolValue,
     };
 
     fn encode_address(addr: Address) -> String {
-        hex::encode_prefixed(addr.into_word())
+        const_hex::encode_prefixed(addr.into_word())
     }
 
     /// Encodes a `ReserveData` struct as the ABI return payload the pool
@@ -224,7 +225,7 @@ mod tests {
             unbacked: 0,
             isolationModeTotalDebt: 0,
         };
-        hex::encode_prefixed(data.abi_encode())
+        const_hex::encode_prefixed(data.abi_encode())
     }
 
     /// Builds an `Asserter` primed with the three responses the probe

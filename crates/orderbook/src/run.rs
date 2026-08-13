@@ -505,7 +505,7 @@ pub async fn run(config: Configuration) {
     tokio::select! {
         result = &mut serve_api => panic!("API task exited {result:?}"),
         result = metrics_task => panic!("metrics task exited {result:?}"),
-        _ = shutdown_signal() => {
+        _ = observe::shutdown::shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");
             match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
@@ -514,33 +514,6 @@ pub async fn run(config: Configuration) {
             }
         }
     };
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Intercept main signals for graceful shutdown
-    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common
-    let sigterm = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .unwrap()
-            .recv()
-            .await
-    };
-    let sigint = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-            .unwrap()
-            .recv()
-            .await;
-    };
-    futures::pin_mut!(sigint);
-    futures::pin_mut!(sigterm);
-    futures::future::select(sigterm, sigint).await;
-}
-
-#[cfg(windows)]
-async fn shutdown_signal() {
-    // We don't support signal handling on windows
-    std::future::pending().await
 }
 
 async fn check_database_connection(orderbook: &Orderbook) {

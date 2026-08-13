@@ -46,10 +46,19 @@ paths:
             $ref: "#/components/schemas/DateTime"
           required: true
         - in: query
-          name: fastPath
+          name: enableFastPath
           description: Hint that this quote is intended for fast-path execution.
           schema:
             type: boolean
+          required: false
+        - in: query
+          name: auctionId
+          description: >-
+            Real auction id the orderbook allocated from the shared auctions
+            sequence, under which a fast-path solution is cached for a later
+            `/settle`. Only sent for fast-path quotes.
+          schema:
+            type: integer
           required: false
       responses:
         "200":
@@ -439,6 +448,11 @@ components:
         supportsFastPath:
           type: boolean
           description: Whether the quoting solver supports fast-path (out-of-competition) execution.
+        solutionId:
+          type: integer
+          description: >-
+            For fast-path quotes: id of the cached solution, to later submit it
+            via `/settle`. Present only when the solution was successfully cached.
       required:
         - clearingPrices
         - solver
@@ -586,6 +600,34 @@ components:
           description: Auction ID in which the specified solution ID is competing.
           type: integer
           example: 123
+        fastPath:
+          description: >
+            Fast-path (out-of-competition) inputs. When present, the driver
+            re-encodes the cached quote solution against the real signed order
+            before settling. Omitted for regular settlements.
+          type: object
+          properties:
+            order:
+              description: The real signed order the cached solution is re-encoded against.
+              allOf:
+                - $ref: "#/components/schemas/Order"
+            limitPrices:
+              description: >
+                The sell/buy amounts defining the exact price at which the order
+                must be filled.
+              type: object
+              properties:
+                sell:
+                  $ref: "#/components/schemas/TokenAmount"
+                buy:
+                  $ref: "#/components/schemas/TokenAmount"
+            nativePrices:
+              description: >
+                Native prices (wei per 10**18 of the token), keyed by token
+                address.
+              type: object
+              additionalProperties:
+                $ref: "#/components/schemas/TokenAmount"
     RevealRequest:
       description: Request to the `/reveal` endpoint.
       type: object

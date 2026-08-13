@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.chain
-    restart: always
+    restart: unless-stopped
     entrypoint: /usr/local/bin/anvil
     command: --fork-url ${ETH_RPC_URL} --block-time 12
     environment:
@@ -35,7 +35,7 @@ services:
 
   db:
     image: postgres:16
-    restart: always
+    restart: unless-stopped
     environment:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
@@ -53,7 +53,7 @@ services:
 
   adminer:
     image: adminer
-    restart: always
+    restart: unless-stopped
     ports:
       - 8082:8080
     depends_on:
@@ -80,7 +80,7 @@ services:
     # explicit tag so the localdev and prebuilt compose variants never reuse
     # each other's images (default tags collide on project + service name)
     image: playground-orderbook:prebuilt
-    restart: always
+    restart: unless-stopped
     command: ["--config", "/orderbook.toml"]
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -112,7 +112,7 @@ services:
       target: autopilot
       dockerfile: ./Dockerfile
     image: playground-autopilot:prebuilt
-    restart: always
+    restart: unless-stopped
     command: ["--config", "/autopilot.toml"]
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -145,7 +145,7 @@ services:
       target: driver
       dockerfile: ./Dockerfile
     image: playground-driver:prebuilt
-    restart: always
+    restart: unless-stopped
     command: ["--config", "/driver.toml"]
     environment:
       - ETHRPC=http://chain:8545
@@ -178,7 +178,7 @@ services:
       target: solvers
       dockerfile: ./Dockerfile
     image: playground-baseline:prebuilt
-    restart: always
+    restart: unless-stopped
     command: ["baseline", "--config", "/baseline.toml"]
     environment:
       - ADDR=0.0.0.0:80
@@ -214,7 +214,7 @@ services:
   # Sourcify - Contract verification service
   sourcify-db:
     image: postgres:16
-    restart: always
+    restart: unless-stopped
     environment:
       - POSTGRES_USER=sourcify
       - POSTGRES_PASSWORD=sourcify
@@ -231,7 +231,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.sourcify
-    restart: always
+    restart: unless-stopped
     depends_on:
       sourcify-db:
         condition: service_healthy
@@ -258,7 +258,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.otterscan
-    restart: always
+    restart: unless-stopped
     environment:
       - ERIGON_URL=http://127.0.0.1:8545
       - SOURCIFY_MODE=${SOURCIFY_MODE:-cloud}
@@ -303,7 +303,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
-    restart: always
+    restart: unless-stopped
     ports:
       - "9090:9090"
     volumes:

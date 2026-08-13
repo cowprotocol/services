@@ -72,6 +72,11 @@ pub fn encoding_failed(
             used.0, limit.0
         )),
         solution::Error::Encoding(_) => return,
+        solution::Error::FastPathTradeCount(_)
+        | solution::Error::FastPathOrderMismatch
+        | solution::Error::FastPathLimitNotMet
+        | solution::Error::FastPathTrade(_)
+        | solution::Error::Math(_) => return,
     };
 
     solver.notify(auction_id, Some(solution_id.clone()), notification);
