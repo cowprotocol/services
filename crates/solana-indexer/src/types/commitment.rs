@@ -1,17 +1,12 @@
 #![expect(dead_code)]
 //! Commitment-tracking types.
 //!
-//! This module holds the types we use to track how far a transaction has
-//! progressed through Solana's commitment pipeline, plus the row shapes the
-//! finalization worker reads and writes.
-//!
-//! The indexer captures transactions at `confirmed` commitment. A later
-//! finalization pass polls `getSignatureStatuses` (whose result is modeled by
-//! [`SignatureStatus`]) and either promotes the row to `finalized` or marks it
-//! `rolled_back`. [`UnfinalizedRow`] is the shape the finalization worker
-//! queries for when sweeping aged confirmed rows, and [`AccountInfo`] holds
-//! account snapshots used for recovery when accounts aren't obtained normally
-//! through the ingestion stream.
+//! The indexer captures transactions at `confirmed` commitment, and a row
+//! counts as finalized once the finalized-slot watermark passes its slot.
+//! [`SignatureStatus`] models the `getSignatureStatuses` result recovery uses
+//! to audit whether an unfinalized transaction was rolled back by a fork, and
+//! [`AccountInfo`] holds account snapshots for recovery paths that cannot get
+//! them from the ingestion stream.
 
 use {
     crate::types::{Signature, slot::Slot},

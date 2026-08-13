@@ -1,5 +1,5 @@
 #![expect(dead_code)]
-//! Solana RPC interface for the finalization worker.
+//! Solana RPC interface for recovery.
 
 use {
     crate::types::{
@@ -12,9 +12,9 @@ use {
     solana_sdk::{pubkey::Pubkey, signature::Signature},
 };
 
-/// Interface for RPC calls the finalization worker needs:
-/// promoting confirmed transactions to finalized, sweeping aged rows,
-/// and reading account state for recovery.
+/// Interface for the RPC calls recovery needs: re-fetching dead-lettered
+/// transactions by signature, auditing unfinalized rows for fork rollbacks,
+/// and reading account state.
 #[async_trait]
 pub(crate) trait SolanaClient: Send + Sync {
     /// Fetch status for multiple transaction signatures (up to 256).

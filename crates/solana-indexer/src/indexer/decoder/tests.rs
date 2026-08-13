@@ -9,11 +9,17 @@ use {
     },
     crate::{
         indexer::ingester::Ingester,
-        persistence::{Call, Persistence},
+        persistence::Postgres,
         types::{
             Signature,
-            channel::StreamUpdate,
-            events::{DecodedEvent, SettlementEvent, TradeDelta},
+            events::{
+                CreatedOrder,
+                DecodedEvent,
+                FinalizedSettlement,
+                OrderKind,
+                SettlementEvent,
+                TradeDelta,
+            },
             order::OrderUid,
             slot::Slot,
             tx::TxContext,
@@ -34,16 +40,15 @@ use {
         },
     },
     bytes::Bytes,
-    futures::stream,
+    futures::StreamExt,
     settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{OrderIntent, OrderKind},
+        data::intent::{OrderIntent, OrderKind as IntentOrderKind},
         pda::order::find_order_pda,
     },
     solana_sdk::pubkey::Pubkey,
     std::sync::{Arc, atomic::AtomicU64},
-    tokio::sync::mpsc::Sender,
 };
 
 fn pubkey(n: u8) -> Pubkey {
@@ -312,12 +317,6 @@ fn signature(n: u8) -> Signature {
     Signature::from([n; 64])
 }
 
-fn test_decoder(settlement: Pubkey, solflow: Pubkey) -> (Decoder, Sender<StreamUpdate>) {
-    let (sender, rx) = tokio::sync::mpsc::channel(16);
-    let decoder = Decoder::new(Persistence::default(), rx, settlement, solflow);
-    (decoder, sender)
-}
-
 /// A slot-status message in the proto envelope the ingester reads.
 fn slot_status_update(slot: u64) -> SubscribeUpdate {
     SubscribeUpdate {
@@ -340,57 +339,16 @@ fn tx_update(slot: u64, info: SubscribeUpdateTransactionInfo) -> SubscribeUpdate
     }
 }
 
-/// A transaction carrying one settlement instruction, so draining it also
-/// routes into `decode_settlement`.
-fn stream_tx(slot: Slot, signature: Signature, settlement: Pubkey) -> StreamUpdate {
-    let info = tx_info(
-        vec![settlement, pubkey(8)],
-        vec![],
-        vec![],
-        vec![CompiledInstruction {
-            program_id_index: 0,
-            accounts: vec![1],
-            data: vec![0],
-        }],
-        vec![],
-    );
-    StreamUpdate::Tx {
-        slot,
-        signature,
-        inner: Box::new(info),
-    }
-}
-
 /// Verifies the run loop drains buffered updates and returns Ok when the
 /// sender drops. Event content is not asserted here: the persistence bodies
 /// are no-ops, so nothing is observable through them. Decode output is
 /// asserted directly in
 /// `decode_wraps_settlement_events_as_decoded`.
-#[tokio::test]
-async fn run_drains_transactions_until_the_sender_drops() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut decoder, sender) = test_decoder(settlement, solflow);
-
-    sender
-        .send(stream_tx(Slot(7), signature(3), settlement))
-        .await
-        .unwrap();
-    // A later slot-status message flushes the buffered slot 7.
-    sender
-        .send(StreamUpdate::Slot { slot: Slot(8) })
-        .await
-        .unwrap();
-    drop(sender);
-
-    assert!(decoder.run().await.is_ok());
-}
-
 /// Build a `CreateOrder` transaction fixture with the client crate. Returns
-/// the tx, the expected order UID (the hash of the encoded intent), and the
-/// `created_by` account. The account-list owner (`pubkey(11)`) differs from
-/// the intent owner (`[0x11; 32]`) so callers can pin that the event owner
-/// comes from the intent data, not the accounts.
-fn create_order_tx() -> (SubscribeUpdateTransactionInfo, OrderUid, Pubkey) {
+/// the tx and the full event its decode must produce. The account-list owner
+/// (`pubkey(11)`) differs from the intent owner (`[0x11; 32]`) so callers can
+/// pin that the event owner comes from the intent data, not the accounts.
+fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     let settlement = pubkey(1);
     let created_by = pubkey(12);
     let intent = OrderIntent {
@@ -400,7 +358,7 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, OrderUid, Pubkey) {
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
-        kind: OrderKind::Sell,
+        kind: IntentOrderKind::Sell,
         partially_fillable: false,
         app_data: [0x44; 32],
     };
@@ -412,7 +370,29 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, OrderUid, Pubkey) {
     }
     .into();
     let tx = tx_from_instructions(pubkey(9), &[instruction]);
-    (tx, OrderUid(intent.uid().to_bytes()), created_by)
+    let expected = CreatedOrder {
+        order_uid: OrderUid(intent.uid().to_bytes()),
+        owner: Pubkey::new_from_array([0x11; 32]),
+        created_by,
+        order_pda: find_order_pda(&settlement, &intent.uid()).0,
+        sell_token_account: Pubkey::new_from_array([0x33; 32]),
+        buy_token_account: Pubkey::new_from_array([0x22; 32]),
+        sell_amount: 1_000,
+        buy_amount: 2_000,
+        valid_to: 42,
+        kind: OrderKind::Sell,
+        partially_fillable: false,
+        app_data: [0x44; 32],
+    };
+    (tx, expected)
+}
+
+/// A decoder over a lazy pool that never connects: `decode` is pure, tests
+/// of it stay database-free.
+fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
+    let pool = sqlx::PgPool::connect_lazy("postgresql://").unwrap();
+    let (_sender, rx) = tokio::sync::mpsc::channel(1);
+    Decoder::new(Postgres::new(pool), rx, settlement, solflow)
 }
 
 /// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run`
@@ -421,22 +401,20 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, OrderUid, Pubkey) {
 /// nothing is dead-lettered, while an absent meta carries no success flag at
 /// all, so nothing is emitted and the transaction is dead-lettered. One
 /// fixture throughout, the meta is the only difference.
-#[test]
-fn decode_wraps_events_and_gates_on_transaction_meta() {
+#[tokio::test]
+async fn decode_wraps_events_and_gates_on_transaction_meta() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut tx, expected_uid, created_by) = create_order_tx();
-    let (decoder, _sender) = test_decoder(settlement, solflow);
+    let (mut tx, expected) = create_order_tx();
+    let decoder = pure_decoder(settlement, solflow);
 
     let events = decoder
         .decode(tx.clone(), Slot(5), signature(6))
         .expect("clean decode");
     assert_eq!(
         events,
-        vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
-            order_uid: expected_uid,
-            owner: Pubkey::new_from_array([0x11; 32]),
-            created_by,
-        })]
+        vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+            Box::new(expected.clone())
+        ))]
     );
 
     tx.meta.as_mut().unwrap().err = Some(TransactionError { err: vec![1] });
@@ -456,7 +434,7 @@ fn decode_wraps_events_and_gates_on_transaction_meta() {
 #[test]
 fn unknown_discriminator_fails_the_whole_transaction() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut tx, _, _) = create_order_tx();
+    let (mut tx, _) = create_order_tx();
     // Prepend a settlement instruction whose discriminator byte matches no
     // known instruction.
     let message = tx.transaction.as_mut().unwrap().message.as_mut().unwrap();
@@ -549,7 +527,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         sell_amount: 1_000,
         buy_amount: 1_234,
         valid_to: 42,
-        kind: OrderKind::Sell,
+        kind: IntentOrderKind::Sell,
         partially_fillable: false,
         app_data: [0x44; 32],
     };
@@ -605,18 +583,19 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 
     assert_eq!(
         events,
-        vec![SettlementEvent::SettlementFinalized {
+        vec![SettlementEvent::SettlementFinalized(FinalizedSettlement {
             auction_id: 4242,
             solver,
             tx_signature: signature(6),
             slot: Slot(5),
+            instruction_index: 0,
             trades: vec![TradeDelta {
                 order_uid: expected_uid,
                 amount_withdrawn_delta: 1_000,
                 amount_received_delta: 1_234,
                 order_fulfilled: true,
             }],
-        }]
+        })]
     );
 }
 
@@ -624,13 +603,17 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 /// ingester and come out of the decoder as persistence writes. This is the
 /// only test spanning the channel, so it pins that what the ingester forwards
 /// is what the decoder can consume, and it drives all three persistence
-/// writes: the bare watermark for a slot with no events, the dead letter for
+/// writes: the bare slot advance for a slot with no events, the dead letter for
 /// a failed decode (which suppresses that transaction's events entirely),
 /// and the flush driven by a slot status moving past the hold-back window.
 #[tokio::test]
-async fn ingester_to_decoder_persists_decoded_events() {
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_ingester_to_decoder_persists_decoded_events() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+
     let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (info, expected_uid, created_by) = create_order_tx();
+    let (info, expected) = create_order_tx();
 
     // Slot 42: a reverted transaction, so the slot decodes to no events.
     // The ingester drops transactions without a well-formed signature.
@@ -669,49 +652,60 @@ async fn ingester_to_decoder_persists_decoded_events() {
     let mut healthy = info;
     healthy.signature = signature(11).as_ref().to_vec();
 
+    // A live channel drives the ingester so the test can interleave sends
+    // with database assertions.
+    let (geyser_tx, mut geyser_rx) = tokio::sync::mpsc::channel(16);
+    let geyser_stream = futures::stream::poll_fn(move |cx| geyser_rx.poll_recv(cx)).boxed();
+
     let (sender, receiver) = tokio::sync::mpsc::channel(16);
-    let persistence = Persistence::default();
-    let mut ingester = Ingester::new(
-        stream::iter([
-            Ok(tx_update(42, reverted)),
-            Ok(tx_update(43, partial)),
-            Ok(tx_update(43, healthy)),
-            Ok(slot_status_update(45)),
-        ]),
-        sender,
-        Arc::new(AtomicU64::new(0)),
-    );
-    let mut decoder = Decoder::new(persistence.clone(), receiver, settlement, solflow);
+    let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
+    let mut decoder = Decoder::new(Postgres::new(pool.clone()), receiver, settlement, solflow);
+    let ingester_task = tokio::spawn(async move { ingester.run().await });
+    let decoder_task = tokio::spawn(async move { decoder.run().await });
 
-    // Drive the ingester to the canned stream's end, which it reports as an
-    // error. `clean_stream_end_returns_stream_ended` pins which one.
-    ingester.run().await.unwrap_err();
-    // Dropping the ingester closes the channel so the decoder's drain returns.
-    drop(ingester);
-    assert!(decoder.run().await.is_ok());
+    for update in [
+        Ok(tx_update(42, reverted)),
+        Ok(tx_update(43, partial)),
+        Ok(tx_update(43, healthy)),
+    ] {
+        geyser_tx.send(update).await.unwrap();
+    }
+    // The hold-back keeps both slots buffered: the newest observed slot (43)
+    // is not two past either of them, so nothing may be persisted yet.
+    let reader = Postgres::new(pool.clone());
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), None);
 
+    // The slot-45 status moves the stream two past 43 and flushes both slots.
+    // Closing the channel ends the ingester (a terminal stream end) and the
+    // decoder drains cleanly behind it, so joining both tasks is the
+    // guarantee that every write below has landed.
+    geyser_tx.send(Ok(slot_status_update(45))).await.unwrap();
+    drop(geyser_tx);
+    assert!(ingester_task.await.unwrap().is_err());
+    assert!(decoder_task.await.unwrap().is_ok());
+
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(43)));
+
+    // Slot 42 held only the reverted transaction: no dead letter, no rows.
+    // The slot-43 transaction with the unknown discriminator is dead-lettered
+    // whole, while its clean sibling's `CreateOrder` persists.
+    let dead: Vec<(Vec<u8>, i64)> =
+        sqlx::query_as("SELECT tx_signature, slot FROM solana.dead_letter")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(dead, vec![(signature(10).as_ref().to_vec(), 43)]);
+    let pda: Vec<(Vec<u8>, Vec<u8>)> =
+        sqlx::query_as("SELECT order_uid, created_by FROM solana.order_pda")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
     assert_eq!(
-        persistence.calls(),
-        vec![
-            // Slot 42 produced no events and is flushed as a bare watermark
-            // once slot 43 starts.
-            Call::Watermark(Slot(42)),
-            // The unknown discriminator dead-letters the slot 43 transaction.
-            Call::DeadLetter {
-                signature: signature(10),
-                slot: Slot(43),
-            },
-            // The slot-45 status moves the stream two past 43, flushing it as
-            // complete: the failed transaction contributes only its dead
-            // letter, the clean sibling's event persists with the slot.
-            Call::PersistEvents {
-                events: vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated {
-                    order_uid: expected_uid,
-                    owner: Pubkey::new_from_array([0x11; 32]),
-                    created_by,
-                })],
-                watermark: Slot(43),
-            },
-        ]
+        pda,
+        vec![(
+            expected.order_uid.0.to_vec(),
+            expected.created_by.to_bytes().to_vec()
+        )]
     );
 }

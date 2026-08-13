@@ -9,16 +9,23 @@
 //! settlement-program and SolFlow transactions, and persists typed events.
 
 // TODO: `decode_solflow` is a stub (the on-chain SolFlow program does not
-// exist), and the `Persistence` write bodies are no-ops (no Postgres adapter).
+// exist).
 
 use {
     crate::{
-        persistence::Persistence,
+        persistence::Postgres,
         types::{
             Signature,
             channel::StreamUpdate,
             errors::{DecodeError, PersistenceError},
-            events::{DecodedEvent, SettlementEvent, TradeDelta},
+            events::{
+                CreatedOrder,
+                DecodedEvent,
+                FinalizedSettlement,
+                OrderKind,
+                SettlementEvent,
+                TradeDelta,
+            },
             order::OrderUid,
             slot::Slot,
             tx::{ResolvedInstruction, TxContext},
@@ -29,7 +36,7 @@ use {
     settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::EncodedOrderIntent,
+        data::intent::{EncodedOrderIntent, OrderKind as InterfaceOrderKind},
         instruction::{
             InstructionInputParsing,
             create_buffer::CreateBufferInput,
@@ -46,7 +53,7 @@ use {
 /// Decoder component.
 pub(crate) struct Decoder {
     /// Persistence layer.
-    pub persistence: Persistence,
+    pub persistence: Postgres,
 
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
@@ -61,7 +68,7 @@ pub(crate) struct Decoder {
 impl Decoder {
     /// Construct a new decoder. The caller owns the channel capacity decision.
     pub fn new(
-        persistence: Persistence,
+        persistence: Postgres,
         rx: Receiver<StreamUpdate>,
         settlement_program: Pubkey,
         solflow_program: Pubkey,
@@ -75,14 +82,15 @@ impl Decoder {
     }
 
     /// Main loop. Drains the channel, decodes each transaction's tracked
-    /// instructions, and hands the results to the persistence seam. Returns
-    /// when the ingester drops the sender.
+    /// instructions, and persists the results. Returns when the ingester
+    /// drops the sender.
     ///
     /// Events and dead letters are buffered per slot and flushed once a
     /// transaction of a later slot arrives: stream resume is slot-granular
-    /// (`from_slot = watermark + 1`), so the watermark may only name slots
-    /// whose transactions have all been delivered. Buffering also makes it
-    /// one persistence batch per slot instead of one per transaction.
+    /// (`from_slot = last_indexed_slot + 1`), so the last indexed slot may
+    /// only name slots whose transactions have all been delivered. Buffering
+    /// also makes it one persistence batch per slot instead of one per
+    /// transaction.
     pub async fn run(&mut self) -> Result<(), PersistenceError> {
         let mut pending: BTreeMap<Slot, SlotBuffer> = BTreeMap::new();
         let mut flushed_through: Option<Slot> = None;
@@ -107,7 +115,7 @@ impl Decoder {
             if let Some(flushed) = flushed_through
                 && slot <= flushed
             {
-                // The events below still persist, and the backward watermark
+                // The events below still persist, and the backward slot write
                 // write is a no-op, but a crash before this batch flushes
                 // would lose the transaction: resume starts past its slot.
                 tracing::warn!(
@@ -143,7 +151,7 @@ impl Decoder {
     /// Flushes every buffer at least [`FLUSH_HOLDBACK_SLOTS`] behind the
     /// observed slot. The hold-back gives late-delivered transactions a
     /// window to join their slot's still unflushed buffer, keeping them
-    /// crash-safe: resume replays everything from the watermark on.
+    /// crash-safe: resume replays everything past the last indexed slot.
     async fn flush_up_to(
         &self,
         pending: &mut BTreeMap<Slot, SlotBuffer>,
@@ -159,12 +167,12 @@ impl Decoder {
         Ok(())
     }
 
-    /// Persist one slot's batch. Dead letters go first: once the watermark
-    /// passes a slot it is never replayed wholesale, so its replay markers
-    /// must already be durable. Events and the watermark advance ride one
-    /// call so the adapter can apply both in one SQL transaction. A slot cut
-    /// off by the stream end (`complete = false`) keeps the watermark behind
-    /// itself.
+    /// Persist one slot's batch. Dead letters go first: once the last
+    /// indexed slot passes a slot it is never replayed wholesale, so its
+    /// replay markers must already be durable. Events and the slot advance
+    /// ride one call so the adapter can apply both in one SQL transaction. A
+    /// slot cut off by the stream end (`complete = false`) keeps the last
+    /// indexed slot behind itself.
     async fn flush_slot(
         &self,
         slot: Slot,
@@ -174,18 +182,20 @@ impl Decoder {
         for signature in buffer.dead_letters {
             self.persistence.write_dead_letter(signature, slot).await?;
         }
-        let watermark = if complete {
+        let last_indexed = if complete {
             slot
         } else {
             Slot(u64::from(slot).saturating_sub(1))
         };
         if buffer.events.is_empty() {
             if complete {
-                self.persistence.write_watermark(watermark).await?;
+                self.persistence
+                    .write_last_indexed_slot(last_indexed)
+                    .await?;
             }
         } else {
             self.persistence
-                .persist_events(buffer.events, watermark)
+                .persist_events(buffer.events, last_indexed)
                 .await?;
         }
         Ok(())
@@ -280,7 +290,7 @@ struct ResolvedOrder {
 
 /// Slots stay buffered until the stream reports a slot this far past them.
 /// A transaction delivered up to this many slots late still joins its own
-/// unflushed buffer instead of racing the watermark.
+/// unflushed buffer instead of racing the last-indexed-slot advance.
 const FLUSH_HOLDBACK_SLOTS: u64 = 2;
 
 /// One slot's accumulated output, flushed once the stream moves past the
@@ -378,8 +388,9 @@ fn decode_settlement(
 }
 
 /// `CreateOrder` -> `OrderCreated`. The parser recovers the encoded order
-/// intent and the `created_by` account. The intent's hash is the order UID,
-/// and the intent carries the owner.
+/// intent and the accounts, and the intent's hash is the order UID. The event
+/// carries the whole intent: for orders placed directly on chain the indexer
+/// is the only writer of the `solana.orders` row.
 fn decode_order_created(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
@@ -389,11 +400,23 @@ fn decode_order_created(
         .map_err(|_| DecodeError::SchemaMismatch)?;
     let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
         .map_err(|_| DecodeError::SchemaMismatch)?;
-    Ok(SettlementEvent::OrderCreated {
+    Ok(SettlementEvent::OrderCreated(Box::new(CreatedOrder {
         order_uid: OrderUid(uid.to_bytes()),
         owner: to_sdk_pubkey(intent.owner),
         created_by: *input.created_by,
-    })
+        order_pda: *input.order_pda,
+        sell_token_account: to_sdk_pubkey(intent.sell_token_account),
+        buy_token_account: to_sdk_pubkey(intent.buy_token_account),
+        sell_amount: intent.sell_amount,
+        buy_amount: intent.buy_amount,
+        valid_to: intent.valid_to,
+        kind: match intent.kind {
+            InterfaceOrderKind::Sell => OrderKind::Sell,
+            InterfaceOrderKind::Buy => OrderKind::Buy,
+        },
+        partially_fillable: intent.partially_fillable,
+        app_data: intent.app_data,
+    })))
 }
 
 /// `CreateBuffer` -> one `BufferCreated` per created buffer. The parser groups
@@ -552,13 +575,14 @@ fn decode_settlements_finalized(
             });
         }
 
-        events.push(SettlementEvent::SettlementFinalized {
+        events.push(SettlementEvent::SettlementFinalized(FinalizedSettlement {
             auction_id: begin_input.auction_id,
             solver,
             tx_signature: ctx.signature,
             slot: ctx.slot,
+            instruction_index: begin.instruction_index,
             trades,
-        });
+        }));
     }
     events
 }

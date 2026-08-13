@@ -25,7 +25,7 @@ pub(crate) enum DecodeError {
 /// Failures surfaced from the persistence boundary.
 #[derive(Debug, Error)]
 pub(crate) enum PersistenceError {
-    /// The SQL `ON CONFLICT` clause rejected the write (e.g. watermark
+    /// The SQL `ON CONFLICT` clause rejected the write (e.g. last indexed slot
     /// regression).
     #[error("persistence conflict")]
     Conflict,
@@ -33,6 +33,9 @@ pub(crate) enum PersistenceError {
     /// pool exhausted). The caller is expected to retry.
     #[error("persistence unavailable")]
     Unavailable,
+    /// The database rejected or failed a statement.
+    #[error("database: {0}")]
+    Database(#[from] sqlx::Error),
 }
 
 /// Failures surfaced from the stream boundary.
