@@ -1,4 +1,10 @@
-#![allow(dead_code, reason = "dead in the lib build, exercised by tests")]
+#![cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "dead in the lib build until the wiring consumes the decoder"
+    )
+)]
 //! The decoder pulls `StreamUpdate`s from the ingester, decodes
 //! settlement-program and SolFlow transactions, and persists typed events.
 
