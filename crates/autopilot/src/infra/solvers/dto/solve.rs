@@ -284,10 +284,10 @@ impl OrderDelta {
 
         let mut updated_orders = Vec::new();
         for order in current {
-            let unchanged = unmatched
+            let changed = unmatched
                 .remove(&order.uid)
-                .is_some_and(|previous| previous == order);
-            if !unchanged {
+                .is_none_or(|previous| previous != order);
+            if changed {
                 updated_orders.push(dto::order::from_domain(order));
             }
         }
