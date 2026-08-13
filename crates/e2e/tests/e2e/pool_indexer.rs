@@ -129,6 +129,12 @@ sol! {
 const POOL_INDEXER_PORT: u16 = 7778;
 const POOL_INDEXER_HOST: &str = "http://127.0.0.1:7778";
 const POOL_INDEXER_METRICS_PORT: u16 = 7779;
+
+/// Builds a URL against the pool-indexer's Uniswap V3 API (all test fixtures
+/// index `mainnet`), so call sites don't repeat the route prefix by hand.
+fn v3_api(path: &str) -> String {
+    format!("{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/{path}")
+}
 // The indexer has its own database (mirrors the per-network prod DB), migrated
 // from `database/sql-pool-indexer` by the `migrations-pool-indexer` flyway step
 // (docker-compose / setup-e2e.sh), separate from the shared autopilot DB.
@@ -185,8 +191,11 @@ async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
     .unwrap();
 }
 
-fn pool_indexer_config(factories: &[Address], metrics_port: u16) -> Configuration {
-    Configuration {
+fn pool_indexer_config(
+    factories: impl IntoIterator<Item = Address>,
+    metrics_port: u16,
+) -> Configuration {
+    let config = Configuration {
         database: DatabaseConfig {
             url: POOL_INDEXER_DB_URL.parse().unwrap(),
             max_connections: NonZeroU32::new(5).unwrap(),
@@ -196,8 +205,8 @@ fn pool_indexer_config(factories: &[Address], metrics_port: u16) -> Configuratio
             chain_id: 1,
             rpc_url: "http://127.0.0.1:8545".parse().unwrap(),
             factories: factories
-                .iter()
-                .map(|&address| FactoryConfig {
+                .into_iter()
+                .map(|address| FactoryConfig {
                     address,
                     deploy_block: 0,
                 })
@@ -214,7 +223,12 @@ fn pool_indexer_config(factories: &[Address], metrics_port: u16) -> Configuratio
         metrics: MetricsConfig {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, metrics_port)),
         },
-    }
+    };
+    config
+        .network
+        .validate()
+        .expect("invalid pool-indexer test config");
+    config
 }
 
 /// Spawns the pool-indexer task and waits for its `/health` endpoint to come
@@ -223,7 +237,7 @@ async fn spawn_pool_indexer(
     factories: &[Address],
     metrics_port: u16,
 ) -> tokio::task::JoinHandle<()> {
-    let config = pool_indexer_config(factories, metrics_port);
+    let config = pool_indexer_config(factories.iter().copied(), metrics_port);
     let handle = tokio::task::spawn(pool_indexer::run(config));
     wait_for_condition(TIMEOUT, || async {
         reqwest::get(format!("{POOL_INDEXER_HOST}/health"))
@@ -255,11 +269,7 @@ where
 /// block_number".
 async fn wait_for_indexer(head: u64, min_pools: usize) {
     wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!(
-            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
-        ))
-        .await
-        .ok()?;
+        let resp = reqwest::get(v3_api("pools")).await.ok()?;
         let body: PoolsListResponse = resp.json().await.ok()?;
         Some(body.block_number >= head && body.pools.len() >= min_pools)
     })
@@ -561,25 +571,21 @@ async fn api_errors(web3: Web3) {
 }
 
 async fn invalid_address_returns_400() {
-    let status = reqwest::get(format!(
-        "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools/not-an-address/ticks"
-    ))
-    .await
-    .unwrap()
-    .status();
+    let status = reqwest::get(v3_api("pools/not-an-address/ticks"))
+        .await
+        .unwrap()
+        .status();
     assert_eq!(u16::from(status), 400, "expected 400 for invalid address");
 }
 
 async fn unknown_address_returns_empty_ticks() {
     let unknown = Address::repeat_byte(0xAB);
-    let resp: TicksResponse = reqwest::get(format!(
-        "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools/{unknown:?}/ticks"
-    ))
-    .await
-    .unwrap()
-    .json()
-    .await
-    .unwrap();
+    let resp: TicksResponse = reqwest::get(v3_api(&format!("pools/{unknown:?}/ticks")))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     assert!(
         resp.ticks.is_empty(),
         "expected empty ticks for unknown pool"
@@ -613,10 +619,8 @@ async fn pagination(web3: Web3) {
         let mut cursor: Option<String> = None;
         loop {
             let url = match &cursor {
-                None => format!("{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools?limit=1"),
-                Some(c) => {
-                    format!("{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools?limit=1&after={c}")
-                }
+                None => v3_api("pools?limit=1"),
+                Some(c) => v3_api(&format!("pools?limit=1&after={c}")),
             };
             let resp: PoolsListResponse = reqwest::get(&url).await.unwrap().json().await.unwrap();
             if resp.pools.is_empty() {
@@ -676,7 +680,7 @@ async fn bootstrap_idempotent(web3: Web3) {
 
     tokio::time::timeout(
         TIMEOUT,
-        pool_indexer::bootstrap(pool_indexer_config(&[factory], POOL_INDEXER_METRICS_PORT)),
+        pool_indexer::bootstrap(pool_indexer_config([factory], POOL_INDEXER_METRICS_PORT)),
     )
     .await
     .expect("bootstrap-only did not exit on an already-seeded DB");
@@ -751,6 +755,7 @@ async fn two_factories(web3: Web3) {
     // One pool per factory, at distinct addresses.
     let (factory_a, pool_a) = deploy_univ3(&web3).await;
     let (factory_b, pool_b) = deploy_univ3(&web3).await;
+    assert_ne!(pool_a, pool_b, "each factory deploys its own pool");
     let factory_a_addr = *factory_a.address();
     let factory_b_addr = *factory_b.address();
     let head = web3.provider.get_block_number().await.unwrap();
@@ -764,14 +769,12 @@ async fn two_factories(web3: Web3) {
         || async {
             wait_for_indexer(head, 2).await;
 
-            let resp: PoolsListResponse = reqwest::get(format!(
-                "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
-            ))
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
+            let resp: PoolsListResponse = reqwest::get(v3_api("pools"))
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
             assert_eq!(
                 resp.pools.len(),
                 2,
@@ -826,14 +829,12 @@ async fn min_envelope(_web3: Web3) {
         &[factory_ahead, factory_behind],
         POOL_INDEXER_METRICS_PORT,
         || async {
-            let resp: PoolsListResponse = reqwest::get(format!(
-                "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools?limit=1"
-            ))
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
+            let resp: PoolsListResponse = reqwest::get(v3_api("pools?limit=1"))
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
             assert_eq!(
                 resp.block_number, 999_999,
                 "envelope should be the MIN across configured factories, ignoring the \

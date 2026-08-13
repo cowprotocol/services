@@ -10,6 +10,7 @@ use {
         response::{IntoResponse, Response},
     },
     sqlx::PgPool,
+    std::collections::BTreeSet,
 };
 
 #[derive(Clone)]
@@ -20,7 +21,7 @@ pub struct AppState {
     pub network: NetworkName,
     /// Configured factory addresses; the served envelope block is scoped to
     /// these so a removed factory's stale checkpoint can't pin it.
-    pub factories: Vec<Address>,
+    pub factories: BTreeSet<Address>,
 }
 
 impl AppState {
