@@ -80,8 +80,11 @@ fn builder(
     // fresh retry budget: ten doubling attempts from 200ms cover an outage of
     // a few minutes, anything longer ends the stream and the process restart
     // resumes from the last indexed slot.
-    builder.reconnect_config =
-        ReconnectConfig::default().with_backoff(Backoff::new(Duration::from_millis(200), 2.0, 10));
+    builder.reconnect_config = ReconnectConfig::default().with_backoff(Backoff::new(
+        RECONNECT_BACKOFF_INITIAL,
+        RECONNECT_BACKOFF_MULTIPLIER,
+        RECONNECT_MAX_RETRIES,
+    ));
     Ok(builder)
 }
 
