@@ -9952,6 +9952,7 @@ dependencies = [
  "bytes",
  "derive_more 1.0.0",
  "futures",
+ "itertools 0.14.0",
  "rustls",
  "settlement-client",
  "settlement-interface",
