@@ -46,7 +46,7 @@ impl Request {
         deadline: chrono::DateTime<chrono::Utc>,
         compress: bool,
     ) -> Self {
-        let helper = RequestHelper {
+        let helper = FullRequestHelper {
             id: auction.id,
             orders: auction.orders.iter().map(dto::order::from_domain).collect(),
             tokens: tokens(auction, trusted_tokens),
@@ -64,7 +64,7 @@ impl Request {
         deadline: chrono::DateTime<chrono::Utc>,
         compress: bool,
     ) -> Self {
-        let helper = DeltaHelper {
+        let helper = DeltaRequestHelper {
             id: current.id,
             tokens: tokens(current, trusted_tokens),
             orders: OrderDelta::compute(&previous.orders, &current.orders),
@@ -145,22 +145,22 @@ impl Request {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum RequestBody {
-    Full(RequestHelper),
-    Delta(DeltaHelper),
+    Full(FullRequestHelper),
+    Delta(DeltaRequestHelper),
 }
 
 impl RequestBody {
     fn id(&self) -> i64 {
         match self {
-            RequestBody::Full(RequestHelper { id, .. }) => *id,
-            RequestBody::Delta(DeltaHelper { id, .. }) => *id,
+            RequestBody::Full(FullRequestHelper { id, .. }) => *id,
+            RequestBody::Delta(DeltaRequestHelper { id, .. }) => *id,
         }
     }
 
     fn deadline(&self) -> DateTime<Utc> {
         match self {
-            RequestBody::Full(RequestHelper { deadline, .. }) => *deadline,
-            RequestBody::Delta(DeltaHelper { deadline, .. }) => *deadline,
+            RequestBody::Full(FullRequestHelper { deadline, .. }) => *deadline,
+            RequestBody::Delta(DeltaRequestHelper { deadline, .. }) => *deadline,
         }
     }
 }
@@ -235,7 +235,7 @@ impl Response {
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RequestHelper {
+struct FullRequestHelper {
     #[serde_as(as = "DisplayFromStr")]
     pub id: i64,
     pub tokens: Vec<Token>,
@@ -250,7 +250,7 @@ struct RequestHelper {
 #[serde_as]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DeltaHelper {
+pub struct DeltaRequestHelper {
     #[serde_as(as = "DisplayFromStr")]
     id: i64,
     tokens: Vec<Token>,
