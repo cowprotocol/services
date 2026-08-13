@@ -44,6 +44,7 @@ use {
     shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::{HashMap, HashSet},
+        iter::chain,
         num::NonZeroUsize,
         sync::{
             Arc,
@@ -67,6 +68,7 @@ pub struct Config {
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
     pub compress_solve_request: bool,
+    pub auction_delta_checkpoint_interval: Duration,
 }
 
 impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
@@ -80,6 +82,7 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
             max_solutions_per_solver: value.max_solutions_per_solver,
             enable_leader_lock: value.enable_leader_lock,
             compress_solve_request: value.compress_solve_request,
+            auction_delta_checkpoint_interval: value.auction_delta_checkpoint_interval,
             sync_solve_deadline_to_blockchain: value.sync_solve_deadline_to_blockchain.map(|cfg| {
                 SlotConfig {
                     slot_length: cfg.slot_length,
@@ -102,11 +105,45 @@ pub struct Probes {
     pub startup: Arc<Option<AtomicBool>>,
 }
 
+/// The auction sent to the delta drivers in the previous run, and when the
+/// last full auction (checkpoint) was sent to them.
+#[derive(Default)]
+struct DeltaState {
+    previous_auction: Option<Arc<domain::Auction>>,
+    last_checkpoint: Option<Instant>,
+}
+
+impl DeltaState {
+    /// Returns the auction to diff `auction` against, and stores `auction`
+    /// to be diffed against in the next cycle. A delta is always relative to
+    /// the auction sent immediately before it.
+    ///
+    /// Returns `None` when a full auction (checkpoint) is due instead: on the
+    /// very first auction and on the first auction that starts once `interval`
+    /// passed since the last checkpoint.
+    fn advance(
+        &mut self,
+        interval: Duration,
+        now: Instant,
+        auction: &Arc<domain::Auction>,
+    ) -> Option<Arc<domain::Auction>> {
+        let previous = self.previous_auction.replace(auction.clone());
+        match (previous, self.last_checkpoint) {
+            (Some(previous), Some(checkpoint)) if now.duration_since(checkpoint) < interval => {
+                Some(previous)
+            }
+            _ => {
+                self.last_checkpoint = Some(now);
+                None
+            }
+        }
+    }
+}
+
 pub struct RunLoop {
     config: Config,
     eth: infra::Ethereum,
     persistence: infra::Persistence,
-    drivers: Vec<Arc<infra::Driver>>,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     probes: Probes,
@@ -116,6 +153,15 @@ pub struct RunLoop {
     winner_selection: winner_selection::Arbitrator,
     /// Notifier that wakes the main loop on new blocks or orders
     wake_notify: Arc<tokio::sync::Notify>,
+
+    /// State for building delta requests for drivers that opted into
+    /// incremental auctions.
+    delta_state: std::sync::Mutex<DeltaState>,
+
+    /// Drivers that do NOT support delta auctions
+    drivers: Vec<Arc<infra::Driver>>,
+    /// Drivers that do support delta auctions
+    delta_drivers: Vec<Arc<infra::Driver>>,
 }
 
 impl RunLoop {
@@ -136,17 +182,23 @@ impl RunLoop {
 
         Self::spawn_block_listener(eth.current_block().clone(), wake_runloop.clone());
 
+        let (delta_drivers, drivers) = drivers
+            .into_iter()
+            .partition(|driver| driver.supports_auction_deltas);
+
         Self {
             config,
             eth,
             persistence,
-            drivers,
             solvable_orders_cache,
             trusted_tokens,
             probes,
             maintenance,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify: wake_runloop,
+            delta_state: Default::default(),
+            drivers,
+            delta_drivers,
         }
     }
 
@@ -185,6 +237,11 @@ impl RunLoop {
             }
 
             if !leader_lock_tracker.is_leader() {
+                // While not leading another instance sends the auctions, so
+                // the previous auction this instance recorded is not the one
+                // the drivers received; ensure we start from a checkpoint when
+                // leadership is (re)gained.
+                *self_arc.delta_state.lock().unwrap() = Default::default();
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
@@ -196,7 +253,7 @@ impl RunLoop {
             {
                 let auction_id = auction.id;
                 self_arc
-                    .single_run(auction, start_block)
+                    .single_run(&auction, start_block)
                     .instrument(tracing::info_span!("auction", auction_id))
                     .await
             }
@@ -279,9 +336,9 @@ impl RunLoop {
     async fn next_auction(
         &self,
         start_block: BlockInfo,
-        prev_auction: &mut Option<domain::Auction>,
+        prev_auction: &mut Option<Arc<domain::Auction>>,
         prev_block: &mut Option<B256>,
-    ) -> Option<domain::Auction> {
+    ) -> Option<Arc<domain::Auction>> {
         // wait for appropriate time to start building the auction
         let auction = self.cut_auction().await?;
         tracing::trace!(auction_id = ?auction.id, "auction cut");
@@ -294,13 +351,13 @@ impl RunLoop {
             return None;
         }
 
-        observe::log_auction_delta(&previous, &auction, &start_block);
+        observe::log_auction_delta(previous.as_deref(), &auction, &start_block);
         self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
     }
 
-    async fn cut_auction(&self) -> Option<domain::Auction> {
+    async fn cut_auction(&self) -> Option<Arc<domain::Auction>> {
         let Some(auction) = self.solvable_orders_cache.current_auction().await else {
             tracing::debug!("no current auction");
             return None;
@@ -322,17 +379,17 @@ impl RunLoop {
             tracing::debug!("skipping empty auction");
             return None;
         }
-        Some(domain::Auction {
+        Some(Arc::new(domain::Auction {
             id,
             block: auction.block,
             orders: auction.orders,
             prices: auction.prices,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
-        })
+        }))
     }
 
     #[instrument(skip_all)]
-    async fn single_run(self: &Arc<Self>, auction: domain::Auction, start_block: BlockInfo) {
+    async fn single_run(self: &Arc<Self>, auction: &Arc<domain::Auction>, start_block: BlockInfo) {
         tracing::info!(auction_id = ?auction.id, "solving");
 
         // Mark all auction orders as `Ready` for competition
@@ -341,13 +398,13 @@ impl RunLoop {
         tracing::trace!(auction_id = ?auction.id, "orders marked as ready");
 
         // Collect valid solutions from all drivers
-        let solutions = self.fetch_solutions(&auction).await;
+        let solutions = self.fetch_solutions(auction).await;
         observe::bids(&solutions);
         if solutions.is_empty() {
             return;
         }
 
-        let ranking = self.winner_selection.arbitrate(solutions, &auction);
+        let ranking = self.winner_selection.arbitrate(solutions, auction);
 
         // Count and record the number of winners
         let num_winners = ranking.winners().count();
@@ -362,7 +419,7 @@ impl RunLoop {
         // of storing all the competition/auction-related data to the DB.
         if let Err(err) = self
             .post_processing(
-                &auction,
+                auction,
                 competition_simulation_block,
                 &ranking,
                 block_deadline,
@@ -407,7 +464,7 @@ impl RunLoop {
             );
         }
         tracing::trace!(auction_id = ?auction.id, "settlement execution started");
-        observe::unsettled(&ranking, &auction);
+        observe::unsettled(&ranking, auction);
     }
 
     /// Starts settlement execution in a background task. The function is async
@@ -584,26 +641,59 @@ impl RunLoop {
         Ok(())
     }
 
+    /// Builds the auction requests, if no drivers have opted-in to
+    /// delta-auctions or if a checkpoint is due, the second request will
+    /// effectively be a copy of the first.
+    async fn build_auction_requests(
+        &self,
+        auction: &Arc<domain::Auction>,
+    ) -> (solve::Request, solve::Request) {
+        let deadline = self.pick_solve_deadline();
+        let trusted_tokens = self.trusted_tokens.all();
+
+        let (request, delta_request) = tokio::join!(
+            solve::Request::new(
+                auction,
+                &trusted_tokens,
+                deadline,
+                self.config.compress_solve_request,
+            ),
+            async {
+                if self.delta_drivers.is_empty() {
+                    return None;
+                }
+                self.build_delta_request(auction, &trusted_tokens, deadline)
+                    .await
+            },
+        );
+        Metrics::solve_request_body_size(request.body_size());
+
+        // On checkpoint auctions the delta drivers receive the full body.
+        let delta_request = delta_request.unwrap_or_else(|| request.clone());
+        Metrics::solve_request_delta_body_size(delta_request.body_size());
+
+        (request, delta_request)
+    }
+
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
     #[instrument(skip_all)]
-    async fn fetch_solutions(&self, auction: &domain::Auction) -> Vec<competition::Bid<Unscored>> {
-        let deadline = self.pick_solve_deadline();
+    async fn fetch_solutions(
+        &self,
+        auction: &Arc<domain::Auction>,
+    ) -> Vec<competition::Bid<Unscored>> {
+        let (request, delta_request) = self.build_auction_requests(auction).await;
 
-        let request = solve::Request::new(
-            auction,
-            &self.trusted_tokens.all(),
-            deadline,
-            self.config.compress_solve_request,
-        )
-        .await;
-        Metrics::solve_request_body_size(request.body_size());
-
-        let mut bids = futures::future::join_all(
+        let mut bids = futures::future::join_all(chain(
             self.drivers
                 .iter()
-                .map(|driver| self.solve(driver.clone(), request.clone())),
-        )
+                .cloned()
+                .map(|driver| self.solve(driver, request.clone())),
+            self.delta_drivers
+                .iter()
+                .cloned()
+                .map(|driver| self.solve(driver, delta_request.clone())),
+        ))
         .await
         .into_iter()
         .flatten()
@@ -635,6 +725,32 @@ impl RunLoop {
         // Shuffle so that sorting randomly splits ties.
         bids.shuffle(&mut rand::rng());
         bids
+    }
+
+    /// Builds the delta request for this auction, shared by all drivers that
+    /// opted into incremental auctions. Returns `None` when a full auction
+    /// (checkpoint) is due instead.
+    async fn build_delta_request(
+        &self,
+        auction: &Arc<domain::Auction>,
+        trusted_tokens: &HashSet<Address>,
+        deadline: chrono::DateTime<chrono::Utc>,
+    ) -> Option<solve::Request> {
+        let previous = self.delta_state.lock().unwrap().advance(
+            self.config.auction_delta_checkpoint_interval,
+            Instant::now(),
+            auction,
+        )?;
+        Some(
+            solve::Request::new_delta(
+                &previous,
+                auction,
+                trusted_tokens,
+                deadline,
+                self.config.compress_solve_request,
+            )
+            .await,
+        )
     }
 
     /// Sends a `/solve` request to the driver and manages all error cases and
@@ -1049,6 +1165,14 @@ struct Metrics {
         1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000
     ))]
     solve_request_body_size: prometheus::Histogram,
+
+    /// Tracks the size in bytes of the `/solve` body built for drivers that
+    /// opted into incremental auctions. Matches `solve_request_body_size` on
+    /// checkpoint auctions, and on every auction while no driver has opted in.
+    #[metric(buckets(
+        1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000
+    ))]
+    solve_request_delta_body_size: prometheus::Histogram,
 }
 
 impl Metrics {
@@ -1139,6 +1263,12 @@ impl Metrics {
     fn solve_request_body_size(size: usize) {
         Self::get().solve_request_body_size.observe(size as f64)
     }
+
+    fn solve_request_delta_body_size(size: usize) {
+        Self::get()
+            .solve_request_delta_body_size
+            .observe(size as f64)
+    }
 }
 
 pub mod observe {
@@ -1152,7 +1282,7 @@ pub mod observe {
     };
 
     pub fn log_auction_delta(
-        previous: &Option<domain::Auction>,
+        previous: Option<&domain::Auction>,
         current: &domain::Auction,
         start_block: &BlockInfo,
     ) {
@@ -1291,5 +1421,49 @@ mod tests {
         let deadline =
             pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
         assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());
+    }
+
+    #[test]
+    fn delta_checkpoint_cadence() {
+        let auction = |id| domain::Auction {
+            id,
+            block: 0,
+            orders: vec![],
+            prices: Default::default(),
+            surplus_capturing_jit_order_owners: vec![],
+        };
+        let interval = Duration::from_secs(30);
+        let mut state = DeltaState::default();
+        let start = Instant::now();
+
+        // With a 30s interval the very first auction is sent in full (no
+        // previous auction yet) and so is the first auction that starts 30s or
+        // more after that checkpoint. Every delta is against the auction right
+        // before it.
+        let mut diffed_against = vec![];
+        for (id, offset) in (0..).zip([0, 10, 20, 30, 40, 50, 60, 70]) {
+            diffed_against.push(
+                state
+                    .advance(
+                        interval,
+                        start + Duration::from_secs(offset),
+                        &Arc::new(auction(id)),
+                    )
+                    .map(|prev| prev.id),
+            );
+        }
+        assert_eq!(
+            diffed_against,
+            [
+                None,
+                Some(0),
+                Some(1),
+                None,
+                Some(3),
+                Some(4),
+                None,
+                Some(6)
+            ]
+        );
     }
 }
