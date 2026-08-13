@@ -10,3 +10,4 @@ alloy-primitives = { workspace = true }
 const-hex = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
+solana-sdk = { workspace = true }

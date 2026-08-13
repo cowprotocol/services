@@ -1,0 +1,22 @@
+# Example configuration for the Solana driver.
+
+[chain]
+# Placeholder — replace with the CoW Settlement program id.
+settlement-program-id = "11111111111111111111111111111111"
+
+[rpc]
+endpoint = "https://api.mainnet-beta.solana.com"
+request-timeout = "10s"
+
+[http]
+bind-address = "0.0.0.0:8080"
+
+[logging]
+filter = "info,solana_driver=debug"
+# stderr-threshold = "warn"
+# use-json = false
+
+[[solvers]]
+name = "baseline"
+endpoint = "http://localhost:8001"
+max-in-flight = 1
