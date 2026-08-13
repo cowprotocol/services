@@ -44,7 +44,6 @@ use {
     shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::{HashMap, HashSet},
-        iter::chain,
         num::NonZeroUsize,
         sync::{
             Arc,
@@ -175,8 +174,6 @@ pub struct RunLoop {
 
     /// Drivers that do NOT support delta auctions
     drivers: Vec<Arc<infra::Driver>>,
-    /// Drivers that do support delta auctions
-    delta_drivers: Vec<Arc<infra::Driver>>,
 }
 
 impl RunLoop {
@@ -197,10 +194,6 @@ impl RunLoop {
 
         Self::spawn_block_listener(eth.current_block().clone(), wake_runloop.clone());
 
-        let (delta_drivers, drivers) = drivers
-            .into_iter()
-            .partition(|driver| driver.supports_auction_deltas);
-
         let interval = config.auction_delta_checkpoint_interval.clone();
 
         Self {
@@ -215,7 +208,6 @@ impl RunLoop {
             wake_notify: wake_runloop,
             delta_state: std::sync::Mutex::new(DeltaState::new(interval)),
             drivers,
-            delta_drivers,
         }
     }
 
@@ -698,16 +690,13 @@ impl RunLoop {
     ) -> Vec<competition::Bid<Unscored>> {
         let (request, delta_request) = self.build_auction_requests(auction).await;
 
-        let mut bids = futures::future::join_all(chain(
-            self.drivers
-                .iter()
-                .cloned()
-                .map(|driver| self.solve(driver, request.clone())),
-            self.delta_drivers
-                .iter()
-                .cloned()
-                .map(|driver| self.solve(driver, delta_request.clone())),
-        ))
+        let mut bids = futures::future::join_all(self.drivers.iter().cloned().map(|driver| {
+            let solve_request = driver
+                .supports_auction_deltas
+                .then(|| delta_request.clone())
+                .unwrap_or_else(|| request.clone());
+            self.solve(driver, solve_request)
+        }))
         .await
         .into_iter()
         .flatten()
@@ -750,7 +739,11 @@ impl RunLoop {
         trusted_tokens: &HashSet<Address>,
         deadline: chrono::DateTime<chrono::Utc>,
     ) -> Option<solve::Request> {
-        if self.delta_drivers.is_empty() {
+        if !self
+            .drivers
+            .iter()
+            .any(|driver| driver.supports_auction_deltas)
+        {
             return None;
         }
         let previous = self
