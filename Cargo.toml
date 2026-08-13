@@ -79,7 +79,6 @@ jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
 jsonrpc-core = "18.0.0"
 liquidity-sources = { path = "crates/liquidity-sources" }
 maplit = "1.0.2"
-mimalloc = "0.1.43"
 mockall = "0.12.1"
 model = { path = "crates/model" }
 moka = "0.12.10"
@@ -124,6 +123,7 @@ shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
 solana-client = "4"
+solana-driver = { path = "crates/solana-driver" }
 solana-indexer = { path = "crates/solana-indexer" }
 solana-sdk = "4"
 solver = { path = "crates/solver" }

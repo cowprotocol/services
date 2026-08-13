@@ -30,7 +30,6 @@ hmac = { workspace = true }
 humantime-serde = { workspace = true }
 itertools = { workspace = true }
 liquidity-sources = { workspace = true }
-mimalloc = { workspace = true, optional = true }
 moka = { workspace = true, features = ["future"] }
 num = { workspace = true }
 number = { workspace = true }
@@ -69,7 +68,6 @@ tempfile = { workspace = true }
 testlib = { workspace = true }
 
 [features]
-mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
 
 [lints]

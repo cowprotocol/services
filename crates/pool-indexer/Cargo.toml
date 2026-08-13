@@ -31,7 +31,6 @@ contracts = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
-mimalloc = { workspace = true, optional = true }
 num = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }
@@ -52,7 +51,6 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [features]
-mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
 
 [lints]

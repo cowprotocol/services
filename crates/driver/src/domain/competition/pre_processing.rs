@@ -1,5 +1,5 @@
 use {
-    super::{Auction, order},
+    super::{Auction, Order, order},
     crate::{
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
@@ -81,6 +81,20 @@ pub struct DataAggregator {
 }
 
 impl DataAggregator {
+    /// Resolves the order's app-data hash to the underlying JSON if it isn't
+    /// already resolved.
+    pub async fn resolve_app_data(&self, order: &mut Order) {
+        let AppData::Hash(hash) = &order.app_data else {
+            return;
+        };
+        let Some(retriever) = self.utilities.app_data_retriever.as_ref() else {
+            return;
+        };
+        if let Ok(Some(doc)) = retriever.get_cached_or_fetch(hash).await {
+            order.app_data = doc.into();
+        }
+    }
+
     /// Aggregates all the data that is needed to pre-process the given auction.
     /// Uses a shared futures internally to make sure that the works happens
     /// only once for all connected solvers to share.
