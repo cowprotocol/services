@@ -676,9 +676,6 @@ impl RunLoop {
                 self.config.compress_solve_request,
             ),
             async {
-                if self.delta_drivers.is_empty() {
-                    return None;
-                }
                 self.build_delta_request(auction, &trusted_tokens, deadline)
                     .await
             },
@@ -753,6 +750,9 @@ impl RunLoop {
         trusted_tokens: &HashSet<Address>,
         deadline: chrono::DateTime<chrono::Utc>,
     ) -> Option<solve::Request> {
+        if self.delta_drivers.is_empty() {
+            return None;
+        }
         let previous = self
             .delta_state
             .lock()
