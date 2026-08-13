@@ -244,9 +244,8 @@ struct FullRequestHelper {
     pub surplus_capturing_jit_order_owners: Vec<Address>,
 }
 
-/// Difference of an auction relative to the auction `previous_id`, which is
-/// the auction the receiving driver got immediately before this one. Only
-/// orders are diffed; tokens and all scalar fields are sent whole.
+/// Difference of an auction relative to the previous (i.e. `id - 1`).
+/// Only orders are diffed; tokens and all scalar fields are sent whole.
 #[serde_as]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
