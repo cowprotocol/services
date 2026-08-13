@@ -90,6 +90,7 @@ impl Inner {
             solver: quote.solver,
             verified: false,
             supports_fast_path: quote.supports_fast_path,
+            solution_id: quote.solution_id,
             execution: quote.execution,
         })
     }
