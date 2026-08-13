@@ -184,6 +184,7 @@ impl From<dto::LegacyQuote> for LegacyTrade {
             solver: quote.solver,
             tx_origin: quote.tx_origin,
             supports_fast_path: quote.supports_fast_path,
+            solution_id: quote.solution_id,
         }
     }
 }
@@ -215,6 +216,7 @@ impl From<dto::Quote> for Trade {
             tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders,
             supports_fast_path: quote.supports_fast_path,
+            solution_id: quote.solution_id,
         }
     }
 }
@@ -363,6 +365,7 @@ impl TradeFinding for ExternalTradeFinder {
             gas_estimate,
             solver: trade.solver(),
             supports_fast_path: trade.supports_fast_path(),
+            solution_id: trade.solution_id(),
             execution: QuoteExecution {
                 interactions: map_interactions_data(trade.interactions()),
                 pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -429,6 +432,11 @@ pub mod dto {
         pub tx_origin: Option<Address>,
         #[serde(default)]
         pub supports_fast_path: bool,
+        /// Solver-assigned solution id for this quote. Threaded through to
+        /// `QuoteResponse.solution_id` and, ultimately, into
+        /// `proposed_solutions.id` when a fast-path quote is persisted.
+        #[serde(default)]
+        pub solution_id: Option<u64>,
     }
 
     #[serde_as]
@@ -448,6 +456,11 @@ pub mod dto {
         pub jit_orders: Vec<JitOrder>,
         #[serde(default)]
         pub supports_fast_path: bool,
+        /// Solver-assigned solution id for this quote. Threaded through to
+        /// `QuoteResponse.solution_id` and, ultimately, into
+        /// `proposed_solutions.id` when a fast-path quote is persisted.
+        #[serde(default)]
+        pub solution_id: Option<u64>,
     }
 
     #[serde_as]
