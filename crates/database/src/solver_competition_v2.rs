@@ -355,6 +355,41 @@ async fn save_jit_orders(
     Ok(())
 }
 
+/// Replaces the placeholder user-order rows written at fast-path quote time
+/// with the real `order_uid` — the placeholder is 56 zero bytes (the
+/// `OrderUid` `Default`). Also records the uid on the auction row.
+/// `deadline` stays unchanged; the autopilot sets it when it dispatches the
+/// solution to the driver via `/settle`.
+///
+/// The caller is expected to hold a transaction — the two UPDATEs are
+/// batched into one roundtrip via a DML CTE and must land atomically with
+/// the order insertion. `order_uids` is set to a fresh single-element array
+/// so re-runs are idempotent.
+#[instrument(skip_all)]
+pub async fn patch_placed_order(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+    order_uid: OrderUid,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+WITH patch_te AS (
+    UPDATE proposed_trade_executions
+    SET order_uid = $1
+    WHERE auction_id = $2 AND order_uid = $3
+)
+UPDATE competition_auctions
+SET order_uids = ARRAY[$1]
+WHERE id = $2
+"#;
+    sqlx::query(QUERY)
+        .bind(order_uid)
+        .bind(auction_id)
+        .bind(OrderUid::default())
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
 /// Deletes all competition rows associated with `auction_id` across
 /// `proposed_trade_executions`, `proposed_jit_orders`, `proposed_solutions`,
 /// and `competition_auctions`.
