@@ -7,7 +7,10 @@ use {
     solana_commitment_config::CommitmentConfig,
     solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
     solana_sdk::{account::Account, pubkey::Pubkey},
-    std::time::Duration,
+    std::{
+        collections::{HashMap, HashSet},
+        time::Duration,
+    },
     url::Url,
 };
 
@@ -28,15 +31,27 @@ impl Rpc {
         }
     }
 
-    /// Fetch accounts by key, `None` for keys that do not exist. Batches
-    /// above the server's per-request cap are split transparently.
+    /// Fetch accounts by key. Accounts that do not exist are absent from the
+    /// map. Duplicate keys are fetched once, and batches above the server's
+    /// per-request cap are split transparently.
     pub(crate) async fn multiple_accounts(
         &self,
         keys: &[Pubkey],
-    ) -> Result<Vec<Option<Account>>, ClientError> {
-        let mut accounts = Vec::with_capacity(keys.len());
-        for chunk in keys.chunks(MAX_MULTIPLE_ACCOUNTS) {
-            accounts.extend(self.client.get_multiple_accounts(chunk).await?);
+    ) -> Result<HashMap<Pubkey, Account>, ClientError> {
+        let unique: Vec<Pubkey> = keys
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        let mut accounts = HashMap::with_capacity(unique.len());
+        for chunk in unique.chunks(MAX_MULTIPLE_ACCOUNTS) {
+            let fetched = self.client.get_multiple_accounts(chunk).await?;
+            for (key, account) in chunk.iter().zip(fetched) {
+                if let Some(account) = account {
+                    accounts.insert(*key, account);
+                }
+            }
         }
         Ok(accounts)
     }
