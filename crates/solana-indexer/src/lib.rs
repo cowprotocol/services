@@ -8,3 +8,4 @@ pub mod persistence;
 mod test_db;
 pub mod traits;
 pub mod types;
+pub mod yellowstone;

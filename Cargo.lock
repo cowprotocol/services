@@ -9952,6 +9952,7 @@ dependencies = [
  "bytes",
  "derive_more 1.0.0",
  "futures",
+ "rustls",
  "settlement-client",
  "settlement-interface",
  "solana-client",
@@ -9960,6 +9961,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "url",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
