@@ -9836,6 +9836,8 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serde-ext",
+ "solana-client",
+ "solana-commitment-config",
  "solana-sdk",
  "tikv-jemallocator",
  "tokio",

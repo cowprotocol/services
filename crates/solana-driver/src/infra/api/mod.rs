@@ -7,6 +7,7 @@ use {
         routing::{get, post},
     },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
+    solana_client::nonblocking::rpc_client::RpcClient,
     std::{net::SocketAddr, sync::Arc},
     tokio_util::sync::CancellationToken,
     tower::ServiceBuilder,
@@ -35,6 +36,7 @@ impl Api {
     /// drain in-flight requests before returning.
     pub async fn serve(
         listener: tokio::net::TcpListener,
+        rpc: Arc<RpcClient>,
         shutdown: CancellationToken,
     ) -> Result<(), std::io::Error> {
         // Propagate the OpenTelemetry trace context from incoming request headers and
@@ -54,7 +56,7 @@ impl Api {
             .layer(DefaultBodyLimit::disable())
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
-            .with_state(State(Arc::new(Inner {})));
+            .with_state(State(Arc::new(Inner { rpc })));
 
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown.cancelled_owned())
@@ -72,6 +74,7 @@ impl Api {
 pub struct State(Arc<Inner>);
 
 struct Inner {
-    // Shared state fields will be added as the driver gains functionality
-    // (e.g. validated solutions for `/settle` to resolve).
+    /// The shared Solana RPC client.
+    #[expect(dead_code)]
+    rpc: Arc<RpcClient>,
 }
