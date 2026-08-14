@@ -230,7 +230,7 @@ impl Decoder {
         }
         Ok(self
             .rpc
-            .multiple_accounts(&accounts)
+            .multiple_accounts(accounts)
             .await?
             .iter()
             .filter_map(|(key, account)| Some((*key, token_account_mint(account)?)))
