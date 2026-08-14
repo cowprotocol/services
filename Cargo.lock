@@ -9783,6 +9783,7 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serde-ext",
+ "solana-client",
  "solana-sdk",
  "tikv-jemallocator",
  "tokio",

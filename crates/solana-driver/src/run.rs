@@ -3,7 +3,8 @@
 use {
     crate::infra::{Api, config, observe as infra_observe},
     clap::Parser,
-    std::{path::PathBuf, time::Duration},
+    solana_client::nonblocking::rpc_client::RpcClient,
+    std::{path::PathBuf, sync::Arc, time::Duration},
 };
 
 /// The Solana driver command line arguments.
@@ -34,11 +35,15 @@ pub async fn run(args: Args) {
     }
 
     let shutdown_token = tokio_util::sync::CancellationToken::new();
+    let rpc = Arc::new(RpcClient::new_with_timeout(
+        config.rpc.endpoint.to_string(),
+        config.rpc.request_timeout,
+    ));
     let api = Api {
         addr: config.http.bind_address,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
-    let serve = Api::serve(listener, shutdown_token.clone());
+    let serve = Api::serve(listener, rpc, shutdown_token.clone());
 
     futures::pin_mut!(serve);
     tokio::select! {
