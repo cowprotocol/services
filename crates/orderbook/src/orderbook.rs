@@ -16,6 +16,7 @@ use {
     model::{
         DomainSeparator,
         order::{
+            BUY_ETH_ADDRESS,
             Order,
             OrderCancellation,
             OrderCreation,
@@ -294,6 +295,14 @@ impl Orderbook {
                 full_app_data_override,
             )
             .await?;
+
+        if order.data.buy_token == BUY_ETH_ADDRESS
+            && shared::ban_list().contains(&order.metadata.owner)
+        {
+            return Err(AddOrderError::OrderValidation(ValidationError::Other(
+                anyhow::anyhow!("forbidden"),
+            )));
+        }
 
         let order_uid = order.metadata.uid;
 

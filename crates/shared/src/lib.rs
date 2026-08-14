@@ -18,9 +18,31 @@ pub mod token_list;
 pub mod url;
 pub mod web3;
 
+use {
+    alloy::primitives::Address,
+    std::{collections::HashSet, sync::LazyLock},
+};
+
 /// anyhow errors are not clonable natively. This is a workaround that creates a
 /// new anyhow error based on formatting the error with its inner sources
 /// without backtrace.
 pub fn clone_anyhow_error(err: &anyhow::Error) -> anyhow::Error {
     anyhow::anyhow!("{:#}", err)
+}
+
+pub fn ban_list() -> &'static HashSet<Address> {
+    static BAN_LIST: LazyLock<HashSet<Address>> = LazyLock::new(|| {
+        let Ok(raw) = std::env::var("BAN_LIST") else {
+            return HashSet::new();
+        };
+        raw.split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.parse()
+                    .unwrap_or_else(|e| panic!("invalid address {s:?} in BAN_LIST: {e}"))
+            })
+            .collect()
+    });
+    &BAN_LIST
 }

@@ -188,6 +188,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(config: Configuration, shutdown_controller: ShutdownController) {
+    let _ = shared::ban_list();
     assert!(config.shadow.is_none(), "cannot run in shadow mode");
     let db_write = Postgres::new(
         config.database.write_url.as_str(),
