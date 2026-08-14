@@ -20,12 +20,14 @@ pub mod routes;
 pub struct Api {
     /// Address the server binds to and listens on.
     pub addr: SocketAddr,
+    /// The shared Solana RPC client.
+    pub rpc: SolanaRPC,
 }
 
 impl Api {
     /// Bind to the configured address, returning the listener and the actual
     /// bound address (which differs from `addr` when binding to port 0).
-    pub async fn bind(self) -> Result<(tokio::net::TcpListener, SocketAddr), std::io::Error> {
+    pub async fn bind(&self) -> Result<(tokio::net::TcpListener, SocketAddr), std::io::Error> {
         let listener = tokio::net::TcpListener::bind(self.addr).await?;
         let local_addr = listener.local_addr()?;
         tracing::info!(port = local_addr.port(), "serving solana driver");
@@ -35,8 +37,8 @@ impl Api {
     /// Serve the API on the given listener until `shutdown` resolves, then
     /// drain in-flight requests before returning.
     pub async fn serve(
+        self,
         listener: tokio::net::TcpListener,
-        rpc: Arc<SolanaRPC>,
         shutdown: CancellationToken,
     ) -> Result<(), std::io::Error> {
         // Propagate the OpenTelemetry trace context from incoming request headers and
@@ -47,6 +49,8 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
+        let state = State(Arc::new(Inner { rpc: self.rpc }));
+
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
             .route("/solve", post(routes::solve))
@@ -56,7 +60,7 @@ impl Api {
             .layer(DefaultBodyLimit::disable())
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
-            .with_state(State(Arc::new(Inner { rpc })));
+            .with_state(state);
 
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown.cancelled_owned())
@@ -73,8 +77,15 @@ impl Api {
 #[expect(dead_code)]
 pub struct State(Arc<Inner>);
 
+impl State {
+    #[expect(dead_code)]
+    fn rpc(&self) -> &SolanaRPC {
+        &self.0.rpc
+    }
+}
+
 struct Inner {
     /// The shared Solana RPC client.
     #[expect(dead_code)]
-    rpc: Arc<SolanaRPC>,
+    rpc: SolanaRPC,
 }
