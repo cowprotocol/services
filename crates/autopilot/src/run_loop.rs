@@ -123,7 +123,7 @@ impl DeltaState {
 
     /// Resets `previous_auction` and `last_checkpoint` to their default values.
     fn reset(&mut self) {
-        self.last_checkpoint = Default::default();
+        self.previous_auction = Default::default();
         self.last_checkpoint = Default::default();
     }
 
