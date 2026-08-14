@@ -42,9 +42,9 @@ impl Rpc {
     /// per-request cap are split into parallel requests.
     pub(crate) async fn multiple_accounts(
         &self,
-        keys: &[Pubkey],
+        keys: impl IntoIterator<Item = Pubkey>,
     ) -> Result<HashMap<Pubkey, Account>, ClientError> {
-        let unique: Vec<Pubkey> = keys.iter().copied().unique().collect();
+        let unique: Vec<Pubkey> = keys.into_iter().unique().collect();
         let fetched = future::try_join_all(unique.chunks(MAX_MULTIPLE_ACCOUNTS).map(|chunk| {
             self.client
                 .get_multiple_accounts(chunk)
