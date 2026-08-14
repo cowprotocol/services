@@ -21,6 +21,7 @@ bigdecimal = { workspace = true }
 bytes = { workspace = true }
 derive_more = { workspace = true }
 futures = { workspace = true }
+itertools = { workspace = true }
 rustls = { workspace = true }
 settlement-interface = {
   package = "settlement-interface",
@@ -28,6 +29,8 @@ settlement-interface = {
   rev = "4d4fc46f594e0159246afaf148f0af2a463d0095"
 }
 solana-client = { workspace = true }
+solana-commitment-config = { workspace = true }
+solana-rpc-client-api = { workspace = true }
 solana-sdk = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
