@@ -124,6 +124,7 @@ shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
 solana-client = "4"
+solana-commitment-config = "3"
 solana-driver = { path = "crates/solana-driver" }
 solana-indexer = { path = "crates/solana-indexer" }
 solana-sdk = "4"

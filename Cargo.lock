@@ -9784,6 +9784,7 @@ dependencies = [
  "serde",
  "serde-ext",
  "solana-client",
+ "solana-commitment-config",
  "solana-sdk",
  "tikv-jemallocator",
  "tokio",

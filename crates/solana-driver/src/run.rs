@@ -4,6 +4,7 @@ use {
     crate::infra::{Api, config, observe as infra_observe},
     clap::Parser,
     solana_client::nonblocking::rpc_client::RpcClient,
+    solana_commitment_config::CommitmentConfig,
     std::{path::PathBuf, sync::Arc, time::Duration},
 };
 
@@ -35,9 +36,10 @@ pub async fn run(args: Args) {
     }
 
     let shutdown_token = tokio_util::sync::CancellationToken::new();
-    let rpc = Arc::new(RpcClient::new_with_timeout(
+    let rpc = Arc::new(RpcClient::new_with_timeout_and_commitment(
         config.rpc.endpoint.to_string(),
         config.rpc.request_timeout,
+        CommitmentConfig::confirmed(),
     ));
     let api = Api {
         addr: config.http.bind_address,
