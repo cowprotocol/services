@@ -194,9 +194,10 @@ impl RunLoop {
 
         Self::spawn_block_listener(eth.current_block().clone(), wake_runloop.clone());
 
-        let interval = config.auction_delta_checkpoint_interval;
-
         Self {
+            delta_state: std::sync::Mutex::new(DeltaState::new(
+                config.auction_delta_checkpoint_interval,
+            )),
             config,
             eth,
             persistence,
@@ -206,7 +207,6 @@ impl RunLoop {
             maintenance,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify: wake_runloop,
-            delta_state: std::sync::Mutex::new(DeltaState::new(interval)),
             drivers,
         }
     }
