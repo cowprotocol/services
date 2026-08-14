@@ -4272,7 +4272,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -9967,6 +9967,8 @@ dependencies = [
  "solana-commitment-config",
  "solana-rpc-client-api",
  "solana-sdk",
+ "spl-token-2022-interface",
+ "spl-token-interface",
  "sqlx",
  "thiserror 1.0.69",
  "tokio",

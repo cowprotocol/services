@@ -132,6 +132,8 @@ solana-sdk = "4"
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
+spl-token-2022-interface = "2"
+spl-token-interface = "2"
 sqlx = {
   version = "0.8",
   default-features = false,

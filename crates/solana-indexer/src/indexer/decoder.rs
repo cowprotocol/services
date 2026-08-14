@@ -626,12 +626,10 @@ fn decode_settlements_finalized(
 
 /// The classic and 2022 SPL token programs, the only owners whose account
 /// layout `token_account_mint` trusts.
-const TOKEN_PROGRAMS: [Pubkey; 2] = [
-    Pubkey::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
-    Pubkey::from_str_const("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
-];
+const TOKEN_PROGRAMS: [Pubkey; 2] = [spl_token_interface::ID, spl_token_2022_interface::ID];
 
-/// Base size of an SPL token account, Token-2022 extensions append past it.
+/// Size of a classic SPL token account, the lower bound for Token-2022,
+/// whose extensions append past it.
 const TOKEN_ACCOUNT_MIN_LEN: usize = 165;
 
 /// The mint an SPL token account holds, the first 32 bytes of its data.
