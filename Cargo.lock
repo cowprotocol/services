@@ -9774,16 +9774,22 @@ dependencies = [
 name = "solana-driver"
 version = "0.1.0"
 dependencies = [
+ "axum 0.8.8",
  "clap",
  "configs",
+ "futures",
  "humantime-serde",
  "observe",
+ "reqwest 0.13.4",
  "serde",
  "serde-ext",
  "solana-sdk",
  "tikv-jemallocator",
  "tokio",
+ "tokio-util",
  "toml",
+ "tower 0.5.3",
+ "tower-http",
  "tracing",
  "url",
 ]

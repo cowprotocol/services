@@ -16,16 +16,22 @@ name = "solana-driver"
 path = "src/main.rs"
 
 [dependencies]
+axum = { workspace = true }
 clap = { workspace = true }
 configs = { workspace = true }
+futures = { workspace = true }
 humantime-serde = { workspace = true }
 observe = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde-ext = { workspace = true }
 solana-sdk = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tokio-util = { workspace = true }
 toml = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["decompression-br", "trace"] }
 tracing = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 
