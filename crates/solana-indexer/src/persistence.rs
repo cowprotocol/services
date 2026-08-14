@@ -457,8 +457,14 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
 
         let uid = [1_u8; 32];
         SeedOrder::new(uid).insert(&pool).await;
+        // A second order with an unseeded uid: its orders row comes from the
+        // event itself, the seeded uid keeps the seed row via ON CONFLICT.
+        let fresh_uid = [2_u8; 32];
         let events = vec![
             DecodedEvent::Settlement(SettlementEvent::OrderCreated(Box::new(created_order(uid)))),
+            DecodedEvent::Settlement(SettlementEvent::OrderCreated(Box::new(created_order(
+                fresh_uid,
+            )))),
             DecodedEvent::Settlement(SettlementEvent::SettlementFinalized(FinalizedSettlement {
                 auction_id: 77,
                 solver: Pubkey::new_from_array([0xCC; 32]),
@@ -507,7 +513,7 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
         let created = sqlx::query(
             "SELECT sell_token, buy_token, sell_amount FROM solana.orders WHERE uid = $1",
         )
-        .bind(uid)
+        .bind(fresh_uid)
         .fetch_one(&pool)
         .await
         .unwrap();
