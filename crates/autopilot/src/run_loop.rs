@@ -194,7 +194,7 @@ impl RunLoop {
 
         Self::spawn_block_listener(eth.current_block().clone(), wake_runloop.clone());
 
-        let interval = config.auction_delta_checkpoint_interval.clone();
+        let interval = config.auction_delta_checkpoint_interval;
 
         Self {
             config,
