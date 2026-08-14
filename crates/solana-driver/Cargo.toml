@@ -19,13 +19,13 @@ path = "src/main.rs"
 axum = { workspace = true }
 clap = { workspace = true }
 configs = { workspace = true }
+cow-solana-rpc = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
 observe = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde-ext = { workspace = true }
-cow-solana-rpc = { workspace = true }
 solana-sdk = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
@@ -36,11 +36,11 @@ tower-http = { workspace = true, features = ["decompression-br", "trace"] }
 tracing = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 
-[features]
-default = []
-
 [dev-dependencies]
 solana-client = { workspace = true }
+
+[features]
+default = []
 
 [lints]
 workspace = true
