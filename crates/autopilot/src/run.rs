@@ -610,10 +610,15 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .drivers
         .into_iter()
         .map(|driver| async move {
-            infra::Driver::try_new(driver.url, driver.name.clone(), driver.submission_account)
-                .await
-                .map(Arc::new)
-                .expect("failed to load solver configuration")
+            infra::Driver::try_new(
+                driver.url,
+                driver.name.clone(),
+                driver.submission_account,
+                driver.supports_auction_deltas,
+            )
+            .await
+            .map(Arc::new)
+            .expect("failed to load solver configuration")
         })
         .collect::<Vec<_>>();
 
@@ -670,6 +675,8 @@ async fn shadow_mode(config: Configuration) -> ! {
                 // this address for anything important so we
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
+                // the shadow autopilot always sends full auctions
+                false,
             )
             .await
             .map(Arc::new)
