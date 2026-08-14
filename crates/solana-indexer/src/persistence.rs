@@ -102,16 +102,28 @@ ON CONFLICT (order_uid) DO NOTHING
         .bind(order.created_by.to_bytes())
         .execute(&mut **tx)
         .await?;
-        // Without both mints the intent row cannot be written, and the order
-        // stays out of the solvable set until a replay resolves it.
+        // Without both mints the intent row cannot be written. The
+        // transaction is dead-lettered so the replay machinery re-delivers
+        // it, until then the order stays out of the solvable set.
         let (Some(sell_token), Some(buy_token)) = (
             mints.get(&order.sell_token_account),
             mints.get(&order.buy_token_account),
         ) else {
             tracing::warn!(
                 order_uid = %order.order_uid,
-                "unresolved token account mints, orders row skipped"
+                "unresolved token account mints, order dead-lettered"
             );
+            sqlx::query(
+                r#"
+INSERT INTO solana.dead_letter (slot, tx_signature, reason)
+VALUES ($1, $2, 'unresolved_mints')
+ON CONFLICT (tx_signature) DO NOTHING
+                "#,
+            )
+            .bind(to_db_slot(slot))
+            .bind(order.signature.as_ref())
+            .execute(&mut **tx)
+            .await?;
             return Ok(());
         };
         // fee_amount is zero, the on-chain intent carries no fee.
