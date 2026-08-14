@@ -498,7 +498,7 @@ AND cancellation_timestamp IS NULL
 /// This is done as sqlx does not support reading arrays of more complicated
 /// types than just one field. The pre_ and post_interaction's data of
 /// target, value and data are composed to an array of interactions later.
-type RawInteraction = (Address, BigDecimal, Vec<u8>);
+pub type RawInteraction = (Address, BigDecimal, Vec<u8>);
 
 /// Order with extra information from other tables. Has all the information
 /// needed to construct a model::Order.
@@ -685,6 +685,67 @@ pub async fn single_full_order_with_quote(
     const QUERY: &str = const_format::concatcp!(
         FULL_ORDER_WITH_QUOTE,
         " WHERE o.uid = $1"
+    );
+    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
+}
+
+/// A fast-path order's signed fields and interactions, joined to its quote's
+/// winning solution and recorded fill. Only what the driver needs to re-encode
+/// the settlement is selected; order metadata and quote data are left out.
+#[derive(Debug, sqlx::FromRow)]
+pub struct FastPathOrder {
+    pub uid: OrderUid,
+    pub owner: Address,
+    pub creation_timestamp: DateTime<Utc>,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub valid_to: i64,
+    pub app_data: AppId,
+    pub kind: OrderKind,
+    pub partially_fillable: bool,
+    pub signature: Vec<u8>,
+    pub receiver: Option<Address>,
+    pub signing_scheme: SigningScheme,
+    pub sell_token_balance: SellTokenSource,
+    pub buy_token_balance: BuyTokenDestination,
+    pub pre_interactions: Vec<RawInteraction>,
+    pub post_interactions: Vec<RawInteraction>,
+    pub auction_id: AuctionId,
+    pub solution_id: BigDecimal,
+    pub solver: Address,
+    pub executed_sell: BigDecimal,
+    pub executed_buy: BigDecimal,
+}
+
+/// Recovers what's needed to settle `uid` out of competition in one query, or
+/// `None` when it is not a fast-path order (no persisted quote competition).
+#[instrument(skip_all)]
+pub async fn single_fast_path_order(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+) -> Result<Option<FastPathOrder>, sqlx::Error> {
+    #[rustfmt::skip]
+    const QUERY: &str = const_format::concatcp!(
+        "SELECT ",
+        "o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, ",
+        "o.sell_amount, o.buy_amount, o.valid_to, o.app_data, o.kind, ",
+        "o.partially_fillable, o.signature, o.receiver, o.signing_scheme, ",
+        "o.sell_token_balance, o.buy_token_balance, ",
+        "array(SELECT (p.target, p.value, p.data) FROM interactions p",
+        " WHERE p.order_uid = o.uid AND p.execution = 'pre' ORDER BY p.index) AS pre_interactions, ",
+        "array(SELECT (p.target, p.value, p.data) FROM interactions p",
+        " WHERE p.order_uid = o.uid AND p.execution = 'post' ORDER BY p.index) AS post_interactions, ",
+        "oq.auction_id AS auction_id, ps.id AS solution_id, ps.solver AS solver, ",
+        "pte.executed_sell AS executed_sell, pte.executed_buy AS executed_buy",
+        " FROM orders o",
+        " JOIN order_quotes oq ON oq.order_uid = o.uid",
+        " JOIN proposed_solutions ps ON ps.auction_id = oq.auction_id AND ps.is_winner",
+        " JOIN proposed_trade_executions pte",
+        " ON pte.auction_id = ps.auction_id AND pte.solution_uid = ps.uid AND pte.order_uid = o.uid",
+        " WHERE o.uid = $1",
+        " LIMIT 1",
     );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
 }

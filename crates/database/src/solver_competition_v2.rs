@@ -71,40 +71,6 @@ pub struct SolverCompetition {
     pub reference_scores: Vec<ReferenceScore>,
 }
 
-/// The winning solution and its proposed trade execution for `order_uid` in the
-/// quote competition `auction_id`. `None` if the quote's competition was not
-/// persisted (or the order was not part of the winning solution).
-#[derive(sqlx::FromRow)]
-pub struct FastPathSolution {
-    pub solution_uid: i64,
-    pub solver: Address,
-    /// Sell amount the winning solution executes the order at (the fill price).
-    pub executed_sell: BigDecimal,
-    /// Buy amount the winning solution executes the order at (the fill price).
-    pub executed_buy: BigDecimal,
-}
-
-#[instrument(skip_all)]
-pub async fn fast_path_solution(
-    ex: &mut PgConnection,
-    auction_id: AuctionId,
-    order_uid: &OrderUid,
-) -> Result<Option<FastPathSolution>, sqlx::Error> {
-    const QUERY: &str = r#"
-        SELECT ps.uid AS solution_uid, ps.solver, pte.executed_sell, pte.executed_buy
-        FROM proposed_solutions ps
-        JOIN proposed_trade_executions pte
-            ON pte.auction_id = ps.auction_id AND pte.solution_uid = ps.uid
-        WHERE ps.auction_id = $1 AND pte.order_uid = $2 AND ps.is_winner
-        LIMIT 1
-    "#;
-    sqlx::query_as(QUERY)
-        .bind(auction_id)
-        .bind(order_uid)
-        .fetch_optional(ex)
-        .await
-}
-
 #[instrument(skip_all)]
 pub async fn load_by_tx_hash(
     mut ex: &mut PgConnection,
