@@ -20,8 +20,7 @@
 //!   method no longer reports them.
 
 pub mod decoder;
-pub mod finalization;
 pub mod ingester;
 
 #[expect(unused_imports)]
-pub(crate) use {decoder::Decoder, finalization::FinalizationWorker, ingester::Ingester};
+pub(crate) use {decoder::Decoder, ingester::Ingester};

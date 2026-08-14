@@ -4,5 +4,8 @@
 
 pub mod indexer;
 pub mod persistence;
-pub mod traits;
+pub mod rpc;
+#[cfg(test)]
+mod test_db;
 pub mod types;
+pub mod yellowstone;
