@@ -197,7 +197,6 @@ mod tests {
         )
         .await
         .unwrap();
-        // Winning solution; the driver's solution id lives in `id`, not `uid`.
         database::solver_competition_v2::save(
             &mut tx,
             auction_id,
@@ -219,7 +218,6 @@ mod tests {
         .unwrap();
         tx.commit().await.unwrap();
 
-        // Recover.
         let fast_path = persistence
             .fast_path_order(OrderUid(order_uid.0))
             .await
@@ -257,7 +255,6 @@ mod tests {
             .expect("a driver matches the solver");
         assert_eq!(selected.name, "matching");
 
-        // Build: fill exactly at the recorded amounts.
         let native_prices = HashMap::from([(Address::from([3u8; 20]), U256::from(1u64))]);
         let request = build_settle_request(&fast_path, native_prices.clone(), 12_345);
         assert_eq!(request.solution_id, solution_id as u64);

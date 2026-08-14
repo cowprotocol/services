@@ -1044,7 +1044,6 @@ pub struct FastPathOrder {
     pub auction_id: database::auction::AuctionId,
     pub solution_id: u64,
     pub solver: eth::Address,
-    /// The amounts the winning solution fills the order at.
     pub limit_sell: eth::U256,
     pub limit_buy: eth::U256,
 }

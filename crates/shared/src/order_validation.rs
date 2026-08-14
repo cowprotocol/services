@@ -389,6 +389,9 @@ pub struct OrderValidator {
     app_data_validator: Validator,
     max_gas_per_order: u64,
     same_tokens_policy: SameTokensPolicy,
+    /// How long a fast-path order is held out of the auction (its `valid_from`
+    /// is set to `now + this` on placement).
+    min_fast_path_exclusivity: Duration,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -476,7 +479,15 @@ impl OrderValidator {
             app_data_validator,
             max_gas_per_order,
             same_tokens_policy,
+            min_fast_path_exclusivity: Duration::ZERO,
         }
+    }
+
+    /// Sets how long fast-path orders are held out of the auction. Defaults to
+    /// zero (no hold-out).
+    pub fn with_min_fast_path_exclusivity(mut self, exclusivity: Duration) -> Self {
+        self.min_fast_path_exclusivity = exclusivity;
+        self
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
@@ -1016,7 +1027,15 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
-        if let Some(valid_from) = app_data.inner.protocol.valid_from {
+        let valid_from = if app_data.inner.protocol.enable_fast_path {
+            app_data.inner.protocol.valid_from.or_else(|| {
+                Some(time::now_in_epoch_seconds() + self.min_fast_path_exclusivity.as_secs() as u32)
+            })
+        } else {
+            app_data.inner.protocol.valid_from
+        };
+
+        if let Some(valid_from) = valid_from {
             let min = self.validity_configuration.min.as_secs();
             if u64::from(data.valid_to) < u64::from(valid_from) + min {
                 return Err(ValidationError::InvalidValidFrom);
@@ -1040,7 +1059,7 @@ impl OrderValidating for OrderValidator {
                     .map(|q| q.try_to_model_order_quote())
                     .transpose()
                     .map_err(ValidationError::Other)?,
-                valid_from: app_data.inner.protocol.valid_from,
+                valid_from,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -1799,7 +1818,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-        );
+        )
+        .with_min_fast_path_exclusivity(Duration::from_secs(30));
 
         let now = time::now_in_epoch_seconds();
         let plain = |valid_to: u32| OrderCreation {
@@ -1848,6 +1868,31 @@ mod tests {
             Err(ValidationError::InvalidValidFrom)
         );
         validate(delayed(now + 50, now + 150)).await.unwrap();
+
+        let fast_path = |valid_to: u32| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableFastPath": true } }).to_string(),
+            },
+            ..plain(valid_to)
+        };
+        std::assert_matches!(
+            validate(fast_path(now + 60)).await,
+            Err(ValidationError::InvalidValidFrom)
+        );
+        let (order, _) = validate(fast_path(now + 150)).await.unwrap();
+        let valid_from = order.metadata.valid_from.unwrap();
+        assert!((now + 30..=now + 32).contains(&valid_from));
+
+        // A user-provided `validFrom` on a fast-path order is preserved.
+        let fast_path_user = OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableFastPath": true, "validFrom": now + 100 } })
+                    .to_string(),
+            },
+            ..plain(now + 180)
+        };
+        let (order, _) = validate(fast_path_user).await.unwrap();
+        assert_eq!(order.metadata.valid_from, Some(now + 100));
     }
 
     #[tokio::test]

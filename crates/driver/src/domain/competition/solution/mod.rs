@@ -588,7 +588,12 @@ impl Solution {
         }
 
         let (flashloans, wrappers) = recover_flashloans_and_wrappers(&order);
-        *user = user.with_order(order)?;
+        // Fill exactly the amount the autopilot recorded.
+        let executed = order::TargetAmount(match order.side {
+            order::Side::Sell => limit_prices.sell,
+            order::Side::Buy => limit_prices.buy,
+        });
+        *user = user.with_order(order, executed)?;
         solution.flashloans = flashloans;
         solution.wrappers = wrappers;
 

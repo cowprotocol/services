@@ -177,19 +177,19 @@ impl Fulfillment {
         &self.order
     }
 
-    /// Rebuild this fulfillment for a different `order`, keeping the executed
-    /// amount, fee and haircut.
-    pub fn with_order(&self, order: competition::Order) -> Result<Self, error::Trade> {
-        // The cached quote fulfillment carries a static zero quoting fee, but a
-        // solver-fee-determined order (a limit order) requires a dynamic fee.
-        // Adapt the fee kind to the order, keeping the (zero) fee amount: the
-        // fast-path takes no fee of its own, it fills at the recorded quote price.
+    /// Rebuild this fulfillment for a different `order`, filling `executed` in
+    /// the order's target token, keeping the fee and haircut.
+    pub fn with_order(
+        &self,
+        order: competition::Order,
+        executed: order::TargetAmount,
+    ) -> Result<Self, error::Trade> {
         let fee = if order.solver_determines_fee() {
             Fee::Dynamic(self.fee())
         } else {
             Fee::Static
         };
-        Self::new(order, self.executed, fee, self.haircut_fee)
+        Self::new(order, executed, fee, self.haircut_fee)
     }
 
     pub fn executed(&self) -> order::TargetAmount {
