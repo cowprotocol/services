@@ -25,8 +25,6 @@ observe = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde-ext = { workspace = true }
-solana-client = { workspace = true }
-solana-commitment-config = { workspace = true }
 solana-rpc = { workspace = true }
 solana-sdk = { workspace = true }
 tikv-jemallocator = { workspace = true }
@@ -40,6 +38,9 @@ url = { workspace = true, features = ["serde"] }
 
 [features]
 default = []
+
+[dev-dependencies]
+solana-client = { workspace = true }
 
 [lints]
 workspace = true

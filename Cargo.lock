@@ -9837,7 +9837,6 @@ dependencies = [
  "serde",
  "serde-ext",
  "solana-client",
- "solana-commitment-config",
  "solana-rpc",
  "solana-sdk",
  "tikv-jemallocator",
