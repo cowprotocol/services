@@ -404,23 +404,25 @@ fn token_account_mint_needs_32_bytes_of_data() {
     assert_eq!(super::token_account_mint(&account(vec![0xAA; 31])), None);
 }
 
-/// A canned `getMultipleAccounts` response: every requested account exists
-/// and holds mint `[0xAA; 32]` (the first 32 bytes of the base64 data).
+/// A canned `getMultipleAccounts` response, in request order: the sell token
+/// account holds mint `[0xA1; 32]`, the buy token account mint `[0xA2; 32]`
+/// (the first 32 bytes of the base64 data).
 fn mock_rpc_with_token_accounts() -> Rpc {
-    let account = serde_json::json!({
-        "lamports": 1u64,
-        "data": [
-            "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-            "base64"
-        ],
-        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "executable": false,
-        "rentEpoch": 0u64,
-        "space": 165u64
-    });
+    let account = |data: &str| {
+        serde_json::json!({
+            "lamports": 1u64,
+            "data": [data, "base64"],
+            "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "executable": false,
+            "rentEpoch": 0u64,
+            "space": 165u64
+        })
+    };
+    let sell = account("oaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    let buy = account("oqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     let response = serde_json::json!({
         "context": { "slot": 1u64, "apiVersion": "2.0.0" },
-        "value": [account, account],
+        "value": [sell, buy],
     });
     let mocks = solana_client::rpc_client::Mocks::from([(
         solana_client::rpc_request::RpcRequest::GetMultipleAccounts,
@@ -768,6 +770,6 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(sell_token, vec![0xAA; 32]);
-    assert_eq!(buy_token, vec![0xAA; 32]);
+    assert_eq!(sell_token, vec![0xA1; 32]);
+    assert_eq!(buy_token, vec![0xA2; 32]);
 }

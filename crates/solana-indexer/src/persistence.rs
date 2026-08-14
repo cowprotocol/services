@@ -483,10 +483,15 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
             })),
         ];
 
-        let mint = Pubkey::new_from_array([0xAA; 32]);
         let mints = HashMap::from([
-            (Pubkey::new_from_array([4; 32]), mint),
-            (Pubkey::new_from_array([5; 32]), mint),
+            (
+                Pubkey::new_from_array([4; 32]),
+                Pubkey::new_from_array([0xA1; 32]),
+            ),
+            (
+                Pubkey::new_from_array([5; 32]),
+                Pubkey::new_from_array([0xA2; 32]),
+            ),
         ]);
 
         // Twice: the second run must change nothing, replay is idempotent.
@@ -506,8 +511,8 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(created.get::<Vec<u8>, _>("sell_token"), vec![0xAA; 32]);
-        assert_eq!(created.get::<Vec<u8>, _>("buy_token"), vec![0xAA; 32]);
+        assert_eq!(created.get::<Vec<u8>, _>("sell_token"), vec![0xA1; 32]);
+        assert_eq!(created.get::<Vec<u8>, _>("buy_token"), vec![0xA2; 32]);
 
         let pda = sqlx::query(
             "SELECT created_by, amount_withdrawn, amount_received FROM solana.order_pda WHERE \
