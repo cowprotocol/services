@@ -1,0 +1,18 @@
+[package]
+name = "solana-rpc"
+version = "0.1.0"
+edition = "2024"
+description = "Solana JSON-RPC client wrapper for CoW Protocol"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "solana_rpc"
+path = "src/lib.rs"
+
+[dependencies]
+solana-commitment-config = { workspace = true }
+solana-rpc-client = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+
+[lints]
+workspace = true

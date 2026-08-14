@@ -3,12 +3,13 @@
 use {
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_driver::infra::api::Api,
+    solana_rpc::SolanaRPC,
     std::{net::SocketAddr, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
 
-fn mock_rpc() -> Arc<RpcClient> {
-    Arc::new(RpcClient::new_mock("succeeds".to_string()))
+fn mock_rpc() -> Arc<SolanaRPC> {
+    Arc::new(RpcClient::new_mock("succeeds".to_string()).into())
 }
 
 /// Spawn the API server on an ephemeral port and return its bound address.

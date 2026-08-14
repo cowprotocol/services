@@ -7,7 +7,7 @@ use {
         routing::{get, post},
     },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
-    solana_client::nonblocking::rpc_client::RpcClient,
+    solana_rpc::SolanaRPC,
     std::{net::SocketAddr, sync::Arc},
     tokio_util::sync::CancellationToken,
     tower::ServiceBuilder,
@@ -36,7 +36,7 @@ impl Api {
     /// drain in-flight requests before returning.
     pub async fn serve(
         listener: tokio::net::TcpListener,
-        rpc: Arc<RpcClient>,
+        rpc: Arc<SolanaRPC>,
         shutdown: CancellationToken,
     ) -> Result<(), std::io::Error> {
         // Propagate the OpenTelemetry trace context from incoming request headers and
@@ -76,5 +76,5 @@ pub struct State(Arc<Inner>);
 struct Inner {
     /// The shared Solana RPC client.
     #[expect(dead_code)]
-    rpc: Arc<RpcClient>,
+    rpc: Arc<SolanaRPC>,
 }

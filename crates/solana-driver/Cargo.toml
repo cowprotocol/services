@@ -27,6 +27,7 @@ serde = { workspace = true }
 serde-ext = { workspace = true }
 solana-client = { workspace = true }
 solana-commitment-config = { workspace = true }
+solana-rpc = { workspace = true }
 solana-sdk = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }

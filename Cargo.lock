@@ -9838,6 +9838,7 @@ dependencies = [
  "serde-ext",
  "solana-client",
  "solana-commitment-config",
+ "solana-rpc",
  "solana-sdk",
  "tikv-jemallocator",
  "tokio",
@@ -10567,6 +10568,15 @@ dependencies = [
  "serde",
  "serde_derive",
  "wincode",
+]
+
+[[package]]
+name = "solana-rpc"
+version = "0.1.0"
+dependencies = [
+ "solana-commitment-config",
+ "solana-rpc-client",
+ "url",
 ]
 
 [[package]]
