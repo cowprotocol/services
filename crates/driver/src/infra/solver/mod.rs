@@ -505,14 +505,7 @@ impl Solver {
             .orders()
             .iter()
             .flat_map(|order| {
-                let hint = order.app_data.flashloan()?;
-                let flashloan = domain::flashloan::Flashloan {
-                    liquidity_provider: hint.liquidity_provider.into(),
-                    protocol_adapter: hint.protocol_adapter.into(),
-                    receiver: hint.receiver,
-                    token: hint.token.into(),
-                    amount: hint.amount.into(),
-                };
+                let flashloan = order.app_data.flashloan()?.into();
                 Some((order.uid, flashloan))
             })
             .collect()

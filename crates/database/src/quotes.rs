@@ -1,5 +1,5 @@
 use {
-    crate::{Address, orders::OrderKind},
+    crate::{Address, auction::AuctionId, orders::OrderKind},
     bigdecimal::BigDecimal,
     sqlx::{
         PgConnection,
@@ -37,6 +37,7 @@ pub struct Quote {
     pub solver: Address,
     pub verified: bool,
     pub metadata: serde_json::Value,
+    pub auction_id: Option<AuctionId>,
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not
@@ -57,9 +58,10 @@ INSERT INTO quotes (
     quote_kind,
     solver,
     verified,
-    metadata
+    metadata,
+    auction_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
@@ -76,6 +78,7 @@ RETURNING id
         .bind(quote.solver)
         .bind(quote.verified)
         .bind(&quote.metadata)
+        .bind(quote.auction_id)
         .fetch_one(ex)
         .await?;
     Ok(id)
@@ -199,6 +202,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+            auction_id: Some(12),
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
@@ -234,6 +238,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+            auction_id: None,
         };
 
         let token_b = ByteArray([2; 20]);
@@ -252,6 +257,7 @@ mod tests {
             solver: ByteArray([2; 20]),
             verified: false,
             metadata: Default::default(),
+            auction_id: None,
         };
 
         // Save two measurements for token_a
@@ -425,6 +431,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+            auction_id: None,
         };
 
         // Highest absolute buy amount, but an expensive fee.
@@ -485,6 +492,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+            auction_id: None,
         };
 
         // Lowest absolute sell amount, but an expensive fee -> total spend 3000.
@@ -549,6 +557,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+            auction_id: None,
         };
 
         // Unverified but strictly better rate (more buy for the same sell).
@@ -610,6 +619,7 @@ mod tests {
                 solver: ByteArray([1; 20]),
                 verified: false,
                 metadata: Default::default(),
+                auction_id: None,
             };
             let id = save(&mut db, &quote).await.unwrap();
             quote.id = id;
@@ -668,6 +678,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: metadata.clone(),
+            auction_id: None,
         };
         // store quote in database
         let id = save(&mut db, &quote).await.unwrap();

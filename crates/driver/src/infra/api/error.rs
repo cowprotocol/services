@@ -25,6 +25,9 @@ enum Kind {
     FailedToSubmit,
     NoValidOrders,
     MalformedRequest,
+    FastPathOrderMismatch,
+    FastPathLimitNotMet,
+    InvalidFastPathOrder,
     TradingOutsideAllowedWindow,
     TokenTemporarilySuspended,
     InsufficientLiquidity,
@@ -63,6 +66,13 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::TooManyPendingSettlements => "Settlement queue is full",
             Kind::NoValidOrders => "No valid orders found in the auction",
             Kind::MalformedRequest => "Could not parse the request",
+            Kind::FastPathOrderMismatch => {
+                "The settle order does not match the quoted fast-path solution"
+            }
+            Kind::FastPathLimitNotMet => {
+                "The fast-path fill would not meet the order's signed limit"
+            }
+            Kind::InvalidFastPathOrder => "The fast-path settlement could not be built",
             Kind::TradingOutsideAllowedWindow => {
                 "Token can only be traded during specific time windows"
             }
@@ -146,6 +156,10 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
             competition::Error::NoValidOrdersFound => Kind::NoValidOrders,
             competition::Error::MalformedRequest => Kind::MalformedRequest,
+            competition::Error::FastPathOrderMismatch => Kind::FastPathOrderMismatch,
+            competition::Error::FastPathLimitNotMet => Kind::FastPathLimitNotMet,
+            competition::Error::FastPathInvalidOrder(_) => Kind::InvalidFastPathOrder,
+            competition::Error::FastPathSettlement(_) => Kind::Unknown,
         };
         error.into()
     }

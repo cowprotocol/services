@@ -236,6 +236,7 @@ Quotes that an order was created with. These quotes get stored persistently and 
  verified            | boolean     | not null | information if quote was verified
  metadata            | json        | not null | additional data associated with the quote in json format
  creation\_timestamp | timestamptz | not null | when the entry was created (DEFAULT NOW() for new and 1970-01-01 for historical data)
+ auction\_id         | bigint      | nullable | the auction competition that was the basis for this quote, the limit price of fast path executions will be derived from this competition
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
@@ -351,6 +352,7 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  solver                | bytea              | not null | public address of the solver that provided this quote
  verified              | boolean            | not null | information if quote was verified
  metadata              | json               | not null | additional data associated with the quote in json format
+ auction\_id           | bigint             | nullable | the auction competition that was the basis for this quote, the limit price of fast path executions will be derived from this competition
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
@@ -516,22 +518,6 @@ Indexes:
 - jit\_event\_id: btree(`block_number`, `log_index`)
 
 The `pool-indexer` service uses its own per-network database, not these shared DBs. Its tables (`pool_indexer_checkpoints`, `uniswap_v3_pools`, `uniswap_v3_pool_states`, `uniswap_v3_ticks`) and migrations live in [`sql-pool-indexer/`](sql-pool-indexer/).
-
-### cow\_amms
-
-Stores information about indexed CoW AMMs that have been discovered through blockchain events. Each row represents a CoW AMM pool with its associated factory contract and tradeable tokens.
-
- Column             | Type     | Nullable | Details
---------------------|----------|----------|--------
- address            | bytea    | not null | Address of the CoW AMM pool contract
- factory\_address   | bytea    | not null | Address of the factory contract associated with this AMM
- tradeable\_tokens  | bytea[]  | not null | Token addresses that can be traded through this AMM
- block\_number      | bigint   | not null | Block number in which the AMM was deployed/finalized
- tx\_hash           | bytea    | not null | Transaction hash in which the AMM was deployed/finalized
-
-Indexes:
-- PRIMARY KEY: btree (`address`)
-- cow\_amms\_factory\_block: btree (`factory_address`, `block_number`)
 
 ### Enums
 

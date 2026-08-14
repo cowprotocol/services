@@ -145,6 +145,26 @@ impl Tokens {
     pub fn iter(&self) -> impl Iterator<Item = &Token> {
         self.0.values()
     }
+
+    /// A copy with `prices` applied to the matching tokens. Tokens absent from
+    /// `prices` keep their existing price.
+    pub fn with_native_prices(&self, prices: &Prices) -> Self {
+        Self(
+            self.0
+                .iter()
+                .map(|(address, token)| {
+                    let price = prices.get(address).copied().or(token.price);
+                    (
+                        *address,
+                        Token {
+                            price,
+                            ..token.clone()
+                        },
+                    )
+                })
+                .collect(),
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -239,7 +259,7 @@ impl From<eth::U256> for Price {
 /// All auction prices
 pub type Prices = HashMap<eth::TokenAddress, Price>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Id(pub i64);
 
 impl Id {
@@ -278,4 +298,37 @@ pub struct InvalidPrice;
 pub enum Error {
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_native_prices_applies_only_given_tokens() {
+        let addr = |b: u8| -> eth::TokenAddress { eth::Address::from([b; 20]).into() };
+        let token = |b: u8| Token {
+            decimals: None,
+            symbol: None,
+            address: addr(b),
+            price: None,
+            available_balance: Default::default(),
+            trusted: false,
+        };
+        let tokens = Tokens(
+            [token(1), token(2)]
+                .into_iter()
+                .map(|t| (t.address, t))
+                .collect(),
+        );
+
+        let priced =
+            tokens.with_native_prices(&Prices::from([(addr(1), Price::from(eth::U256::from(5)))]));
+
+        assert_eq!(
+            priced.get(&addr(1)).unwrap().price.unwrap().0.0,
+            eth::U256::from(5),
+        );
+        assert!(priced.get(&addr(2)).unwrap().price.is_none());
+    }
 }

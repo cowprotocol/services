@@ -81,6 +81,47 @@ pub struct GasFeeOverride {
     pub max_priority_fee_per_gas: u128,
 }
 
+/// The sell/buy amounts a fast-path order was quoted and signed at. The cached
+/// solution must fill at least as well as these for the fast path to proceed.
+#[derive(Clone, Copy, Debug)]
+pub struct LimitPrices {
+    pub sell: eth::U256,
+    pub buy: eth::U256,
+}
+
+/// Whether `order` describes the same trade as `quoted`: same tokens, side and
+/// target amount. A partial check, not full order equality.
+fn compare_orders(order: &competition::Order, quoted: &competition::Order) -> bool {
+    order.sell.token == quoted.sell.token
+        && order.buy.token == quoted.buy.token
+        && order.side == quoted.side
+        && order.target() == quoted.target()
+}
+
+fn recover_flashloans_and_wrappers(
+    order: &competition::Order,
+) -> (HashMap<order::Uid, Flashloan>, Vec<WrapperCall>) {
+    let flashloans = order
+        .app_data
+        .flashloan()
+        .map(|f| {
+            let flashloan = domain::flashloan::Flashloan::from(f);
+            (order.uid, (&flashloan).into())
+        })
+        .into_iter()
+        .collect();
+    let wrappers = order
+        .app_data
+        .wrappers()
+        .iter()
+        .map(|w| WrapperCall {
+            address: w.address,
+            data: w.data.clone().into(),
+        })
+        .collect();
+    (flashloans, wrappers)
+}
+
 impl Solution {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
@@ -505,6 +546,61 @@ impl Solution {
         Settlement::encode(self, auction, eth, simulator, solver_native_token).await
     }
 
+    /// Swap this quote solution's single user order for the real signed
+    /// `order`, pin the fill to the signed limit, and recover the order's
+    /// flashloans/wrappers from its app-data.
+    pub fn finalize_fast_path_solution(
+        &self,
+        order: competition::Order,
+        limit_prices: LimitPrices,
+    ) -> Result<Self, error::Error> {
+        let mut solution = self.clone();
+        let Ok(user) = solution
+            .trades
+            .iter_mut()
+            .filter_map(|trade| match trade {
+                Trade::Fulfillment(fulfillment) => Some(fulfillment),
+                Trade::Jit(_) => None,
+            })
+            .exactly_one()
+        else {
+            return Err(error::Error::FastPathTradeCount(self.user_trades().count()));
+        };
+
+        if !compare_orders(&order, user.order()) {
+            return Err(error::Error::FastPathOrderMismatch);
+        }
+
+        let clearing = ClearingPrices {
+            sell: self
+                .clearing_price(order.sell.token)
+                .ok_or(error::Error::FastPathOrderMismatch)?,
+            buy: self
+                .clearing_price(order.buy.token)
+                .ok_or(error::Error::FastPathOrderMismatch)?,
+        };
+        let within_limit = match order.side {
+            order::Side::Sell => user.buy_amount(&clearing)?.0 >= limit_prices.buy,
+            order::Side::Buy => user.sell_amount(&clearing)?.0 <= limit_prices.sell,
+        };
+        if !within_limit {
+            return Err(error::Error::FastPathLimitNotMet);
+        }
+
+        let (flashloans, wrappers) = recover_flashloans_and_wrappers(&order);
+        *user = user.with_order(order)?;
+        solution.flashloans = flashloans;
+        solution.wrappers = wrappers;
+
+        // Pin the fill to the signed limit so it settles at exactly
+        // the price the autopilot expects.
+        let sell = user.order().sell.token.as_erc20(self.weth);
+        let buy = user.order().buy.token.as_erc20(self.weth);
+        solution.prices.insert(sell, limit_prices.buy);
+        solution.prices.insert(buy, limit_prices.sell);
+        Ok(solution)
+    }
+
     /// Token prices settled by this solution, expressed using an arbitrary
     /// reference unit chosen by the solver. These values are only
     /// meaningful in relation to each others.
@@ -689,6 +785,12 @@ pub mod error {
         NonBufferableTokensUsed(BTreeSet<TokenAddress>),
         #[error("invalid internalization: uninternalized solution fails to simulate")]
         FailingInternalization,
+        #[error("expected exactly one user trade in the fast-path quote solution, found {0}")]
+        FastPathTradeCount(usize),
+        #[error("fast-path order does not match the quoted order")]
+        FastPathOrderMismatch,
+        #[error(transparent)]
+        FastPathTrade(#[from] Trade),
         #[error("Gas estimate of {0:?} exceeded the per settlement limit of {1:?}")]
         GasLimitExceeded(eth::Gas, eth::Gas),
         #[error("insufficient solver account Ether balance, required {0:?}")]
@@ -697,6 +799,10 @@ pub mod error {
         DifferentSolvers,
         #[error("encoding error: {0:?}")]
         Encoding(#[from] encoding::Error),
+        #[error("fast-path fill would not meet the order's signed limit")]
+        FastPathLimitNotMet,
+        #[error(transparent)]
+        Math(#[from] Math),
     }
 
     // Custom conversion function because clippy wants us to box this

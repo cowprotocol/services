@@ -278,6 +278,7 @@ mod tests {
                 block_dependent: false,
                 fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+                auction_id: None,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -288,6 +289,7 @@ mod tests {
                 block_dependent: false,
                 fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+                auction_id: None,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -298,6 +300,7 @@ mod tests {
                 block_dependent: false,
                 fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+                auction_id: None,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -308,6 +311,7 @@ mod tests {
                 block_dependent: false,
                 fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+                auction_id: None,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -318,6 +322,7 @@ mod tests {
                 block_dependent: false,
                 fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+                auction_id: None,
             }),
         ];
         let estimates = [
@@ -417,6 +422,7 @@ mod tests {
             block_dependent: false,
             fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            auction_id: None,
         });
 
         fn estimate(amount: u64) -> Estimate {
@@ -480,6 +486,7 @@ mod tests {
             block_dependent: false,
             fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            auction_id: None,
         });
 
         fn estimate(amount: u64) -> Estimate {
@@ -561,6 +568,7 @@ mod tests {
             block_dependent: false,
             fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            auction_id: None,
         });
 
         fn estimate(amount: u64) -> Estimate {
@@ -631,6 +639,7 @@ mod tests {
             block_dependent: false,
             fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            auction_id: None,
         })
     }
 

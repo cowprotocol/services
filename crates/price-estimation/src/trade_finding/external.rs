@@ -73,6 +73,7 @@ impl ExternalTradeFinder {
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
                 fast_path: query.fast_path,
+                auction_id: query.auction_id,
             };
             let block_dependent = query.block_dependent;
             let id = observe::tracing::distributed::request_id::from_current_span();
@@ -401,8 +402,10 @@ pub mod dto {
         pub amount: U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         pub fast_path: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub auction_id: Option<i64>,
     }
 
     #[serde_as]
