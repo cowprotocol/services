@@ -672,11 +672,11 @@ impl RunLoop {
                     .await
             },
         );
-        Metrics::solve_request_body_size(request.body_size());
+        Metrics::solve_request_body_size("full", request.body_size());
 
         // On checkpoint auctions the delta drivers receive the full body.
         let delta_request = delta_request.unwrap_or_else(|| request.clone());
-        Metrics::solve_request_delta_body_size(delta_request.body_size());
+        Metrics::solve_request_body_size("delta", delta_request.body_size());
 
         (request, delta_request)
     }
@@ -1171,19 +1171,18 @@ struct Metrics {
     #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
 
-    /// Tracks the size of the `/solve` request body in bytes.
-    #[metric(buckets(
-        1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000
-    ))]
-    solve_request_body_size: prometheus::Histogram,
-
-    /// Tracks the size in bytes of the `/solve` body built for drivers that
-    /// opted into incremental auctions. Matches `solve_request_body_size` on
-    /// checkpoint auctions, and on every auction while no driver has opted in.
-    #[metric(buckets(
-        1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000
-    ))]
-    solve_request_delta_body_size: prometheus::Histogram,
+    /// Tracks the size of the `/solve` request body in bytes. The `kind` label
+    /// tells the two bodies apart: `full` is sent to regular drivers, `delta`
+    /// to the drivers that opted into incremental auctions. Both are equal on
+    /// checkpoint auctions and while no driver has opted in.
+    #[metric(
+        labels("kind"),
+        buckets(
+            1_000, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000, 2_000_000,
+            3_000_000, 4_000_000
+        )
+    )]
+    solve_request_body_size: prometheus::HistogramVec,
 }
 
 impl Metrics {
@@ -1271,13 +1270,10 @@ impl Metrics {
             .observe(init_block_timestamp.elapsed().as_secs_f64())
     }
 
-    fn solve_request_body_size(size: usize) {
-        Self::get().solve_request_body_size.observe(size as f64)
-    }
-
-    fn solve_request_delta_body_size(size: usize) {
+    fn solve_request_body_size(kind: &str, size: usize) {
         Self::get()
-            .solve_request_delta_body_size
+            .solve_request_body_size
+            .with_label_values(&[kind])
             .observe(size as f64)
     }
 }
