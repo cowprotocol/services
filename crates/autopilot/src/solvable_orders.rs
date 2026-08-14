@@ -24,7 +24,7 @@ use {
     futures::FutureExt,
     itertools::Itertools,
     model::{
-        order::{Order, OrderClass, OrderUid},
+        order::{BUY_ETH_ADDRESS, Order, OrderClass, OrderUid},
         signature::Signature,
         time::now_in_epoch_seconds,
     },
@@ -210,9 +210,13 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.get_solvable_orders().await?;
         tracing::trace!("fetched solvable orders from db");
 
+        let ban_list = shared::ban_list();
         let orders: Vec<&Order> = db_solvable_orders
             .orders
             .values()
+            .filter(|order| {
+                order.data.buy_token != BUY_ETH_ADDRESS || !ban_list.contains(&order.metadata.owner)
+            })
             .map(|order| order.as_ref())
             .collect();
 
