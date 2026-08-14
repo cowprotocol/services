@@ -1,12 +1,12 @@
 [package]
-name = "solana-rpc"
+name = "cow-solana-rpc"
 version = "0.1.0"
 edition = "2024"
 description = "Solana JSON-RPC client wrapper for CoW Protocol"
 license = "GPL-3.0-or-later"
 
 [lib]
-name = "solana_rpc"
+name = "cow_solana_rpc"
 path = "src/lib.rs"
 
 [dependencies]

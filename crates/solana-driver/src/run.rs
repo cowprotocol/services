@@ -3,7 +3,7 @@
 use {
     crate::infra::{Api, config, observe as infra_observe},
     clap::Parser,
-    solana_rpc::SolanaRPC,
+    cow_solana_rpc::SolanaRPC,
     std::{path::PathBuf, time::Duration},
 };
 

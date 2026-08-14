@@ -127,7 +127,7 @@ solana-client = "4"
 solana-commitment-config = "3"
 solana-driver = { path = "crates/solana-driver" }
 solana-indexer = { path = "crates/solana-indexer" }
-solana-rpc = { path = "crates/solana-rpc" }
+cow-solana-rpc = { path = "crates/cow-solana-rpc" }
 solana-rpc-client = "4"
 solana-rpc-client-api = "4"
 solana-sdk = "4"
