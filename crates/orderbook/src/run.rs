@@ -55,6 +55,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .expect("failed to load configuration file")
         .validate()
         .expect("failed to validate configuration file");
+    let _ = shared::ban_list();
     let chain_name = config
         .shared
         .chain_id
