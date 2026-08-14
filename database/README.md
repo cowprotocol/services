@@ -477,11 +477,12 @@ This table contains data of [`Trade`](https://github.com/cowprotocol/contracts/b
  sell\_amount  | numeric | not null | amount of sell\_token that got taken from the order owner
  buy\_amount   | numeric | not null | amount of buy\_token received by the order owner
  fee\_amount   | numeric | not null | fee amount in sell\_token that got taken in this trade. Note that this amount refers to all or a portion of the static fee\_amount the user signed during the order creation.
+ gas\_cost     | numeric | nullable | this trade's share of its settlement's gas cost in wei, rounded down. `NULL` for settlements observed before the migration that added it.
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
 - trade\_order\_uid: btree (`order_uid`, `block_number`, `log_index`)
-- trades_covering: btree(`order_uid`) INCLUDE (`buy_amount`, `sell_amount`, `fee_amount`)
+- trades\_covering\_with\_gas\_cost: btree(`order_uid`) INCLUDE (`buy_amount`, `sell_amount`, `fee_amount`, `gas_cost`)
 
 ### jit\_orders
 
