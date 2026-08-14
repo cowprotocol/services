@@ -292,8 +292,6 @@ impl OrderDelta {
             }
         }
 
-        // `HashMap` iteration order is unspecified, so sort to keep the
-        // payload a pure function of the two auctions.
         let removed_orders: Vec<boundary::OrderUid> =
             unmatched.into_keys().map(Into::into).collect();
 
