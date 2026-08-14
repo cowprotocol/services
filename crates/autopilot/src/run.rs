@@ -653,7 +653,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         eth.current_block().clone(),
         run_loop_config.submission_deadline,
         run_loop_config.max_settlement_transaction_wait,
-        config.native_price_timeout,
     );
     infra::order_notify::Notifier::new(
         banned_users.clone(),

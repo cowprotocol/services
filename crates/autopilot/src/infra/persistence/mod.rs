@@ -38,7 +38,7 @@ use {
     eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
-    shared::db_order_conversions::full_order_into_model_order,
+    shared::db_order_conversions::{fast_path_order_into_model, full_order_into_model_order},
     std::{
         collections::{HashMap, HashSet},
         ops::DerefMut,
@@ -1038,10 +1038,9 @@ impl Persistence {
             .collect())
     }
 
-    /// Recover everything needed to settle a fast-path (out-of-competition)
-    /// order via the driver's `/settle`, or `None` when `uid` is not a
-    /// fast-path order: no auction linked to its quote, or the quote's
-    /// competition (solution id + solver) has not been persisted yet.
+    /// Recovers what's needed to settle a fast-path order via the driver's
+    /// `/settle`, or `None` when `uid` is not a fast-path order (its quote's
+    /// competition was not persisted).
     pub async fn fast_path_order(
         &self,
         uid: domain::OrderUid,
@@ -1054,35 +1053,26 @@ impl Persistence {
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
         let key = ByteArray(uid.0);
 
-        let Some(quote) = database::orders::read_quote(&mut ex, &key).await? else {
-            return Ok(None);
-        };
-        let Some(auction_id) = quote.auction_id else {
-            return Ok(None);
-        };
-        let Some(solution) =
-            solver_competition_v2::fast_path_solution(&mut ex, auction_id, &key).await?
-        else {
-            return Ok(None);
-        };
-        let Some(order) = database::orders::single_full_order_with_quote(&mut ex, &key).await?
-        else {
+        let Some(row) = database::orders::single_fast_path_order(&mut ex, &key).await? else {
             return Ok(None);
         };
 
-        let model_order = full_order_into_model_order(order.full_order)?;
-        // Fast-path re-encodes the cached solution at the quoted fill, so its
-        // own fees and quote apply; the order carries neither here.
+        let model_order = fast_path_order_into_model(&row)?;
+        // The cached solution carries the fees and quote; so the recovered
+        // order needs neither.
         let order = boundary::order::to_domain(&model_order, vec![], None);
 
         Ok(Some(FastPathOrder {
             order,
-            auction_id,
-            solution_id: u64::try_from(solution.solution_uid).context("negative solution id")?,
-            solver: eth::Address::from(solution.solver.0),
-            limit_sell: big_decimal_to_u256(&solution.executed_sell)
+            auction_id: row.auction_id,
+            solution_id: row
+                .solution_id
+                .to_u64()
+                .context("solution id out of range")?,
+            solver: eth::Address::from(row.solver.0),
+            limit_sell: big_decimal_to_u256(&row.executed_sell)
                 .context("invalid executed sell amount")?,
-            limit_buy: big_decimal_to_u256(&solution.executed_buy)
+            limit_buy: big_decimal_to_u256(&row.executed_buy)
                 .context("invalid executed buy amount")?,
         }))
     }
@@ -1094,8 +1084,7 @@ pub struct FastPathOrder {
     pub auction_id: database::auction::AuctionId,
     pub solution_id: u64,
     pub solver: eth::Address,
-    /// The sell/buy amounts the winning solution fills the order at — the exact
-    /// price the fast-path settlement must reproduce.
+    /// The amounts the winning solution fills the order at.
     pub limit_sell: eth::U256,
     pub limit_buy: eth::U256,
 }
