@@ -48,7 +48,11 @@ pub struct Postgres {
 }
 
 impl Postgres {
-    pub async fn new(url: &str, config: Config) -> sqlx::Result<Self> {
+    pub async fn new(
+        url: &str,
+        config: Config,
+        domain_separator: DomainSeparator,
+    ) -> sqlx::Result<Self> {
         let pool = PgPoolOptions::new()
             .max_connections(config.max_pool_size.get())
             .connect(url)
@@ -59,13 +63,8 @@ impl Postgres {
         Ok(Self {
             pool,
             config,
-            domain_separator: DomainSeparator::default(),
+            domain_separator,
         })
-    }
-
-    pub fn with_domain_separator(mut self, domain_separator: DomainSeparator) -> Self {
-        self.domain_separator = domain_separator;
-        self
     }
 
     fn start_db_metrics_job(pool: PgPool) {
@@ -86,8 +85,9 @@ impl Postgres {
         });
     }
 
+    #[cfg(test)]
     pub async fn with_defaults() -> sqlx::Result<Self> {
-        Self::new("postgresql://", Default::default()).await
+        Self::new("postgresql://", Default::default(), Default::default()).await
     }
 
     #[instrument(skip_all)]

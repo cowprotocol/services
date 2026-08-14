@@ -191,16 +191,18 @@ pub async fn run(config: Configuration) {
         max_pool_size: config.database.max_connections.get(),
         statement_timeout: config.database.statement_timeout,
     };
-    let postgres_write = Postgres::try_new(config.database.write_url.as_str(), db_config.clone())
-        .expect("failed to create database")
-        .with_domain_separator(domain_separator);
+    let postgres_write = Postgres::try_new(
+        config.database.write_url.as_str(),
+        db_config.clone(),
+        domain_separator,
+    )
+    .expect("failed to create database");
 
     let postgres_read = if let Some(db_read_url) = config.database.read_url
         && config.database.write_url != db_read_url
     {
-        Postgres::try_new_with_timeout(db_read_url.as_str(), db_config)
+        Postgres::try_new_with_timeout(db_read_url.as_str(), db_config, domain_separator)
             .expect("failed to create read replica database")
-            .with_domain_separator(domain_separator)
     } else {
         postgres_write.clone()
     };

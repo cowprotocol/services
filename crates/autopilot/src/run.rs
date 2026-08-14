@@ -189,19 +189,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(config: Configuration, shutdown_controller: ShutdownController) {
     assert!(config.shadow.is_none(), "cannot run in shadow mode");
-    let mut db_write = Postgres::new(
-        config.database.write_url.as_str(),
-        crate::database::Config {
-            insert_batch_size: config.database.insert_batch_size,
-            max_pool_size: config.database.max_connections,
-        },
-    )
-    .await
-    .unwrap();
-
-    // If the DB is in read-only mode, running ANALYZE is not possible and will
-    // trigger and error https://www.postgresql.org/docs/current/hot-standby.html
-    crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::from(config.http_client);
     let ethrpc_args = shared::web3::Arguments::from(&config.shared.ethrpc);
@@ -258,7 +245,20 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .expect("Couldn't get vault relayer address");
 
     let domain_separator = DomainSeparator::new(chain_id, *eth.contracts().settlement().address());
-    db_write.domain_separator = domain_separator;
+    let db_write = Postgres::new(
+        config.database.write_url.as_str(),
+        crate::database::Config {
+            insert_batch_size: config.database.insert_batch_size,
+            max_pool_size: config.database.max_connections,
+        },
+        domain_separator,
+    )
+    .await
+    .unwrap();
+
+    // If the DB is in read-only mode, running ANALYZE is not possible and will
+    // trigger and error https://www.postgresql.org/docs/current/hot-standby.html
+    crate::database::run_database_metrics_work(db_write.clone());
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 

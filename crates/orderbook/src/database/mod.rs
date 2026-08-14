@@ -57,19 +57,23 @@ pub struct Postgres {
 // methods.
 
 impl Postgres {
-    pub fn try_new(uri: &str, config: Config) -> Result<Self> {
+    pub fn try_new(uri: &str, config: Config, domain_separator: DomainSeparator) -> Result<Self> {
         Ok(Self {
             pool: PgPoolOptions::new()
                 .max_connections(config.max_pool_size)
                 .connect_lazy(uri)?,
             config,
-            domain_separator: DomainSeparator::default(),
+            domain_separator,
         })
     }
 
     /// Creates a Postgres connection pool, but applies the [`Config`]'s
     /// `statement_timeout` to all queries.
-    pub fn try_new_with_timeout(uri: &str, config: Config) -> Result<Self> {
+    pub fn try_new_with_timeout(
+        uri: &str,
+        config: Config,
+        domain_separator: DomainSeparator,
+    ) -> Result<Self> {
         let read_query_timeout = config.statement_timeout;
 
         Ok(Self {
@@ -85,13 +89,8 @@ impl Postgres {
                 })
                 .connect_lazy(uri)?,
             config,
-            domain_separator: DomainSeparator::default(),
+            domain_separator,
         })
-    }
-
-    pub fn with_domain_separator(mut self, domain_separator: DomainSeparator) -> Self {
-        self.domain_separator = domain_separator;
-        self
     }
 
     async fn insert_order_app_data(
@@ -109,6 +108,18 @@ impl Postgres {
             }
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn with_defaults() -> Result<Self> {
+        let config = Config::default();
+        Ok(Self {
+            pool: PgPoolOptions::new()
+                .max_connections(config.max_pool_size)
+                .connect_lazy("postgres://")?,
+            config,
+            domain_separator: Default::default(),
+        })
     }
 }
 
@@ -136,7 +147,8 @@ mod tests {
             statement_timeout: Duration::from_millis(100),
             ..Default::default()
         };
-        let db = Postgres::try_new_with_timeout("postgresql://", config).unwrap();
+        let db =
+            Postgres::try_new_with_timeout("postgresql://", config, Default::default()).unwrap();
         let mut conn = db.pool.acquire().await.unwrap();
 
         // A fast query should succeed.
