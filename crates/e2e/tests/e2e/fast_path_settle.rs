@@ -1,4 +1,6 @@
 use {
+    configs::test_util::TestDefault,
+    database::byte_array::ByteArray,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -8,6 +10,7 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     shared::web3::Web3,
+    std::{ops::DerefMut, time::Duration},
 };
 
 #[tokio::test]
@@ -16,9 +19,6 @@ async fn local_node_fast_path_settle() {
     run_test(fast_path_settle).await;
 }
 
-/// End-to-end proof that a fast-path order settles through the driver's
-/// `/settle`: quote with `enableFastPath`, place the order, and the autopilot
-/// re-encodes the cached quote solution and submits it on-chain.
 async fn fast_path_settle(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -49,12 +49,23 @@ async fn fast_path_settle(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    // A long fast-path exclusivity so only the fast path can settle the order
+    let orderbook_config = configs::orderbook::Configuration {
+        order_validation: configs::orderbook::order_validation::OrderValidationConfig {
+            min_fast_path_exclusivity: Duration::from_secs(300),
+            ..Default::default()
+        },
+        ..configs::orderbook::Configuration::test_default()
+    };
+    services
+        .start_protocol_with_args(
+            configs::autopilot::Configuration::test("test_solver", solver.address()),
+            orderbook_config,
+            solver,
+        )
+        .await;
 
-    // Opt into the fast-path (app-data metadata) and gate the order out of the
-    // regular auction with a future validFrom.
-    let valid_from = model::time::now_in_epoch_seconds() + 300;
-    let app_data = format!(r#"{{"metadata":{{"enableFastPath":true,"validFrom":{valid_from}}}}}"#);
+    let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
 
     tracing::info!("Quoting with enableFastPath.");
     let quote_request = OrderQuoteRequest {
@@ -93,17 +104,26 @@ async fn fast_path_settle(web3: Web3) {
     );
     let uid = services.create_order(&order).await.unwrap();
 
+    let valid_from: Option<i64> = {
+        let mut db = services.db().acquire().await.unwrap();
+        sqlx::query_scalar("SELECT valid_from FROM orders WHERE uid = $1")
+            .bind(ByteArray(uid.0))
+            .fetch_one(db.deref_mut())
+            .await
+            .unwrap()
+    };
+    assert!(
+        valid_from.is_some_and(|v| v as u32 > model::time::now_in_epoch_seconds()),
+        "fast-path order should have a future valid_from set by the orderbook"
+    );
+
     tracing::info!("Waiting for the fast-path settlement.");
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
-        let Ok(order) = services.get_order(&uid).await else {
-            return false;
-        };
-        assert!(
-            model::time::now_in_epoch_seconds() < valid_from,
-            "test ran past validFrom; the regular auction could now settle the order",
-        );
-        order.metadata.status == OrderStatus::Fulfilled
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
     })
     .await
     .unwrap();
