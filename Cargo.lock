@@ -8910,6 +8910,7 @@ dependencies = [
  "const-hex",
  "serde",
  "serde_with",
+ "solana-sdk",
 ]
 
 [[package]]
@@ -9788,12 +9789,24 @@ dependencies = [
 name = "solana-driver"
 version = "0.1.0"
 dependencies = [
+ "axum 0.8.8",
  "clap",
+ "configs",
  "futures",
+ "humantime-serde",
  "observe",
+ "reqwest 0.13.4",
+ "serde",
+ "serde-ext",
+ "solana-sdk",
  "tikv-jemallocator",
  "tokio",
+ "tokio-util",
+ "toml",
+ "tower 0.5.3",
+ "tower-http",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -9956,16 +9969,23 @@ name = "solana-indexer"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bigdecimal",
  "bytes",
  "derive_more 1.0.0",
  "futures",
+ "itertools 0.14.0",
+ "rustls",
  "settlement-client",
  "settlement-interface",
  "solana-client",
+ "solana-commitment-config",
+ "solana-rpc-client-api",
  "solana-sdk",
+ "sqlx",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "url",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
