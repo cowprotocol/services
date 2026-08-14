@@ -372,6 +372,7 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     .into();
     let tx = tx_from_instructions(pubkey(9), &[instruction]);
     let expected = CreatedOrder {
+        signature: signature(6),
         order_uid: OrderUid(intent.uid().to_bytes()),
         owner: Pubkey::new_from_array([0x11; 32]),
         created_by,
@@ -389,19 +390,29 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
 }
 
 #[test]
-fn token_account_mint_needs_32_bytes_of_data() {
-    let account = |data: Vec<u8>| solana_sdk::account::Account {
+fn token_account_mint_trusts_only_token_program_accounts() {
+    let account = |owner: Pubkey, data: Vec<u8>| solana_sdk::account::Account {
         lamports: 1,
         data,
-        owner: pubkey(1),
+        owner,
         executable: false,
         rent_epoch: 0,
     };
+    let token_program = super::TOKEN_PROGRAMS[0];
     assert_eq!(
-        super::token_account_mint(&account(vec![0xAA; 165])),
+        super::token_account_mint(&account(token_program, vec![0xAA; 165])),
         Some(Pubkey::new_from_array([0xAA; 32]))
     );
-    assert_eq!(super::token_account_mint(&account(vec![0xAA; 31])), None);
+    // A mint account: right owner, too short to be a token account.
+    assert_eq!(
+        super::token_account_mint(&account(token_program, vec![0xAA; 82])),
+        None
+    );
+    // Right size, arbitrary owner.
+    assert_eq!(
+        super::token_account_mint(&account(pubkey(1), vec![0xAA; 165])),
+        None
+    );
 }
 
 /// A canned `getMultipleAccounts` response, in request order: the sell token

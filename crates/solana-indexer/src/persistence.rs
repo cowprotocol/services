@@ -65,10 +65,11 @@ impl Postgres {
         tx: &mut PgTransaction<'_>,
         event: DecodedEvent,
         mints: &HashMap<Pubkey, Pubkey>,
+        slot: Slot,
     ) -> Result<(), PersistenceError> {
         match event {
             DecodedEvent::Settlement(SettlementEvent::OrderCreated(order)) => {
-                Self::apply_order_created(tx, &order, mints).await
+                Self::apply_order_created(tx, &order, mints, slot).await
             }
             DecodedEvent::Settlement(SettlementEvent::SettlementFinalized(settlement)) => {
                 Self::apply_settlement_finalized(tx, settlement).await
@@ -88,6 +89,7 @@ impl Postgres {
         tx: &mut PgTransaction<'_>,
         order: &CreatedOrder,
         mints: &HashMap<Pubkey, Pubkey>,
+        slot: Slot,
     ) -> Result<(), PersistenceError> {
         sqlx::query(
             r#"
@@ -262,7 +264,7 @@ WHERE indexer_state.slot < EXCLUDED.slot
     ) -> Result<(), PersistenceError> {
         let mut tx = self.pool.begin().await?;
         for event in events {
-            Self::apply(&mut tx, event, mints).await?;
+            Self::apply(&mut tx, event, mints, last_indexed_slot).await?;
         }
         Self::upsert_last_indexed_slot(&mut *tx, last_indexed_slot).await?;
         Ok(tx.commit().await?)
@@ -362,6 +364,7 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
 
     fn created_order(uid: [u8; 32]) -> crate::types::events::CreatedOrder {
         crate::types::events::CreatedOrder {
+            signature: Signature::from([6; 64]),
             order_uid: OrderUid(uid),
             owner: Pubkey::new_from_array([0xAA; 32]),
             created_by: Pubkey::new_from_array([0xBB; 32]),
@@ -406,6 +409,13 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
             .await
             .unwrap();
         assert_eq!(orders, 0);
+        let reason: String =
+            sqlx::query_scalar("SELECT reason FROM solana.dead_letter WHERE tx_signature = $1")
+                .bind(Signature::from([6; 64]).as_ref())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(reason, "unresolved_mints");
     }
 
     #[tokio::test]

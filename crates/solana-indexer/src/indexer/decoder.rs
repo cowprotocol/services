@@ -381,7 +381,7 @@ fn decode_settlement(
         // failure flag so the transaction is dead-lettered.
         let decoded = match discriminator {
             SettlementInstruction::CreateOrder => {
-                decode_order_created(instruction, &ctx.account_keys).map(|event| vec![event])
+                decode_order_created(instruction, ctx).map(|event| vec![event])
             }
             SettlementInstruction::CreateBuffer => {
                 decode_buffers_created(instruction, &ctx.account_keys)
@@ -429,14 +429,15 @@ fn decode_settlement(
 /// is the only writer of the `solana.orders` row.
 fn decode_order_created(
     instruction: &ResolvedInstruction,
-    account_keys: &[Pubkey],
+    ctx: &TxContext,
 ) -> Result<SettlementEvent, DecodeError> {
-    let mut accounts = instruction_account_keys(instruction, account_keys)?;
+    let mut accounts = instruction_account_keys(instruction, &ctx.account_keys)?;
     let input = CreateOrderInput::parse(&instruction.data, &mut accounts)
         .map_err(|_| DecodeError::SchemaMismatch)?;
     let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
         .map_err(|_| DecodeError::SchemaMismatch)?;
     Ok(SettlementEvent::OrderCreated(Box::new(CreatedOrder {
+        signature: ctx.signature,
         order_uid: OrderUid(uid.to_bytes()),
         owner: to_sdk_pubkey(intent.owner),
         created_by: *input.created_by,
@@ -623,9 +624,23 @@ fn decode_settlements_finalized(
     events
 }
 
+/// The classic and 2022 SPL token programs, the only owners whose account
+/// layout `token_account_mint` trusts.
+const TOKEN_PROGRAMS: [Pubkey; 2] = [
+    Pubkey::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+    Pubkey::from_str_const("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+];
+
+/// Base size of an SPL token account, Token-2022 extensions append past it.
+const TOKEN_ACCOUNT_MIN_LEN: usize = 165;
+
 /// The mint an SPL token account holds, the first 32 bytes of its data.
-/// `None` when the data is too short to be a token account.
+/// `None` for accounts that are not token accounts, so a garbage account
+/// named by an intent cannot smuggle a fake mint into the orders table.
 fn token_account_mint(account: &Account) -> Option<Pubkey> {
+    if !TOKEN_PROGRAMS.contains(&account.owner) || account.data.len() < TOKEN_ACCOUNT_MIN_LEN {
+        return None;
+    }
     Some(Pubkey::new_from_array(
         account.data.get(..32)?.try_into().ok()?,
     ))
