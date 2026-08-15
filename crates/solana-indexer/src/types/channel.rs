@@ -19,4 +19,13 @@ pub(crate) enum StreamUpdate {
         /// Wire message body.
         inner: Box<SubscribeUpdateTransactionInfo>,
     },
+    /// A slot-status message. Lets the decoder flush a buffered slot without
+    /// waiting for the next tracked transaction, which can be arbitrarily far
+    /// away. Only slots at the transaction stream's commitment may be
+    /// forwarded, an earlier-commitment slot would flush a buffer whose
+    /// transactions are still in flight.
+    Slot {
+        /// The slot the status message reports.
+        slot: Slot,
+    },
 }

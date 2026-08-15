@@ -24,6 +24,18 @@ impl From<&solvers_dto::solution::Flashloan> for Flashloan {
     }
 }
 
+impl From<&app_data::Flashloan> for Flashloan {
+    fn from(value: &app_data::Flashloan) -> Self {
+        Self {
+            liquidity_provider: value.liquidity_provider.into(),
+            protocol_adapter: value.protocol_adapter.into(),
+            receiver: value.receiver,
+            token: value.token.into(),
+            amount: value.amount.into(),
+        }
+    }
+}
+
 #[expect(clippy::from_over_into)]
 impl Into<solvers_dto::solution::Flashloan> for &Flashloan {
     fn into(self) -> solvers_dto::solution::Flashloan {
