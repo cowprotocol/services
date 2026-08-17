@@ -11,9 +11,15 @@ bigdecimal = { workspace = true }
 chain-types = { workspace = true }
 const-hex = { workspace = true }
 database = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
 sqlx = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
+url = { workspace = true }
 
 [lints]
 workspace = true

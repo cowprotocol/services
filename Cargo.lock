@@ -1567,9 +1567,15 @@ dependencies = [
  "chain-types",
  "const-hex",
  "database",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "serde_with",
  "sqlx",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -2729,6 +2735,8 @@ name = "chain-types"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "bs58",
+ "const-hex",
  "num 0.4.3",
  "number",
  "ruint",
