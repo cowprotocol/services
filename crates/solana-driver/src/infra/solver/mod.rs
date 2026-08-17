@@ -9,12 +9,10 @@ use {
         domain,
         infra::{config, solver::dto::auction::Auction},
     },
-    futures::future::join_all,
     solana_sdk::pubkey::Pubkey,
     std::sync::Arc,
     thiserror::Error,
     tokio::sync::Semaphore,
-    tracing::Instrument,
 };
 
 pub mod dto;
@@ -84,42 +82,6 @@ impl Solver {
             .into_domain(&auction_dto, self.account)
             .map_err(Error::BadResponse)
     }
-}
-
-/// Query every configured solver engine for solutions to the given auction.
-///
-/// An engine that fails, exceeds the timeout, or returns bad data loses this
-/// auction. The other engines still compete.
-pub async fn solve_all(solvers: &[Solver], auction: &domain::Auction) -> Vec<domain::Solution> {
-    if solvers.is_empty() {
-        return Vec::new();
-    }
-
-    let futures = solvers.iter().map(|solver| {
-        let solver = solver.clone();
-        let auction = auction.clone();
-        let name = solver.name().to_string();
-        async move {
-            let result = solver.solve(&auction).await;
-            match result {
-                Ok(solutions) => {
-                    tracing::info!(
-                        solver = %solver.name(),
-                        count = solutions.len(),
-                        "solver returned solutions"
-                    );
-                    solutions
-                }
-                Err(err) => {
-                    tracing::warn!(solver = %solver.name(), ?err, "solver failed");
-                    Vec::new()
-                }
-            }
-        }
-        .instrument(tracing::info_span!("solve", solver = name))
-    });
-
-    join_all(futures).await.into_iter().flatten().collect()
 }
 
 #[derive(Debug, Error)]

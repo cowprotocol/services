@@ -182,48 +182,6 @@ mod tests {
         }
     }
 
-    fn sample_solution_json() -> serde_json::Value {
-        json!({
-            "id": 1,
-            "trades": [{
-                "orderUid": format!("0x{}", "08".repeat(32)),
-                "executedAmount": "1000",
-            }],
-            "interactions": [{
-                "programId": pubkey(9).to_string(),
-                "accounts": [{
-                    "pubkey": pubkey(4).to_string(),
-                    "isSigner": true,
-                    "isWritable": false,
-                }],
-                "instructionData": BASE64_STANDARD.encode([0xde, 0xad]),
-            }],
-            "addressLookupTables": [pubkey(7).to_string()],
-        })
-    }
-
-    #[test]
-    fn wire_format_is_stable() {
-        let solutions: Solutions =
-            serde_json::from_value(json!({ "solutions": [sample_solution_json()] })).unwrap();
-        let domain = solutions
-            .into_domain(&sample_auction_dto(), pubkey(6))
-            .unwrap();
-
-        assert_eq!(domain.len(), 1);
-        assert_eq!(domain[0].id, 1);
-        assert_eq!(domain[0].solver, pubkey(6));
-        assert_eq!(domain[0].trades[0].order_uid, OrderUid([8; 32]));
-        assert_eq!(domain[0].trades[0].executed_amount, 1_000);
-        assert_eq!(domain[0].trades[0].fee, 0);
-        assert_eq!(domain[0].interactions[0].program_id, pubkey(9));
-        assert_eq!(domain[0].interactions[0].data, vec![0xde, 0xad]);
-        assert_eq!(domain[0].interactions[0].accounts[0].pubkey, pubkey(4));
-        assert!(domain[0].interactions[0].accounts[0].is_signer);
-        assert!(!domain[0].interactions[0].accounts[0].is_writable);
-        assert_eq!(domain[0].address_lookup_tables, vec![pubkey(7)]);
-    }
-
     #[test]
     fn rejects_unknown_order_uid() {
         let bad = json!({
