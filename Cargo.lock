@@ -7445,6 +7445,7 @@ dependencies = [
  "reqwest 0.13.4",
  "scopeguard",
  "serde",
+ "serde-ext",
  "serde_json",
  "shared",
  "sqlx",
