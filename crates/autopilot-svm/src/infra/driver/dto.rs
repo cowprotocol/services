@@ -186,12 +186,23 @@ mod tests {
 
     #[test]
     fn responses_deserialize() {
-        let solve: SolveResponse =
-            serde_json::from_str(r#"{"solutions":[{"solutionId":3,"score":"12345"}]}"#).unwrap();
-        assert_eq!(solve.solutions[0].solution_id, 3);
-        assert_eq!(solve.solutions[0].score, 12_345);
+        let uid = "0x1111111111111111111111111111111111111111111111111111111111111111";
+        let solver = Pubkey([0x22; 32]).to_string();
+        let solve: SolveResponse = serde_json::from_str(&format!(
+            r#"{{"solutions":[{{"solutionId":3,"score":"12345","solver":"{solver}",
+                "orders":{{"{uid}":{{"executedSell":"100","executedBuy":"200"}}}}}}]}}"#,
+        ))
+        .unwrap();
+        let solution = &solve.solutions[0];
+        assert_eq!(solution.solution_id, 3);
+        assert_eq!(solution.score, 12_345);
+        assert_eq!(solution.solver, Pubkey([0x22; 32]));
+        let traded = &solution.orders[&IntentHash([0x11; 32])];
+        assert_eq!((traded.executed_sell, traded.executed_buy), (100, 200));
 
-        let settle: SettleResponse = serde_json::from_str(r#"{"txSignature":"5bpPk"}"#).unwrap();
-        assert_eq!(settle.tx_signature, "5bpPk");
+        let settle: SettleResponse =
+            serde_json::from_str(&format!(r#"{{"txSignature":"{}"}}"#, Signature([9; 64])))
+                .unwrap();
+        assert_eq!(settle.tx_signature, Signature([9; 64]));
     }
 }
