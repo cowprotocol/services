@@ -14,7 +14,7 @@ use {
 
 /// The auction posted to `/solve`.
 #[serde_as]
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SolveRequest {
     /// Autopilot-assigned auction id.
@@ -26,7 +26,7 @@ pub struct SolveRequest {
 
 /// One solvable order in the auction.
 #[serde_as]
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde_as(as = "DisplayFromStr")]
@@ -84,7 +84,7 @@ impl From<&auction::Order> for Order {
 }
 
 /// The driver's `/solve` answer.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SolveResponse {
     pub solutions: Vec<Solution>,
@@ -93,7 +93,7 @@ pub struct SolveResponse {
 /// One proposed solution: enough to rank it, detect order overlap between
 /// winners, and attribute its settlement on chain.
 #[serde_as]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub solution_id: u64,
@@ -110,7 +110,7 @@ pub struct Solution {
 
 /// What a solution executes for one order.
 #[serde_as]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TradedAmounts {
     #[serde_as(as = "DisplayFromStr")]
@@ -120,7 +120,7 @@ pub struct TradedAmounts {
 }
 
 /// Asks the driver to submit a previously proposed solution.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettleRequest {
     pub auction_id: i64,
@@ -129,7 +129,7 @@ pub struct SettleRequest {
 
 /// The driver's `/settle` answer.
 #[serde_as]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettleResponse {
     /// Transaction signature of the submitted settlement.
@@ -158,51 +158,64 @@ mod tests {
         }
     }
 
+    /// One pass pins the wire conventions with literals (a pure round trip
+    /// is self-consistent even when the format is wrong) and round-trips
+    /// every DTO through serde.
     #[test]
-    fn solve_request_serializes_the_wire_conventions() {
+    fn dtos_round_trip_and_pin_the_wire_format() {
         let request = SolveRequest {
             id: 7,
             deadline_slot: 100,
             orders: vec![Order::from(&order())],
         };
         let json = serde_json::to_value(&request).unwrap();
-        assert_eq!(json["id"], 7);
         assert_eq!(json["deadlineSlot"], 100);
-        let order = &json["orders"][0];
         assert_eq!(
-            order["uid"],
+            json["orders"][0]["uid"],
             "0x1111111111111111111111111111111111111111111111111111111111111111"
         );
         // u64::MAX survives as a decimal string.
-        assert_eq!(order["sellAmount"], "18446744073709551615");
-        assert_eq!(order["kind"], "sell");
+        assert_eq!(json["orders"][0]["sellAmount"], "18446744073709551615");
+        assert_eq!(json["orders"][0]["kind"], "sell");
         // Base58 of 32 bytes of 0x22, precomputed so this does not just
         // compare the Display impl against itself.
         assert_eq!(
-            order["owner"],
+            json["orders"][0]["owner"],
             "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3"
         );
-    }
+        assert_eq!(
+            serde_json::from_value::<SolveRequest>(json).unwrap(),
+            request
+        );
 
-    #[test]
-    fn responses_deserialize() {
-        let uid = "0x1111111111111111111111111111111111111111111111111111111111111111";
-        let solver = Pubkey([0x22; 32]).to_string();
-        let solve: SolveResponse = serde_json::from_str(&format!(
-            r#"{{"solutions":[{{"solutionId":3,"score":"12345","solver":"{solver}",
-                "orders":{{"{uid}":{{"executedSell":"100","executedBuy":"200"}}}}}}]}}"#,
-        ))
-        .unwrap();
-        let solution = &solve.solutions[0];
-        assert_eq!(solution.solution_id, 3);
-        assert_eq!(solution.score, 12_345);
-        assert_eq!(solution.solver, Pubkey([0x22; 32]));
-        let traded = &solution.orders[&IntentHash([0x11; 32])];
-        assert_eq!((traded.executed_sell, traded.executed_buy), (100, 200));
+        let solve = SolveResponse {
+            solutions: vec![Solution {
+                solution_id: 3,
+                score: 12_345,
+                solver: Pubkey([0x22; 32]),
+                orders: HashMap::from([(
+                    IntentHash([0x11; 32]),
+                    TradedAmounts {
+                        executed_sell: 100,
+                        executed_buy: 200,
+                    },
+                )]),
+            }],
+        };
+        let json = serde_json::to_value(&solve).unwrap();
+        assert_eq!(json["solutions"][0]["score"], "12345");
+        assert_eq!(
+            serde_json::from_value::<SolveResponse>(json).unwrap(),
+            solve
+        );
 
-        let settle: SettleResponse =
-            serde_json::from_str(&format!(r#"{{"txSignature":"{}"}}"#, Signature([9; 64])))
-                .unwrap();
-        assert_eq!(settle.tx_signature, Signature([9; 64]));
+        let settle = SettleResponse {
+            tx_signature: Signature([9; 64]),
+        };
+        let json = serde_json::to_value(&settle).unwrap();
+        assert_eq!(
+            serde_json::from_value::<SettleResponse>(json).unwrap(),
+            settle
+        );
     }
 }
