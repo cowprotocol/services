@@ -6,9 +6,10 @@
 
 use {
     crate::domain::auction,
-    chain_types::solana::{IntentHash, Pubkey},
+    chain_types::solana::{IntentHash, Pubkey, Signature},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
+    std::collections::HashMap,
 };
 
 /// The auction posted to `/solve`.
@@ -89,7 +90,8 @@ pub struct SolveResponse {
     pub solutions: Vec<Solution>,
 }
 
-/// One proposed solution, the ranking input.
+/// One proposed solution: enough to rank it, detect order overlap between
+/// winners, and attribute its settlement on chain.
 #[serde_as]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +100,23 @@ pub struct Solution {
     /// Total surplus in lamports, decimal string on the wire.
     #[serde_as(as = "DisplayFromStr")]
     pub score: u64,
+    /// The keypair the driver settles with, the on-chain solver identity.
+    #[serde_as(as = "DisplayFromStr")]
+    pub solver: Pubkey,
+    /// Executed amounts per filled order.
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
+    pub orders: HashMap<IntentHash, TradedAmounts>,
+}
+
+/// What a solution executes for one order.
+#[serde_as]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TradedAmounts {
+    #[serde_as(as = "DisplayFromStr")]
+    pub executed_sell: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    pub executed_buy: u64,
 }
 
 /// Asks the driver to submit a previously proposed solution.
@@ -109,11 +128,13 @@ pub struct SettleRequest {
 }
 
 /// The driver's `/settle` answer.
+#[serde_as]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettleResponse {
-    /// Base58 transaction signature of the submitted settlement.
-    pub tx_signature: String,
+    /// Transaction signature of the submitted settlement.
+    #[serde_as(as = "DisplayFromStr")]
+    pub tx_signature: Signature,
 }
 
 #[cfg(test)]

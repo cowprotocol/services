@@ -63,6 +63,37 @@ impl FromStr for Pubkey {
     }
 }
 
+/// A Solana transaction signature (64 bytes), rendered as base58.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Signature(pub [u8; 64]);
+
+impl fmt::Display for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&bs58::encode(self.0).into_string())
+    }
+}
+
+/// A string that does not decode to exactly 64 base58 bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidSignature;
+
+impl fmt::Display for InvalidSignature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("not a base58-encoded 64-byte signature")
+    }
+}
+
+impl std::error::Error for InvalidSignature {}
+
+impl FromStr for Signature {
+    type Err = InvalidSignature;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = bs58::decode(s).into_vec().map_err(|_| InvalidSignature)?;
+        Ok(Self(bytes.try_into().map_err(|_| InvalidSignature)?))
+    }
+}
+
 /// The Solana chain marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Solana;
