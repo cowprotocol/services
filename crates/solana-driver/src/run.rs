@@ -1,7 +1,7 @@
 //! Driver entry-point logic.
 
 use {
-    crate::infra::{Api, config, observe as infra_observe},
+    crate::infra::{Api, api::State, config, observe as infra_observe, solver},
     clap::Parser,
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_commitment_config::CommitmentConfig,
@@ -41,11 +41,15 @@ pub async fn run(args: Args) {
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
     ));
+
+    let solvers: Vec<solver::Solver> = config.solvers.iter().map(solver::Solver::new).collect();
+
     let api = Api {
         addr: config.http.bind_address,
     };
+    let state = State::new(rpc, solvers);
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
-    let serve = Api::serve(listener, rpc, shutdown_token.clone());
+    let serve = Api::serve(listener, state, shutdown_token.clone());
 
     futures::pin_mut!(serve);
     tokio::select! {

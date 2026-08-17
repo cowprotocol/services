@@ -1,14 +1,18 @@
 //! Integration tests for the HTTP API server.
 
 use {
-    solana_client::nonblocking::rpc_client::RpcClient,
-    solana_driver::infra::api::Api,
+    solana_driver::infra::api::{Api, State},
     std::{net::SocketAddr, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
 
-fn mock_rpc() -> Arc<RpcClient> {
-    Arc::new(RpcClient::new_mock("succeeds".to_string()))
+fn mock_state() -> State {
+    State::new(
+        Arc::new(solana_client::nonblocking::rpc_client::RpcClient::new_mock(
+            "succeeds".to_string(),
+        )),
+        Vec::new(),
+    )
 }
 
 /// Spawn the API server on an ephemeral port and return its bound address.
@@ -19,7 +23,7 @@ async fn spawn_server() -> SocketAddr {
     let (listener, addr) = api.bind().await.unwrap();
     // A token that is never cancelled keeps the server alive for the test.
     let shutdown = CancellationToken::new();
-    tokio::spawn(async move { Api::serve(listener, mock_rpc(), shutdown).await.unwrap() });
+    tokio::spawn(async move { Api::serve(listener, mock_state(), shutdown).await.unwrap() });
     addr
 }
 
@@ -41,7 +45,7 @@ async fn shuts_down_cleanly_on_signal() {
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown_token = CancellationToken::new();
-    let serve = Api::serve(listener, mock_rpc(), shutdown_token.clone());
+    let serve = Api::serve(listener, mock_state(), shutdown_token.clone());
     let handle = tokio::spawn(async move { serve.await.unwrap() });
 
     // The server is up and serving requests.

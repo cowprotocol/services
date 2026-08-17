@@ -1,6 +1,7 @@
 //! HTTP API server.
 
 use {
+    crate::infra::solver,
     axum::{
         Router,
         extract::DefaultBodyLimit,
@@ -36,7 +37,7 @@ impl Api {
     /// drain in-flight requests before returning.
     pub async fn serve(
         listener: tokio::net::TcpListener,
-        rpc: Arc<RpcClient>,
+        state: State,
         shutdown: CancellationToken,
     ) -> Result<(), std::io::Error> {
         // Propagate the OpenTelemetry trace context from incoming request headers and
@@ -56,7 +57,7 @@ impl Api {
             .layer(DefaultBodyLimit::disable())
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
-            .with_state(State(Arc::new(Inner { rpc })));
+            .with_state(state);
 
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown.cancelled_owned())
@@ -65,16 +66,27 @@ impl Api {
 }
 
 /// Shared state available to all route handlers.
-///
-/// The inner field is not yet read by any handler (the `/solve` and `/settle`
-/// handlers are stubs), so `#[expect(dead_code)]` suppresses the unused-field
-/// warning until shared state is added.
 #[derive(Clone)]
-#[expect(dead_code)]
 pub struct State(Arc<Inner>);
+
+impl State {
+    /// Build the shared state the handlers operate on.
+    pub fn new(rpc: Arc<RpcClient>, solvers: Vec<solver::Solver>) -> Self {
+        Self(Arc::new(Inner { rpc, solvers }))
+    }
+
+    pub fn rpc(&self) -> &RpcClient {
+        &self.0.rpc
+    }
+
+    pub fn solvers(&self) -> &[solver::Solver] {
+        &self.0.solvers
+    }
+}
 
 struct Inner {
     /// The shared Solana RPC client.
-    #[expect(dead_code)]
     rpc: Arc<RpcClient>,
+    /// Configured solver engines.
+    solvers: Vec<solver::Solver>,
 }

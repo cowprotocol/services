@@ -9,6 +9,10 @@ use {
     tokio::fs,
 };
 
+const fn default_solve_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+
 /// Load the driver configuration from a TOML file.
 ///
 /// # Panics
@@ -99,6 +103,14 @@ pub struct Solver {
     pub name: String,
     /// HTTP endpoint of the solver engine API.
     pub endpoint: url::Url,
+    /// The solver's on-chain identity. Reported on every `domain::Solution`
+    /// produced by this engine.
+    #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
+    pub account: Pubkey,
+    /// Timeout for the request/response roundtrip between the driver and
+    /// solver engine.
+    #[serde(with = "humantime_serde", default = "default_solve_timeout")]
+    pub timeout: Duration,
     /// Maximum number of concurrent solve requests kept in flight per solver.
     pub max_in_flight: NonZero<usize>,
 }
@@ -119,9 +131,38 @@ mod tests {
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");
         assert_eq!(config.solvers[0].max_in_flight.get(), 1);
+        assert_eq!(config.solvers[0].timeout, Duration::from_secs(30));
+        assert_eq!(
+            config.chain.settlement_program_id,
+            "MooohhPEAAHwAwEozL7JPEmnDvaahuUpccYN4Yb8ccK"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(
+            config.solvers[0].account,
+            "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
+                .parse()
+                .unwrap()
+        );
         assert_eq!(config.logging.filter, "info,solana_driver=debug");
         assert_eq!(config.logging.stderr_threshold, None);
         assert!(!config.logging.use_json);
+    }
+
+    #[test]
+    fn solver_config_parses() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            account = "11111111111111111111111111111111"
+            max-in-flight = 1
+            timeout = "15s"
+        "#;
+        let solver: Solver = toml::de::from_str(solver_config).unwrap();
+        assert_eq!(solver.name, "baseline");
+        assert_eq!(solver.account, Pubkey::default());
+        assert_eq!(solver.timeout, Duration::from_secs(15));
+        assert_eq!(solver.max_in_flight.get(), 1);
     }
 
     #[test]
