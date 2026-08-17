@@ -195,7 +195,7 @@ fn pool_indexer_config(
     factories: impl IntoIterator<Item = Address>,
     metrics_port: u16,
 ) -> Configuration {
-    let config = Configuration {
+    Configuration {
         database: DatabaseConfig {
             url: POOL_INDEXER_DB_URL.parse().unwrap(),
             max_connections: NonZeroU32::new(5).unwrap(),
@@ -223,12 +223,7 @@ fn pool_indexer_config(
         metrics: MetricsConfig {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, metrics_port)),
         },
-    };
-    config
-        .network
-        .validate()
-        .expect("invalid pool-indexer test config");
-    config
+    }
 }
 
 /// Spawns the pool-indexer task and waits for its `/health` endpoint to come
@@ -796,6 +791,35 @@ async fn two_factories(web3: Web3) {
                     "pool {pool:#x} should be owned by factory {factory:#x}"
                 );
             }
+
+            let (_, _, _, liq_before) = snapshot_pool_state(&db, pool_a).await;
+            let pool_a_contract = MockUniswapV3Pool::MockUniswapV3PoolInstance::new(
+                pool_a,
+                web3.provider.clone().erased(),
+            );
+            pool_a_contract
+                .mockMint(
+                    Address::repeat_byte(1),
+                    I24::try_from(-200i32).unwrap(),
+                    I24::try_from(200i32).unwrap(),
+                    1_000_000u128,
+                )
+                .send()
+                .await
+                .unwrap()
+                .watch()
+                .await
+                .unwrap();
+            let new_head = web3.provider.get_block_number().await.unwrap();
+            wait_for_indexer(new_head, 2).await;
+
+            let (_, _, _, liq_after) = snapshot_pool_state(&db, pool_a).await;
+            assert!(
+                liq_after.parse::<u128>().unwrap() > liq_before.parse::<u128>().unwrap(),
+                "pool A's mint was indexed"
+            );
+            let (_, _, _, liq_b) = snapshot_pool_state(&db, pool_b).await;
+            assert_eq!(liq_b, "1000000", "pool B unchanged");
         },
     )
     .await;
