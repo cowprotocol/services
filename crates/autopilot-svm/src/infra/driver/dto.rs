@@ -155,10 +155,11 @@ mod tests {
         // u64::MAX survives as a decimal string.
         assert_eq!(order["sellAmount"], "18446744073709551615");
         assert_eq!(order["kind"], "sell");
-        // Base58 of 32 bytes of 0x22.
+        // Base58 of 32 bytes of 0x22, precomputed so this does not just
+        // compare the Display impl against itself.
         assert_eq!(
             order["owner"],
-            chain_types::solana::Pubkey([0x22; 32]).to_string()
+            "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3"
         );
     }
 

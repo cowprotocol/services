@@ -33,9 +33,13 @@ pub enum Error {
     /// The driver answered with a non-success status.
     #[error("status {status}: {body}")]
     Status { status: StatusCode, body: String },
-    /// The response body did not match the expected DTO.
-    #[error("body: {0}")]
-    Body(#[from] serde_json::Error),
+    /// The response body did not match the expected DTO. Carries the body,
+    /// the payload is the evidence.
+    #[error("body: {error}: {body}")]
+    Body {
+        error: serde_json::Error,
+        body: String,
+    },
 }
 
 impl Driver {
@@ -72,6 +76,6 @@ impl Driver {
         if !status.is_success() {
             return Err(Error::Status { status, body });
         }
-        Ok(serde_json::from_str(&body)?)
+        serde_json::from_str(&body).map_err(|error| Error::Body { error, body })
     }
 }
