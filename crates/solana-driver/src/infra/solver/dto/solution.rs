@@ -45,6 +45,7 @@ pub struct Solution {
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     /// The order's 32-byte intent hash.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub order_uid: OrderUid,
     /// Sell-token units for sell orders, buy-token units for buy orders.
     #[serde_as(as = "serde_with::DisplayFromStr")]
