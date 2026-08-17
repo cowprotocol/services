@@ -10,12 +10,14 @@ pub(crate) enum DecodeError {
     /// match any known instruction on either program.
     #[error("unknown instruction discriminator")]
     UnknownDiscriminator,
-    /// The ALT (Address Lookup Table) loaded-address list could not be resolved
-    /// against the full account list.
-    #[error("alt resolution failed")]
-    AltResolutionFailed,
-    /// The instruction was recognised but its schema did not match the on-chain
-    /// layout.
+    /// An account index did not resolve against the transaction's account list,
+    /// which includes the ALT (Address Lookup Table) loaded addresses.
+    #[error("account index {index} out of range for {len} account keys")]
+    AccountIndexOutOfRange { index: u8, len: usize },
+    /// The instruction was recognised but its schema did not match the
+    /// on-chain layout. Carries the parser's error rendered as text, which
+    /// names the failed check. Nothing branches on it, and the interface does
+    /// not re-export its error type.
     #[error("schema mismatch")]
     SchemaMismatch,
 }
@@ -23,7 +25,7 @@ pub(crate) enum DecodeError {
 /// Failures surfaced from the persistence boundary.
 #[derive(Debug, Error)]
 pub(crate) enum PersistenceError {
-    /// The SQL `ON CONFLICT` clause rejected the write (e.g. watermark
+    /// The SQL `ON CONFLICT` clause rejected the write (e.g. last indexed slot
     /// regression).
     #[error("persistence conflict")]
     Conflict,
@@ -31,6 +33,9 @@ pub(crate) enum PersistenceError {
     /// pool exhausted). The caller is expected to retry.
     #[error("persistence unavailable")]
     Unavailable,
+    /// The database rejected or failed a statement.
+    #[error("database: {0}")]
+    Database(#[from] sqlx::Error),
 }
 
 /// Failures surfaced from the stream boundary.

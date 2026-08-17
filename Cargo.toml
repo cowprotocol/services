@@ -8,25 +8,25 @@ members = [
 
 [workspace.dependencies]
 account-balances = { path = "crates/account-balances" }
-alloy = { version = "1.8.3", default-features = false }
-alloy-consensus = { version = "1.8.3", default-features = false }
-alloy-contract = { version = "1.8.3", default-features = false }
-alloy-dyn-abi = { version = "1.5.7", default-features = false }
-alloy-eips = { version = "1.8.3", default-features = false }
-alloy-json-abi = { version = "1.5.7", default-features = false }
-alloy-json-rpc = { version = "1.8.3", default-features = false }
-alloy-network = { version = "1.8.3", default-features = false }
-alloy-primitives = { version = "1.5.7", default-features = false }
-alloy-provider = { version = "1.8.3", default-features = false }
-alloy-rpc-client = { version = "1.8.3", default-features = false }
-alloy-rpc-types = { version = "1.8.3", default-features = false }
-alloy-rpc-types-eth = { version = "1.8.3", default-features = false }
-alloy-rpc-types-trace = { version = "1.8.3", default-features = false }
-alloy-signer = { version = "1.8.3", default-features = false }
-alloy-signer-local = { version = "1.8.3", default-features = false }
-alloy-sol-types = { version = "1.5.7" }
-alloy-transport = { version = "1.8.3", default-features = false }
-alloy-transport-ws = { version = "1.8.3", default-features = false }
+alloy = { version = "2.4.1", default-features = false }
+alloy-consensus = { version = "2.4.1", default-features = false }
+alloy-contract = { version = "2.4.1", default-features = false }
+alloy-dyn-abi = { version = "1.6.1", default-features = false }
+alloy-eips = { version = "2.4.1", default-features = false }
+alloy-json-abi = { version = "1.6.1", default-features = false }
+alloy-json-rpc = { version = "2.4.1", default-features = false }
+alloy-network = { version = "2.4.1", default-features = false }
+alloy-primitives = { version = "1.6.1", default-features = false }
+alloy-provider = { version = "2.4.1", default-features = false }
+alloy-rpc-client = { version = "2.4.1", default-features = false }
+alloy-rpc-types = { version = "2.4.1", default-features = false }
+alloy-rpc-types-eth = { version = "2.4.1", default-features = false }
+alloy-rpc-types-trace = { version = "2.4.1", default-features = false }
+alloy-signer = { version = "2.4.1", default-features = false }
+alloy-signer-local = { version = "2.4.1", default-features = false }
+alloy-sol-types = { version = "1.6.1" }
+alloy-transport = { version = "2.4.1", default-features = false }
+alloy-transport-ws = { version = "2.4.1", default-features = false }
 anyhow = "1.0.100"
 app-data = { path = "crates/app-data" }
 arc-swap = "1.7.1"
@@ -110,6 +110,7 @@ reqwest = { version = "0.13.4", features = ["hickory-dns"] }
 rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 rust_decimal = { version = "1.35.0", default-features = false }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 s3 = { path = "crates/s3" }
 schemars = { version = "1.2", features = ["chrono04"] }
 scopeguard = "1.2.0"
@@ -123,8 +124,10 @@ shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
 solana-client = "4"
+solana-commitment-config = "3"
 solana-driver = { path = "crates/solana-driver" }
 solana-indexer = { path = "crates/solana-indexer" }
+solana-rpc-client-api = "4"
 solana-sdk = "4"
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
@@ -146,6 +149,7 @@ token-info = { path = "crates/token-info" }
 tokio = { version = "1.38.0", features = ["tracing"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tokio-tungstenite = { version = "0.28", default-features = false }
+tokio-util = "0.7"
 toml = "0.8.14"
 tower = "0.5"
 tower-http = "0.6"

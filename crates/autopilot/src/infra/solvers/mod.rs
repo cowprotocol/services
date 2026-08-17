@@ -22,6 +22,7 @@ pub struct Driver {
     pub name: String,
     pub url: Url,
     pub submission_address: eth::Address,
+    pub supports_auction_deltas: bool,
     client: Client,
 }
 
@@ -39,6 +40,7 @@ impl Driver {
         url: Url,
         name: String,
         submission_account: Account,
+        supports_auction_deltas: bool,
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
@@ -54,7 +56,13 @@ impl Driver {
             }
             Account::Address(address) => address,
         };
-        tracing::info!(?name, ?url, ?submission_address, "Creating solver");
+        tracing::info!(
+            ?name,
+            ?url,
+            ?submission_address,
+            supports_auction_deltas,
+            "creating solver"
+        );
 
         Ok(Self {
             name,
@@ -65,6 +73,7 @@ impl Driver {
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
             submission_address,
+            supports_auction_deltas,
         })
     }
 
@@ -141,7 +150,7 @@ impl Driver {
         let text = String::from_utf8_lossy(&body);
         tracing::trace!(%status, body=%text, "solver response");
         let context = || format!("url {url}, body {text:?}");
-        if status != 200 {
+        if status != StatusCode::OK.as_u16() {
             return Err(anyhow!("bad status {status}, {}", context()));
         }
         serde_json::from_slice(&body).with_context(|| format!("bad json {}", context()))
