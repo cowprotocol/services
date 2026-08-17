@@ -177,10 +177,19 @@ impl Fulfillment {
         &self.order
     }
 
-    /// Rebuild this fulfillment for a different `order`, keeping the executed
-    /// amount, fee and haircut.
-    pub fn with_order(&self, order: competition::Order) -> Result<Self, error::Trade> {
-        Self::new(order, self.executed, self.fee, self.haircut_fee)
+    /// Rebuild this fulfillment for a different `order`, filling `executed` in
+    /// the order's target token, keeping the fee and haircut.
+    pub fn with_order(
+        &self,
+        order: competition::Order,
+        executed: order::TargetAmount,
+    ) -> Result<Self, error::Trade> {
+        let fee = if order.solver_determines_fee() {
+            Fee::Dynamic(self.fee())
+        } else {
+            Fee::Static
+        };
+        Self::new(order, executed, fee, self.haircut_fee)
     }
 
     pub fn executed(&self) -> order::TargetAmount {

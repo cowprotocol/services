@@ -744,6 +744,7 @@ impl RunLoop {
                 solution_id,
                 submission_deadline_latest_block,
                 auction_id,
+                fast_path: None,
             };
 
             self.store_execution_started(

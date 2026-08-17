@@ -8,9 +8,11 @@ use {
         orders::{
             BuyTokenDestination as DbBuyTokenDestination,
             ExecutionTime,
+            FastPathOrder as FastPathOrderDb,
             FullOrder as FullOrderDb,
             OrderClass as DbOrderClass,
             OrderKind as DbOrderKind,
+            RawInteraction,
             SellTokenSource as DbSellTokenSource,
             SigningScheme as DbSigningScheme,
         },
@@ -133,6 +135,40 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     })
 }
 
+pub fn fast_path_order_into_model(order: &FastPathOrderDb) -> Result<Order> {
+    let metadata = OrderMetadata {
+        creation_date: order.creation_timestamp,
+        owner: Address::new(order.owner.0),
+        uid: OrderUid(order.uid.0),
+        ..Default::default()
+    };
+    let data = OrderData {
+        sell_token: Address::new(order.sell_token.0),
+        buy_token: Address::new(order.buy_token.0),
+        receiver: order.receiver.map(|address| Address::new(address.0)),
+        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
+        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
+        valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
+        app_data: AppDataHash(order.app_data.0),
+        fee_amount: Default::default(),
+        kind: order_kind_from(order.kind),
+        partially_fillable: order.partially_fillable,
+        sell_token_balance: sell_token_source_from(order.sell_token_balance),
+        buy_token_balance: buy_token_destination_from(order.buy_token_balance),
+    };
+    let signature =
+        Signature::from_bytes(signing_scheme_from(order.signing_scheme), &order.signature)?;
+    Ok(Order {
+        metadata,
+        data,
+        signature,
+        interactions: Interactions {
+            pre: raw_interactions_into_model(&order.pre_interactions)?,
+            post: raw_interactions_into_model(&order.post_interactions)?,
+        },
+    })
+}
+
 pub fn order_quote_into_model(
     quote: &database::orders::Quote,
     status: model::order::OrderStatus,
@@ -174,6 +210,12 @@ pub fn extract_interactions(
         ExecutionTime::Pre => &order.pre_interactions,
         ExecutionTime::Post => &order.post_interactions,
     };
+    raw_interactions_into_model(interactions)
+}
+
+pub fn raw_interactions_into_model(
+    interactions: &[RawInteraction],
+) -> Result<Vec<InteractionData>> {
     interactions
         .iter()
         .map(|interaction| {
