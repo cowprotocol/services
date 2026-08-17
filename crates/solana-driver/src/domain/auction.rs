@@ -7,6 +7,10 @@ use {super::order_uid::OrderUid, serde::Serialize, solana_sdk::pubkey::Pubkey};
 pub struct Auction {
     pub id: u64,
     pub orders: Vec<Order>,
+    /// Absolute deadline by which solver engines must return solutions. The
+    /// driver derives each request's timeout as the time remaining until this
+    /// instant, and skips the request entirely if the deadline has passed.
+    pub deadline: chrono::DateTime<chrono::Utc>,
 }
 
 /// One order available for solvers to fill.

@@ -30,14 +30,10 @@ pub struct Solver {
 impl Solver {
     /// Build a solver client from its configuration.
     pub fn new(config: &config::Solver) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(config.timeout)
-            .build()
-            .unwrap();
         Self {
             name: config.name.clone(),
             account: config.account,
-            client,
+            client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             in_flight: Arc::new(Semaphore::new(config.max_in_flight.get())),
         }
@@ -61,23 +57,41 @@ impl Solver {
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
+
+        // Calculate the time remaining until the auction's deadline.
+        let timeout = {
+            let remaining = auction.deadline.signed_duration_since(chrono::Utc::now());
+            if remaining <= chrono::Duration::zero() {
+                tracing::warn!(
+                    solver = %self.name,
+                    "auction deadline exceeded before sending request to solver"
+                );
+                return Ok(Vec::new());
+            }
+            // Safe: we just checked `remaining` is positive.
+            remaining.to_std().unwrap()
+        };
+
         let _permit = self.in_flight.acquire().await;
         let request = self
             .client
             .post(solve_url.as_str())
             .header("content-type", "application/json")
+            .timeout(timeout)
             .body(body);
 
         tracing::debug!(url = %solve_url, "sending solve request");
 
         let response = request.send().await?;
         let status = response.status();
-        let body = response.text().await?;
         if !status.is_success() {
-            return Err(Error::HttpStatus { status, body });
+            return Err(Error::HttpStatus {
+                status,
+                body: response.text().await?,
+            });
         }
 
-        let solutions: dto::Solutions = serde_json::from_str(&body)?;
+        let solutions: dto::Solutions = response.json().await?;
         solutions
             .into_domain(&auction_dto, self.account)
             .map_err(Error::BadResponse)
@@ -86,9 +100,6 @@ impl Solver {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    /// The solver did not respond within the configured timeout.
-    #[error("solver timed out")]
-    Timeout,
     /// An HTTP error occurred while talking to the solver.
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),

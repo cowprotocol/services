@@ -21,4 +21,3 @@ name = "baseline"
 endpoint = "http://localhost:8001"
 account = "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
 max-in-flight = 1
-timeout = "30s"

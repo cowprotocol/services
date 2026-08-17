@@ -28,7 +28,7 @@ use {
         config::JupiterConfig,
         dex::{Dex, jupiter::Jupiter},
     },
-    std::{str::FromStr, sync::Arc, time::Duration},
+    std::{str::FromStr, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
 
@@ -39,6 +39,7 @@ const USDT: &str = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 /// A sell of 10 USDC for USDT. The driver derives the buy-side ATA from the
 /// solver's account, so the domain order carries no destination.
 fn sell_auction() -> Auction {
+    let deadline = chrono::Utc::now() + chrono::Duration::seconds(15);
     Auction {
         id: 1,
         orders: vec![Order {
@@ -48,6 +49,7 @@ fn sell_auction() -> Auction {
             amount: 10_000_000,
             side: Side::Sell,
         }],
+        deadline,
     }
 }
 
@@ -95,7 +97,6 @@ async fn driver_solves_against_live_jupiter_engine() {
         name: "jupiter-live".to_string(),
         endpoint: format!("http://{addr}").parse().unwrap(),
         account: solver_account,
-        timeout: Duration::from_secs(30),
         max_in_flight: std::num::NonZero::new(1).unwrap(),
     });
 
