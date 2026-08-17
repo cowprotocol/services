@@ -12,6 +12,8 @@
 //! cargo nextest run -p solana-driver --run-ignored ignored-only --test jupiter_live
 //! # set JUPITER_API_KEY for rate-limit headroom:
 //! JUPITER_API_KEY=... cargo nextest run -p solana-driver --run-ignored ignored-only --test jupiter_live
+//! # override the auction deadline (default 15s):
+//! SOLANA_DRIVER_TEST_DEADLINE=30 cargo nextest run -p solana-driver --run-ignored ignored-only --test jupiter_live
 //! # show the full deserialized solution (printed by the test):
 //! cargo nextest run -p solana-driver --run-ignored ignored-only --test jupiter_live --nocapture
 //! ```
@@ -36,10 +38,19 @@ use {
 const USDC: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const USDT: &str = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 
+/// Auction deadline for the live test (seconds).
+fn deadline() -> chrono::DateTime<chrono::Utc> {
+    let secs = std::env::var("SOLANA_DRIVER_TEST_DEADLINE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|s: &i64| *s > 0)
+        .unwrap_or(15);
+    chrono::Utc::now() + chrono::Duration::seconds(secs)
+}
+
 /// A sell of 10 USDC for USDT. The driver derives the buy-side ATA from the
 /// solver's account, so the domain order carries no destination.
 fn sell_auction() -> Auction {
-    let deadline = chrono::Utc::now() + chrono::Duration::seconds(15);
     Auction {
         id: 1,
         orders: vec![Order {
@@ -49,7 +60,7 @@ fn sell_auction() -> Auction {
             amount: 10_000_000,
             side: Side::Sell,
         }],
-        deadline,
+        deadline: deadline(),
     }
 }
 
