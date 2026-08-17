@@ -21,6 +21,9 @@ pub struct Order {
     pub sell_token: Pubkey,
     pub buy_token: Pubkey,
     pub sell_token_account: Pubkey,
+    /// Where the buy tokens are paid out. Any SPL token account: it names its
+    /// own owner and mint, so it doubles as the receiver and there is no
+    /// separate receiver field like on EVM.
     pub buy_token_account: Pubkey,
     pub sell_amount: u64,
     pub buy_amount: u64,
