@@ -472,8 +472,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
         ));
 
-    // Wakes the run loop on new blocks; the order notifier (spawned below, once
-    // the drivers are available) also wakes it on new orders.
+    // Wakes the run loop on new orders (via the notifier) and new blocks.
     let wake_runloop = Arc::new(tokio::sync::Notify::new());
 
     let solvable_orders_cache = SolvableOrdersCache::new(
@@ -628,7 +627,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let fast_path_settler = infra::order_notify::FastPathSettler::new(
         persistence.clone(),
         drivers.clone(),
-        api_native_price_estimator.clone(),
         eth.current_block().clone(),
         run_loop_config.submission_deadline,
         run_loop_config.max_settlement_transaction_wait,

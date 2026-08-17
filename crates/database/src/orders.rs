@@ -717,6 +717,9 @@ pub struct FastPathOrder {
     pub solver: Address,
     pub executed_sell: BigDecimal,
     pub executed_buy: BigDecimal,
+    /// The quote auction's native prices (token, normalized price).
+    pub price_tokens: Vec<Address>,
+    pub price_values: Vec<BigDecimal>,
 }
 
 /// Recovers what's needed to settle `uid` out of competition in one query, or
@@ -738,12 +741,14 @@ pub async fn single_fast_path_order(
         "array(SELECT (p.target, p.value, p.data) FROM interactions p",
         " WHERE p.order_uid = o.uid AND p.execution = 'post' ORDER BY p.index) AS post_interactions, ",
         "oq.auction_id AS auction_id, ps.id AS solution_id, ps.solver AS solver, ",
-        "pte.executed_sell AS executed_sell, pte.executed_buy AS executed_buy",
+        "pte.executed_sell AS executed_sell, pte.executed_buy AS executed_buy, ",
+        "ca.price_tokens AS price_tokens, ca.price_values AS price_values",
         " FROM orders o",
         " JOIN order_quotes oq ON oq.order_uid = o.uid",
         " JOIN proposed_solutions ps ON ps.auction_id = oq.auction_id AND ps.is_winner",
         " JOIN proposed_trade_executions pte",
         " ON pte.auction_id = ps.auction_id AND pte.solution_uid = ps.uid AND pte.order_uid = o.uid",
+        " JOIN competition_auctions ca ON ca.id = oq.auction_id",
         " WHERE o.uid = $1",
         " LIMIT 1",
     );

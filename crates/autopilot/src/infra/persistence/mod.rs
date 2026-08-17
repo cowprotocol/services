@@ -1018,9 +1018,19 @@ impl Persistence {
         };
 
         let model_order = fast_path_order_into_model(&row)?;
-        // The cached solution carries the fees and quote; so the recovered
-        // order needs neither.
+        // Fast-path fills at the recorded executed amounts; the order's fee
+        // policies and quote are not applied in the re-encode.
         let order = boundary::order::to_domain(&model_order, vec![], None);
+
+        let native_prices = row
+            .price_tokens
+            .iter()
+            .zip(&row.price_values)
+            .map(|(token, value)| {
+                let price = big_decimal_to_u256(value).context("invalid native price")?;
+                anyhow::Ok((eth::Address::from(token.0), price))
+            })
+            .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
         Ok(Some(FastPathOrder {
             order,
@@ -1034,6 +1044,7 @@ impl Persistence {
                 .context("invalid executed sell amount")?,
             limit_buy: big_decimal_to_u256(&row.executed_buy)
                 .context("invalid executed buy amount")?,
+            native_prices,
         }))
     }
 }
@@ -1046,6 +1057,8 @@ pub struct FastPathOrder {
     pub solver: eth::Address,
     pub limit_sell: eth::U256,
     pub limit_buy: eth::U256,
+    /// Native prices (token → normalized price) from the quote's auction.
+    pub native_prices: HashMap<eth::Address, eth::U256>,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
