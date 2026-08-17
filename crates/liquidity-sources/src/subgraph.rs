@@ -16,7 +16,6 @@ const MAX_NUMBER_OF_ATTEMPTS_DEFAULT: usize = 10;
 pub struct SubgraphClient {
     client: Client,
     subgraph_url: Url,
-    max_pools_per_tick_query: usize,
     max_number_of_attempts: usize,
 }
 
@@ -32,15 +31,10 @@ pub struct Data<T> {
 
 impl SubgraphClient {
     /// Creates a new subgraph client from the specified organization and name.
-    pub fn try_new(
-        subgraph_url: Url,
-        client: Client,
-        max_pools_per_tick_query: usize,
-    ) -> Result<Self> {
+    pub fn try_new(subgraph_url: Url, client: Client) -> Result<Self> {
         Ok(Self {
             client,
             subgraph_url,
-            max_pools_per_tick_query,
             max_number_of_attempts: MAX_NUMBER_OF_ATTEMPTS_DEFAULT,
         })
     }
@@ -136,10 +130,6 @@ impl SubgraphClient {
         }
 
         Ok(result)
-    }
-
-    pub fn max_pools_per_tick_query(&self) -> usize {
-        self.max_pools_per_tick_query
     }
 }
 
