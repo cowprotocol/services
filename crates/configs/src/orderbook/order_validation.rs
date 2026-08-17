@@ -37,10 +37,6 @@ const fn default_max_gas_per_order() -> u64 {
     8_000_000
 }
 
-const fn default_min_fast_path_exclusivity() -> Duration {
-    Duration::from_secs(10)
-}
-
 /// Rules governing order validity periods, gas limits, and token policies.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -80,15 +76,12 @@ pub struct OrderValidationConfig {
     #[serde(default)]
     pub same_tokens_policy: SameTokensPolicy,
 
-    /// How long a fast-path order is held out of the batch auction so the
-    /// fast-path settlement can run exclusively. On placement the orderbook
-    /// sets the order's `valid_from` to `now + this`, unless the user set a
-    /// later one.
-    #[serde(
-        with = "humantime_serde",
-        default = "default_min_fast_path_exclusivity"
-    )]
-    pub min_fast_path_exclusivity: Duration,
+    /// How long a fast-path order is held out of the batch auction for its
+    /// exclusive settlement (`valid_from = now + this`, unless the user set a
+    /// later one). Unset disables the fast path: orders requesting it are
+    /// rejected.
+    #[serde(with = "humantime_serde", default)]
+    pub min_fast_path_exclusivity: Option<Duration>,
 }
 
 impl Default for OrderValidationConfig {
@@ -100,7 +93,7 @@ impl Default for OrderValidationConfig {
             max_limit_orders_per_user: default_max_limit_orders_per_user(),
             max_gas_per_order: default_max_gas_per_order(),
             same_tokens_policy: Default::default(),
-            min_fast_path_exclusivity: default_min_fast_path_exclusivity(),
+            min_fast_path_exclusivity: None,
         }
     }
 }
@@ -151,7 +144,7 @@ mod tests {
             max_limit_orders_per_user: 5,
             max_gas_per_order: 5_000_000,
             same_tokens_policy: SameTokensPolicy::AllowSell,
-            min_fast_path_exclusivity: Duration::from_secs(30),
+            min_fast_path_exclusivity: Some(Duration::from_secs(30)),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

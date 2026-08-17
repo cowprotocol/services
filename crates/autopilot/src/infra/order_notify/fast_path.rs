@@ -8,11 +8,9 @@ use {
             solvers::dto::settle,
         },
     },
-    alloy::primitives::{Address, U256},
     anyhow::Context,
     ethrpc::block_stream::CurrentBlockWatcher,
-    price_estimation::native::{NativePriceEstimating, to_normalized_price},
-    std::{collections::HashMap, sync::Arc, time::Duration},
+    std::{sync::Arc, time::Duration},
 };
 
 /// Settles fast-path (out-of-competition) orders by re-encoding the order's
@@ -21,7 +19,6 @@ use {
 pub struct FastPathSettler {
     persistence: Persistence,
     drivers: Vec<Arc<infra::Driver>>,
-    native_price_estimator: Arc<dyn NativePriceEstimating>,
     current_block: CurrentBlockWatcher,
     /// Blocks added to the current block to bound the settlement submission.
     submission_deadline: u64,
@@ -32,7 +29,6 @@ impl FastPathSettler {
     pub fn new(
         persistence: Persistence,
         drivers: Vec<Arc<infra::Driver>>,
-        native_price_estimator: Arc<dyn NativePriceEstimating>,
         current_block: CurrentBlockWatcher,
         submission_deadline: u64,
         settle_timeout: Duration,
@@ -40,7 +36,6 @@ impl FastPathSettler {
         Self {
             persistence,
             drivers,
-            native_price_estimator,
             current_block,
             submission_deadline,
             settle_timeout,
@@ -57,13 +52,6 @@ impl FastPathSettler {
             .find(|driver| driver.submission_address == fast_path.solver)
             .with_context(|| format!("no driver for fast-path solver {:?}", fast_path.solver))?;
 
-        let native_prices = self
-            .native_prices(&[
-                fast_path.order.sell.token.into(),
-                fast_path.order.buy.token.into(),
-            ])
-            .await;
-
         let deadline = self.current_block.borrow().number + self.submission_deadline;
         tracing::info!(
             ?uid,
@@ -72,36 +60,14 @@ impl FastPathSettler {
             solution_id = fast_path.solution_id,
             "initiating fast-path settle"
         );
-        let request = build_settle_request(&fast_path, native_prices, deadline);
+        let request = build_settle_request(&fast_path, deadline);
         driver.settle(&request, self.settle_timeout).await
-    }
-
-    /// Native prices for the order's tokens, from the estimator's cache only.
-    /// Missing prices are omitted; the driver tolerates a partial map.
-    async fn native_prices(&self, tokens: &[Address]) -> HashMap<Address, U256> {
-        let mut prices = HashMap::new();
-        for &token in tokens {
-            match self
-                .native_price_estimator
-                .estimate_native_price(token, Duration::ZERO)
-                .await
-            {
-                Ok(price) => {
-                    if let Some(price) = to_normalized_price(price) {
-                        prices.insert(token, price);
-                    }
-                }
-                Err(err) => tracing::warn!(?token, ?err, "no native price for fast-path token"),
-            }
-        }
-        prices
     }
 }
 
 /// Build the driver `/settle` request for a recovered fast-path order.
 fn build_settle_request(
     fast_path: &FastPathOrder,
-    native_prices: HashMap<Address, U256>,
     submission_deadline_latest_block: u64,
 ) -> settle::Request {
     settle::Request {
@@ -114,7 +80,7 @@ fn build_settle_request(
                 sell: fast_path.limit_sell,
                 buy: fast_path.limit_buy,
             },
-            native_prices,
+            native_prices: fast_path.native_prices.clone(),
         }),
     }
 }
@@ -137,6 +103,7 @@ mod tests {
     use {
         super::*,
         crate::{database::Postgres, infra::persistence::Persistence},
+        alloy::primitives::U256,
         bigdecimal::BigDecimal,
         configs::autopilot::solver::Account,
         database::{
@@ -144,6 +111,7 @@ mod tests {
             orders::{Order as DbOrder, OrderKind, Quote},
         },
         eth_domain_types as eth,
+        std::collections::HashMap,
     };
 
     /// Seeds a fast-path competition, then checks the that autopilot recovers
@@ -216,6 +184,20 @@ mod tests {
         )
         .await
         .unwrap();
+        database::auction::save(
+            &mut tx,
+            database::auction::Auction {
+                id: auction_id,
+                block: 0,
+                deadline: 0,
+                order_uids: vec![],
+                price_tokens: vec![ByteArray([4u8; 20]), ByteArray([5u8; 20])],
+                price_values: vec![BigDecimal::from(1), BigDecimal::from(2)],
+                surplus_capturing_jit_order_owners: vec![],
+            },
+        )
+        .await
+        .unwrap();
         tx.commit().await.unwrap();
 
         let fast_path = persistence
@@ -228,13 +210,22 @@ mod tests {
         assert_eq!(fast_path.solver, eth::Address::from([3u8; 20]));
         assert_eq!(fast_path.limit_sell, U256::from(111u64));
         assert_eq!(fast_path.limit_buy, U256::from(222u64));
+        assert_eq!(
+            fast_path.native_prices,
+            HashMap::from([
+                (eth::Address::from([4u8; 20]), U256::from(1u64)),
+                (eth::Address::from([5u8; 20]), U256::from(2u64)),
+            ])
+        );
 
         // Route to the driver whose submission address is the winning solver.
-        let matching = Arc::new(
+        // The matching driver is set up from the seeded `solver` (not the
+        // recovered value) so a wrong recovered solver would fail to route.
+        let fast_path_solver = Arc::new(
             infra::Driver::try_new(
-                "http://matching".parse().unwrap(),
-                "matching".into(),
-                Account::Address(fast_path.solver),
+                "http://fast-path-solver".parse().unwrap(),
+                "fast-path-solver".into(),
+                Account::Address(eth::Address::from(solver.0)),
             )
             .await
             .unwrap(),
@@ -248,22 +239,21 @@ mod tests {
             .await
             .unwrap(),
         );
-        let drivers = [other, matching];
+        let drivers = [other, fast_path_solver];
         let selected = drivers
             .iter()
             .find(|driver| driver.submission_address == fast_path.solver)
             .expect("a driver matches the solver");
-        assert_eq!(selected.name, "matching");
+        assert_eq!(selected.name, "fast-path-solver");
 
-        let native_prices = HashMap::from([(Address::from([3u8; 20]), U256::from(1u64))]);
-        let request = build_settle_request(&fast_path, native_prices.clone(), 12_345);
+        let request = build_settle_request(&fast_path, 12_345);
         assert_eq!(request.solution_id, solution_id as u64);
         assert_eq!(request.auction_id, auction_id);
         assert_eq!(request.submission_deadline_latest_block, 12_345);
-        let fast_path = request.fast_path.expect("fastPath present");
-        assert_eq!(fast_path.limit_prices.sell, U256::from(111u64));
-        assert_eq!(fast_path.limit_prices.buy, U256::from(222u64));
-        assert_eq!(fast_path.native_prices, native_prices);
+        let request_fast_path = request.fast_path.expect("fastPath present");
+        assert_eq!(request_fast_path.limit_prices.sell, U256::from(111u64));
+        assert_eq!(request_fast_path.limit_prices.buy, U256::from(222u64));
+        assert_eq!(request_fast_path.native_prices, fast_path.native_prices);
 
         // A regular quoted order (no auction_id) is not fast-path.
         assert!(

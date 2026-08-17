@@ -278,6 +278,9 @@ pub enum ValidationError {
     /// `valid_from` leaves too small a window before `valid_to` for the order
     /// to be settled.
     InvalidValidFrom,
+    /// The order opts into the fast path but it is not enabled on this
+    /// environment.
+    FastPathDisabled,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
     TooMuchGas,
@@ -390,8 +393,8 @@ pub struct OrderValidator {
     max_gas_per_order: u64,
     same_tokens_policy: SameTokensPolicy,
     /// How long a fast-path order is held out of the auction (its `valid_from`
-    /// is set to `now + this` on placement).
-    min_fast_path_exclusivity: Duration,
+    /// is set to `now + this` on placement). `None` disables the fast path.
+    min_fast_path_exclusivity: Option<Duration>,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -479,13 +482,13 @@ impl OrderValidator {
             app_data_validator,
             max_gas_per_order,
             same_tokens_policy,
-            min_fast_path_exclusivity: Duration::ZERO,
+            min_fast_path_exclusivity: None,
         }
     }
 
-    /// Sets how long fast-path orders are held out of the auction. Defaults to
-    /// zero (no hold-out).
-    pub fn with_min_fast_path_exclusivity(mut self, exclusivity: Duration) -> Self {
+    /// Sets how long fast-path orders are held out of the auction. `None` (the
+    /// default) disables the fast path.
+    pub fn with_min_fast_path_exclusivity(mut self, exclusivity: Option<Duration>) -> Self {
         self.min_fast_path_exclusivity = exclusivity;
         self
     }
@@ -1040,9 +1043,14 @@ impl OrderValidating for OrderValidator {
         }
 
         let valid_from = if app_data.inner.protocol.enable_fast_path {
-            app_data.inner.protocol.valid_from.or_else(|| {
-                Some(time::now_in_epoch_seconds() + self.min_fast_path_exclusivity.as_secs() as u32)
-            })
+            let Some(exclusivity) = self.min_fast_path_exclusivity else {
+                return Err(ValidationError::FastPathDisabled);
+            };
+            app_data
+                .inner
+                .protocol
+                .valid_from
+                .or_else(|| Some(time::now_in_epoch_seconds() + exclusivity.as_secs() as u32))
         } else {
             app_data.inner.protocol.valid_from
         };
@@ -1790,49 +1798,53 @@ mod tests {
 
     #[tokio::test]
     async fn enforces_minimum_validity_window() {
-        let mut order_quoter = MockOrderQuoting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter
-            .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _| Ok(()));
-        let mut signature_validating = MockSignatureValidating::new();
-        signature_validating
-            .expect_validate_signature_and_get_additional_gas()
-            .never();
-        let hooks = HooksTrampoline::Instance::new(
-            Address::from([0xcf; 20]),
-            ProviderBuilder::new()
-                .connect_mocked_client(Asserter::new())
-                .erased(),
-        );
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
-        let validator = OrderValidator::new(
-            native_token,
-            Arc::new(order_validation::banned::Users::none()),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(60),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
-            false,
-            Default::default(),
-            hooks,
-            Arc::new(order_quoter),
-            Arc::new(balance_fetcher),
-            Arc::new(signature_validating),
-            None,
-            Arc::new(limit_order_counter),
-            1,
-            Default::default(),
-            u64::MAX,
-            SameTokensPolicy::Disallow,
-        )
-        .with_min_fast_path_exclusivity(Duration::from_secs(30));
+        let build_validator = |exclusivity: Option<Duration>| {
+            let mut order_quoter = MockOrderQuoting::new();
+            order_quoter
+                .expect_find_quote()
+                .returning(|_, _| Ok(Default::default()));
+            let mut balance_fetcher = MockBalanceFetching::new();
+            balance_fetcher
+                .expect_can_transfer()
+                .returning(|_, _| Ok(()));
+            let mut signature_validating = MockSignatureValidating::new();
+            signature_validating
+                .expect_validate_signature_and_get_additional_gas()
+                .never();
+            let hooks = HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            );
+            let mut limit_order_counter = MockLimitOrderCounting::new();
+            limit_order_counter.expect_count().returning(|_| Ok(0u64));
+            let native_token =
+                WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+            OrderValidator::new(
+                native_token,
+                Arc::new(order_validation::banned::Users::none()),
+                OrderValidPeriodConfiguration {
+                    min: Duration::from_secs(60),
+                    max_market: Duration::from_secs(100),
+                    max_limit: Duration::from_secs(200),
+                },
+                false,
+                Default::default(),
+                hooks,
+                Arc::new(order_quoter),
+                Arc::new(balance_fetcher),
+                Arc::new(signature_validating),
+                None,
+                Arc::new(limit_order_counter),
+                1,
+                Default::default(),
+                u64::MAX,
+                SameTokensPolicy::Disallow,
+            )
+            .with_min_fast_path_exclusivity(exclusivity)
+        };
+        let validator = build_validator(Some(Duration::from_secs(30)));
 
         let now = time::now_in_epoch_seconds();
         let plain = |valid_to: u32| OrderCreation {
@@ -1906,6 +1918,20 @@ mod tests {
         };
         let (order, _) = validate(fast_path_user).await.unwrap();
         assert_eq!(order.metadata.valid_from, Some(now + 100));
+
+        // Fast-path orders are rejected when the fast path is disabled.
+        let disabled = build_validator(None);
+        std::assert_matches!(
+            disabled
+                .validate_and_construct_order(
+                    fast_path(now + 150),
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await,
+            Err(ValidationError::FastPathDisabled)
+        );
     }
 
     #[tokio::test]
