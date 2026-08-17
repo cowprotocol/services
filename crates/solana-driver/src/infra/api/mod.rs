@@ -49,7 +49,7 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
-        let state = State(Arc::new(Inner { rpc: self.rpc }));
+        let state = State::new(self.rpc);
 
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
@@ -78,9 +78,8 @@ impl Api {
 pub struct State(Arc<Inner>);
 
 impl State {
-    #[expect(dead_code)]
-    fn rpc(&self) -> &SolanaRPC {
-        &self.0.rpc
+    fn new(rpc: SolanaRPC) -> Self {
+        Self(Arc::new(Inner { rpc }))
     }
 }
 

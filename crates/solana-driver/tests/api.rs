@@ -1,7 +1,7 @@
 //! Integration tests for the HTTP API server.
 
 use {
-    solana_client::nonblocking::rpc_client::RpcClient,
+    cow_solana_rpc::SolanaRPC,
     solana_driver::infra::api::Api,
     std::net::SocketAddr,
     tokio_util::sync::CancellationToken,
@@ -10,7 +10,7 @@ use {
 fn mock_api() -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
-        rpc: RpcClient::new_mock("succeeds".to_string()).into(),
+        rpc: SolanaRPC::new_mock("succeeds".to_string()),
     }
 }
 

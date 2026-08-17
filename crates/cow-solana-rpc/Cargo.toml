@@ -14,5 +14,9 @@ solana-commitment-config = { workspace = true }
 solana-rpc-client = { workspace = true }
 url = { workspace = true }
 
+[features]
+# Enables mock constructors for tests.
+test-util = []
+
 [lints]
 workspace = true
