@@ -55,6 +55,7 @@ console-subscriber = "0.3.0"
 const_format = "0.2.32"
 const-hex = "1.17.0"
 contracts = { path = "contracts/generated/contracts-facade" }
+cow-solana-rpc = { path = "crates/cow-solana-rpc" }
 dashmap = "6.1.0"
 database = { path = "crates/database" }
 derive_more = { version = "1.0.0", features = ["full"] }
@@ -127,6 +128,7 @@ solana-client = "4"
 solana-commitment-config = "3"
 solana-driver = { path = "crates/solana-driver" }
 solana-indexer = { path = "crates/solana-indexer" }
+solana-rpc-client = "4"
 solana-rpc-client-api = "4"
 solana-sdk = "4"
 solver = { path = "crates/solver" }

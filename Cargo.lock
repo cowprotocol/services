@@ -3976,6 +3976,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cow-solana-rpc"
+version = "0.1.0"
+dependencies = [
+ "solana-commitment-config",
+ "solana-rpc-client",
+ "url",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9830,14 +9839,13 @@ dependencies = [
  "axum 0.8.8",
  "clap",
  "configs",
+ "cow-solana-rpc",
  "futures",
  "humantime-serde",
  "observe",
  "reqwest 0.13.4",
  "serde",
  "serde-ext",
- "solana-client",
- "solana-commitment-config",
  "solana-sdk",
  "tikv-jemallocator",
  "tokio",
