@@ -4,8 +4,7 @@
 
 use {
     crate::{domain, domain::order_uid::OrderUid, infra::solver::dto::auction::Auction},
-    base64::prelude::*,
-    serde::{Deserialize, Deserializer},
+    serde::Deserialize,
     serde_with::serde_as,
     solana_sdk::{
         instruction::{AccountMeta as SdkAccountMeta, Instruction},
@@ -60,7 +59,7 @@ pub struct InstructionDto {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub program_id: Pubkey,
     pub accounts: Vec<AccountMetaDto>,
-    #[serde(deserialize_with = "deserialize_base64")]
+    #[serde_as(as = "serde_with::base64::Base64")]
     pub instruction_data: Vec<u8>,
 }
 
@@ -93,14 +92,6 @@ impl From<InstructionDto> for Instruction {
             data: value.instruction_data,
         }
     }
-}
-
-fn deserialize_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    BASE64_STANDARD.decode(s).map_err(serde::de::Error::custom)
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]

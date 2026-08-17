@@ -118,7 +118,7 @@ serde = { version = "1.0.203", features = ["derive"] }
 serde-ext = { path = "crates/serde-ext" }
 serde_json = { version = "1.0.117", features = ["raw_value", "unbounded_depth"] }
 serde_stacker = "0.1.14"
-serde_with = "3.8.1"
+serde_with = { version = "3.8.1", features = ["base64"] }
 sha2 = "0.10"
 shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }

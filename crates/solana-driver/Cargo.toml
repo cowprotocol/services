@@ -17,7 +17,6 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { workspace = true }
-base64 = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["clock"] }
 clap = { workspace = true }
 configs = { workspace = true }
