@@ -3,7 +3,11 @@
 use {
     configs::shared::LoggingConfig,
     serde::Deserialize,
-    serde_ext::{deserialize_nonempty_vec, deserialize_solana_pubkey_b58},
+    serde_ext::{
+        deserialize_nonempty_vec,
+        deserialize_solana_pubkey_b58,
+        deserialize_url_with_trailing_slash,
+    },
     solana_sdk::pubkey::Pubkey,
     std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
     tokio::fs,
@@ -98,6 +102,7 @@ pub struct Solver {
     /// metrics.
     pub name: String,
     /// HTTP endpoint of the solver engine API.
+    #[serde(deserialize_with = "deserialize_url_with_trailing_slash")]
     pub endpoint: url::Url,
     /// The solver's on-chain identity. Reported on every `domain::Solution`
     /// produced by this engine.

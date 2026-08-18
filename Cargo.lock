@@ -8939,6 +8939,7 @@ dependencies = [
  "serde",
  "serde_with",
  "solana-sdk",
+ "url",
 ]
 
 [[package]]
