@@ -48,7 +48,11 @@ impl Solver {
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
 
-        let _permit = self.in_flight.acquire().await;
+        let _permit = self
+            .in_flight
+            .acquire()
+            .await
+            .expect("semaphore is never closed");
 
         // Calculate the time remaining until the auction's deadline. This is
         // computed *after* acquiring the permit, otherwise the wait could
