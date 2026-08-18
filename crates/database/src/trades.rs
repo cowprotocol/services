@@ -8,7 +8,7 @@ use {
         events::EventIndex,
     },
     bigdecimal::BigDecimal,
-    sqlx::{Executor, PgConnection},
+    sqlx::PgConnection,
     std::ops::DerefMut,
     tracing::{Instrument, info_span, instrument},
 };
