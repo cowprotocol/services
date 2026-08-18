@@ -104,8 +104,9 @@ pub enum Error {
 impl Solutions {
     /// Convert the wire solutions into domain solutions.
     ///
-    /// Each trade must reference an order from the auction the driver sent. A
-    /// trade with an unknown order UID makes its solution invalid.
+    /// Each trade must reference an order from the auction the driver sent.
+    /// Any trade referencing an unknown order UID rejects the entire engine
+    /// response.
     pub fn into_domain(
         self,
         auction: &Auction,
