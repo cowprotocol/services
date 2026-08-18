@@ -70,7 +70,8 @@ impl<C: ChainTypes> Arbitrator<C> {
         let (mut solutions, scores_by_solution) =
             self.compute_scores_by_solution(solutions, context);
 
-        // only keep solutions that settle at least 1 order that the mechanism "cares about"
+        // only keep solutions that settle at least 1 order that the mechanism "cares
+        // about"
         solutions.retain(|solution| {
             solution
                 .orders()

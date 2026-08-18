@@ -261,6 +261,42 @@ fn evm_surplus_fee_policy_doubles_score() {
     assert_eq!(ranking.ranked[0].score(), U256::from(10u64));
 }
 
+/// A solution that only settles a scoring order at exactly the limit price
+/// scores zero, but is still retained (and wins if unopposed) because it
+/// contributes to score. Previously the arbitrator dropped any zero-score
+/// solution outright.
+#[test]
+fn zero_score_solution_is_kept_when_it_settles_a_scoring_order() {
+    let uid = evm_uid(1, 0xaa);
+    let (token_a, token_b) = (Address::repeat_byte(1), Address::repeat_byte(2));
+    let solver = Address::repeat_byte(3);
+    let context = AuctionContext::<Evm> {
+        fee_policies: HashMap::from([(uid, vec![])]),
+        native_prices: HashMap::from([(token_b, U256::from(EVM_UNIT_PRICE))]),
+        ..Default::default()
+    };
+    // `sell_order` uses sell_amount=100, buy_amount=90; executing at 90
+    // hits the limit exactly and yields zero surplus.
+    let solutions = vec![Solution::new(
+        1,
+        solver,
+        vec![sell_order::<Evm>(uid, token_a, token_b, 90, U256::from)],
+    )];
+    let arbitrator = Arbitrator::<Evm> {
+        max_winners: 1,
+        wrapped_native: Address::repeat_byte(0xff),
+    };
+
+    let ranking = arbitrator.arbitrate(solutions, &context);
+
+    assert_eq!(
+        ranking.winners().map(|s| s.id()).collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert_eq!(ranking.ranked[0].score(), U256::from(0u64));
+    assert!(ranking.filtered_out.is_empty());
+}
+
 /// JIT attribution diverges by design: the EVM UID embeds the owner, the
 /// Solana intent hash does not, so a JIT-owner order scores on EVM and the
 /// equivalent solution dies scoreless on Solana.
