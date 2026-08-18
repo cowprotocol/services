@@ -43,6 +43,7 @@ balance-overrides = { path = "crates/balance-overrides" }
 base64 = "0.22.1"
 bigdecimal = "0.4"
 brotli = "8"
+bs58 = "0.5"
 bytes = "1.11.1"
 bytes-hex = { path = "crates/bytes-hex" }
 cached = { version = "0.49.3", default-features = false }
