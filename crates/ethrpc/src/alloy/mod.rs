@@ -183,3 +183,193 @@ mod test_util {
 #[cfg(feature = "test-util")]
 pub use test_util::{CallBuilderExt, ProviderExt};
 use {alloy_rpc_client::RpcClientInner, alloy_transport::IntoBoxTransport};
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        std::{
+            net::SocketAddr,
+            sync::{Arc, Mutex},
+            time::Duration,
+        },
+        tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::{TcpListener, TcpStream},
+        },
+    };
+
+    /// A minimal JSON-RPC endpoint that records the packets it receives and
+    /// answers every request with an error. The tests only care about the
+    /// shape of what reaches the node, not about the results.
+    struct Recorder {
+        url: String,
+        packets: Arc<Mutex<Vec<serde_json::Value>>>,
+    }
+
+    impl Recorder {
+        async fn start() -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr: SocketAddr = listener.local_addr().unwrap();
+            let packets = Arc::new(Mutex::new(Vec::new()));
+
+            let recorded = packets.clone();
+            tokio::spawn(async move {
+                while let Ok((socket, _)) = listener.accept().await {
+                    let recorded = recorded.clone();
+                    tokio::spawn(async move { serve(socket, recorded).await });
+                }
+            });
+
+            Self {
+                url: format!("http://{addr}"),
+                packets,
+            }
+        }
+
+        /// The recorded packets that carry `eth_call`s, so that incidental
+        /// traffic from the provider's fillers cannot affect the assertions.
+        fn eth_call_packets(&self) -> Vec<serde_json::Value> {
+            self.packets
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|packet| packet.to_string().contains("eth_call"))
+                .cloned()
+                .collect()
+        }
+    }
+
+    async fn serve(mut socket: TcpStream, recorded: Arc<Mutex<Vec<serde_json::Value>>>) {
+        let body = read_body(&mut socket).await;
+        let request: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let response = serde_json::to_vec(&error_response(&request)).unwrap();
+        recorded.lock().unwrap().push(request);
+
+        let head = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: \
+             {}\r\nconnection: close\r\n\r\n",
+            response.len()
+        );
+        socket.write_all(head.as_bytes()).await.unwrap();
+        socket.write_all(&response).await.unwrap();
+        socket.shutdown().await.unwrap();
+    }
+
+    /// Reads one HTTP request and returns its body.
+    async fn read_body(socket: &mut TcpStream) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let read = socket.read(&mut chunk).await.unwrap();
+            assert!(
+                read > 0,
+                "connection closed before the request was complete"
+            );
+            buffer.extend_from_slice(&chunk[..read]);
+
+            let Some(end_of_head) = buffer.windows(4).position(|w| w == b"\r\n\r\n") else {
+                continue;
+            };
+            let head = String::from_utf8_lossy(&buffer[..end_of_head]).to_lowercase();
+            let length: usize = head
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length:"))
+                .expect("request without content length")
+                .trim()
+                .parse()
+                .unwrap();
+
+            let body = end_of_head + 4;
+            if buffer.len() >= body + length {
+                return buffer[body..body + length].to_vec();
+            }
+        }
+    }
+
+    /// Builds a JSON-RPC error answer of the same shape (single or batch) as
+    /// the request.
+    fn error_response(request: &serde_json::Value) -> serde_json::Value {
+        let error = |request: &serde_json::Value| {
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": request["id"],
+                "error": { "code": -32000, "message": "recorder does not answer calls" },
+            })
+        };
+        match request {
+            serde_json::Value::Array(requests) => requests.iter().map(error).collect(),
+            request => error(request),
+        }
+    }
+
+    fn config() -> Config {
+        Config {
+            ethrpc_max_batch_size: 20,
+            ethrpc_max_concurrent_requests: 10,
+            // Give both aggregates time to land in the same batch.
+            ethrpc_batch_delay: Duration::from_millis(100),
+        }
+    }
+
+    /// `MulticallBuilder` sends its `aggregate3` through `provider.root()`,
+    /// which skips provider layers. It does not skip [`BatchCallLayer`],
+    /// because that one lives in the transport stack of the [`RpcClient`]
+    /// that `root()` holds.
+    ///
+    /// The proof: two `aggregate3` calls issued concurrently against a
+    /// provider built by [`provider()`] arrive at the node as a *single*
+    /// JSON-RPC batch of two `eth_call`s. Nothing but our layer coalesces
+    /// requests that way, as [`multicall3_is_not_batched_by_alloy_itself`]
+    /// shows.
+    #[tokio::test]
+    async fn multicall3_still_passes_through_our_layers() {
+        let node = Recorder::start().await;
+        let (provider, _wallet) = provider(&node.url, config(), Some("test"));
+
+        let first = provider.multicall().get_block_number().get_chain_id();
+        let second = provider.multicall().get_block_number().get_chain_id();
+        let (first, second) = futures::join!(first.aggregate3(), second.aggregate3());
+
+        // The node answers with errors, so both aggregates fail. What matters
+        // is the shape of what reached it.
+        assert!(first.is_err());
+        assert!(second.is_err());
+
+        let packets = node.eth_call_packets();
+        assert_eq!(packets.len(), 1, "expected one packet, got {packets:#?}");
+        let batch = packets[0]
+            .as_array()
+            .unwrap_or_else(|| panic!("the aggregates were not batched: {packets:#?}"));
+        assert_eq!(batch.len(), 2, "expected both aggregates in the batch");
+        assert!(batch.iter().all(|request| {
+            request["method"] == "eth_call"
+                // Both entries are `aggregate3` calls to `Multicall3`.
+                && request["params"][0]["to"]
+                    .as_str()
+                    .unwrap()
+                    .eq_ignore_ascii_case("0xcA11bde05977b3631167028862bE2a173976CA11")
+        }));
+    }
+
+    /// Negative control for the test above: the same two aggregates sent
+    /// through [`unbuffered_provider()`], which is the same stack without
+    /// [`BatchCallLayer`], arrive as two separate single requests. So the
+    /// batching seen above comes from our layer and not from alloy.
+    #[tokio::test]
+    async fn multicall3_is_not_batched_by_alloy_itself() {
+        let node = Recorder::start().await;
+        let (provider, _wallet) = unbuffered_provider(&node.url, Some("test"));
+
+        let first = provider.multicall().get_block_number().get_chain_id();
+        let second = provider.multicall().get_block_number().get_chain_id();
+        let _ = futures::join!(first.aggregate3(), second.aggregate3());
+
+        let packets = node.eth_call_packets();
+        assert_eq!(packets.len(), 2, "expected two packets, got {packets:#?}");
+        assert!(
+            packets.iter().all(|packet| packet.is_object()),
+            "expected single requests, got {packets:#?}"
+        );
+    }
+}
