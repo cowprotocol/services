@@ -7,6 +7,9 @@ description = "Solana autopilot: the chain-generic auction loop and its seam tra
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+database = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
 
 [lints]
