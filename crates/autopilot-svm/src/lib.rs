@@ -1,10 +1,8 @@
 //! Solana-side autopilot components built on a chain-generic auction loop.
 
-#![expect(
-    dead_code,
-    reason = "no binary target yet, the wiring PR consumes these modules"
-)]
+#![expect(dead_code, reason = "consumed by the auction loop wiring")]
+
+pub mod run_loop;
 
 mod domain;
 mod infra;
-mod run_loop;

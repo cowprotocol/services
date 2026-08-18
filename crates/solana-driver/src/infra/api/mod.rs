@@ -6,6 +6,7 @@ use {
         extract::DefaultBodyLimit,
         routing::{get, post},
     },
+    cow_solana_rpc::SolanaRPC,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     std::{net::SocketAddr, sync::Arc},
     tokio_util::sync::CancellationToken,
@@ -19,12 +20,14 @@ pub mod routes;
 pub struct Api {
     /// Address the server binds to and listens on.
     pub addr: SocketAddr,
+    /// The shared Solana RPC client.
+    pub rpc: SolanaRPC,
 }
 
 impl Api {
     /// Bind to the configured address, returning the listener and the actual
     /// bound address (which differs from `addr` when binding to port 0).
-    pub async fn bind(self) -> Result<(tokio::net::TcpListener, SocketAddr), std::io::Error> {
+    pub async fn bind(&self) -> Result<(tokio::net::TcpListener, SocketAddr), std::io::Error> {
         let listener = tokio::net::TcpListener::bind(self.addr).await?;
         let local_addr = listener.local_addr()?;
         tracing::info!(port = local_addr.port(), "serving solana driver");
@@ -34,6 +37,7 @@ impl Api {
     /// Serve the API on the given listener until `shutdown` resolves, then
     /// drain in-flight requests before returning.
     pub async fn serve(
+        self,
         listener: tokio::net::TcpListener,
         shutdown: CancellationToken,
     ) -> Result<(), std::io::Error> {
@@ -45,6 +49,8 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
+        let state = State::new(self.rpc);
+
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
             .route("/solve", post(routes::solve))
@@ -54,7 +60,7 @@ impl Api {
             .layer(DefaultBodyLimit::disable())
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
-            .with_state(State(Arc::new(Inner {})));
+            .with_state(state);
 
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown.cancelled_owned())
@@ -71,7 +77,14 @@ impl Api {
 #[expect(dead_code)]
 pub struct State(Arc<Inner>);
 
+impl State {
+    fn new(rpc: SolanaRPC) -> Self {
+        Self(Arc::new(Inner { rpc }))
+    }
+}
+
 struct Inner {
-    // Shared state fields will be added as the driver gains functionality
-    // (e.g. validated solutions for `/settle` to resolve).
+    /// The shared Solana RPC client.
+    #[expect(dead_code)]
+    rpc: SolanaRPC,
 }
