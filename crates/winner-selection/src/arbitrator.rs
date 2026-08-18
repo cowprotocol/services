@@ -70,8 +70,14 @@ impl<C: ChainTypes> Arbitrator<C> {
         let (mut solutions, scores_by_solution) =
             self.compute_scores_by_solution(solutions, context);
 
-        // Discard any solutions with a score of 0 as they are invalid
-        solutions.retain(|solution| !solution.score().is_zero());
+        // only keep solutions that settle at least 1 order that the mechanism "cares
+        // about"
+        solutions.retain(|solution| {
+            solution
+                .orders()
+                .iter()
+                .any(|order| context.contributes_to_score(&order.uid))
+        });
 
         // Sort by score descending
         solutions.sort_by_key(|solution| Reverse(solution.score()));
