@@ -64,7 +64,7 @@ impl Solver {
                     solver = %self.name,
                     "auction deadline exceeded before sending request to solver"
                 );
-                return Ok(Vec::new());
+                return Err(Error::DeadlineExceeded);
             }
             // Safe: we just checked `remaining` is positive.
             remaining.to_std().unwrap()
@@ -111,4 +111,7 @@ pub enum Error {
     /// The request body could not be serialized.
     #[error("JSON serialization error: {0}")]
     Serialize(#[from] serde_json::Error),
+    /// The auction deadline passed before a solve request could be sent.
+    #[error("auction deadline exceeded")]
+    DeadlineExceeded,
 }
