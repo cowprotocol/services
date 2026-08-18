@@ -51,7 +51,7 @@ chain-types = { path = "crates/chain-types" }
 chrono = { version = "0.4.38", default-features = false }
 clap = { version = "4.5.6", features = ["derive", "env"] }
 configs = { path = "crates/configs/" }
-console-subscriber = "0.3.0"
+console-subscriber = "0.5.0"
 const_format = "0.2.32"
 const-hex = "1.17.0"
 contracts = { path = "contracts/generated/contracts-facade" }
