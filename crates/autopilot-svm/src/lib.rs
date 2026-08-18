@@ -4,4 +4,5 @@
 
 pub mod run_loop;
 
+mod domain;
 mod infra;
