@@ -22,6 +22,8 @@ pub struct Auction {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub taker: Pubkey,
     pub orders: Vec<Order>,
+    /// Absolute deadline by which solutions must be returned.
+    pub deadline: chrono::DateTime<chrono::Utc>,
 }
 
 /// One order to quote.

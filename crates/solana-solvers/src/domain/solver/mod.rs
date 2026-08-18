@@ -36,6 +36,9 @@ impl Quote for Dex {
 ///
 /// Order counts are small (bounded by the settlement account budget), so every
 /// order is quoted at once.
+///
+/// TODO: Enforce `auction.deadline` with a timeout, like the EVM dex solver does
+/// (`crates/solvers/src/domain/solver/dex/mod.rs`).
 pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
     let candidates = auction.orders.iter().enumerate().map(|(index, order)| {
         let dex_order = order.to_dex_order();
@@ -56,6 +59,10 @@ mod tests {
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
+    }
+
+    fn deadline() -> chrono::DateTime<chrono::Utc> {
+        chrono::Utc::now() + chrono::Duration::seconds(60)
     }
 
     fn order(uid: u8, side: dex::Side, sell_mint: Pubkey) -> auction::Order {
@@ -104,6 +111,7 @@ mod tests {
                 order(0x02, dex::Side::Sell, pubkey(0xff)), // no route
                 order(0x03, dex::Side::Buy, pubkey(0x11)),  // buys disabled
             ],
+            deadline: deadline(),
         };
 
         let solutions = solve(&MockQuote, &auction).await;
@@ -118,6 +126,7 @@ mod tests {
             id: 1,
             taker: pubkey(1),
             orders: vec![],
+            deadline: deadline(),
         };
         assert!(solve(&MockQuote, &auction).await.is_empty());
     }

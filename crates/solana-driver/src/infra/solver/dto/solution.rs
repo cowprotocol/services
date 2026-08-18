@@ -181,6 +181,7 @@ mod tests {
                 amount: 1_000,
                 side: Side::Sell,
             }],
+            deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
         }
     }
 
