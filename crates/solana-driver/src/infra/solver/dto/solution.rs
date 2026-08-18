@@ -7,10 +7,10 @@ use {
     serde::Deserialize,
     serde_with::serde_as,
     solana_sdk::{
-        instruction::{AccountMeta as SdkAccountMeta, Instruction},
+        instruction::{AccountMeta as SdkAccountMeta, Instruction as SdkInstruction},
         pubkey::Pubkey,
     },
-    std::collections::HashSet,
+    std::collections::HashMap,
 };
 
 /// The solutions one engine returned for one auction. This wrapper owns the
@@ -28,7 +28,7 @@ pub struct Solutions {
 pub struct Solution {
     pub id: u64,
     pub trades: Vec<Trade>,
-    pub interactions: Vec<InstructionDto>,
+    pub interactions: Vec<Instruction>,
     /// Optional solver estimate of total settlement compute units.
     #[serde(default)]
     pub cu_estimate: Option<u64>,
@@ -55,10 +55,10 @@ pub struct Trade {
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InstructionDto {
+pub struct Instruction {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub program_id: Pubkey,
-    pub accounts: Vec<AccountMetaDto>,
+    pub accounts: Vec<AccountMeta>,
     #[serde_as(as = "serde_with::base64::Base64")]
     pub instruction_data: Vec<u8>,
 }
@@ -67,15 +67,15 @@ pub struct InstructionDto {
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AccountMetaDto {
+pub struct AccountMeta {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub pubkey: Pubkey,
     pub is_signer: bool,
     pub is_writable: bool,
 }
 
-impl From<AccountMetaDto> for SdkAccountMeta {
-    fn from(value: AccountMetaDto) -> Self {
+impl From<AccountMeta> for SdkAccountMeta {
+    fn from(value: AccountMeta) -> Self {
         Self {
             pubkey: value.pubkey,
             is_signer: value.is_signer,
@@ -84,8 +84,8 @@ impl From<AccountMetaDto> for SdkAccountMeta {
     }
 }
 
-impl From<InstructionDto> for Instruction {
-    fn from(value: InstructionDto) -> Self {
+impl From<Instruction> for SdkInstruction {
+    fn from(value: Instruction) -> Self {
         Self {
             program_id: value.program_id,
             accounts: value.accounts.into_iter().map(Into::into).collect(),
@@ -99,6 +99,9 @@ pub enum Error {
     /// A trade references an order that was not in the sent auction.
     #[error("trade references unknown order UID {0}")]
     UnknownOrderUid(OrderUid),
+    /// A trade executes more than the order amount.
+    #[error("trade {0} executes {1} but order amount is {2}")]
+    ExecutedAmountExceedsOrderAmount(OrderUid, u64, u64),
 }
 
 impl Solutions {
@@ -112,7 +115,8 @@ impl Solutions {
         auction: &Auction,
         solver: Pubkey,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let allowed_uids: HashSet<OrderUid> = auction.orders.iter().map(|o| o.uid).collect();
+        let allowed_orders: HashMap<OrderUid, u64> =
+            auction.orders.iter().map(|o| (o.uid, o.amount)).collect();
 
         self.solutions
             .into_iter()
@@ -121,8 +125,16 @@ impl Solutions {
                     .trades
                     .into_iter()
                     .map(|trade| {
-                        if !allowed_uids.contains(&trade.order_uid) {
-                            return Err(Error::UnknownOrderUid(trade.order_uid));
+                        let amount = match allowed_orders.get(&trade.order_uid) {
+                            Some(&amount) => amount,
+                            None => return Err(Error::UnknownOrderUid(trade.order_uid)),
+                        };
+                        if trade.executed_amount > amount {
+                            return Err(Error::ExecutedAmountExceedsOrderAmount(
+                                trade.order_uid,
+                                trade.executed_amount,
+                                amount,
+                            ));
                         }
                         Ok(domain::Trade {
                             order_uid: trade.order_uid,
@@ -170,6 +182,29 @@ mod tests {
                 side: Side::Sell,
             }],
         }
+    }
+
+    #[test]
+    fn rejects_executed_amount_exceeding_order() {
+        let bad = json!({
+            "solutions": [{
+                "id": 1,
+                "trades": [{
+                    "orderUid": format!("0x{}", "08".repeat(32)),
+                    "executedAmount": "1001",
+                }],
+                "interactions": [],
+                "addressLookupTables": [],
+            }],
+        });
+        let solutions: Solutions = serde_json::from_value(bad).unwrap();
+        let err = solutions
+            .into_domain(&sample_auction_dto(), pubkey(6))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            Error::ExecutedAmountExceedsOrderAmount(OrderUid([8; 32]), 1001, 1000)
+        );
     }
 
     #[test]
