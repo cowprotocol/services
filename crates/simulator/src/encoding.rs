@@ -348,9 +348,12 @@ pub(crate) async fn finish_simulation_builder(
         return Err(BuildError::NoOrder);
     }
 
-    let block = match builder.block {
-        Block::Latest => builder.simulator.0.current_block.borrow().number,
-        Block::Number(n) => n,
+    let (block, block_timestamp) = match builder.block {
+        Block::Latest => {
+            let block = builder.simulator.0.current_block.borrow();
+            (block.number, Some(block.timestamp))
+        }
+        Block::Number(n) => (n, None),
     };
 
     let executed_amounts = futures::future::try_join_all(
@@ -498,10 +501,11 @@ pub(crate) async fn finish_simulation_builder(
     // propAMM state when simulated on historic blocks is slightly different
     // from what you would have gotten if you actually traded with the propAMM
     // on that block but we can't do anything about it and most likely the
-    // price is close enough to not affect the simulation.
-    if matches!(builder.block, Block::Latest)
+    // price is close enough to not affect the simulation. Only the tip has a
+    // known timestamp, which is what gates the overrides to it here.
+    if let Some(block_timestamp) = block_timestamp
         && let Some(stream) = builder.simulator.0.simulation_overrides.as_ref()
-        && let Some(state_overrides) = stream.current()
+        && let Some(state_overrides) = stream.overrides_for(block, block_timestamp)
     {
         for (account, state) in state_overrides {
             builder

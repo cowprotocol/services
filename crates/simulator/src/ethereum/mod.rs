@@ -1,5 +1,6 @@
 use {
     crate::ethereum::contracts::Contracts,
+    alloy_eips::BlockId,
     alloy_primitives::U256,
     alloy_provider::{Provider, network::TransactionBuilder},
     alloy_rpc_types::{TransactionRequest, state::StateOverride},
@@ -124,6 +125,7 @@ impl Ethereum {
         &self,
         tx: T,
         overrides: Option<StateOverride>,
+        block: BlockId,
     ) -> Result<eth_domain_types::Gas, Error>
     where
         T: Into<TransactionRequest>,
@@ -139,7 +141,7 @@ impl Ethereum {
             .provider
             .estimate_gas(tx)
             .overrides_opt(overrides)
-            .pending()
+            .block(block)
             .await
             .map_err(Error::Rpc)?
             .into();
