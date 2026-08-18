@@ -9,6 +9,7 @@ use {
     },
     bigdecimal::BigDecimal,
     sqlx::{Executor, PgConnection},
+    std::ops::DerefMut,
     tracing::{Instrument, info_span, instrument},
 };
 
@@ -213,16 +214,15 @@ pub async fn attribute_gas_cost(
             WHERE t.block_number = s.block_number
             AND   t.log_index = s.log_index"
     );
-    ex.execute(
-        sqlx::query(QUERY)
-            .bind(settlement.block_number)
-            .bind(settlement.log_index)
-            .bind(gas_used)
-            .bind(effective_gas_price)
-            .bind(surplus_capturing_jit_order_owners),
-    )
-    .await
-    .map(|_| ())
+    sqlx::query(QUERY)
+        .bind(settlement.block_number)
+        .bind(settlement.log_index)
+        .bind(gas_used)
+        .bind(effective_gas_price)
+        .bind(surplus_capturing_jit_order_owners)
+        .execute(ex.deref_mut())
+        .await
+        .map(|_| ())
 }
 
 #[instrument(skip_all)]
