@@ -126,15 +126,14 @@ ON CONFLICT (tx_signature) DO NOTHING
             .await?;
             return Ok(());
         };
-        // fee_amount is zero, the on-chain intent carries no fee.
         // creation_timestamp is the indexing time, the stream carries no
         // block time.
         sqlx::query(
             r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
-    buy_token_account, sell_amount, buy_amount, fee_amount, valid_to, kind,
+    buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10::OrderKind, $11, $12, now(), $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::OrderKind, $11, $12, now(), $13)
 ON CONFLICT (uid) DO NOTHING
             "#,
         )
@@ -356,9 +355,9 @@ mod tests {
             sqlx::query(
                 r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
-    buy_token_account, sell_amount, buy_amount, fee_amount, valid_to, kind,
+    buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), $7)
+VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6::OrderKind, false, $2, now(), $7)
                 "#,
             )
             .bind(self.uid)
