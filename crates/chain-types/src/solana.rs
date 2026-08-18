@@ -3,7 +3,10 @@
 //! No solana-sdk dependency: the algorithm only needs identifiers it can
 //! hash and compare, 32-byte newtypes suffice.
 
-use crate::{Amount, ChainTypes, MathError, MathResult};
+use {
+    crate::{Amount, ChainTypes, MathError, MathResult},
+    std::{error, fmt, str::FromStr},
+};
 
 /// A Solana account address (token mint or solver identity).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -13,6 +16,83 @@ pub struct Pubkey(pub [u8; 32]);
 /// 56-byte UID it carries no embedded owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct IntentHash(pub [u8; 32]);
+
+/// `0x`-prefixed hex, the wire and log rendering of an order uid.
+impl fmt::Display for IntentHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut buffer = const_hex::Buffer::<32, true>::new();
+        f.write_str(buffer.format(&self.0))
+    }
+}
+
+impl FromStr for IntentHash {
+    type Err = const_hex::FromHexError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut bytes = [0u8; 32];
+        const_hex::decode_to_slice(s.strip_prefix("0x").unwrap_or(s), &mut bytes)?;
+        Ok(Self(bytes))
+    }
+}
+
+/// Base58, the canonical Solana address rendering.
+impl fmt::Display for Pubkey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&bs58::encode(self.0).into_string())
+    }
+}
+
+/// A string that does not decode to exactly 32 base58 bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidPubkey;
+
+impl fmt::Display for InvalidPubkey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("not a base58-encoded 32-byte key")
+    }
+}
+
+impl error::Error for InvalidPubkey {}
+
+impl FromStr for Pubkey {
+    type Err = InvalidPubkey;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = bs58::decode(s).into_vec().map_err(|_| InvalidPubkey)?;
+        Ok(Self(bytes.try_into().map_err(|_| InvalidPubkey)?))
+    }
+}
+
+/// A Solana transaction signature (64 bytes), rendered as base58.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Signature(pub [u8; 64]);
+
+impl fmt::Display for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&bs58::encode(self.0).into_string())
+    }
+}
+
+/// A string that does not decode to exactly 64 base58 bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidSignature;
+
+impl fmt::Display for InvalidSignature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("not a base58-encoded 64-byte signature")
+    }
+}
+
+impl error::Error for InvalidSignature {}
+
+impl FromStr for Signature {
+    type Err = InvalidSignature;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = bs58::decode(s).into_vec().map_err(|_| InvalidSignature)?;
+        Ok(Self(bytes.try_into().map_err(|_| InvalidSignature)?))
+    }
+}
 
 /// The Solana chain marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]

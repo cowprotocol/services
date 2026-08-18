@@ -6,6 +6,8 @@ description = "Per-chain type vocabulary and arithmetic traits for chain-generic
 
 [dependencies]
 alloy-primitives = { workspace = true }
+bs58 = { workspace = true }
+const-hex = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
 ruint = { workspace = true, features = ["num-traits"] }
