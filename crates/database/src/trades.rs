@@ -1,7 +1,15 @@
 use {
-    crate::{Address, OrderUid, TransactionHash, auction::AuctionId, events::EventIndex},
+    crate::{
+        Address,
+        OrderUid,
+        PgTransaction,
+        TransactionHash,
+        auction::AuctionId,
+        events::EventIndex,
+    },
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
+    std::ops::DerefMut,
     tracing::{Instrument, info_span, instrument},
 };
 
@@ -126,32 +134,95 @@ pub struct TradeEvent {
     pub order_uid: OrderUid,
 }
 
+/// A CTE named `settled` holding the trades one settlement settled. Prefix it
+/// to a query that binds the settlement's block number to `$1` and its log
+/// index to `$2`.
+///
+/// The lower bound is the log index of the previous (lower log index)
+/// settlement in the same block, or 0 if there is no previous settlement.
+/// `order_uid` is only needed by the read path.
+const SETTLED_TRADES_CTE: &str = r#"
+WITH previous_settlement AS (
+    SELECT COALESCE(MAX(log_index), 0)
+    FROM settlements
+    WHERE block_number = $1 AND log_index < $2
+),
+settled AS (
+    SELECT block_number, log_index, order_uid
+    FROM trades
+    WHERE block_number = $1
+    AND log_index BETWEEN (SELECT * from previous_settlement) AND $2
+)
+"#;
+
 #[instrument(skip_all)]
 pub async fn get_trades_for_settlement(
     ex: &mut PgConnection,
     settlement: EventIndex,
 ) -> Result<Vec<TradeEvent>, sqlx::Error> {
-    const QUERY: &str = r#"
-WITH
-    -- The log index in this query is the log index of the settlement event from the previous (lower log index) settlement in the same transaction or 0 if there is no previous settlement.
-    previous_settlement AS (
-        SELECT COALESCE(MAX(log_index), 0)
-        FROM settlements
-        WHERE block_number = $1 AND log_index < $2
-    )
-SELECT
-    block_number,
-    log_index,
-    order_uid
-FROM trades t
-WHERE t.block_number = $1
-AND t.log_index BETWEEN (SELECT * from previous_settlement) AND $2
-"#;
+    const QUERY: &str = const_format::concatcp!(
+        SETTLED_TRADES_CTE,
+        "SELECT block_number, log_index, order_uid FROM settled"
+    );
     sqlx::query_as(QUERY)
         .bind(settlement.block_number)
         .bind(settlement.log_index)
         .fetch_all(ex)
         .await
+}
+
+/// Splits a settlement's gas cost equally between the user trades it settled,
+/// storing each share in `trades.gas_cost`.
+///
+/// A trade is a user trade if its order is in the `orders` table, or if its
+/// owner is in `surplus_capturing_jit_order_owners`. Every other trade settled
+/// a JIT order that only provides liquidity for the user trades, so it gets a
+/// share of 0 instead of taking one away from them.
+///
+/// Shares round down, so they add up to at most the cost attributed to the
+/// settlement. As with `settlements.gas_used`, a transaction with two
+/// settlements attributes its full cost twice, once per settlement. We do not
+/// expect this to happen.
+#[instrument(skip_all)]
+pub async fn attribute_gas_cost(
+    ex: &mut PgTransaction<'_>,
+    settlement: EventIndex,
+    gas_used: BigDecimal,
+    effective_gas_price: BigDecimal,
+    surplus_capturing_jit_order_owners: &[Address],
+) -> Result<(), sqlx::Error> {
+    // The divisor is never 0: only rows that are in `gas_paying` divide by it.
+    // Bytes 33 to 52 of an order uid are the owner, see the
+    // `trades_order_uid_owner` index.
+    const QUERY: &str = const_format::concatcp!(
+        SETTLED_TRADES_CTE,
+        ", gas_paying AS (
+            SELECT block_number, log_index
+            FROM settled s
+            WHERE EXISTS (SELECT 1 FROM orders o WHERE o.uid = s.order_uid)
+            OR    substring(s.order_uid, 33, 20) = ANY($5)
+        )
+        UPDATE trades t SET gas_cost =
+            CASE
+                WHEN p.log_index IS NULL THEN 0
+                ELSE FLOOR($3 * $4 / (SELECT COUNT(*) FROM gas_paying))
+            END
+            FROM settled s
+            LEFT JOIN gas_paying p
+                ON  p.block_number = s.block_number
+                AND p.log_index = s.log_index
+            WHERE t.block_number = s.block_number
+            AND   t.log_index = s.log_index"
+    );
+    sqlx::query(QUERY)
+        .bind(settlement.block_number)
+        .bind(settlement.log_index)
+        .bind(gas_used)
+        .bind(effective_gas_price)
+        .bind(surplus_capturing_jit_order_owners)
+        .execute(ex.deref_mut())
+        .await
+        .map(|_| ())
 }
 
 #[instrument(skip_all)]
@@ -185,7 +256,6 @@ mod tests {
     use {
         super::*,
         crate::{
-            PgTransaction,
             byte_array::ByteArray,
             events::{Event, EventIndex, Settlement, Trade},
             onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
@@ -548,6 +618,185 @@ mod tests {
         .await
         .unwrap();
         settlement
+    }
+
+    async fn gas_costs(ex: &mut PgConnection) -> Vec<(i64, Option<BigDecimal>)> {
+        sqlx::query_as("SELECT log_index, gas_cost FROM trades ORDER BY log_index")
+            .fetch_all(ex)
+            .await
+            .unwrap()
+    }
+
+    /// A settlement's gas cost is split between the trades it settled, and a
+    /// second settlement in the same block only takes its own trades.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_attribute_gas_cost() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let event = |log_index| EventIndex {
+            block_number: 0,
+            log_index,
+        };
+
+        // Two settlements in one block: the first settles the trades at log 0
+        // and 1, the second those at log 3, 4 and 5.
+        for log_index in [0, 1, 3, 4, 5] {
+            let uid = ByteArray([u8::try_from(log_index).unwrap(); 56]);
+            add_order_and_trade(
+                &mut db,
+                Default::default(),
+                uid,
+                event(log_index),
+                None,
+                None,
+            )
+            .await;
+        }
+        let first = event(2);
+        add_settlement(&mut db, first, Default::default(), ByteArray([1; 32]), 1).await;
+        let second = event(6);
+        add_settlement(&mut db, second, Default::default(), ByteArray([2; 32]), 2).await;
+
+        // Nothing is attributed until the settlement is observed.
+        assert!(
+            gas_costs(&mut db)
+                .await
+                .iter()
+                .all(|(_, cost)| cost.is_none())
+        );
+
+        attribute_gas_cost(&mut db, first, 100.into(), 10.into(), &[])
+            .await
+            .unwrap();
+
+        // 1000 wei split between the first settlement's 2 trades. The second
+        // settlement's trades are untouched.
+        assert_eq!(
+            gas_costs(&mut db).await,
+            vec![
+                (0, Some(500.into())),
+                (1, Some(500.into())),
+                (3, None),
+                (4, None),
+                (5, None),
+            ]
+        );
+
+        // 700 wei over 3 trades does not divide evenly. The share rounds down,
+        // so the shares never add up to more than the transaction paid.
+        attribute_gas_cost(&mut db, second, 70.into(), 10.into(), &[])
+            .await
+            .unwrap();
+        assert_eq!(
+            gas_costs(&mut db).await,
+            vec![
+                (0, Some(500.into())),
+                (1, Some(500.into())),
+                (3, Some(233.into())),
+                (4, Some(233.into())),
+                (5, Some(233.into())),
+            ]
+        );
+    }
+
+    /// JIT orders only provide liquidity for the user orders, so they take no
+    /// share of the gas cost, unless the auction lets their owner capture
+    /// surplus.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_attribute_gas_cost_of_jit_orders() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let event = |log_index| EventIndex {
+            block_number: 0,
+            log_index,
+        };
+        let uid = |owner: Address| {
+            let mut uid = [0u8; 56];
+            uid[32..52].copy_from_slice(&owner.0);
+            ByteArray(uid)
+        };
+        let user = ByteArray([1; 20]);
+        let market_maker = ByteArray([2; 20]);
+        let liquidity_provider = ByteArray([3; 20]);
+
+        // A user order, a JIT order of an owner the auction lets capture
+        // surplus and a plain liquidity JIT order.
+        add_order_and_trade(&mut db, user, uid(user), event(0), None, None).await;
+        add_trade(
+            &mut db,
+            market_maker,
+            uid(market_maker),
+            event(1),
+            None,
+            None,
+        )
+        .await;
+        add_trade(
+            &mut db,
+            liquidity_provider,
+            uid(liquidity_provider),
+            event(2),
+            None,
+            None,
+        )
+        .await;
+        let settlement = event(3);
+        add_settlement(
+            &mut db,
+            settlement,
+            Default::default(),
+            ByteArray([1; 32]),
+            1,
+        )
+        .await;
+
+        attribute_gas_cost(&mut db, settlement, 100.into(), 10.into(), &[market_maker])
+            .await
+            .unwrap();
+
+        // 1000 wei split between the user order and the surplus capturing JIT
+        // order. The liquidity JIT order paid nothing.
+        assert_eq!(
+            gas_costs(&mut db).await,
+            vec![
+                (0, Some(500.into())),
+                (1, Some(500.into())),
+                (2, Some(0.into())),
+            ]
+        );
+    }
+
+    /// A settlement that settled no trades must not fail on a zero divisor.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_attribute_gas_cost_without_trades() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let settlement = EventIndex {
+            block_number: 0,
+            log_index: 0,
+        };
+        add_settlement(
+            &mut db,
+            settlement,
+            Default::default(),
+            Default::default(),
+            1,
+        )
+        .await;
+
+        attribute_gas_cost(&mut db, settlement, 100.into(), 10.into(), &[])
+            .await
+            .unwrap();
+        assert!(gas_costs(&mut db).await.is_empty());
     }
 
     #[tokio::test]
