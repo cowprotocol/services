@@ -5,7 +5,7 @@ use {super::order_uid::OrderUid, serde::Serialize, solana_sdk::pubkey::Pubkey};
 /// A collection of orders the driver wants solvers to fill.
 #[derive(Clone, Debug)]
 pub struct Auction {
-    pub id: u64,
+    pub id: i64,
     pub orders: Vec<Order>,
     /// Absolute deadline by which solver engines must return solutions. The
     /// driver derives each request's timeout as the time remaining until this
