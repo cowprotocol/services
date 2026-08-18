@@ -58,7 +58,11 @@ impl Solver {
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
 
-        // Calculate the time remaining until the auction's deadline.
+        let _permit = self.in_flight.acquire().await;
+
+        // Calculate the time remaining until the auction's deadline. This is
+        // computed *after* acquiring the permit, otherwise the wait could
+        // silently eat into the budget and let the solve run past the deadline.
         let timeout = {
             let remaining = auction.deadline.signed_duration_since(chrono::Utc::now());
             if remaining <= chrono::Duration::zero() {
@@ -71,8 +75,6 @@ impl Solver {
             // Safe: we just checked `remaining` is positive.
             remaining.to_std().unwrap()
         };
-
-        let _permit = self.in_flight.acquire().await;
         let request = self
             .client
             .post(solve_url.as_str())
