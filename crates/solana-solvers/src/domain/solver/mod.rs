@@ -37,8 +37,8 @@ impl Quote for Dex {
 /// Order counts are small (bounded by the settlement account budget), so every
 /// order is quoted at once.
 ///
-/// TODO: Enforce `auction.deadline` with a timeout, like the EVM dex solver does
-/// (`crates/solvers/src/domain/solver/dex/mod.rs`).
+/// TODO: Enforce `auction.deadline` with a timeout, like the EVM dex solver
+/// does (`crates/solvers/src/domain/solver/dex/mod.rs`).
 pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
     let candidates = auction.orders.iter().enumerate().map(|(index, order)| {
         let dex_order = order.to_dex_order();
