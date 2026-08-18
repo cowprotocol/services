@@ -124,12 +124,9 @@ impl Solutions {
                         if !allowed_uids.contains(&trade.order_uid) {
                             return Err(Error::UnknownOrderUid(trade.order_uid));
                         }
-                        // The wire format carries no clearing prices or fee yet, so
-                        // the fee defaults to zero.
                         Ok(domain::Trade {
                             order_uid: trade.order_uid,
                             executed_amount: trade.executed_amount,
-                            fee: 0,
                         })
                     })
                     .collect::<Result<_, _>>()?;

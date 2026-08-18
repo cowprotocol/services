@@ -129,13 +129,11 @@ async fn driver_solves_against_live_jupiter_engine() {
     assert_eq!(solution.solver, solver_account);
 
     // --- trade ---
-    // One trade fulfilling our order. The wire format carries no fee, so the
-    // driver defaults it to zero.
+    // One trade fulfilling our order. The wire format carries no fee.
     assert_eq!(solution.trades.len(), 1);
     let trade = &solution.trades[0];
     assert_eq!(trade.order_uid, OrderUid([8; 32]));
     assert_eq!(trade.executed_amount, 10_000_000, "full sell amount filled");
-    assert_eq!(trade.fee, 0, "wire format carries no fee, defaults to zero");
 
     // --- interactions ---
     // The swap must arrive as real Solana instructions: every interaction

@@ -26,7 +26,4 @@ pub struct Trade {
     pub order_uid: OrderUid,
     /// Sell-token units for sell orders, buy-token units for buy orders.
     pub executed_amount: u64,
-    /// Solver-reported fee, in sell-token units. Defaults to zero when the
-    /// wire format carries no fee.
-    pub fee: u64,
 }
