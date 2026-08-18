@@ -76,9 +76,7 @@ impl<C: ChainTypes> Arbitrator<C> {
             solution
                 .orders()
                 .iter()
-                .filter(|order| context.contributes_to_score(&order.uid))
-                .count()
-                > 0
+                .any(|order| context.contributes_to_score(&order.uid))
         });
 
         // Sort by score descending
