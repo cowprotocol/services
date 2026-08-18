@@ -53,6 +53,10 @@ impl Solver {
         // Calculate the time remaining until the auction's deadline. This is
         // computed *after* acquiring the permit, otherwise the wait could
         // silently eat into the budget and let the solve run past the deadline.
+        //
+        // TODO: Split the deadline budget between solver time and driver processing
+        // time. The EVM driver uses `solving_share_of_deadline` to give the solver a
+        // configurable fraction of the remaining time, leaving the rest for building
         let timeout = {
             let remaining = auction.deadline.signed_duration_since(chrono::Utc::now());
             if remaining <= chrono::Duration::zero() {
