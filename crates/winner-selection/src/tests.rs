@@ -263,8 +263,7 @@ fn evm_surplus_fee_policy_doubles_score() {
 
 /// A solution that only settles a scoring order at exactly the limit price
 /// scores zero, but is still retained (and wins if unopposed) because it
-/// contributes to score. Previously the arbitrator dropped any zero-score
-/// solution outright.
+/// contributes to score.
 #[test]
 fn zero_score_solution_is_kept_when_it_settles_a_scoring_order() {
     let uid = evm_uid(1, 0xaa);
