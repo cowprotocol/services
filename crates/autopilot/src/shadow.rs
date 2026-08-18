@@ -85,7 +85,7 @@ impl RunLoop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
-            observe::log_auction_delta(&previous, &auction, &start_block);
+            observe::log_auction_delta(previous.as_ref(), &auction, &start_block);
             self.liveness.auction();
 
             self.single_run(&auction)

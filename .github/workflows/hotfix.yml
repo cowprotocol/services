@@ -1,7 +1,8 @@
 name: Hotfix Release
 
+# Tag pushes and the release itself go through a GitHub App installation token.
 permissions:
-  contents: write
+  contents: read
 
 on:
   pull_request_target:
@@ -14,11 +15,18 @@ jobs:
     if: ${{ github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'hotfix') }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_KEY }}
+          permission-contents: write
+
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          token: "${{ secrets.HOTFIX_ACTION_TOKEN }}"
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Configure git
         run: |
@@ -43,7 +51,7 @@ jobs:
           echo "Latest release version: $LATEST_VERSION"
           echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
         env:
-          GH_TOKEN: ${{ secrets.HOTFIX_ACTION_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Determine next patch version
         id: bump
@@ -84,14 +92,15 @@ jobs:
         id: tag_version
         run: |
           git tag $BUMP
-          git push origin $BUMP
+          git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY" "$BUMP"
         env:
           BUMP: ${{ steps.bump.outputs.tag }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: "Create hotfix release"
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
-          github-token: "${{ secrets.HOTFIX_ACTION_TOKEN }}"
+          github-token: "${{ steps.app-token.outputs.token }}"
           script: |
             try {
               const response = await github.rest.repos.createRelease({
