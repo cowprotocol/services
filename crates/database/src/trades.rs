@@ -1,7 +1,14 @@
 use {
-    crate::{Address, OrderUid, TransactionHash, auction::AuctionId, events::EventIndex},
+    crate::{
+        Address,
+        OrderUid,
+        PgTransaction,
+        TransactionHash,
+        auction::AuctionId,
+        events::EventIndex,
+    },
     bigdecimal::BigDecimal,
-    sqlx::PgConnection,
+    sqlx::{Executor, PgConnection},
     tracing::{Instrument, info_span, instrument},
 };
 
@@ -177,7 +184,7 @@ pub async fn get_trades_for_settlement(
 /// expect this to happen.
 #[instrument(skip_all)]
 pub async fn attribute_gas_cost(
-    ex: &mut PgConnection,
+    ex: &mut PgTransaction<'_>,
     settlement: EventIndex,
     gas_used: BigDecimal,
     effective_gas_price: BigDecimal,
@@ -206,15 +213,16 @@ pub async fn attribute_gas_cost(
             WHERE t.block_number = s.block_number
             AND   t.log_index = s.log_index"
     );
-    sqlx::query(QUERY)
-        .bind(settlement.block_number)
-        .bind(settlement.log_index)
-        .bind(gas_used)
-        .bind(effective_gas_price)
-        .bind(surplus_capturing_jit_order_owners)
-        .execute(ex)
-        .await
-        .map(|_| ())
+    ex.execute(
+        sqlx::query(QUERY)
+            .bind(settlement.block_number)
+            .bind(settlement.log_index)
+            .bind(gas_used)
+            .bind(effective_gas_price)
+            .bind(surplus_capturing_jit_order_owners),
+    )
+    .await
+    .map(|_| ())
 }
 
 #[instrument(skip_all)]
@@ -248,7 +256,6 @@ mod tests {
     use {
         super::*,
         crate::{
-            PgTransaction,
             byte_array::ByteArray,
             events::{Event, EventIndex, Settlement, Trade},
             onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
