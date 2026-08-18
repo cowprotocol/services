@@ -3,10 +3,7 @@ use {
     url::Url,
 };
 
-/// Deserialize a URL, ensuring its path ends with a trailing `/`.
-///
-/// This makes `Url::join("solve")` append `solve` rather than replacing the
-/// last path segment (e.g. `http://host/api` -> `http://host/api/solve`).
+/// Deserialize a URL and make sure its path ends with a slash.
 pub fn deserialize_url_with_trailing_slash<'de, D>(deserializer: D) -> Result<Url, D::Error>
 where
     D: Deserializer<'de>,
