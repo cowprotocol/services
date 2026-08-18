@@ -1,0 +1,13 @@
+[package]
+name = "autopilot-svm"
+version = "0.1.0"
+edition = "2024"
+description = "Solana autopilot: the chain-generic auction loop and its seam traits"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true
