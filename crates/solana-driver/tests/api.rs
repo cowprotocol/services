@@ -1,29 +1,27 @@
 //! Integration tests for the HTTP API server.
 
 use {
-    solana_driver::infra::api::{Api, State},
-    std::{net::SocketAddr, sync::Arc},
+    cow_solana_rpc::SolanaRPC,
+    solana_driver::infra::api::Api,
+    std::net::SocketAddr,
     tokio_util::sync::CancellationToken,
 };
 
-fn mock_state() -> State {
-    State::new(
-        Arc::new(solana_client::nonblocking::rpc_client::RpcClient::new_mock(
-            "succeeds".to_string(),
-        )),
-        Vec::new(),
-    )
+fn mock_api() -> Api {
+    Api {
+        addr: "0.0.0.0:0".parse().unwrap(),
+        rpc: SolanaRPC::new_mock("succeeds".to_string()),
+        solvers: Vec::new(),
+    }
 }
 
 /// Spawn the API server on an ephemeral port and return its bound address.
 async fn spawn_server() -> SocketAddr {
-    let api = Api {
-        addr: "0.0.0.0:0".parse().unwrap(),
-    };
+    let api = mock_api();
     let (listener, addr) = api.bind().await.unwrap();
     // A token that is never cancelled keeps the server alive for the test.
     let shutdown = CancellationToken::new();
-    tokio::spawn(async move { Api::serve(listener, mock_state(), shutdown).await.unwrap() });
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
     addr
 }
 
@@ -40,12 +38,10 @@ async fn healthz_returns_200() {
 
 #[tokio::test]
 async fn shuts_down_cleanly_on_signal() {
-    let api = Api {
-        addr: "0.0.0.0:0".parse().unwrap(),
-    };
+    let api = mock_api();
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown_token = CancellationToken::new();
-    let serve = Api::serve(listener, mock_state(), shutdown_token.clone());
+    let serve = api.serve(listener, shutdown_token.clone());
     let handle = tokio::spawn(async move { serve.await.unwrap() });
 
     // The server is up and serving requests.
