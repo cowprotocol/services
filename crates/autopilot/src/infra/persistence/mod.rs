@@ -795,6 +795,11 @@ impl Persistence {
                 },
                 u256_to_big_decimal(&gas.0),
                 u256_to_big_decimal(&gas_price.0.0),
+                &settlement
+                    .surplus_capturing_jit_order_owners()
+                    .iter()
+                    .map(|owner| ByteArray(owner.0.0))
+                    .collect::<Vec<_>>(),
             )
             .await?;
 
