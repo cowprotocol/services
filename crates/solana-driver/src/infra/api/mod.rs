@@ -73,6 +73,7 @@ impl Api {
 
 /// Shared state available to all route handlers.
 #[derive(Clone)]
+#[expect(dead_code)]
 pub struct State(Arc<Inner>);
 
 impl State {
@@ -80,16 +81,9 @@ impl State {
     fn new(rpc: SolanaRPC, solvers: Vec<solver::Solver>) -> Self {
         Self(Arc::new(Inner { rpc, solvers }))
     }
-
-    pub fn rpc(&self) -> &SolanaRPC {
-        &self.0.rpc
-    }
-
-    pub fn solvers(&self) -> &[solver::Solver] {
-        &self.0.solvers
-    }
 }
 
+#[expect(dead_code)]
 struct Inner {
     /// The shared Solana RPC client.
     rpc: SolanaRPC,

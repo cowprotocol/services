@@ -39,16 +39,6 @@ impl Solver {
         }
     }
 
-    /// The solver's human-readable name.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// The solver's on-chain identity.
-    pub fn account(&self) -> Pubkey {
-        self.account
-    }
-
     /// POST the auction to this engine's `/solve` endpoint and return the
     /// domain solutions it produced.
     #[tracing::instrument(name = "solver_engine", skip_all, fields(solver = %self.name))]
