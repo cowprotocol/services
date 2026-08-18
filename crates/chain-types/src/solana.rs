@@ -5,7 +5,7 @@
 
 use {
     crate::{Amount, ChainTypes, MathError, MathResult},
-    std::{fmt, str::FromStr},
+    std::{error, fmt, str::FromStr},
 };
 
 /// A Solana account address (token mint or solver identity).
@@ -52,7 +52,7 @@ impl fmt::Display for InvalidPubkey {
     }
 }
 
-impl std::error::Error for InvalidPubkey {}
+impl error::Error for InvalidPubkey {}
 
 impl FromStr for Pubkey {
     type Err = InvalidPubkey;
@@ -83,7 +83,7 @@ impl fmt::Display for InvalidSignature {
     }
 }
 
-impl std::error::Error for InvalidSignature {}
+impl error::Error for InvalidSignature {}
 
 impl FromStr for Signature {
     type Err = InvalidSignature;

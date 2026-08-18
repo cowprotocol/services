@@ -42,12 +42,21 @@ pub enum Error {
     },
 }
 
+/// Append a path segment to the base URL. `Url::join` is RFC 3986 relative
+/// resolution, which drops the base's last path segment unless it ends in a
+/// slash, so a base like `http://driver/svm` would lose its prefix.
+fn join(base: &Url, path: &str) -> Url {
+    let base = base.as_str().trim_end_matches('/');
+    let path = path.trim_start_matches('/');
+    Url::parse(&format!("{base}/{path}")).expect("valid driver url")
+}
+
 impl Driver {
     pub fn new(name: String, url: &Url) -> Self {
         Self {
             name,
-            solve_url: url.join("solve").expect("valid driver url"),
-            settle_url: url.join("settle").expect("valid driver url"),
+            solve_url: join(url, "solve"),
+            settle_url: join(url, "settle"),
             client: reqwest::Client::builder()
                 .timeout(REQUEST_TIMEOUT)
                 .build()
@@ -77,5 +86,27 @@ impl Driver {
             return Err(Error::Status { status, body });
         }
         serde_json::from_str(&body).map_err(|error| Error::Body { error, body })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A base URL with a path and no trailing slash keeps its prefix,
+    /// the case `Url::join` gets wrong.
+    #[test]
+    fn join_keeps_the_base_path() {
+        let cases = [
+            ("http://driver", "http://driver/solve"),
+            ("http://driver/", "http://driver/solve"),
+            ("http://driver/svm", "http://driver/svm/solve"),
+            ("http://driver/svm/", "http://driver/svm/solve"),
+        ];
+        for (base, expected) in cases {
+            let base = Url::parse(base).unwrap();
+            assert_eq!(join(&base, "solve").as_str(), expected);
+            assert_eq!(join(&base, "/solve").as_str(), expected);
+        }
     }
 }
