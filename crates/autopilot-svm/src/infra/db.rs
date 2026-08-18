@@ -116,7 +116,7 @@ fn orders_from_rows(rows: Vec<OrderRow>) -> Vec<Order> {
     rows.into_iter()
         .filter_map(|row| {
             let uid = row.uid;
-            order_from_row(row)
+            Order::try_from(row)
                 .map_err(|err| {
                     tracing::warn!(uid = %const_hex::encode(uid.0), ?err, "skipping corrupt order row")
                 })
@@ -125,25 +125,29 @@ fn orders_from_rows(rows: Vec<OrderRow>) -> Vec<Order> {
         .collect()
 }
 
-fn order_from_row(row: OrderRow) -> Result<Order> {
-    Ok(Order {
-        uid: IntentHash(row.uid.0),
-        owner: Pubkey(row.owner.0),
-        sell_token: Pubkey(row.sell_token.0),
-        buy_token: Pubkey(row.buy_token.0),
-        sell_token_account: Pubkey(row.sell_token_account.0),
-        buy_token_account: Pubkey(row.buy_token_account.0),
-        sell_amount: to_amount(&row.sell_amount).context("sell_amount")?,
-        buy_amount: to_amount(&row.buy_amount).context("buy_amount")?,
-        valid_to: row.valid_to.try_into().context("valid_to")?,
-        kind: match row.kind.as_str() {
-            "sell" => OrderKind::Sell,
-            "buy" => OrderKind::Buy,
-            other => bail!("unknown order kind {other:?}"),
-        },
-        partially_fillable: row.partially_fillable,
-        order_pda: Pubkey(row.order_pda.0),
-    })
+impl TryFrom<OrderRow> for Order {
+    type Error = anyhow::Error;
+
+    fn try_from(row: OrderRow) -> Result<Self> {
+        Ok(Order {
+            uid: IntentHash(row.uid.0),
+            owner: Pubkey(row.owner.0),
+            sell_token: Pubkey(row.sell_token.0),
+            buy_token: Pubkey(row.buy_token.0),
+            sell_token_account: Pubkey(row.sell_token_account.0),
+            buy_token_account: Pubkey(row.buy_token_account.0),
+            sell_amount: to_amount(&row.sell_amount).context("sell_amount")?,
+            buy_amount: to_amount(&row.buy_amount).context("buy_amount")?,
+            valid_to: row.valid_to.try_into().context("valid_to")?,
+            kind: match row.kind.as_str() {
+                "sell" => OrderKind::Sell,
+                "buy" => OrderKind::Buy,
+                other => bail!("unknown order kind {other:?}"),
+            },
+            partially_fillable: row.partially_fillable,
+            order_pda: Pubkey(row.order_pda.0),
+        })
+    }
 }
 
 /// Token amounts are `numeric(20,0)` in the database, u64 on chain.
@@ -181,17 +185,17 @@ mod tests {
 
     #[test]
     fn converts_a_row_and_rejects_out_of_range_values() {
-        let order = super::order_from_row(conversion_row()).unwrap();
+        let order = super::Order::try_from(conversion_row()).unwrap();
         assert_eq!(order.sell_amount, u64::MAX);
         assert_eq!(order.kind, crate::domain::auction::OrderKind::Sell);
 
         let mut too_big = conversion_row();
         too_big.sell_amount = BigDecimal::from(u64::MAX) + BigDecimal::from(1u64);
-        assert!(super::order_from_row(too_big).is_err());
+        assert!(super::Order::try_from(too_big).is_err());
 
         let mut bad_kind = conversion_row();
         bad_kind.kind = "liquidity".to_owned();
-        assert!(super::order_from_row(bad_kind).is_err());
+        assert!(super::Order::try_from(bad_kind).is_err());
     }
 
     #[test]
