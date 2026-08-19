@@ -12,6 +12,8 @@ path = "src/lib.rs"
 [dependencies]
 solana-commitment-config = { workspace = true }
 solana-rpc-client = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+solana-sdk = { workspace = true }
 url = { workspace = true }
 
 [features]

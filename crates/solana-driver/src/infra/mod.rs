@@ -4,6 +4,7 @@
 pub mod api;
 pub mod config;
 pub mod observe;
+pub mod settlement;
 pub mod solver;
 
 pub use self::api::Api;

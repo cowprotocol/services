@@ -1,12 +1,14 @@
 //! Solana JSON-RPC client wrapper.
 
-pub use solana_commitment_config::CommitmentConfig;
-use {solana_rpc_client::nonblocking::rpc_client::RpcClient, std::time::Duration, url::Url};
+pub use {solana_commitment_config::CommitmentConfig, solana_rpc_client_api::client_error::Error};
+use {
+    solana_rpc_client::nonblocking::rpc_client::RpcClient,
+    solana_sdk::{hash::Hash, signature::Signature, transaction::Transaction},
+    std::time::Duration,
+    url::Url,
+};
 
 pub struct SolanaRPC {
-    /// Not yet read: helper methods that use the underlying client will be
-    /// added in follow-up PRs.
-    #[expect(dead_code)]
     inner: RpcClient,
 }
 
@@ -34,5 +36,20 @@ impl SolanaRPC {
         Self {
             inner: RpcClient::new_mock(url),
         }
+    }
+
+    /// The node's current slot at the client's commitment level.
+    pub async fn slot(&self) -> Result<u64, Error> {
+        self.inner.get_slot().await
+    }
+
+    /// A recent blockhash for transaction signing.
+    pub async fn latest_blockhash(&self) -> Result<Hash, Error> {
+        self.inner.get_latest_blockhash().await
+    }
+
+    /// Submit a signed transaction without waiting for confirmation.
+    pub async fn send_transaction(&self, transaction: &Transaction) -> Result<Signature, Error> {
+        self.inner.send_transaction(transaction).await
     }
 }

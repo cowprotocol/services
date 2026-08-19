@@ -3,6 +3,7 @@
 use {
     cow_solana_rpc::SolanaRPC,
     solana_driver::infra::api::Api,
+    solana_sdk::{pubkey::Pubkey, signature::Keypair},
     std::net::SocketAddr,
     tokio_util::sync::CancellationToken,
 };
@@ -12,6 +13,8 @@ fn mock_api() -> Api {
         addr: "0.0.0.0:0".parse().unwrap(),
         rpc: SolanaRPC::new_mock("succeeds".to_string()),
         solvers: Vec::new(),
+        keypair: Keypair::new(),
+        settlement_program: Pubkey::new_unique(),
     }
 }
 

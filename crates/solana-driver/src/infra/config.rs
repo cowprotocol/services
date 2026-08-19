@@ -9,7 +9,12 @@ use {
         deserialize_url_with_trailing_slash,
     },
     solana_sdk::pubkey::Pubkey,
-    std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
+    std::{
+        net::SocketAddr,
+        num::NonZero,
+        path::{Path, PathBuf},
+        time::Duration,
+    },
     tokio::fs,
 };
 
@@ -73,6 +78,9 @@ pub struct Chain {
     /// On-chain program id of the settlement contract.
     #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
     pub settlement_program_id: Pubkey,
+    /// Path to the solver keypair settlements are signed with.
+    /// TODO: file-based for the demo, real key management replaces it.
+    pub solver_keypair: PathBuf,
 }
 
 /// RPC client configuration.

@@ -3,6 +3,8 @@
 [chain]
 # Placeholder — replace with the CoW Settlement program id.
 settlement-program-id = "MooohhPEAAHwAwEozL7JPEmnDvaahuUpccYN4Yb8ccK"
+# The solver identity settlements are signed with.
+solver-keypair = "~/.config/solana/id.json"
 
 [rpc]
 endpoint = "https://api.mainnet-beta.solana.com"

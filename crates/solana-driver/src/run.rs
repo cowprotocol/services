@@ -4,6 +4,7 @@ use {
     crate::infra::{Api, config, observe as infra_observe, solver},
     clap::Parser,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
+    solana_sdk::signature::read_keypair_file,
     std::{path::PathBuf, time::Duration},
 };
 
@@ -41,10 +42,14 @@ pub async fn run(args: Args) {
         CommitmentConfig::confirmed(),
     );
     let solvers: Vec<solver::Solver> = config.solvers.iter().map(solver::Solver::new).collect();
+    let keypair =
+        read_keypair_file(&config.chain.solver_keypair).expect("failed to read solver keypair");
     let api = Api {
         addr: config.http.bind_address,
         rpc,
         solvers,
+        keypair,
+        settlement_program: config.chain.settlement_program_id,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());
