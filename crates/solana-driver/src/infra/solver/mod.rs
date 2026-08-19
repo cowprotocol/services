@@ -119,3 +119,33 @@ pub enum Error {
     #[error("auction deadline exceeded")]
     DeadlineExceeded,
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, std::num::NonZero};
+
+    #[tokio::test]
+    async fn solve_with_past_deadline_is_rejected() {
+        // Build a solver pointing at a port that is never listened on. The
+        // deadline check fires before any HTTP request is sent, so this never
+        // actually connects to the endpoint.
+        let solver = Solver::new(&config::Solver {
+            name: "test".to_owned(),
+            endpoint: "http://127.0.0.1:1".parse().unwrap(),
+            account: Pubkey::default(),
+            max_in_flight: NonZero::new(1).unwrap(),
+        });
+        let auction = domain::Auction {
+            id: 0,
+            orders: Vec::new(),
+            // Well in the past: the request must be skipped entirely.
+            deadline: chrono::Utc::now() - chrono::Duration::seconds(10),
+        };
+
+        let err = solver.solve(&auction).await.expect_err("solve should fail");
+        assert!(
+            matches!(err, Error::DeadlineExceeded),
+            "expected DeadlineExceeded, got {err:?}"
+        );
+    }
+}
