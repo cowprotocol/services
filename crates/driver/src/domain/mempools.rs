@@ -21,8 +21,10 @@ use {
 /// we increase slightly more.
 const GAS_PRICE_BUMP_PCT: u64 = 13;
 
-/// The gas amount required to cancel a transaction.
-const CANCELLATION_GAS_AMOUNT: u64 = 21000;
+/// The gas amount required to cancel a transaction. Self-transfer intrinsic
+/// 21000 plus the fallback of the EIP-7702 delegate (21396 measured on
+/// mainnet).
+const CANCELLATION_GAS_AMOUNT: u64 = 22_000;
 
 /// How the settlement transaction should be submitted on-chain.
 #[derive(Debug, Clone)]
