@@ -23,9 +23,19 @@ pub struct Api {
 }
 
 impl Api {
-    /// Bind and serve until `shutdown` resolves.
+    /// Bind to the configured address, returning the listener and the actual
+    /// bound address (which differs from `addr` when binding to port 0).
+    pub async fn bind(&self) -> std::io::Result<(tokio::net::TcpListener, SocketAddr)> {
+        let listener = tokio::net::TcpListener::bind(self.addr).await?;
+        let local_addr = listener.local_addr()?;
+        tracing::info!(addr = %local_addr, "solana-solvers listening");
+        Ok((listener, local_addr))
+    }
+
+    /// Serve the API on the given listener until `shutdown` resolves.
     pub async fn serve(
         self,
+        listener: tokio::net::TcpListener,
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> std::io::Result<()> {
         let app = Router::new()
@@ -35,8 +45,6 @@ impl Api {
             .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
             .layer(axum::extract::DefaultBodyLimit::disable());
 
-        let listener = tokio::net::TcpListener::bind(self.addr).await?;
-        tracing::info!(addr = %self.addr, "solana-solvers listening");
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown)
             .await

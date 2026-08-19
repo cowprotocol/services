@@ -11,6 +11,7 @@ fn mock_api() -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
         rpc: SolanaRPC::new_mock("succeeds".to_string()),
+        solvers: Vec::new(),
     }
 }
 

@@ -2,7 +2,7 @@
 
 [chain]
 # Placeholder — replace with the CoW Settlement program id.
-settlement-program-id = "11111111111111111111111111111111"
+settlement-program-id = "MooohhPEAAHwAwEozL7JPEmnDvaahuUpccYN4Yb8ccK"
 
 [rpc]
 endpoint = "https://api.mainnet-beta.solana.com"
@@ -19,4 +19,5 @@ filter = "info,solana_driver=debug"
 [[solvers]]
 name = "baseline"
 endpoint = "http://localhost:8001"
+account = "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
 max-in-flight = 1
