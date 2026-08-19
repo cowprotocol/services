@@ -1,0 +1,28 @@
+# Example configuration for the Solana autopilot.
+
+db-url = "postgresql://"
+# Serves /metrics, /liveness, /ready, and /startup.
+metrics-address = "0.0.0.0:9588"
+# The pod fails the liveness probe when no auction cycle completed in this
+# time.
+max-auction-age = "5m"
+
+[rpc]
+# The devnet node.
+endpoint = "https://api.devnet.solana.com"
+request-timeout = "10s"
+
+[chain]
+wrapped-native-mint = "So11111111111111111111111111111111111111112"
+
+[competition]
+max-winners = 1
+solve-deadline-slots = 15
+submission-deadline-slots = 25
+
+[[drivers]]
+name = "baseline"
+url = "http://localhost:11088"
+
+[logging]
+filter = "info,autopilot_svm=debug"

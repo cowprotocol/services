@@ -19,12 +19,6 @@ use {
     winner_selection::{Side, solution},
 };
 
-/// Slots between the tip a solve request is stamped at and its deadline,
-/// the driver's whole thinking budget (~6s at 400ms slots, the EVM fast
-/// chains run 6s solve deadlines).
-/// TODO: make configurable.
-const SOLVE_DEADLINE_SLOTS: u64 = 15;
-
 /// Solana's target slot time.
 const SLOT_DURATION: Duration = Duration::from_millis(400);
 
@@ -32,11 +26,16 @@ const SLOT_DURATION: Duration = Duration::from_millis(400);
 /// solutions for the arbitrator.
 pub struct DriverCompetition {
     drivers: Vec<Arc<Driver>>,
+    /// How many slots a driver gets to answer `/solve`.
+    solve_deadline_slots: u64,
 }
 
 impl DriverCompetition {
-    pub fn new(drivers: Vec<Arc<Driver>>) -> Self {
-        Self { drivers }
+    pub fn new(drivers: Vec<Arc<Driver>>, solve_deadline_slots: u64) -> Self {
+        Self {
+            drivers,
+            solve_deadline_slots,
+        }
     }
 }
 
@@ -45,7 +44,7 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
     async fn solve(&self, auction: &Auction) -> Vec<Solution> {
         let request = &dto::SolveRequest {
             id: auction.id,
-            deadline_slot: auction.tip + SOLVE_DEADLINE_SLOTS,
+            deadline_slot: auction.tip + self.solve_deadline_slots,
             orders: auction.orders.iter().map(dto::Order::from).collect(),
         };
         let by_uid: HashMap<IntentHash, &Order> = auction
@@ -57,7 +56,8 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
         // The deadline sent to the drivers is also enforced here: a response
         // landing after it is dropped, so one hung driver cannot hold the
         // loop for the HTTP client's whole ceiling.
-        let budget = SLOT_DURATION * u32::try_from(SOLVE_DEADLINE_SLOTS).expect("small constant");
+        let budget = SLOT_DURATION
+            .saturating_mul(u32::try_from(self.solve_deadline_slots).unwrap_or(u32::MAX));
         let responses = futures::future::join_all(self.drivers.iter().enumerate().map(
             |(driver_index, driver)| async move {
                 match tokio::time::timeout(budget, driver.solve(request)).await {
