@@ -1,12 +1,5 @@
 use {
-    super::{
-        DecodeFailed,
-        Decoder,
-        ResolvedOrder,
-        build_account_keys,
-        decode_settlement,
-        relevant_instructions,
-    },
+    super::{DecodeFailed, Decoder, build_account_keys, decode_settlement, relevant_instructions},
     crate::{
         indexer::ingester::Ingester,
         persistence::Postgres,
@@ -520,10 +513,7 @@ fn unknown_discriminator_fails_the_whole_transaction() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
-    assert_eq!(
-        decode_settlement(&instructions, &ctx, |_| None),
-        Err(DecodeFailed)
-    );
+    assert_eq!(decode_settlement(&instructions, &ctx), Err(DecodeFailed));
 }
 
 /// A `BeginSettle` whose named `FinalizeSettle` is not present in the
@@ -560,10 +550,7 @@ fn unpaired_begin_settle_sets_failure_flag() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
-    assert_eq!(
-        decode_settlement(&instructions, &ctx, |_| None),
-        Err(DecodeFailed)
-    );
+    assert_eq!(decode_settlement(&instructions, &ctx), Err(DecodeFailed));
 }
 
 /// A `BeginSettle` + `FinalizeSettle` pair built by the client crate decodes
@@ -574,8 +561,7 @@ fn unpaired_begin_settle_sets_failure_flag() {
 ///   from the same order's sell account),
 /// - the buy-side amount comes from the `FinalizeSettle` entry paired to its
 ///   order by position (order `i` is paid by entry `i`),
-/// - the order UID comes from the injected resolver, keyed by the canonical
-///   order PDA the builder derives,
+/// - the trade names the canonical order PDA the builder derives,
 /// - the solver is the fee payer.
 #[test]
 fn begin_and_finalize_settle_decode_to_settlement_finalized() {
@@ -625,14 +611,6 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     .into();
     let tx = tx_from_instructions(solver, &[begin, finalize]);
 
-    let expected_uid = OrderUid([0x55; 32]);
-    let resolve_order = |pda: &Pubkey| {
-        (*pda == order_pda).then_some(ResolvedOrder {
-            order_uid: expected_uid,
-            order_fulfilled: true,
-        })
-    };
-
     let ctx = TxContext {
         slot: Slot(5),
         signature: signature(6),
@@ -640,7 +618,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
-    let events = decode_settlement(&instructions, &ctx, resolve_order).expect("clean decode");
+    let events = decode_settlement(&instructions, &ctx).expect("clean decode");
 
     assert_eq!(
         events,
@@ -651,10 +629,9 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
             slot: Slot(5),
             instruction_index: 0,
             trades: vec![TradeDelta {
-                order_uid: expected_uid,
+                order_pda,
                 amount_withdrawn_delta: 1_000,
                 amount_received_delta: 1_234,
-                order_fulfilled: true,
             }],
         })]
     );

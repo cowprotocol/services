@@ -37,6 +37,32 @@ fn from_db_slot(slot: i64) -> Slot {
     Slot(u64::try_from(slot).expect("negative slot in the database"))
 }
 
+/// A `solana.orders.uid` value, 32 bytes by schema constraint.
+fn from_db_uid(uid: Vec<u8>) -> [u8; 32] {
+    uid.try_into().expect("uid length enforced by the schema")
+}
+
+/// Why a transaction sits in `solana.dead_letter`, stored as the `reason`
+/// column value the replay tooling filters on.
+enum DeadLetterReason {
+    /// The transaction failed to decode.
+    DecoderError,
+    /// A created order's token accounts did not resolve to mints.
+    UnresolvedMints,
+    /// A settlement trade named an order PDA with no orders row.
+    UnresolvedOrders,
+}
+
+impl DeadLetterReason {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::DecoderError => "decoder_error",
+            Self::UnresolvedMints => "unresolved_mints",
+            Self::UnresolvedOrders => "unresolved_orders",
+        }
+    }
+}
+
 /// Postgres implementation over the `solana.*` schema.
 #[derive(Clone)]
 pub(crate) struct Postgres {
@@ -109,16 +135,12 @@ ON CONFLICT (order_uid) DO NOTHING
                 order_uid = %order.order_uid,
                 "unresolved token account mints, order dead-lettered"
             );
-            sqlx::query(
-                r#"
-INSERT INTO solana.dead_letter (slot, tx_signature, reason)
-VALUES ($1, $2, 'unresolved_mints')
-ON CONFLICT (tx_signature) DO NOTHING
-                "#,
+            Self::insert_dead_letter(
+                &mut **tx,
+                order.signature,
+                slot,
+                DeadLetterReason::UnresolvedMints,
             )
-            .bind(to_db_slot(slot))
-            .bind(order.signature.as_ref())
-            .execute(&mut **tx)
             .await?;
             return Ok(());
         };
@@ -172,14 +194,8 @@ ON CONFLICT (tx_signature, instruction_index) DO NOTHING
         .bind(settlement.auction_id)
         .execute(&mut **tx)
         .await?;
-        for trade in settlement.trades {
-            Self::apply_trade(
-                tx,
-                settlement.tx_signature,
-                settlement.instruction_index,
-                trade,
-            )
-            .await?;
+        for trade in &settlement.trades {
+            Self::apply_trade(tx, &settlement, *trade).await?;
         }
         Ok(())
     }
@@ -187,12 +203,36 @@ ON CONFLICT (tx_signature, instruction_index) DO NOTHING
     /// Insert one trade row and, only when the row is new, fold its deltas
     /// into the order PDA's running sums. The conflict check keys the sums to
     /// the insert so a replayed settlement cannot double-apply them.
+    ///
+    /// The trade names its order by PDA, the orders table maps it to the UID.
+    /// An unknown PDA dead-letters the transaction: the order's own creation
+    /// was dead-lettered (or never indexed), so the replay restores the order
+    /// row first and this settlement's trade on the second pass.
     async fn apply_trade(
         tx: &mut PgTransaction<'_>,
-        tx_signature: Signature,
-        instruction_index: u32,
+        settlement: &FinalizedSettlement,
         trade: TradeDelta,
     ) -> Result<(), PersistenceError> {
+        let order_uid: Option<[u8; 32]> =
+            sqlx::query_scalar("SELECT uid FROM solana.orders WHERE order_pda = $1")
+                .bind(trade.order_pda.to_bytes())
+                .fetch_optional(&mut **tx)
+                .await?
+                .map(from_db_uid);
+        let Some(order_uid) = order_uid else {
+            tracing::warn!(
+                order_pda = %trade.order_pda,
+                "trade for an unknown order PDA, settlement dead-lettered"
+            );
+            Self::insert_dead_letter(
+                &mut **tx,
+                settlement.tx_signature,
+                settlement.slot,
+                DeadLetterReason::UnresolvedOrders,
+            )
+            .await?;
+            return Ok(());
+        };
         // The fee is not on-chain data (it comes from the off-chain solution),
         // so the column holds zero.
         let inserted = sqlx::query(
@@ -203,9 +243,9 @@ VALUES ($1, $2, $3, $4, $5, 0)
 ON CONFLICT DO NOTHING
             "#,
         )
-        .bind(tx_signature.as_ref())
-        .bind(to_db_instruction_index(instruction_index))
-        .bind(trade.order_uid.0)
+        .bind(settlement.tx_signature.as_ref())
+        .bind(to_db_instruction_index(settlement.instruction_index))
+        .bind(order_uid)
         .bind(BigDecimal::from(trade.amount_withdrawn_delta))
         .bind(BigDecimal::from(trade.amount_received_delta))
         .execute(&mut **tx)
@@ -222,18 +262,20 @@ SET amount_withdrawn = amount_withdrawn + $2,
 WHERE order_uid = $1
             "#,
         )
-        .bind(trade.order_uid.0)
+        .bind(order_uid)
         .bind(BigDecimal::from(trade.amount_withdrawn_delta))
         .bind(BigDecimal::from(trade.amount_received_delta))
         .execute(&mut **tx)
         .await?
         .rows_affected();
         if updated == 0 {
-            // The trade row keeps the deltas, so the sums are reconstructible
-            // once the order PDA row appears, but nothing applies them
+            // Unreachable through the indexer's own writes (an orders row is
+            // only ever written after its order_pda row), so this guards
+            // manually repaired databases. The trade row keeps the deltas,
+            // so the sums are reconstructible, but nothing applies them
             // automatically.
             tracing::warn!(
-                order_uid = %trade.order_uid,
+                order_pda = %trade.order_pda,
                 "trade for an order without an order_pda row, sums not applied"
             );
         }
@@ -283,22 +325,34 @@ WHERE indexer_state.slot < EXCLUDED.slot
     }
 
     /// Record a transaction whose decode failed so recovery can replay it by
-    /// signature. One row per transaction, idempotent on the signature.
-    pub(crate) async fn write_dead_letter(
+    /// signature.
+    pub(crate) async fn record_decode_failure(
         &self,
         signature: Signature,
         slot: Slot,
     ) -> Result<(), PersistenceError> {
+        Self::insert_dead_letter(&self.pool, signature, slot, DeadLetterReason::DecoderError).await
+    }
+
+    /// Mark a transaction for replay by signature. One row per transaction,
+    /// idempotent on the signature, so the first recorded reason wins.
+    async fn insert_dead_letter(
+        ex: impl sqlx::PgExecutor<'_>,
+        signature: Signature,
+        slot: Slot,
+        reason: DeadLetterReason,
+    ) -> Result<(), PersistenceError> {
         sqlx::query(
             r#"
 INSERT INTO solana.dead_letter (slot, tx_signature, reason)
-VALUES ($1, $2, 'decoder_error')
+VALUES ($1, $2, $3)
 ON CONFLICT (tx_signature) DO NOTHING
             "#,
         )
         .bind(to_db_slot(slot))
-        .bind(signature.as_ref())
-        .execute(&self.pool)
+        .bind(signature.as_ref().to_vec())
+        .bind(reason.as_str())
+        .execute(ex)
         .await?;
         Ok(())
     }
@@ -450,11 +504,11 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6::OrderKind, false, $2, now(), $7)
 
         let signature = Signature::from([7; 64]);
         postgres
-            .write_dead_letter(signature, Slot(5))
+            .record_decode_failure(signature, Slot(5))
             .await
             .unwrap();
         postgres
-            .write_dead_letter(signature, Slot(6))
+            .record_decode_failure(signature, Slot(6))
             .await
             .unwrap();
 
@@ -489,10 +543,10 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6::OrderKind, false, $2, now(), $7)
                 slot: Slot(20),
                 instruction_index: 1,
                 trades: vec![TradeDelta {
-                    order_uid: OrderUid(uid),
+                    // `SeedOrder` writes the uid as its own order PDA.
+                    order_pda: Pubkey::new_from_array(uid),
                     amount_withdrawn_delta: 300,
                     amount_received_delta: 500,
-                    order_fulfilled: false,
                 }],
             })),
             // A second settlement in the same transaction keeps its own row.
@@ -559,11 +613,58 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6::OrderKind, false, $2, now(), $7)
             .fetch_one(&pool)
             .await
             .unwrap();
+        // The trade names the order PDA, the row must carry the resolved uid.
+        let trade_uids: Vec<Vec<u8>> = sqlx::query_scalar("SELECT order_uid FROM solana.trades")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!((settlements, trade_uids), (2, vec![uid.to_vec()]));
+        assert_eq!(postgres.last_indexed_slot().await.unwrap(), Some(Slot(20)));
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_unknown_order_pda_dead_letters_the_settlement() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+
+        let events = vec![DecodedEvent::Settlement(
+            SettlementEvent::SettlementFinalized(FinalizedSettlement {
+                auction_id: 77,
+                solver: Pubkey::new_from_array([0xCC; 32]),
+                tx_signature: Signature::from([9; 64]),
+                slot: Slot(20),
+                instruction_index: 1,
+                trades: vec![TradeDelta {
+                    order_pda: Pubkey::new_from_array([0xEE; 32]),
+                    amount_withdrawn_delta: 300,
+                    amount_received_delta: 500,
+                }],
+            }),
+        )];
+        postgres
+            .persist_events(events, &HashMap::new(), Slot(20))
+            .await
+            .unwrap();
+
+        // The settlement row lands, the unresolvable trade is replaced by a
+        // replay marker.
+        let settlements: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.settlements")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         let trades: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.trades")
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!((settlements, trades), (2, 1));
-        assert_eq!(postgres.last_indexed_slot().await.unwrap(), Some(Slot(20)));
+        assert_eq!((settlements, trades), (1, 0));
+        let reason: String =
+            sqlx::query_scalar("SELECT reason FROM solana.dead_letter WHERE tx_signature = $1")
+                .bind(Signature::from([9; 64]).as_ref())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(reason, "unresolved_orders");
     }
 }
