@@ -4,6 +4,7 @@ use {
     alloy::{
         eips::BlockId,
         primitives::{Address, U256},
+        providers::{MulticallItem, Provider},
     },
     anyhow::Result,
     cached::{Cached, TimedCache},
@@ -11,7 +12,7 @@ use {
         ERC20,
         IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
     },
-    ethrpc::{Web3, alloy::errors::ignore_non_node_error},
+    ethrpc::Web3,
     futures::{
         FutureExt as _,
         future::{self, BoxFuture},
@@ -271,51 +272,60 @@ impl PoolReading for DefaultPoolReader {
     fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
         let pair_address = self.pair_provider.pair_address(&pair);
 
+        let pair_contract =
+            IUniswapLikePair::Instance::new(pair_address, self.web3.provider.clone());
         // Fetch ERC20 token balances of the pools to sanity check with reserves
         let token0 = ERC20::Instance::new(pair.get().0, self.web3.provider.clone());
         let token1 = ERC20::Instance::new(pair.get().1, self.web3.provider.clone());
 
         async move {
-            let fetch_token0_balance = token0.balanceOf(pair_address).block(block);
-            let fetch_token1_balance = token1.balanceOf(pair_address).block(block);
+            // Every sub-call is allowed to fail on its own: there may be no pool
+            // at the address, or a token may not answer `balanceOf`. A failure of
+            // the aggregate itself is a node error and propagates for retrying.
+            let (reserves, token0_balance, token1_balance) = self
+                .web3
+                .provider
+                .multicall()
+                .block(block)
+                .add_call(pair_contract.getReserves().into_call(true))
+                .add_call(token0.balanceOf(pair_address).into_call(true))
+                .add_call(token1.balanceOf(pair_address).into_call(true))
+                .aggregate3()
+                .await?;
 
-            let pair_contract =
-                IUniswapLikePair::Instance::new(pair_address, self.web3.provider.clone());
-            let fetch_reserves = pair_contract.getReserves().block(block);
-
-            let (reserves, token0_balance, token1_balance) = futures::join!(
-                fetch_reserves.call().into_future(),
-                fetch_token0_balance.call().into_future(),
-                fetch_token1_balance.call().into_future()
-            );
-
-            handle_results(
+            Ok(handle_results(
                 FetchedPool {
                     pair,
-                    reserves,
-                    token0_balance,
-                    token1_balance,
+                    reserves: reserves.ok(),
+                    token0_balance: token0_balance.ok(),
+                    token1_balance: token1_balance.ok(),
                 },
                 pair_address,
-            )
+            ))
         }
         .boxed()
     }
 }
 
+/// Pool state as read from the node. `None` stands for a call that returned no
+/// usable data, meaning there is no pool at the address or the token does not
+/// answer.
 struct FetchedPool {
     pair: TokenPair,
-    reserves: Result<getReservesReturn, alloy::contract::Error>,
-    token0_balance: Result<U256, alloy::contract::Error>,
-    token1_balance: Result<U256, alloy::contract::Error>,
+    reserves: Option<getReservesReturn>,
+    token0_balance: Option<U256>,
+    token1_balance: Option<U256>,
 }
 
-fn handle_results(fetched_pool: FetchedPool, address: Address) -> Result<Option<Pool>> {
-    let reserves = ignore_non_node_error(fetched_pool.reserves)?;
-    let token0_balance = ignore_non_node_error(fetched_pool.token0_balance)?;
-    let token1_balance = ignore_non_node_error(fetched_pool.token1_balance)?;
+fn handle_results(fetched_pool: FetchedPool, address: Address) -> Option<Pool> {
+    let FetchedPool {
+        pair,
+        reserves,
+        token0_balance,
+        token1_balance,
+    } = fetched_pool;
 
-    let pool = reserves.and_then(|reserves| {
+    reserves.and_then(|reserves| {
         let r0 = u128::try_from(reserves.reserve0).ok()?;
         let r1 = u128::try_from(reserves.reserve1).ok()?;
         // Some ERC20s (e.g. AMPL) have an elastic supply and can thus reduce the
@@ -336,10 +346,8 @@ fn handle_results(fetched_pool: FetchedPool, address: Address) -> Result<Option<
         }
         // Errors here should never happen because reserves are uint<112, 2>
         // meaning they'll always fit in u128, but panicking here is not a good idea
-        Some(Pool::uniswap(address, fetched_pool.pair, (r0, r1)))
-    });
-
-    Ok(pool)
+        Some(Pool::uniswap(address, pair, (r0, r1)))
+    })
 }
 
 pub mod test_util {
@@ -370,7 +378,11 @@ pub mod test_util {
 mod tests {
     use {
         super::*,
-        ethrpc::alloy::errors::{testing_alloy_contract_error, testing_alloy_node_error},
+        alloy::{
+            primitives::{Bytes, aliases::U112},
+            providers::{bindings::IMulticall3, mock::Asserter},
+            sol_types::SolCall,
+        },
     };
 
     #[test]
@@ -515,31 +527,153 @@ mod tests {
         );
     }
 
-    #[test]
-    fn pool_fetcher_forwards_node_error() {
-        let fetched_pool = FetchedPool {
-            reserves: Err(testing_alloy_node_error()),
-            pair: Default::default(),
-            token0_balance: Ok(U256::ONE),
-            token1_balance: Ok(U256::ONE),
-        };
-        let pool_address = Default::default();
-        assert!(handle_results(fetched_pool, pool_address).is_err());
+    fn reserves(reserve0: u128, reserve1: u128) -> getReservesReturn {
+        getReservesReturn {
+            reserve0: U112::from(reserve0),
+            reserve1: U112::from(reserve1),
+            blockTimestampLast: 0,
+        }
     }
 
     #[test]
-    fn pool_fetcher_skips_contract_error() {
+    fn pool_fetcher_skips_pool_without_reserves() {
         let fetched_pool = FetchedPool {
-            reserves: Err(testing_alloy_contract_error()),
             pair: Default::default(),
-            token0_balance: Ok(U256::ONE),
-            token1_balance: Ok(U256::ONE),
+            reserves: None,
+            token0_balance: Some(U256::ONE),
+            token1_balance: Some(U256::ONE),
         };
-        let pool_address = Default::default();
+        assert!(handle_results(fetched_pool, Default::default()).is_none());
+    }
+
+    #[test]
+    fn pool_fetcher_skips_pool_without_balances() {
+        let fetched_pool = FetchedPool {
+            pair: Default::default(),
+            reserves: Some(reserves(1, 1)),
+            token0_balance: Some(U256::ONE),
+            token1_balance: None,
+        };
+        assert!(handle_results(fetched_pool, Default::default()).is_none());
+    }
+
+    #[test]
+    fn pool_fetcher_keeps_pool_backed_by_its_balances() {
+        let fetched_pool = FetchedPool {
+            pair: Default::default(),
+            reserves: Some(reserves(10, 20)),
+            token0_balance: Some(U256::from(10)),
+            token1_balance: Some(U256::from(30)),
+        };
+        let pool = handle_results(fetched_pool, Default::default()).unwrap();
+        assert_eq!(pool.reserves, (10, 20));
+    }
+
+    /// A negative rebase leaves the pool holding less than its reserves claim,
+    /// which makes its clearing price unusable.
+    #[test]
+    fn pool_fetcher_skips_pool_short_of_its_reserves() {
+        let fetched_pool = FetchedPool {
+            pair: Default::default(),
+            reserves: Some(reserves(10, 20)),
+            token0_balance: Some(U256::from(10)),
+            token1_balance: Some(U256::from(19)),
+        };
+        assert!(handle_results(fetched_pool, Default::default()).is_none());
+    }
+
+    /// A reader whose node answers with whatever is pushed onto `asserter`.
+    fn mocked_reader(asserter: Asserter) -> DefaultPoolReader {
+        DefaultPoolReader::new(
+            Web3::with_asserter(asserter),
+            PairProvider {
+                factory: Address::with_last_byte(1),
+                init_code_digest: [0; 32],
+            },
+        )
+    }
+
+    fn token_pair() -> TokenPair {
+        TokenPair::new(Address::with_last_byte(2), Address::with_last_byte(3)).unwrap()
+    }
+
+    /// The `eth_call` response of an `aggregate3` whose sub-calls came back as
+    /// given, in the order the reader asked for them.
+    fn aggregate3_response(sub_calls: Vec<(bool, Vec<u8>)>) -> Bytes {
+        let results = sub_calls
+            .into_iter()
+            .map(|(success, return_data)| IMulticall3::Result {
+                success,
+                returnData: return_data.into(),
+            })
+            .collect();
+        IMulticall3::aggregate3Call::abi_encode_returns(&results).into()
+    }
+
+    fn encoded_reserves(reserve0: u128, reserve1: u128) -> Vec<u8> {
+        IUniswapLikePair::IUniswapLikePair::getReservesCall::abi_encode_returns(&reserves(
+            reserve0, reserve1,
+        ))
+    }
+
+    fn encoded_balance(balance: u128) -> Vec<u8> {
+        ERC20::ERC20::balanceOfCall::abi_encode_returns(&U256::from(balance))
+    }
+
+    /// A failing node must stay distinguishable from a missing pool, so that
+    /// the read is retried instead of the pair being remembered as having
+    /// no pool.
+    #[tokio::test]
+    async fn pool_fetcher_forwards_node_error() {
+        let asserter = Asserter::new();
+        asserter.push_failure_msg("node is unavailable");
+
+        let reader = mocked_reader(asserter);
         assert!(
-            handle_results(fetched_pool, pool_address)
+            reader
+                .read_state(token_pair(), BlockId::latest())
+                .await
+                .is_err()
+        );
+    }
+
+    /// Whereas a sub-call the node did answer, but which failed, means there is
+    /// nothing to trade against at that address.
+    #[tokio::test]
+    async fn pool_fetcher_skips_contract_error() {
+        let asserter = Asserter::new();
+        asserter.push_success(&aggregate3_response(vec![
+            (false, vec![]),
+            (true, encoded_balance(1)),
+            (true, encoded_balance(1)),
+        ]));
+
+        let reader = mocked_reader(asserter);
+        assert!(
+            reader
+                .read_state(token_pair(), BlockId::latest())
+                .await
                 .unwrap()
                 .is_none()
-        )
+        );
+    }
+
+    #[tokio::test]
+    async fn pool_fetcher_reads_pool_from_one_aggregated_call() {
+        let asserter = Asserter::new();
+        asserter.push_success(&aggregate3_response(vec![
+            (true, encoded_reserves(10, 20)),
+            (true, encoded_balance(10)),
+            (true, encoded_balance(20)),
+        ]));
+
+        let reader = mocked_reader(asserter);
+        let pool = reader
+            .read_state(token_pair(), BlockId::latest())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(pool.reserves, (10, 20));
+        assert_eq!(pool.tokens, token_pair());
     }
 }
