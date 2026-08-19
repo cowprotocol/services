@@ -43,6 +43,7 @@ use {
     futures::stream::{Stream, StreamExt},
     solana_sdk::pubkey::Pubkey,
     std::{
+        collections::HashMap,
         ops::ControlFlow,
         sync::{
             Arc,
@@ -337,7 +338,7 @@ fn subscribe_request(
         account_include: vec![program.to_string()],
         ..Default::default()
     };
-    let mut filters = std::collections::HashMap::from([(
+    let mut filters = HashMap::from([(
         SETTLEMENT_FILTER.to_owned(),
         transactions(settlement_program),
     )]);
