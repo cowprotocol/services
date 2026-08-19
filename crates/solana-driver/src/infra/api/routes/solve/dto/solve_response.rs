@@ -193,7 +193,7 @@ mod tests {
 
         let response = SolveResponse::new(solutions, &auction);
         let solution = &response.solutions[0];
-        assert_eq!(solution.score, 0, "score is stubbed to 0 (D3)");
+        assert_eq!(solution.score, 0, "score is stubbed to 0");
         assert_eq!(solution.orders[&OrderUid([0x11; 32])].executed_sell, 100);
         assert_eq!(solution.orders[&OrderUid([0x11; 32])].executed_buy, 0);
         assert_eq!(solution.orders[&OrderUid([0x22; 32])].executed_sell, 0);
