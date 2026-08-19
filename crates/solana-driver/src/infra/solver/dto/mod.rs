@@ -4,7 +4,10 @@
 //! `dto/{auction,solution}.rs` types; they are deliberately not shared with the
 //! solver crate so the wire format can evolve on one side at a time. Serde
 //! tests in each module pin the JSON shape against the literals the solver
-//! crate tests assert, so drift breaks a test instead of an auction.
+//! crate tests assert.
+//!
+//! Eventually, we could extract a shared `dto` crate (like the EVM driver does
+//! with `solvers-dto`) to keep the API consistent without needing these tests.
 
 pub mod auction;
 pub mod solution;

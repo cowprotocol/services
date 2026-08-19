@@ -84,3 +84,54 @@ impl Auction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{domain::Side, util},
+        serde_json::json,
+    };
+
+    fn pubkey(byte: u8) -> Pubkey {
+        Pubkey::new_from_array([byte; 32])
+    }
+
+    /// Pins the outbound `/solve` request shape against the literal the
+    /// `solana-solvers` `Auction` deserializes.
+    #[test]
+    fn wire_format_is_stable() {
+        let json = json!({
+            "id": 1,
+            "taker": pubkey(3).to_string(),
+            "orders": [{
+                "uid": format!("0x{}", "08".repeat(32)),
+                "sellMint": pubkey(1).to_string(),
+                "buyMint": pubkey(2).to_string(),
+                "buyDestination": util::associated_token_address(&pubkey(3), &pubkey(2)).to_string(),
+                "amount": "1000",
+                "side": "sell",
+            }],
+            "deadline": "2026-01-01T00:00:00Z",
+        });
+
+        let expected = Auction {
+            id: 1,
+            taker: pubkey(3),
+            orders: vec![Order {
+                uid: OrderUid([8; 32]),
+                sell_mint: pubkey(1),
+                buy_mint: pubkey(2),
+                buy_destination: util::associated_token_address(&pubkey(3), &pubkey(2)),
+                amount: 1_000,
+                side: Side::Sell,
+            }],
+            deadline: chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        };
+
+        let actual = serde_json::to_value(&expected).unwrap();
+        assert_eq!(actual, json);
+    }
+}

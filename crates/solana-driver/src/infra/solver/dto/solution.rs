@@ -15,7 +15,7 @@ use {
 
 /// The solutions one engine returned for one auction. This wrapper owns the
 /// conversion into domain solutions.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Solutions {
     solutions: Vec<Solution>,
@@ -23,7 +23,7 @@ pub struct Solutions {
 
 /// A solution in the driver's `/solve` DTO.
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub id: u64,
@@ -40,7 +40,7 @@ pub struct Solution {
 
 /// A fulfillment of one auction order.
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     /// The order's 32-byte intent hash.
@@ -53,7 +53,7 @@ pub struct Trade {
 
 /// A Solana instruction the solver supplies, carried verbatim.
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Instruction {
     #[serde_as(as = "serde_with::DisplayFromStr")]
@@ -65,7 +65,7 @@ pub struct Instruction {
 
 /// Account meta in the driver DTO shape.
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountMeta {
     #[serde_as(as = "serde_with::DisplayFromStr")]
@@ -226,5 +226,54 @@ mod tests {
             .into_domain(&sample_auction_dto(), pubkey(6))
             .unwrap_err();
         assert_eq!(err, Error::UnknownOrderUid(OrderUid([0xff; 32])));
+    }
+
+    /// Pins the inbound `/solve` response shape against the literal the
+    /// `solana-solvers` `Solution` serializes.
+    #[test]
+    fn wire_format_is_stable() {
+        let json = json!({
+            "solutions": [{
+                "id": 1,
+                "trades": [{
+                    "orderUid": format!("0x{}", "08".repeat(32)),
+                    "executedAmount": "1000",
+                }],
+                "interactions": [{
+                    "programId": pubkey(9).to_string(),
+                    "accounts": [{
+                        "pubkey": pubkey(4).to_string(),
+                        "isSigner": true,
+                        "isWritable": false,
+                    }],
+                    "instructionData": "3q0=",
+                }],
+                "addressLookupTables": [pubkey(7).to_string()],
+            }]
+        });
+
+        let expected = Solutions {
+            solutions: vec![Solution {
+                id: 1,
+                trades: vec![Trade {
+                    order_uid: OrderUid([8; 32]),
+                    executed_amount: 1_000,
+                }],
+                interactions: vec![Instruction {
+                    program_id: pubkey(9),
+                    accounts: vec![AccountMeta {
+                        pubkey: pubkey(4),
+                        is_signer: true,
+                        is_writable: false,
+                    }],
+                    instruction_data: vec![0xde, 0xad],
+                }],
+                cu_estimate: None,
+                address_lookup_tables: vec![pubkey(7)],
+            }],
+        };
+
+        let actual: Solutions = serde_json::from_value(json).unwrap();
+        assert_eq!(actual, expected);
     }
 }
