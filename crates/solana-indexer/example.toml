@@ -1,6 +1,9 @@
 # Example configuration for the Solana indexer.
 
-db-url = "postgresql://"
+[database]
+# The Postgres database the indexer writes to. A value like "%DB_WRITE_URL"
+# reads the URL from that environment variable.
+write-url = "postgresql://"
 
 [chain]
 # The settlement program deployed on devnet.

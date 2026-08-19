@@ -1,7 +1,7 @@
 //! Configuration of the indexer's external endpoints.
 
 use {
-    configs::shared::LoggingConfig,
+    configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
     serde_ext::{deserialize_optional_solana_pubkey_b58, deserialize_solana_pubkey_b58},
     solana_sdk::pubkey::Pubkey,
@@ -35,9 +35,9 @@ pub async fn load(path: &Path) -> Config {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
-    /// Postgres connection URL.
-    #[serde(default = "default_db_url")]
-    pub db_url: String,
+    /// Connection configuration for the database the indexer writes to.
+    #[serde(default)]
+    pub database: DatabasePoolConfig,
     /// Chain and deployment-specific configuration.
     pub chain: Chain,
     /// Yellowstone gRPC stream configuration.
@@ -62,10 +62,6 @@ impl Config {
     }
 }
 
-fn default_db_url() -> String {
-    "postgresql://".to_owned()
-}
-
 /// Solana chain configuration.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -79,13 +75,23 @@ pub struct Chain {
 }
 
 /// Yellowstone gRPC stream configuration.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Yellowstone {
     /// gRPC endpoint, `https` endpoints get TLS.
     pub endpoint: url::Url,
     /// Provider authentication token, sent as the x-token header.
     pub x_token: Option<String>,
+}
+
+/// The manual impl keeps the authentication token out of config logs.
+impl std::fmt::Debug for Yellowstone {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Yellowstone")
+            .field("endpoint", &self.endpoint)
+            .field("x_token", &"REDACTED")
+            .finish()
+    }
 }
 
 /// JSON-RPC client configuration.
