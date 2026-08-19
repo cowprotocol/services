@@ -107,16 +107,16 @@ async fn run(config: Config) {
         Box::new(DbAuctionProvider::new(pool)),
         Box::new(DriverCompetition::new(
             drivers.clone(),
-            config.competition.solve_deadline_slots,
+            config.competition.solve_deadline_slots.get(),
         )),
         Box::new(SolanaArbitrator::new(
-            config.competition.max_winners,
+            config.competition.max_winners.get(),
             Pubkey(config.chain.wrapped_native_mint.to_bytes()),
         )),
         Box::new(DriverExecutor::new(
             drivers,
             tracker.clone(),
-            config.competition.submission_deadline_slots,
+            config.competition.submission_deadline_slots.get(),
         )),
         Box::new(LogObserver::new(tracker)),
     );
@@ -139,8 +139,8 @@ async fn run(config: Config) {
 
     tokio::select! {
         () = cycles => unreachable!("the auction loop never returns"),
-        () = ended(metrics) => tracing::error!("metrics server stopped"),
-        () = ended(listen) => tracing::error!("settlement listen session stopped"),
+        () = ended(metrics) => panic!("metrics server stopped"),
+        () = ended(listen) => panic!("settlement listen session stopped"),
         () = observe::shutdown::shutdown_signal() => tracing::info!("shutting down"),
     }
 }
