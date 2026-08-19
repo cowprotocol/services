@@ -1,7 +1,7 @@
 //! HTTP API server.
 
 use {
-    crate::infra::solver,
+    crate::domain,
     axum::{
         Router,
         extract::DefaultBodyLimit,
@@ -15,7 +15,10 @@ use {
     tower_http::{decompression::RequestDecompressionLayer, trace::TraceLayer},
 };
 
+pub mod error;
 pub mod routes;
+
+pub use self::error::Error;
 
 /// The Solana driver HTTP API server.
 pub struct Api {
@@ -23,8 +26,8 @@ pub struct Api {
     pub addr: SocketAddr,
     /// The shared Solana RPC client.
     pub rpc: SolanaRPC,
-    /// Configured solver engines.
-    pub solvers: Vec<solver::Solver>,
+    /// The competition that runs auctions across solver engines.
+    pub competition: domain::Competition,
 }
 
 impl Api {
@@ -45,14 +48,14 @@ impl Api {
         shutdown: CancellationToken,
     ) -> Result<(), std::io::Error> {
         // Propagate the OpenTelemetry trace context from incoming request headers and
-        // record the trace id on the request span, so logs can be correlated across
-        // services. `make_span` sets the parent context and an empty `trace_id` field;
-        // `record_trace_id` then fills it in.
+        // record the trace id on the request span, so the driver can correlate logs
+        // across services. `make_span` sets the parent context and an empty
+        // `trace_id` field. `record_trace_id` then fills it in.
         let tracing_layer = ServiceBuilder::new()
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
-        let state = State::new(self.rpc, self.solvers);
+        let state = State::new(self.rpc, self.competition);
 
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
@@ -73,20 +76,24 @@ impl Api {
 
 /// Shared state available to all route handlers.
 #[derive(Clone)]
-#[expect(dead_code)]
 pub struct State(Arc<Inner>);
 
 impl State {
     /// Build the shared state the handlers operate on.
-    fn new(rpc: SolanaRPC, solvers: Vec<solver::Solver>) -> Self {
-        Self(Arc::new(Inner { rpc, solvers }))
+    fn new(rpc: SolanaRPC, competition: domain::Competition) -> Self {
+        Self(Arc::new(Inner { rpc, competition }))
+    }
+
+    /// The competition that runs auctions across solver engines.
+    fn competition(&self) -> &domain::Competition {
+        &self.0.competition
     }
 }
 
-#[expect(dead_code)]
 struct Inner {
     /// The shared Solana RPC client.
+    #[expect(dead_code, reason = "used by the deadline and submission follow-ups")]
     rpc: SolanaRPC,
-    /// Configured solver engines.
-    solvers: Vec<solver::Solver>,
+    /// The competition that runs auctions across solver engines.
+    competition: domain::Competition,
 }

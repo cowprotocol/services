@@ -1,7 +1,10 @@
 //! Driver entry-point logic.
 
 use {
-    crate::infra::{Api, config, observe as infra_observe, solver},
+    crate::{
+        domain,
+        infra::{Api, config, observe as infra_observe, solver},
+    },
     clap::Parser,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     std::{path::PathBuf, time::Duration},
@@ -41,10 +44,11 @@ pub async fn run(args: Args) {
         CommitmentConfig::confirmed(),
     );
     let solvers: Vec<solver::Solver> = config.solvers.iter().map(solver::Solver::new).collect();
+    let competition = domain::Competition::new(solvers);
     let api = Api {
         addr: config.http.bind_address,
         rpc,
-        solvers,
+        competition,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());

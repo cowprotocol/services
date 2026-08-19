@@ -20,7 +20,7 @@
 
 use {
     solana_driver::{
-        domain::{Auction, Order, Side, order_uid::OrderUid},
+        domain::{Auction, Id, Order, Side, Slot, order_uid::OrderUid},
         infra::{config, solver::Solver},
         util::associated_token_address,
     },
@@ -52,14 +52,22 @@ fn deadline() -> chrono::DateTime<chrono::Utc> {
 /// solver's account, so the domain order carries no destination.
 fn sell_auction() -> Auction {
     Auction {
-        id: 1,
+        id: Id::new(1).unwrap(),
         orders: vec![Order {
             uid: OrderUid([8; 32]),
-            sell_mint: Pubkey::from_str(USDC).unwrap(),
-            buy_mint: Pubkey::from_str(USDT).unwrap(),
-            amount: 10_000_000,
+            owner: Pubkey::default(),
+            sell_token: Pubkey::from_str(USDC).unwrap(),
+            buy_token: Pubkey::from_str(USDT).unwrap(),
+            sell_token_account: Pubkey::default(),
+            buy_token_account: Pubkey::default(),
+            sell_amount: 10_000_000,
+            buy_amount: 0,
+            valid_to: 0,
             side: Side::Sell,
+            partially_fillable: false,
+            order_pda: Pubkey::default(),
         }],
+        deadline_slot: Slot(1),
         deadline: deadline(),
     }
 }

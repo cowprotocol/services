@@ -1,5 +1,24 @@
-use crate::infra::api::State;
+pub mod dto;
 
-pub async fn solve(_state: axum::extract::State<State>) -> axum::http::StatusCode {
-    axum::http::StatusCode::NOT_IMPLEMENTED
+pub use dto::AuctionError;
+use {
+    crate::infra::api::{State, error::Error as ApiError},
+    axum::{Json, http::StatusCode},
+    tracing::Instrument,
+};
+
+/// Handle `POST /solve`: parse the autopilot's auction, fan it out to the
+/// configured solver engines, and answer with the converted solutions.
+pub async fn solve(
+    state: axum::extract::State<State>,
+    Json(request): Json<dto::SolveRequest>,
+) -> Result<Json<dto::SolveResponse>, (StatusCode, Json<ApiError>)> {
+    let auction = request.into_domain()?;
+    let auction_id = auction.id;
+    let solutions = state
+        .competition()
+        .solve(&auction)
+        .instrument(tracing::info_span!("/solve", auction_id = %auction_id))
+        .await?;
+    Ok(Json(dto::SolveResponse::new(solutions, &auction)))
 }
