@@ -13,7 +13,7 @@ use {
         yellowstone,
     },
     clap::Parser,
-    sqlx::PgPool,
+    sqlx::postgres::PgPoolOptions,
     std::{
         path::PathBuf,
         sync::{Arc, atomic::AtomicU64},
@@ -54,7 +54,10 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 async fn run(config: Config, start_slot: Option<u64>) {
-    let pool = PgPool::connect(&config.db_url)
+    // The indexer writes, so the pool always points at the write URL.
+    let pool = PgPoolOptions::new()
+        .max_connections(config.database.max_connections.get())
+        .connect(config.database.write_url.as_str())
         .await
         .expect("database connection");
     let persistence = Postgres::new(pool);
