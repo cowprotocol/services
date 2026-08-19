@@ -3961,6 +3961,8 @@ version = "0.1.0"
 dependencies = [
  "solana-commitment-config",
  "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
  "url",
 ]
 
@@ -9728,6 +9730,7 @@ dependencies = [
  "serde-ext",
  "serde_json",
  "serde_with",
+ "settlement-interface",
  "solana-sdk",
  "solana-solvers",
  "thiserror 1.0.69",
