@@ -8,6 +8,7 @@ use {
             competition::DriverCompetition,
             driver::{Driver, dto},
             executor::DriverExecutor,
+            observation::SettlementTracker,
             observer::LogObserver,
             provider::DbAuctionProvider,
         },
@@ -86,8 +87,8 @@ async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
 
 async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
     sqlx::query(
-        "TRUNCATE solana.trades, solana.settlements, solana.order_pda, solana.orders, \
-         solana.indexer_state",
+        "TRUNCATE solana.trades, solana.settlements, solana.settlement_executions, \
+         solana.order_pda, solana.orders, solana.indexer_state",
     )
     .execute(pool)
     .await
@@ -163,13 +164,14 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }
 
+    let tracker = SettlementTracker::new(pool.clone());
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
-        Box::new(DbAuctionProvider::new(pool)),
+        Box::new(DbAuctionProvider::new(pool.clone())),
         Box::new(DriverCompetition::new(vec![Arc::clone(&driver)])),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
-        Box::new(DriverExecutor::new(vec![driver])),
-        Box::new(LogObserver),
+        Box::new(DriverExecutor::new(vec![driver], tracker.clone())),
+        Box::new(LogObserver::new(tracker.clone())),
     );
     auction_loop.run_cycle().await;
 
@@ -179,4 +181,12 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         .expect("settle channel open");
     assert_eq!(settle.solution_id, 7);
     assert!(settle.auction_id > 0);
+    // The dispatch opened a settlement-execution window.
+    let open_windows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM solana.settlement_executions WHERE outcome IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(open_windows, 1);
 }
