@@ -106,6 +106,7 @@ fn build_module() -> Module {
         .add_contract(Contract::new("ERC20"))
         .add_contract(Contract::new("ERC20Mintable"))
         .add_contract(Contract::new("IERC4626"))
+        .add_contract(Contract::new("Multicall3"))
         // GnosisSafe
         .add_contract(Contract::new("GnosisSafe"))
         .add_contract(Contract::new("GnosisSafeCompatibilityFallbackHandler"))

@@ -1,7 +1,11 @@
 use {
     alloy::{
-        primitives::{Address, B256, U256, keccak256},
-        providers::Provider,
+        primitives::{Address, B256, U256, address, keccak256},
+        providers::{
+            MULTICALL3_ADDRESS,
+            Provider,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
         sol_types::SolCall,
     },
     contracts::{
@@ -13,13 +17,15 @@ use {
         GPv2Settlement,
         HoneyswapRouter,
         HooksTrampoline,
+        Multicall3,
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
         support::{Balances, Signatures},
     },
-    ethrpc::alloy::CallBuilderExt,
+    ethrpc::alloy::{CallBuilderExt, ProviderSignerExt},
     model::DomainSeparator,
+    number::units::EthUnit,
     shared::web3::Web3,
 };
 
@@ -127,6 +133,8 @@ impl Contracts {
             .expect("get network ID failed")
             .to_string();
         tracing::info!("connected to test network {}", network_id);
+
+        deploy_multicall3(web3).await;
 
         let accounts = web3
             .provider
@@ -261,6 +269,57 @@ impl Contracts {
             _ => B256::new(liquidity_sources::uniswap_v2::UNISWAP_INIT),
         }
     }
+}
+
+/// Puts `Multicall3` where every network keeps it, which only a fresh local
+/// node needs: forked networks inherit the real deployment. Liquidity sources
+/// batch their pool reads through it, so without it they cannot read anything.
+///
+/// The canonical address is the one the original deployer got from its very
+/// first transaction, so replaying that transaction is the only way to land
+/// there. It works because a fresh node still has that account at nonce 0.
+async fn deploy_multicall3(web3: &Web3) {
+    const DEPLOYER: Address = address!("0x05f32B3cC3888453ff71B01135B34FF8e41263F2");
+
+    if !web3
+        .provider
+        .get_code_at(MULTICALL3_ADDRESS)
+        .await
+        .expect("could not fetch Multicall3 code")
+        .is_empty()
+    {
+        return;
+    }
+
+    // A wallet-less provider makes alloy hand the transaction to the node for
+    // signing instead of looking for a key we do not have.
+    let deployment = Multicall3::Instance::deploy_builder(web3.provider.without_wallet())
+        .from(DEPLOYER)
+        .into_transaction_request();
+
+    web3.provider
+        .anvil_send_impersonated_transaction_with_config(
+            deployment,
+            ImpersonateConfig {
+                fund_amount: Some(1u64.eth()),
+                stop_impersonate: true,
+            },
+        )
+        .await
+        .expect("failed to deploy Multicall3")
+        .watch()
+        .await
+        .expect("Multicall3 deployment was not mined");
+
+    assert!(
+        !web3
+            .provider
+            .get_code_at(MULTICALL3_ADDRESS)
+            .await
+            .expect("could not fetch Multicall3 code")
+            .is_empty(),
+        "Multicall3 did not end up at {MULTICALL3_ADDRESS}"
+    );
 }
 
 /// Resolve a router with the canonical UniswapV2 ABI for the current chain.
