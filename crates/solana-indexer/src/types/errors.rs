@@ -36,6 +36,9 @@ pub(crate) enum PersistenceError {
     /// The database rejected or failed a statement.
     #[error("database: {0}")]
     Database(#[from] sqlx::Error),
+    /// The account lookup enriching a batch failed.
+    #[error("rpc: {0}")]
+    Rpc(#[from] solana_client::client_error::ClientError),
 }
 
 /// Failures surfaced from the stream boundary.

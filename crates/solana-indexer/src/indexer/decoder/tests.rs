@@ -10,6 +10,7 @@ use {
     crate::{
         indexer::ingester::Ingester,
         persistence::Postgres,
+        rpc::Rpc,
         types::{
             Signature,
             events::{
@@ -371,6 +372,7 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     .into();
     let tx = tx_from_instructions(pubkey(9), &[instruction]);
     let expected = CreatedOrder {
+        signature: signature(6),
         order_uid: OrderUid(intent.uid().to_bytes()),
         owner: Pubkey::new_from_array([0x11; 32]),
         created_by,
@@ -387,12 +389,71 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     (tx, expected)
 }
 
+#[test]
+fn token_account_mint_trusts_only_token_program_accounts() {
+    let account = |owner: Pubkey, data: Vec<u8>| solana_sdk::account::Account {
+        lamports: 1,
+        data,
+        owner,
+        executable: false,
+        rent_epoch: 0,
+    };
+    let token_program = super::TOKEN_PROGRAMS[0];
+    assert_eq!(
+        super::token_account_mint(&account(token_program, vec![0xAA; 165])),
+        Some(Pubkey::new_from_array([0xAA; 32]))
+    );
+    // A mint account: right owner, too short to be a token account.
+    assert_eq!(
+        super::token_account_mint(&account(token_program, vec![0xAA; 82])),
+        None
+    );
+    // Right size, arbitrary owner.
+    assert_eq!(
+        super::token_account_mint(&account(pubkey(1), vec![0xAA; 165])),
+        None
+    );
+}
+
+/// A canned `getMultipleAccounts` response, in request order: the sell token
+/// account holds mint `[0xA1; 32]`, the buy token account mint `[0xA2; 32]`
+/// (the first 32 bytes of the base64 data).
+fn mock_rpc_with_token_accounts() -> Rpc {
+    let account = |data: &str| {
+        serde_json::json!({
+            "lamports": 1u64,
+            "data": [data, "base64"],
+            "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "executable": false,
+            "rentEpoch": 0u64,
+            "space": 165u64
+        })
+    };
+    let sell = account("oaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    let buy = account("oqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    let response = serde_json::json!({
+        "context": { "slot": 1u64, "apiVersion": "2.0.0" },
+        "value": [sell, buy],
+    });
+    let mocks = solana_client::rpc_client::Mocks::from([(
+        solana_client::rpc_request::RpcRequest::GetMultipleAccounts,
+        response,
+    )]);
+    Rpc::new_mock(mocks)
+}
+
 /// A decoder over a lazy pool that never connects: `decode` is pure, tests
 /// of it stay database-free.
 fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
     let pool = sqlx::PgPool::connect_lazy("postgresql://").unwrap();
     let (_sender, rx) = tokio::sync::mpsc::channel(1);
-    Decoder::new(Postgres::new(pool), rx, settlement, solflow)
+    Decoder::new(
+        Postgres::new(pool),
+        Rpc::new_mock(Default::default()),
+        rx,
+        settlement,
+        solflow,
+    )
 }
 
 /// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run`
@@ -659,7 +720,13 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
 
     let (sender, receiver) = tokio::sync::mpsc::channel(16);
     let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
-    let mut decoder = Decoder::new(Postgres::new(pool.clone()), receiver, settlement, solflow);
+    let mut decoder = Decoder::new(
+        Postgres::new(pool.clone()),
+        mock_rpc_with_token_accounts(),
+        receiver,
+        settlement,
+        solflow,
+    );
     let ingester_task = tokio::spawn(async move { ingester.run().await });
     let decoder_task = tokio::spawn(async move { decoder.run().await });
 
@@ -708,4 +775,12 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
             expected.created_by.to_bytes().to_vec()
         )]
     );
+    let (sell_token, buy_token): (Vec<u8>, Vec<u8>) =
+        sqlx::query_as("SELECT sell_token, buy_token FROM solana.orders WHERE uid = $1")
+            .bind(expected.order_uid.0)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(sell_token, vec![0xA1; 32]);
+    assert_eq!(buy_token, vec![0xA2; 32]);
 }

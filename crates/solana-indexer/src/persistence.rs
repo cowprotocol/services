@@ -4,11 +4,20 @@ use {
     crate::types::{
         Signature,
         errors::PersistenceError,
-        events::{CreatedOrder, DecodedEvent, FinalizedSettlement, SettlementEvent, TradeDelta},
+        events::{
+            CreatedOrder,
+            DecodedEvent,
+            FinalizedSettlement,
+            OrderKind,
+            SettlementEvent,
+            TradeDelta,
+        },
         slot::Slot,
     },
     bigdecimal::BigDecimal,
+    solana_sdk::pubkey::Pubkey,
     sqlx::{PgPool, PgTransaction},
+    std::collections::HashMap,
 };
 
 /// Slots stay far below `i64::MAX`, the conversion to the database's
@@ -55,10 +64,12 @@ impl Postgres {
     async fn apply(
         tx: &mut PgTransaction<'_>,
         event: DecodedEvent,
+        mints: &HashMap<Pubkey, Pubkey>,
+        slot: Slot,
     ) -> Result<(), PersistenceError> {
         match event {
             DecodedEvent::Settlement(SettlementEvent::OrderCreated(order)) => {
-                Self::apply_order_created(tx, &order).await
+                Self::apply_order_created(tx, &order, mints, slot).await
             }
             DecodedEvent::Settlement(SettlementEvent::SettlementFinalized(settlement)) => {
                 Self::apply_settlement_finalized(tx, settlement).await
@@ -77,11 +88,9 @@ impl Postgres {
     async fn apply_order_created(
         tx: &mut PgTransaction<'_>,
         order: &CreatedOrder,
+        mints: &HashMap<Pubkey, Pubkey>,
+        slot: Slot,
     ) -> Result<(), PersistenceError> {
-        // TODO: also insert the `solana.orders` row, so orders created
-        // directly on chain become solvable. Needs the token mints,
-        // which only an account lookup can provide, the intent carries
-        // token accounts.
         sqlx::query(
             r#"
 INSERT INTO solana.order_pda (order_uid, created_by)
@@ -91,6 +100,59 @@ ON CONFLICT (order_uid) DO NOTHING
         )
         .bind(order.order_uid.0)
         .bind(order.created_by.to_bytes())
+        .execute(&mut **tx)
+        .await?;
+        // Without both mints the intent row cannot be written. The
+        // transaction is dead-lettered so the replay machinery re-delivers
+        // it, until then the order stays out of the solvable set.
+        let (Some(sell_token), Some(buy_token)) = (
+            mints.get(&order.sell_token_account),
+            mints.get(&order.buy_token_account),
+        ) else {
+            tracing::warn!(
+                order_uid = %order.order_uid,
+                "unresolved token account mints, order dead-lettered"
+            );
+            sqlx::query(
+                r#"
+INSERT INTO solana.dead_letter (slot, tx_signature, reason)
+VALUES ($1, $2, 'unresolved_mints')
+ON CONFLICT (tx_signature) DO NOTHING
+                "#,
+            )
+            .bind(to_db_slot(slot))
+            .bind(order.signature.as_ref())
+            .execute(&mut **tx)
+            .await?;
+            return Ok(());
+        };
+        // creation_timestamp is the indexing time, the stream carries no
+        // block time.
+        sqlx::query(
+            r#"
+INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
+    buy_token_account, sell_amount, buy_amount, valid_to, kind,
+    partially_fillable, app_data, creation_timestamp, order_pda)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::OrderKind, $11, $12, now(), $13)
+ON CONFLICT (uid) DO NOTHING
+            "#,
+        )
+        .bind(order.order_uid.0)
+        .bind(order.owner.to_bytes())
+        .bind(sell_token.to_bytes())
+        .bind(buy_token.to_bytes())
+        .bind(order.sell_token_account.to_bytes())
+        .bind(order.buy_token_account.to_bytes())
+        .bind(BigDecimal::from(order.sell_amount))
+        .bind(BigDecimal::from(order.buy_amount))
+        .bind(i64::from(order.valid_to))
+        .bind(match order.kind {
+            OrderKind::Sell => "sell",
+            OrderKind::Buy => "buy",
+        })
+        .bind(order.partially_fillable)
+        .bind(order.app_data.to_vec())
+        .bind(order.order_pda.to_bytes())
         .execute(&mut **tx)
         .await?;
         Ok(())
@@ -203,15 +265,17 @@ WHERE indexer_state.slot < EXCLUDED.slot
     }
 
     /// Save one slot's decoded events and advance the last indexed slot in
-    /// one transaction.
+    /// one transaction. `mints` maps the batch's token accounts to their
+    /// mints.
     pub(crate) async fn persist_events(
         &self,
         events: Vec<DecodedEvent>,
+        mints: &HashMap<Pubkey, Pubkey>,
         last_indexed_slot: Slot,
     ) -> Result<(), PersistenceError> {
         let mut tx = self.pool.begin().await?;
         for event in events {
-            Self::apply(&mut tx, event).await?;
+            Self::apply(&mut tx, event, mints, last_indexed_slot).await?;
         }
         Self::upsert_last_indexed_slot(&mut *tx, last_indexed_slot).await?;
         Ok(tx.commit().await?)
@@ -260,6 +324,7 @@ mod tests {
         bigdecimal::BigDecimal,
         solana_sdk::pubkey::Pubkey,
         sqlx::{PgPool, Row},
+        std::collections::HashMap,
     };
 
     /// The `solana.orders` columns a seeded test order writes.
@@ -290,9 +355,9 @@ mod tests {
             sqlx::query(
                 r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
-    buy_token_account, sell_amount, buy_amount, fee_amount, valid_to, kind,
+    buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), $7)
+VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6::OrderKind, false, $2, now(), $7)
                 "#,
             )
             .bind(self.uid)
@@ -306,6 +371,62 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
             .await
             .unwrap();
         }
+    }
+
+    fn created_order(uid: [u8; 32]) -> crate::types::events::CreatedOrder {
+        crate::types::events::CreatedOrder {
+            signature: Signature::from([6; 64]),
+            order_uid: OrderUid(uid),
+            owner: Pubkey::new_from_array([0xAA; 32]),
+            created_by: Pubkey::new_from_array([0xBB; 32]),
+            order_pda: Pubkey::new_from_array([0xDD; 32]),
+            sell_token_account: Pubkey::new_from_array([4; 32]),
+            buy_token_account: Pubkey::new_from_array([5; 32]),
+            sell_amount: 1_000,
+            buy_amount: 2_000,
+            valid_to: 42,
+            kind: crate::types::events::OrderKind::Sell,
+            partially_fillable: false,
+            app_data: [0; 32],
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_unresolved_mints_skip_the_orders_row() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+
+        let uid = [0x77; 32];
+        let events = vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+            Box::new(created_order(uid)),
+        ))];
+        postgres
+            .persist_events(events, &HashMap::new(), Slot(30))
+            .await
+            .unwrap();
+
+        let pda: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM solana.order_pda WHERE order_uid = $1")
+                .bind(uid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(pda, 1);
+        let orders: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.orders WHERE uid = $1")
+            .bind(uid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(orders, 0);
+        let reason: String =
+            sqlx::query_scalar("SELECT reason FROM solana.dead_letter WHERE tx_signature = $1")
+                .bind(Signature::from([6; 64]).as_ref())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(reason, "unresolved_mints");
     }
 
     #[tokio::test]
@@ -357,23 +478,14 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
 
         let uid = [1_u8; 32];
         SeedOrder::new(uid).insert(&pool).await;
+        // A second order with an unseeded uid: its orders row comes from the
+        // event itself, the seeded uid keeps the seed row via ON CONFLICT.
+        let fresh_uid = [2_u8; 32];
         let events = vec![
-            DecodedEvent::Settlement(SettlementEvent::OrderCreated(Box::new(
-                crate::types::events::CreatedOrder {
-                    order_uid: OrderUid(uid),
-                    owner: Pubkey::new_from_array([0xAA; 32]),
-                    created_by: Pubkey::new_from_array([0xBB; 32]),
-                    order_pda: Pubkey::new_from_array([0xDD; 32]),
-                    sell_token_account: Pubkey::new_from_array([4; 32]),
-                    buy_token_account: Pubkey::new_from_array([5; 32]),
-                    sell_amount: 1_000,
-                    buy_amount: 2_000,
-                    valid_to: 42,
-                    kind: crate::types::events::OrderKind::Sell,
-                    partially_fillable: false,
-                    app_data: [0; 32],
-                },
-            ))),
+            DecodedEvent::Settlement(SettlementEvent::OrderCreated(Box::new(created_order(uid)))),
+            DecodedEvent::Settlement(SettlementEvent::OrderCreated(Box::new(created_order(
+                fresh_uid,
+            )))),
             DecodedEvent::Settlement(SettlementEvent::SettlementFinalized(FinalizedSettlement {
                 auction_id: 77,
                 solver: Pubkey::new_from_array([0xCC; 32]),
@@ -398,12 +510,36 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, 0, $5, $6::OrderKind, false, $2, now(), 
             })),
         ];
 
+        let mints = HashMap::from([
+            (
+                Pubkey::new_from_array([4; 32]),
+                Pubkey::new_from_array([0xA1; 32]),
+            ),
+            (
+                Pubkey::new_from_array([5; 32]),
+                Pubkey::new_from_array([0xA2; 32]),
+            ),
+        ]);
+
         // Twice: the second run must change nothing, replay is idempotent.
         postgres
-            .persist_events(events.clone(), Slot(20))
+            .persist_events(events.clone(), &mints, Slot(20))
             .await
             .unwrap();
-        postgres.persist_events(events, Slot(20)).await.unwrap();
+        postgres
+            .persist_events(events, &mints, Slot(20))
+            .await
+            .unwrap();
+
+        let created = sqlx::query(
+            "SELECT sell_token, buy_token, sell_amount FROM solana.orders WHERE uid = $1",
+        )
+        .bind(fresh_uid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(created.get::<Vec<u8>, _>("sell_token"), vec![0xA1; 32]);
+        assert_eq!(created.get::<Vec<u8>, _>("buy_token"), vec![0xA2; 32]);
 
         let pda = sqlx::query(
             "SELECT created_by, amount_withdrawn, amount_received FROM solana.order_pda WHERE \
