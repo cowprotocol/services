@@ -1,13 +1,17 @@
 //! HTTP API server.
 
 use {
-    axum::{Router, routing::get},
+    axum::{Router, http, routing::get},
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     sqlx::PgPool,
     std::{net::SocketAddr, sync::Arc},
     tokio_util::sync::CancellationToken,
     tower::ServiceBuilder,
-    tower_http::{decompression::RequestDecompressionLayer, trace::TraceLayer},
+    tower_http::{
+        cors::{Any, CorsLayer},
+        decompression::RequestDecompressionLayer,
+        trace::TraceLayer,
+    },
 };
 
 pub mod routes;
@@ -47,8 +51,16 @@ impl Api {
 
         let state = State::new(self.pool);
 
+        // Browsers call this API directly, so it answers cross-origin
+        // requests like the EVM orderbook does.
+        let cors = CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([http::Method::GET, http::Method::OPTIONS, http::Method::HEAD])
+            .allow_headers([http::header::ORIGIN, http::header::CONTENT_TYPE]);
+
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
+            .layer(cors)
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
             .with_state(state);

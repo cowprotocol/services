@@ -3,9 +3,22 @@
 use {
     crate::infra::{Api, config, observe as infra_observe},
     clap::Parser,
+    observe::metrics::{DEFAULT_METRICS_PORT, LivenessChecking, serve_metrics},
     sqlx::PgPool,
-    std::{path::PathBuf, time::Duration},
+    std::{path::PathBuf, sync::Arc, time::Duration},
 };
+
+/// Fails the liveness probe when the database is unreachable.
+struct Liveness {
+    pool: PgPool,
+}
+
+#[async_trait::async_trait]
+impl LivenessChecking for Liveness {
+    async fn is_alive(&self) -> bool {
+        sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
+    }
+}
 
 /// The Solana orderbook command line arguments.
 #[derive(Debug, Parser)]
@@ -39,6 +52,16 @@ pub async fn run(args: Args) {
         .await
         .expect("database connection");
 
+    let mut metrics_address = config.http.bind_address;
+    metrics_address.set_port(DEFAULT_METRICS_PORT);
+    tracing::info!(%metrics_address, "serving metrics");
+    let metrics = serve_metrics(
+        Arc::new(Liveness { pool: pool.clone() }),
+        metrics_address,
+        Default::default(),
+        Default::default(),
+    );
+
     let shutdown_token = tokio_util::sync::CancellationToken::new();
     let api = Api {
         addr: config.http.bind_address,
@@ -50,6 +73,7 @@ pub async fn run(args: Args) {
     futures::pin_mut!(serve);
     tokio::select! {
         result = &mut serve => panic!("serve task exited: {result:?}"),
+        result = metrics => panic!("metrics server exited: {result:?}"),
         _ = observe::shutdown::shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_token.cancel();
