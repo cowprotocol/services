@@ -1,0 +1,12 @@
+# Example configuration for the Solana orderbook.
+
+# The Postgres database the indexer writes to.
+db-url = "postgresql://"
+
+[http]
+bind-address = "0.0.0.0:8080"
+
+[logging]
+filter = "info,solana_orderbook=debug"
+# stderr-threshold = "warn"
+# use-json = false
