@@ -14,6 +14,7 @@
 use {
     crate::{
         persistence::Postgres,
+        rpc::Rpc,
         types::{
             Signature,
             channel::StreamUpdate,
@@ -45,8 +46,8 @@ use {
         },
         recover_discriminator,
     },
-    solana_sdk::pubkey::Pubkey,
-    std::collections::BTreeMap,
+    solana_sdk::{account::Account, pubkey::Pubkey},
+    std::collections::{BTreeMap, HashMap},
     tokio::sync::mpsc::Receiver,
 };
 
@@ -54,6 +55,9 @@ use {
 pub(crate) struct Decoder {
     /// Persistence layer.
     pub persistence: Postgres,
+
+    /// Account lookups for data the stream does not carry.
+    pub rpc: Rpc,
 
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
@@ -69,12 +73,14 @@ impl Decoder {
     /// Construct a new decoder. The caller owns the channel capacity decision.
     pub fn new(
         persistence: Postgres,
+        rpc: Rpc,
         rx: Receiver<StreamUpdate>,
         settlement_program: Pubkey,
         solflow_program: Pubkey,
     ) -> Self {
         Self {
             persistence,
+            rpc,
             rx,
             settlement_program,
             solflow_program,
@@ -194,11 +200,41 @@ impl Decoder {
                     .await?;
             }
         } else {
+            let mints = self.resolve_mints(&buffer.events).await?;
             self.persistence
-                .persist_events(buffer.events, last_indexed)
+                .persist_events(buffer.events, &mints, last_indexed)
                 .await?;
         }
         Ok(())
+    }
+
+    /// Resolve the token accounts named by the batch's created orders to
+    /// their mints. The intent carries token accounts, the orders table
+    /// stores mints.
+    async fn resolve_mints(
+        &self,
+        events: &[DecodedEvent],
+    ) -> Result<HashMap<Pubkey, Pubkey>, PersistenceError> {
+        let accounts: Vec<Pubkey> = events
+            .iter()
+            .filter_map(|event| match event {
+                DecodedEvent::Settlement(SettlementEvent::OrderCreated(order)) => {
+                    Some([order.sell_token_account, order.buy_token_account])
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        if accounts.is_empty() {
+            return Ok(HashMap::new());
+        }
+        Ok(self
+            .rpc
+            .multiple_accounts(accounts)
+            .await?
+            .iter()
+            .filter_map(|(key, account)| Some((*key, token_account_mint(account)?)))
+            .collect())
     }
 
     /// Decode one transaction's tracked instructions into domain events.
@@ -345,7 +381,7 @@ fn decode_settlement(
         // failure flag so the transaction is dead-lettered.
         let decoded = match discriminator {
             SettlementInstruction::CreateOrder => {
-                decode_order_created(instruction, &ctx.account_keys).map(|event| vec![event])
+                decode_order_created(instruction, ctx).map(|event| vec![event])
             }
             SettlementInstruction::CreateBuffer => {
                 decode_buffers_created(instruction, &ctx.account_keys)
@@ -393,14 +429,15 @@ fn decode_settlement(
 /// is the only writer of the `solana.orders` row.
 fn decode_order_created(
     instruction: &ResolvedInstruction,
-    account_keys: &[Pubkey],
+    ctx: &TxContext,
 ) -> Result<SettlementEvent, DecodeError> {
-    let mut accounts = instruction_account_keys(instruction, account_keys)?;
+    let mut accounts = instruction_account_keys(instruction, &ctx.account_keys)?;
     let input = CreateOrderInput::parse(&instruction.data, &mut accounts)
         .map_err(|_| DecodeError::SchemaMismatch)?;
     let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
         .map_err(|_| DecodeError::SchemaMismatch)?;
     Ok(SettlementEvent::OrderCreated(Box::new(CreatedOrder {
+        signature: ctx.signature,
         order_uid: OrderUid(uid.to_bytes()),
         owner: to_sdk_pubkey(intent.owner),
         created_by: *input.created_by,
@@ -585,6 +622,26 @@ fn decode_settlements_finalized(
         }));
     }
     events
+}
+
+/// The classic and 2022 SPL token programs, the only owners whose account
+/// layout `token_account_mint` trusts.
+const TOKEN_PROGRAMS: [Pubkey; 2] = [spl_token_interface::ID, spl_token_2022_interface::ID];
+
+/// Size of a classic SPL token account, the lower bound for Token-2022,
+/// whose extensions append past it.
+const TOKEN_ACCOUNT_MIN_LEN: usize = 165;
+
+/// The mint an SPL token account holds, the first 32 bytes of its data.
+/// `None` for accounts that are not token accounts, so a garbage account
+/// named by an intent cannot smuggle a fake mint into the orders table.
+fn token_account_mint(account: &Account) -> Option<Pubkey> {
+    if !TOKEN_PROGRAMS.contains(&account.owner) || account.data.len() < TOKEN_ACCOUNT_MIN_LEN {
+        return None;
+    }
+    Some(Pubkey::new_from_array(
+        account.data.get(..32)?.try_into().ok()?,
+    ))
 }
 
 /// Resolve an instruction's account-list indices to their pubkeys, in order, so

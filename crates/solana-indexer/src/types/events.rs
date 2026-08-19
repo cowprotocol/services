@@ -42,6 +42,9 @@ pub(crate) enum OrderKind {
 /// carries everything that row needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CreatedOrder {
+    /// Transaction the order was created in, the replay key when indexing
+    /// it fails partway.
+    pub signature: Signature,
     /// Order UID this order is identified by.
     pub order_uid: OrderUid,
     /// Owner of the order.

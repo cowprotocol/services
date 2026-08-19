@@ -112,7 +112,7 @@ reqwest = { version = "0.13.4", features = ["hickory-dns"] }
 rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 rust_decimal = { version = "1.35.0", default-features = false }
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
+rustls = { version = "0.23.41", default-features = false }
 s3 = { path = "crates/s3" }
 schemars = { version = "1.2", features = ["chrono04"] }
 scopeguard = "1.2.0"
@@ -135,6 +135,8 @@ solana-sdk = "4"
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
+spl-token-2022-interface = "2"
+spl-token-interface = "2"
 sqlx = {
   version = "0.8",
   default-features = false,

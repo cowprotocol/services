@@ -101,6 +101,12 @@ if you haven't installed `anvil` yet, refer to `foundry`'s [installation guide](
 All `forked_node` tests will require a `FORK_MAINNET_URL`, you can refer to [Chainlist](https://chainlist.org/chain/1) to find some publicly available RPCs (terms and conditions may apply).
 A subset of the `forked_node` tests will require a `FORK_GNOSIS_URL`, refer to the list of [Gnosis RPC Providers](https://docs.gnosischain.com/tools/RPC%20Providers/) for publicly available nodes.
 
+### PropAMM Tests
+
+In order to run `pamm_` prefixed tests you have to set:
+1. `NODE_WS_URL` pointing to live mainnet RPC node websocket.
+2. `PAMM_QUOTE_STREAM_URL` pointing to the builder's quote stream (i.e. `wss://eu.rpc.titanbuilder.xyz/ws/pamm_quote_stream`).s
+
 ## Profiling
 
 All binaries are compiled with support for [tokio-console](https://github.com/tokio-rs/console) by default to allow you to look inside the tokio runtime.
@@ -133,7 +139,7 @@ Connect to the socket and send the "dump" command:
 # From Kubernetes
 kubectl exec <pod> -n <namespace> -- sh -c "echo dump | nc -U /tmp/heap_dump_orderbook.sock" > heap.pprof
 
-# From Docker
+# From Dockers
 docker exec <container> sh -c "echo dump | nc -U /tmp/heap_dump_orderbook.sock" > heap.pprof
 ```
 

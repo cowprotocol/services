@@ -14,7 +14,6 @@ CREATE TABLE solana.orders (
     buy_token_account     bytea NOT NULL CHECK (length(buy_token_account) = 32),
     sell_amount           numeric(20,0) NOT NULL,
     buy_amount            numeric(20,0) NOT NULL,
-    fee_amount            numeric(20,0) NOT NULL,
     -- Unix seconds, u32 on chain.
     valid_to              bigint NOT NULL,
     -- Earliest unix second the order may enter an auction. NULL means no

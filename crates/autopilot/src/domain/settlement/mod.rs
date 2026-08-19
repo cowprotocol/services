@@ -88,6 +88,12 @@ impl Settlement {
         self.solution_uid
     }
 
+    /// The owners whose JIT orders the associated auction treats like user
+    /// orders.
+    pub fn surplus_capturing_jit_order_owners(&self) -> &HashSet<eth::Address> {
+        &self.auction.surplus_capturing_jit_order_owners
+    }
+
     /// Summarizes settlement data required by the autopilot, see
     /// [`SettlementMetrics`] for details.
     pub(crate) fn summarize(&self) -> SettlementMetrics<'_> {

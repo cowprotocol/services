@@ -216,9 +216,9 @@ mod tests {
         sqlx::query(
             r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
-    buy_token_account, sell_amount, buy_amount, fee_amount, valid_to, kind,
+    buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, intent_signature, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 0, $3, $6::OrderKind, false, $2, $4, now(), $5)
+VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, $3, $6::OrderKind, false, $2, $4, now(), $5)
             "#,
         )
         .bind(ByteArray([n; 32]))

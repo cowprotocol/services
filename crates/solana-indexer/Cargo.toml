@@ -32,6 +32,8 @@ solana-client = { workspace = true }
 solana-commitment-config = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-sdk = { workspace = true }
+spl-token-2022-interface = { workspace = true }
+spl-token-interface = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
@@ -41,6 +43,7 @@ yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 settlement-client = {
   package = "settlement-client",
   git = "https://github.com/cowprotocol/solana-programs",

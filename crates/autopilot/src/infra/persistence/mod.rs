@@ -787,6 +787,22 @@ impl Persistence {
             )
             .await?;
 
+            database::trades::attribute_gas_cost(
+                &mut ex,
+                EventIndex {
+                    block_number,
+                    log_index,
+                },
+                u256_to_big_decimal(&gas.0),
+                u256_to_big_decimal(&gas_price.0.0),
+                &settlement
+                    .surplus_capturing_jit_order_owners()
+                    .iter()
+                    .map(|owner| ByteArray(owner.0.0))
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
+
             store_order_events(
                 &mut ex,
                 fee_breakdown.keys().cloned(),
