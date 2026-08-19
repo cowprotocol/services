@@ -7,7 +7,6 @@
 use {
     crate::{
         persistence::Postgres,
-        rpc::Rpc,
         types::{
             Signature,
             channel::StreamUpdate,
@@ -27,6 +26,7 @@ use {
         },
     },
     bytes::Bytes,
+    cow_solana_rpc::SolanaRPC,
     settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
@@ -50,7 +50,7 @@ pub(crate) struct Decoder {
     pub persistence: Postgres,
 
     /// Account lookups for data the stream does not carry.
-    pub rpc: Rpc,
+    pub rpc: SolanaRPC,
 
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
@@ -67,7 +67,7 @@ impl Decoder {
     /// Construct a new decoder. The caller owns the channel capacity decision.
     pub fn new(
         persistence: Postgres,
-        rpc: Rpc,
+        rpc: SolanaRPC,
         rx: Receiver<StreamUpdate>,
         settlement_program: Pubkey,
         solflow_program: Option<Pubkey>,
