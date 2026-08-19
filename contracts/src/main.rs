@@ -511,6 +511,7 @@ fn build_module() -> Module {
         .add_submodule(
             Submodule::new("support")
                 .add_contract(Contract::new("AnyoneAuthenticator"))
+                .add_contract(Contract::new("Multicall3"))
                 .add_contract(Contract::new("Solver"))
                 .add_contract(Contract::new("Spardose"))
                 .add_contract(Contract::new("Swapper"))

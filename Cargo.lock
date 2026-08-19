@@ -3072,6 +3072,7 @@ dependencies = [
  "cow-contract-izeroex",
  "cow-contract-liquoricesettlement",
  "cow-contract-mockerc4626wrapper",
+ "cow-contract-multicall3",
  "cow-contract-nonstandarderc20balances",
  "cow-contract-pancakerouter",
  "cow-contract-permit2",
@@ -3748,6 +3749,17 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-mockerc4626wrapper"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-multicall3"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",
