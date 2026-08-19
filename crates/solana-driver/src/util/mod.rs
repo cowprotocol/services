@@ -13,6 +13,14 @@ const SPL_TOKEN_PROGRAM_ID: Pubkey =
 
 /// Derive the associated token account (ATA) address for `owner` and `mint`
 /// under the SPL Token program.
+///
+/// TODO(token-2022): this derivation hard-codes the SPL Token program ID as the
+/// mint's token program in the PDA seed. Token-2022 mints live under a
+/// different program, whose ATA addresses derive with a different seed set, so
+/// this returns the wrong address for them.
+///
+/// To support token-2022 we'd need to look up the mint's token program (e.g.
+/// via `get_account_info` on the mint) and use that program ID in the seeds.
 pub fn associated_token_address(owner: &Pubkey, mint: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(
         &[owner.as_ref(), SPL_TOKEN_PROGRAM_ID.as_ref(), mint.as_ref()],
