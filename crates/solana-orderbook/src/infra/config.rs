@@ -1,7 +1,7 @@
 //! Configuration of infrastructural components.
 
 use {
-    configs::shared::LoggingConfig,
+    configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
     std::{net::SocketAddr, path::Path},
     tokio::fs,
@@ -33,9 +33,10 @@ pub async fn load(path: &Path) -> Config {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
-    /// Postgres connection URL of the database the indexer writes to.
-    #[serde(default = "default_db_url")]
-    pub db_url: url::Url,
+    /// Connection configuration for the database the indexer writes to. The
+    /// orderbook only reads, so the read URL wins when configured.
+    #[serde(default)]
+    pub database: DatabasePoolConfig,
     /// HTTP API server configuration.
     pub http: Http,
     /// Logging configuration.
@@ -56,10 +57,6 @@ impl Config {
     }
 }
 
-fn default_db_url() -> url::Url {
-    "postgresql://".parse().expect("valid default database URL")
-}
-
 /// HTTP API server configuration.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -75,7 +72,8 @@ mod tests {
     #[tokio::test]
     async fn loads_the_example_config() {
         let config = load(Path::new("example.toml")).await;
-        assert_eq!(config.db_url.as_str(), "postgresql://");
+        assert_eq!(config.database.write_url.as_str(), "postgresql://");
+        assert!(config.database.read_url.is_none());
         assert_eq!(config.http.bind_address, "0.0.0.0:8080".parse().unwrap());
         assert_eq!(config.logging.filter, "info,solana_orderbook=debug");
     }

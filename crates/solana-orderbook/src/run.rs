@@ -4,7 +4,7 @@ use {
     crate::infra::{Api, config, observe as infra_observe},
     clap::Parser,
     observe::metrics::{DEFAULT_METRICS_PORT, LivenessChecking, serve_metrics},
-    sqlx::PgPool,
+    sqlx::{Executor, PgPool, postgres::PgPoolOptions},
     std::{path::PathBuf, sync::Arc, time::Duration},
 };
 
@@ -48,7 +48,21 @@ pub async fn run(args: Args) {
         tracing::info!(?config, "loaded config");
     }
 
-    let pool = PgPool::connect(config.db_url.as_str())
+    // The orderbook only reads, so the replica URL wins when configured and
+    // every connection gets the read statement timeout.
+    let database = &config.database;
+    let url = database.read_url.as_ref().unwrap_or(&database.write_url);
+    let timeout_ms = database.statement_timeout.as_millis();
+    let pool = PgPoolOptions::new()
+        .max_connections(database.max_connections.get())
+        .after_connect(move |conn, _meta| {
+            Box::pin(async move {
+                conn.execute(format!("SET statement_timeout = {timeout_ms}").as_str())
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(url.as_str())
         .await
         .expect("database connection");
 
