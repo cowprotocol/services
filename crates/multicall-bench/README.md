@@ -78,8 +78,15 @@ off a pinned run.
 - `calls` counts **logical** JSON-RPC calls. `ethrpc`'s instrumentation layer
   sits above its batching layer (`crates/ethrpc/src/alloy/mod.rs`), so this is
   the count before coalescing — despite what the metric's own doc comment says.
-  `http~` divides it by the batch size as an estimate; nothing below the
-  batching layer is instrumented, so the real HTTP count is not measured.
+- `http` counts HTTP round-trips, and is **measured**, not derived: the batching
+  layer counts every packet it hands to the transport, and calls that never
+  reach the layer are added back one each. `fill` is `calls/http`, the batching
+  ratio the node actually saw.
+- The `batching` section under the table reads those same counters per method.
+  It exists because `fill` alone cannot separate "the layer coalesced nothing"
+  from "the calls never went through the layer" — a per-method `batched/total`
+  of `eth_call=0/6188` is the second, and is exactly the failure this harness
+  had no way to see before.
 - `mism` counts results differing from the baseline config, `moved` counts
   results differing between a config's own first and last pass. Same code path
   in the second case, so `moved` is the noise floor: only `mism` clearly above
@@ -114,6 +121,11 @@ off a pinned run.
   50        100    10      376      415      62       1
   50        100    50      269      278      62       1
 ```
+
+The `http~` column above was an estimate — `calls` divided by the configured
+batch size — from before the batching layer was instrumented. Re-run to get the
+measured `http` and `fill` columns; the estimate assumed every packet leaves
+full, which only holds when enough calls are queued at flush time.
 
 Multicall batch size barely matters: 25, 50, 100 and 200 all land within noise
 of each other (180-230ms min), so no gas-cap knee is visible even at 200 queries

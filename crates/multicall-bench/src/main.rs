@@ -23,11 +23,24 @@ enum Command {
     Run(Box<bench::Args>),
 }
 
+/// Default filter. `warn` so that the fallbacks inside the balance fetcher (no
+/// `Multicall3` on the chain, a whole chunk failing) show up in the output,
+/// without the per-batch chatter drowning the table.
+const DEFAULT_LOG_FILTER: &str = "warn";
+
+/// Raise this to watch batching happen call by call. The summary the benchmark
+/// prints comes from counters, not from these logs, so this is only for looking
+/// at individual packets:
+///
+/// ```text
+/// LOG_FILTER=warn,ethrpc::alloy::buffering=debug,account_balances=debug
+/// ```
+const LOG_FILTER: &str = "LOG_FILTER";
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    // `warn` so that the fallbacks inside the balance fetcher (no `Multicall3`
-    // on the chain, a whole chunk failing) show up in the output.
-    observe::tracing::init::initialize_reentrant(&Config::default().with_env_filter("warn"));
+    let filter = std::env::var(LOG_FILTER).unwrap_or_else(|_| DEFAULT_LOG_FILTER.to_owned());
+    observe::tracing::init::initialize_reentrant(&Config::default().with_env_filter(&filter));
 
     match Command::parse() {
         Command::Dump(args) => dump::run(args).await,

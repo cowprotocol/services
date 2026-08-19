@@ -52,10 +52,21 @@ pub struct Pass {
     /// batching layer, so this counts calls as the caller made them, before any
     /// coalescing into HTTP requests.
     pub calls: u64,
-    /// HTTP round-trips, estimated as `calls / ethrpc_batch_size`. Not
-    /// measured: nothing below the batching layer is instrumented, and how
-    /// full a batch ends up depends on what was queued when it was flushed.
-    pub http_estimate: u64,
+    /// HTTP round-trips, measured below the batching layer: one per packet it
+    /// sent, plus one for every call that bypassed it.
+    pub http: u64,
+    /// Calls the batching layer coalesced into those packets.
+    pub batched: u64,
+    /// Calls that never reached the batching layer. Everything when the layer
+    /// is disabled; anything above zero when it is not means some call path
+    /// goes around it.
+    pub unbatched: u64,
+    /// Mean calls per HTTP round-trip, `calls / http`. `1.0` means nothing was
+    /// coalesced, whatever the configured batch size says.
+    pub batch_fill: f64,
+    /// Per method, `batched/total` calls. The line that says whether the
+    /// `eth_call`s carrying `aggregate3` were batched.
+    pub batching: String,
     /// Mean duration of one logical call. A batched call spans the whole HTTP
     /// request, so this approaches the round-trip time as batches fill up.
     pub mean_call_ms: f64,

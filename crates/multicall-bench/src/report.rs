@@ -12,7 +12,8 @@ use {
     std::{path::Path, time::Duration},
 };
 
-const HEADERS: [&str; 13] = [
+const COLUMNS: usize = 14;
+const HEADERS: [&str; COLUMNS] = [
     "mc",
     "rpc_batch",
     "conc",
@@ -21,18 +22,21 @@ const HEADERS: [&str; 13] = [
     "med_ms",
     "max_ms",
     "calls",
-    "http~",
+    "http",
+    "fill",
     "call_ms",
     "err",
     "mism",
     "moved",
 ];
-const WIDTHS: [usize; 13] = [4, 9, 4, 5, 7, 7, 7, 6, 6, 7, 5, 5, 5];
+const WIDTHS: [usize; COLUMNS] = [4, 9, 4, 5, 7, 7, 7, 6, 6, 5, 7, 5, 5, 5];
 
 const LEGEND: &str = "\
 mc      queries per Multicall3 call; 0 reads them individually and is the parity baseline
-calls   logical JSON-RPC calls per pass, before the ethrpc batching layer coalesces them
-http~   HTTP round-trips, estimated as calls/rpc_batch — not measured
+calls   logical JSON-RPC calls per pass, counted above the ethrpc batching layer
+http    HTTP round-trips, counted below it: one per packet it sent, plus one per call that
+        bypassed it entirely
+fill    calls/http, the measured batching ratio; 1.0 means nothing was coalesced
 call_ms mean duration of one logical call; for batched calls this spans the whole HTTP request
 mism    results differing from the baseline config
 moved   results differing between this config's own first and last pass — same code path, so
@@ -80,12 +84,14 @@ pub fn progress(measurement: &Measurement) {
     let (min, med, max) = measurement.wall_ms();
     println!(
         "mc={} rpc_batch={} conc={} delay={}ms  wall {min}/{med}/{max} ms  calls={:.0}  \
-         call={:.1}ms",
+         http={:.0}  fill={:.1}  call={:.1}ms",
         measurement.config.multicall_batch_size,
         measurement.config.ethrpc_batch_size,
         measurement.config.ethrpc_concurrency,
         measurement.config.ethrpc_batch_delay_ms,
         measurement.mean(|pass| pass.calls as f64),
+        measurement.mean(|pass| pass.http as f64),
+        measurement.mean(|pass| pass.batch_fill),
         measurement.mean(|pass| pass.mean_call_ms),
     );
 }
@@ -107,7 +113,8 @@ pub fn table(measurements: &[Measurement]) {
                 med.to_string(),
                 max.to_string(),
                 format!("{:.0}", measurement.mean(|pass| pass.calls as f64)),
-                format!("{:.0}", measurement.mean(|pass| pass.http_estimate as f64)),
+                format!("{:.0}", measurement.mean(|pass| pass.http as f64)),
+                format!("{:.1}", measurement.mean(|pass| pass.batch_fill)),
                 format!("{:.1}", measurement.mean(|pass| pass.mean_call_ms)),
                 format!("{:.0}", measurement.mean(|pass| pass.err as f64)),
                 optional(measurement.parity_mismatches),
@@ -116,7 +123,70 @@ pub fn table(measurements: &[Measurement]) {
         );
     }
     println!("\n{LEGEND}");
+    batching(measurements);
     examples(measurements);
+}
+
+/// Whether the two batching mechanisms did what the config asked for.
+///
+/// The table's `fill` column already shows the ratio, but a ratio alone cannot
+/// tell "the layer coalesced nothing" apart from "the calls never reached the
+/// layer". These counters can, so the verdict is stated rather than inferred.
+fn batching(measurements: &[Measurement]) {
+    println!("\nbatching, measured below the ethrpc batching layer:");
+    for measurement in measurements {
+        let config = &measurement.config;
+        let calls = measurement.mean(|pass| pass.calls as f64);
+        let batched = measurement.mean(|pass| pass.batched as f64);
+        let unbatched = measurement.mean(|pass| pass.unbatched as f64);
+        let fill = measurement.mean(|pass| pass.batch_fill);
+
+        // Only the last pass's breakdown: every pass runs the same code path,
+        // so they all agree, and one line per config stays readable.
+        let per_method = measurement
+            .passes
+            .last()
+            .map(|pass| pass.batching.as_str())
+            .unwrap_or_default();
+
+        println!(
+            "  mc={:<4} rpc_batch={:<4} {:>6.0} of {:>6.0} calls batched into {:>5.0} packets \
+             (fill {fill:.1}) — {}",
+            config.multicall_batch_size,
+            config.ethrpc_batch_size,
+            batched,
+            calls,
+            measurement.mean(|pass| pass.http as f64),
+            verdict(config.ethrpc_batch_size, batched, unbatched, fill),
+        );
+        if !per_method.is_empty() {
+            println!("       batched/total per method: {per_method}");
+        }
+    }
+}
+
+/// Reads the counters against what the config asked for. `batch_size <= 1`
+/// removes the batching layer altogether, so for those configs no batching is
+/// the correct outcome and any batching would mean the wrong provider was used.
+fn verdict(batch_size: usize, batched: f64, unbatched: f64, fill: f64) -> String {
+    if batch_size <= 1 {
+        return if batched > 0.0 {
+            format!("UNEXPECTED: layer is disabled but carried {batched:.0} calls")
+        } else {
+            "layer disabled, one HTTP request per call as configured".to_owned()
+        };
+    }
+    if batched == 0.0 {
+        return "NOT BATCHED: no call reached the batching layer".to_owned();
+    }
+    if unbatched > 0.0 {
+        return format!("PARTIAL: {unbatched:.0} calls went around the batching layer");
+    }
+    if fill < 1.5 {
+        return "batched, but packets held ~1 call — too few calls in flight to coalesce"
+            .to_owned();
+    }
+    format!("batched, {fill:.1} calls per HTTP request of at most {batch_size}")
 }
 
 fn examples(measurements: &[Measurement]) {
@@ -159,22 +229,25 @@ pub fn write_files(
 fn csv(measurements: &[Measurement]) -> String {
     let mut out = String::from(
         "multicall_batch_size,ethrpc_batch_size,ethrpc_concurrency,ethrpc_batch_delay_ms,pass,\
-         wall_ms,calls,http_estimate,mean_call_ms,ok,err,parity_mismatches\n",
+         wall_ms,calls,http,batched,unbatched,batch_fill,mean_call_ms,ok,err,parity_mismatches\n",
     );
     for measurement in measurements {
         for (index, pass) in measurement.passes.iter().enumerate() {
             let Pass {
                 wall_ms,
                 calls,
-                http_estimate,
+                http,
+                batched,
+                unbatched,
+                batch_fill,
                 mean_call_ms,
                 ok,
                 err,
                 ..
             } = pass;
             out.push_str(&format!(
-                "{},{},{},{},{index},{wall_ms},{calls},{http_estimate},{mean_call_ms:.3},{ok},\
-                 {err},{}\n",
+                "{},{},{},{},{index},{wall_ms},{calls},{http},{batched},{unbatched},{batch_fill:.\
+                 3},{mean_call_ms:.3},{ok},{err},{}\n",
                 measurement.config.multicall_batch_size,
                 measurement.config.ethrpc_batch_size,
                 measurement.config.ethrpc_concurrency,
@@ -188,7 +261,7 @@ fn csv(measurements: &[Measurement]) -> String {
     out
 }
 
-fn row(cells: &[String; 13]) -> String {
+fn row(cells: &[String; COLUMNS]) -> String {
     let mut out = String::new();
     for (cell, width) in cells.iter().zip(WIDTHS) {
         out.push_str(&format!("{cell:>width$}  "));

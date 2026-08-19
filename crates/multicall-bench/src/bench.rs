@@ -248,11 +248,7 @@ pub async fn run(args: Args) -> Result<()> {
 
 /// The measured operation. Every number the benchmark reports about a config
 /// comes from here, and nothing outside this function is timed.
-async fn timed_pass(
-    fetcher: &dyn BalanceFetching,
-    queries: &[Query],
-    ethrpc_batch_size: usize,
-) -> (Pass, Vec<Option<U256>>) {
+async fn timed_pass(fetcher: &dyn BalanceFetching, queries: &[Query]) -> (Pass, Vec<Option<U256>>) {
     let before = Snapshot::take();
     let start = Instant::now();
 
@@ -262,11 +258,14 @@ async fn timed_pass(
     let delta = before.delta(&Snapshot::take());
 
     let ok = results.iter().filter(|result| result.is_ok()).count();
-    let calls = delta.total_requests();
     let pass = Pass {
         wall_ms,
-        calls,
-        http_estimate: calls.div_ceil(ethrpc_batch_size.max(1) as u64),
+        calls: delta.total_requests(),
+        http: delta.http_requests(),
+        batched: delta.total_batched(),
+        unbatched: delta.unbatched(),
+        batch_fill: delta.batch_fill(),
+        batching: delta.batching(),
         mean_call_ms: delta.mean_request_seconds() * 1000.0,
         ok,
         err: results.len() - ok,
@@ -302,7 +301,7 @@ async fn measure(
     let mut first = None;
     let mut last = Vec::new();
     for _ in 0..args.repeat {
-        let (pass, values) = timed_pass(fetcher.as_ref(), queries, config.ethrpc_batch_size).await;
+        let (pass, values) = timed_pass(fetcher.as_ref(), queries).await;
         passes.push(pass);
         if first.is_none() {
             first = Some(values.clone());

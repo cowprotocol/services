@@ -99,6 +99,13 @@ impl Balances {
         // Boxing and eagerly collecting works around rustc's higher-ranked
         // lifetime inference bug when async blocks capturing references meet
         // `buffered`.
+        tracing::debug!(
+            queries = queries.len(),
+            multicall_batch_size = self.multicall_batch_size,
+            chunks = queries.len().div_ceil(self.multicall_batch_size),
+            "reading balances through Multicall3"
+        );
+
         let chunks: Vec<_> = queries
             .chunks(self.multicall_batch_size)
             .map(|chunk| {
@@ -162,6 +169,14 @@ impl Balances {
                 ));
         }
 
+        // One `aggregate3`, so one `eth_call` — whether that `eth_call` then
+        // shares an HTTP request with the other chunks' is up to the `ethrpc`
+        // batching layer, which counts its own packets.
+        tracing::debug!(
+            queries = queries.len(),
+            sub_calls = queries.len() * 2,
+            "dispatching Multicall3 aggregate3"
+        );
         let results = multicall.aggregate3().await?;
         ensure!(
             results.len() == queries.len() * 2,

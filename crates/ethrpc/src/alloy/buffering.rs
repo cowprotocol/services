@@ -28,8 +28,8 @@ use {
         stream::StreamExt as _,
     },
     std::{
-        collections::{HashMap, VecDeque, hash_map::Entry},
-        fmt::Debug,
+        collections::{BTreeMap, HashMap, VecDeque, hash_map::Entry},
+        fmt::{Debug, Write as _},
         marker::PhantomData,
         pin::Pin,
         sync::Arc,
@@ -190,6 +190,8 @@ where
         let semaphore = Arc::new(Semaphore::new(config.ethrpc_max_concurrent_requests));
         let max_batch_size = config.ethrpc_max_batch_size;
         let batch_delay = config.ethrpc_batch_delay;
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry())
+            .expect("unexpected error getting metrics instance");
 
         tokio::task::spawn(async move {
             let mut queue =
@@ -224,7 +226,7 @@ where
                     // move permit into the task so we only return it when
                     // task is done
                     let _permit = permit;
-                    process_batch(this_inner, batch).await;
+                    process_batch(this_inner, batch, metrics).await;
                 });
             }
         })
@@ -364,8 +366,11 @@ impl<Req, Resp> FairQueue<Req, Resp> {
     }
 }
 
-async fn process_batch<S>(mut inner: S, batch: Vec<(SerializedRequest, ResponseSender)>)
-where
+async fn process_batch<S>(
+    mut inner: S,
+    batch: Vec<(SerializedRequest, ResponseSender)>,
+    metrics: &'static Metrics,
+) where
     S: Service<RequestPacket, Response = ResponsePacket, Error = TransportError>,
 {
     // Map<Id, Senders> because even with random IDs we might get duplicates,
@@ -394,6 +399,8 @@ where
         tracing::trace!("all callers stopped awaiting their request");
         return;
     }
+
+    metrics.record(&requests);
 
     let result = inner
         .call(RequestPacket::Batch(requests))
@@ -432,6 +439,68 @@ where
                 });
         }
     }
+}
+
+/// Records what the batching layer actually puts on the wire.
+///
+/// The [`InstrumentationLayer`](super::instrumentation) sits *above* this
+/// layer, so its counters describe logical calls as the callers made them and
+/// say nothing about whether those calls were ever coalesced. These counters
+/// are the other half: one packet is one HTTP round-trip, so
+/// `calls / batches` is the measured batching ratio, and a method that never
+/// shows up in `calls` never went through this layer at all.
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "ethrpc_batching")]
+struct Metrics {
+    /// JSON-RPC packets handed to the transport, i.e. HTTP round-trips.
+    batches: prometheus::IntCounter,
+
+    /// Logical JSON-RPC calls those packets carried, per method.
+    #[metric(labels("method"))]
+    calls: prometheus::IntCounterVec,
+
+    /// Calls per packet. `1` throughout means nothing is being coalesced.
+    #[metric(buckets(1, 2, 3, 5, 10, 20, 50, 100, 200))]
+    batch_size: prometheus::Histogram,
+}
+
+impl Metrics {
+    /// Counts one outgoing packet. `requests` must be what is about to be sent,
+    /// after cancelled callers have been dropped.
+    fn record(&self, requests: &[SerializedRequest]) {
+        self.batches.inc();
+        self.batch_size.observe(requests.len() as f64);
+        for request in requests {
+            self.calls.with_label_values(&[request.method()]).inc();
+        }
+
+        // The breakdown costs an allocation per packet, so only pay for it when
+        // somebody is listening.
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            tracing::debug!(
+                size = requests.len(),
+                methods = %methods(requests),
+                "dispatching rpc batch"
+            );
+        }
+    }
+}
+
+/// The methods in a packet as `method=count` pairs, for logging.
+fn methods(requests: &[SerializedRequest]) -> String {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for request in requests {
+        *counts.entry(request.method()).or_default() += 1;
+    }
+    counts
+        .into_iter()
+        .fold(String::new(), |mut out, (method, count)| {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            let _ = write!(out, "{method}={count}");
+            out
+        })
 }
 
 impl<S> Service<RequestPacket> for BatchCallProvider<S>
@@ -487,7 +556,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use {super::*, futures::FutureExt as _};
+    use {
+        super::*,
+        alloy_json_rpc::{Id, Request},
+        futures::FutureExt as _,
+        std::sync::Mutex,
+    };
 
     #[test]
     fn test_batch_request_entry_pop_twice() {
@@ -517,6 +591,91 @@ mod test {
 
         let third_pop = entry.pop_front();
         assert!(third_pop.is_none());
+    }
+
+    /// Inner service that records the shape of every packet the batching
+    /// layer hands it, and answers nothing. The callers therefore all fail,
+    /// which is irrelevant: what is under test is what reached the transport.
+    #[derive(Clone, Default)]
+    struct RecordingTransport {
+        packets: Arc<Mutex<Vec<Vec<String>>>>,
+    }
+
+    impl Service<RequestPacket> for RecordingTransport {
+        type Error = TransportError;
+        type Future = Pin<Box<dyn Future<Output = Result<ResponsePacket, TransportError>> + Send>>;
+        type Response = ResponsePacket;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, req: RequestPacket) -> Self::Future {
+            let methods = req
+                .requests()
+                .iter()
+                .map(|r| r.method().to_owned())
+                .collect();
+            self.packets.lock().unwrap().push(methods);
+            Box::pin(async { Ok(ResponsePacket::Batch(Vec::new())) })
+        }
+    }
+
+    fn serialized(method: &'static str, id: u64) -> SerializedRequest {
+        Request::new(method, Id::Number(id), ())
+            .serialize()
+            .expect("serialize request")
+    }
+
+    /// The property the whole layer exists for: calls issued concurrently
+    /// leave as one packet, capped at the configured batch size. Asserted on
+    /// what the transport saw, because the instrumentation layer sits above
+    /// the batching layer and so cannot tell the difference.
+    #[tokio::test]
+    async fn concurrent_calls_leave_as_one_packet() {
+        let transport = RecordingTransport::default();
+        let config = Config {
+            ethrpc_max_batch_size: 4,
+            ethrpc_max_concurrent_requests: 1,
+            // The queue only fills up while a concurrency slot is taken, so
+            // give the worker a window to collect the burst.
+            ethrpc_batch_delay: Duration::from_millis(50),
+        };
+        let mut provider = BatchCallProvider::new(config, transport.clone());
+
+        // All ten from one task, so they are all queued before the worker
+        // assembles its first batch.
+        let calls: Vec<_> = (0..10)
+            .map(|id| provider.call(RequestPacket::Single(serialized("eth_call", id))))
+            .collect();
+        // The callers all fail because the transport answers nothing; the
+        // packets it recorded are the point.
+        let _ = futures::future::join_all(calls).await;
+
+        let packets = transport.packets.lock().unwrap().clone();
+        assert_eq!(
+            packets.iter().map(Vec::len).sum::<usize>(),
+            10,
+            "every call must reach the transport exactly once"
+        );
+        assert!(
+            packets.iter().all(|packet| packet.len() <= 4),
+            "no packet may exceed the configured batch size: {packets:?}"
+        );
+        assert!(
+            packets.iter().any(|packet| packet.len() > 1),
+            "calls issued concurrently must be coalesced, got {packets:?}"
+        );
+    }
+
+    #[test]
+    fn methods_summarises_a_packet() {
+        let requests = [
+            serialized("eth_call", 1),
+            serialized("eth_getBalance", 2),
+            serialized("eth_call", 3),
+        ];
+        assert_eq!(methods(&requests), "eth_call=2 eth_getBalance=1");
     }
 
     /// Tests that the fair queue builds batches in a round robin fashion.
