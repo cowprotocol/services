@@ -1,10 +1,3 @@
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "dead in the lib build until the wiring consumes the decoder"
-    )
-)]
 //! The decoder pulls `StreamUpdate`s from the ingester, decodes
 //! settlement-program and SolFlow transactions, and persists typed events.
 
@@ -65,8 +58,9 @@ pub(crate) struct Decoder {
     /// Settlement program id (filter target for the decoder).
     pub settlement_program: Pubkey,
 
-    /// SolFlow program id (filter target for the decoder).
-    pub solflow_program: Pubkey,
+    /// SolFlow program id (filter target for the decoder). Absent until the
+    /// program exists.
+    pub solflow_program: Option<Pubkey>,
 }
 
 impl Decoder {
@@ -76,7 +70,7 @@ impl Decoder {
         rpc: Rpc,
         rx: Receiver<StreamUpdate>,
         settlement_program: Pubkey,
-        solflow_program: Pubkey,
+        solflow_program: Option<Pubkey>,
     ) -> Self {
         Self {
             persistence,
@@ -268,7 +262,7 @@ impl Decoder {
         }
 
         let instructions =
-            relevant_instructions(&tx, &self.settlement_program, &self.solflow_program);
+            relevant_instructions(&tx, &self.settlement_program, self.solflow_program.as_ref());
         if instructions.is_empty() {
             return Ok(Vec::new());
         }
@@ -729,10 +723,10 @@ impl RawInstruction<'_> {
         self,
         account_keys: &[Pubkey],
         settlement_program: &Pubkey,
-        solflow_program: &Pubkey,
+        solflow_program: Option<&Pubkey>,
     ) -> Option<ResolvedInstruction> {
         let program_id = *account_keys.get(self.program_id_index as usize)?;
-        if program_id != *settlement_program && program_id != *solflow_program {
+        if program_id != *settlement_program && Some(&program_id) != solflow_program {
             return None;
         }
         Some(ResolvedInstruction {
@@ -760,7 +754,7 @@ const MAX_CPI_DEPTH: usize = 4;
 fn relevant_instructions(
     tx: &SubscribeUpdateTransactionInfo,
     settlement_program: &Pubkey,
-    solflow_program: &Pubkey,
+    solflow_program: Option<&Pubkey>,
 ) -> Vec<ResolvedInstruction> {
     let account_keys = build_account_keys(tx);
     let top_level = tx

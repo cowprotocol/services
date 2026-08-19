@@ -44,10 +44,6 @@ pub(crate) struct Postgres {
 }
 
 impl Postgres {
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "constructed by the binary wiring")
-    )]
     pub(crate) fn new(pool: PgPool) -> Self {
         Self { pool }
     }
