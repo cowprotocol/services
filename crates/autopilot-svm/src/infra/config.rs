@@ -1,7 +1,7 @@
 //! Configuration of the autopilot's endpoints and competition parameters.
 
 use {
-    configs::shared::LoggingConfig,
+    configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
     serde_ext::{deserialize_nonempty_vec, deserialize_solana_pubkey_b58},
     solana_sdk::pubkey::Pubkey,
@@ -35,9 +35,9 @@ pub async fn load(path: &Path) -> Config {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
-    /// Postgres connection URL.
-    #[serde(default = "default_db_url")]
-    pub db_url: url::Url,
+    /// Connection configuration for the database the indexer writes to.
+    #[serde(default)]
+    pub database: DatabasePoolConfig,
     /// JSON-RPC client configuration.
     pub rpc: Rpc,
     /// Chain and deployment-specific configuration.
@@ -71,10 +71,6 @@ impl Config {
             None,
         )
     }
-}
-
-fn default_db_url() -> url::Url {
-    "postgresql://".parse().expect("valid default database URL")
 }
 
 fn default_metrics_address() -> SocketAddr {
@@ -149,7 +145,7 @@ mod tests {
     #[tokio::test]
     async fn loads_the_example_config() {
         let config = load(std::path::Path::new("example.toml")).await;
-        assert_eq!(config.db_url.as_str(), "postgresql://");
+        assert_eq!(config.database.write_url.as_str(), "postgresql://");
         assert_eq!(
             config.chain.wrapped_native_mint,
             "So11111111111111111111111111111111111111112"

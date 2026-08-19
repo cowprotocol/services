@@ -20,7 +20,7 @@ use {
     clap::Parser,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     observe::metrics::LivenessChecking,
-    sqlx::PgPool,
+    sqlx::postgres::PgPoolOptions,
     std::{
         path::PathBuf,
         sync::{Arc, RwLock},
@@ -79,7 +79,11 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 async fn run(config: Config) {
-    let pool = PgPool::connect(config.db_url.as_str())
+    // The autopilot writes settlement executions, so the pool always points
+    // at the write URL.
+    let pool = PgPoolOptions::new()
+        .max_connections(config.database.max_connections.get())
+        .connect(config.database.write_url.as_str())
         .await
         .expect("database connection");
 

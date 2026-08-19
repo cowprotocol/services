@@ -1,6 +1,9 @@
 # Example configuration for the Solana autopilot.
 
-db-url = "postgresql://"
+[database]
+# The Postgres database the indexer writes to. A value like "%DB_WRITE_URL"
+# reads the URL from that environment variable.
+write-url = "postgresql://"
 # Serves /metrics, /liveness, /ready, and /startup.
 metrics-address = "0.0.0.0:9588"
 # The pod fails the liveness probe when no auction cycle completed in this
