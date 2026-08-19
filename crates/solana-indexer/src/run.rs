@@ -20,6 +20,7 @@ use {
         time::Duration,
     },
     tokio::sync::mpsc,
+    yellowstone_grpc_client::GeyserGrpcClient,
 };
 
 /// Wait between attempts to bring the stream back up.
@@ -75,19 +76,7 @@ async fn run(config: Config, start_slot: Option<u64>) {
     let stream_loop = async {
         let mut resume = start_slot.map_or(Resume::Watermark, Resume::From);
         loop {
-            let client = match yellowstone::connect(
-                config.yellowstone.endpoint.clone(),
-                config.yellowstone.x_token.clone(),
-            )
-            .await
-            {
-                Ok(client) => client,
-                Err(err) => {
-                    tracing::error!(?err, "yellowstone connection failed");
-                    tokio::time::sleep(STREAM_RETRY).await;
-                    continue;
-                }
-            };
+            let client = connect_yellowstone(&config.yellowstone).await;
             match Ingester::serve(
                 client,
                 tx.clone(),
@@ -121,13 +110,26 @@ async fn run(config: Config, start_slot: Option<u64>) {
     };
 
     tokio::select! {
-        // The loop only breaks when the decoder hung up, so its result is
-        // the real story.
+        // The loop only breaks when the decoder hung up, so report the
+        // decoder's exit.
         _ = stream_loop => {
             let result = (&mut decoder_task).await;
             tracing::error!(?result, "decoder stopped");
         }
         result = &mut decoder_task => tracing::error!(?result, "decoder stopped"),
         _ = observe::shutdown::shutdown_signal() => tracing::info!("shutdown signal received"),
+    }
+}
+
+/// Retries the yellowstone connection until it succeeds.
+async fn connect_yellowstone(config: &config::Yellowstone) -> GeyserGrpcClient {
+    loop {
+        match yellowstone::connect(config.endpoint.clone(), config.x_token.clone()).await {
+            Ok(client) => return client,
+            Err(err) => {
+                tracing::error!(?err, "yellowstone connection failed");
+                tokio::time::sleep(STREAM_RETRY).await;
+            }
+        }
     }
 }
