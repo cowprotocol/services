@@ -19,10 +19,16 @@ path = "src/main.rs"
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 bytes = { workspace = true }
+clap = { workspace = true }
+configs = { workspace = true }
 derive_more = { workspace = true }
 futures = { workspace = true }
+humantime-serde = { workspace = true }
 itertools = { workspace = true }
+observe = { workspace = true }
 rustls = { workspace = true }
+serde = { workspace = true }
+serde-ext = { workspace = true }
 settlement-interface = {
   package = "settlement-interface",
   git = "https://github.com/cowprotocol/solana-programs",
@@ -36,7 +42,9 @@ spl-token-2022-interface = { workspace = true }
 spl-token-interface = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
+tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+toml = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 yellowstone-grpc-client = { workspace = true }

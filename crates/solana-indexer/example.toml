@@ -1,0 +1,18 @@
+# Example configuration for the Solana indexer.
+
+db-url = "postgresql://"
+
+[chain]
+# The settlement program deployed on devnet.
+settlement-program-id = "MooohhPEAAHwAwEozL7JPEmnDvaahuUpccYN4Yb8ccK"
+
+[yellowstone]
+endpoint = "https://yellowstone.example.com"
+# x-token = "secret"
+
+[rpc]
+endpoint = "https://api.devnet.solana.com"
+request-timeout = "10s"
+
+[logging]
+filter = "info,solana_indexer=debug"

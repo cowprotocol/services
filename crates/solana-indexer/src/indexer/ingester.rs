@@ -271,14 +271,19 @@ impl Ingester<GeyserStream> {
         persistence: Postgres,
         latest_chain_slot: Arc<AtomicU64>,
         settlement_program: Pubkey,
-        solflow_program: Pubkey,
+        solflow_program: Option<Pubkey>,
+        resume: Resume,
     ) -> Result<(), Error> {
         // The proto field is a bare slot number, and `from_slot` is inclusive, so
         // resume one past the last fully persisted slot.
-        let from_slot = persistence
-            .last_indexed_slot()
-            .await?
-            .map(|last_indexed| u64::from(last_indexed) + 1);
+        let from_slot = match resume {
+            Resume::Watermark => persistence
+                .last_indexed_slot()
+                .await?
+                .map(|last_indexed| u64::from(last_indexed) + 1),
+            Resume::LiveTip => None,
+            Resume::From(slot) => Some(slot),
+        };
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
@@ -292,28 +297,22 @@ impl Ingester<GeyserStream> {
     }
 }
 
-/// Temporary compile-time proof that [`Ingester::serve`]'s future is `Send`.
-///
-/// Keep this only until a real `tokio::spawn(Ingester::serve(...))` call site
-/// lands; the actual spawn is the better check. Delete this helper then.
-#[allow(dead_code)]
-fn assert_serve_future_is_send(
-    client: GeyserGrpcClient,
-    tx: Sender<StreamUpdate>,
-    persistence: Postgres,
-    latest_chain_slot: Arc<AtomicU64>,
-    settlement_program: Pubkey,
-    solflow_program: Pubkey,
-) {
-    fn is_send<F: Send>(_: F) {}
-    is_send(Ingester::serve(
-        client,
-        tx,
-        persistence,
-        latest_chain_slot,
-        settlement_program,
-        solflow_program,
-    ));
+/// Filter labels in the subscription request. The server echoes them on
+/// matching updates, nothing routes on them today.
+const SETTLEMENT_FILTER: &str = "settlement_txs";
+const SOLFLOW_FILTER: &str = "sol_flow_txs";
+const CHAIN_TIP_FILTER: &str = "chain_tip";
+
+/// Where a fresh subscription starts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Resume {
+    /// One past the persisted last indexed slot.
+    Watermark,
+    /// The provider's live tip, accepting a gap. The fallback when the
+    /// watermark is older than the provider's replay window.
+    LiveTip,
+    /// A caller-chosen slot, still bounded by the provider's replay window.
+    From(u64),
 }
 
 /// The wire-level filter shape: the two named transaction filters and the
@@ -325,12 +324,9 @@ fn assert_serve_future_is_send(
 /// `__autoreconnect` key) so the `AutoReconnect` wrapper can checkpoint and
 /// resume on reconnect; those messages are consumed inside the wrapper and
 /// never reach the ingester.
-///
-/// TODO: source the exact subscriptions from a config file once this crate's
-/// configuration module lands.
 fn subscribe_request(
     settlement_program: Pubkey,
-    solflow_program: Pubkey,
+    solflow_program: Option<Pubkey>,
     from_slot: Option<u64>,
 ) -> SubscribeRequest {
     // `failed: None` includes failed transactions: the failure itself is the
@@ -341,17 +337,17 @@ fn subscribe_request(
         account_include: vec![program.to_string()],
         ..Default::default()
     };
+    let mut filters = std::collections::HashMap::from([(
+        SETTLEMENT_FILTER.to_owned(),
+        transactions(settlement_program),
+    )]);
+    if let Some(solflow) = solflow_program {
+        filters.insert(SOLFLOW_FILTER.to_owned(), transactions(solflow));
+    }
     SubscribeRequest {
-        transactions: [
-            (
-                "settlement_txs".to_owned(),
-                transactions(settlement_program),
-            ),
-            ("sol_flow_txs".to_owned(), transactions(solflow_program)),
-        ]
-        .into(),
+        transactions: filters,
         slots: [(
-            "chain_tip".to_owned(),
+            CHAIN_TIP_FILTER.to_owned(),
             SubscribeRequestFilterSlots {
                 // one message per slot at the subscription's commitment level
                 filter_by_commitment: Some(true),
