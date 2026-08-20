@@ -135,6 +135,9 @@ where
             reader(eth.web3().clone(), pair_provider),
             eth.web3().clone(),
             config.missing_pool_cache_time,
+            // Every Uniswap-V2-like venue shares this constructor and the
+            // "uniswapV2" RPC label, so the router is what tells them apart.
+            config.router.to_string(),
         );
 
         Arc::new(PoolCache::new(
