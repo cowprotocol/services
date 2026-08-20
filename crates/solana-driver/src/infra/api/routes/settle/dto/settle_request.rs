@@ -18,6 +18,9 @@ pub struct SettleRequest {
     pub auction_id: i64,
     #[serde_as(as = "DisplayFromStr")]
     pub solution_id: u64,
+    /// Slot after which a settlement for this auction is late.
+    #[serde_as(as = "DisplayFromStr")]
+    pub deadline_slot: u64,
 }
 
 #[cfg(test)]
@@ -31,10 +34,12 @@ mod tests {
         let request = SettleRequest {
             auction_id: 7,
             solution_id: 3,
+            deadline_slot: 100,
         };
         let expected = serde_json::json!({
             "auctionId": "7",
-            "solutionId": "3"
+            "solutionId": "3",
+            "deadlineSlot": "100"
         });
         assert_eq!(serde_json::to_value(&request).unwrap(), expected);
     }

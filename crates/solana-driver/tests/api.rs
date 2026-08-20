@@ -295,7 +295,7 @@ async fn settle_rejects_non_positive_auction_id() {
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/settle"))
-        .json(&serde_json::json!({ "auctionId": "0", "solutionId": "3" }))
+        .json(&serde_json::json!({ "auctionId": "0", "solutionId": "3", "deadlineSlot": "100" }))
         .send()
         .await
         .unwrap();
