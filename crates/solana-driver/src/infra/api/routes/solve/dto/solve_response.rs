@@ -26,7 +26,6 @@ pub struct SolveResponse {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
-    #[serde_as(as = "DisplayFromStr")]
     solution_id: u64,
     /// Total surplus in lamports, decimal string on the wire.
     #[serde_as(as = "DisplayFromStr")]
@@ -139,7 +138,7 @@ mod tests {
         };
         let expected = serde_json::json!({
             "solutions": [{
-                "solutionId": "3",
+                "solutionId": 3,
                 "score": "12345",
                 "solver": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
                 "orders": {

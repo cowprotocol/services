@@ -143,7 +143,7 @@ async fn solve_returns_converted_solutions() {
     // `executedBuy` is the zero placeholder.
     let expected = serde_json::json!({
         "solutions": [{
-            "solutionId": "42",
+            "solutionId": 42,
             "score": "0",
             "solver": account.to_string(),
             "orders": {
