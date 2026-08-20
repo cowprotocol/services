@@ -20,5 +20,5 @@ pub async fn solve(
         .solve(&auction)
         .instrument(tracing::info_span!("/solve", auction_id = %auction_id))
         .await?;
-    Ok(Json(dto::SolveResponse::new(solutions, &auction)))
+    Ok(Json(dto::SolveResponse::new(solutions)))
 }
