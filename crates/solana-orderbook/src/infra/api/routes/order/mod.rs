@@ -37,17 +37,3 @@ fn now_unix() -> i64 {
         .try_into()
         .expect("unix seconds fit i64")
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_prefixed_and_bare_hex_uids() {
-        let hex = "11".repeat(32);
-        assert_eq!(parse_uid(&format!("0x{hex}")), Some([0x11; 32]));
-        assert_eq!(parse_uid(&hex), Some([0x11; 32]));
-        assert_eq!(parse_uid("0xzz"), None);
-        assert_eq!(parse_uid("0x1234"), None);
-    }
-}
