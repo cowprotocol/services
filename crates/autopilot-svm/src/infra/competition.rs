@@ -19,9 +19,6 @@ use {
     winner_selection::{Side, solution},
 };
 
-/// Solana's target slot time.
-const SLOT_DURATION: Duration = Duration::from_millis(400);
-
 /// Sends `/solve` to every driver and converts the answers into attributable
 /// solutions for the arbitrator.
 pub struct DriverCompetition {
@@ -44,10 +41,7 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
     async fn solve(&self, auction: &Auction) -> Vec<Solution> {
         let request = &dto::SolveRequest {
             id: auction.id,
-            // The wire carries the deadline as a slot, so the wall-clock
-            // budget converts at the target slot time.
-            deadline_slot: auction.tip
-                + (self.solve_deadline.as_millis() / SLOT_DURATION.as_millis()) as u64,
+            deadline: chrono::Utc::now() + self.solve_deadline,
             orders: auction.orders.iter().map(dto::Order::from).collect(),
         };
         let by_uid: HashMap<IntentHash, &Order> = auction

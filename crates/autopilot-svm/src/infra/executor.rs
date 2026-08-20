@@ -47,6 +47,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             let request = dto::SettleRequest {
                 auction_id,
                 solution_id: winner.id(),
+                submission_deadline_slot: deadline,
             };
             tokio::spawn(async move {
                 match driver.settle(&request).await {
