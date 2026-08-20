@@ -1,12 +1,9 @@
 //! Solana JSON-RPC client wrapper.
 
-pub use solana_commitment_config::CommitmentConfig;
+pub use {solana_commitment_config::CommitmentConfig, solana_rpc_client_api::client_error::Error};
 use {solana_rpc_client::nonblocking::rpc_client::RpcClient, std::time::Duration, url::Url};
 
 pub struct SolanaRPC {
-    /// Not yet read: helper methods that use the underlying client will be
-    /// added in follow-up PRs.
-    #[expect(dead_code)]
     inner: RpcClient,
 }
 
@@ -34,5 +31,10 @@ impl SolanaRPC {
         Self {
             inner: RpcClient::new_mock(url),
         }
+    }
+
+    /// The node's current slot at the client's commitment level.
+    pub async fn slot(&self) -> Result<u64, Error> {
+        self.inner.get_slot().await
     }
 }

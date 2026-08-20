@@ -9,8 +9,11 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 chain-types = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 const-hex = { workspace = true }
+cow-solana-rpc = { workspace = true }
 database = { workspace = true }
+futures = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -20,6 +23,10 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
 url = { workspace = true }
+winner-selection = { workspace = true }
+
+[dev-dependencies]
+axum = { workspace = true }
 
 [lints]
 workspace = true

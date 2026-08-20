@@ -19,8 +19,8 @@ use {
 pub struct SolveRequest {
     /// Autopilot-assigned auction id.
     pub id: i64,
-    /// Slot after which a settlement for this auction is late.
-    pub deadline_slot: u64,
+    /// Wall-clock deadline for answering `/solve`.
+    pub deadline: chrono::DateTime<chrono::Utc>,
     pub orders: Vec<Order>,
 }
 
@@ -125,6 +125,8 @@ pub struct TradedAmounts {
 pub struct SettleRequest {
     pub auction_id: i64,
     pub solution_id: u64,
+    /// The last slot the settlement transaction may land in.
+    pub submission_deadline_slot: u64,
 }
 
 /// The driver's `/settle` answer.
@@ -165,11 +167,11 @@ mod tests {
     fn dtos_round_trip_and_pin_the_wire_format() {
         let request = SolveRequest {
             id: 7,
-            deadline_slot: 100,
+            deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![Order::from(&order())],
         };
         let json = serde_json::to_value(&request).unwrap();
-        assert_eq!(json["deadlineSlot"], 100);
+        assert_eq!(json["deadline"], "2026-01-01T00:00:00Z");
         assert_eq!(
             json["orders"][0]["uid"],
             "0x1111111111111111111111111111111111111111111111111111111111111111"
@@ -216,6 +218,18 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<SettleResponse>(json).unwrap(),
             settle
+        );
+
+        let settle_request = SettleRequest {
+            auction_id: 7,
+            solution_id: 3,
+            submission_deadline_slot: 125,
+        };
+        let json = serde_json::to_value(&settle_request).unwrap();
+        assert_eq!(json["submissionDeadlineSlot"], 125);
+        assert_eq!(
+            serde_json::from_value::<SettleRequest>(json).unwrap(),
+            settle_request
         );
     }
 }
