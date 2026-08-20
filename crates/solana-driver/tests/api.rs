@@ -185,7 +185,9 @@ async fn settle_rejects_non_positive_auction_id() {
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/mock/settle"))
-        .json(&serde_json::json!({ "auctionId": 0, "solutionId": 3, "submissionDeadlineSlot": 125 }))
+        .json(
+            &serde_json::json!({ "auctionId": 0, "solutionId": 3, "submissionDeadlineSlot": 125 }),
+        )
         .send()
         .await
         .unwrap();
