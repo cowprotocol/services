@@ -26,15 +26,15 @@ const SLOT_DURATION: Duration = Duration::from_millis(400);
 /// solutions for the arbitrator.
 pub struct DriverCompetition {
     drivers: Vec<Arc<Driver>>,
-    /// How many slots a driver gets to answer `/solve`.
-    solve_deadline_slots: u64,
+    /// How long a driver gets to answer `/solve`.
+    solve_deadline: Duration,
 }
 
 impl DriverCompetition {
-    pub fn new(drivers: Vec<Arc<Driver>>, solve_deadline_slots: u64) -> Self {
+    pub fn new(drivers: Vec<Arc<Driver>>, solve_deadline: Duration) -> Self {
         Self {
             drivers,
-            solve_deadline_slots,
+            solve_deadline,
         }
     }
 }
@@ -44,7 +44,10 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
     async fn solve(&self, auction: &Auction) -> Vec<Solution> {
         let request = &dto::SolveRequest {
             id: auction.id,
-            deadline_slot: auction.tip + self.solve_deadline_slots,
+            // The wire carries the deadline as a slot, so the wall-clock
+            // budget converts at the target slot time.
+            deadline_slot: auction.tip
+                + (self.solve_deadline.as_millis() / SLOT_DURATION.as_millis()) as u64,
             orders: auction.orders.iter().map(dto::Order::from).collect(),
         };
         let by_uid: HashMap<IntentHash, &Order> = auction
@@ -56,8 +59,7 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
         // The deadline sent to the drivers is also enforced here: a response
         // landing after it is dropped, so one hung driver cannot hold the
         // loop for the HTTP client's whole ceiling.
-        let budget = SLOT_DURATION
-            .saturating_mul(u32::try_from(self.solve_deadline_slots).unwrap_or(u32::MAX));
+        let budget = self.solve_deadline;
         let responses = futures::future::join_all(self.drivers.iter().enumerate().map(
             |(driver_index, driver)| async move {
                 match tokio::time::timeout(budget, driver.solve(request)).await {

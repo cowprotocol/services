@@ -111,7 +111,7 @@ async fn run(config: Config) {
         Box::new(DbAuctionProvider::new(pool)),
         Box::new(DriverCompetition::new(
             drivers.clone(),
-            config.competition.solve_deadline_slots.get(),
+            config.competition.solve_deadline,
         )),
         Box::new(SolanaArbitrator::new(
             config.competition.max_winners.get(),

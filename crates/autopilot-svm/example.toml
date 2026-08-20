@@ -20,7 +20,7 @@ wrapped-native-mint = "So11111111111111111111111111111111111111112"
 
 [competition]
 max-winners = 1
-solve-deadline-slots = 15
+solve-deadline = "6s"
 submission-deadline-slots = 25
 
 [[drivers]]

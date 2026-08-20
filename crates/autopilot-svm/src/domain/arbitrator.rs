@@ -47,7 +47,7 @@ impl WinnerSelection<SolanaCycle> for SolanaArbitrator {
         // An empty fee-policy list marks an order as part of the auction, the
         // arbitrator only scores such orders. The auction carries no protocol
         // fees.
-        // TODO: real fee policies arrive with the MVP protocol-fee support.
+        // TODO: real fee policies arrive with the protocol-fee support (post-MVP).
         let fee_policies = auction
             .orders
             .iter()

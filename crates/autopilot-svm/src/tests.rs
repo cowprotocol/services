@@ -26,7 +26,7 @@ use {
     chain_types::solana::{IntentHash, Pubkey, Signature},
     database::byte_array::ByteArray,
     sqlx::PgPool,
-    std::{collections::HashMap, net::SocketAddr, sync::Arc},
+    std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::mpsc,
     url::Url,
 };
@@ -157,7 +157,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         let provider = DbAuctionProvider::new(pool.clone());
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
-        let competition = DriverCompetition::new(vec![Arc::clone(&driver)], 15);
+        let competition = DriverCompetition::new(vec![Arc::clone(&driver)], Duration::from_secs(6));
         let solutions = competition.solve(&auction).await;
         assert_eq!(solutions.len(), 1, "driver solution converted");
         let ranking = SolanaArbitrator::new(1, wrapped_native).arbitrate(solutions, &auction);
@@ -168,14 +168,17 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
         Box::new(DbAuctionProvider::new(pool.clone())),
-        Box::new(DriverCompetition::new(vec![Arc::clone(&driver)], 15)),
+        Box::new(DriverCompetition::new(
+            vec![Arc::clone(&driver)],
+            Duration::from_secs(6),
+        )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
         Box::new(DriverExecutor::new(vec![driver], tracker.clone(), 25)),
         Box::new(LogObserver::new(tracker.clone())),
     );
     auction_loop.run_cycle().await;
 
-    let settle = tokio::time::timeout(std::time::Duration::from_secs(5), settled.recv())
+    let settle = tokio::time::timeout(Duration::from_secs(5), settled.recv())
         .await
         .expect("settlement dispatched before the timeout")
         .expect("settle channel open");

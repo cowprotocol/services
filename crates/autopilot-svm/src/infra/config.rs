@@ -103,16 +103,15 @@ pub struct Chain {
 }
 
 /// Competition parameters. The `NonZero` types reject a `0` at config load:
-/// a zero deadline would drop every driver response, a zero winner count
-/// would settle nothing.
+/// a zero winner count would settle nothing.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct Competition {
     /// Maximum number of winning solutions per auction.
     pub max_winners: NonZero<usize>,
-    /// Slots between the tip an auction is cut at and the drivers' solve
-    /// deadline.
-    pub solve_deadline_slots: NonZero<u64>,
+    /// How long drivers get to answer `/solve`.
+    #[serde(with = "humantime_serde")]
+    pub solve_deadline: Duration,
     /// Slots a settlement may take after ranking before it counts as late.
     pub submission_deadline_slots: NonZero<u64>,
 }
@@ -121,8 +120,8 @@ impl Default for Competition {
     fn default() -> Self {
         Self {
             max_winners: NonZero::new(1).expect("non-zero literal"),
-            // ~6s at 400ms slots, the EVM fast chains run 6s solve deadlines.
-            solve_deadline_slots: NonZero::new(15).expect("non-zero literal"),
+            // The EVM fast chains run 6s solve deadlines.
+            solve_deadline: Duration::from_secs(6),
             submission_deadline_slots: NonZero::new(25).expect("non-zero literal"),
         }
     }
@@ -153,7 +152,7 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(config.competition.max_winners.get(), 1);
-        assert_eq!(config.competition.solve_deadline_slots.get(), 15);
+        assert_eq!(config.competition.solve_deadline, Duration::from_secs(6));
         assert_eq!(config.competition.submission_deadline_slots.get(), 25);
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.drivers.len(), 1);
