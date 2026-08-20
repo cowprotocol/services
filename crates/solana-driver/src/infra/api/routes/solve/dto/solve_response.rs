@@ -83,6 +83,10 @@ impl Solution {
                 // is knowingly wrong. The autopilot must not persist it or compute over it as
                 // if it were real. The driver will replace it once the engine wire carries both
                 // legs (or clearing prices arrive).
+                //
+                // TODO: once the engine wire carries both trade legs, `domain::Trade` will hold
+                // the side directly and this lookup (plus the `.expect`) goes
+                // away entirely.
                 let side = sides.get(&trade.order_uid).copied().expect(
                     "trade uid is known by construction: Solutions::into_domain rejects unknown \
                      uids",
