@@ -63,8 +63,8 @@ fn solver(addr: SocketAddr, account: Pubkey) -> Solver {
 /// The autopilot's own literal `/solve` request JSON.
 fn solve_request() -> serde_json::Value {
     serde_json::json!({
-        "id": "7",
-        "deadlineSlot": "100",
+        "id": 7,
+        "deadline": "2026-01-01T00:00:00Z",
         "orders": [{
             "uid": uid(),
             "owner": pubkey(0x22).to_string(),
@@ -185,7 +185,7 @@ async fn settle_rejects_non_positive_auction_id() {
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/mock/settle"))
-        .json(&serde_json::json!({ "auctionId": "0", "solutionId": "3", "deadlineSlot": "100" }))
+        .json(&serde_json::json!({ "auctionId": 0, "solutionId": 3, "submissionDeadlineSlot": 125 }))
         .send()
         .await
         .unwrap();

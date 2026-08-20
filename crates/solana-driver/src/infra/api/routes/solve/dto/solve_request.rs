@@ -13,9 +13,7 @@ use {
     std::time::Duration,
 };
 
-/// Placeholder solve budget until the deadline is derived from `deadline_slot`.
-// TODO: derive the deadline from `deadline_slot` via
-// `SolanaRPC::get_block_time`/`get_slot`.
+/// Placeholder solve budget until the wire `deadline` is piped into the domain.
 const SOLVE_DEADLINE: Duration = Duration::from_secs(15);
 
 /// The auction posted to `/solve`.
@@ -24,11 +22,9 @@ const SOLVE_DEADLINE: Duration = Duration::from_secs(15);
 #[serde(rename_all = "camelCase")]
 pub struct SolveRequest {
     /// Autopilot-assigned auction id.
-    #[serde_as(as = "DisplayFromStr")]
     id: i64,
-    /// Slot after which a settlement for this auction is late.
-    #[serde_as(as = "DisplayFromStr")]
-    deadline_slot: u64,
+    /// Timestamp deadline for answering `/solve`.
+    deadline: chrono::DateTime<chrono::Utc>,
     orders: Vec<Order>,
 }
 
@@ -114,18 +110,19 @@ impl SolveRequest {
     /// Convert the wire request into a domain auction.
     ///
     /// The driver uses `now + SOLVE_DEADLINE` as a placeholder for the
-    /// wall-clock `deadline`.
+    /// timestamp `deadline`.
     pub fn into_domain(self) -> Result<domain::Auction, Error> {
         let id = domain::auction::Id::try_from(self.id)?;
-        // TODO: derive the deadline from `deadline_slot` via
-        // `SolanaRPC::get_block_time`/`get_slot` once that type adds these methods.
+        // TODO: pipe the wire `deadline` into the domain once the placeholder
+        // solve budget is replaced.
         let deadline = chrono::Utc::now()
             + chrono::Duration::from_std(SOLVE_DEADLINE)
                 .expect("solve-deadline fits in a chrono duration");
         Ok(domain::Auction {
             id,
             orders: self.orders.into_iter().map(Into::into).collect(),
-            deadline_slot: domain::Slot(self.deadline_slot),
+            // Placeholder; the domain does not consume it yet.
+            deadline_slot: domain::Slot(0),
             deadline,
         })
     }
@@ -163,12 +160,12 @@ mod tests {
     fn solve_request_pins_the_wire_format() {
         let request = SolveRequest {
             id: 7,
-            deadline_slot: 100,
+            deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![order()],
         };
         let expected = serde_json::json!({
-            "id": "7",
-            "deadlineSlot": "100",
+            "id": 7,
+            "deadline": "2026-01-01T00:00:00Z",
             "orders": [{
                 "uid": "0x1111111111111111111111111111111111111111111111111111111111111111",
                 "owner": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
@@ -191,7 +188,7 @@ mod tests {
     fn into_domain_rejects_non_positive_id() {
         let request = SolveRequest {
             id: 0,
-            deadline_slot: 100,
+            deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![order()],
         };
         let err = request

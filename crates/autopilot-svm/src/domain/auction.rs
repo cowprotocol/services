@@ -76,7 +76,7 @@ mod tests {
     }
 
     #[test]
-    fn auction_equality_ignores_the_id() {
+    fn auction_equality_ignores_id() {
         let orders = vec![order(10)];
         let a = Auction {
             id: 1,
