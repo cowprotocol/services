@@ -26,8 +26,7 @@ use {
         },
     },
     bytes::Bytes,
-    cow_solana_rpc::SolanaRPC,
-    settlement_interface::{
+    cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
         data::intent::{EncodedOrderIntent, OrderKind as InterfaceOrderKind},
@@ -39,6 +38,7 @@ use {
         },
         recover_discriminator,
     },
+    cow_solana_rpc::SolanaRPC,
     solana_sdk::{account::Account, pubkey::Pubkey},
     std::collections::{BTreeMap, HashMap},
     tokio::sync::mpsc::Receiver,
@@ -369,11 +369,12 @@ fn decode_settlement(
             SettlementInstruction::BeginSettle | SettlementInstruction::FinalizeSettle => {
                 Ok(Vec::new())
             }
-            // No domain event: `Initialize` bootstraps the program state.
+            // No domain event: `Initialize` bootstraps the program state and
+            // `ReclaimBuffer` recovers rent without touching order state.
             // TODO: map `ReclaimOrder` to `OrderClosed`.
-            SettlementInstruction::Initialize | SettlementInstruction::ReclaimOrder => {
-                Ok(Vec::new())
-            }
+            SettlementInstruction::Initialize
+            | SettlementInstruction::ReclaimOrder
+            | SettlementInstruction::ReclaimBuffer => Ok(Vec::new()),
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
@@ -445,9 +446,10 @@ fn decode_buffers_created(
     let input = CreateBufferInput::parse(&instruction.data, &mut accounts)
         .map_err(|_| DecodeError::SchemaMismatch)?;
     Ok(input
-        .buffers
-        .iter()
-        .map(|pair| SettlementEvent::BufferCreated { token: pair[1] })
+        .buffers()
+        .map(|buffer| SettlementEvent::BufferCreated {
+            token: *buffer.mint,
+        })
         .collect())
 }
 

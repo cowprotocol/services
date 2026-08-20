@@ -33,14 +33,14 @@ use {
         },
     },
     bytes::Bytes,
-    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-    futures::StreamExt,
-    settlement_interface::{
+    cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
         data::intent::{OrderIntent, OrderKind as IntentOrderKind},
         pda::order::find_order_pda,
     },
+    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
+    futures::StreamExt,
     solana_sdk::pubkey::Pubkey,
     std::sync::{Arc, atomic::AtomicU64},
 };
@@ -54,7 +54,7 @@ fn pubkey(n: u8) -> Pubkey {
 /// encounter order.
 fn tx_from_instructions(
     payer: Pubkey,
-    instructions: &[settlement_interface::Instruction],
+    instructions: &[cow_settlement_interface::Instruction],
 ) -> SubscribeUpdateTransactionInfo {
     let mut keys = vec![payer];
     let index_of = |keys: &mut Vec<Pubkey>, key: Pubkey| -> u8 {
@@ -356,7 +356,7 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         partially_fillable: false,
         app_data: [0x44; 32],
     };
-    let instruction = settlement_client::instructions::CreateOrder {
+    let instruction = cow_settlement_client::instructions::CreateOrder {
         program_id: settlement,
         owner: pubkey(11),
         created_by,
@@ -577,18 +577,18 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     };
     let order_pda = find_order_pda(&settlement, &intent.uid()).0;
 
-    let begin = settlement_client::instructions::BeginSettle {
+    let begin = cow_settlement_client::instructions::BeginSettle {
         program_id: settlement,
         finalize_ix_index: 1,
         auction_id: 4242,
-        orders: &[settlement_client::instructions::InitializedIntent {
+        orders: &[cow_settlement_client::instructions::InitializedIntent {
             intent: &intent,
             pulls: &[
-                settlement_client::instructions::Pull {
+                cow_settlement_client::instructions::Pull {
                     destination: pubkey(27),
                     amount: 300,
                 },
-                settlement_client::instructions::Pull {
+                cow_settlement_client::instructions::Pull {
                     destination: pubkey(28),
                     amount: 700,
                 },
@@ -596,10 +596,10 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         }],
     }
     .into();
-    let finalize = settlement_client::instructions::FinalizeSettle {
+    let finalize = cow_settlement_client::instructions::FinalizeSettle {
         program_id: settlement,
         begin_ix_index: 0,
-        orders: &[settlement_client::instructions::FinalizedIntent {
+        orders: &[cow_settlement_client::instructions::FinalizedIntent {
             intent: &intent,
             mint: pubkey(30),
             amount: 1_234,

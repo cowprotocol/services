@@ -3712,6 +3712,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "cow-settlement-client"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93949beec804859f528c0aa3d5944793f76ca007d2930eff88e9705a2fb03c3c"
+dependencies = [
+ "cow-settlement-interface",
+ "solana-program-error",
+]
+
+[[package]]
+name = "cow-settlement-interface"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f74c11504033ef2f52571c0a3854c45308ee9017a31ff7b8c482448f15ac225f"
+dependencies = [
+ "arrayref",
+ "derive_more 1.0.0",
+ "num_enum",
+ "solana-account-view",
+ "solana-address 2.6.1",
+ "solana-hash 4.4.0",
+ "solana-instruction",
+ "solana-program-error",
+ "solana-pubkey 4.2.0",
+ "solana-sdk-ids",
+ "solana-sha256-hasher",
+ "solana-system-interface 3.2.0",
+ "spl-token-interface 3.0.0",
+]
+
+[[package]]
 name = "cow-solana-rpc"
 version = "0.1.0"
 dependencies = [
@@ -8519,34 +8550,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "settlement-client"
-version = "0.1.0"
-source = "git+https://github.com/cowprotocol/solana-programs?rev=4d4fc46f594e0159246afaf148f0af2a463d0095#4d4fc46f594e0159246afaf148f0af2a463d0095"
-dependencies = [
- "settlement-interface",
-]
-
-[[package]]
-name = "settlement-interface"
-version = "0.1.0"
-source = "git+https://github.com/cowprotocol/solana-programs?rev=4d4fc46f594e0159246afaf148f0af2a463d0095#4d4fc46f594e0159246afaf148f0af2a463d0095"
-dependencies = [
- "arrayref",
- "derive_more 1.0.0",
- "num_enum",
- "solana-account-view",
- "solana-address 2.6.1",
- "solana-hash 3.1.0",
- "solana-instruction",
- "solana-program-error",
- "solana-pubkey 3.0.0",
- "solana-sdk-ids",
- "solana-sha256-hasher",
- "solana-system-interface 3.2.0",
- "spl-token-interface",
-]
-
-[[package]]
 name = "sha1"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8912,7 +8915,7 @@ dependencies = [
  "spl-generic-token",
  "spl-token-2022-interface",
  "spl-token-group-interface",
- "spl-token-interface",
+ "spl-token-interface 2.0.0",
  "spl-token-metadata-interface",
  "thiserror 2.0.18",
  "zstd",
@@ -9335,6 +9338,8 @@ dependencies = [
  "bytes",
  "clap",
  "configs",
+ "cow-settlement-client",
+ "cow-settlement-interface",
  "cow-solana-rpc",
  "derive_more 1.0.0",
  "futures",
@@ -9344,11 +9349,9 @@ dependencies = [
  "serde",
  "serde-ext",
  "serde_json",
- "settlement-client",
- "settlement-interface",
  "solana-sdk",
  "spl-token-2022-interface",
- "spl-token-interface",
+ "spl-token-interface 2.0.0",
  "sqlx",
  "thiserror 1.0.69",
  "tikv-jemallocator",
@@ -10610,6 +10613,26 @@ name = "spl-token-interface"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c564ac05a7c8d8b12e988a37d82695b5ba4db376d07ea98bc4882c81f96c7f3"
+dependencies = [
+ "arrayref",
+ "bytemuck",
+ "num-derive",
+ "num-traits",
+ "num_enum",
+ "solana-instruction",
+ "solana-program-error",
+ "solana-program-option",
+ "solana-program-pack",
+ "solana-pubkey 3.0.0",
+ "solana-sdk-ids",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "spl-token-interface"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7143c4e676984047a400e2fbd7ac29a1659f2b1b52b897cfde19316b562e4589"
 dependencies = [
  "arrayref",
  "bytemuck",
