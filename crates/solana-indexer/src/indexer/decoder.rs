@@ -435,9 +435,9 @@ fn decode_order_created(
     })))
 }
 
-/// `CreateBuffer` -> one `BufferCreated` per created buffer. The parser groups
-/// the trailing accounts into `[buffer_pda, mint]` pairs, and the event's
-/// token is each pair's mint.
+/// `CreateBuffer` -> one `BufferCreated` per created buffer. The parser
+/// exposes the created buffers as typed accounts, and the event's token is
+/// each buffer's mint.
 fn decode_buffers_created(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
