@@ -1,6 +1,5 @@
 use {
     super::Postgres,
-    crate::dto::TokenMetadata,
     alloy::primitives::{Address, B256, map::HashSet},
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
@@ -442,51 +441,6 @@ impl Postgres {
             .into_iter()
             .map(full_order_into_model_order)
             .collect::<Result<Vec<_>>>()
-    }
-
-    pub async fn token_metadata(&self, token: &Address) -> Result<TokenMetadata> {
-        let (first_trade_block, native_price): (Option<u32>, Option<alloy::primitives::U256>) = tokio::try_join!(
-            self.execute_instrumented("token_first_trade_block", async {
-                let mut ex = self.pool.acquire().await?;
-                database::trades::token_first_trade_block(&mut ex, ByteArray(token.0.0))
-                    .await
-                    .map_err(anyhow::Error::from)?
-                    .map(u32::try_from)
-                    .transpose()
-                    .map_err(anyhow::Error::from)
-            }),
-            self.execute_instrumented("fetch_latest_token_price", async {
-                let mut ex = self.pool.acquire().await?;
-                Ok(database::auction_prices::fetch_latest_token_price(
-                    &mut ex,
-                    ByteArray(token.0.0),
-                )
-                .await
-                .map_err(anyhow::Error::from)?
-                .and_then(|price| big_decimal_to_u256(&price)))
-            })
-        )?;
-
-        Ok(TokenMetadata {
-            first_trade_block,
-            native_price,
-        })
-    }
-
-    async fn execute_instrumented<F, T>(&self, label: &str, f: F) -> Result<T>
-    where
-        F: std::future::Future<Output = Result<T>>,
-    {
-        let timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&[label])
-            .start_timer();
-
-        let result = f.await?;
-
-        timer.observe_duration();
-
-        Ok(result)
     }
 }
 

@@ -42,16 +42,6 @@ pub async fn insert(
 }
 
 #[instrument(skip_all)]
-pub async fn fetch(
-    ex: &mut PgConnection,
-    auction_id: AuctionId,
-) -> Result<Vec<AuctionPrice>, sqlx::Error> {
-    const QUERY: &str = "SELECT * FROM auction_prices WHERE auction_id = $1";
-    let prices = sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?;
-    Ok(prices)
-}
-
-#[instrument(skip_all)]
 pub async fn fetch_latest_prices(ex: &mut PgConnection) -> Result<Vec<AuctionPrice>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT * FROM auction_prices WHERE auction_id = (
@@ -60,23 +50,6 @@ SELECT * FROM auction_prices WHERE auction_id = (
 )
     "#;
     sqlx::query_as(QUERY).fetch_all(ex).await
-}
-
-#[instrument(skip_all)]
-pub async fn fetch_latest_token_price(
-    ex: &mut PgConnection,
-    token: Address,
-) -> Result<Option<BigDecimal>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT * FROM auction_prices
-WHERE token = $1
-ORDER BY auction_id DESC
-LIMIT 1
-    "#;
-
-    let auction_price: Option<AuctionPrice> =
-        sqlx::query_as(QUERY).bind(token).fetch_optional(ex).await?;
-    Ok(auction_price.map(|ap| ap.price))
 }
 
 #[cfg(test)]
@@ -90,23 +63,6 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let auction_1 = vec![
-            AuctionPrice {
-                auction_id: 1,
-                token: ByteArray([2; 20]),
-                price: 1.into(),
-            },
-            AuctionPrice {
-                auction_id: 1,
-                token: ByteArray([3; 20]),
-                price: 2.into(),
-            },
-        ];
-        let auction_2 = vec![AuctionPrice {
-            auction_id: 2,
-            token: ByteArray([2; 20]),
-            price: 3.into(),
-        }];
         let auction_3 = vec![
             AuctionPrice {
                 auction_id: 3,
@@ -120,28 +76,10 @@ mod tests {
             },
         ];
 
-        insert(&mut db, &auction_1).await.unwrap();
-        insert(&mut db, &auction_2).await.unwrap();
         insert(&mut db, &auction_3).await.unwrap();
 
-        // check that all auctions are there
-        let output = fetch(&mut db, 1).await.unwrap();
-        assert_eq!(output, auction_1);
-        let output = fetch(&mut db, 2).await.unwrap();
-        assert_eq!(output, auction_2);
-        let output = fetch(&mut db, 3).await.unwrap();
-        assert_eq!(output, auction_3);
-        // non-existent auction
-        let output = fetch(&mut db, 4).await.unwrap();
-        assert!(output.is_empty());
         // latest prices
         let output = fetch_latest_prices(&mut db).await.unwrap();
         assert_eq!(output, auction_3);
-        // latest token price
-        let output = fetch_latest_token_price(&mut db, ByteArray([2; 20]))
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(output, BigDecimal::from(3));
     }
 }

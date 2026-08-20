@@ -789,27 +789,6 @@ impl<'a> Services<'a> {
         }
     }
 
-    /// Get token metadata
-    pub async fn get_token_metadata(
-        &self,
-        token: &Address,
-    ) -> Result<orderbook::dto::TokenMetadata, (StatusCode, String)> {
-        let response = self
-            .http
-            .get(format!("{API_HOST}/api/v1/token/{token:?}/metadata"))
-            .send()
-            .await
-            .unwrap();
-
-        let status = response.status();
-        let body = response.text().await.unwrap();
-
-        match status {
-            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
-            code => Err((code, body)),
-        }
-    }
-
     /// Get API version
     pub async fn get_api_version(&self) -> Result<String, (StatusCode, String)> {
         let response = self

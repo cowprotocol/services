@@ -43,7 +43,6 @@ mod smart_contract_orders;
 mod solver_competition;
 mod state_override;
 mod submission;
-mod token_metadata;
 mod tracking_insufficient_funds;
 mod trades_v2;
 mod uncovered_order;

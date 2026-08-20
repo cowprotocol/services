@@ -40,7 +40,6 @@ mod get_order_status;
 mod get_orders_by_tx;
 mod get_orders_by_uid;
 mod get_solver_competition_v2;
-mod get_token_metadata;
 mod get_total_surplus;
 mod get_trades;
 mod get_trades_v2;
@@ -251,11 +250,6 @@ pub fn handle_all_routes(
             "POST",
             "/api/v1/quote/stream",
             post(post_quote_stream::post_quote_stream_handler),
-        ),
-        (
-            "GET",
-            "/api/v1/token/{token}/metadata",
-            get(get_token_metadata::get_token_metadata_handler),
         ),
         (
             "GET",

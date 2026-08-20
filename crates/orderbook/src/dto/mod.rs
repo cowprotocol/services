@@ -80,13 +80,3 @@ pub struct OrderSimulationResult {
     /// Any error that might have been reported during order simulation
     pub error: Option<String>,
 }
-
-#[serde_as]
-#[derive(Serialize)]
-#[cfg_attr(feature = "e2e", derive(serde::Deserialize))]
-#[serde(rename_all = "camelCase")]
-pub struct TokenMetadata {
-    pub first_trade_block: Option<u32>,
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub native_price: Option<U256>,
-}
