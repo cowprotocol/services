@@ -83,17 +83,20 @@ impl Order {
     }
 }
 
-/// Cancellation wins, then a full fill on the order's own side, then expiry.
+/// A full fill on the order's own side wins, then cancellation, then expiry,
+/// the EVM orderbook's precedence. Fulfilled must beat cancelled here:
+/// reclaiming a filled order's PDA to recover rent stamps a cancellation
+/// timestamp, and that cleanup does not undo the fill.
 fn status(row: &OrderRow, now_unix: i64) -> Status {
-    if row.cancellation_timestamp.is_some() {
-        return Status::Cancelled;
-    }
     let filled = match row.kind.as_str() {
         "sell" => row.amount_withdrawn >= row.sell_amount,
         _ => row.amount_received >= row.buy_amount,
     };
     if filled {
         return Status::Fulfilled;
+    }
+    if row.cancellation_timestamp.is_some() {
+        return Status::Cancelled;
     }
     if row.valid_to < now_unix {
         return Status::Expired;
@@ -139,12 +142,18 @@ mod tests {
         // A full fill outranks expiry.
         assert_eq!(status(&filled, 2_001), Status::Fulfilled);
 
-        let cancelled = OrderRow {
+        let reclaimed_after_fill = OrderRow {
             cancellation_timestamp: Some(DateTime::from_timestamp(1_100, 0).unwrap()),
             amount_withdrawn: 1_000.into(),
             ..row()
         };
-        // Cancellation outranks everything.
+        // Reclaiming a filled order's PDA is cleanup, not a cancellation.
+        assert_eq!(status(&reclaimed_after_fill, 1_500), Status::Fulfilled);
+
+        let cancelled = OrderRow {
+            cancellation_timestamp: Some(DateTime::from_timestamp(1_100, 0).unwrap()),
+            ..row()
+        };
         assert_eq!(status(&cancelled, 1_500), Status::Cancelled);
     }
 
