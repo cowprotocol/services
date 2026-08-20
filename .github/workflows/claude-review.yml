@@ -47,7 +47,7 @@ jobs:
       id-token: write
       actions: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history lets the action compute an accurate diff vs the base
           # branch instead of just the latest commit.
