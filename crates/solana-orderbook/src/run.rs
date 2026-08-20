@@ -34,7 +34,6 @@ async fn read_pool(database: &DatabasePoolConfig) -> PgPool {
 fn serve_probes(pool: PgPool, api_address: SocketAddr) -> JoinHandle<()> {
     let mut metrics_address = api_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
-    tracing::info!(%metrics_address, "serving metrics");
     serve_metrics(
         Arc::new(Liveness { pool }),
         metrics_address,
