@@ -18,6 +18,7 @@ async-trait = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
 chain-types = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
 configs = { workspace = true }
 const-hex = { workspace = true }

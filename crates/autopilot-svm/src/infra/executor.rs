@@ -58,6 +58,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             let request = dto::SettleRequest {
                 auction_id,
                 solution_id: winner.id(),
+                submission_deadline_slot: deadline,
             };
             // A window that cannot be opened must not block the settlement,
             // the dispatch is the priority.
