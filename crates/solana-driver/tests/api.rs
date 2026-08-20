@@ -61,10 +61,14 @@ fn solver(addr: SocketAddr, account: Pubkey) -> Solver {
 }
 
 /// The autopilot's own literal `/solve` request JSON.
+///
+/// The deadline is computed relative to now so the request is always
+/// solvable, regardless of when the test runs.
 fn solve_request() -> serde_json::Value {
+    let deadline = chrono::Utc::now() + chrono::Duration::minutes(5);
     serde_json::json!({
         "id": 7,
-        "deadline": "2026-01-01T00:00:00Z",
+        "deadline": deadline.to_rfc3339(),
         "orders": [{
             "uid": uid(),
             "owner": pubkey(0x22).to_string(),
