@@ -173,7 +173,7 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
         vec![router, acct_a, settlement, solflow, acct_b]
     );
 
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    let relevant = relevant_instructions(&tx, &settlement, Some(&solflow));
 
     // Execution order: top-level 0's settlement CPI runs before top-level 1's
     // solflow call. The router at top-level 0 is dropped.
@@ -233,7 +233,7 @@ fn unresolvable_programs_dropped_account_indices_carried_through() {
 
     assert_eq!(build_account_keys(&tx), vec![settlement, Pubkey::default()]);
 
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    let relevant = relevant_instructions(&tx, &settlement, Some(&solflow));
     assert_eq!(relevant.len(), 1);
     assert_eq!(relevant[0].program_id, settlement);
     assert_eq!(relevant[0].instruction_index, 2);
@@ -269,7 +269,7 @@ fn inner_ix_path_tracks_cpi_nesting_depth() {
         }],
     );
 
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    let relevant = relevant_instructions(&tx, &settlement, Some(&solflow));
     assert_eq!(relevant.len(), 3);
 
     assert_eq!(relevant[0].program_id, settlement);
@@ -307,7 +307,7 @@ fn corrupt_stack_height_is_clamped() {
         }],
     );
 
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    let relevant = relevant_instructions(&tx, &settlement, Some(&solflow));
     assert_eq!(relevant.len(), 1);
     assert_eq!(relevant[0].program_id, settlement);
     // depth 9999 clamped to 4, so the path is bounded, not 9999 elements
@@ -452,7 +452,7 @@ fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
         Rpc::new_mock(Default::default()),
         rx,
         settlement,
-        solflow,
+        Some(solflow),
     )
 }
 
@@ -519,7 +519,7 @@ fn unknown_discriminator_fails_the_whole_transaction() {
         account_keys: build_account_keys(&tx),
         post_token_balances: vec![],
     };
-    let instructions = relevant_instructions(&tx, &settlement, &solflow);
+    let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
     assert_eq!(
         decode_settlement(&instructions, &ctx, |_| None),
         Err(DecodeFailed)
@@ -559,7 +559,7 @@ fn unpaired_begin_settle_sets_failure_flag() {
         account_keys: build_account_keys(&tx),
         post_token_balances: vec![],
     };
-    let instructions = relevant_instructions(&tx, &settlement, &solflow);
+    let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
     assert_eq!(
         decode_settlement(&instructions, &ctx, |_| None),
         Err(DecodeFailed)
@@ -639,7 +639,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         account_keys: build_account_keys(&tx),
         post_token_balances: vec![],
     };
-    let instructions = relevant_instructions(&tx, &settlement, &solflow);
+    let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
     let events = decode_settlement(&instructions, &ctx, resolve_order).expect("clean decode");
 
     assert_eq!(
@@ -725,7 +725,7 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
         mock_rpc_with_token_accounts(),
         receiver,
         settlement,
-        solflow,
+        Some(solflow),
     );
     let ingester_task = tokio::spawn(async move { ingester.run().await });
     let decoder_task = tokio::spawn(async move { decoder.run().await });

@@ -18,7 +18,6 @@ pub(crate) struct Rpc {
 }
 
 impl Rpc {
-    #[expect(dead_code, reason = "constructed by the binary wiring")]
     pub(crate) fn new(endpoint: Url, request_timeout: Duration) -> Self {
         Self {
             client: RpcClient::new_with_timeout_and_commitment(

@@ -4278,7 +4278,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.118",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -8841,6 +8841,7 @@ dependencies = [
  "serde",
  "serde_with",
  "solana-sdk",
+ "url",
 ]
 
 [[package]]
@@ -9720,8 +9721,10 @@ name = "solana-driver"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "clap",
  "configs",
+ "const-hex",
  "cow-solana-rpc",
  "futures",
  "humantime-serde",
@@ -9729,7 +9732,11 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serde-ext",
+ "serde_json",
+ "serde_with",
  "solana-sdk",
+ "solana-solvers",
+ "thiserror 1.0.69",
  "tikv-jemallocator",
  "tokio",
  "tokio-util",
@@ -9902,10 +9909,16 @@ dependencies = [
  "async-trait",
  "bigdecimal",
  "bytes",
+ "clap",
+ "configs",
  "derive_more 1.0.0",
  "futures",
+ "humantime-serde",
  "itertools 0.14.0",
+ "observe",
  "rustls",
+ "serde",
+ "serde-ext",
  "serde_json",
  "settlement-client",
  "settlement-interface",
@@ -9917,7 +9930,9 @@ dependencies = [
  "spl-token-interface",
  "sqlx",
  "thiserror 1.0.69",
+ "tikv-jemallocator",
  "tokio",
+ "toml",
  "tracing",
  "url",
  "yellowstone-grpc-client",
@@ -10800,6 +10815,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "chrono",
  "clap",
  "const-hex",
  "futures",
@@ -13117,7 +13133,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
