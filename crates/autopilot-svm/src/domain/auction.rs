@@ -39,9 +39,6 @@ pub struct Auction {
     /// Autopilot-assigned id. Excluded from equality: the dedupe compares two
     /// cuts by content, and the id is allocated only for a fresh cut.
     pub id: i64,
-    /// Slot the auction was cut at. Excluded from equality for the same
-    /// reason: the tip moves every cycle, the content may not.
-    pub tip: u64,
     pub orders: Vec<Order>,
 }
 
@@ -79,24 +76,18 @@ mod tests {
     }
 
     #[test]
-    fn auction_equality_ignores_id_and_tip() {
+    fn auction_equality_ignores_id() {
         let orders = vec![order(10)];
         let a = Auction {
             id: 1,
-            tip: 100,
             orders: orders.clone(),
         };
-        let b = Auction {
-            id: 2,
-            tip: 200,
-            orders,
-        };
+        let b = Auction { id: 2, orders };
         assert_eq!(a, b);
         assert_ne!(
             a,
             Auction {
                 id: 1,
-                tip: 100,
                 orders: vec![],
             }
         );
