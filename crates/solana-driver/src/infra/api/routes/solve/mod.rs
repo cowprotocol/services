@@ -7,8 +7,8 @@ use {
     tracing::Instrument,
 };
 
-/// Handle `POST /solve`: parse the autopilot's auction, fan it out to the
-/// configured solver engines, and answer with the converted solutions.
+/// Handle `POST /solve`: parse the autopilot's auction, send it to this
+/// solver engine, and answer with the converted solutions.
 pub async fn solve(
     state: axum::extract::State<State>,
     Json(request): Json<dto::SolveRequest>,

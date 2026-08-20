@@ -1,82 +1,30 @@
-//! The competition: the driver runs one auction across its configured solver
-//! engines.
+//! The competition: the driver runs one auction through a single solver engine.
 //!
-//! `Competition` owns the solve flow (concurrent fan-out to engines, reindexing
-//! engine-local solution ids to driver-unique ones) and the settle seam. It
-//! holds the concrete `infra::solver::Solver` clients.
+//! `Competition` owns the solve flow (calling the engine) and the settle entry
+//! point. It holds the concrete `infra::solver::Solver` client. One
+//! `Competition` per solver engine is mounted on the API under `/{name}`.
 
 use {
     super::{Auction, auction::Id, solution::Solution},
     crate::infra::solver::{Error as SolverError, Solver},
 };
 
-/// Orchestrates one auction across the configured solver engines.
+/// Orchestrates one auction through a single solver engine.
 pub struct Competition {
-    solvers: Vec<Solver>,
+    solver: Solver,
 }
 
 impl Competition {
-    /// Build a competition from the configured solver engines.
-    pub fn new(solvers: Vec<Solver>) -> Self {
-        Self { solvers }
+    /// Build a competition from a single solver engine.
+    pub fn new(solver: Solver) -> Self {
+        Self { solver }
     }
 
-    /// Fan the auction out to every engine concurrently and collect their
-    /// solutions.
+    /// Send the auction to the solver engine and return its solutions.
     ///
-    /// The driver logs and drops a failing engine. A partial failure must not
-    /// kill the auction: the remaining engines still propose solutions. If
-    /// every engine fails, the driver returns `Error::Solver`.
-    ///
-    /// The driver reindexes engine-local solution ids to driver-unique ids. The
-    /// autopilot then addresses a solution by `(auction_id, solution_id)`
-    /// without collisions across engines.
+    /// If the engine fails, the driver returns `Error::Solver`.
     pub async fn solve(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
-        // TODO: add a timeout and stream results out of the fan-out (via
-        // `FuturesUnordered`) while the timeout has not expired.
-        let results = futures::future::join_all(self.solvers.iter().map(|solver| {
-            let name = solver.name().to_owned();
-            async move {
-                let result = solver.solve(auction).await;
-                (name, result)
-            }
-        }))
-        .await;
-
-        let mut solutions = Vec::new();
-        let mut any_success = false;
-        let mut last_error = None;
-        for (name, result) in results {
-            match result {
-                Ok(mut engine_solutions) => {
-                    any_success = true;
-                    solutions.append(&mut engine_solutions);
-                }
-                Err(error) => {
-                    tracing::warn!(solver = %name, %error, "solver engine failed");
-                    last_error = Some(error);
-                }
-            }
-        }
-
-        // If every engine failed, return the failure. A partial failure (some
-        // engines succeeded) still returns the successful solutions.
-        if !any_success && let Some(error) = last_error {
-            return Err(Error::Solver(error));
-        }
-
-        // Reindex engine-local solution ids to driver-unique ids. The autopilot
-        // addresses solutions by (auction_id, solution_id), so ids must be
-        // unique across engines within one auction.
-        for (index, solution) in solutions.iter_mut().enumerate() {
-            tracing::debug!(
-                solver = %solution.solver,
-                engine_id = solution.id,
-                driver_id = index,
-                "reindexing solution id"
-            );
-            solution.id = index as u64;
-        }
+        let solutions = self.solver.solve(auction).await?;
 
         // TODO: store the proposed solutions in the solution cache keyed by
         // (auction_id, solution_id) once the cache lands. The cache also
@@ -94,7 +42,7 @@ impl Competition {
 /// An error the competition reports to the API layer.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// A solver engine failed to produce solutions.
+    /// The solver engine failed to produce solutions.
     #[error("solver engine failed: {0}")]
     Solver(#[from] SolverError),
 }

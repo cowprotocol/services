@@ -1,12 +1,8 @@
 //! HTTP API server.
 
 use {
-    crate::domain,
-    axum::{
-        Router,
-        extract::DefaultBodyLimit,
-        routing::{get, post},
-    },
+    crate::{domain, infra::solver::Solver},
+    axum::{Router, extract::DefaultBodyLimit, routing::get},
     cow_solana_rpc::SolanaRPC,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     std::{net::SocketAddr, sync::Arc},
@@ -24,10 +20,11 @@ pub use self::error::Error;
 pub struct Api {
     /// Address the server binds to and listens on.
     pub addr: SocketAddr,
-    /// The shared Solana RPC client.
-    pub rpc: SolanaRPC,
-    /// The competition that runs auctions across solver engines.
-    pub competition: domain::Competition,
+    /// The shared Solana RPC client, wrapped in `Arc` so each solver engine's
+    /// state can hold a clone.
+    pub rpc: Arc<SolanaRPC>,
+    /// The solver engines.
+    pub solvers: Vec<Solver>,
 }
 
 impl Api {
@@ -55,18 +52,31 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
-        let state = State::new(self.rpc, self.competition);
+        // Global routes (healthz) live at the root.
+        let mut app = Router::new().route("/healthz", get(routes::healthz));
 
-        let app = Router::new()
-            .route("/healthz", get(routes::healthz))
-            .route("/solve", post(routes::solve))
-            .route("/settle", post(routes::settle))
+        // Mount one router per solver engine under `/{solver_name}`.
+        for solver in self.solvers {
+            let solver_name = solver.name().to_owned();
+            let competition = domain::Competition::new(solver);
+            let state = State::new(self.rpc.clone(), competition);
+
+            let router = Router::new()
+                .route("/solve", axum::routing::post(routes::solve))
+                .route("/settle", axum::routing::post(routes::settle))
+                .with_state(state);
+
+            let path = format!("/{solver_name}");
+            tracing::debug!(path = %path, "mounting solver");
+            app = app.nest(&path, router);
+        }
+
+        let app = app
             // Disable the request body limit: solver payloads (auctions and solutions)
             // can exceed axum's 2MB default.
             .layer(DefaultBodyLimit::disable())
             .layer(RequestDecompressionLayer::new())
-            .layer(tracing_layer)
-            .with_state(state);
+            .layer(tracing_layer);
 
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown.cancelled_owned())
@@ -74,17 +84,17 @@ impl Api {
     }
 }
 
-/// Shared state available to all route handlers.
+/// Shared state available to all route handlers for one solver engine.
 #[derive(Clone)]
 pub struct State(Arc<Inner>);
 
 impl State {
     /// Build the shared state the handlers operate on.
-    fn new(rpc: SolanaRPC, competition: domain::Competition) -> Self {
+    fn new(rpc: Arc<SolanaRPC>, competition: domain::Competition) -> Self {
         Self(Arc::new(Inner { rpc, competition }))
     }
 
-    /// The competition that runs auctions across solver engines.
+    /// The competition that runs auctions for this solver engine.
     fn competition(&self) -> &domain::Competition {
         &self.0.competition
     }
@@ -93,7 +103,7 @@ impl State {
 struct Inner {
     /// The shared Solana RPC client.
     #[expect(dead_code, reason = "used by the deadline and submission follow-ups")]
-    rpc: SolanaRPC,
-    /// The competition that runs auctions across solver engines.
+    rpc: Arc<SolanaRPC>,
+    /// The competition that runs auctions for this solver engine.
     competition: domain::Competition,
 }

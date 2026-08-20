@@ -2,12 +2,9 @@
 
 use {
     cow_solana_rpc::SolanaRPC,
-    solana_driver::{
-        domain::Competition,
-        infra::{api::Api, config, solver::Solver},
-    },
+    solana_driver::infra::{api::Api, config, solver::Solver},
     solana_sdk::pubkey::Pubkey,
-    std::{net::SocketAddr, num::NonZero},
+    std::{net::SocketAddr, num::NonZero, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
 
@@ -20,17 +17,17 @@ fn uid() -> String {
     format!("0x{}", "11".repeat(32))
 }
 
-fn api_with(competition: Competition) -> Api {
+fn api_with(solvers: Vec<Solver>) -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
-        rpc: SolanaRPC::new_mock("succeeds".to_string()),
-        competition,
+        rpc: Arc::new(SolanaRPC::new_mock("succeeds".to_string())),
+        solvers,
     }
 }
 
 /// Spawn the API server on an ephemeral port and return its bound address.
-async fn spawn_server(competition: Competition) -> SocketAddr {
-    let api = api_with(competition);
+async fn spawn_server(solvers: Vec<Solver>) -> SocketAddr {
+    let api = api_with(solvers);
     let (listener, addr) = api.bind().await.unwrap();
     // The test never cancels this token, so the server stays alive.
     let shutdown = CancellationToken::new();
@@ -87,7 +84,7 @@ fn solve_request() -> serde_json::Value {
 
 #[tokio::test]
 async fn healthz_returns_200() {
-    let addr = spawn_server(Competition::new(Vec::new())).await;
+    let addr = spawn_server(Vec::new()).await;
     let response = reqwest::Client::new()
         .get(format!("http://{addr}/healthz"))
         .send()
@@ -98,7 +95,7 @@ async fn healthz_returns_200() {
 
 #[tokio::test]
 async fn shuts_down_cleanly_on_signal() {
-    let api = api_with(Competition::new(Vec::new()));
+    let api = api_with(Vec::new());
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown_token = CancellationToken::new();
     let serve = api.serve(listener, shutdown_token.clone());
@@ -131,10 +128,10 @@ async fn solve_returns_converted_solutions() {
         }]
     }))
     .await;
-    let addr = spawn_server(Competition::new(vec![solver(engine, account)])).await;
+    let addr = spawn_server(vec![solver(engine, account)]).await;
 
     let response = reqwest::Client::new()
-        .post(format!("http://{addr}/solve"))
+        .post(format!("http://{addr}/mock/solve"))
         .json(&solve_request())
         .send()
         .await
@@ -142,12 +139,11 @@ async fn solve_returns_converted_solutions() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 
     let json: serde_json::Value = response.json().await.unwrap();
-    // The engine's id (42) is reindexed to 0, and the sell order's
-    // side-matching amount fills `executedSell` while `executedBuy` is the
-    // zero placeholder.
+    // The sell order's side-matching amount fills `executedSell` while
+    // `executedBuy` is the zero placeholder.
     let expected = serde_json::json!({
         "solutions": [{
-            "solutionId": "0",
+            "solutionId": "42",
             "score": "0",
             "solver": account.to_string(),
             "orders": {
@@ -162,86 +158,13 @@ async fn solve_returns_converted_solutions() {
 }
 
 #[tokio::test]
-async fn solve_reindexes_colliding_engine_ids() {
-    // Two engines both return a solution with the same engine-local id. The
-    // driver reindexes them to driver-unique ids so the autopilot can address
-    // each solution by (auction_id, solution_id) without collision.
-    let account1 = pubkey(0x99);
-    let account2 = pubkey(0x88);
-    let engine1 = spawn_mock_solver_engine(serde_json::json!({
-        "solutions": [{
-            "id": 0,
-            "trades": [{
-                "orderUid": uid(),
-                "executedAmount": "1000",
-            }],
-            "interactions": [],
-        }]
-    }))
-    .await;
-    let engine2 = spawn_mock_solver_engine(serde_json::json!({
-        "solutions": [{
-            "id": 0,
-            "trades": [{
-                "orderUid": uid(),
-                "executedAmount": "500",
-            }],
-            "interactions": [],
-        }]
-    }))
-    .await;
-    let addr = spawn_server(Competition::new(vec![
-        solver(engine1, account1),
-        solver(engine2, account2),
-    ]))
-    .await;
-
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/solve"))
-        .json(&solve_request())
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
-
-    let json: serde_json::Value = response.json().await.unwrap();
-    let expected = serde_json::json!({
-        "solutions": [
-            {
-                "solutionId": "0",
-                "score": "0",
-                "solver": account1.to_string(),
-                "orders": {
-                    (uid()): {
-                        "executedSell": "1000",
-                        "executedBuy": "0",
-                    }
-                }
-            },
-            {
-                "solutionId": "1",
-                "score": "0",
-                "solver": account2.to_string(),
-                "orders": {
-                    (uid()): {
-                        "executedSell": "500",
-                        "executedBuy": "0",
-                    }
-                }
-            }
-        ]
-    });
-    assert_eq!(json, expected);
-}
-
-#[tokio::test]
 async fn solve_with_engine_down_returns_solver_failed() {
     // Point the solver at a port with no listener.
     let dead = solver("127.0.0.1:1".parse().unwrap(), pubkey(0x99));
-    let addr = spawn_server(Competition::new(vec![dead])).await;
+    let addr = spawn_server(vec![dead]).await;
 
     let response = reqwest::Client::new()
-        .post(format!("http://{addr}/solve"))
+        .post(format!("http://{addr}/mock/solve"))
         .json(&solve_request())
         .send()
         .await
@@ -256,45 +179,12 @@ async fn solve_with_engine_down_returns_solver_failed() {
 }
 
 #[tokio::test]
-async fn solve_with_partial_engine_failure_returns_successful_solutions() {
-    // One engine returns a solution, the other is down. The failing engine
-    // must not kill the auction: the driver returns the successful engine's
-    // solution.
-    let account = pubkey(0x99);
-    let engine = spawn_mock_solver_engine(serde_json::json!({
-        "solutions": [{
-            "id": 0,
-            "trades": [{
-                "orderUid": uid(),
-                "executedAmount": "1000",
-            }],
-            "interactions": [],
-        }]
-    }))
-    .await;
-    let dead = solver("127.0.0.1:1".parse().unwrap(), pubkey(0x88));
-    let addr = spawn_server(Competition::new(vec![solver(engine, account), dead])).await;
-
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/solve"))
-        .json(&solve_request())
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
-
-    let json: serde_json::Value = response.json().await.unwrap();
-    let solutions = json["solutions"].as_array().unwrap();
-    assert_eq!(solutions.len(), 1);
-    assert_eq!(solutions[0]["solutionId"], "0");
-}
-
-#[tokio::test]
 async fn settle_rejects_non_positive_auction_id() {
-    let addr = spawn_server(Competition::new(Vec::new())).await;
+    let dead = solver("127.0.0.1:1".parse().unwrap(), pubkey(0x99));
+    let addr = spawn_server(vec![dead]).await;
 
     let response = reqwest::Client::new()
-        .post(format!("http://{addr}/settle"))
+        .post(format!("http://{addr}/mock/settle"))
         .json(&serde_json::json!({ "auctionId": "0", "solutionId": "3", "deadlineSlot": "100" }))
         .send()
         .await
