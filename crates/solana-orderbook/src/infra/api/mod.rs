@@ -61,6 +61,7 @@ impl Api {
 
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
+            .route("/api/v1/orders/{uid}", get(routes::order))
             .layer(cors)
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
