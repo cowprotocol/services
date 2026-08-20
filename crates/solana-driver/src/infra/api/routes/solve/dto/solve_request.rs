@@ -10,12 +10,7 @@ use {
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
-    std::time::Duration,
 };
-
-/// Placeholder solve budget until the wire `deadline` is piped into the domain.
-const SOLVE_DEADLINE: Duration = Duration::from_secs(15);
-
 /// The auction posted to `/solve`.
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -108,22 +103,14 @@ impl From<domain::auction::InvalidAuctionId> for Error {
 
 impl SolveRequest {
     /// Convert the wire request into a domain auction.
-    ///
-    /// The driver uses `now + SOLVE_DEADLINE` as a placeholder for the
-    /// timestamp `deadline`.
     pub fn into_domain(self) -> Result<domain::Auction, Error> {
         let id = domain::auction::Id::try_from(self.id)?;
-        // TODO: pipe the wire `deadline` into the domain once the placeholder
-        // solve budget is replaced.
-        let deadline = chrono::Utc::now()
-            + chrono::Duration::from_std(SOLVE_DEADLINE)
-                .expect("solve-deadline fits in a chrono duration");
         Ok(domain::Auction {
             id,
             orders: self.orders.into_iter().map(Into::into).collect(),
             // Placeholder; the domain does not consume it yet.
             deadline_slot: domain::Slot(0),
-            deadline,
+            deadline: self.deadline,
         })
     }
 }
