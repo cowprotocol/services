@@ -22,7 +22,7 @@ pub async fn settle(
 
     let handle_request = async {
         state.competition().settle(auction_id, solution_id)?;
-        unreachable!("competition.settle panics until on-chain settlement is implemented")
+        unimplemented!("competition.settle panics until on-chain settlement is implemented")
     };
 
     handle_request
