@@ -193,8 +193,8 @@ mod tests {
         assert_eq!(solution.trades[0].order_uid, ORDER_UID);
         assert_eq!(solution.trades[0].executed_amount, 1_000);
         // Sell mint prices at the amount bought, buy mint at the amount sold.
-        assert_eq!(solution.prices[&order(dex::Side::Sell).sell_mint], 2_000);
-        assert_eq!(solution.prices[&order(dex::Side::Sell).buy_mint], 1_000);
+        assert_eq!(solution.prices[&order.sell_mint], 2_000);
+        assert_eq!(solution.prices[&order.buy_mint], 1_000);
         assert_eq!(solution.address_lookup_tables, vec![pubkey(7)]);
 
         // The instruction is carried verbatim, flags included.
