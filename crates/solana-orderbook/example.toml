@@ -1,0 +1,15 @@
+# Example configuration for the Solana orderbook.
+
+[database]
+# The Postgres database the indexer writes to. Reads prefer read-url when set,
+# and a value like "%DB_READ_URL" reads the URL from that environment variable.
+write-url = "postgresql://"
+# read-url = "%DB_READ_URL"
+
+[http]
+bind-address = "0.0.0.0:8080"
+
+[logging]
+filter = "info,solana_orderbook=debug"
+# stderr-threshold = "warn"
+# use-json = false
