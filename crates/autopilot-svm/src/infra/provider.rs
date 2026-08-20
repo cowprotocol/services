@@ -59,9 +59,9 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         Ok(())
     }
 
-    async fn cut_auction(&self, tip: &u64) -> Option<crate::domain::auction::Auction> {
+    async fn cut_auction(&self, _tip: &u64) -> Option<crate::domain::auction::Auction> {
         let now = now_unix();
-        let auction = db::cut(&self.pool, self.next_id(now), *tip, now)
+        let auction = db::cut(&self.pool, self.next_id(now), now)
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
