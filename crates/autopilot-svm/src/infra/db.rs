@@ -102,10 +102,10 @@ ORDER BY slot, tx_signature
         .context("read solana.settlements by auction")
 }
 
-/// Cut an auction at the given tip from the open orders.
-pub async fn cut(ex: impl PgExecutor<'_>, id: i64, tip: u64, now_unix: i64) -> Result<Auction> {
+/// Cut an auction from the open orders.
+pub async fn cut(ex: impl PgExecutor<'_>, id: i64, now_unix: i64) -> Result<Auction> {
     let orders = orders_from_rows(open_orders(ex, now_unix).await?);
-    Ok(Auction { id, tip, orders })
+    Ok(Auction { id, orders })
 }
 
 /// A row the indexer wrote always converts (on-chain values fit the domain
