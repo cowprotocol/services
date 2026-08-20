@@ -241,6 +241,10 @@ mod tests {
             json,
             serde_json::json!({
                 "id": 1,
+                "prices": {
+                    (pubkey(1).to_string()): "2000",
+                    (pubkey(2).to_string()): "1000",
+                },
                 "trades": [{
                     "orderUid": format!("0x{}", "08".repeat(32)),
                     "executedAmount": "1000",
