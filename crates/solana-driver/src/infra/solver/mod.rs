@@ -141,7 +141,7 @@ mod tests {
             max_in_flight: NonZero::new(1).unwrap(),
         });
         let auction = domain::Auction {
-            id: domain::Id(1),
+            id: domain::Id::new(1).unwrap(),
             orders: Vec::new(),
             deadline_slot: domain::Slot(1),
             // Well in the past: the request must be skipped entirely.

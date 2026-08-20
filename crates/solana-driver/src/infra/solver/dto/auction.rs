@@ -80,7 +80,7 @@ impl Auction {
     /// as its buy-side counterpart on the same premise.
     pub fn new(auction: &domain::Auction, taker: Pubkey) -> Self {
         Self {
-            id: auction.id.0,
+            id: auction.id.get(),
             taker,
             orders: auction
                 .orders

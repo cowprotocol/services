@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn new_fills_the_side_matching_amount() {
         let auction = domain::Auction {
-            id: domain::auction::Id(1),
+            id: domain::auction::Id::new(1).unwrap(),
             orders: vec![
                 domain::Order {
                     uid: OrderUid([0x11; 32]),

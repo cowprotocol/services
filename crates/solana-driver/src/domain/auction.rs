@@ -12,7 +12,7 @@ use {
 /// The id must be positive. The autopilot assigns positive ids, and the
 /// engine boundary later reads the id as `u64`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Id(pub i64);
+pub struct Id(i64);
 
 impl Id {
     /// Construct a validated auction id. Reject non-positive values.
@@ -21,6 +21,11 @@ impl Id {
             return Err(InvalidAuctionId(id));
         }
         Ok(Self(id))
+    }
+
+    /// The raw id value. Guaranteed positive by construction.
+    pub fn get(self) -> i64 {
+        self.0
     }
 }
 
