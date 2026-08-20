@@ -20,11 +20,13 @@ use {
 
 /// A closed window's outcome, the `solana.settlement_executions.outcome`
 /// value. The outcome records what the indexer observed on chain, never a
-/// driver's report, which is why a landing observed after the deadline may
-/// overwrite a timeout. The schema also allows `rejected`, unused until
-/// typed `/settle` errors are consumed.
+/// driver's report. The schema also allows `rejected`, unused until typed
+/// `/settle` errors are consumed.
 enum Outcome {
+    /// The settlement was observed landed on chain.
     Landed,
+    /// The deadline passed with no observed settlement. A landing observed
+    /// later still overwrites this, chain truth wins over the sweep's timing.
     Timeout,
 }
 
@@ -51,7 +53,7 @@ impl SettlementTracker {
     /// Open a window for a dispatched settlement. `solution_uid` is the
     /// winner's driver-local solution id until competition persistence
     /// allocates uids.
-    pub async fn dispatched(
+    pub async fn open_dispatched_settlement_window(
         &self,
         auction_id: i64,
         solver: Pubkey,
@@ -69,9 +71,9 @@ ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
         )
         .bind(auction_id)
         .bind(solver.0)
-        .bind(to_db_u64(solution_uid))
-        .bind(to_db_u64(start_slot))
-        .bind(to_db_u64(deadline_slot))
+        .bind(to_db_integer(solution_uid))
+        .bind(to_db_integer(start_slot))
+        .bind(to_db_integer(deadline_slot))
         .execute(&self.pool)
         .await
         .context("open settlement execution window")?;
@@ -83,7 +85,7 @@ ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
     /// of one auction each close on their own settlement. A window already
     /// closed as timed out upgrades to landed: the settlement executed, just
     /// late, and lateness stays visible as `end_slot` past `deadline_slot`.
-    async fn landed(
+    async fn close_solvers_window_as_landed(
         &self,
         auction_id: i64,
         solver: &[u8],
@@ -114,7 +116,7 @@ WHERE auction_id = $1 AND solver = $6 AND (outcome IS NULL OR outcome = $5)
     /// timed out, logging each. Driven by the competition cycle, so on a
     /// chain with no active auctions a timeout surfaces with the next
     /// competition, not at its deadline slot.
-    pub async fn flag_expired(&self, slot: u64) -> Result<()> {
+    pub async fn close_expired_windows_as_timeout(&self, slot: u64) -> Result<()> {
         let expired: Vec<(i64,)> = sqlx::query_as(
             r#"
 UPDATE solana.settlement_executions
@@ -123,7 +125,7 @@ WHERE outcome IS NULL AND deadline_slot <= $1
 RETURNING auction_id
             "#,
         )
-        .bind(to_db_u64(slot))
+        .bind(to_db_integer(slot))
         .bind(Outcome::Timeout.as_str())
         .fetch_all(&self.pool)
         .await
@@ -135,7 +137,7 @@ RETURNING auction_id
     }
 
     /// Auction ids of open windows, the seed re-read set.
-    async fn open_windows(&self) -> Result<Vec<i64>> {
+    async fn open_window_auction_ids(&self) -> Result<Vec<i64>> {
         let rows: Vec<(i64,)> = sqlx::query_as(
             "SELECT auction_id FROM solana.settlement_executions WHERE outcome IS NULL",
         )
@@ -146,8 +148,8 @@ RETURNING auction_id
     }
 }
 
-/// Slots and solution ids stay far below `i64::MAX`.
-fn to_db_u64(value: u64) -> i64 {
+/// Slots and solution ids stay far below `i64::MAX`, the column type.
+fn to_db_integer(value: u64) -> i64 {
     i64::try_from(value).expect("value exceeds i64")
 }
 
@@ -169,7 +171,7 @@ impl SettlementObservation {
         for settlement in db::settlements_by_auction(&self.pool, auction_id).await? {
             let closed = self
                 .tracker
-                .landed(
+                .close_solvers_window_as_landed(
                     auction_id,
                     &settlement.solver.0,
                     settlement.slot,
@@ -194,7 +196,7 @@ impl NotifyHandler for SettlementObservation {
     /// Re-check every open window: a NOTIFY missed while the connection was
     /// down (or while the autopilot was not running) is recovered here.
     async fn seed(&mut self) -> Result<()> {
-        for auction_id in self.tracker.open_windows().await? {
+        for auction_id in self.tracker.open_window_auction_ids().await? {
             self.resolve(auction_id).await?;
         }
         Ok(())
@@ -266,7 +268,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
 
         let tracker = SettlementTracker::new(pool.clone());
         tracker
-            .dispatched(4242, Pubkey([7; 32]), 1, 90, 100)
+            .open_dispatched_settlement_window(4242, Pubkey([7; 32]), 1, 90, 100)
             .await
             .unwrap();
 
@@ -305,22 +307,22 @@ VALUES (10, $1, 0, $2, $3, NULL)
 
         let tracker = SettlementTracker::new(pool.clone());
         tracker
-            .dispatched(1, Pubkey([7; 32]), 1, 90, 100)
+            .open_dispatched_settlement_window(1, Pubkey([7; 32]), 1, 90, 100)
             .await
             .unwrap();
         tracker
-            .dispatched(2, Pubkey([7; 32]), 1, 90, 200)
+            .open_dispatched_settlement_window(2, Pubkey([7; 32]), 1, 90, 200)
             .await
             .unwrap();
 
-        tracker.flag_expired(150).await.unwrap();
+        tracker.close_expired_windows_as_timeout(150).await.unwrap();
         assert_eq!(outcome(&pool, 1).await.as_deref(), Some("timeout"));
         assert_eq!(outcome(&pool, 2).await, None);
 
         // A settlement observed after the timeout upgrades the verdict: it
         // executed, just late.
         tracker
-            .landed(1, &[7u8; 32], 160, &[9u8; 64])
+            .close_solvers_window_as_landed(1, &[7u8; 32], 160, &[9u8; 64])
             .await
             .unwrap();
         assert_eq!(outcome(&pool, 1).await.as_deref(), Some("landed"));

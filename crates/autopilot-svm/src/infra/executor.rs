@@ -17,7 +17,8 @@ use {
 /// loop starts the next cycle while settlements land.
 pub struct DriverExecutor {
     drivers: Vec<Arc<Driver>>,
-    /// Dispatched settlements the observation side resolves or times out.
+    /// Opens a settlement-execution window per dispatched settlement, which
+    /// the observation side later resolves or times out.
     tracker: SettlementTracker,
     /// Slots a settlement may take after ranking before it counts as late.
     submission_deadline_slots: u64,
@@ -64,7 +65,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             // the dispatch is the priority.
             if let Err(err) = self
                 .tracker
-                .dispatched(
+                .open_dispatched_settlement_window(
                     auction_id,
                     winner.solver(),
                     winner.id(),
