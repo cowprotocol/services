@@ -25,14 +25,17 @@ pub struct Error {
 
 impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(kind: Kind) -> Self {
-        let description = match kind {
-            Kind::InvalidAuctionId => "Invalid ID specified in the auction",
-            Kind::SolverFailed => "Solver engine returned an invalid response",
+        let (status, description) = match kind {
+            Kind::InvalidAuctionId => (
+                axum::http::StatusCode::BAD_REQUEST,
+                "Invalid ID specified in the auction",
+            ),
+            Kind::SolverFailed => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "All solver engines failed to produce solutions",
+            ),
         };
-        (
-            axum::http::StatusCode::BAD_REQUEST,
-            axum::Json(Error { kind, description }),
-        )
+        (status, axum::Json(Error { kind, description }))
     }
 }
 
