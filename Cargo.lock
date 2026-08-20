@@ -6309,6 +6309,7 @@ dependencies = [
  "maplit",
  "mockall",
  "model",
+ "moka",
  "num 0.4.3",
  "number",
  "observe",

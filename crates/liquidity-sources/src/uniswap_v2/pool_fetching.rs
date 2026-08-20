@@ -6,7 +6,6 @@ use {
         primitives::{Address, U256},
     },
     anyhow::Result,
-    cached::{Cached, TimedCache},
     contracts::{
         ERC20,
         IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
@@ -17,15 +16,18 @@ use {
         future::{self, BoxFuture},
     },
     model::TokenPair,
+    moka::sync::Cache,
     num::rational::Ratio,
-    std::{
-        collections::HashSet,
-        sync::{LazyLock, RwLock},
-        time::Duration,
-    },
+    std::{collections::HashSet, sync::LazyLock, time::Duration},
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
+
+/// Upper bound on the token pairs remembered as having no pool.
+/// At the time of writing mainnet observes roughly 30k of them per Uniswap V2
+/// like venue. Evicting an entry early is harmless because it only causes the
+/// pair to be probed again.
+const MAX_NON_EXISTENT_POOLS: u64 = 50_000;
 
 static POOL_MAX_RESERVES: LazyLock<U256> = LazyLock::new(|| U256::from((1u128 << 112) - 1));
 
@@ -199,7 +201,9 @@ impl BaselineSolvable for Pool {
 pub struct PoolFetcher<Reader> {
     pub pool_reader: Reader,
     pub web3: Web3,
-    pub non_existent_pools: RwLock<TimedCache<TokenPair, ()>>,
+    /// Token pairs that returned no usable liquidity. They are suppressed
+    /// from being fetched again until their entry expires.
+    pub non_existent_pools: Cache<TokenPair, ()>,
 }
 
 impl<Reader> PoolFetcher<Reader> {
@@ -207,7 +211,10 @@ impl<Reader> PoolFetcher<Reader> {
         Self {
             pool_reader: reader,
             web3,
-            non_existent_pools: RwLock::new(TimedCache::with_lifespan(cache_time.as_secs())),
+            non_existent_pools: Cache::builder()
+                .max_capacity(MAX_NON_EXISTENT_POOLS)
+                .time_to_live(cache_time)
+                .build(),
         }
     }
 }
@@ -219,10 +226,7 @@ where
 {
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
         let mut token_pairs: Vec<_> = token_pairs.into_iter().collect();
-        {
-            let mut non_existent_pools = self.non_existent_pools.write().unwrap();
-            token_pairs.retain(|pair| non_existent_pools.cache_get(pair).is_none());
-        }
+        token_pairs.retain(|pair| self.non_existent_pools.get(pair).is_none());
         let futures = token_pairs
             .iter()
             .map(|pair| self.pool_reader.read_state(*pair, at_block.into()))
@@ -240,9 +244,8 @@ where
         }
         if !new_missing_pairs.is_empty() {
             tracing::debug!(token_pairs = ?new_missing_pairs, "stop indexing liquidity");
-            let mut non_existent_pools = self.non_existent_pools.write().unwrap();
             for pair in new_missing_pairs {
-                non_existent_pools.cache_set(pair, ());
+                self.non_existent_pools.insert(pair, ());
             }
         }
         Ok(pools)
@@ -371,6 +374,10 @@ mod tests {
     use {
         super::*,
         ethrpc::alloy::errors::{testing_alloy_contract_error, testing_alloy_node_error},
+        std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
     };
 
     #[test]
@@ -541,5 +548,77 @@ mod tests {
                 .unwrap()
                 .is_none()
         )
+    }
+    /// A [`PoolReading`] that reports every pair as having no pool and counts
+    /// how often it was asked.
+    struct CountingReader(Arc<AtomicUsize>);
+
+    impl PoolReading for CountingReader {
+        fn read_state(&self, _: TokenPair, _: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            async { Ok(None) }.boxed()
+        }
+    }
+
+    fn counting_fetcher(cache_time: Duration) -> (PoolFetcher<CountingReader>, Arc<AtomicUsize>) {
+        let reads = Arc::new(AtomicUsize::new(0));
+        let fetcher = PoolFetcher::new(
+            CountingReader(reads.clone()),
+            ethrpc::mock::web3(),
+            cache_time,
+        );
+        (fetcher, reads)
+    }
+
+    fn some_pair() -> HashSet<TokenPair> {
+        HashSet::from([
+            TokenPair::new(Address::with_last_byte(1), Address::with_last_byte(2)).unwrap(),
+        ])
+    }
+
+    #[tokio::test]
+    async fn non_existent_pool_is_probed_only_once() {
+        let (fetcher, reads) = counting_fetcher(Duration::from_secs(60));
+
+        assert!(
+            fetcher
+                .fetch(some_pair(), Block::Recent)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            fetcher
+                .fetch(some_pair(), Block::Recent)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn non_existent_pool_is_probed_again_after_expiry() {
+        let cache_time = Duration::from_millis(50);
+        let (fetcher, reads) = counting_fetcher(cache_time);
+
+        fetcher.fetch(some_pair(), Block::Recent).await.unwrap();
+        tokio::time::sleep(cache_time * 3).await;
+        fetcher.fetch(some_pair(), Block::Recent).await.unwrap();
+
+        assert_eq!(reads.load(Ordering::SeqCst), 2);
+    }
+
+    /// `UniV2BaselineSourceParameters::into_source` builds the fetcher with a
+    /// zero cache time, which has to leave the suppression disabled.
+    #[tokio::test]
+    async fn zero_cache_time_disables_suppression() {
+        let (fetcher, reads) = counting_fetcher(Duration::ZERO);
+
+        fetcher.fetch(some_pair(), Block::Recent).await.unwrap();
+        fetcher.fetch(some_pair(), Block::Recent).await.unwrap();
+
+        assert_eq!(reads.load(Ordering::SeqCst), 2);
     }
 }
