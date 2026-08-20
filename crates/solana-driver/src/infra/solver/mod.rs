@@ -28,6 +28,11 @@ pub struct Solver {
 }
 
 impl Solver {
+    /// The human-readable name of this solver, for logs and metrics.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// Build a solver client from its configuration.
     pub fn new(config: &config::Solver) -> Self {
         Self {
@@ -136,8 +141,9 @@ mod tests {
             max_in_flight: NonZero::new(1).unwrap(),
         });
         let auction = domain::Auction {
-            id: 0,
+            id: domain::Id::new(1).unwrap(),
             orders: Vec::new(),
+            deadline_slot: domain::Slot(1),
             // Well in the past: the request must be skipped entirely.
             deadline: chrono::Utc::now() - chrono::Duration::seconds(10),
         };
