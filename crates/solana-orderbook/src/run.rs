@@ -78,10 +78,9 @@ pub async fn run(args: Args) {
     infra_observe::init(config.observe_config());
 
     let version = observe::version::git_version();
-    tracing::info!(%version, "running solana orderbook");
-    if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
-        tracing::info!(?config, "loaded config");
-    }
+    // Secrets stay out of the log through the config types' redacting Debug
+    // impls.
+    tracing::info!(%version, ?config, "running solana orderbook");
 
     let pool = read_pool(&config.database).await;
     let metrics = serve_probes(pool.clone(), config.http.bind_address);
