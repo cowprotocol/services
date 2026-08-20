@@ -3,6 +3,7 @@
 pub mod pair_provider;
 pub mod pool_cache;
 pub mod pool_fetching;
+mod slotted_expiry;
 
 use {
     self::{
@@ -15,7 +16,7 @@ use {
     contracts::IUniswapLikeRouter,
     ethrpc::{Web3, alloy::ProviderLabelingExt},
     hex_literal::hex,
-    std::{fmt::Display, str::FromStr, sync::Arc},
+    std::{fmt::Display, str::FromStr, sync::Arc, time::Duration},
 };
 
 // How to compute for unknown contracts
@@ -113,8 +114,14 @@ impl UniV2BaselineSourceParameters {
             PoolReadingStyle::Default => Box::new(pool_reader),
             PoolReadingStyle::Swapr => Box::new(SwaprPoolReader(pool_reader)),
         };
-        let fetcher =
-            pool_fetching::PoolFetcher::new(pool_reader, web3.clone(), Default::default());
+        // This source is built for one-off lookups, so a negative cache would
+        // only accumulate state without ever saving a probe. Zero disables it.
+        let fetcher = pool_fetching::PoolFetcher::new(
+            pool_reader,
+            web3.clone(),
+            Duration::ZERO,
+            "univ2Baseline".to_owned(),
+        );
         Ok(UniV2BaselineSource {
             router,
             pair_provider,

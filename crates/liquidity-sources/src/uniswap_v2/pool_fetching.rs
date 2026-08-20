@@ -1,6 +1,10 @@
 use {
     super::pair_provider::PairProvider,
-    crate::{baseline_solvable::BaselineSolvable, recent_block_cache::Block},
+    crate::{
+        baseline_solvable::BaselineSolvable,
+        recent_block_cache::Block,
+        uniswap_v2::slotted_expiry::SlottedExpiry,
+    },
     alloy::{
         eips::BlockId,
         primitives::{Address, U256},
@@ -18,16 +22,46 @@ use {
     model::TokenPair,
     moka::sync::Cache,
     num::rational::Ratio,
+    prometheus::{IntCounterVec, IntGaugeVec},
     std::{collections::HashSet, sync::LazyLock, time::Duration},
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
 
 /// Upper bound on the token pairs remembered as having no pool.
-/// At the time of writing mainnet observes roughly 30k of them per Uniswap V2
-/// like venue. Evicting an entry early is harmless because it only causes the
-/// pair to be probed again.
-const MAX_NON_EXISTENT_POOLS: u64 = 50_000;
+/// At the time of writing the largest such cache on mainnet holds roughly 20k
+/// entries, so this leaves about 5x headroom. Evicting an entry early is not
+/// incorrect, but the overflow is then re-probed on every block rather than
+/// once per cycle, so the cap wants headroom rather than to be tight.
+const MAX_NON_EXISTENT_POOLS: u64 = 100_000;
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Token pairs recorded as having no pool. Every re-probe that re-confirms
+    /// a pair counts again, so in steady state this tracks the probe cadence:
+    /// roughly one per suppressed pair per `missing_pool_cache_time`.
+    ///
+    /// Today a transport failure aborts the whole fetch before anything is
+    /// recorded, so only per-pair contract-level results land here. Once probes
+    /// are batched into a single call, a partially failed batch could record
+    /// pairs that do have a pool, and a step change here is where that shows.
+    #[metric(labels("venue"))]
+    non_existent_pools_cached: IntCounterVec,
+
+    /// Entries resident in the cache, which is what counts against
+    /// `MAX_NON_EXISTENT_POOLS`. Slightly ahead of the number of pairs actually
+    /// suppressed, because moka keeps an expired entry until its timer fires.
+    /// Reaching the cap means new pairs are refused admission and re-probed on
+    /// every block rather than once per cycle.
+    #[metric(labels("venue"))]
+    non_existent_pools_size: IntGaugeVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+    }
+}
 
 static POOL_MAX_RESERVES: LazyLock<U256> = LazyLock::new(|| U256::from((1u128 << 112) - 1));
 
@@ -201,20 +235,28 @@ impl BaselineSolvable for Pool {
 pub struct PoolFetcher<Reader> {
     pub pool_reader: Reader,
     pub web3: Web3,
-    /// Token pairs that returned no usable liquidity. They are suppressed
-    /// from being fetched again until their entry expires.
-    pub non_existent_pools: Cache<TokenPair, ()>,
+    /// Identifies this venue in metrics. One process runs a fetcher per
+    /// Uniswap-V2-like venue, and they must not share metric series.
+    pub venue: String,
+    /// Token pairs that returned no usable liquidity. They are suppressed from
+    /// being fetched again until their entry expires. `None` when the
+    /// configured cache time is zero, which disables suppression: building the
+    /// cache anyway would retain entries that expire the moment they land.
+    pub non_existent_pools: Option<Cache<TokenPair, ()>>,
 }
 
 impl<Reader> PoolFetcher<Reader> {
-    pub fn new(reader: Reader, web3: Web3, cache_time: Duration) -> Self {
+    pub fn new(reader: Reader, web3: Web3, cache_time: Duration, venue: String) -> Self {
         Self {
             pool_reader: reader,
             web3,
-            non_existent_pools: Cache::builder()
-                .max_capacity(MAX_NON_EXISTENT_POOLS)
-                .time_to_live(cache_time)
-                .build(),
+            venue,
+            non_existent_pools: (!cache_time.is_zero()).then(|| {
+                Cache::builder()
+                    .max_capacity(MAX_NON_EXISTENT_POOLS)
+                    .expire_after(SlottedExpiry::new(cache_time))
+                    .build()
+            }),
         }
     }
 }
@@ -225,8 +267,16 @@ where
     Reader: PoolReading,
 {
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
+        let metrics = Metrics::get();
         let mut token_pairs: Vec<_> = token_pairs.into_iter().collect();
-        token_pairs.retain(|pair| self.non_existent_pools.get(pair).is_none());
+
+        if let Some(cache) = &self.non_existent_pools {
+            metrics
+                .non_existent_pools_size
+                .with_label_values(&[&self.venue])
+                .set(i64::try_from(cache.entry_count()).unwrap_or(i64::MAX));
+            token_pairs.retain(|pair| cache.get(pair).is_none());
+        }
         let futures = token_pairs
             .iter()
             .map(|pair| self.pool_reader.read_state(*pair, at_block.into()))
@@ -244,8 +294,14 @@ where
         }
         if !new_missing_pairs.is_empty() {
             tracing::debug!(token_pairs = ?new_missing_pairs, "stop indexing liquidity");
-            for pair in new_missing_pairs {
-                self.non_existent_pools.insert(pair, ());
+            if let Some(cache) = &self.non_existent_pools {
+                metrics
+                    .non_existent_pools_cached
+                    .with_label_values(&[&self.venue])
+                    .inc_by(new_missing_pairs.len() as u64);
+                for pair in new_missing_pairs {
+                    cache.insert(pair, ());
+                }
             }
         }
         Ok(pools)
@@ -374,9 +430,12 @@ mod tests {
     use {
         super::*,
         ethrpc::alloy::errors::{testing_alloy_contract_error, testing_alloy_node_error},
-        std::sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
+        std::{
+            sync::{
+                Arc,
+                atomic::{AtomicUsize, Ordering},
+            },
+            time::Instant,
         },
     };
 
@@ -566,14 +625,25 @@ mod tests {
             CountingReader(reads.clone()),
             ethrpc::mock::web3(),
             cache_time,
+            "test".to_owned(),
         );
         (fetcher, reads)
     }
 
+    fn a_pair() -> TokenPair {
+        TokenPair::new(Address::with_last_byte(1), Address::with_last_byte(2)).unwrap()
+    }
+
     fn some_pair() -> HashSet<TokenPair> {
-        HashSet::from([
-            TokenPair::new(Address::with_last_byte(1), Address::with_last_byte(2)).unwrap(),
-        ])
+        HashSet::from([a_pair()])
+    }
+
+    fn pair_number(i: u64) -> TokenPair {
+        TokenPair::new(
+            Address::left_padding_from(&u64::MAX.to_be_bytes()),
+            Address::left_padding_from(&i.to_be_bytes()),
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -620,5 +690,91 @@ mod tests {
         fetcher.fetch(some_pair(), Block::Recent).await.unwrap();
 
         assert_eq!(reads.load(Ordering::SeqCst), 2);
+        assert!(
+            fetcher.non_existent_pools.is_none(),
+            "a disabled cache should not be built at all"
+        );
+    }
+    /// A [`PoolReading`] that fails the way a dead node does.
+    struct FailingReader;
+
+    impl PoolReading for FailingReader {
+        fn read_state(&self, _: TokenPair, _: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
+            async { Err(anyhow::anyhow!("node is unreachable")) }.boxed()
+        }
+    }
+
+    /// A node failure must never be mistaken for "this pair has no pool".
+    /// Only `handle_results` covered this before, so a move to batched probes
+    /// could start caching false negatives without any test noticing. A false
+    /// negative silently hides a real pool for a whole cycle.
+    #[tokio::test]
+    async fn a_node_error_never_records_a_pair_as_missing() {
+        let fetcher = PoolFetcher::new(
+            FailingReader,
+            ethrpc::mock::web3(),
+            Duration::from_secs(3600),
+            "test".to_owned(),
+        );
+
+        assert!(fetcher.fetch(some_pair(), Block::Recent).await.is_err());
+
+        let cache = fetcher.non_existent_pools.as_ref().unwrap();
+        cache.run_pending_tasks();
+        assert_eq!(cache.entry_count(), 0, "a node error poisoned the cache");
+    }
+
+    /// Drives a real `moka` cache to pin the two properties `SlottedExpiry`
+    /// exists for. Reverting to `time_to_live` fails the spread assertion;
+    /// dropping the `expire_after_update` override fails the cadence one.
+    #[tokio::test]
+    async fn slotting_keeps_the_cadence_and_spreads_the_re_probes() {
+        const BASE: Duration = Duration::from_millis(200);
+        const POLL: Duration = Duration::from_millis(10);
+        const POLLS: u32 = 60;
+        const PAIRS: u64 = 200;
+
+        let (fetcher, reads) = counting_fetcher(BASE);
+        let pairs: HashSet<_> = (0..PAIRS).map(pair_number).collect();
+
+        // Discovery is a burst by nature. Measure the re-probes that follow.
+        fetcher.fetch(pairs.clone(), Block::Recent).await.unwrap();
+
+        let started = Instant::now();
+        let mut previous = reads.load(Ordering::SeqCst);
+        let mut per_fetch = Vec::new();
+        for _ in 0..POLLS {
+            tokio::time::sleep(POLL).await;
+            fetcher.fetch(pairs.clone(), Block::Recent).await.unwrap();
+            let total = reads.load(Ordering::SeqCst);
+            per_fetch.push(total - previous);
+            previous = total;
+        }
+
+        // One re-probe per pair per cycle. Scale by the time actually spent, so
+        // a slow machine shifts the expectation instead of failing the test.
+        let cycles = started.elapsed().as_secs_f64() / BASE.as_secs_f64();
+        let expected = PAIRS as f64 * cycles;
+        let re_probes = per_fetch.iter().sum::<usize>() as f64;
+
+        assert!(
+            re_probes < expected * 1.5,
+            "{re_probes} re-probes against an expected {expected:.0}: cadence too fast"
+        );
+        assert!(
+            re_probes > expected * 0.5,
+            "{re_probes} re-probes against an expected {expected:.0}: cadence too slow"
+        );
+
+        // A herd shows up as most fetches seeing nothing and one seeing
+        // everything; spread means every fetch sees a few. Deliberately not a
+        // bound on the largest fetch, since a scheduling stall legitimately
+        // lets one fetch cover a wide slice of the cycle.
+        let idle = per_fetch.iter().filter(|probes| **probes == 0).count();
+        assert!(
+            idle < per_fetch.len() / 4,
+            "{idle} of {} fetches re-probed nothing: the herd is synchronised",
+            per_fetch.len()
+        );
     }
 }
