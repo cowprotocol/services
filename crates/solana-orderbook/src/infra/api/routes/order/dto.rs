@@ -90,7 +90,9 @@ impl Order {
 fn status(row: &OrderRow, now_unix: i64) -> Status {
     let filled = match row.kind.as_str() {
         "sell" => row.amount_withdrawn >= row.sell_amount,
-        _ => row.amount_received >= row.buy_amount,
+        "buy" => row.amount_received >= row.buy_amount,
+        // The DB enum only holds sell and buy, a new variant must fail loud.
+        other => unreachable!("unknown order kind {other}"),
     };
     if filled {
         return Status::Fulfilled;
@@ -141,6 +143,13 @@ mod tests {
         };
         // A full fill outranks expiry.
         assert_eq!(status(&filled, 2_001), Status::Fulfilled);
+
+        let filled_buy = OrderRow {
+            kind: "buy".to_string(),
+            amount_received: 500.into(),
+            ..row()
+        };
+        assert_eq!(status(&filled_buy, 1_500), Status::Fulfilled);
 
         let reclaimed_after_fill = OrderRow {
             cancellation_timestamp: Some(DateTime::from_timestamp(1_100, 0).unwrap()),
