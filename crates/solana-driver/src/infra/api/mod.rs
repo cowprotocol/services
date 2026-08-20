@@ -1,6 +1,7 @@
 //! HTTP API server.
 
 use {
+    crate::infra::solver,
     axum::{
         Router,
         extract::DefaultBodyLimit,
@@ -22,6 +23,8 @@ pub struct Api {
     pub addr: SocketAddr,
     /// The shared Solana RPC client.
     pub rpc: SolanaRPC,
+    /// Configured solver engines.
+    pub solvers: Vec<solver::Solver>,
 }
 
 impl Api {
@@ -49,7 +52,7 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
-        let state = State::new(self.rpc);
+        let state = State::new(self.rpc, self.solvers);
 
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
@@ -69,22 +72,21 @@ impl Api {
 }
 
 /// Shared state available to all route handlers.
-///
-/// The inner field is not yet read by any handler (the `/solve` and `/settle`
-/// handlers are stubs), so `#[expect(dead_code)]` suppresses the unused-field
-/// warning until shared state is added.
 #[derive(Clone)]
 #[expect(dead_code)]
 pub struct State(Arc<Inner>);
 
 impl State {
-    fn new(rpc: SolanaRPC) -> Self {
-        Self(Arc::new(Inner { rpc }))
+    /// Build the shared state the handlers operate on.
+    fn new(rpc: SolanaRPC, solvers: Vec<solver::Solver>) -> Self {
+        Self(Arc::new(Inner { rpc, solvers }))
     }
 }
 
+#[expect(dead_code)]
 struct Inner {
     /// The shared Solana RPC client.
-    #[expect(dead_code)]
     rpc: SolanaRPC,
+    /// Configured solver engines.
+    solvers: Vec<solver::Solver>,
 }

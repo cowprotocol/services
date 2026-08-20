@@ -12,6 +12,17 @@ where
     s.parse().map_err(serde::de::Error::custom)
 }
 
+/// Same as [`deserialize_solana_pubkey_b58`] for optional fields. Pair with
+/// `#[serde(default)]` so an absent field stays `None`.
+pub fn deserialize_optional_solana_pubkey_b58<'de, D>(
+    deserializer: D,
+) -> Result<Option<Pubkey>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(deserialize_solana_pubkey_b58(deserializer)?))
+}
+
 #[cfg(test)]
 mod tests {
     use {

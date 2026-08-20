@@ -1,7 +1,7 @@
 //! Driver entry-point logic.
 
 use {
-    crate::infra::{Api, config, observe as infra_observe},
+    crate::infra::{Api, config, observe as infra_observe, solver},
     clap::Parser,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     std::{path::PathBuf, time::Duration},
@@ -40,9 +40,11 @@ pub async fn run(args: Args) {
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
     );
+    let solvers: Vec<solver::Solver> = config.solvers.iter().map(solver::Solver::new).collect();
     let api = Api {
         addr: config.http.bind_address,
         rpc,
+        solvers,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());
