@@ -8,6 +8,7 @@ use {
     serde::Serialize,
     serde_with::serde_as,
     solana_sdk::{instruction::Instruction as SolInstruction, pubkey::Pubkey},
+    std::collections::HashMap,
 };
 
 /// A solution in the driver's `/solve` DTO. Trades fulfill auction orders, with
@@ -17,6 +18,12 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub id: u64,
+    /// Uniform clearing prices by mint. For a single-order solution the pair
+    /// is the executed swap's ratio: the sell mint maps to the amount bought
+    /// and the buy mint to the amount sold, so
+    /// `executed_sell * price_sell == executed_buy * price_buy`.
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
+    pub prices: HashMap<Pubkey, u64>,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Instruction>,
     /// Optional solver estimate of total settlement compute units.
@@ -98,6 +105,10 @@ impl Solution {
         };
         Ok(Self {
             id,
+            prices: HashMap::from([
+                (order.sell_mint, swap.out_amount),
+                (order.buy_mint, swap.in_amount),
+            ]),
             trades: vec![Trade {
                 order_uid,
                 executed_amount,
@@ -181,6 +192,9 @@ mod tests {
         assert_eq!(solution.trades.len(), 1);
         assert_eq!(solution.trades[0].order_uid, ORDER_UID);
         assert_eq!(solution.trades[0].executed_amount, 1_000);
+        // Sell mint prices at the amount bought, buy mint at the amount sold.
+        assert_eq!(solution.prices[&order(dex::Side::Sell).sell_mint], 2_000);
+        assert_eq!(solution.prices[&order(dex::Side::Sell).buy_mint], 1_000);
         assert_eq!(solution.address_lookup_tables, vec![pubkey(7)]);
 
         // The instruction is carried verbatim, flags included.
