@@ -44,7 +44,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for LogObserver {
     ) -> anyhow::Result<()> {
         // Best effort: the expiry bookkeeping only touches previously
         // dispatched windows and must not block the current dispatch.
-        if let Err(err) = self.tracker.flag_expired(*tip).await {
+        if let Err(err) = self.tracker.close_expired_windows_as_timeout(*tip).await {
             tracing::error!(?err, "failed to flag expired settlement windows");
         }
         tracing::info!(
