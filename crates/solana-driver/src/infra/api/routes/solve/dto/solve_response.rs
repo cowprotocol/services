@@ -52,47 +52,64 @@ pub struct TradedAmounts {
 impl SolveResponse {
     /// Build the wire response from the driver's domain solutions.
     ///
-    /// `auction` supplies each order's side.
+    /// `auction` supplies each order's side and tokens.
     pub fn new(solutions: Vec<domain::Solution>, auction: &domain::Auction) -> Self {
-        let sides: HashMap<OrderUid, domain::Side> = auction
+        let auction_orders: HashMap<OrderUid, &domain::Order> = auction
             .orders
             .iter()
-            .map(|order| (order.uid, order.side))
+            .map(|order| (order.uid, order))
             .collect();
         Self {
             solutions: solutions
                 .into_iter()
-                .map(|solution| Solution::new(solution, &sides))
+                .map(|solution| Solution::new(solution, &auction_orders))
                 .collect(),
         }
     }
 }
 
 impl Solution {
-    fn new(solution: domain::Solution, sides: &HashMap<OrderUid, domain::Side>) -> Self {
-        let orders = solution
-            .trades
+    fn new(solution: domain::Solution, auction_orders: &HashMap<OrderUid, &domain::Order>) -> Self {
+        let domain::Solution {
+            id,
+            prices,
+            trades,
+            solver,
+            ..
+        } = solution;
+        let orders = trades
             .into_iter()
             .map(|trade| {
-                // WARN: As of now, the engine implementation only reports one executed amount,
-                // on the order's own side.  We fill that side and leave the other side at 0 as
-                // a placeholder.
-                //
-                // TODO: the counterpart amount isn't on the engine wire yet, so the `0` below
-                // is knowingly wrong. The autopilot must not persist it or compute over it as
-                // if it were real. The driver will replace it once the engine wire carries both
-                // legs (or clearing prices arrive).
-                //
-                // TODO: once the engine wire carries both trade legs, `domain::Trade` will hold
-                // the side directly and this lookup (plus the `.expect`) goes
-                // away entirely.
-                let side = sides.get(&trade.order_uid).copied().expect(
+                let order = auction_orders.get(&trade.order_uid).expect(
                     "trade uid is known by construction: Solutions::into_domain rejects unknown \
                      uids",
                 );
-                let (executed_sell, executed_buy) = match side {
-                    domain::Side::Sell => (trade.executed_amount, 0),
-                    domain::Side::Buy => (0, trade.executed_amount),
+                // The engine reports one executed amount, on the order's own side, plus uniform
+                // clearing prices per mint. Derive the counterpart leg from the prices so the
+                // autopilot sees a real trade on both sides instead of a zero placeholder.
+                let price_sell = prices
+                    .get(&order.sell_token)
+                    .expect("engine reports a clearing price for every traded sell mint");
+                let price_buy = prices
+                    .get(&order.buy_token)
+                    .expect("engine reports a clearing price for every traded buy mint");
+                let (executed_sell, executed_buy) = match order.side {
+                    domain::Side::Sell => {
+                        let executed_buy = trade
+                            .executed_amount
+                            .checked_mul(*price_sell)
+                            .and_then(|v| v.checked_div(*price_buy))
+                            .expect("clearing prices yield a valid counterpart amount");
+                        (trade.executed_amount, executed_buy)
+                    }
+                    domain::Side::Buy => {
+                        let executed_sell = trade
+                            .executed_amount
+                            .checked_mul(*price_buy)
+                            .and_then(|v| v.checked_div(*price_sell))
+                            .expect("clearing prices yield a valid counterpart amount");
+                        (executed_sell, trade.executed_amount)
+                    }
                 };
                 (
                     trade.order_uid,
@@ -104,11 +121,11 @@ impl Solution {
             })
             .collect();
         Self {
-            solution_id: solution.id,
-            // TODO: the driver stubs the score to 0 until surplus math is done, which needs both
-            // executed amounts and native price functionality.
+            solution_id: id,
+            // TODO: the driver stubs the score to 0 until surplus math is done, which needs
+            // native price functionality.
             score: 0,
-            solver: solution.solver,
+            solver,
             orders,
         }
     }
@@ -152,13 +169,10 @@ mod tests {
         assert_eq!(serde_json::to_value(&solve).unwrap(), expected);
     }
 
-    /// A sell order fills `executedSell` and zero-fills `executedBuy`. A buy
-    /// order does the reverse. The zero is the placeholder.
-    ///
-    /// TODO: temporary — obsolete once the engine wire carries both legs (or
-    /// clearing prices arrive), at which point the zero placeholder goes away.
+    /// A sell order fills `executedSell` and derives `executedBuy` from the
+    /// clearing prices. A buy order does the reverse.
     #[test]
-    fn new_fills_the_side_matching_amount() {
+    fn new_derives_the_counterpart_leg_from_clearing_prices() {
         let auction = domain::Auction {
             id: domain::auction::Id::new(1).unwrap(),
             orders: vec![
@@ -179,6 +193,11 @@ mod tests {
         let solutions = vec![domain::Solution {
             id: 0,
             solver: Pubkey::new_from_array([0x33; 32]),
+            // Sell mint prices at the amount bought, buy mint at the amount sold.
+            prices: HashMap::from([
+                (Pubkey::new_from_array([0x33; 32]), 200),
+                (Pubkey::new_from_array([0x44; 32]), 100),
+            ]),
             trades: vec![
                 domain::Trade {
                     order_uid: OrderUid([0x11; 32]),
@@ -197,9 +216,11 @@ mod tests {
         let response = SolveResponse::new(solutions, &auction);
         let solution = &response.solutions[0];
         assert_eq!(solution.score, 0, "score is stubbed to 0");
+        // Sell order: 100 sold, 100 * 200 / 100 = 200 bought.
         assert_eq!(solution.orders[&OrderUid([0x11; 32])].executed_sell, 100);
-        assert_eq!(solution.orders[&OrderUid([0x11; 32])].executed_buy, 0);
-        assert_eq!(solution.orders[&OrderUid([0x22; 32])].executed_sell, 0);
+        assert_eq!(solution.orders[&OrderUid([0x11; 32])].executed_buy, 200);
+        // Buy order: 200 bought, 200 * 100 / 200 = 100 sold.
+        assert_eq!(solution.orders[&OrderUid([0x22; 32])].executed_sell, 100);
         assert_eq!(solution.orders[&OrderUid([0x22; 32])].executed_buy, 200);
     }
 

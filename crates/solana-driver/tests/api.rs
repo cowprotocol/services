@@ -124,6 +124,10 @@ async fn solve_returns_converted_solutions() {
     let engine = spawn_mock_solver_engine(serde_json::json!({
         "solutions": [{
             "id": 42,
+            "prices": {
+                (pubkey(0x33).to_string()): "2000",
+                (pubkey(0x44).to_string()): "1000",
+            },
             "trades": [{
                 "orderUid": uid(),
                 "executedAmount": "1000",
@@ -143,8 +147,8 @@ async fn solve_returns_converted_solutions() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 
     let json: serde_json::Value = response.json().await.unwrap();
-    // The sell order's side-matching amount fills `executedSell` while
-    // `executedBuy` is the zero placeholder.
+    // The sell order's side-matching amount fills `executedSell` and the
+    // counterpart leg is derived from the clearing prices.
     let expected = serde_json::json!({
         "solutions": [{
             "solutionId": 42,
@@ -153,7 +157,7 @@ async fn solve_returns_converted_solutions() {
             "orders": {
                 (uid()): {
                     "executedSell": "1000",
-                    "executedBuy": "0",
+                    "executedBuy": "2000",
                 }
             }
         }]

@@ -27,6 +27,13 @@ pub struct Solutions {
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub id: u64,
+    /// Uniform clearing prices by mint: the sell mint maps to the amount
+    /// bought and the buy mint to the amount sold, so for every trade
+    /// `executed_sell * price_sell == executed_buy * price_buy`. The engine
+    /// currently only produces single-order solutions, so the pair is the
+    /// executed swap's ratio.
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
+    pub prices: HashMap<Pubkey, u64>,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Instruction>,
     /// Optional solver estimate of total settlement compute units.
@@ -146,6 +153,7 @@ impl Solutions {
                 Ok(domain::Solution {
                     id: solution.id,
                     solver,
+                    prices: solution.prices,
                     trades,
                     interactions: solution.interactions.into_iter().map(Into::into).collect(),
                     address_lookup_tables: solution.address_lookup_tables,
@@ -190,6 +198,10 @@ mod tests {
         let bad = json!({
             "solutions": [{
                 "id": 1,
+                "prices": {
+                    (pubkey(1).to_string()): "2000",
+                    (pubkey(2).to_string()): "1000",
+                },
                 "trades": [{
                     "orderUid": format!("0x{}", "08".repeat(32)),
                     "executedAmount": "1001",
@@ -213,6 +225,10 @@ mod tests {
         let bad = json!({
             "solutions": [{
                 "id": 1,
+                "prices": {
+                    (pubkey(1).to_string()): "2000",
+                    (pubkey(2).to_string()): "1000",
+                },
                 "trades": [{
                     "orderUid": format!("0x{}", "ff".repeat(32)),
                     "executedAmount": "1000",
@@ -235,6 +251,10 @@ mod tests {
         let json = json!({
             "solutions": [{
                 "id": 1,
+                "prices": {
+                    (pubkey(1).to_string()): "2000",
+                    (pubkey(2).to_string()): "1000",
+                },
                 "trades": [{
                     "orderUid": format!("0x{}", "08".repeat(32)),
                     "executedAmount": "1000",
@@ -255,6 +275,7 @@ mod tests {
         let expected = Solutions {
             solutions: vec![Solution {
                 id: 1,
+                prices: HashMap::from([(pubkey(1), 2_000), (pubkey(2), 1_000)]),
                 trades: vec![Trade {
                     order_uid: OrderUid([8; 32]),
                     executed_amount: 1_000,
