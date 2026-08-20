@@ -3,10 +3,45 @@
 use {
     crate::infra::{Api, config, observe as infra_observe},
     clap::Parser,
+    configs::database::DatabasePoolConfig,
     observe::metrics::{DEFAULT_METRICS_PORT, LivenessChecking, serve_metrics},
     sqlx::{Executor, PgPool, postgres::PgPoolOptions},
-    std::{path::PathBuf, sync::Arc, time::Duration},
+    std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration},
+    tokio::task::JoinHandle,
 };
+
+/// Connect the read pool: the replica URL wins when configured, and every
+/// connection gets the read statement timeout.
+async fn read_pool(database: &DatabasePoolConfig) -> PgPool {
+    let url = database.read_url.as_ref().unwrap_or(&database.write_url);
+    let timeout_ms = database.statement_timeout.as_millis();
+    PgPoolOptions::new()
+        .max_connections(database.max_connections.get())
+        .after_connect(move |conn, _meta| {
+            Box::pin(async move {
+                conn.execute(format!("SET statement_timeout = {timeout_ms}").as_str())
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(url.as_str())
+        .await
+        .expect("database connection")
+}
+
+/// Serve the metrics and probe routes on the API address with the metrics
+/// port.
+fn serve_probes(pool: PgPool, api_address: SocketAddr) -> JoinHandle<()> {
+    let mut metrics_address = api_address;
+    metrics_address.set_port(DEFAULT_METRICS_PORT);
+    tracing::info!(%metrics_address, "serving metrics");
+    serve_metrics(
+        Arc::new(Liveness { pool }),
+        metrics_address,
+        Default::default(),
+        Default::default(),
+    )
+}
 
 /// Fails the liveness probe when the database is unreachable.
 struct Liveness {
@@ -48,33 +83,8 @@ pub async fn run(args: Args) {
         tracing::info!(?config, "loaded config");
     }
 
-    // The orderbook only reads, so the replica URL wins when configured and
-    // every connection gets the read statement timeout.
-    let database = &config.database;
-    let url = database.read_url.as_ref().unwrap_or(&database.write_url);
-    let timeout_ms = database.statement_timeout.as_millis();
-    let pool = PgPoolOptions::new()
-        .max_connections(database.max_connections.get())
-        .after_connect(move |conn, _meta| {
-            Box::pin(async move {
-                conn.execute(format!("SET statement_timeout = {timeout_ms}").as_str())
-                    .await?;
-                Ok(())
-            })
-        })
-        .connect(url.as_str())
-        .await
-        .expect("database connection");
-
-    let mut metrics_address = config.http.bind_address;
-    metrics_address.set_port(DEFAULT_METRICS_PORT);
-    tracing::info!(%metrics_address, "serving metrics");
-    let metrics = serve_metrics(
-        Arc::new(Liveness { pool: pool.clone() }),
-        metrics_address,
-        Default::default(),
-        Default::default(),
-    );
+    let pool = read_pool(&config.database).await;
+    let metrics = serve_probes(pool.clone(), config.http.bind_address);
 
     let shutdown_token = tokio_util::sync::CancellationToken::new();
     let api = Api {

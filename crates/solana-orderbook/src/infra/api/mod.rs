@@ -4,7 +4,8 @@ use {
     axum::{Router, http, routing::get},
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     sqlx::PgPool,
-    std::{net::SocketAddr, sync::Arc},
+    std::{io, net::SocketAddr, sync::Arc},
+    tokio::net::TcpListener,
     tokio_util::sync::CancellationToken,
     tower::ServiceBuilder,
     tower_http::{
@@ -27,8 +28,8 @@ pub struct Api {
 impl Api {
     /// Bind to the configured address, returning the listener and the actual
     /// bound address (which differs from `addr` when binding to port 0).
-    pub async fn bind(&self) -> Result<(tokio::net::TcpListener, SocketAddr), std::io::Error> {
-        let listener = tokio::net::TcpListener::bind(self.addr).await?;
+    pub async fn bind(&self) -> Result<(TcpListener, SocketAddr), io::Error> {
+        let listener = TcpListener::bind(self.addr).await?;
         let local_addr = listener.local_addr()?;
         tracing::info!(port = local_addr.port(), "serving solana orderbook");
         Ok((listener, local_addr))
@@ -38,9 +39,9 @@ impl Api {
     /// drain in-flight requests before returning.
     pub async fn serve(
         self,
-        listener: tokio::net::TcpListener,
+        listener: TcpListener,
         shutdown: CancellationToken,
-    ) -> Result<(), std::io::Error> {
+    ) -> Result<(), io::Error> {
         // Propagate the OpenTelemetry trace context from incoming request headers and
         // record the trace id on the request span, so logs can be correlated across
         // services. `make_span` sets the parent context and an empty `trace_id` field;
