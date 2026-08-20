@@ -1,5 +1,7 @@
 //! A Solana slot number.
-
+///
+/// TODO: consolidate `Slot` (and other shared Solana primitive types) into the
+/// `chain-types` crate.
 use std::fmt;
 
 /// A Solana slot number.
