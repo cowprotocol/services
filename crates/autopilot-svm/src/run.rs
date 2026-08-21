@@ -10,7 +10,7 @@ use {
             executor::DriverExecutor,
             listen::ListenSession,
             observation::{SettlementObservation, SettlementTracker},
-            observer::LogObserver,
+            observer::CompetitionObserver,
             provider::DbAuctionProvider,
             trigger::SlotTrigger,
         },
@@ -108,7 +108,7 @@ async fn run(config: Config) {
 
     let mut auction_loop = AuctionLoop::new(
         Box::new(SlotTrigger::new(rpc)),
-        Box::new(DbAuctionProvider::new(pool)),
+        Box::new(DbAuctionProvider::new(pool.clone())),
         Box::new(DriverCompetition::new(
             drivers.clone(),
             config.competition.solve_deadline,
@@ -122,7 +122,7 @@ async fn run(config: Config) {
             tracker.clone(),
             config.competition.submission_deadline_slots.get(),
         )),
-        Box::new(LogObserver::new(tracker)),
+        Box::new(CompetitionObserver::new(pool, tracker)),
     );
     let liveness = Arc::new(Liveness::new(config.max_auction_age));
     let metrics = observe::metrics::serve_metrics(
