@@ -28,6 +28,9 @@ pub struct Trade {
     pub fee_amount: BigDecimal,
     #[serde_as(as = "DisplayFromStr")]
     pub tx_signature: Signature,
+    /// Position of the settlement instruction within its transaction,
+    /// disambiguating multiple fills of one order in the same transaction.
+    pub instruction_index: i32,
     /// Slot the settlement landed in. Absent while the settlement row has
     /// not been indexed.
     pub slot: Option<i64>,
@@ -44,6 +47,7 @@ impl From<TradeRow> for Trade {
             buy_amount: row.buy_amount,
             fee_amount: row.fee_amount,
             tx_signature: Signature::from(row.tx_signature.0),
+            instruction_index: row.instruction_index,
             slot: row.slot,
         }
     }
@@ -64,6 +68,7 @@ mod tests {
             buy_amount: 500.into(),
             fee_amount: 7.into(),
             tx_signature: ByteArray([9; 64]),
+            instruction_index: 3,
             slot: Some(42),
         });
         let json = serde_json::to_value(&trade).unwrap();
@@ -79,6 +84,7 @@ mod tests {
             json["txSignature"],
             "BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA"
         );
+        assert_eq!(json["instructionIndex"], 3);
         assert_eq!(json["slot"], 42);
     }
 }

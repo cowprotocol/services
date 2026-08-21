@@ -62,6 +62,7 @@ pub struct TradeRow {
     pub buy_amount: BigDecimal,
     pub fee_amount: BigDecimal,
     pub tx_signature: ByteArray<64>,
+    pub instruction_index: i32,
     pub slot: Option<i64>,
 }
 
@@ -75,14 +76,15 @@ pub async fn trades(
 ) -> Result<Vec<TradeRow>> {
     const QUERY: &str = r#"
 SELECT t.order_uid, o.owner, o.sell_token, o.buy_token,
-       t.sell_amount, t.buy_amount, t.fee_amount, t.tx_signature, s.slot
+       t.sell_amount, t.buy_amount, t.fee_amount, t.tx_signature,
+       t.instruction_index, s.slot
 FROM solana.trades t
 JOIN solana.orders o ON o.uid = t.order_uid
 LEFT JOIN (SELECT DISTINCT tx_signature, slot FROM solana.settlements) s
     ON s.tx_signature = t.tx_signature
 WHERE ($1::bytea IS NULL OR t.order_uid = $1)
   AND ($2::bytea IS NULL OR o.owner = $2)
-ORDER BY s.slot, t.tx_signature, t.order_uid
+ORDER BY s.slot, t.tx_signature, t.instruction_index, t.order_uid
     "#;
     sqlx::query_as(QUERY)
         .bind(order_uid.map(ByteArray))
@@ -97,10 +99,12 @@ mod tests {
     use {super::*, sqlx::PgPool};
 
     async fn seed(pool: &PgPool, uid: [u8; 32], cancelled: bool) {
-        sqlx::query("TRUNCATE solana.order_pda, solana.orders CASCADE")
-            .execute(pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "TRUNCATE solana.order_pda, solana.orders, solana.trades, solana.settlements CASCADE",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
         sqlx::query(
             r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
@@ -177,6 +181,7 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now
         let by_uid = trades(&pool, Some(uid), None).await.unwrap();
         assert_eq!(by_uid.len(), 1);
         assert_eq!(by_uid[0].slot, Some(42));
+        assert_eq!(by_uid[0].instruction_index, 1);
         assert_eq!(by_uid[0].sell_amount, BigDecimal::from(400));
 
         let by_owner = trades(&pool, None, Some([0xAA; 32])).await.unwrap();
