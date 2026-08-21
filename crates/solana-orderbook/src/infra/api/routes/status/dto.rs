@@ -3,6 +3,10 @@
 use serde::Serialize;
 
 /// Auction progress of an order.
+///
+/// TODO: `solved`, `executing`, and `traded` gain a `value` payload with
+/// per-solution solver data (the EVM orderbook's `SolutionInclusion` shape)
+/// once the autopilot persists competition results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Status {

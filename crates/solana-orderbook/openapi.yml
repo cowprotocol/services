@@ -204,7 +204,10 @@ components:
         status:
           $ref: "#/components/schemas/OrderStatus"
     CompetitionOrderStatus:
-      description: Auction progress of an order.
+      description: |
+        Auction progress of an order. `solved`, `executing`, and `traded`
+        gain a `value` payload with per-solution solver data once the
+        autopilot persists competition results.
       type: object
       required:
         - type
