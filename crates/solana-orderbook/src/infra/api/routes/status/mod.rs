@@ -31,8 +31,7 @@ pub async fn order_status(
         .await
         .map_err(internal)?
         .ok_or_else(|| error::reply(StatusCode::NOT_FOUND, "NotFound", "order status not found"))?;
-    // Cancellation is on-chain state stamped by the indexer, no auction
-    // event records it.
+    // Cancellation is on-chain state, no auction event records it.
     if row.cancellation_timestamp.is_some() {
         return Ok(Json(dto::Status::Cancelled));
     }
