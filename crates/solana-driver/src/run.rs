@@ -40,7 +40,12 @@ pub async fn run(args: Args) {
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
     ));
-    let solvers: Vec<solver::Solver> = config.solvers.iter().map(solver::Solver::new).collect();
+    let solvers: Vec<solver::Solver> = config
+        .solvers
+        .iter()
+        .map(solver::Solver::new)
+        .collect::<Result<_, _>>()
+        .expect("failed to load solver signer keypairs");
     let api = Api {
         addr: config.http.bind_address,
         rpc,

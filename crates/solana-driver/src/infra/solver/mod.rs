@@ -9,7 +9,10 @@ use {
         domain,
         infra::{config, solver::dto::auction::Auction},
     },
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{
+        pubkey::Pubkey,
+        signer::{Signer, keypair::Keypair},
+    },
     std::sync::Arc,
     thiserror::Error,
     tokio::sync::Semaphore,
@@ -18,10 +21,12 @@ use {
 pub mod dto;
 
 /// A configured solver engine HTTP client.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Solver {
     name: String,
     account: Pubkey,
+    #[expect(dead_code, reason = "used by the settlement path in follow-up PRs")]
+    signer: Arc<Keypair>,
     client: reqwest::Client,
     base_url: reqwest::Url,
     in_flight: Arc<Semaphore>,
@@ -34,14 +39,38 @@ impl Solver {
     }
 
     /// Build a solver client from its configuration.
-    pub fn new(config: &config::Solver) -> Self {
-        Self {
+    ///
+    /// Loads the signer keypair from `config.signer_keypair` and validates that
+    /// its public key matches `config.account`.
+    pub fn new(config: &config::Solver) -> Result<Self, Error> {
+        let keypair = solana_sdk::signer::keypair::read_keypair_file(&config.signer_keypair)
+            .map_err(|error| Error::SignerKeypair {
+                solver: config.name.clone(),
+                path: config.signer_keypair.clone(),
+                error,
+            })?;
+        let pubkey = keypair.pubkey();
+        if pubkey != config.account {
+            tracing::error!(
+                solver = %config.name,
+                %pubkey,
+                account = %config.account,
+                "signer keypair pubkey does not match solver account",
+            );
+            return Err(Error::SignerPubkeyMismatch {
+                solver: config.name.clone(),
+                pubkey,
+                account: config.account,
+            });
+        }
+        Ok(Self {
             name: config.name.clone(),
             account: config.account,
+            signer: Arc::new(keypair),
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             in_flight: Arc::new(Semaphore::new(config.max_in_flight.get())),
-        }
+        })
     }
 
     /// POST the auction to this engine's `/solve` endpoint and return the
@@ -123,23 +152,58 @@ pub enum Error {
     /// The auction deadline passed before a solve request could be sent.
     #[error("auction deadline exceeded")]
     DeadlineExceeded,
+    /// The signer keypair could not be loaded from the configured path.
+    #[error("failed to load signer keypair for solver {solver} from {path}: {error}")]
+    SignerKeypair {
+        solver: String,
+        path: std::path::PathBuf,
+        #[source]
+        error: Box<dyn std::error::Error>,
+    },
+    /// The signer keypair's public key does not match the solver's configured
+    /// on-chain identity.
+    #[error(
+        "signer keypair pubkey {pubkey} does not match solver account {account} for solver \
+         {solver}"
+    )]
+    SignerPubkeyMismatch {
+        solver: String,
+        pubkey: Pubkey,
+        account: Pubkey,
+    },
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::num::NonZero};
+    use {
+        super::*,
+        solana_sdk::signer::keypair::{Keypair, read_keypair_file, write_keypair_file},
+        std::num::NonZero,
+        tempfile::NamedTempFile,
+    };
+
+    /// Write a fresh keypair to a temp file and return its path.
+    fn temp_keypair() -> std::path::PathBuf {
+        let file = NamedTempFile::new().expect("create temp file");
+        let path = file.into_temp_path().keep().expect("keep temp file");
+        write_keypair_file(&Keypair::new(), &path).expect("write keypair");
+        path
+    }
 
     #[tokio::test]
     async fn solve_with_past_deadline_is_rejected() {
         // Build a solver pointing at a port that is never listened on. The
         // deadline check fires before any HTTP request is sent, so this never
         // actually connects to the endpoint.
+        let keypair_path = temp_keypair();
         let solver = Solver::new(&config::Solver {
             name: "test".to_owned(),
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
-            account: Pubkey::default(),
+            account: read_keypair_file(&keypair_path).unwrap().pubkey(),
+            signer_keypair: keypair_path,
             max_in_flight: NonZero::new(1).unwrap(),
-        });
+        })
+        .expect("solver construction should succeed");
         let auction = domain::Auction {
             id: domain::Id::new(1).unwrap(),
             orders: Vec::new(),

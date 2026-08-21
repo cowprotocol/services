@@ -24,7 +24,13 @@ use {
         infra::{config, solver::Solver},
         util::associated_token_address,
     },
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{
+        pubkey::Pubkey,
+        signer::{
+            Signer,
+            keypair::{Keypair, read_keypair_file, write_keypair_file},
+        },
+    },
     solana_solvers::{
         api::Api,
         config::JupiterConfig,
@@ -111,13 +117,21 @@ async fn driver_solves_against_live_jupiter_engine() {
 
     // Any valid pubkey works: Jupiter builds instructions for this account,
     // the swap only runs for real once the driver submits the settlement.
-    let solver_account = Pubkey::new_unique();
+    let keypair_file = tempfile::NamedTempFile::new().expect("create temp file");
+    let keypair_path = keypair_file
+        .into_temp_path()
+        .keep()
+        .expect("keep temp file");
+    write_keypair_file(&Keypair::new(), &keypair_path).expect("write keypair");
+    let solver_account = read_keypair_file(&keypair_path).unwrap().pubkey();
     let solver = Solver::new(&config::Solver {
         name: "jupiter-live".to_string(),
         endpoint: format!("http://{addr}").parse().unwrap(),
         account: solver_account,
+        signer_keypair: keypair_path,
         max_in_flight: std::num::NonZero::new(1).unwrap(),
-    });
+    })
+    .expect("solver construction should succeed");
 
     // `Solver::solve` posts the auction and deserializes the JSON response
     // into `domain::Solution`s; an `Ok` result proves the wire deserialization

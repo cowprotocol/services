@@ -9736,6 +9736,7 @@ dependencies = [
  "serde_with",
  "solana-sdk",
  "solana-solvers",
+ "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
  "tokio",
