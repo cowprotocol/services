@@ -1,5 +1,4 @@
-//! Order event writes: the auction-progress log behind the orderbook's
-//! status endpoint.
+//! Order event writes: the per-order auction-progress log.
 
 use {
     anyhow::{Context, Result},
