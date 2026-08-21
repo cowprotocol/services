@@ -8,8 +8,7 @@ use {
     sqlx::PgExecutor,
 };
 
-/// One order joined with its fill state, everything the order endpoint
-/// serves.
+/// One order joined with its fill state.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct OrderRow {
     pub uid: ByteArray<32>,
