@@ -424,11 +424,7 @@ fn get_vol_fee_adjusted_quote_data(
     let factor = volume_fee_policy.get_applicable_volume_fee_factor(buy_token, sell_token, None);
 
     let Some(factor) = factor else {
-        return Ok(AdjustedQuoteData {
-            sell_amount: quote.sell_amount,
-            buy_amount: quote.buy_amount,
-            protocol_fee_bps: None,
-        });
+        return Ok(AdjustedQuoteData::unchanged(quote));
     };
     // Calculate the volume (surplus token amount) to apply fee to
     // Following driver's logic in
