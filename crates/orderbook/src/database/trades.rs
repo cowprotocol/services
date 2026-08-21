@@ -4,7 +4,7 @@ use {
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, trades::TradesQueryRow},
     model::{fee_policy::ExecutedProtocolFee, order::OrderUid, trade::Trade},
-    number::conversions::big_decimal_to_big_uint,
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
     std::convert::TryInto,
 };
 
@@ -169,6 +169,11 @@ fn trade_from(
     let buy_token = Address::from_slice(&row.buy_token.0);
     let sell_token = Address::from_slice(&row.sell_token.0);
     let tx_hash = row.tx_hash.map(|hash| B256::from_slice(&hash.0));
+    let gas_cost = row
+        .gas_cost
+        .as_ref()
+        .map(|cost| big_decimal_to_u256(cost).context("gas cost is not a valid u256"))
+        .transpose()?;
     Ok(Trade {
         block_number,
         log_index,
@@ -181,15 +186,46 @@ fn trade_from(
         sell_token,
         tx_hash,
         executed_protocol_fees,
+        gas_cost,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, alloy::primitives::U256, sqlx::types::BigDecimal};
 
     #[test]
     fn convert_trade() {
         trade_from(TradesQueryRow::default(), vec![]).unwrap();
+    }
+
+    /// An unattributed cost is reported as absent rather than as zero.
+    #[test]
+    fn convert_trade_gas_cost() {
+        let row = TradesQueryRow {
+            gas_cost: Some(BigDecimal::from(1000)),
+            ..Default::default()
+        };
+        assert_eq!(
+            trade_from(row, vec![]).unwrap().gas_cost,
+            Some(U256::from(1000))
+        );
+        assert_eq!(
+            trade_from(TradesQueryRow::default(), vec![])
+                .unwrap()
+                .gas_cost,
+            None
+        );
+    }
+
+    /// An unrepresentable cost is an error, not a silent absence that would
+    /// read as "never attributed".
+    #[test]
+    fn convert_trade_rejects_unrepresentable_gas_cost() {
+        let row = TradesQueryRow {
+            gas_cost: Some(BigDecimal::from(-1)),
+            ..Default::default()
+        };
+        assert!(trade_from(row, vec![]).is_err());
     }
 }
