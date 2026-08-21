@@ -65,9 +65,10 @@ pub struct TradeRow {
     pub slot: Option<i64>,
 }
 
-/// Trades filtered by order uid or owner. The settlement join is
-/// deduplicated because settlements key on `(tx_signature,
-/// instruction_index)` and the slot is constant per transaction.
+/// Trades filtered by order uid or owner. The slot comes from any settlement
+/// row of the transaction because the slot is constant per transaction. A
+/// trade whose order row is not indexed yet is omitted until the order
+/// lands.
 pub async fn trades(
     ex: impl PgExecutor<'_>,
     order_uid: Option<[u8; 32]>,
@@ -79,8 +80,11 @@ SELECT t.order_uid, o.owner, o.sell_token, o.buy_token,
        t.instruction_index, s.slot
 FROM solana.trades t
 JOIN solana.orders o ON o.uid = t.order_uid
-LEFT JOIN (SELECT DISTINCT tx_signature, slot FROM solana.settlements) s
-    ON s.tx_signature = t.tx_signature
+LEFT JOIN LATERAL (
+    SELECT slot FROM solana.settlements
+    WHERE tx_signature = t.tx_signature
+    LIMIT 1
+) s ON true
 WHERE ($1::bytea IS NULL OR t.order_uid = $1)
   AND ($2::bytea IS NULL OR o.owner = $2)
 ORDER BY s.slot, t.tx_signature, t.instruction_index, t.order_uid
