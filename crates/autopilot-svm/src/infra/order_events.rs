@@ -4,39 +4,16 @@
 use {
     anyhow::{Context, Result},
     chain_types::solana::IntentHash,
+    database::order_events::OrderEventLabel,
     sqlx::PgExecutor,
 };
-
-/// Auction-progress labels this autopilot reports.
-#[derive(Debug, Clone, Copy)]
-pub enum Label {
-    /// The order entered the auction sent to the solvers.
-    Ready,
-    /// The order appeared only in ranked non-winning solutions.
-    Considered,
-    /// The order is part of a winning solution being submitted.
-    Executing,
-    /// The order's settlement was observed on chain.
-    Traded,
-}
-
-impl Label {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Ready => "ready",
-            Self::Considered => "considered",
-            Self::Executing => "executing",
-            Self::Traded => "traded",
-        }
-    }
-}
 
 /// Append one event per order. Best effort by design: callers log failures,
 /// a lost event degrades the status endpoint, never the competition.
 pub async fn store(
     ex: impl PgExecutor<'_>,
     uids: impl IntoIterator<Item = IntentHash>,
-    label: Label,
+    label: OrderEventLabel,
 ) -> Result<()> {
     let uids: Vec<Vec<u8>> = uids.into_iter().map(|uid| uid.0.to_vec()).collect();
     if uids.is_empty() {
@@ -45,11 +22,11 @@ pub async fn store(
     sqlx::query(
         r#"
 INSERT INTO solana.order_events (order_uid, timestamp, label)
-SELECT uid, now(), $2::solana.OrderEventLabel FROM UNNEST($1::bytea[]) AS uid
+SELECT uid, now(), $2 FROM UNNEST($1::bytea[]) AS uid
         "#,
     )
     .bind(uids)
-    .bind(label.as_str())
+    .bind(label)
     .execute(ex)
     .await
     .context("insert solana.order_events")?;
@@ -69,15 +46,15 @@ mod tests {
             .await
             .unwrap();
 
-        store(&pool, [], Label::Ready).await.unwrap();
+        store(&pool, [], OrderEventLabel::Ready).await.unwrap();
         store(
             &pool,
             [IntentHash([0x11; 32]), IntentHash([0x22; 32])],
-            Label::Ready,
+            OrderEventLabel::Ready,
         )
         .await
         .unwrap();
-        store(&pool, [IntentHash([0x11; 32])], Label::Executing)
+        store(&pool, [IntentHash([0x11; 32])], OrderEventLabel::Executing)
             .await
             .unwrap();
 

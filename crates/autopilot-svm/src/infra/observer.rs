@@ -14,6 +14,7 @@ use {
     },
     async_trait::async_trait,
     chain_types::solana::IntentHash,
+    database::order_events::OrderEventLabel,
     sqlx::PgPool,
     std::collections::HashSet,
 };
@@ -35,7 +36,7 @@ impl CompetitionObserver {
     async fn store_events(
         &self,
         uids: impl IntoIterator<Item = IntentHash>,
-        label: order_events::Label,
+        label: OrderEventLabel,
     ) {
         if let Err(err) = order_events::store(&self.pool, uids, label).await {
             tracing::error!(?err, ?label, "failed to store order events");
@@ -49,7 +50,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
         tracing::debug!(orders = auction.orders.len(), "auction entered competition");
         self.store_events(
             auction.orders.iter().map(|order| order.uid),
-            order_events::Label::Ready,
+            OrderEventLabel::Ready,
         )
         .await;
     }
@@ -87,9 +88,9 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
             considered = considered.len(),
             "orders matched"
         );
-        self.store_events(executing, order_events::Label::Executing)
+        self.store_events(executing, OrderEventLabel::Executing)
             .await;
-        self.store_events(considered, order_events::Label::Considered)
+        self.store_events(considered, OrderEventLabel::Considered)
             .await;
     }
 

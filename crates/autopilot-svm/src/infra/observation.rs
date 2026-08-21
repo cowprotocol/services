@@ -15,6 +15,7 @@ use {
     anyhow::{Context, Result},
     async_trait::async_trait,
     chain_types::solana::{IntentHash, Pubkey},
+    database::order_events::OrderEventLabel,
     sqlx::PgPool,
 };
 
@@ -193,7 +194,7 @@ impl SettlementObservation {
                     .into_iter()
                     .map(|uid| IntentHash(uid.0));
                 if let Err(err) =
-                    order_events::store(&self.pool, traded, order_events::Label::Traded).await
+                    order_events::store(&self.pool, traded, OrderEventLabel::Traded).await
                 {
                     tracing::error!(?err, "failed to store traded order events");
                 }
