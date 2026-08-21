@@ -206,7 +206,7 @@ components:
     CompetitionOrderStatus:
       description: |
         Auction progress of an order. `solved`, `executing`, and `traded`
-        gain a `value` payload with per-solution solver data once the
+        carry a `value` list of per-solution inclusions, empty until the
         autopilot persists competition results.
       type: object
       required:
@@ -215,6 +215,30 @@ components:
         type:
           type: string
           enum: [open, scheduled, active, solved, executing, traded, cancelled]
+        value:
+          description: Present on `solved`, `executing`, and `traded`.
+          type: array
+          items:
+            $ref: "#/components/schemas/SolutionInclusion"
+    SolutionInclusion:
+      description: One solution's view of the order.
+      type: object
+      required:
+        - solver
+      properties:
+        solver:
+          $ref: "#/components/schemas/Pubkey"
+        executedAmounts:
+          description: Absent when the solution does not include the order.
+          type: object
+          required:
+            - sell
+            - buy
+          properties:
+            sell:
+              $ref: "#/components/schemas/TokenAmount"
+            buy:
+              $ref: "#/components/schemas/TokenAmount"
     Signature:
       description: A base58-encoded Solana transaction signature.
       type: string

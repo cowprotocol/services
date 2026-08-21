@@ -25,12 +25,12 @@ pub async fn order_status(
         .await
         .map_err(internal)?
     {
-        return Ok(Json(dto::Status::Traded));
+        return Ok(Json(dto::Status::Traded(Vec::new())));
     }
     let row = db::order_by_uid(state.pool(), uid)
         .await
         .map_err(internal)?
-        .ok_or_else(|| error::reply(StatusCode::NOT_FOUND, "NotFound", "Order was not found"))?;
+        .ok_or_else(|| error::reply(StatusCode::NOT_FOUND, "NotFound", "order status not found"))?;
     // Cancellation is on-chain state stamped by the indexer, no auction
     // event records it.
     if row.cancellation_timestamp.is_some() {
