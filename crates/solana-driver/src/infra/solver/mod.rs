@@ -25,7 +25,7 @@ pub mod dto;
 pub struct Solver {
     name: String,
     account: Pubkey,
-    #[expect(dead_code, reason = "used by the settlement path in follow-up PRs")]
+    #[expect(dead_code, reason = "settlement signing is not implemented")]
     signer: Arc<Keypair>,
     client: reqwest::Client,
     base_url: reqwest::Url,
