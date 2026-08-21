@@ -21,6 +21,8 @@ chrono = { workspace = true, default-features = false, features = ["clock"] }
 clap = { workspace = true }
 configs = { workspace = true }
 const-hex = { workspace = true }
+cow-settlement-client = { workspace = true }
+cow-settlement-interface = { workspace = true }
 cow-solana-rpc = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
@@ -30,6 +32,7 @@ serde = { workspace = true }
 serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+solana-compute-budget-interface = { workspace = true }
 solana-sdk = { workspace = true }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }

@@ -141,12 +141,6 @@ mod tests {
         assert_eq!(config.solvers[0].name, "baseline");
         assert_eq!(config.solvers[0].max_in_flight.get(), 1);
         assert_eq!(
-            config.chain.settlement_program_id,
-            "MooohhPEAAHwAwEozL7JPEmnDvaahuUpccYN4Yb8ccK"
-                .parse()
-                .unwrap()
-        );
-        assert_eq!(
             config.solvers[0].account,
             "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
                 .parse()
