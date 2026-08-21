@@ -658,6 +658,28 @@ mod tests {
         );
     }
 
+    /// A pair that was never deployed is a codeless CREATE2 address.
+    /// Calling it succeeds with empty data, which must fail this sub-call
+    /// alone, not the whole aggregate.
+    #[tokio::test]
+    async fn pool_fetcher_skips_codeless_pair_address() {
+        let asserter = Asserter::new();
+        asserter.push_success(&aggregate3_response(vec![
+            (true, vec![]),
+            (true, encoded_balance(1)),
+            (true, encoded_balance(1)),
+        ]));
+
+        let reader = mocked_reader(asserter);
+        assert!(
+            reader
+                .read_state(token_pair(), BlockId::latest())
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
     #[tokio::test]
     async fn pool_fetcher_reads_pool_from_one_aggregated_call() {
         let asserter = Asserter::new();
