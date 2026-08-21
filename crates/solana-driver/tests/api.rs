@@ -1,9 +1,11 @@
 //! Integration tests for the HTTP API server.
 
 use {
+    cow_settlement_interface::pda::order::find_order_pda,
     cow_solana_rpc::SolanaRPC,
-    solana_driver::infra::{api::Api, config, solver::Solver},
+    solana_driver::infra::{api::Api, blockchain::Solana, config, solver::Solver},
     solana_sdk::{
+        hash::Hash,
         pubkey::Pubkey,
         signer::{Signer, keypair::read_keypair_file},
     },
@@ -21,10 +23,17 @@ fn uid() -> String {
     format!("0x{}", "11".repeat(32))
 }
 
+fn blockchain() -> Arc<Solana> {
+    Arc::new(Solana::new(
+        SolanaRPC::new_mock("succeeds".to_string()),
+        cow_settlement_interface::id(),
+    ))
+}
+
 fn api_with(solvers: Vec<Solver>) -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
-        rpc: Arc::new(SolanaRPC::new_mock("succeeds".to_string())),
+        blockchain: blockchain(),
         solvers,
     }
 }
@@ -77,6 +86,14 @@ fn dead_solver() -> (Solver, Pubkey) {
     solver_with_keypair("127.0.0.1:1".parse().unwrap())
 }
 
+fn order_pda() -> Pubkey {
+    find_order_pda(
+        &cow_settlement_interface::id(),
+        &Hash::new_from_array([0x11; 32]),
+    )
+    .0
+}
+
 /// The autopilot's own literal `/solve` request JSON.
 ///
 /// The deadline is computed relative to now so the request is always
@@ -98,7 +115,7 @@ fn solve_request() -> serde_json::Value {
             "validTo": 42,
             "kind": "sell",
             "partiallyFillable": false,
-            "orderPda": pubkey(0x77).to_string(),
+            "orderPda": order_pda().to_string(),
         }]
     })
 }
