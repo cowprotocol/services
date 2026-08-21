@@ -102,11 +102,6 @@ pub struct NetworkConfig {
     /// against Anvil, which doesn't simulate finality.
     #[serde(skip)]
     pub use_latest: bool,
-    /// Subgraph GraphQL endpoint for the initial seed.
-    #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
-    pub subgraph_url: Url,
-    /// Block to seed at. Defaults to the subgraph's current block.
-    pub seed_block: Option<u64>,
 }
 
 impl NetworkConfig {
@@ -138,12 +133,14 @@ impl NetworkConfig {
     }
 }
 
-/// One factory address. The indexer runs a dedicated seed + live-indexing
-/// loop per entry in [`NetworkConfig::factories`].
+/// The factory and the block it was deployed at. The indexer cold-seeds by
+/// replaying on-chain events from `deploy_block`, then live-indexes.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct FactoryConfig {
     pub address: Address,
+    /// Block the factory was deployed at; on-chain cold-seed scans from here
+    pub deploy_block: u64,
 }
 
 /// Subset of [`NetworkConfig`] handed to [`UniswapV3Indexer`] at runtime.
