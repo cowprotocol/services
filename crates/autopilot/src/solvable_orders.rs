@@ -138,6 +138,7 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<NativePriceUpdater>,
     weth: Address,
     protocol_fees: domain::ProtocolFees,
+    penalty_cap_calculator: Option<domain::penalty_cap::PenaltyCapCalculator>,
     surplus_capturing_jit_order_owners: Vec<Address>,
     native_price_timeout: Duration,
     settlement_contract: Address,
@@ -163,6 +164,7 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<NativePriceUpdater>,
         weth: Address,
         protocol_fees: domain::ProtocolFees,
+        penalty_cap_calculator: Option<domain::penalty_cap::PenaltyCapCalculator>,
         surplus_capturing_jit_order_owners: Vec<Address>,
         native_price_timeout: Duration,
         settlement_contract: Address,
@@ -178,6 +180,7 @@ impl SolvableOrdersCache {
             native_price_estimator,
             weth,
             protocol_fees,
+            penalty_cap_calculator,
             surplus_capturing_jit_order_owners,
             native_price_timeout,
             settlement_contract,
@@ -278,6 +281,9 @@ impl SolvableOrdersCache {
                     orders,
                     &self.native_price_estimator,
                     self.native_price_timeout,
+                    self.penalty_cap_calculator
+                        .as_ref()
+                        .map(|calculator| calculator.usd_reference_token()),
                 ),
             )
             .await;
@@ -287,6 +293,11 @@ impl SolvableOrdersCache {
         prices
             .entry(self.weth)
             .or_insert_with(|| to_normalized_price(1.0).unwrap());
+        if let Some(calculator) = &self.penalty_cap_calculator {
+            if let Some(price) = prices.get(&calculator.usd_reference_token()) {
+                calculator.record_usd_price(*price);
+            }
+        }
         Metrics::track_filtered_orders(MissingNativePrice, &removed);
         filtered_order_events.extend(removed.into_iter().map(|uid| (uid, MissingNativePrice)));
 
@@ -321,8 +332,16 @@ impl SolvableOrdersCache {
                             .quotes
                             .get(&order.metadata.uid.into())
                             .map(|quote| quote.as_ref().clone());
-                        self.protocol_fees
-                            .apply(order, quote, &surplus_capturing_jit_order_owners)
+                        let penalty_cap = self
+                            .penalty_cap_calculator
+                            .as_ref()
+                            .map(|calculator| calculator.calculate(order, &prices));
+                        let protocol_fees = self.protocol_fees.apply(
+                            order,
+                            quote.as_ref(),
+                            &surplus_capturing_jit_order_owners,
+                        );
+                        boundary::order::to_domain(order, protocol_fees, quote, penalty_cap)
                     })
                     .collect()
             }),
@@ -660,15 +679,17 @@ async fn get_orders_with_native_prices<'a>(
     orders: Vec<&'a Order>,
     native_price_estimator: &NativePriceUpdater,
     timeout: Duration,
+    extra_token: Option<Address>,
 ) -> (
     Vec<&'a Order>,
     Vec<OrderUid>,
     BTreeMap<Address, alloy::primitives::U256>,
 ) {
-    let traded_tokens = orders
+    let mut traded_tokens = orders
         .iter()
         .flat_map(|order| [order.data.sell_token, order.data.buy_token])
         .collect::<HashSet<_>>();
+    traded_tokens.extend(extra_token);
 
     let prices = get_native_prices(traded_tokens, native_price_estimator, timeout).await;
 
@@ -805,6 +826,7 @@ mod tests {
             orders_ref,
             &native_price_estimator,
             Duration::from_millis(100),
+            None,
         )
         .await;
         assert_eq!(filtered_orders, [orders[1].as_ref()]);
@@ -897,9 +919,13 @@ mod tests {
         // We'll have no native prices in this call. But set_tokens_to_update
         // will cause the background task to fetch them in the next cycle.
         let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
-        let (alive_orders, _removed_orders, prices) =
-            get_orders_with_native_prices(orders_ref, &native_price_estimator, Duration::ZERO)
-                .await;
+        let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
+            orders_ref,
+            &native_price_estimator,
+            Duration::ZERO,
+            None,
+        )
+        .await;
         assert!(alive_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -908,9 +934,13 @@ mod tests {
 
         // Now we have all the native prices we want.
         let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
-        let (alive_orders, _removed_orders, prices) =
-            get_orders_with_native_prices(orders_ref, &native_price_estimator, Duration::ZERO)
-                .await;
+        let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
+            orders_ref,
+            &native_price_estimator,
+            Duration::ZERO,
+            None,
+        )
+        .await;
 
         assert_eq!(alive_orders, [orders[2].as_ref()]);
         assert_eq!(
@@ -995,6 +1025,7 @@ mod tests {
             orders_ref,
             &native_price_estimator,
             Duration::from_secs(10),
+            None,
         )
         .await;
         assert!(

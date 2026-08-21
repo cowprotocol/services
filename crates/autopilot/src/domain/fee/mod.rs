@@ -239,17 +239,16 @@ impl ProtocolFees {
             .collect::<Vec<_>>()
     }
 
-    /// Converts an order from the boundary layer to the domain layer, applying
-    /// protocol fees if necessary.
+    /// Computes the protocol fee policies that apply to an order.
     pub fn apply(
         &self,
         order: &boundary::Order,
-        quote: Option<domain::Quote>,
+        quote: Option<&domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
-    ) -> domain::Order {
+    ) -> Vec<Policy> {
         // In case there is no quote, we assume 0 buy amount so that the order ends up
         // being considered out of market price.
-        let reference_quote = quote.clone().unwrap_or(domain::Quote {
+        let reference_quote = quote.cloned().unwrap_or(domain::Quote {
             order_uid: order.metadata.uid.into(),
             sell_amount: order.data.sell_amount.into(),
             buy_amount: U256::ZERO.into(),
@@ -261,18 +260,18 @@ impl ProtocolFees {
             Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get());
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner) {
-            return boundary::order::to_domain(order, partner_fee, quote);
+            return partner_fee;
         }
 
-        self.apply_policies(order, reference_quote, partner_fee)
+        self.apply_policies(order, &reference_quote, partner_fee)
     }
 
     fn apply_policies(
         &self,
         order: &boundary::Order,
-        quote: domain::Quote,
+        quote: &domain::Quote,
         partner_fees: Vec<Policy>,
-    ) -> domain::Order {
+    ) -> Vec<Policy> {
         let now = Utc::now();
         let fee_policies = self
             .upcoming_fee_policies
@@ -281,14 +280,12 @@ impl ProtocolFees {
             .map(|upcoming| &upcoming.fee_policies)
             .unwrap_or(&self.fee_policies);
 
-        let protocol_fees = fee_policies
+        fee_policies
             .iter()
-            .filter_map(|fee_policy| Self::protocol_fee_into_policy(order, &quote, fee_policy))
-            .flat_map(|policy| self.variant_fee_apply(order, &quote, policy))
+            .filter_map(|fee_policy| Self::protocol_fee_into_policy(order, quote, fee_policy))
+            .flat_map(|policy| self.variant_fee_apply(order, quote, policy))
             .chain(partner_fees)
-            .collect::<Vec<_>>();
-
-        boundary::order::to_domain(order, protocol_fees, Some(quote))
+            .collect()
     }
 
     fn variant_fee_apply(

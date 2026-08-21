@@ -1186,6 +1186,7 @@ mod tests {
             valid_to: Default::default(),
             signature: order::Signature::PreSign,
             quote: None,
+            penalty_cap: None,
         }
     }
 
