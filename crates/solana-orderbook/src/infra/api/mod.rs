@@ -15,6 +15,7 @@ use {
     },
 };
 
+pub mod error;
 pub mod routes;
 
 /// The Solana orderbook HTTP API server.
