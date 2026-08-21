@@ -1,7 +1,11 @@
 //! Configuration of the indexer's external endpoints.
 
 use {
-    configs::{database::DatabasePoolConfig, shared::LoggingConfig},
+    configs::{
+        database::DatabasePoolConfig,
+        deserialize_env::deserialize_optional_string_from_env,
+        shared::LoggingConfig,
+    },
     serde::Deserialize,
     serde_ext::{deserialize_optional_solana_pubkey_b58, deserialize_solana_pubkey_b58},
     solana_sdk::pubkey::Pubkey,
@@ -80,7 +84,10 @@ pub struct Chain {
 pub struct Yellowstone {
     /// gRPC endpoint, `https` endpoints get TLS.
     pub endpoint: url::Url,
-    /// Provider authentication token, sent as the x-token header.
+    /// Provider authentication token, sent as the x-token header. A value
+    /// like `%YELLOWSTONE_X_TOKEN` reads the token from that environment
+    /// variable, keeping the literal out of the config file.
+    #[serde(default, deserialize_with = "deserialize_optional_string_from_env")]
     pub x_token: Option<String>,
 }
 
@@ -116,5 +123,18 @@ mod tests {
         let config = super::load(&path).await;
         assert!(config.chain.solflow_program_id.is_none());
         assert_eq!(config.logging.filter, "info,solana_indexer=debug");
+    }
+
+    /// A `%VAR` x-token reads the token from the environment.
+    #[test]
+    fn x_token_from_env() {
+        let var = "TEST_INDEXER_X_TOKEN";
+        // Safety: test-only, using a unique env var name to avoid conflicts
+        unsafe { std::env::set_var(var, "token-value") };
+        let toml =
+            format!("endpoint = \"https://yellowstone.example.com\"\nx-token = \"%{var}\"\n");
+        let parsed: super::Yellowstone = toml::de::from_str(&toml).unwrap();
+        assert_eq!(parsed.x_token.as_deref(), Some("token-value"));
+        unsafe { std::env::remove_var(var) };
     }
 }
