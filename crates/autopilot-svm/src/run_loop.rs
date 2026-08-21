@@ -110,7 +110,7 @@ pub trait SettlementExecutor<C: Cycle>: Send + Sync {
 #[async_trait]
 pub trait SettlementObserver<C: Cycle>: Send + Sync {
     /// All auction orders entered the competition.
-    fn on_orders_ready(&self, auction: &C::Auction);
+    async fn on_orders_ready(&self, auction: &C::Auction);
 
     /// Persists the competition outcome (auction, solutions, scores, fees).
     /// An error aborts the cycle before any settlement is dispatched.
@@ -124,7 +124,11 @@ pub trait SettlementObserver<C: Cycle>: Send + Sync {
 
     /// Orders of winning solutions are executing, other ranked orders are
     /// considered.
-    fn on_orders_matched(&self, executing: HashSet<C::OrderUid>, considered: HashSet<C::OrderUid>);
+    async fn on_orders_matched(
+        &self,
+        executing: HashSet<C::OrderUid>,
+        considered: HashSet<C::OrderUid>,
+    );
 
     /// Final per-cycle reporting after settlements were dispatched.
     fn on_competition_ended(&self, auction: &C::Auction, ranking: &C::Ranking);
@@ -200,7 +204,7 @@ impl<C: Cycle> AuctionLoop<C> {
 
     /// Runs one competition for the auction.
     async fn single_run(&self, auction: &C::Auction) {
-        self.observer.on_orders_ready(auction);
+        self.observer.on_orders_ready(auction).await;
 
         let solutions = self.competition.solve(auction).await;
         if solutions.is_empty() {
@@ -232,7 +236,7 @@ impl<C: Cycle> AuctionLoop<C> {
             .into_iter()
             .filter(|uid| !executing.contains(uid))
             .collect();
-        self.observer.on_orders_matched(executing, considered);
+        self.observer.on_orders_matched(executing, considered).await;
 
         self.executor
             .execute(auction.id(), &ranking, deadline)

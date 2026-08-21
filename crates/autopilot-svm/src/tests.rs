@@ -9,7 +9,7 @@ use {
             driver::{Driver, dto},
             executor::DriverExecutor,
             observation::SettlementTracker,
-            observer::LogObserver,
+            observer::CompetitionObserver,
             provider::DbAuctionProvider,
         },
         run_loop::{
@@ -88,7 +88,7 @@ async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
 async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
     sqlx::query(
         "TRUNCATE solana.trades, solana.settlements, solana.settlement_executions, \
-         solana.order_pda, solana.orders, solana.indexer_state",
+         solana.order_pda, solana.orders, solana.indexer_state, solana.order_events",
     )
     .execute(pool)
     .await
@@ -174,7 +174,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
         Box::new(DriverExecutor::new(vec![driver], tracker.clone(), 25)),
-        Box::new(LogObserver::new(tracker.clone())),
+        Box::new(CompetitionObserver::new(pool.clone(), tracker.clone())),
     );
     auction_loop.run_cycle().await;
 
@@ -192,4 +192,11 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     .await
     .unwrap();
     assert_eq!(open_windows, 1);
+    // The cycle reported the order's auction progress.
+    let mut events: Vec<String> = sqlx::query_scalar("SELECT label::text FROM solana.order_events")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    events.sort();
+    assert_eq!(events, ["executing", "ready"]);
 }

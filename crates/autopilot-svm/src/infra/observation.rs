@@ -11,10 +11,10 @@
 //! window.
 
 use {
-    crate::infra::{db, listen::NotifyHandler},
+    crate::infra::{db, listen::NotifyHandler, order_events},
     anyhow::{Context, Result},
     async_trait::async_trait,
-    chain_types::solana::Pubkey,
+    chain_types::solana::{IntentHash, Pubkey},
     sqlx::PgPool,
 };
 
@@ -185,6 +185,18 @@ impl SettlementObservation {
                     tx_signature = %const_hex::encode(settlement.tx_signature.0),
                     "settlement observed on chain"
                 );
+                // The window only closes once, so the traded events dedupe
+                // with it. Best effort: a lost event degrades the status
+                // endpoint, never the observation.
+                let traded = db::trade_order_uids(&self.pool, &settlement.tx_signature.0)
+                    .await?
+                    .into_iter()
+                    .map(|uid| IntentHash(uid.0));
+                if let Err(err) =
+                    order_events::store(&self.pool, traded, order_events::Label::Traded).await
+                {
+                    tracing::error!(?err, "failed to store traded order events");
+                }
             }
         }
         Ok(())
@@ -226,6 +238,7 @@ mod tests {
             "solana.trades",
             "solana.settlements",
             "solana.settlement_executions",
+            "solana.order_events",
         ] {
             sqlx::query(&format!("DELETE FROM {table}"))
                 .execute(pool)
@@ -244,6 +257,15 @@ VALUES (10, $1, 0, $2, $3, NULL)
         .bind([9u8; 64])
         .bind([7u8; 32])
         .bind(auction_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount, \
+             buy_amount, fee_amount) VALUES ($1, 0, $2, 400, 200, 0)",
+        )
+        .bind([9u8; 64])
+        .bind([0xAB_u8; 32])
         .execute(pool)
         .await
         .unwrap();
@@ -295,6 +317,14 @@ VALUES (10, $1, 0, $2, $3, NULL)
         .await
         .unwrap();
         assert_eq!(signature, vec![9u8; 64]);
+        // The landed settlement reported its orders as traded.
+        let events: Vec<String> =
+            sqlx::query_scalar("SELECT label::text FROM solana.order_events WHERE order_uid = $1")
+                .bind([0xAB_u8; 32])
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(events, ["traded"]);
     }
 
     /// Expiry closes only windows past their deadline, and closed windows
