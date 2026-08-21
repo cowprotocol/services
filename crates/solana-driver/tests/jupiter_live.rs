@@ -20,7 +20,7 @@
 
 use {
     solana_driver::{
-        domain::{Auction, Order, Side, order_uid::OrderUid},
+        domain::{Auction, Id, Order, Side, Slot, order_uid::OrderUid},
         infra::{config, solver::Solver},
         util::associated_token_address,
     },
@@ -52,14 +52,22 @@ fn deadline() -> chrono::DateTime<chrono::Utc> {
 /// solver's account, so the domain order carries no destination.
 fn sell_auction() -> Auction {
     Auction {
-        id: 1,
+        id: Id::new(1).unwrap(),
         orders: vec![Order {
             uid: OrderUid([8; 32]),
-            sell_mint: Pubkey::from_str(USDC).unwrap(),
-            buy_mint: Pubkey::from_str(USDT).unwrap(),
-            amount: 10_000_000,
+            owner: Pubkey::default(),
+            sell_token: Pubkey::from_str(USDC).unwrap(),
+            buy_token: Pubkey::from_str(USDT).unwrap(),
+            sell_token_account: Pubkey::default(),
+            buy_token_account: Pubkey::default(),
+            sell_amount: 10_000_000,
+            buy_amount: 0,
+            valid_to: 0,
             side: Side::Sell,
+            partially_fillable: false,
+            order_pda: Pubkey::default(),
         }],
+        deadline_slot: Slot(1),
         deadline: deadline(),
     }
 }
@@ -133,7 +141,7 @@ async fn driver_solves_against_live_jupiter_engine() {
     assert_eq!(solution.trades.len(), 1);
     let trade = &solution.trades[0];
     assert_eq!(trade.order_uid, OrderUid([8; 32]));
-    assert_eq!(trade.executed_amount, 10_000_000, "full sell amount filled");
+    assert_eq!(trade.executed_sell, 10_000_000, "full sell amount filled");
 
     // --- interactions ---
     // The swap must arrive as real Solana instructions: every interaction

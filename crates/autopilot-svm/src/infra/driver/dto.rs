@@ -19,7 +19,7 @@ use {
 pub struct SolveRequest {
     /// Autopilot-assigned auction id.
     pub id: i64,
-    /// Wall-clock deadline for answering `/solve`.
+    /// Deadline for answering `/solve`.
     pub deadline: chrono::DateTime<chrono::Utc>,
     pub orders: Vec<Order>,
 }
