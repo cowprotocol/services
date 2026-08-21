@@ -13,10 +13,6 @@ use {
     std::sync::Arc,
 };
 
-/// Slots a settlement may take after ranking before it counts as late.
-/// TODO: make configurable.
-const SUBMISSION_DEADLINE_SLOTS: u64 = 25;
-
 /// Sends `/settle` to each winner's driver. Submission runs detached, the
 /// loop starts the next cycle while settlements land.
 pub struct DriverExecutor {
@@ -24,18 +20,28 @@ pub struct DriverExecutor {
     /// Opens a settlement-execution window per dispatched settlement, which
     /// the observation side later resolves or times out.
     tracker: SettlementTracker,
+    /// Slots a settlement may take after ranking before it counts as late.
+    submission_deadline_slots: u64,
 }
 
 impl DriverExecutor {
-    pub fn new(drivers: Vec<Arc<Driver>>, tracker: SettlementTracker) -> Self {
-        Self { drivers, tracker }
+    pub fn new(
+        drivers: Vec<Arc<Driver>>,
+        tracker: SettlementTracker,
+        submission_deadline_slots: u64,
+    ) -> Self {
+        Self {
+            drivers,
+            tracker,
+            submission_deadline_slots,
+        }
     }
 }
 
 #[async_trait]
 impl SettlementExecutor<SolanaCycle> for DriverExecutor {
     fn submission_deadline(&self, tip: &u64) -> u64 {
-        tip + SUBMISSION_DEADLINE_SLOTS
+        tip + self.submission_deadline_slots
     }
 
     async fn execute(&self, auction_id: i64, ranking: &Ranking, deadline: u64) {
@@ -63,7 +69,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                     auction_id,
                     winner.solver(),
                     winner.id(),
-                    deadline.saturating_sub(SUBMISSION_DEADLINE_SLOTS),
+                    deadline.saturating_sub(self.submission_deadline_slots),
                     deadline,
                 )
                 .await

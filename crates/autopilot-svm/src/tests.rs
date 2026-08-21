@@ -173,7 +173,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             Duration::from_secs(6),
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
-        Box::new(DriverExecutor::new(vec![driver], tracker.clone())),
+        Box::new(DriverExecutor::new(vec![driver], tracker.clone(), 25)),
         Box::new(LogObserver::new(tracker.clone())),
     );
     auction_loop.run_cycle().await;

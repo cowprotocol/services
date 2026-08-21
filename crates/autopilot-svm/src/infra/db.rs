@@ -69,12 +69,24 @@ pub struct Settlement {
     pub slot: i64,
     pub tx_signature: ByteArray<64>,
     pub solver: ByteArray<32>,
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read once settlement attribution lands")
+    )]
     pub auction_id: i64,
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read once settlement attribution lands")
+    )]
     pub solution_uid: Option<i64>,
 }
 
 /// Latest slot the indexer fully processed. `None` before the indexer's first
 /// write. `solana.indexer_state` is a single-row table.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "consumed by the freshness gating")
+)]
 pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
     const QUERY: &str = r#"SELECT slot FROM solana.indexer_state"#;
     sqlx::query_scalar(QUERY)
