@@ -51,12 +51,6 @@ impl Solver {
             })?;
         let pubkey = keypair.pubkey();
         if pubkey != config.account {
-            tracing::error!(
-                solver = %config.name,
-                %pubkey,
-                account = %config.account,
-                "signer keypair pubkey does not match solver account",
-            );
             return Err(Error::SignerPubkeyMismatch {
                 solver: config.name.clone(),
                 pubkey,
