@@ -180,7 +180,9 @@ impl Decoder {
         complete: bool,
     ) -> Result<(), PersistenceError> {
         for signature in buffer.dead_letters {
-            self.persistence.write_dead_letter(signature, slot).await?;
+            self.persistence
+                .record_decode_failure(signature, slot)
+                .await?;
         }
         let last_indexed = if complete {
             slot
@@ -285,10 +287,7 @@ impl Decoder {
                 .into_iter()
                 .partition(|instruction| instruction.program_id == self.settlement_program);
 
-        // TODO: resolve order PDAs against persisted order rows. Without a
-        // resolver backend nothing resolves, so `SettlementFinalized` events
-        // carry the tx-level fields with empty trades.
-        let events = decode_settlement(&settlement, &ctx, |_order_pda| None)?;
+        let events = decode_settlement(&settlement, &ctx)?;
 
         for instruction in &solflow {
             self.decode_solflow(instruction);
@@ -305,17 +304,6 @@ impl Decoder {
             "sol_flow instruction decode not implemented"
         );
     }
-}
-
-/// Order fields the `BeginSettle` wire does not carry, looked up per order PDA
-/// through an injected resolver so the decode stays a pure function. A future
-/// PR backs the resolver with the persisted order rows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ResolvedOrder {
-    /// UID of the order held at the PDA.
-    order_uid: OrderUid,
-    /// Whether the order is fully filled after this settlement.
-    order_fulfilled: bool,
 }
 
 /// Slots stay buffered until the stream reports a slot this far past them.
@@ -344,14 +332,11 @@ struct DecodeFailed;
 /// whole transaction must be dead-lettered, every instruction is still
 /// scanned so each failure gets logged.
 ///
-/// Pure: every tx-level input arrives through `ctx`, and any order field the
-/// `BeginSettle` wire does not carry is resolved through `resolve_order` (keyed
-/// on the order PDA), so tests can inject a canned map. `instructions` must be
+/// Pure: every tx-level input arrives through `ctx`. `instructions` must be
 /// the transaction's settlement-program instructions, in execution order.
 fn decode_settlement(
     instructions: &[ResolvedInstruction],
     ctx: &TxContext,
-    resolve_order: impl Fn(&Pubkey) -> Option<ResolvedOrder>,
 ) -> Result<Vec<SettlementEvent>, DecodeFailed> {
     let mut events = Vec::new();
     let mut decode_failed = false;
@@ -408,7 +393,6 @@ fn decode_settlement(
     events.extend(decode_settlements_finalized(
         instructions,
         ctx,
-        &resolve_order,
         &mut decode_failed,
     ));
     if decode_failed {
@@ -479,7 +463,6 @@ fn decode_buffers_created(
 fn decode_settlements_finalized(
     instructions: &[ResolvedInstruction],
     ctx: &TxContext,
-    resolve_order: &impl Fn(&Pubkey) -> Option<ResolvedOrder>,
     decode_failed: &mut bool,
 ) -> Vec<SettlementEvent> {
     // The solver is the transaction fee payer: the first account key, which
@@ -582,9 +565,6 @@ fn decode_settlements_finalized(
             .iter()
             .zip(finalize_input.pushes.iter().map(|push| push.amount))
         {
-            let Some(resolved) = resolve_order(order.order_pda) else {
-                continue;
-            };
             // Sell-side pull total, little-endian on the wire. An overflowing
             // sum cannot be a real settlement, so it invalidates the pair.
             let sum = order.amounts.iter().try_fold(0u64, |acc, amount| {
@@ -599,10 +579,9 @@ fn decode_settlements_finalized(
                 continue 'process_instructions;
             };
             trades.push(TradeDelta {
-                order_uid: resolved.order_uid,
+                order_pda: *order.order_pda,
                 amount_withdrawn_delta,
                 amount_received_delta,
-                order_fulfilled: resolved.order_fulfilled,
             });
         }
 
