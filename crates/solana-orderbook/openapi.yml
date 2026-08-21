@@ -37,6 +37,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/orders/{uid}/status:
+    get:
+      operationId: getOrderStatus
+      description: |
+        The order's auction progress. A trade always reports `traded`,
+        otherwise the latest auction event decides, and an indexed order
+        without events is `scheduled`.
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          description: The order's 32-byte intent hash as hex.
+          schema:
+            $ref: "#/components/schemas/OrderUid"
+      responses:
+        "200":
+          description: The auction progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompetitionOrderStatus"
+        "400":
+          description: The uid is not 32 bytes of hex.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No order with this uid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/trades:
     get:
       operationId: getTrades
@@ -170,6 +203,15 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         status:
           $ref: "#/components/schemas/OrderStatus"
+    CompetitionOrderStatus:
+      description: Auction progress of an order.
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [open, scheduled, active, solved, executing, traded, cancelled]
     Signature:
       description: A base58-encoded Solana transaction signature.
       type: string
