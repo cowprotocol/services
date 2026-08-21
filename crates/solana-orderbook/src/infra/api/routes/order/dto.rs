@@ -31,8 +31,8 @@ pub struct Order {
     #[serde_as(as = "DisplayFromStr")]
     pub buy_amount: BigDecimal,
     /// Unix seconds.
-    pub valid_to: i64,
-    pub kind: String,
+    pub valid_to: u32,
+    pub kind: Kind,
     pub partially_fillable: bool,
     pub app_data: String,
     #[serde_as(as = "DisplayFromStr")]
@@ -45,6 +45,24 @@ pub struct Order {
     #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigDecimal,
     pub status: Status,
+}
+
+/// Which amount the order fixes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Kind {
+    Sell,
+    Buy,
+}
+
+/// The order's kind column. The DB enum only holds sell and buy, a new
+/// variant must fail loud.
+fn kind(row: &OrderRow) -> Kind {
+    match row.kind.as_str() {
+        "sell" => Kind::Sell,
+        "buy" => Kind::Buy,
+        other => unreachable!("unknown order kind {other}"),
+    }
 }
 
 /// Lifecycle of an order.
@@ -61,8 +79,9 @@ impl Order {
     /// Assemble the wire order from its row at the given time.
     pub fn new(row: OrderRow, now_unix: i64) -> Self {
         let status = status(&row, now_unix);
+        let kind = kind(&row);
         Self {
-            uid: format!("0x{}", const_hex::encode(row.uid.0)),
+            uid: const_hex::encode_prefixed(row.uid.0),
             owner: Pubkey::new_from_array(row.owner.0),
             sell_token: Pubkey::new_from_array(row.sell_token.0),
             buy_token: Pubkey::new_from_array(row.buy_token.0),
@@ -70,10 +89,10 @@ impl Order {
             buy_token_account: Pubkey::new_from_array(row.buy_token_account.0),
             sell_amount: row.sell_amount,
             buy_amount: row.buy_amount,
-            valid_to: row.valid_to,
-            kind: row.kind,
+            valid_to: row.valid_to.try_into().expect("valid_to fits u32"),
+            kind,
             partially_fillable: row.partially_fillable,
-            app_data: format!("0x{}", const_hex::encode(row.app_data.0)),
+            app_data: const_hex::encode_prefixed(row.app_data.0),
             order_pda: Pubkey::new_from_array(row.order_pda.0),
             creation_date: row.creation_timestamp,
             executed_sell_amount: row.amount_withdrawn,
@@ -88,11 +107,9 @@ impl Order {
 /// rent stamps a cancellation timestamp, and that cleanup does not undo the
 /// fill.
 fn status(row: &OrderRow, now_unix: i64) -> Status {
-    let filled = match row.kind.as_str() {
-        "sell" => row.amount_withdrawn >= row.sell_amount,
-        "buy" => row.amount_received >= row.buy_amount,
-        // The DB enum only holds sell and buy, a new variant must fail loud.
-        other => unreachable!("unknown order kind {other}"),
+    let filled = match kind(row) {
+        Kind::Sell => row.amount_withdrawn >= row.sell_amount,
+        Kind::Buy => row.amount_received >= row.buy_amount,
     };
     if filled {
         return Status::Fulfilled;
