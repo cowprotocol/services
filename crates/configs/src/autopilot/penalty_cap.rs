@@ -1,7 +1,7 @@
 use {
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::ensure,
-    serde::{Deserialize, Deserializer, Serialize, de::Unexpected},
+    serde::{Deserialize, Deserializer, Serialize},
     std::collections::HashSet,
 };
 
@@ -48,12 +48,16 @@ impl PenaltyFactor {
     /// High precision scale factor (1 million) for sub-basis-point
     /// precision, allowing factors like 0.00001 (0.1 BPS) to be
     /// represented without rounding to 0.
-    pub const HIGH_PRECISION_SCALE: u64 = 1_000_000;
+    const HIGH_PRECISION_SCALE: u64 = 1_000_000;
 
-    /// Converts the factor to a high precision scaled integer.
-    /// For example, 0.00001 -> 10 (with scale of 1_000_000).
-    pub fn to_high_precision(&self) -> u64 {
-        (self.0 * Self::HIGH_PRECISION_SCALE as f64).round() as u64
+    /// Multiplies an amount by this factor, using high precision scaling
+    /// to support sub-basis-point factors. Returns `None` if the
+    /// multiplication overflows.
+    pub fn apply_to(&self, amount: U256) -> Option<U256> {
+        let scaled = (self.0 * Self::HIGH_PRECISION_SCALE as f64).round() as u64;
+        amount
+            .checked_mul(U256::from(scaled))
+            .map(|amount| amount / U256::from(Self::HIGH_PRECISION_SCALE))
     }
 
     /// Get the inner value
@@ -68,7 +72,16 @@ impl TryFrom<f64> for PenaltyFactor {
     fn try_from(value: f64) -> Result<Self, Self::Error> {
         ensure!(
             (0.0..1.0).contains(&value),
-            "Factor must be in the range [0, 1)"
+            "factor must be in the range [0, 1)"
+        );
+        // Reject factors that `apply_to`'s scaling cannot represent
+        // exactly, since they would get silently rounded (in the worst
+        // case to 0).
+        let scaled = value * Self::HIGH_PRECISION_SCALE as f64;
+        ensure!(
+            (scaled - scaled.round()).abs() < 1e-6,
+            "factor must be a multiple of {}",
+            1. / Self::HIGH_PRECISION_SCALE as f64
         );
         Ok(PenaltyFactor(value))
     }
@@ -80,12 +93,8 @@ impl<'de> Deserialize<'de> for PenaltyFactor {
         D: Deserializer<'de>,
     {
         let raw = f64::deserialize(deserializer)?;
-        PenaltyFactor::try_from(raw).map_err(|_| {
-            serde::de::Error::invalid_value(
-                Unexpected::Float(raw),
-                &"expected penalty factor to be in interval [0, 1)",
-            )
-        })
+        PenaltyFactor::try_from(raw)
+            .map_err(|err| serde::de::Error::custom(format!("invalid penalty factor {raw}: {err}")))
     }
 }
 
@@ -117,5 +126,38 @@ mod tests {
         assert_eq!(config.overrides.len(), 1);
         assert_eq!(config.overrides[0].factor.get(), 0.00001);
         assert_eq!(config.overrides[0].tokens.len(), 2);
+    }
+
+    #[test]
+    fn rejects_unrepresentable_factors() {
+        // Factors that scaling would silently round are rejected.
+        assert!(PenaltyFactor::try_from(0.0000005).is_err()); // rounds to 0
+        assert!(PenaltyFactor::try_from(0.0000015).is_err()); // rounds to 0.000002
+        assert!(PenaltyFactor::try_from(1.5).is_err()); // out of range
+        assert!(
+            toml::from_str::<PenaltyCapConfig>(
+                r#"
+            default-factor = 0.0000005
+            absolute-cap-usd = 20
+            usd-reference-token = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            "#
+            )
+            .is_err()
+        );
+
+        // The smallest representable factor and zero are accepted.
+        assert!(PenaltyFactor::try_from(0.000001).is_ok());
+        assert!(PenaltyFactor::try_from(0.).is_ok());
+    }
+
+    #[test]
+    fn apply_sub_basis_point_factor() {
+        let factor = PenaltyFactor::try_from(0.00001).unwrap();
+        // 0.1 BPS of 1e18 is 1e13.
+        assert_eq!(
+            factor.apply_to(U256::from(1_000_000_000_000_000_000_u128)),
+            Some(U256::from(10_000_000_000_000_u128))
+        );
+        assert_eq!(factor.apply_to(U256::MAX), None);
     }
 }

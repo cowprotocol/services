@@ -101,7 +101,7 @@ impl PenaltyCapCalculator {
             amount
                 .checked_mul(*price)
                 .map(|volume| volume / WAD)
-                .and_then(|volume| apply_factor(volume, factor))
+                .and_then(|volume| factor.apply_to(volume))
         });
         let cap = match volume_cap {
             Some(volume_cap) => volume_cap.min(absolute_cap),
@@ -141,14 +141,6 @@ impl PenaltyCapCalculator {
             .map(|cap| cap / WAD)
             .unwrap_or(U256::MAX)
     }
-}
-
-/// Multiplies an amount by a penalty factor, using high precision scaling
-/// to support sub-basis-point factors.
-fn apply_factor(amount: U256, factor: PenaltyFactor) -> Option<U256> {
-    amount
-        .checked_mul(U256::from(factor.to_high_precision()))
-        .map(|scaled| scaled / U256::from(PenaltyFactor::HIGH_PRECISION_SCALE))
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
