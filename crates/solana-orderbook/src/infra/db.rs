@@ -4,7 +4,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
-    database::byte_array::ByteArray,
+    database::{byte_array::ByteArray, order_events::OrderEventLabel},
     sqlx::PgExecutor,
 };
 
@@ -109,9 +109,12 @@ pub async fn order_has_trade(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<b
 }
 
 /// The label of the order's most recent auction-progress event.
-pub async fn latest_order_event(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<Option<String>> {
+pub async fn latest_order_event(
+    ex: impl PgExecutor<'_>,
+    uid: [u8; 32],
+) -> Result<Option<OrderEventLabel>> {
     const QUERY: &str = r#"
-SELECT label::text
+SELECT label
 FROM solana.order_events
 WHERE order_uid = $1
 ORDER BY timestamp DESC
@@ -203,7 +206,7 @@ VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
         for (at, label) in [(1, "ready"), (2, "executing")] {
             sqlx::query(
                 "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, \
-                 to_timestamp($2), $3::solana.OrderEventLabel)",
+                 to_timestamp($2), $3::OrderEventLabel)",
             )
             .bind(ByteArray(uid))
             .bind(at)
@@ -213,8 +216,8 @@ VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
             .unwrap();
         }
         assert_eq!(
-            latest_order_event(&pool, uid).await.unwrap().as_deref(),
-            Some("executing")
+            latest_order_event(&pool, uid).await.unwrap(),
+            Some(OrderEventLabel::Executing)
         );
 
         sqlx::query(
