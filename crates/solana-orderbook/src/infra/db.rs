@@ -97,15 +97,6 @@ ORDER BY s.slot, t.tx_signature, t.instruction_index, t.order_uid
         .context("read solana.trades")
 }
 
-/// Whether the order exists.
-pub async fn order_exists(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<bool> {
-    sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM solana.orders WHERE uid = $1)")
-        .bind(ByteArray(uid))
-        .fetch_one(ex)
-        .await
-        .context("check solana.orders existence")
-}
-
 /// Whether the order has at least one trade.
 pub async fn order_has_trade(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<bool> {
     sqlx::query_scalar::<_, bool>(
@@ -206,8 +197,6 @@ VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
             .await
             .unwrap();
 
-        assert!(order_exists(&pool, uid).await.unwrap());
-        assert!(!order_exists(&pool, [0x99; 32]).await.unwrap());
         assert!(!order_has_trade(&pool, uid).await.unwrap());
         assert!(latest_order_event(&pool, uid).await.unwrap().is_none());
 

@@ -27,6 +27,15 @@ pub async fn order_status(
     {
         return Ok(Json(dto::Status::Traded));
     }
+    let row = db::order_by_uid(state.pool(), uid)
+        .await
+        .map_err(internal)?
+        .ok_or_else(|| error::reply(StatusCode::NOT_FOUND, "NotFound", "Order was not found"))?;
+    // Cancellation is on-chain state stamped by the indexer, no auction
+    // event records it.
+    if row.cancellation_timestamp.is_some() {
+        return Ok(Json(dto::Status::Cancelled));
+    }
     if let Some(label) = db::latest_order_event(state.pool(), uid)
         .await
         .map_err(internal)?
@@ -35,15 +44,5 @@ pub async fn order_status(
     }
     // Orders are created on-chain, an indexed order can predate its first
     // auction event.
-    if db::order_exists(state.pool(), uid)
-        .await
-        .map_err(internal)?
-    {
-        return Ok(Json(dto::Status::Scheduled));
-    }
-    Err(error::reply(
-        StatusCode::NOT_FOUND,
-        "NotFound",
-        "Order was not found",
-    ))
+    Ok(Json(dto::Status::Scheduled))
 }
