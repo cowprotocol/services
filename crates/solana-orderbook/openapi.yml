@@ -37,6 +37,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/trades:
+    get:
+      operationId: getTrades
+      description: |
+        Trades of one order or one owner. Exactly one of `orderUid` and
+        `owner` must be set.
+      parameters:
+        - name: orderUid
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/OrderUid"
+        - name: owner
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Pubkey"
+      responses:
+        "200":
+          description: The trades, ordered by slot.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trade"
+        "400":
+          description: |
+            Both or neither filter set (`InvalidTradeFilter`), or a malformed
+            filter value (`InvalidOrderUid`, `InvalidOwner`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   schemas:
     OrderUid:
@@ -136,6 +170,61 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         status:
           $ref: "#/components/schemas/OrderStatus"
+    Signature:
+      description: A base58-encoded Solana transaction signature.
+      type: string
+      example: "BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA"
+    Trade:
+      description: One fill of an order.
+      type: object
+      required:
+        - orderUid
+        - owner
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - txSignature
+        - instructionIndex
+      properties:
+        orderUid:
+          $ref: "#/components/schemas/OrderUid"
+        owner:
+          $ref: "#/components/schemas/Pubkey"
+        sellToken:
+          description: The mint of the token sold.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        buyToken:
+          description: The mint of the token bought.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        sellAmount:
+          description: Sell tokens pulled by this fill.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          description: Buy tokens paid by this fill.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        txSignature:
+          description: The settlement transaction.
+          allOf:
+            - $ref: "#/components/schemas/Signature"
+        instructionIndex:
+          description: |
+            Position of the settlement instruction within its transaction,
+            disambiguating multiple fills of one order in the same
+            transaction.
+          type: integer
+          format: int32
+        slot:
+          description: |
+            Slot the settlement landed in. Absent while the settlement row
+            has not been indexed.
+          type: integer
+          format: int64
+          nullable: true
     Error:
       description: A machine-readable error type and a human-readable description.
       type: object
