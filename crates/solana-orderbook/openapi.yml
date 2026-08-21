@@ -216,7 +216,12 @@ components:
           type: string
           enum: [open, scheduled, active, solved, executing, traded, cancelled]
         value:
-          description: Present on `solved`, `executing`, and `traded`.
+          description: |-
+            A list of solvers who participated in the latest competition, sorted
+            by score in ascending order, where the last element is the winner.
+
+            The presence of executed amounts defines whether the solver provided
+            a solution for the desired order.
           type: array
           items:
             $ref: "#/components/schemas/SolutionInclusion"
@@ -227,9 +232,13 @@ components:
         - solver
       properties:
         solver:
-          $ref: "#/components/schemas/Pubkey"
+          description: The on-chain address of the solver.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
         executedAmounts:
-          description: Absent when the solution does not include the order.
+          description: |-
+            The executed amounts for the order as proposed by the solver,
+            omitted when the solution does not include the order.
           type: object
           required:
             - sell

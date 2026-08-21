@@ -14,19 +14,24 @@ use {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase", content = "value")]
 pub enum Status {
-    /// Known to the orderbook but not part of a running auction.
+    /// Order is part of the orderbook but not actively being worked on. This
+    /// can for example happen if the necessary balances are missing.
     Open,
-    /// Awaiting the next auction.
+    /// Order awaits being put into the current auction.
     Scheduled,
-    /// Part of the current auction, solvers are working on it.
+    /// Order is part of the current auction and solvers are computing
+    /// solutions for it.
     Active,
-    /// Solutions were proposed but did not win.
+    /// Some solvers proposed solutions for the orders but did not win the
+    /// competition.
     Solved(Vec<SolutionInclusion>),
-    /// Part of the winning solution being submitted on-chain.
+    /// The order was contained in the winning solution which the solver
+    /// currently tries to submit on-chain.
     Executing(Vec<SolutionInclusion>),
-    /// Executed on-chain.
+    /// The order was successfully executed on-chain.
     Traded(Vec<SolutionInclusion>),
-    /// Cancelled, no longer entering auctions.
+    /// The user cancelled the order. It will no longer show up in any
+    /// auctions.
     Cancelled,
 }
 
