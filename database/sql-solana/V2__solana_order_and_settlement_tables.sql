@@ -82,6 +82,9 @@ CREATE INDEX solana_settlements_auction_id ON solana.settlements (auction_id);
 CREATE TABLE solana.trades (
     tx_signature            bytea NOT NULL,
     instruction_index       integer NOT NULL,
+    -- Instruction path for CPI-emitted trades: '{}' is a top-level
+    -- instruction, '{0,2}' is inner instruction 2 under top-level 0.
+    inner_ix_path           integer[] NOT NULL DEFAULT '{}',
     order_uid               bytea NOT NULL CHECK (length(order_uid) = 32),
     -- Per-order pull from the BeginSettle instruction data, fee included.
     sell_amount             numeric(20,0) NOT NULL,
@@ -89,7 +92,7 @@ CREATE TABLE solana.trades (
     buy_amount              numeric(20,0) NOT NULL,
     -- From the off-chain proposed-solution data.
     fee_amount              numeric(20,0) NOT NULL,
-    PRIMARY KEY (tx_signature, instruction_index, order_uid)
+    PRIMARY KEY (tx_signature, instruction_index, inner_ix_path, order_uid)
 );
 
 CREATE INDEX solana_trades_order_uid ON solana.trades (order_uid);
