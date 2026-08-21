@@ -19,6 +19,7 @@ dependencies = [
  "alloy-contract",
  "alloy-dyn-abi",
  "alloy-primitives",
+ "alloy-provider",
  "alloy-rpc-types",
  "alloy-sol-types",
  "anyhow",
