@@ -3,7 +3,10 @@
 pub mod dto;
 
 use {
-    crate::infra::{api::State, db},
+    crate::infra::{
+        api::{State, error},
+        db,
+    },
     axum::{Json, extract::Path, http::StatusCode},
     std::time::{SystemTime, UNIX_EPOCH},
 };
@@ -13,15 +16,21 @@ use {
 pub async fn order(
     state: axum::extract::State<State>,
     Path(uid): Path<String>,
-) -> Result<Json<dto::Order>, StatusCode> {
-    let uid = parse_uid(&uid).ok_or(StatusCode::BAD_REQUEST)?;
+) -> Result<Json<dto::Order>, error::Reply> {
+    let uid = parse_uid(&uid).ok_or_else(|| {
+        error::reply(
+            StatusCode::BAD_REQUEST,
+            "InvalidOrderUid",
+            "orderUid must be 32 bytes of hex",
+        )
+    })?;
     let row = db::order_by_uid(state.pool(), uid)
         .await
         .map_err(|err| {
             tracing::error!(?err, "order lookup failed");
-            StatusCode::INTERNAL_SERVER_ERROR
+            error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
         })?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .ok_or_else(|| error::reply(StatusCode::NOT_FOUND, "NotFound", "Order was not found"))?;
     Ok(Json(dto::Order::new(row, now_unix())))
 }
 
