@@ -25,8 +25,6 @@ pub struct Trade {
     #[serde_as(as = "DisplayFromStr")]
     pub buy_amount: BigDecimal,
     #[serde_as(as = "DisplayFromStr")]
-    pub fee_amount: BigDecimal,
-    #[serde_as(as = "DisplayFromStr")]
     pub tx_signature: Signature,
     /// Position of the settlement instruction within its transaction,
     /// disambiguating multiple fills of one order in the same transaction.
@@ -45,7 +43,6 @@ impl From<TradeRow> for Trade {
             buy_token: Pubkey::new_from_array(row.buy_token.0),
             sell_amount: row.sell_amount,
             buy_amount: row.buy_amount,
-            fee_amount: row.fee_amount,
             tx_signature: Signature::from(row.tx_signature.0),
             instruction_index: row.instruction_index,
             slot: row.slot,
@@ -66,7 +63,6 @@ mod tests {
             buy_token: ByteArray([0x44; 32]),
             sell_amount: 1_000.into(),
             buy_amount: 500.into(),
-            fee_amount: 7.into(),
             tx_signature: ByteArray([9; 64]),
             instruction_index: 3,
             slot: Some(42),
@@ -79,7 +75,6 @@ mod tests {
         );
         assert_eq!(json["sellAmount"], "1000");
         assert_eq!(json["buyAmount"], "500");
-        assert_eq!(json["feeAmount"], "7");
         assert_eq!(
             json["txSignature"],
             "BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA"

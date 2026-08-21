@@ -60,7 +60,6 @@ pub struct TradeRow {
     pub buy_token: ByteArray<32>,
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
-    pub fee_amount: BigDecimal,
     pub tx_signature: ByteArray<64>,
     pub instruction_index: i32,
     pub slot: Option<i64>,
@@ -76,7 +75,7 @@ pub async fn trades(
 ) -> Result<Vec<TradeRow>> {
     const QUERY: &str = r#"
 SELECT t.order_uid, o.owner, o.sell_token, o.buy_token,
-       t.sell_amount, t.buy_amount, t.fee_amount, t.tx_signature,
+       t.sell_amount, t.buy_amount, t.tx_signature,
        t.instruction_index, s.slot
 FROM solana.trades t
 JOIN solana.orders o ON o.uid = t.order_uid
