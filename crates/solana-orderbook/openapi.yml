@@ -1,0 +1,150 @@
+openapi: 3.0.3
+info:
+  title: Solana Order Book API
+  description: |
+    Read-only API over the orders and settlements the indexer records from the
+    Solana settlement program.
+  version: 0.0.1
+paths:
+  /api/v1/orders/{uid}:
+    get:
+      operationId: getOrder
+      description: |
+        One order with its fill state.
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          description: The order's 32-byte intent hash as hex.
+          schema:
+            $ref: "#/components/schemas/OrderUid"
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: The uid is not 32 bytes of hex.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No order with this uid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  schemas:
+    OrderUid:
+      description: The order's 32-byte intent hash as hex.
+      type: string
+      example: "0x291a7e4327d1c8f8ffd97d290fa0d1d3e60cd71d16bee0a389a15adc7c99f076"
+    Pubkey:
+      description: A base58-encoded Solana public key.
+      type: string
+      example: "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3"
+    TokenAmount:
+      description: A token amount in base units as a decimal string.
+      type: string
+      example: "1000000"
+    OrderKind:
+      description: Which amount the order fixes.
+      type: string
+      enum: [sell, buy]
+    OrderStatus:
+      description: |
+        Lifecycle of the order. A full fill wins over cancellation because
+        reclaiming a filled order's account stamps a cancellation timestamp
+        without undoing the fill.
+      type: string
+      enum: [open, fulfilled, cancelled, expired]
+    Order:
+      description: One order with its fill state.
+      type: object
+      required:
+        - uid
+        - owner
+        - sellToken
+        - buyToken
+        - sellTokenAccount
+        - buyTokenAccount
+        - sellAmount
+        - buyAmount
+        - validTo
+        - kind
+        - partiallyFillable
+        - appData
+        - orderPda
+        - creationDate
+        - executedSellAmount
+        - executedBuyAmount
+        - status
+      properties:
+        uid:
+          $ref: "#/components/schemas/OrderUid"
+        owner:
+          $ref: "#/components/schemas/Pubkey"
+        sellToken:
+          description: The mint of the token being sold.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        buyToken:
+          description: The mint of the token being bought.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        sellTokenAccount:
+          description: The owner's token account the sell tokens are pulled from.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        buyTokenAccount:
+          description: The owner's token account the buy tokens are paid to.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        validTo:
+          description: Expiry as unix seconds.
+          type: integer
+          format: int64
+        kind:
+          $ref: "#/components/schemas/OrderKind"
+        partiallyFillable:
+          type: boolean
+        appData:
+          description: The 32-byte app-data hash as hex.
+          type: string
+        orderPda:
+          description: The order's on-chain account.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        creationDate:
+          type: string
+          format: date-time
+        executedSellAmount:
+          description: Sell tokens pulled from the order so far.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        executedBuyAmount:
+          description: Buy tokens paid to the order so far.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+    Error:
+      description: A machine-readable error type and a human-readable description.
+      type: object
+      required:
+        - errorType
+        - description
+      properties:
+        errorType:
+          type: string
+          example: "NotFound"
+        description:
+          type: string
