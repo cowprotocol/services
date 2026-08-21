@@ -193,8 +193,7 @@ impl From<&Order> for OrderIntent {
                 Side::Buy => OrderKind::Buy,
             },
             partially_fillable: order.partially_fillable,
-            // TODO: `app_data` is a placeholder until the `autopilot-svm` sends it.
-            app_data: [0; 32],
+            app_data: order.app_data,
         }
     }
 }
@@ -311,11 +310,17 @@ mod tests {
         }
     }
 
+    fn default_order(program_id: &Pubkey, uid_byte: u8, sell_token: u8, buy_token: u8) -> Order {
+        order(
+            program_id, uid_byte, sell_token, buy_token, 0x55, 0x66, 1_000, 2_000, [0; 32],
+        )
+    }
+
     /// A single-order settlement with no interactions and no setup
     /// instructions. The instruction list is `[SetComputeUnitLimit,
     /// BeginSettle, FinalizeSettle]`.
     fn settlement(program_id: &Pubkey) -> Settlement {
-        let order = order(program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        let order = default_order(program_id, 0x11, 0x33, 0x44);
         Settlement::new(
             *program_id,
             Id::new(7).unwrap(),
@@ -339,6 +344,7 @@ mod tests {
         buy_token_account: u8,
         sell_amount: u64,
         buy_amount: u64,
+        app_data: [u8; 32],
     ) -> Order {
         let uid = OrderUid([uid_byte; 32]);
         let order_pda = find_order_pda(program_id, &Hash::new_from_array(uid.0)).0;
@@ -355,13 +361,14 @@ mod tests {
             side: super::super::Side::Sell,
             partially_fillable: false,
             order_pda,
+            app_data,
         }
     }
 
     #[test]
     fn rejects_a_mismatched_order_pda() {
         let program_id = pubkey(0xaa);
-        let mut order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        let mut order = default_order(&program_id, 0x11, 0x33, 0x44);
         order.order_pda = pubkey(0xff);
 
         let err = Settlement::new(
@@ -380,7 +387,7 @@ mod tests {
     fn rejects_a_solution_with_no_trades() {
         let program_id = pubkey(0xaa);
         let payer = pubkey(0xbb);
-        let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        let order = default_order(&program_id, 0x11, 0x33, 0x44);
         let settlement = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
@@ -403,7 +410,7 @@ mod tests {
     fn multiple_trades_for_the_same_order_are_summed() {
         let program_id = pubkey(0xaa);
         let payer = pubkey(0xbb);
-        let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        let order = default_order(&program_id, 0x11, 0x33, 0x44);
         // The fixture order has `sell_amount: 1_000`, `buy_amount: 2_000`. Split it
         // across two trades: 400/800 and 600/1200.
         let settlement = Settlement::new(
@@ -453,8 +460,8 @@ mod tests {
         let program_id = pubkey(0xaa);
         let payer = pubkey(0xbb);
 
-        let order_a = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
-        let order_b = order(&program_id, 0x22, 0x45, 0x46, 0x67, 0x68, 500, 1_000);
+        let order_a = default_order(&program_id, 0x11, 0x33, 0x44);
+        let order_b = default_order(&program_id, 0x22, 0x45, 0x46);
         let settlement = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
@@ -500,8 +507,8 @@ mod tests {
 
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
-        // With placeholder `app_data`, the derived PDAs differ from the wire PDAs, so
-        // assert pull amounts rather than PDA equality.
+        // Assert pull amounts rather than PDA equality; the tests above already
+        // cover the PDA derivation cross-check.
         let settled: Vec<u64> = begin_input
             .orders
             .iter()
@@ -524,7 +531,7 @@ mod tests {
     fn setup_instructions_shift_the_reciprocal_indices() {
         let program_id = pubkey(0xaa);
         let payer = pubkey(0xbb);
-        let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        let order = default_order(&program_id, 0x11, 0x33, 0x44);
         // Both the sell-mint and buy-mint buffers are missing.
         let missing_buffers = vec![order.sell_token, order.buy_token];
         let settlement = Settlement::new(
