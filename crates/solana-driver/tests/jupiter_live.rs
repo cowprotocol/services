@@ -70,6 +70,7 @@ fn sell_auction() -> Auction {
             side: Side::Sell,
             partially_fillable: false,
             order_pda: Pubkey::default(),
+            app_data: [0; 32],
         }],
         deadline_slot: Slot(1),
         deadline: deadline(),

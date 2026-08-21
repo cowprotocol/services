@@ -116,6 +116,7 @@ fn solve_request() -> serde_json::Value {
             "kind": "sell",
             "partiallyFillable": false,
             "orderPda": order_pda().to_string(),
+            "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
         }]
     })
 }
