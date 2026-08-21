@@ -125,8 +125,10 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now
         .await
         .unwrap();
         sqlx::query(
-            "INSERT INTO solana.order_pda (order_uid, created_by, amount_withdrawn, \
-             cancellation_timestamp) VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)",
+            r#"
+INSERT INTO solana.order_pda (order_uid, created_by, amount_withdrawn, cancellation_timestamp)
+VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
+            "#,
         )
         .bind(ByteArray(uid))
         .bind(ByteArray([0xAA; 32]))
