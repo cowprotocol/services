@@ -26,16 +26,14 @@ use {
     },
     solana_sdk::{
         pubkey::Pubkey,
-        signer::{
-            Signer,
-            keypair::{Keypair, read_keypair_file, write_keypair_file},
-        },
+        signer::{Signer, keypair::read_keypair_file},
     },
     solana_solvers::{
         api::Api,
         config::JupiterConfig,
         dex::{Dex, jupiter::Jupiter},
     },
+    solana_testlib::temp_keypair,
     std::{str::FromStr, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
@@ -117,12 +115,8 @@ async fn driver_solves_against_live_jupiter_engine() {
 
     // Any valid pubkey works: Jupiter builds instructions for this account,
     // the swap only runs for real once the driver submits the settlement.
-    let keypair_file = tempfile::NamedTempFile::new().expect("create temp file");
-    let keypair_path = keypair_file
-        .into_temp_path()
-        .keep()
-        .expect("keep temp file");
-    write_keypair_file(&Keypair::new(), &keypair_path).expect("write keypair");
+    let keypair_file = temp_keypair();
+    let keypair_path = keypair_file.path().to_path_buf();
     let solver_account = read_keypair_file(&keypair_path).unwrap().pubkey();
     let solver = Solver::new(&config::Solver {
         name: "jupiter-live".to_string(),

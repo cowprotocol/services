@@ -171,25 +171,18 @@ pub enum Error {
 mod tests {
     use {
         super::*,
-        solana_sdk::signer::keypair::{Keypair, read_keypair_file, write_keypair_file},
+        solana_sdk::signer::keypair::read_keypair_file,
+        solana_testlib::temp_keypair,
         std::num::NonZero,
-        tempfile::NamedTempFile,
     };
-
-    /// Write a fresh keypair to a temp file and return its path.
-    fn temp_keypair() -> std::path::PathBuf {
-        let file = NamedTempFile::new().expect("create temp file");
-        let path = file.into_temp_path().keep().expect("keep temp file");
-        write_keypair_file(&Keypair::new(), &path).expect("write keypair");
-        path
-    }
 
     #[tokio::test]
     async fn solve_with_past_deadline_is_rejected() {
         // Build a solver pointing at a port that is never listened on. The
         // deadline check fires before any HTTP request is sent, so this never
         // actually connects to the endpoint.
-        let keypair_path = temp_keypair();
+        let keypair_file = temp_keypair();
+        let keypair_path = keypair_file.path().to_path_buf();
         let solver = Solver::new(&config::Solver {
             name: "test".to_owned(),
             endpoint: "http://127.0.0.1:1".parse().unwrap(),

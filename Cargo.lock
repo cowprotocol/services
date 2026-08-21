@@ -9736,7 +9736,7 @@ dependencies = [
  "serde_with",
  "solana-sdk",
  "solana-solvers",
- "tempfile",
+ "solana-testlib",
  "thiserror 1.0.69",
  "tikv-jemallocator",
  "tokio",
@@ -11080,6 +11080,14 @@ checksum = "17358d1e9a13e5b9c2264d301102126cf11a47fd394cdf3dec174fe7bc96e1de"
 dependencies = [
  "solana-address 2.6.1",
  "solana-sdk-ids",
+]
+
+[[package]]
+name = "solana-testlib"
+version = "0.1.0"
+dependencies = [
+ "solana-sdk",
+ "tempfile",
 ]
 
 [[package]]

@@ -5,12 +5,10 @@ use {
     solana_driver::infra::{api::Api, config, solver::Solver},
     solana_sdk::{
         pubkey::Pubkey,
-        signer::{
-            Signer,
-            keypair::{Keypair, read_keypair_file},
-        },
+        signer::{Signer, keypair::read_keypair_file},
     },
-    std::{net::SocketAddr, num::NonZero, path::PathBuf, sync::Arc},
+    solana_testlib::temp_keypair,
+    std::{net::SocketAddr, num::NonZero, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
 
@@ -21,14 +19,6 @@ fn pubkey(byte: u8) -> Pubkey {
 /// The autopilot's own literal order uid (32 bytes of `0x11`).
 fn uid() -> String {
     format!("0x{}", "11".repeat(32))
-}
-
-/// Write a fresh keypair to a temp file and return its path.
-fn temp_keypair() -> PathBuf {
-    let file = tempfile::NamedTempFile::new().expect("create temp file");
-    let path = file.into_temp_path().keep().expect("keep temp file");
-    solana_sdk::signer::keypair::write_keypair_file(&Keypair::new(), &path).expect("write keypair");
-    path
 }
 
 fn api_with(solvers: Vec<Solver>) -> Api {
@@ -68,7 +58,8 @@ async fn spawn_mock_solver_engine(response: serde_json::Value) -> SocketAddr {
 /// A solver client whose on-chain identity is a freshly generated keypair,
 /// so the test can register a matching settlement signer.
 fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
-    let keypair_path = temp_keypair();
+    let keypair_file = temp_keypair();
+    let keypair_path = keypair_file.path().to_path_buf();
     let account = read_keypair_file(&keypair_path).unwrap().pubkey();
     let solver = Solver::new(&config::Solver {
         name: "mock".to_owned(),
