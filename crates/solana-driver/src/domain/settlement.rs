@@ -85,9 +85,7 @@ impl Settlement {
     }
 
     /// Builds the settlement instruction list
-    pub fn instructions(&self, signer: &Keypair) -> Result<Vec<Instruction>, Error> {
-        let signer_pubkey = signer.pubkey();
-
+    pub fn instructions(&self, payer: Pubkey) -> Result<Vec<Instruction>, Error> {
         // Prepare each order for settlement: resolve its executed amounts and build its
         // intent, sell-mint pull, and buy-mint push.
         let settlement_orders: Vec<SettlementOrder> = self
@@ -130,7 +128,7 @@ impl Settlement {
             instructions.push(
                 CreateBuffers {
                     program_id: self.program_id,
-                    payer: signer_pubkey,
+                    payer,
                     mints: &self.missing_buffers,
                 }
                 .into(),
@@ -171,7 +169,7 @@ impl Settlement {
         blockhash: Hash,
         lookup_tables: &[AddressLookupTableAccount],
     ) -> Result<VersionedTransaction, Error> {
-        let instructions = self.instructions(signer)?;
+        let instructions = self.instructions(signer.pubkey())?;
         let message =
             MessageV0::try_compile(&signer.pubkey(), &instructions, lookup_tables, blockhash)?;
         let transaction = VersionedTransaction::try_new(VersionedMessage::V0(message), &[signer])?;
@@ -381,7 +379,7 @@ mod tests {
     #[test]
     fn rejects_a_solution_with_no_trades() {
         let program_id = pubkey(0xaa);
-        let signer = Keypair::new();
+        let payer = pubkey(0xbb);
         let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
         let settlement = Settlement::new(
             program_id,
@@ -394,7 +392,7 @@ mod tests {
         .unwrap();
 
         let err = settlement
-            .instructions(&signer)
+            .instructions(payer)
             .expect_err("a solution with no trades must be rejected");
         assert!(matches!(err, Error::NoTradeForOrder(..)));
     }
@@ -404,7 +402,7 @@ mod tests {
     #[test]
     fn multiple_trades_for_the_same_order_are_summed() {
         let program_id = pubkey(0xaa);
-        let signer = Keypair::new();
+        let payer = pubkey(0xbb);
         let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
         // The fixture order has `sell_amount: 1_000`, `buy_amount: 2_000`. Split it
         // across two trades: 400/800 and 600/1200.
@@ -429,7 +427,7 @@ mod tests {
         )
         .unwrap();
 
-        let instructions = settlement.instructions(&signer).unwrap();
+        let instructions = settlement.instructions(payer).unwrap();
         // [SetComputeUnitLimit, BeginSettle, FinalizeSettle].
         let begin = &instructions[1];
         let finalize = &instructions[2];
@@ -453,7 +451,7 @@ mod tests {
     #[test]
     fn multiple_orders_in_one_settlement() {
         let program_id = pubkey(0xaa);
-        let signer = Keypair::new();
+        let payer = pubkey(0xbb);
 
         let order_a = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
         let order_b = order(&program_id, 0x22, 0x45, 0x46, 0x67, 0x68, 500, 1_000);
@@ -496,7 +494,7 @@ mod tests {
         )
         .unwrap();
 
-        let instructions = settlement.instructions(&signer).unwrap();
+        let instructions = settlement.instructions(payer).unwrap();
         let begin = &instructions[1];
         let finalize = &instructions[2];
 
@@ -525,7 +523,7 @@ mod tests {
     #[test]
     fn setup_instructions_shift_the_reciprocal_indices() {
         let program_id = pubkey(0xaa);
-        let signer = Keypair::new();
+        let payer = pubkey(0xbb);
         let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
         // Both the sell-mint and buy-mint buffers are missing.
         let missing_buffers = vec![order.sell_token, order.buy_token];
@@ -539,7 +537,7 @@ mod tests {
         )
         .unwrap();
 
-        let instructions = settlement.instructions(&signer).unwrap();
+        let instructions = settlement.instructions(payer).unwrap();
 
         // [SetComputeUnitLimit, CreateBuffers, BeginSettle, FinalizeSettle].
         assert_eq!(instructions.len(), 4);
