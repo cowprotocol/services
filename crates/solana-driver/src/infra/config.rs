@@ -9,7 +9,12 @@ use {
         deserialize_url_with_trailing_slash,
     },
     solana_sdk::pubkey::Pubkey,
-    std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
+    std::{
+        net::SocketAddr,
+        num::NonZero,
+        path::{Path, PathBuf},
+        time::Duration,
+    },
     tokio::fs,
 };
 
@@ -108,6 +113,13 @@ pub struct Solver {
     /// produced by this engine.
     #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
     pub account: Pubkey,
+    /// Path to the solver's settlement signer keypair. Its public key must
+    /// equal `account`; the driver fails fast on mismatch at startup.
+    ///
+    /// TODO: plaintext keypair paths are temporary. Secrets must not live in
+    /// plaintext config long-term; KMS-backed signers are planned, mirroring
+    /// the EVM driver's `submission_accounts`.
+    pub signer_keypair: PathBuf,
     /// Maximum number of concurrent solve requests kept in flight per solver.
     pub max_in_flight: NonZero<usize>,
 }
@@ -140,6 +152,10 @@ mod tests {
                 .parse()
                 .unwrap()
         );
+        assert_eq!(
+            config.solvers[0].signer_keypair,
+            Path::new("/path/to/keypair.json")
+        );
         assert_eq!(config.logging.filter, "info,solana_driver=debug");
         assert_eq!(config.logging.stderr_threshold, None);
         assert!(!config.logging.use_json);
@@ -151,11 +167,13 @@ mod tests {
             name = "baseline"
             endpoint = "http://localhost:8001"
             account = "11111111111111111111111111111111"
+            signer-keypair = "/path/to/keypair.json"
             max-in-flight = 1
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
         assert_eq!(solver.name, "baseline");
         assert_eq!(solver.account, Pubkey::default());
+        assert_eq!(solver.signer_keypair, Path::new("/path/to/keypair.json"));
         assert_eq!(solver.max_in_flight.get(), 1);
     }
 
@@ -164,6 +182,8 @@ mod tests {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
+            account = "11111111111111111111111111111111"
+            signer-keypair = "/path/to/keypair.json"
             max-in-flight = 0
         "#;
         let err = toml::de::from_str::<Solver>(solver_config)

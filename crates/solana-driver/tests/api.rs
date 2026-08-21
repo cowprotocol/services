@@ -3,7 +3,11 @@
 use {
     cow_solana_rpc::SolanaRPC,
     solana_driver::infra::{api::Api, config, solver::Solver},
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{
+        pubkey::Pubkey,
+        signer::{Signer, keypair::read_keypair_file},
+    },
+    solana_testlib::temp_keypair,
     std::{net::SocketAddr, num::NonZero, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
@@ -51,13 +55,26 @@ async fn spawn_mock_solver_engine(response: serde_json::Value) -> SocketAddr {
     addr
 }
 
-fn solver(addr: SocketAddr, account: Pubkey) -> Solver {
-    Solver::new(&config::Solver {
+/// A solver client whose on-chain identity is a freshly generated keypair,
+/// so the test can register a matching settlement signer.
+fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
+    let keypair_file = temp_keypair();
+    let keypair_path = keypair_file.path().to_path_buf();
+    let account = read_keypair_file(&keypair_path).unwrap().pubkey();
+    let solver = Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: format!("http://{addr}").parse().unwrap(),
         account,
+        signer_keypair: keypair_path,
         max_in_flight: NonZero::new(1).unwrap(),
     })
+    .expect("solver construction should succeed");
+    (solver, account)
+}
+
+/// A solver client pointing at a dead endpoint (no listener).
+fn dead_solver() -> (Solver, Pubkey) {
+    solver_with_keypair("127.0.0.1:1".parse().unwrap())
 }
 
 /// The autopilot's own literal `/solve` request JSON.
@@ -120,7 +137,6 @@ async fn shuts_down_cleanly_on_signal() {
 
 #[tokio::test]
 async fn solve_returns_converted_solutions() {
-    let account = pubkey(0x99);
     let engine = spawn_mock_solver_engine(serde_json::json!({
         "solutions": [{
             "id": 42,
@@ -136,7 +152,8 @@ async fn solve_returns_converted_solutions() {
         }]
     }))
     .await;
-    let addr = spawn_server(vec![solver(engine, account)]).await;
+    let (solver, account) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/mock/solve"))
@@ -168,7 +185,7 @@ async fn solve_returns_converted_solutions() {
 #[tokio::test]
 async fn solve_with_engine_down_returns_solver_failed() {
     // Point the solver at a port with no listener.
-    let dead = solver("127.0.0.1:1".parse().unwrap(), pubkey(0x99));
+    let (dead, _) = dead_solver();
     let addr = spawn_server(vec![dead]).await;
 
     let response = reqwest::Client::new()
@@ -188,7 +205,7 @@ async fn solve_with_engine_down_returns_solver_failed() {
 
 #[tokio::test]
 async fn settle_rejects_non_positive_auction_id() {
-    let dead = solver("127.0.0.1:1".parse().unwrap(), pubkey(0x99));
+    let (dead, _) = dead_solver();
     let addr = spawn_server(vec![dead]).await;
 
     let response = reqwest::Client::new()
