@@ -52,8 +52,7 @@ WHERE o.uid = $1
         .context("read solana.orders by uid")
 }
 
-/// One trade joined with its order's identity and the settlement's slot,
-/// everything the trades endpoint serves.
+/// One trade joined with its order's identity and the settlement's slot.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct TradeRow {
     pub order_uid: ByteArray<32>,
@@ -67,10 +66,9 @@ pub struct TradeRow {
     pub slot: Option<i64>,
 }
 
-/// Trades filtered by order uid or owner, exactly one set. The settlement
-/// join is deduplicated because settlements key on
-/// `(tx_signature, instruction_index)` and the slot is constant per
-/// transaction.
+/// Trades filtered by order uid or owner. The settlement join is
+/// deduplicated because settlements key on `(tx_signature,
+/// instruction_index)` and the slot is constant per transaction.
 pub async fn trades(
     ex: impl PgExecutor<'_>,
     order_uid: Option<[u8; 32]>,

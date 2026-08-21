@@ -10,8 +10,7 @@ use {
     std::str::FromStr,
 };
 
-/// Query parameters: exactly one of `orderUid` or `owner`, the EVM
-/// orderbook's contract.
+/// Query parameters. Exactly one of `orderUid` or `owner` must be set.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Params {
@@ -37,7 +36,6 @@ pub async fn trades(
                     .to_bytes(),
             ),
         ),
-        // Exactly one filter, the EVM orderbook's contract.
         _ => return Err(StatusCode::BAD_REQUEST),
     };
     let rows = db::trades(state.pool(), order_uid, owner)

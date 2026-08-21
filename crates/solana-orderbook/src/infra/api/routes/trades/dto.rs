@@ -8,8 +8,7 @@ use {
     solana_sdk::{pubkey::Pubkey, signature::Signature},
 };
 
-/// One trade, camelCase on the wire, pubkeys and the transaction signature as
-/// base58, amounts as decimal strings, the uid as `0x`-hex.
+/// One trade on the wire.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
