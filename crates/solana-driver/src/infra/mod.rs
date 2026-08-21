@@ -2,6 +2,7 @@
 //! dependencies (configuration, RPC, HTTP API, observability, solver engines).
 
 pub mod api;
+pub mod blockchain;
 pub mod config;
 pub mod observe;
 pub mod solver;

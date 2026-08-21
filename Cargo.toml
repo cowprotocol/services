@@ -55,6 +55,7 @@ configs = { path = "crates/configs/" }
 console-subscriber = "0.5.0"
 const_format = "0.2.32"
 const-hex = "1.17.0"
+cow-settlement-interface = "0.2"
 contracts = { path = "contracts/generated/contracts-facade" }
 cow-solana-rpc = { path = "crates/cow-solana-rpc" }
 dashmap = "6.1.0"
@@ -127,6 +128,7 @@ signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
 solana-client = "4"
 solana-commitment-config = "3"
+solana-compute-budget-interface = "3"
 solana-driver = { path = "crates/solana-driver" }
 solana-indexer = { path = "crates/solana-indexer" }
 solana-rpc-client = "4"
@@ -136,6 +138,7 @@ solana-testlib = { path = "crates/solana-testlib" }
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
+spl-associated-token-account-interface = "2"
 spl-token-2022-interface = "2"
 spl-token-interface = "2"
 sqlx = {
