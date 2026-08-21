@@ -52,6 +52,49 @@ WHERE o.uid = $1
         .context("read solana.orders by uid")
 }
 
+/// One trade joined with its order's identity and the settlement's slot,
+/// everything the trades endpoint serves.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct TradeRow {
+    pub order_uid: ByteArray<32>,
+    pub owner: ByteArray<32>,
+    pub sell_token: ByteArray<32>,
+    pub buy_token: ByteArray<32>,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub fee_amount: BigDecimal,
+    pub tx_signature: ByteArray<64>,
+    pub slot: Option<i64>,
+}
+
+/// Trades filtered by order uid or owner, exactly one set. The settlement
+/// join is deduplicated because settlements key on
+/// `(tx_signature, instruction_index)` and the slot is constant per
+/// transaction.
+pub async fn trades(
+    ex: impl PgExecutor<'_>,
+    order_uid: Option<[u8; 32]>,
+    owner: Option<[u8; 32]>,
+) -> Result<Vec<TradeRow>> {
+    const QUERY: &str = r#"
+SELECT t.order_uid, o.owner, o.sell_token, o.buy_token,
+       t.sell_amount, t.buy_amount, t.fee_amount, t.tx_signature, s.slot
+FROM solana.trades t
+JOIN solana.orders o ON o.uid = t.order_uid
+LEFT JOIN (SELECT DISTINCT tx_signature, slot FROM solana.settlements) s
+    ON s.tx_signature = t.tx_signature
+WHERE ($1::bytea IS NULL OR t.order_uid = $1)
+  AND ($2::bytea IS NULL OR o.owner = $2)
+ORDER BY s.slot, t.tx_signature, t.order_uid
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(order_uid.map(ByteArray))
+        .bind(owner.map(ByteArray))
+        .fetch_all(ex)
+        .await
+        .context("read solana.trades")
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, sqlx::PgPool};
@@ -91,7 +134,7 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
-    async fn reads_an_order_with_fill_state() {
+    async fn solana_db_reads_an_order_with_fill_state() {
         let pool = PgPool::connect("postgresql://").await.unwrap();
         let uid = [0x11; 32];
         seed(&pool, uid, false).await;
@@ -108,5 +151,45 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now
         seed(&pool, uid, true).await;
         let row = order_by_uid(&pool, uid).await.unwrap().unwrap();
         assert!(row.cancellation_timestamp.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_reads_trades_by_uid_and_owner() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+        sqlx::query(
+            "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid,              \
+             sell_amount, buy_amount, fee_amount) VALUES ($1, 1, $2, 400, 200, 0)",
+        )
+        .bind(ByteArray([9u8; 64]))
+        .bind(ByteArray(uid))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver,              auction_id) VALUES (42, $1, 1, $2, 7)",
+        )
+        .bind(ByteArray([9u8; 64]))
+        .bind(ByteArray([0xCC; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let by_uid = trades(&pool, Some(uid), None).await.unwrap();
+        assert_eq!(by_uid.len(), 1);
+        assert_eq!(by_uid[0].slot, Some(42));
+        assert_eq!(by_uid[0].sell_amount, BigDecimal::from(400));
+
+        let by_owner = trades(&pool, None, Some([0xAA; 32])).await.unwrap();
+        assert_eq!(by_owner.len(), 1);
+
+        assert!(
+            trades(&pool, Some([0x99; 32]), None)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }
