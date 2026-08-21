@@ -22,9 +22,7 @@ o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, 
 o.valid_to, NULL AS valid_from, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, '\x9008d19f58aabd9ed0d60971565aa8510560ab41'::bytea AS settlement_contract, o.sell_token_balance, o.buy_token_balance,
 'liquidity'::OrderClass AS class,
-(SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
-(SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
-(SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
+fills.sum_buy, fills.sum_sell, fills.sum_fee, fills.gas_cost,
 FALSE AS invalidated,
 FALSE AS presignature_pending,
 ARRAY[]::record[] AS pre_interactions,
@@ -37,7 +35,7 @@ COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid =
 NULL AS full_app_data
 "#;
 
-pub const FROM: &str = "jit_orders o";
+pub const FROM: &str = const_format::concatcp!("jit_orders o", orders::FILLS_JOIN);
 
 #[instrument(skip_all)]
 pub async fn get_by_id(
@@ -195,7 +193,10 @@ mod tests {
 
     use {
         super::*,
-        crate::byte_array::ByteArray,
+        crate::{
+            byte_array::ByteArray,
+            events::{Event, EventIndex, Settlement, Trade},
+        },
         sqlx::{Connection, PgConnection},
     };
 
@@ -248,5 +249,91 @@ mod tests {
             .await
             .unwrap();
         get_by_id(&mut db, &jit_order.uid).await.unwrap().unwrap();
+    }
+
+    /// A JIT order pays no gas while it only provides liquidity, and a full
+    /// share once the auction lets its owner capture surplus.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_jit_order_gas_cost() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let owner = ByteArray([7; 20]);
+        let mut uid = [0u8; 56];
+        uid[32..52].copy_from_slice(&owner.0);
+        let jit_order = JitOrder {
+            owner,
+            uid: ByteArray(uid),
+            ..Default::default()
+        };
+        insert(&mut db, std::slice::from_ref(&jit_order))
+            .await
+            .unwrap();
+
+        let event = |log_index| EventIndex {
+            block_number: 0,
+            log_index,
+        };
+        let fill = |log_index| {
+            (
+                event(log_index),
+                Event::Trade(Trade {
+                    order_uid: jit_order.uid,
+                    ..Default::default()
+                }),
+            )
+        };
+        let gas_cost = async |db: &mut crate::PgTransaction<'_>| {
+            get_by_id(db, &jit_order.uid)
+                .await
+                .unwrap()
+                .unwrap()
+                .gas_cost
+        };
+
+        // Each settlement settles one fill of this order on its own.
+        crate::events::append(
+            &mut db,
+            &[
+                fill(0),
+                (event(1), Event::Settlement(Settlement::default())),
+                fill(2),
+                (
+                    event(3),
+                    Event::Settlement(Settlement {
+                        transaction_hash: ByteArray([2; 32]),
+                        ..Default::default()
+                    }),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+
+        // Liquidity only, so this fill pays nothing. The other fill is still
+        // unattributed, which hides the total rather than understating it.
+        crate::trades::attribute_gas_cost(
+            &mut db,
+            event(1),
+            BigDecimal::from(100),
+            BigDecimal::from(10),
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(gas_cost(&mut db).await, None);
+
+        crate::trades::attribute_gas_cost(
+            &mut db,
+            event(3),
+            BigDecimal::from(100),
+            BigDecimal::from(10),
+            &[jit_order.owner],
+        )
+        .await
+        .unwrap();
+        assert_eq!(gas_cost(&mut db).await, Some(BigDecimal::from(1000)));
     }
 }

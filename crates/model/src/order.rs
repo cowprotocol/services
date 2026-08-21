@@ -712,6 +712,12 @@ pub struct OrderMetadata {
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_fee: U256,
     pub executed_fee_token: Address,
+    /// The order's estimated share of its settlements' gas costs, in native
+    /// token wei, summed across its fills. `None` unless the cost of every
+    /// fill is known.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_cost: Option<U256>,
     pub invalidated: bool,
     pub status: OrderStatus,
     #[serde(flatten)]

@@ -26,6 +26,11 @@ pub struct TradesQueryRow {
     pub sell_token: Address,
     pub tx_hash: Option<TransactionHash>,
     pub auction_id: Option<AuctionId>,
+    /// This trade's share of its settlement's gas cost in native token wei, as
+    /// attributed by [`attribute_gas_cost`]. `NULL` for settlements observed
+    /// before the migration that added the column, `0` for a JIT order that
+    /// only provided liquidity.
+    pub gas_cost: Option<BigDecimal>,
 }
 
 pub fn trades<'a>(
@@ -46,6 +51,7 @@ SELECT
     o.owner,
     o.buy_token,
     o.sell_token,
+    t.gas_cost,
     settlement.tx_hash,
     settlement.auction_id"#;
 
@@ -183,6 +189,11 @@ pub async fn get_trades_for_settlement(
 /// settlement. As with `settlements.gas_used`, a transaction with two
 /// settlements attributes its full cost twice, once per settlement. We do not
 /// expect this to happen.
+///
+/// The `orders` test only holds once the indexer that writes an on-chain
+/// order's row has caught up with the settlement's block, which is why the
+/// autopilot attributes from `run_optional_maintenance`. Attributing earlier
+/// would permanently class such an order as liquidity-only.
 #[instrument(skip_all)]
 pub async fn attribute_gas_cost(
     ex: &mut PgTransaction<'_>,
@@ -990,6 +1001,55 @@ mod tests {
                 log_index: 2,
                 order_uid: trade_b.order_uid,
             }]
+        );
+    }
+
+    /// The trades query reports the share stored for each trade, and no cost
+    /// at all for a trade whose settlement was never attributed.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_trades_report_attributed_gas_cost() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let users_and_orders = generate_owners_and_order_ids(&[2]).await;
+        let (owner, orders) = &users_and_orders[0];
+        let event = |log_index| EventIndex {
+            block_number: 0,
+            log_index,
+        };
+
+        // Two settlements in one block: the first settles both orders, the
+        // second only order[0]'s next fill.
+        add_order_and_trade(&mut db, *owner, orders[0], event(0), None, None).await;
+        add_order_and_trade(&mut db, *owner, orders[1], event(1), None, None).await;
+        let first = event(2);
+        add_settlement(&mut db, first, Default::default(), ByteArray([1; 32]), 1).await;
+        add_trade(&mut db, *owner, orders[0], event(3), None, None).await;
+        let second = event(4);
+        add_settlement(&mut db, second, Default::default(), ByteArray([2; 32]), 2).await;
+
+        // Only the first settlement is attributed.
+        attribute_gas_cost(&mut db, first, 100.into(), 10.into(), &[])
+            .await
+            .unwrap();
+
+        let mut rows = trades(&mut db, Some(owner), None, 0, 1000)
+            .into_inner()
+            .await
+            .unwrap();
+        rows.sort_by_key(|row| row.log_index);
+        assert_eq!(
+            rows.iter()
+                .map(|row| (row.order_uid, row.gas_cost.clone(), row.tx_hash))
+                .collect::<Vec<_>>(),
+            vec![
+                // 1000 wei split between the first settlement's 2 trades.
+                (orders[0], Some(500.into()), Some(ByteArray([1; 32]))),
+                (orders[1], Some(500.into()), Some(ByteArray([1; 32]))),
+                (orders[0], None, Some(ByteArray([2; 32]))),
+            ]
         );
     }
 

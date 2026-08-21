@@ -3,8 +3,9 @@
 
 use {
     crate::{fee_policy::ExecutedProtocolFee, order::OrderUid},
-    alloy_primitives::{Address, B256},
+    alloy_primitives::{Address, B256, U256},
     num::BigUint,
+    number::serialization::HexOrDecimalU256,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
 };
@@ -30,6 +31,13 @@ pub struct Trade {
     // Settlement Data
     pub tx_hash: Option<B256>,
     pub executed_protocol_fees: Vec<ExecutedProtocolFee>,
+    /// The trade's estimated share of its settlement's gas cost, in native
+    /// token wei. `None` if the settlement predates this being recorded, `0`
+    /// for a JIT order that only provided liquidity for the settlement's user
+    /// trades.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_cost: Option<U256>,
 }
 
 #[cfg(test)]
@@ -56,6 +64,7 @@ mod tests {
             "sellToken": "0x000000000000000000000000000000000000000a",
             "buyToken": "0x0000000000000000000000000000000000000009",
             "txHash": "0x0000000000000000000000000000000000000000000000000000000000000040",
+            "gasCost": "3000000",
             "executedProtocolFees": [
                 {
                     "amount": "5",
@@ -104,6 +113,7 @@ mod tests {
             buy_token: Address::with_last_byte(9),
             sell_token: Address::with_last_byte(10),
             tx_hash: Some(B256::with_last_byte(64)),
+            gas_cost: Some(U256::from(3_000_000u64)),
             executed_protocol_fees: vec![
                 ExecutedProtocolFee {
                     amount: U256::from(5u64),
@@ -138,6 +148,18 @@ mod tests {
         assert_eq!(deserialized, expected);
         let serialized = serde_json::to_value(expected).unwrap();
         assert_json_matches!(serialized, value);
+    }
+
+    #[test]
+    fn unknown_gas_cost_is_omitted() {
+        let serialized = serde_json::to_value(Trade::default()).unwrap();
+        assert!(serialized.get("gasCost").is_none());
+        assert_eq!(
+            serde_json::from_value::<Trade>(serialized)
+                .unwrap()
+                .gas_cost,
+            None
+        );
     }
 
     #[test]
