@@ -37,6 +37,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/orders/{uid}/status:
+    get:
+      operationId: getOrderStatus
+      description: |
+        The order's auction progress. A trade always reports `traded`,
+        otherwise the latest auction event decides, and an indexed order
+        without events is `scheduled`.
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          description: The order's 32-byte intent hash as hex.
+          schema:
+            $ref: "#/components/schemas/OrderUid"
+      responses:
+        "200":
+          description: The auction progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompetitionOrderStatus"
+        "400":
+          description: The uid is not 32 bytes of hex.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No order with this uid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/trades:
     get:
       operationId: getTrades
@@ -170,6 +203,51 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         status:
           $ref: "#/components/schemas/OrderStatus"
+    CompetitionOrderStatus:
+      description: |
+        Auction progress of an order. `solved`, `executing`, and `traded`
+        carry a `value` list of per-solution inclusions, empty until the
+        autopilot persists competition results.
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [open, scheduled, active, solved, executing, traded, cancelled]
+        value:
+          description: |-
+            A list of solvers who participated in the latest competition, sorted
+            by score in ascending order, where the last element is the winner.
+
+            The presence of executed amounts defines whether the solver provided
+            a solution for the desired order.
+          type: array
+          items:
+            $ref: "#/components/schemas/SolutionInclusion"
+    SolutionInclusion:
+      description: One solution's view of the order.
+      type: object
+      required:
+        - solver
+      properties:
+        solver:
+          description: The on-chain address of the solver.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        executedAmounts:
+          description: |-
+            The executed amounts for the order as proposed by the solver,
+            omitted when the solution does not include the order.
+          type: object
+          required:
+            - sell
+            - buy
+          properties:
+            sell:
+              $ref: "#/components/schemas/TokenAmount"
+            buy:
+              $ref: "#/components/schemas/TokenAmount"
     Signature:
       description: A base58-encoded Solana transaction signature.
       type: string
