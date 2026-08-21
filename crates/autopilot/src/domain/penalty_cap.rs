@@ -4,6 +4,7 @@ use {
     configs::autopilot::penalty_cap::{PenaltyCapConfig, PenaltyFactor},
     eth_domain_types as eth,
     model::order::{BUY_ETH_ADDRESS, OrderKind},
+    num::ToPrimitive,
     std::{
         collections::{BTreeMap, HashSet},
         sync::Mutex,
@@ -59,7 +60,9 @@ impl PenaltyCapCalculator {
                 .collect(),
             absolute_cap_atoms: U256::from(
                 (config.absolute_cap_usd * 10f64.powi(i32::from(usd_reference_token_decimals)))
-                    .round() as u128,
+                    .round()
+                    .to_u128()
+                    .expect("penalty cap USD bound cannot be converted into reference token atoms"),
             ),
             usd_reference_token: config.usd_reference_token,
             native_token,
@@ -290,6 +293,22 @@ mod tests {
         );
         let cap = calculator().calculate(&order, &BTreeMap::default());
         assert_eq!(cap.0, U256::from(5_000_000_000_000_000_u128));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot be converted into reference token atoms")]
+    fn negative_absolute_cap_panics() {
+        PenaltyCapCalculator::new(
+            &PenaltyCapConfig {
+                default_factor: 0.0004.try_into().unwrap(),
+                absolute_cap_usd: -20.,
+                usd_reference_token: USDC,
+                overrides: vec![],
+            },
+            NATIVE,
+            6,
+            U256::from(250_000_000_000_000_000_000_000_000_u128),
+        );
     }
 
     #[test]
