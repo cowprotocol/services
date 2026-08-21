@@ -40,7 +40,11 @@ pub async fn order_status(
         .await
         .map_err(internal)?
     {
-        return Ok(Json(dto::Status::from_label(&label)));
+        let status = dto::Status::from_label(&label).ok_or_else(|| {
+            tracing::error!(label, "unmapped order event label");
+            error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
+        })?;
+        return Ok(Json(status));
     }
     // Orders are created on-chain, an indexed order can predate its first
     // auction event.

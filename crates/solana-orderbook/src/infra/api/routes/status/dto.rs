@@ -27,18 +27,19 @@ pub enum Status {
 }
 
 impl Status {
-    /// Map an order-event label to the wire status. The label set is pinned
-    /// by the DB enum, a new variant must fail loud.
-    pub fn from_label(label: &str) -> Self {
+    /// Map an order-event label to the wire status. `None` for a label the
+    /// mapping does not know, which the label-sweep test turns into a CI
+    /// failure whenever a migration extends the DB enum.
+    pub fn from_label(label: &str) -> Option<Self> {
         match label {
-            "created" => Self::Scheduled,
-            "ready" => Self::Active,
-            "considered" => Self::Solved,
-            "executing" => Self::Executing,
-            "traded" => Self::Traded,
-            "cancelled" => Self::Cancelled,
-            "filtered" | "invalid" => Self::Open,
-            other => unreachable!("unknown order event label {other}"),
+            "created" => Some(Self::Scheduled),
+            "ready" => Some(Self::Active),
+            "considered" => Some(Self::Solved),
+            "executing" => Some(Self::Executing),
+            "traded" => Some(Self::Traded),
+            "cancelled" => Some(Self::Cancelled),
+            "filtered" | "invalid" => Some(Self::Open),
+            _ => None,
         }
     }
 }
@@ -61,13 +62,34 @@ mod tests {
 
     #[test]
     fn labels_map_to_statuses() {
-        assert_eq!(Status::from_label("created"), Status::Scheduled);
-        assert_eq!(Status::from_label("ready"), Status::Active);
-        assert_eq!(Status::from_label("considered"), Status::Solved);
-        assert_eq!(Status::from_label("executing"), Status::Executing);
-        assert_eq!(Status::from_label("traded"), Status::Traded);
-        assert_eq!(Status::from_label("cancelled"), Status::Cancelled);
-        assert_eq!(Status::from_label("filtered"), Status::Open);
-        assert_eq!(Status::from_label("invalid"), Status::Open);
+        assert_eq!(Status::from_label("created"), Some(Status::Scheduled));
+        assert_eq!(Status::from_label("ready"), Some(Status::Active));
+        assert_eq!(Status::from_label("considered"), Some(Status::Solved));
+        assert_eq!(Status::from_label("executing"), Some(Status::Executing));
+        assert_eq!(Status::from_label("traded"), Some(Status::Traded));
+        assert_eq!(Status::from_label("cancelled"), Some(Status::Cancelled));
+        assert_eq!(Status::from_label("filtered"), Some(Status::Open));
+        assert_eq!(Status::from_label("invalid"), Some(Status::Open));
+        assert_eq!(Status::from_label("liquidity"), None);
+    }
+
+    /// Every label the DB enum can produce has a mapping, so a migration
+    /// extending the enum fails here until the mapping learns the variant.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_every_event_label_maps() {
+        let pool = sqlx::PgPool::connect("postgresql://").await.unwrap();
+        let labels: Vec<String> =
+            sqlx::query_scalar("SELECT unnest(enum_range(NULL::solana.OrderEventLabel))::text")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert!(!labels.is_empty());
+        for label in labels {
+            assert!(
+                Status::from_label(&label).is_some(),
+                "unmapped order event label {label}"
+            );
+        }
     }
 }
