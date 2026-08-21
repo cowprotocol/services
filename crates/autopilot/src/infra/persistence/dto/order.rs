@@ -42,6 +42,11 @@ pub struct Order {
     #[serde(flatten)]
     pub signature: boundary::Signature,
     pub quote: Option<Quote>,
+    /// Cap on the penalty a solver can incur for winning this order but
+    /// failing to execute it, in native token (CIP-87).
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub penalty_cap: Option<U256>,
 }
 
 /// Takes the order by reference so callers that still need the domain order
@@ -84,6 +89,7 @@ pub fn from_domain(order: &domain::Order) -> Order {
         app_data: order.app_data.clone().into(),
         signature: order.signature.clone().into(),
         quote: order.quote.as_ref().map(Quote::from_domain),
+        penalty_cap: order.penalty_cap.map(Into::into),
     }
 }
 
@@ -121,8 +127,7 @@ pub fn to_domain(order: Order) -> domain::Order {
         app_data: order.app_data.into(),
         signature: order.signature.into(),
         quote: order.quote.map(|q| q.to_domain(order.uid.into())),
-        // Not part of the serialized auction (yet).
-        penalty_cap: None,
+        penalty_cap: order.penalty_cap.map(Into::into),
     }
 }
 

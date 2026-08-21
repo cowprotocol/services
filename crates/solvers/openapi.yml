@@ -371,6 +371,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
+        penaltyCap:
+          allOf:
+            - description: |-
+                Cap on the penalty a solver can incur for winning this order
+                but failing to execute it, denominated in the native token
+                (CIP-87).
+            - $ref: "#/components/schemas/TokenAmount"
         validTo:
           type: integer
         kind:

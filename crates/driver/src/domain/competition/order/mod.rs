@@ -49,6 +49,9 @@ pub struct OrderData {
     pub protocol_fees: Vec<FeePolicy>,
     /// The winning quote.
     pub quote: Option<Quote>,
+    /// Cap on the penalty a solver can incur for winning this order but
+    /// failing to execute it, in native token (CIP-87).
+    pub penalty_cap: Option<eth::Ether>,
 }
 
 /// An order in the auction.
@@ -500,6 +503,7 @@ mod tests {
                     },
                     protocol_fees: Default::default(),
                     quote: Default::default(),
+                    penalty_cap: Default::default(),
                 }),
                 app_data: Default::default(),
                 partial,

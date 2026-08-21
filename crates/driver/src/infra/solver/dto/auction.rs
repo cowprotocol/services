@@ -160,6 +160,7 @@ pub fn new(
                             .map(fee_policy_from_domain)
                             .collect(),
                     ),
+                    penalty_cap: order.penalty_cap.map(Into::into),
                     app_data: AppDataHash(order.app_data.hash().0.into()),
                     flashloan_hint: flashloan_hints.get(&order.uid).map(Into::into),
                     wrappers: wrappers

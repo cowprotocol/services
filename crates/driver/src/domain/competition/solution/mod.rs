@@ -171,6 +171,7 @@ impl Solution {
                             buy_token_balance: jit.order().buy_token_balance,
                             protocol_fees: vec![],
                             quote: None,
+                            penalty_cap: None,
                         }),
                         app_data: jit.order().app_data.into(),
                         partial: jit.order().partially_fillable(),
