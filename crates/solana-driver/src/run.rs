@@ -4,7 +4,7 @@ use {
     crate::infra::{Api, config, observe as infra_observe, solver},
     clap::Parser,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
-    std::{path::PathBuf, time::Duration},
+    std::{path::PathBuf, sync::Arc, time::Duration},
 };
 
 /// The Solana driver command line arguments.
@@ -35,11 +35,11 @@ pub async fn run(args: Args) {
     }
 
     let shutdown_token = tokio_util::sync::CancellationToken::new();
-    let rpc = SolanaRPC::new_with_timeout_and_commitment(
+    let rpc = Arc::new(SolanaRPC::new_with_timeout_and_commitment(
         &config.rpc.endpoint,
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
-    );
+    ));
     let solvers: Vec<solver::Solver> = config.solvers.iter().map(solver::Solver::new).collect();
     let api = Api {
         addr: config.http.bind_address,

@@ -1056,11 +1056,11 @@ impl Competition {
         let tx = settlement.transaction(settlement::Internalization::Enable);
         let gas_needed_for_tx = self.simulator.gas(tx.clone()).await?;
         if gas_needed_for_tx > settlement.gas.limit {
-            return Err(simulator::Error::Revert(RevertError {
+            return Err(simulator::Error::Revert(Box::new(RevertError {
                 err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
                 tx: tx.clone(),
                 block: self.eth.current_block().borrow().number.into(),
-            }));
+            })));
         }
         Ok(())
     }
