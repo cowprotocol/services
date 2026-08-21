@@ -77,6 +77,19 @@ CREATE TABLE solana.settlements (
 );
 
 CREATE INDEX solana_settlements_auction_id ON solana.settlements (auction_id);
+
+-- Wakes the autopilot's settlement observation: settlements are rare, so a
+-- NOTIFY beats polling. The payload is the auction id the settlement claims.
+CREATE FUNCTION solana.notify_settlement_finalized() RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_notify('solana_settlement_finalized', NEW.auction_id::text);
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER solana_settlement_finalized
+AFTER INSERT ON solana.settlements
+FOR EACH ROW EXECUTE FUNCTION solana.notify_settlement_finalized();
 -- Per-order accounting deltas of a settlement. order_uid completes the key
 -- because one settlement moves several orders.
 CREATE TABLE solana.trades (
