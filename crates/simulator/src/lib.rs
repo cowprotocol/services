@@ -183,7 +183,7 @@ pub enum Error {
     /// If a transaction reverted, forward that transaction together with the
     /// error.
     #[error(transparent)]
-    Revert(#[from] RevertError),
+    Revert(#[from] Box<RevertError>),
     /// Any other error that is not related to the underlying transaction
     /// failing.
     #[error(transparent)]
@@ -204,11 +204,11 @@ where
             SimulatorError::GasExceeded(..) => Some(tx.clone()),
         };
         match tx {
-            Some(tx) => Error::Revert(RevertError {
+            Some(tx) => Error::Revert(Box::new(RevertError {
                 err,
                 tx: tx.clone(),
                 block,
-            }),
+            })),
             None => Error::Other(err),
         }
     }
