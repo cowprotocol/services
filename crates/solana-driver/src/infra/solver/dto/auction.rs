@@ -52,13 +52,20 @@ impl Order {
     /// The `taker` is the solver that signs the settlement transaction; the
     /// driver derives `buy_destination` as its ATA for the buy mint on the same
     /// premise as the sell token.
+    ///
+    /// The engine wire carries a single `amount` on the order's side, so the
+    /// driver projects the side-matching amount (`sell_amount` for sells,
+    /// `buy_amount` for buys) from the full domain order.
     fn from_order_and_taker(order: &domain::Order, taker: Pubkey) -> Self {
         Self {
             uid: order.uid,
-            sell_mint: order.sell_mint,
-            buy_mint: order.buy_mint,
-            buy_destination: associated_token_address(&taker, &order.buy_mint),
-            amount: order.amount,
+            sell_mint: order.sell_token,
+            buy_mint: order.buy_token,
+            buy_destination: associated_token_address(&taker, &order.buy_token),
+            amount: match order.side {
+                Side::Sell => order.sell_amount,
+                Side::Buy => order.buy_amount,
+            },
             side: order.side,
         }
     }
@@ -73,7 +80,7 @@ impl Auction {
     /// as its buy-side counterpart on the same premise.
     pub fn new(auction: &domain::Auction, taker: Pubkey) -> Self {
         Self {
-            id: auction.id,
+            id: auction.id.get(),
             taker,
             orders: auction
                 .orders

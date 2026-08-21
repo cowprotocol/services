@@ -47,7 +47,7 @@ pub struct Order {
     pub status: Status,
 }
 
-/// Lifecycle of an order, the EVM orderbook's vocabulary.
+/// Lifecycle of an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Status {
@@ -83,10 +83,10 @@ impl Order {
     }
 }
 
-/// A full fill on the order's own side wins, then cancellation, then expiry,
-/// the EVM orderbook's precedence. Fulfilled must beat cancelled here:
-/// reclaiming a filled order's PDA to recover rent stamps a cancellation
-/// timestamp, and that cleanup does not undo the fill.
+/// A full fill on the order's own side wins, then cancellation, then expiry.
+/// Fulfilled must beat cancelled: reclaiming a filled order's PDA to recover
+/// rent stamps a cancellation timestamp, and that cleanup does not undo the
+/// fill.
 fn status(row: &OrderRow, now_unix: i64) -> Status {
     let filled = match row.kind.as_str() {
         "sell" => row.amount_withdrawn >= row.sell_amount,
