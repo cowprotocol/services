@@ -121,6 +121,8 @@ pub fn to_domain(order: Order) -> domain::Order {
         app_data: order.app_data.into(),
         signature: order.signature.into(),
         quote: order.quote.map(|q| q.to_domain(order.uid.into())),
+        // Not part of the serialized auction (yet).
+        penalty_cap: None,
     }
 }
 

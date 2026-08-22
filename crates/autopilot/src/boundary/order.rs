@@ -4,6 +4,7 @@ pub fn to_domain(
     order: &model::order::Order,
     protocol_fees: Vec<domain::fee::Policy>,
     quote: Option<domain::Quote>,
+    penalty_cap: Option<eth::Ether>,
 ) -> domain::Order {
     let remaining_order = remaining_amounts::Order::from(order.clone());
     let order_is_untouched = remaining_order.executed_amount.is_zero();
@@ -49,5 +50,6 @@ pub fn to_domain(
         app_data: order.data.app_data.into(),
         signature: order.signature.clone().into(),
         quote,
+        penalty_cap,
     }
 }
