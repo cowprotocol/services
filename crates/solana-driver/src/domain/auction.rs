@@ -59,6 +59,8 @@ pub struct Auction {
     /// driver derives each request's timeout as the time left until this
     /// instant. It skips the request if the deadline has passed.
     pub deadline: chrono::DateTime<chrono::Utc>,
+    /// Settlement program id the driver settles against for this auction.
+    pub program_id: Pubkey,
 }
 
 /// One order available for solvers to fill.
