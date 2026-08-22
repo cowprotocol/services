@@ -24,9 +24,7 @@ pub mod dto;
 #[derive(Clone)]
 pub struct Solver {
     name: String,
-    account: Pubkey,
-    #[expect(dead_code, reason = "settlement signing is not implemented")]
-    signer: Arc<Keypair>,
+    keypair: Arc<Keypair>,
     client: reqwest::Client,
     base_url: reqwest::Url,
     in_flight: Arc<Semaphore>,
@@ -38,10 +36,14 @@ impl Solver {
         &self.name
     }
 
+    /// The solver's on-chain identity, derived from its signer keypair.
+    pub fn pubkey(&self) -> Pubkey {
+        self.keypair.pubkey()
+    }
+
     /// Build a solver client from its configuration.
     ///
-    /// Loads the signer keypair from `config.signer_keypair` and validates that
-    /// its public key matches `config.account`.
+    /// Loads the signer keypair from `config.signer_keypair`.
     pub fn new(config: &config::Solver) -> Result<Self, Error> {
         let keypair = solana_sdk::signer::keypair::read_keypair_file(&config.signer_keypair)
             .map_err(|error| Error::SignerKeypair {
@@ -49,18 +51,9 @@ impl Solver {
                 path: config.signer_keypair.clone(),
                 error,
             })?;
-        let pubkey = keypair.pubkey();
-        if pubkey != config.account {
-            return Err(Error::SignerPubkeyMismatch {
-                solver: config.name.clone(),
-                pubkey,
-                account: config.account,
-            });
-        }
         Ok(Self {
             name: config.name.clone(),
-            account: config.account,
-            signer: Arc::new(keypair),
+            keypair: Arc::new(keypair),
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             in_flight: Arc::new(Semaphore::new(config.max_in_flight.get())),
@@ -71,7 +64,7 @@ impl Solver {
     /// domain solutions it produced.
     #[tracing::instrument(name = "solver_engine", skip_all, fields(solver = %self.name))]
     pub async fn solve(&self, auction: &domain::Auction) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(auction, self.account, auction.program_id);
+        let auction_dto = Auction::new(auction, self.pubkey(), auction.program_id);
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
@@ -121,7 +114,7 @@ impl Solver {
 
         let solutions: dto::Solutions = response.json().await?;
         solutions
-            .into_domain(&auction_dto, self.account)
+            .into_domain(&auction_dto, self.pubkey())
             .map_err(Error::BadResponse)
     }
 }
@@ -154,27 +147,11 @@ pub enum Error {
         #[source]
         error: Box<dyn std::error::Error>,
     },
-    /// The signer keypair's public key does not match the solver's configured
-    /// on-chain identity.
-    #[error(
-        "signer keypair pubkey {pubkey} does not match solver account {account} for solver \
-         {solver}"
-    )]
-    SignerPubkeyMismatch {
-        solver: String,
-        pubkey: Pubkey,
-        account: Pubkey,
-    },
 }
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        solana_sdk::signer::keypair::read_keypair_file,
-        solana_testlib::temp_keypair,
-        std::num::NonZero,
-    };
+    use {super::*, solana_testlib::temp_keypair, std::num::NonZero};
 
     #[tokio::test]
     async fn solve_with_past_deadline_is_rejected() {
@@ -186,7 +163,6 @@ mod tests {
         let solver = Solver::new(&config::Solver {
             name: "test".to_owned(),
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
-            account: read_keypair_file(&keypair_path).unwrap().pubkey(),
             signer_keypair: keypair_path,
             max_in_flight: NonZero::new(1).unwrap(),
         })
