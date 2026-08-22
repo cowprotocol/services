@@ -10175,14 +10175,22 @@ dependencies = [
 name = "solana-orderbook"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "axum",
+ "bigdecimal",
+ "chrono",
  "clap",
  "configs",
+ "const-hex",
+ "database",
  "futures",
  "observe",
  "reqwest 0.13.4",
  "serde",
+ "serde_json",
+ "serde_with",
+ "solana-sdk",
  "sqlx",
  "tikv-jemallocator",
  "tokio",

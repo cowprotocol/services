@@ -3,6 +3,7 @@
 
 pub mod api;
 pub mod config;
+pub mod db;
 pub mod observe;
 
 pub use self::api::Api;
