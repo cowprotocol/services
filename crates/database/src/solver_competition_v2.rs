@@ -355,6 +355,122 @@ async fn save_jit_orders(
     Ok(())
 }
 
+/// Because the final order uid is not known when we store the quote
+/// competition data we use `0x000...000` as a sentinel value.
+/// When an order gets placed referencing a quote competition this function
+/// replaces the placeholder value with the now final order uid.
+#[instrument(skip_all)]
+pub async fn finalize_quote_competition(
+    ex: &mut PgTransaction<'_>,
+    auction_id: AuctionId,
+    order_uid: OrderUid,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+WITH patch_te AS (
+    UPDATE proposed_trade_executions
+    SET order_uid = $1
+    WHERE auction_id = $2 AND order_uid = $3
+)
+UPDATE competition_auctions
+SET order_uids = ARRAY[$1]
+WHERE id = $2
+"#;
+    sqlx::query(QUERY)
+        .bind(order_uid)
+        .bind(auction_id)
+        .bind(OrderUid::default())
+        .execute(ex.deref_mut())
+        .await?;
+    Ok(())
+}
+
+/// Deletes all competition rows associated with `auction_id` across
+/// `proposed_trade_executions`, `proposed_jit_orders`, `proposed_solutions`,
+/// and `competition_auctions`.
+#[instrument(skip_all)]
+pub async fn delete_by_auction_id(
+    ex: &mut PgTransaction<'_>,
+    auction_id: AuctionId,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+WITH
+    del_te AS (DELETE FROM proposed_trade_executions WHERE auction_id = $1),
+    del_jo AS (DELETE FROM proposed_jit_orders       WHERE auction_id = $1),
+    del_ps AS (DELETE FROM proposed_solutions        WHERE auction_id = $1)
+DELETE FROM competition_auctions WHERE id = $1
+"#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .execute(ex.deref_mut())
+        .await?;
+    Ok(())
+}
+
+/// A JIT order proposed by a solver as part of a quote response. Distinct
+/// from the autopilot flow, where a JIT order is identified at runtime by
+/// its `order_uid` not appearing in the `orders` table. In the quoting
+/// flow the placeholder user trade also has no matching `orders` row, so
+/// we track JIT-ness explicitly instead.
+#[derive(Clone, Debug, PartialEq)]
+pub struct QuoteJitOrder {
+    pub solution_uid: i64,
+    pub order_uid: OrderUid,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub limit_sell: BigDecimal,
+    pub limit_buy: BigDecimal,
+    pub side: OrderKind,
+}
+
+/// Persists competition data derived from a fast-path quote response.
+/// `solutions[i].orders` should carry every trade (placeholder user trade
+/// plus each JIT trade) — these are written to `proposed_trade_executions`.
+/// `jit_orders` carries the corresponding entries for `proposed_jit_orders`
+/// and is inserted unconditionally.
+#[instrument(skip_all)]
+pub async fn save_from_quote(
+    ex: &mut PgTransaction<'_>,
+    auction_id: AuctionId,
+    solutions: &[Solution],
+    jit_orders: &[QuoteJitOrder],
+) -> Result<(), sqlx::Error> {
+    if solutions.is_empty() {
+        return Ok(());
+    }
+    save_solutions(ex, auction_id, solutions).await?;
+    save_trade_executions(ex, auction_id, solutions).await?;
+    save_jit_orders_unchecked(ex, auction_id, jit_orders).await?;
+    Ok(())
+}
+
+#[instrument(skip_all)]
+async fn save_jit_orders_unchecked(
+    ex: &mut PgTransaction<'_>,
+    auction_id: AuctionId,
+    jits: &[QuoteJitOrder],
+) -> Result<(), sqlx::Error> {
+    if jits.is_empty() {
+        return Ok(());
+    }
+    let mut builder = QueryBuilder::new(
+        r#"INSERT INTO proposed_jit_orders
+        (auction_id, solution_uid, order_uid, sell_token, buy_token, limit_sell, limit_buy, side)"#,
+    );
+    builder.push_values(jits.iter(), |mut b, j| {
+        b.push_bind(auction_id)
+            .push_bind(j.solution_uid)
+            .push_bind(j.order_uid)
+            .push_bind(j.sell_token)
+            .push_bind(j.buy_token)
+            .push_bind(&j.limit_sell)
+            .push_bind(&j.limit_buy)
+            .push_bind(j.side);
+    });
+    builder.push(" ON CONFLICT (auction_id, solution_uid, order_uid) DO NOTHING;");
+    builder.build().execute(ex.deref_mut()).await?;
+    Ok(())
+}
+
 #[derive(sqlx::FromRow)]
 struct SolutionRow {
     uid: i64,

@@ -94,6 +94,19 @@ WHERE id = $1
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+/// Deletes the row from the transient `quotes` table and returns it.
+/// Used when a quote is promoted to an `order_quotes` row at order-placement
+/// time — the caller reuses the returned row's fields to build the
+/// `order_quotes` insert.
+#[instrument(skip_all)]
+pub async fn delete_and_return_row(
+    ex: &mut PgConnection,
+    id: QuoteId,
+) -> Result<Option<Quote>, sqlx::Error> {
+    const QUERY: &str = "DELETE FROM quotes WHERE id = $1 RETURNING *";
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+}
+
 /// Fields for searching stored quotes.
 #[derive(Clone)]
 pub struct QuoteSearchParameters {

@@ -4,8 +4,9 @@ use {
     chrono::{DateTime, Utc},
     model::quote::QuoteId,
     shared::{
-        event_storing_helpers::{create_db_search_parameters, create_quote_row},
+        event_storing_helpers::create_db_search_parameters,
         order_quoting::{QuoteCompetition, QuoteData, QuoteSearchParameters, QuoteStoring},
+        quote_storage::save_quote_competition,
     },
 };
 
@@ -17,11 +18,9 @@ impl QuoteStoring for Postgres {
             .with_label_values(&["save_quote"])
             .start_timer();
 
-        let mut ex = self.pool.acquire().await?;
-        let row = create_quote_row(&data)?;
-        let id = database::quotes::save(&mut ex, &row).await?;
-        // TODO populate `competition_auctions`, `proposed_solutions`,
-        // `proposed_trade_executions`
+        let mut tx = self.pool.begin().await?;
+        let id = save_quote_competition(&mut tx, data, &self.domain_separator).await?;
+        tx.commit().await?;
         Ok(id)
     }
 

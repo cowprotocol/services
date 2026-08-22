@@ -189,7 +189,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(config: Configuration, shutdown_controller: ShutdownController) {
     assert!(config.shadow.is_none(), "cannot run in shadow mode");
-    let db_write = Postgres::new(
+    let mut db_write = Postgres::new(
         config.database.write_url.as_str(),
         crate::database::Config {
             insert_batch_size: config.database.insert_batch_size,
@@ -256,6 +256,9 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .call()
         .await
         .expect("Couldn't get vault relayer address");
+
+    let domain_separator = DomainSeparator::new(chain_id, *eth.contracts().settlement().address());
+    db_write.domain_separator = domain_separator;
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
@@ -575,7 +578,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
-            DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
+            domain_separator,
             *eth.contracts().settlement().address(),
             eth.contracts().trampoline().clone(),
         );
