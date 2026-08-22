@@ -19,10 +19,10 @@
 //! ```
 
 use {
+    cow_settlement_interface::pda::buffer::find_buffer_pda,
     solana_driver::{
         domain::{Auction, Id, Order, Side, Slot, order_uid::OrderUid},
         infra::{config, solver::Solver},
-        util::associated_token_address,
     },
     solana_sdk::{
         pubkey::Pubkey,
@@ -52,8 +52,8 @@ fn deadline() -> chrono::DateTime<chrono::Utc> {
     chrono::Utc::now() + chrono::Duration::seconds(secs)
 }
 
-/// A sell of 10 USDC for USDT. The driver derives the buy-side ATA from the
-/// solver's account, so the domain order carries no destination.
+/// A sell of 10 USDC for USDT. The driver derives the buy destination as the
+/// USDT buffer PDA.
 fn sell_auction() -> Auction {
     Auction {
         id: Id::new(1).unwrap(),
@@ -74,6 +74,7 @@ fn sell_auction() -> Auction {
         }],
         deadline_slot: Slot(1),
         deadline: deadline(),
+        program_id: cow_settlement_interface::id(),
     }
 }
 
@@ -171,11 +172,15 @@ async fn driver_solves_against_live_jupiter_engine() {
     );
 
     // The swap instructions must be built for our settlement signer and land
-    // the buy output in the ATA the driver derived from it. This is the
-    // end-to-end check that the `buy_destination` derivation flows through the
-    // whole driver <-> solver <-> Jupiter path.
-    let buy_destination =
-        associated_token_address(&solver_account, &Pubkey::from_str(USDT).unwrap());
+    // the buy output in the buy-mint buffer PDA the driver derived from the
+    // settlement program id. This is the end-to-end check that the
+    // `buy_destination` derivation flows through the whole driver <-> solver <->
+    // Jupiter path.
+    let buy_destination = find_buffer_pda(
+        &cow_settlement_interface::id(),
+        &Pubkey::from_str(USDT).unwrap(),
+    )
+    .0;
     let touched: Vec<Pubkey> = solution
         .interactions
         .iter()

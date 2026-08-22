@@ -13,7 +13,8 @@ pub async fn solve(
     state: axum::extract::State<State>,
     Json(request): Json<dto::SolveRequest>,
 ) -> Result<Json<dto::SolveResponse>, (StatusCode, Json<ApiError>)> {
-    let auction = request.into_domain()?;
+    let program_id = state.blockchain().program_id();
+    let auction = request.into_domain(program_id)?;
     let auction_id = auction.id;
     let solutions = state
         .competition()

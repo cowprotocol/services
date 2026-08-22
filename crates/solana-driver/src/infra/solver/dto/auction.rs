@@ -3,10 +3,8 @@
 //! The wire format matches `solana-solvers/src/dto/auction.rs`.
 
 use {
-    crate::{
-        domain::{self, Side, order_uid::OrderUid},
-        util::associated_token_address,
-    },
+    crate::domain::{self, Side, order_uid::OrderUid},
+    cow_settlement_interface::pda::buffer::find_buffer_pda,
     serde::Serialize,
     serde_with::serde_as,
     solana_sdk::pubkey::Pubkey,
@@ -47,21 +45,32 @@ pub struct Order {
 }
 
 impl Order {
-    /// Build the wire order from a domain order and the settlement taker.
+    /// Build the wire order from a domain order and the settlement program id.
     ///
-    /// The `taker` is the solver that signs the settlement transaction; the
-    /// driver derives `buy_destination` as its ATA for the buy mint on the same
-    /// premise as the sell token.
+    /// The swap output must land in the buy-mint buffer PDA so that
+    /// `FinalizeSettle` can push it to the user's buy token account.
+    ///
+    /// The wire format does not specify how the sell tokens reach the swap
+    /// because the current driver defaults `BeginSettle` to pull into the
+    /// canonical sell-mint buffer PDA. Solvers must therefore include
+    /// transfer instructions in their solutions that move sell tokens from that
+    /// buffer PDA into whatever account their swap instructions spend from
+    /// (e.g., the taker's sell ATA). A future optimization can let solvers
+    /// report per-order pull destinations so the driver routes directly to
+    /// their chosen accounts.
+    ///
+    /// A future optimization can let solvers report per-order pull destinations
+    /// so the driver routes directly to their chosen accounts.
     ///
     /// The engine wire carries a single `amount` on the order's side, so the
     /// driver projects the side-matching amount (`sell_amount` for sells,
     /// `buy_amount` for buys) from the full domain order.
-    fn from_order_and_taker(order: &domain::Order, taker: Pubkey) -> Self {
+    fn from_order_and_program_id(order: &domain::Order, program_id: Pubkey) -> Self {
         Self {
             uid: order.uid,
             sell_mint: order.sell_token,
             buy_mint: order.buy_token,
-            buy_destination: associated_token_address(&taker, &order.buy_token),
+            buy_destination: find_buffer_pda(&program_id, &order.buy_token).0,
             amount: match order.side {
                 Side::Sell => order.sell_amount,
                 Side::Buy => order.buy_amount,
@@ -74,18 +83,18 @@ impl Order {
 impl Auction {
     /// Build the wire auction from the domain auction.
     ///
-    /// The `taker` is a concept borrowed from the solana-solvers API: the
-    /// solver that signs the settlement transaction. Under the current API the
-    /// sell token is the taker's ATA, and the driver derives `buy_destination`
-    /// as its buy-side counterpart on the same premise.
-    pub fn new(auction: &domain::Auction, taker: Pubkey) -> Self {
+    /// The `taker` is the solver that signs the settlement transaction.
+    /// `program_id` is used to derive the buy-mint buffer PDA, which is the
+    /// swap output destination so `FinalizeSettle` can push it to the
+    /// user's buy token account.
+    pub fn new(auction: &domain::Auction, taker: Pubkey, program_id: Pubkey) -> Self {
         Self {
             id: auction.id.get(),
             taker,
             orders: auction
                 .orders
                 .iter()
-                .map(|order| Order::from_order_and_taker(order, taker))
+                .map(|order| Order::from_order_and_program_id(order, program_id))
                 .collect(),
             deadline: auction.deadline,
         }
@@ -94,11 +103,7 @@ impl Auction {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::{domain::Side, util},
-        serde_json::json,
-    };
+    use {super::*, crate::domain::Side, serde_json::json};
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -108,14 +113,17 @@ mod tests {
     /// `solana-solvers` `Auction` deserializes.
     #[test]
     fn wire_format_is_stable() {
+        let program_id = pubkey(0xaa);
+        let taker = pubkey(3);
+        let buy_mint = pubkey(2);
         let json = json!({
             "id": 1,
-            "taker": pubkey(3).to_string(),
+            "taker": taker.to_string(),
             "orders": [{
                 "uid": format!("0x{}", "08".repeat(32)),
                 "sellMint": pubkey(1).to_string(),
-                "buyMint": pubkey(2).to_string(),
-                "buyDestination": util::associated_token_address(&pubkey(3), &pubkey(2)).to_string(),
+                "buyMint": buy_mint.to_string(),
+                "buyDestination": find_buffer_pda(&program_id, &buy_mint).0.to_string(),
                 "amount": "1000",
                 "side": "sell",
             }],
@@ -124,12 +132,12 @@ mod tests {
 
         let expected = Auction {
             id: 1,
-            taker: pubkey(3),
+            taker,
             orders: vec![Order {
                 uid: OrderUid([8; 32]),
                 sell_mint: pubkey(1),
-                buy_mint: pubkey(2),
-                buy_destination: util::associated_token_address(&pubkey(3), &pubkey(2)),
+                buy_mint,
+                buy_destination: find_buffer_pda(&program_id, &buy_mint).0,
                 amount: 1_000,
                 side: Side::Sell,
             }],
