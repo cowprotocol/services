@@ -211,6 +211,25 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .simulation_node_url
         .as_ref()
         .map(|node_url| shared::web3::web3(&ethrpc_args, node_url, "simulation"));
+    // The event indexers get a provider of their own. It still batches, but only
+    // with the other requests of the indexing subsystem. A node answers a
+    // JSON-RPC batch only after it executed every member of it, one after the
+    // other, so on the shared provider a log query or a block lookup waits for
+    // whatever heavy `eth_call`s of other subsystems happened to fill the same
+    // batch.
+    let indexing_web3 = shared::web3::web3(
+        &shared::web3::Arguments {
+            ethrpc_max_batch_size: ethrpc_args.ethrpc_max_batch_size,
+            // Indexing sends only a handful of requests per block, so a small
+            // share of the configured concurrency is plenty. The share is
+            // additional to the base provider's rather than taken from it, so
+            // the node sees a slightly higher limit in total.
+            ethrpc_max_concurrent_requests: ethrpc_args.ethrpc_max_concurrent_requests.div_ceil(4),
+            ethrpc_batch_delay: ethrpc_args.ethrpc_batch_delay,
+        },
+        &config.shared.node_url,
+        "indexing",
+    );
 
     let chain_id = web3
         .provider
@@ -295,7 +314,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         web3: web3.clone(),
     })));
     let block_retriever = Arc::new(BlockRetriever {
-        provider: web3.provider.clone(),
+        provider: indexing_web3.provider.clone(),
         block_stream: eth.current_block().clone(),
     });
 
@@ -421,7 +440,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     };
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
-            web3.provider.clone(),
+            indexing_web3.provider.clone(),
             *eth.contracts().settlement().address(),
         ),
         boundary::events::settlement::Indexer::new(
@@ -560,7 +579,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), config.ethflow.contracts.clone()),
+            EthFlowRefundRetriever::new(indexing_web3.clone(), config.ethflow.contracts.clone()),
             db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -572,7 +591,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
             db_write.clone(),
-            web3.clone(),
+            indexing_web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
@@ -592,7 +611,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), config.ethflow.contracts),
+            CoWSwapOnchainOrdersContract::new(indexing_web3.clone(), config.ethflow.contracts),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
