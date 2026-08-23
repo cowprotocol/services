@@ -84,4 +84,15 @@ async fn penalty_cap(web3: Web3) {
     })
     .await
     .unwrap();
+
+    // Once a solution proposing the order is ranked, the order's penalty cap
+    // gets persisted for penalty accounting.
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        let caps = crate::database::penalty_caps_of_order(services.db(), &uid).await;
+        caps.iter()
+            .any(|cap| cap.penalty_cap_native > bigdecimal::BigDecimal::from(0))
+    })
+    .await
+    .unwrap();
 }

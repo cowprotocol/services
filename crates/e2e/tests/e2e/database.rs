@@ -20,6 +20,20 @@ pub async fn events_of_order(db: &Db, uid: &OrderUid) -> Vec<order_events::Order
         .unwrap()
 }
 
+/// Returns the persisted penalty caps of that order across all auctions.
+pub async fn penalty_caps_of_order(
+    db: &Db,
+    uid: &OrderUid,
+) -> Vec<database::order_penalty_caps::OrderPenaltyCap> {
+    const QUERY: &str = "SELECT * FROM order_penalty_caps WHERE order_uid = $1";
+    let mut db = db.acquire().await.unwrap();
+    sqlx::query_as(QUERY)
+        .bind(ByteArray(uid.0))
+        .fetch_all(db.deref_mut())
+        .await
+        .unwrap()
+}
+
 /// Returns quote.
 pub async fn quote_metadata(db: &Db, quote_id: i64) -> Option<(serde_json::Value,)> {
     const QUERY: &str = "SELECT metadata FROM quotes WHERE id = $1";

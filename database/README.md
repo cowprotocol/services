@@ -220,6 +220,20 @@ Indexes:
 - user\_valid\_to: btree(`valid_to`)
 - version\_idx: btree(`settlement_contract`)
 
+### order\_penalty\_caps
+
+Per-order penalty caps: the maximum penalty a solver can incur for winning an order but failing to execute it, denominated in the native token.
+Stored for every order that appears in a ranked solution of the auction, so the solver accounting can compute penalties for solutions that were not executed.
+
+ Column                 | Type      | Nullable | Details
+------------------------|-----------|----------|--------
+ auction\_id            | bigint    | not null | unique identifier for the auction
+ order\_uid             | bytea     | not null | 56 bytes identifier linking to the order in the `orders` table
+ penalty\_cap\_native   | numeric   | not null | cap on the penalty for not executing this order, in native token wei
+
+Indexes:
+- PRIMARY KEY: composite key(`auction_id`, `order_uid`)
+
 ### order\_quotes
 
 Quotes that an order was created with. These quotes get stored persistently and can be used to evaluate how accurate the quoted fee predicted the execution cost that actually happened on-chain.

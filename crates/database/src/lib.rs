@@ -13,6 +13,7 @@ pub mod onchain_invalidations;
 pub mod order_events;
 pub mod order_execution;
 pub mod order_history;
+pub mod order_penalty_caps;
 pub mod orders;
 pub mod quotes;
 pub mod reference_scores;
@@ -76,6 +77,7 @@ pub const LARGE_TABLES: &[&str] = &[
     "orders",
     "order_events",
     "order_execution",
+    "order_penalty_caps",
     "order_quotes",
     "proposed_solutions",
     "proposed_trade_executions",
