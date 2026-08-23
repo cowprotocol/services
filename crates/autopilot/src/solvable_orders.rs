@@ -332,7 +332,7 @@ impl SolvableOrdersCache {
                             .quotes
                             .get(&order.metadata.uid.into())
                             .map(|quote| quote.as_ref().clone());
-                        let penalty_cap = self
+                        let penalty_cap_native = self
                             .penalty_cap_calculator
                             .as_ref()
                             .map(|calculator| calculator.calculate(order, &prices));
@@ -341,7 +341,7 @@ impl SolvableOrdersCache {
                             quote.as_ref(),
                             &surplus_capturing_jit_order_owners,
                         );
-                        boundary::order::to_domain(order, protocol_fees, quote, penalty_cap)
+                        boundary::order::to_domain(order, protocol_fees, quote, penalty_cap_native)
                     })
                     .collect()
             }),

@@ -29,7 +29,7 @@ pub struct Order {
     pub quote: Option<domain::Quote>,
     /// Cap on the penalty a solver can incur for winning this order but
     /// failing to execute it, in native token (CIP-87).
-    pub penalty_cap: Option<eth::Ether>,
+    pub penalty_cap_native: Option<eth::Ether>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
