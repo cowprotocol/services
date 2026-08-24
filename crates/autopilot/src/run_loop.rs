@@ -457,7 +457,15 @@ impl RunLoop {
             OrderEventLabel::Considered,
         );
         tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
-        Metrics::winner_declared(start_block.observed_at.elapsed());
+        let run_loop_time = start_block.observed_at.elapsed();
+        Metrics::winner_declared(run_loop_time);
+        // The headroom is measured against the start block's slot, not against
+        // the moment we noticed it, so the time the block spent reaching us
+        // counts against the budget too.
+        Metrics::settle_slot_headroom(
+            self.eth.chain().block_time_in_ms(),
+            start_block.observation_lag + run_loop_time,
+        );
 
         for (solution_uid, winner) in ranking.enumerated().filter(|(_, bid)| bid.is_winner()) {
             let (driver, solution) = (winner.driver(), winner.solution());
@@ -1158,9 +1166,19 @@ struct Metrics {
     /// Total time between seeing the start block of the auction and declaring
     /// a winning driver.
     #[metric(buckets(
-        0, 1, 2, 3, 4, 5, 6, 7, 7.5, 8, 8.25, 8.5, 8.75, 9, 9.25, 9.5, 9.75, 10
+        0, 1, 2, 3, 4, 5, 5.5, 6, 6.25, 6.5, 6.75, 7, 7.5, 8, 8.25, 8.5, 8.75, 9, 9.25, 9.5, 9.75,
+        10, 12, 13, 14, 15, 17, 20
     ))]
     winner_declared: prometheus::Histogram,
+
+    /// `block_time - (observation_lag + observed_at..settle_dispatched)`: time
+    /// left for the winners to settle against the block after the auction's
+    /// start block. Negative means the run loop already consumed that block.
+    #[metric(buckets(
+        -8, -6, -5, -4.5, -4, -3.5, -3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5,
+        4, 6, 8, 12
+    ))]
+    settle_slot_headroom: prometheus::Histogram,
 
     /// Total time spent in a single run of the run loop.
     #[metric(buckets(0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48))]
@@ -1262,6 +1280,12 @@ impl Metrics {
 
     fn winner_declared(elapsed: Duration) {
         Self::get().winner_declared.observe(elapsed.as_secs_f64());
+    }
+
+    fn settle_slot_headroom(block_time: Duration, elapsed: Duration) {
+        Self::get()
+            .settle_slot_headroom
+            .observe(block_time.as_secs_f64() - elapsed.as_secs_f64());
     }
 
     fn auction_ready(init_block_timestamp: Instant) {
@@ -1370,6 +1394,7 @@ mod tests {
             gas_price: Default::default(),
             base_fee: Default::default(),
             observed_at: Instant::now(),
+            observation_lag: Default::default(),
         }
     }
 

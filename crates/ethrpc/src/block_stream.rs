@@ -9,7 +9,7 @@ use {
     futures::StreamExt,
     std::{
         fmt::Debug,
-        time::{Duration, Instant},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
@@ -31,6 +31,10 @@ pub struct BlockInfo {
     pub base_fee: u64,
     /// When the system noticed the new block.
     pub observed_at: Instant,
+    /// Chain-side delay before we saw the block: wall clock at observation
+    /// minus the block's `timestamp`. Whole-second timestamps make this an
+    /// upper bound, so aggregate it instead of reading single samples.
+    pub observation_lag: Duration,
 }
 
 impl Default for BlockInfo {
@@ -44,6 +48,7 @@ impl Default for BlockInfo {
             gas_price: Default::default(),
             base_fee: Default::default(),
             observed_at: Instant::now(),
+            observation_lag: Default::default(),
         }
     }
 }
@@ -85,6 +90,12 @@ impl TryFrom<alloy_rpc_types::Header> for BlockInfo {
                 .base_fee_per_gas
                 .ok_or_else(|| anyhow!("no base fee available"))?,
             observed_at: Instant::now(),
+            // `saturating_sub` because a block can carry a timestamp in the
+            // future: test chains mine on demand and real nodes can drift.
+            observation_lag: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .saturating_sub(Duration::from_secs(value.timestamp)),
         })
     }
 }
@@ -337,6 +348,12 @@ pub struct Metrics {
         13.75, 14. // 12s
     ))]
     time_since_last_block: prometheus::Histogram,
+
+    /// Chain-side delay before a new block reaches us: a floor every service
+    /// inherits rather than something a service can optimise.
+    // resolution over the ~0.5-4s mainnet range, coarse above for slow chains
+    #[metric(buckets(0.1, 0.25, 0.5, 0.75, 1., 1.5, 2., 2.5, 3., 3.5, 4., 5., 6., 8., 12.))]
+    block_observation_lag: prometheus::Histogram,
 }
 
 fn update_block_metrics(previous_block: &BlockInfo, new_block: &BlockInfo) {
@@ -359,6 +376,9 @@ fn update_block_metrics(previous_block: &BlockInfo, new_block: &BlockInfo) {
     metrics
         .time_since_last_block
         .observe(previous_block.observed_at.elapsed().as_secs_f64());
+    metrics
+        .block_observation_lag
+        .observe(new_block.observation_lag.as_secs_f64());
 }
 
 /// Awaits and returns the next block that will be pushed into the stream.
