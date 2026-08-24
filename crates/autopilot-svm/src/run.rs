@@ -91,7 +91,7 @@ async fn run(config: Config) {
     let listen = ListenSession::spawn(
         pool.clone(),
         SETTLEMENT_FINALIZED_CHANNEL,
-        SettlementObservation::new(pool.clone(), tracker.clone()),
+        SettlementObservation::new(pool.clone()),
     );
 
     let rpc = SolanaRPC::new_with_timeout_and_commitment(

@@ -65,12 +65,12 @@ fn label_str(label: OrderEventLabel) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, sqlx::PgPool};
+    use super::*;
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_writes_order_events() {
-        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let pool = crate::test_db::pool().await;
         sqlx::query("TRUNCATE solana.order_events")
             .execute(&pool)
             .await

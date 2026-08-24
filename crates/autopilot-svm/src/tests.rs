@@ -86,13 +86,7 @@ async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
 }
 
 async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
-    sqlx::query(
-        "TRUNCATE solana.trades, solana.settlements, solana.settlement_executions, \
-         solana.order_pda, solana.orders, solana.indexer_state, solana.order_events",
-    )
-    .execute(pool)
-    .await
-    .unwrap();
+    crate::test_db::wipe(pool).await;
     sqlx::query("INSERT INTO solana.indexer_state (slot) VALUES ($1)")
         .bind(tip)
         .execute(pool)
@@ -125,7 +119,7 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_mock_cycle_dispatches_the_settlement() {
-    let pool = PgPool::connect("postgresql://").await.unwrap();
+    let pool = crate::test_db::pool().await;
     let uid = [0x11; 32];
     let tip = 500_u64;
     seed_open_order(&pool, uid, i64::try_from(tip).unwrap()).await;

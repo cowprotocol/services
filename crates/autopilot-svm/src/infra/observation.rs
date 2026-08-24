@@ -12,13 +12,13 @@
 
 use {
     crate::infra::{db, listen::NotifyHandler},
-    anyhow::{Context, Result},
+    anyhow::Result,
     async_trait::async_trait,
     chain_types::solana::Pubkey,
     sqlx::PgPool,
 };
 
-/// Writes and closes settlement-execution windows.
+/// Opens and expires settlement-execution windows.
 ///
 /// `solana.settlement_executions.outcome` records what the indexer observed
 /// on chain, never a driver's report, which is why a landing observed after
@@ -45,57 +45,15 @@ impl SettlementTracker {
         start_slot: u64,
         deadline_slot: u64,
     ) -> Result<()> {
-        sqlx::query(
-            r#"
-INSERT INTO solana.settlement_executions
-    (auction_id, solver, solution_uid, start_timestamp, start_slot, deadline_slot)
-VALUES ($1, $2, $3, now(), $4, $5)
-ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
-            "#,
+        db::open_settlement_window(
+            &self.pool,
+            auction_id,
+            solver,
+            to_db_integer(solution_uid),
+            to_db_integer(start_slot),
+            to_db_integer(deadline_slot),
         )
-        .bind(auction_id)
-        .bind(solver.0)
-        .bind(to_db_integer(solution_uid))
-        .bind(to_db_integer(start_slot))
-        .bind(to_db_integer(deadline_slot))
-        .execute(&self.pool)
         .await
-        .context("open settlement execution window")?;
-        Ok(())
-    }
-
-    /// Close the solver's windows of the auction as landed, recording the
-    /// settlement's slot and signature. Keyed by solver so concurrent winners
-    /// of one auction each close on their own settlement. A window already
-    /// closed as timed out upgrades to landed: the settlement executed, just
-    /// late, and lateness stays visible as `end_slot` past `deadline_slot`.
-    ///
-    /// A settlement carries no solution uid, so a solver holding several
-    /// windows of one auction closes all of them on its first settlement.
-    /// Correct while one solver wins at most one solution per auction.
-    async fn close_solvers_window_as_landed(
-        &self,
-        auction_id: i64,
-        solver: &[u8],
-        slot: i64,
-        signature: &[u8],
-    ) -> Result<u64> {
-        let closed = sqlx::query(
-            r#"
-UPDATE solana.settlement_executions
-SET outcome = 'landed', end_timestamp = now(), end_slot = $2, submitted_signature = $3
-WHERE auction_id = $1 AND solver = $4 AND (outcome IS NULL OR outcome = 'timeout')
-            "#,
-        )
-        .bind(auction_id)
-        .bind(slot)
-        .bind(signature)
-        .bind(solver)
-        .execute(&self.pool)
-        .await
-        .context("close settlement execution window")?
-        .rows_affected();
-        Ok(closed)
     }
 
     /// Close every open window whose deadline is at or before the slot as
@@ -103,33 +61,11 @@ WHERE auction_id = $1 AND solver = $4 AND (outcome IS NULL OR outcome = 'timeout
     /// chain with no active auctions a timeout surfaces with the next
     /// competition, not at its deadline slot.
     pub async fn close_expired_windows_as_timeout(&self, slot: u64) -> Result<()> {
-        let expired: Vec<(i64,)> = sqlx::query_as(
-            r#"
-UPDATE solana.settlement_executions
-SET outcome = 'timeout', end_timestamp = now(), end_slot = $1
-WHERE outcome IS NULL AND deadline_slot <= $1
-RETURNING auction_id
-            "#,
-        )
-        .bind(to_db_integer(slot))
-        .fetch_all(&self.pool)
-        .await
-        .context("expire settlement execution windows")?;
-        for (auction_id,) in expired {
+        let slot = to_db_integer(slot);
+        for auction_id in db::expire_settlement_windows(&self.pool, slot).await? {
             tracing::error!(auction_id, slot, "settlement missed its deadline");
         }
         Ok(())
-    }
-
-    /// Auction ids of open windows, the seed re-read set.
-    async fn open_window_auction_ids(&self) -> Result<Vec<i64>> {
-        let rows: Vec<(i64,)> = sqlx::query_as(
-            "SELECT auction_id FROM solana.settlement_executions WHERE outcome IS NULL",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("read open settlement execution windows")?;
-        Ok(rows.into_iter().map(|(auction_id,)| auction_id).collect())
     }
 }
 
@@ -138,39 +74,27 @@ fn to_db_integer(value: u64) -> i64 {
     i64::try_from(value).expect("value exceeds i64")
 }
 
-/// Resolves NOTIFY payloads (and reconnect re-reads) against the settlements
-/// table, closing the matching windows.
+/// Closes windows against the settlements the indexer records, driven by the
+/// `solana_settlement_finalized` notifications.
 pub struct SettlementObservation {
     pool: PgPool,
-    tracker: SettlementTracker,
 }
 
 impl SettlementObservation {
-    pub fn new(pool: PgPool, tracker: SettlementTracker) -> Self {
-        Self { pool, tracker }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
-    /// Close the matching windows for every settlement observed for the
-    /// auction, each keyed to its solver.
+    /// Close the auction's windows against its observed settlements.
     async fn resolve(&self, auction_id: i64) -> Result<()> {
-        for settlement in db::settlements_by_auction(&self.pool, auction_id).await? {
-            let closed = self
-                .tracker
-                .close_solvers_window_as_landed(
-                    auction_id,
-                    &settlement.solver.0,
-                    settlement.slot,
-                    &settlement.tx_signature.0,
-                )
-                .await?;
-            if closed > 0 {
-                tracing::info!(
-                    auction_id,
-                    slot = settlement.slot,
-                    tx_signature = %const_hex::encode(settlement.tx_signature.0),
-                    "settlement observed on chain"
-                );
-            }
+        for landed in db::close_landed_windows(&self.pool, auction_id).await? {
+            tracing::info!(
+                auction_id,
+                slot = landed.end_slot,
+                solver = %Pubkey(landed.solver.0),
+                tx_signature = %const_hex::encode(landed.submitted_signature.0),
+                "settlement observed on chain"
+            );
         }
         Ok(())
     }
@@ -181,7 +105,7 @@ impl NotifyHandler for SettlementObservation {
     /// Re-check every open window: a NOTIFY missed while the connection was
     /// down (or while the autopilot was not running) is recovered here.
     async fn seed(&mut self) -> Result<()> {
-        for auction_id in self.tracker.open_window_auction_ids().await? {
+        for auction_id in db::open_window_auction_ids(&self.pool).await? {
             self.resolve(auction_id).await?;
         }
         Ok(())
@@ -205,20 +129,6 @@ mod tests {
         sqlx::PgPool,
         std::time::Duration,
     };
-
-    async fn wipe(pool: &PgPool) {
-        for table in [
-            "solana.trades",
-            "solana.settlements",
-            "solana.settlement_executions",
-            "solana.order_events",
-        ] {
-            sqlx::query(&format!("DELETE FROM {table}"))
-                .execute(pool)
-                .await
-                .unwrap();
-        }
-    }
 
     async fn insert_settlement(pool: &PgPool, auction_id: i64) {
         sqlx::query(
@@ -249,8 +159,8 @@ VALUES (10, $1, 0, $2, $3, NULL)
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
     async fn solana_db_settlement_notify_closes_the_window_as_landed() {
-        let pool = PgPool::connect("postgresql://").await.unwrap();
-        wipe(&pool).await;
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
 
         let tracker = SettlementTracker::new(pool.clone());
         tracker
@@ -261,7 +171,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let task = ListenSession::spawn(
             pool.clone(),
             "solana_settlement_finalized",
-            SettlementObservation::new(pool.clone(), tracker.clone()),
+            SettlementObservation::new(pool.clone()),
         );
 
         insert_settlement(&pool, 4242).await;
@@ -288,8 +198,8 @@ VALUES (10, $1, 0, $2, $3, NULL)
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
     async fn solana_db_expiry_times_out_only_past_deadlines() {
-        let pool = PgPool::connect("postgresql://").await.unwrap();
-        wipe(&pool).await;
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
 
         let tracker = SettlementTracker::new(pool.clone());
         tracker
@@ -307,8 +217,8 @@ VALUES (10, $1, 0, $2, $3, NULL)
 
         // A settlement observed after the timeout upgrades the verdict: it
         // executed, just late.
-        tracker
-            .close_solvers_window_as_landed(1, &[7u8; 32], 160, &[9u8; 64])
+        insert_settlement(&pool, 1).await;
+        crate::infra::db::close_landed_windows(&pool, 1)
             .await
             .unwrap();
         assert_eq!(outcome(&pool, 1).await.as_deref(), Some("landed"));
