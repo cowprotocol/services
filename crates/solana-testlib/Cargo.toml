@@ -1,0 +1,15 @@
+[package]
+name = "solana-testlib"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Shared test helpers for Solana CoW Protocol crates"
+repository = "https://github.com/cowprotocol/services"
+
+[dependencies]
+solana-sdk = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

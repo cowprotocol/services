@@ -74,4 +74,9 @@ impl SolanaRPC {
         .await?;
         Ok(fetched.into_iter().flatten().collect())
     }
+
+    /// The node's current slot at the client's commitment level.
+    pub async fn slot(&self) -> Result<u64, Error> {
+        self.inner.get_slot().await
+    }
 }
