@@ -6,6 +6,7 @@ use {
     num::ToPrimitive,
     number::conversions::u160_to_big_decimal,
     sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow},
+    std::collections::BTreeSet,
 };
 
 fn bytes_to_addr(b: Vec<u8>) -> Result<Address> {
@@ -335,72 +336,6 @@ pub async fn batch_update_ticks(
     Ok(())
 }
 
-/// Set `liquidity_net` directly (no delta accumulation). Used by the seeder
-/// where the subgraph value is already the net.
-pub async fn batch_seed_ticks(
-    tx: &mut Transaction<'_, Postgres>,
-    factory: &Address,
-    ticks: &[TickDeltaData],
-) -> Result<()> {
-    if ticks.is_empty() {
-        return Ok(());
-    }
-    let addresses: Vec<&[u8]> = ticks
-        .iter()
-        .map(|tick| tick.pool_address.as_slice())
-        .collect();
-    let tick_idxs: Vec<i32> = ticks.iter().map(|tick| tick.tick_idx).collect();
-    let values: Vec<BigDecimal> = ticks
-        .iter()
-        .map(|tick| BigDecimal::from(tick.delta))
-        .collect();
-
-    sqlx::query(
-        "WITH input AS (
-             SELECT t.addr, t.tick_idx, SUM(t.val) AS net
-             FROM UNNEST($2::BYTEA[], $3::INT4[], $4::NUMERIC[]) AS t(addr, tick_idx, val)
-             GROUP BY t.addr, t.tick_idx
-         )
-         INSERT INTO uniswap_v3_ticks (pool_address, tick_idx, liquidity_net)
-         SELECT i.addr, i.tick_idx, i.net
-         FROM input i
-         WHERE EXISTS (
-             SELECT 1 FROM uniswap_v3_pools
-             WHERE address = i.addr AND factory = $1
-         )
-           AND i.net <> 0
-         ON CONFLICT (pool_address, tick_idx) DO UPDATE
-             SET liquidity_net = EXCLUDED.liquidity_net",
-    )
-    .bind(factory.as_slice())
-    .bind(addresses)
-    .bind(tick_idxs)
-    .bind(values)
-    .execute(&mut **tx)
-    .await
-    .context("batch_seed_ticks")?;
-    Ok(())
-}
-
-/// Deletes ticks for all pools of `factory`. Used by the seeder before a
-/// reseed. Scoped to one factory so other factories aren't affected.
-pub async fn delete_ticks_for_factory(
-    tx: &mut Transaction<'_, Postgres>,
-    factory: &Address,
-) -> Result<()> {
-    sqlx::query(
-        "DELETE FROM uniswap_v3_ticks t
-         USING uniswap_v3_pools p
-         WHERE p.address = t.pool_address
-           AND p.factory = $1",
-    )
-    .bind(factory.as_slice())
-    .execute(&mut **tx)
-    .await
-    .context("delete_ticks_for_factory")?;
-    Ok(())
-}
-
 /// A pool joined with its current state row.
 pub struct PoolRow {
     pub address: Address,
@@ -677,13 +612,24 @@ pub async fn batch_set_token_symbols(
     Ok(())
 }
 
-pub async fn get_latest_indexed_block(pool: &PgPool) -> Result<Option<u64>> {
-    let row = sqlx::query("SELECT MAX(block_number) AS max_block FROM pool_indexer_checkpoints")
-        .fetch_one(pool)
-        .await
-        .context("get_latest_indexed_block")?;
+/// The block every configured factory is indexed through, so every served pool
+/// is current at least to here. Scoped to `factories` so a decommissioned
+/// factory's leftover checkpoint row can't pin the value.
+pub async fn get_latest_indexed_block(
+    pool: &PgPool,
+    factories: &BTreeSet<Address>,
+) -> Result<Option<u64>> {
+    let factories: Vec<&[u8]> = factories.iter().map(|f| f.as_slice()).collect();
+    let row = sqlx::query(
+        "SELECT MIN(block_number) AS block FROM pool_indexer_checkpoints
+         WHERE contract_address = ANY($1)",
+    )
+    .bind(factories)
+    .fetch_one(pool)
+    .await
+    .context("get_latest_indexed_block")?;
 
     Ok(row
-        .get::<Option<i64>, _>("max_block")
+        .get::<Option<i64>, _>("block")
         .map(|b| b.cast_unsigned()))
 }

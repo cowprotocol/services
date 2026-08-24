@@ -62,12 +62,20 @@ impl Config {
     }
 }
 
+fn default_settlement_program_id() -> Pubkey {
+    cow_settlement_interface::ID
+}
+
 /// Solana chain configuration.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Chain {
-    /// On-chain program id of the settlement contract.
-    #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
+    /// On-chain program id of the settlement contract. Defaults to the
+    /// official deployment the interface crate exports.
+    #[serde(
+        default = "default_settlement_program_id",
+        deserialize_with = "deserialize_solana_pubkey_b58"
+    )]
     pub settlement_program_id: Pubkey,
     /// On-chain program id of SolFlow. Absent until the program exists.
     #[serde(default, deserialize_with = "deserialize_optional_solana_pubkey_b58")]

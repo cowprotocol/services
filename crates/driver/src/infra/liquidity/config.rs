@@ -158,33 +158,12 @@ impl Swapr {
     }
 }
 
-/// Subgraph-specific Uniswap V3 config.
-#[derive(Clone, Debug)]
-pub struct UniswapV3Subgraph {
-    pub url: Url,
-
-    /// How many pool IDs can be present in a where clause of a Tick query at
-    /// once. Some subgraphs are overloaded and throw errors when there are
-    /// too many.
-    pub max_pools_per_tick_query: usize,
-}
-
 /// Pool-indexer-specific Uniswap V3 config.
 #[derive(Clone, Debug)]
 pub struct UniswapV3PoolIndexer {
     /// Service root, e.g. `http://pool-indexer/` exposing
     /// `/api/v1/{network}/uniswap/v3/`.
     pub url: Url,
-}
-
-/// Where Uniswap V3 pool definitions and tick data are fetched from. Exactly
-/// one source is active per network.
-#[derive(Clone, Debug)]
-pub enum UniswapV3PoolSource {
-    /// A Uniswap V3 subgraph (typically Goldsky-hosted).
-    Subgraph(UniswapV3Subgraph),
-    /// A CoW pool-indexer service exposing `/api/v1/{network}/uniswap/v3/`.
-    PoolIndexer(UniswapV3PoolIndexer),
 }
 
 /// Uniswap V3 liquidity fetching options.
@@ -196,8 +175,8 @@ pub struct UniswapV3 {
     /// How many pools should be initialized during start up.
     pub max_pools_to_initialize: usize,
 
-    /// Where pool data is fetched from (subgraph or pool-indexer).
-    pub pool_source: UniswapV3PoolSource,
+    /// Where pool data is fetched from.
+    pub pool_indexer: UniswapV3PoolIndexer,
 
     /// How often the liquidity source should be reinitialized to
     /// become aware of new pools.
@@ -207,11 +186,11 @@ pub struct UniswapV3 {
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[expect(clippy::self_named_constructors)]
-    pub fn uniswap_v3(pool_source: UniswapV3PoolSource, chain: Chain) -> Option<Self> {
+    pub fn uniswap_v3(pool_indexer: UniswapV3PoolIndexer, chain: Chain) -> Option<Self> {
         Some(Self {
             router: contracts::UniswapV3SwapRouterV2::deployment_address(&chain.id())?.into(),
             max_pools_to_initialize: 100,
-            pool_source,
+            pool_indexer,
             reinit_interval: None,
         })
     }

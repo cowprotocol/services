@@ -7,4 +7,3 @@ mod db;
 mod indexer;
 mod metrics;
 mod run;
-mod subgraph_seeder;
