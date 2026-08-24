@@ -1158,7 +1158,8 @@ struct Metrics {
     /// Total time between seeing the start block of the auction and declaring
     /// a winning driver.
     #[metric(buckets(
-        0, 1, 2, 3, 4, 5, 6, 7, 7.5, 8, 8.25, 8.5, 8.75, 9, 9.25, 9.5, 9.75, 10
+        0, 1, 2, 3, 4, 5, 6, 7, 7.25, 7.5, 7.75, 8, 8.25, 8.5, 8.75, 9, 9.25, 9.5, 9.75, 10, 10.25,
+        10.5, 10.75, 11, 11.25, 11.5, 11.75, 12, 12.5, 13, 15, 17, 20
     ))]
     winner_declared: prometheus::Histogram,
 
