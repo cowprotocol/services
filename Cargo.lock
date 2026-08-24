@@ -9097,6 +9097,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-compute-budget-interface"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8292c436b269ad23cecc8b24f7da3ab07ca111661e25e00ce0e1d22771951ab9"
+dependencies = [
+ "solana-instruction",
+ "solana-sdk-ids",
+]
+
+[[package]]
 name = "solana-config-interface"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9179,6 +9189,8 @@ dependencies = [
  "clap",
  "configs",
  "const-hex",
+ "cow-settlement-client",
+ "cow-settlement-interface",
  "cow-solana-rpc",
  "futures",
  "humantime-serde",
@@ -9188,6 +9200,7 @@ dependencies = [
  "serde-ext",
  "serde_json",
  "serde_with",
+ "solana-compute-budget-interface",
  "solana-sdk",
  "solana-solvers",
  "solana-testlib",

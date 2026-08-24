@@ -24,7 +24,7 @@ pub struct Solution {
     /// Address lookup tables the interactions assume.
     pub address_lookup_tables: Vec<Pubkey>,
     /// Optional solver estimate of total settlement compute units.
-    pub cu_estimate: Option<u64>,
+    pub cu_estimate: Option<u32>,
 }
 
 /// A fulfillment of one auction order.
