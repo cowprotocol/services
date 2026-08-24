@@ -9369,6 +9369,7 @@ dependencies = [
  "cow-settlement-client",
  "cow-settlement-interface",
  "cow-solana-rpc",
+ "database",
  "derive_more 1.0.0",
  "futures",
  "humantime-serde",

@@ -23,6 +23,7 @@ clap = { workspace = true }
 configs = { workspace = true }
 cow-settlement-interface = "0.2.0"
 cow-solana-rpc = { workspace = true }
+database = { workspace = true }
 derive_more = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
