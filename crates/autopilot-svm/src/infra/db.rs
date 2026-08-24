@@ -114,6 +114,95 @@ ORDER BY slot, tx_signature
         .context("read solana.settlements by auction")
 }
 
+/// A window closed as landed, for the caller's log line.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct LandedWindow {
+    pub solver: ByteArray<32>,
+    pub end_slot: i64,
+    pub submitted_signature: ByteArray<64>,
+}
+
+/// Open a settlement-execution window for a dispatched settlement.
+pub async fn open_settlement_window(
+    ex: impl PgExecutor<'_>,
+    auction_id: i64,
+    solver: Pubkey,
+    solution_uid: i64,
+    start_slot: i64,
+    deadline_slot: i64,
+) -> Result<()> {
+    const QUERY: &str = r#"
+INSERT INTO solana.settlement_executions
+    (auction_id, solver, solution_uid, start_timestamp, start_slot, deadline_slot)
+VALUES ($1, $2, $3, now(), $4, $5)
+ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
+    "#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(solver.0)
+        .bind(solution_uid)
+        .bind(start_slot)
+        .bind(deadline_slot)
+        .execute(ex)
+        .await
+        .context("open settlement execution window")?;
+    Ok(())
+}
+
+/// Close the auction's windows against the settlements the indexer recorded,
+/// matching each window to its solver's settlement. A window already closed
+/// as timed out upgrades to landed: the settlement executed, just late, and
+/// lateness stays visible as `end_slot` past `deadline_slot`.
+///
+/// A settlement carries no solution uid, so a solver holding several windows
+/// of one auction closes all of them on its first settlement. Correct while
+/// one solver wins at most one solution per auction.
+pub async fn close_landed_windows(
+    ex: impl PgExecutor<'_>,
+    auction_id: i64,
+) -> Result<Vec<LandedWindow>> {
+    const QUERY: &str = r#"
+UPDATE solana.settlement_executions e
+SET outcome = 'landed', end_timestamp = now(), end_slot = s.slot,
+    submitted_signature = s.tx_signature
+FROM solana.settlements s
+WHERE e.auction_id = $1
+  AND s.auction_id = e.auction_id
+  AND s.solver = e.solver
+  AND (e.outcome IS NULL OR e.outcome = 'timeout')
+RETURNING e.solver, e.end_slot, e.submitted_signature
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(auction_id)
+        .fetch_all(ex)
+        .await
+        .context("close landed settlement execution windows")
+}
+
+/// Close every open window whose deadline is at or before the slot as timed
+/// out, returning their auction ids.
+pub async fn expire_settlement_windows(ex: impl PgExecutor<'_>, slot: i64) -> Result<Vec<i64>> {
+    const QUERY: &str = r#"
+UPDATE solana.settlement_executions
+SET outcome = 'timeout', end_timestamp = now(), end_slot = $1
+WHERE outcome IS NULL AND deadline_slot <= $1
+RETURNING auction_id
+    "#;
+    sqlx::query_scalar(QUERY)
+        .bind(slot)
+        .fetch_all(ex)
+        .await
+        .context("expire settlement execution windows")
+}
+
+/// Auction ids of open windows, the seed re-read set.
+pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>> {
+    sqlx::query_scalar("SELECT auction_id FROM solana.settlement_executions WHERE outcome IS NULL")
+        .fetch_all(ex)
+        .await
+        .context("read open settlement execution windows")
+}
+
 /// Cut an auction from the open orders.
 pub async fn cut(ex: impl PgExecutor<'_>, id: i64, now_unix: i64) -> Result<Auction> {
     let orders = orders_from_rows(open_orders(ex, now_unix).await?);
