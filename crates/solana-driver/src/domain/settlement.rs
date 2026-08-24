@@ -209,6 +209,13 @@ fn validate_orders(
     orders.sort_unstable();
     orders.dedup();
 
+    // Reject trades whose order uid matches no order in the settlement.
+    for trade in solution.trades.iter() {
+        if !orders.iter().any(|order| order.uid == trade.order_uid) {
+            return Err(Error::NoOrderForTrade(trade.order_uid));
+        }
+    }
+
     // Validate each order against the solution.
     for order in orders.iter() {
         // Reject orders whose wire PDA does not match the derived PDA.
@@ -293,11 +300,14 @@ impl SettlementOrder {
 }
 
 /// An error from the settlement encoding.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum Error {
     /// No trade fills the given order.
     #[error("no trade fills order {0}")]
     NoTradeForOrder(OrderUid),
+    /// No order matches the given trade.
+    #[error("no order matches trade {0}")]
+    NoOrderForTrade(OrderUid),
     /// The sum of the executed amounts overflowed `u64`.
     #[error("executed amounts overflow u64")]
     ExecutedAmountOverflow,
@@ -465,6 +475,28 @@ mod tests {
         )
         .expect_err("a solution with no trades must be rejected");
         assert!(matches!(err, Error::NoTradeForOrder(..)));
+    }
+
+    /// A trade whose order uid matches no order in the settlement is rejected.
+    #[test]
+    fn rejects_a_trade_with_no_matching_order() {
+        let program_id = pubkey(0xaa);
+        let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        let expected = OrderUid([0x22; 32]);
+        let err = Settlement::new(
+            program_id,
+            Id::new(7).unwrap(),
+            vec![order],
+            solution(vec![Trade {
+                order_uid: expected,
+                executed_sell: 1_000,
+                executed_buy: 2_000,
+            }]),
+            200_000,
+            Vec::new(),
+        )
+        .expect_err("a trade with no matching order must be rejected");
+        assert_eq!(err, Error::NoOrderForTrade(expected));
     }
 
     /// A non-partially-fillable order filled for less than its target is
