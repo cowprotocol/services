@@ -9,7 +9,7 @@ use {
             driver::Driver,
             executor::DriverExecutor,
             listen::ListenSession,
-            observation::{SettlementObservation, SettlementTracker},
+            observation::SettlementWindows,
             observer::CompetitionObserver,
             provider::DbAuctionProvider,
             trigger::SlotTrigger,
@@ -87,12 +87,8 @@ async fn run(config: Config) {
         .await
         .expect("database connection");
 
-    let tracker = SettlementTracker::new(pool.clone());
-    let listen = ListenSession::spawn(
-        pool.clone(),
-        SETTLEMENT_FINALIZED_CHANNEL,
-        SettlementObservation::new(pool.clone()),
-    );
+    let windows = SettlementWindows::new(pool.clone());
+    let listen = ListenSession::spawn(pool.clone(), SETTLEMENT_FINALIZED_CHANNEL, windows.clone());
 
     let rpc = SolanaRPC::new_with_timeout_and_commitment(
         &config.rpc.endpoint,
@@ -119,10 +115,10 @@ async fn run(config: Config) {
         )),
         Box::new(DriverExecutor::new(
             drivers,
-            tracker.clone(),
+            windows.clone(),
             config.competition.submission_deadline_slots.get(),
         )),
-        Box::new(CompetitionObserver::new(pool, tracker)),
+        Box::new(CompetitionObserver::new(pool, windows)),
     );
     let liveness = Arc::new(Liveness::new(config.max_auction_age));
     let metrics = observe::metrics::serve_metrics(

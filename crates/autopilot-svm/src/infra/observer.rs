@@ -9,7 +9,7 @@
 use {
     crate::{
         domain::{auction::Auction, cycle::Ranking},
-        infra::{observation::SettlementTracker, order_events},
+        infra::{observation::SettlementWindows, order_events},
         run_loop::SettlementObserver,
     },
     async_trait::async_trait,
@@ -23,12 +23,12 @@ use {
 /// settlement-timeout check off the per-cycle tip.
 pub struct CompetitionObserver {
     pool: PgPool,
-    tracker: SettlementTracker,
+    windows: SettlementWindows,
 }
 
 impl CompetitionObserver {
-    pub fn new(pool: PgPool, tracker: SettlementTracker) -> Self {
-        Self { pool, tracker }
+    pub fn new(pool: PgPool, windows: SettlementWindows) -> Self {
+        Self { pool, windows }
     }
 
     /// Best effort: a lost event degrades the status endpoint, never the
@@ -64,7 +64,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
     ) -> anyhow::Result<()> {
         // Best effort: the expiry bookkeeping only touches previously
         // dispatched windows and must not block the current dispatch.
-        if let Err(err) = self.tracker.close_expired_windows_as_timeout(*tip).await {
+        if let Err(err) = self.windows.expire_past_deadline(*tip).await {
             tracing::error!(?err, "failed to flag expired settlement windows");
         }
         tracing::info!(

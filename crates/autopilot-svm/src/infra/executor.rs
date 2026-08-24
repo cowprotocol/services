@@ -5,7 +5,7 @@ use {
         domain::cycle::{Ranking, SolanaCycle},
         infra::{
             driver::{Driver, dto},
-            observation::SettlementTracker,
+            observation::SettlementWindows,
         },
         run_loop::SettlementExecutor,
     },
@@ -19,7 +19,7 @@ pub struct DriverExecutor {
     drivers: Vec<Arc<Driver>>,
     /// Opens a settlement-execution window per dispatched settlement, which
     /// the observation side later resolves or times out.
-    tracker: SettlementTracker,
+    windows: SettlementWindows,
     /// Slots a settlement may take after ranking before it counts as late.
     submission_deadline_slots: u64,
 }
@@ -27,12 +27,12 @@ pub struct DriverExecutor {
 impl DriverExecutor {
     pub fn new(
         drivers: Vec<Arc<Driver>>,
-        tracker: SettlementTracker,
+        windows: SettlementWindows,
         submission_deadline_slots: u64,
     ) -> Self {
         Self {
             drivers,
-            tracker,
+            windows,
             submission_deadline_slots,
         }
     }
@@ -64,8 +64,8 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             // A window that cannot be opened must not block the settlement,
             // the dispatch is the priority.
             if let Err(err) = self
-                .tracker
-                .open_dispatched_settlement_window(
+                .windows
+                .open_dispatched(
                     auction_id,
                     winner.solver(),
                     winner.id(),

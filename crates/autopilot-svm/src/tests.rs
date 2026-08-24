@@ -8,7 +8,7 @@ use {
             competition::DriverCompetition,
             driver::{Driver, dto},
             executor::DriverExecutor,
-            observation::SettlementTracker,
+            observation::SettlementWindows,
             observer::CompetitionObserver,
             provider::DbAuctionProvider,
         },
@@ -158,7 +158,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }
 
-    let tracker = SettlementTracker::new(pool.clone());
+    let windows = SettlementWindows::new(pool.clone());
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
         Box::new(DbAuctionProvider::new(pool.clone())),
@@ -167,8 +167,8 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             Duration::from_secs(6),
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
-        Box::new(DriverExecutor::new(vec![driver], tracker.clone(), 25)),
-        Box::new(CompetitionObserver::new(pool.clone(), tracker.clone())),
+        Box::new(DriverExecutor::new(vec![driver], windows.clone(), 25)),
+        Box::new(CompetitionObserver::new(pool.clone(), windows.clone())),
     );
     auction_loop.run_cycle().await;
 
