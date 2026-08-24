@@ -3,7 +3,6 @@ use {
     crate::{
         indexer::ingester::Ingester,
         persistence::Postgres,
-        rpc::Rpc,
         types::{
             Signature,
             events::{
@@ -34,6 +33,7 @@ use {
         },
     },
     bytes::Bytes,
+    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     futures::StreamExt,
     settlement_interface::{
         Pubkey as InterfacePubkey,
@@ -411,7 +411,7 @@ fn token_account_mint_trusts_only_token_program_accounts() {
 /// A canned `getMultipleAccounts` response, in request order: the sell token
 /// account holds mint `[0xA1; 32]`, the buy token account mint `[0xA2; 32]`
 /// (the first 32 bytes of the base64 data).
-fn mock_rpc_with_token_accounts() -> Rpc {
+fn mock_rpc_with_token_accounts() -> SolanaRPC {
     let account = |data: &str| {
         serde_json::json!({
             "lamports": 1u64,
@@ -428,11 +428,8 @@ fn mock_rpc_with_token_accounts() -> Rpc {
         "context": { "slot": 1u64, "apiVersion": "2.0.0" },
         "value": [sell, buy],
     });
-    let mocks = solana_client::rpc_client::Mocks::from([(
-        solana_client::rpc_request::RpcRequest::GetMultipleAccounts,
-        response,
-    )]);
-    Rpc::new_mock(mocks)
+    let mocks = Mocks::from([(RpcRequest::GetMultipleAccounts, response)]);
+    SolanaRPC::new_mock_with_mocks(mocks)
 }
 
 /// A decoder over a lazy pool that never connects: `decode` is pure, tests
@@ -442,7 +439,7 @@ fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
     let (_sender, rx) = tokio::sync::mpsc::channel(1);
     Decoder::new(
         Postgres::new(pool),
-        Rpc::new_mock(Default::default()),
+        SolanaRPC::new_mock_with_mocks(Default::default()),
         rx,
         settlement,
         Some(solflow),
