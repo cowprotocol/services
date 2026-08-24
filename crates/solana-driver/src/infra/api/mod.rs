@@ -102,7 +102,7 @@ impl State {
 
 struct Inner {
     /// The shared Solana RPC client.
-    #[expect(dead_code, reason = "used by the deadline and submission follow-ups")]
+    #[expect(dead_code, reason = "slot deadline and submission are not implemented")]
     rpc: Arc<SolanaRPC>,
     /// The competition that runs auctions for this solver engine.
     competition: domain::Competition,

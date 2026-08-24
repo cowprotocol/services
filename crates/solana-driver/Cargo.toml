@@ -44,6 +44,7 @@ url = { workspace = true, features = ["serde"] }
 [dev-dependencies]
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
 solana-solvers = { path = "../solana-solvers" }
+solana-testlib = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [features]
