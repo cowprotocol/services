@@ -18,28 +18,12 @@ use {
     sqlx::PgPool,
 };
 
-/// A closed window's outcome, the `solana.settlement_executions.outcome`
-/// value. The outcome records what the indexer observed on chain, never a
-/// driver's report. The schema also allows `rejected`, unused until typed
-/// `/settle` errors are consumed.
-enum Outcome {
-    /// The settlement was observed landed on chain.
-    Landed,
-    /// The deadline passed with no observed settlement. A landing observed
-    /// later still overwrites this, chain truth wins over the sweep's timing.
-    Timeout,
-}
-
-impl Outcome {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Landed => "landed",
-            Self::Timeout => "timeout",
-        }
-    }
-}
-
 /// Writes and closes settlement-execution windows.
+///
+/// `solana.settlement_executions.outcome` records what the indexer observed
+/// on chain, never a driver's report, which is why a landing observed after
+/// the deadline overwrites a timeout. The schema also allows `rejected`,
+/// unused until typed `/settle` errors are consumed.
 #[derive(Clone)]
 pub struct SettlementTracker {
     pool: PgPool,
@@ -95,15 +79,13 @@ ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
         let closed = sqlx::query(
             r#"
 UPDATE solana.settlement_executions
-SET outcome = $4, end_timestamp = now(), end_slot = $2, submitted_signature = $3
-WHERE auction_id = $1 AND solver = $6 AND (outcome IS NULL OR outcome = $5)
+SET outcome = 'landed', end_timestamp = now(), end_slot = $2, submitted_signature = $3
+WHERE auction_id = $1 AND solver = $4 AND (outcome IS NULL OR outcome = 'timeout')
             "#,
         )
         .bind(auction_id)
         .bind(slot)
         .bind(signature)
-        .bind(Outcome::Landed.as_str())
-        .bind(Outcome::Timeout.as_str())
         .bind(solver)
         .execute(&self.pool)
         .await
@@ -120,13 +102,12 @@ WHERE auction_id = $1 AND solver = $6 AND (outcome IS NULL OR outcome = $5)
         let expired: Vec<(i64,)> = sqlx::query_as(
             r#"
 UPDATE solana.settlement_executions
-SET outcome = $2, end_timestamp = now(), end_slot = $1
+SET outcome = 'timeout', end_timestamp = now(), end_slot = $1
 WHERE outcome IS NULL AND deadline_slot <= $1
 RETURNING auction_id
             "#,
         )
         .bind(to_db_integer(slot))
-        .bind(Outcome::Timeout.as_str())
         .fetch_all(&self.pool)
         .await
         .context("expire settlement execution windows")?;
