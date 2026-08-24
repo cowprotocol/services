@@ -41,8 +41,6 @@ pub struct Settlement {
     /// The orders this settlement fills.
     orders: Vec<Order>,
     solution: Solution,
-    /// The compute-unit limit for the settlement transaction.
-    cu_limit: u32,
     /// Token mints whose buffer PDAs do not exist on chain yet, sorted and
     /// deduplicated.
     missing_buffers: Vec<Pubkey>,
@@ -59,7 +57,6 @@ impl Settlement {
         auction_id: Id,
         mut orders: Vec<Order>,
         solution: Solution,
-        cu_limit: u32,
         mut missing_buffers: Vec<Pubkey>,
     ) -> Result<Self, Error> {
         validate_orders(&program_id, &mut orders, &solution)?;
@@ -71,7 +68,6 @@ impl Settlement {
             auction_id,
             orders,
             solution,
-            cu_limit,
             missing_buffers,
         })
     }
@@ -110,11 +106,13 @@ impl Settlement {
         // Start populating the instruction list.
         let mut instructions = Vec::new();
 
-        // Set the compute limit TODO: Once we have CU price estimation, add the
-        // respective `ComputeBudget::set_compute_unit_price` instruction too.
-        instructions.push(ComputeBudgetInstruction::set_compute_unit_limit(
-            self.cu_limit,
-        ));
+        // Set the compute limit. The solver provides an optional CU estimate; if
+        // it is missing we fall back to the Solana default. TODO: Once we have CU
+        // price estimation, add the respective `ComputeBudget::set_compute_unit_price`
+        // instruction too.
+        if let Some(cu_limit) = self.solution.cu_estimate {
+            instructions.push(ComputeBudgetInstruction::set_compute_unit_limit(cu_limit));
+        }
         // Insert `CreateBuffers instructions in case there are missing Buffer accounts.
         if !self.missing_buffers.is_empty() {
             instructions.push(
@@ -158,6 +156,11 @@ impl Settlement {
     }
 
     /// Encode the settlement as a signed v0 transaction.
+    ///
+    /// TODO: Once the `Solution` domain type can resolve its
+    /// `address_lookup_tables` pubkeys into on-chain
+    /// `AddressLookupTableAccount`s, this `lookup_tables` argument may no
+    /// longer be necessary.
     pub fn encode(
         &self,
         signer: &Keypair,
@@ -376,7 +379,7 @@ mod tests {
             trades,
             interactions: Vec::new(),
             address_lookup_tables: Vec::new(),
-            cu_estimate: None,
+            cu_estimate: Some(200_000),
         }
     }
 
@@ -390,7 +393,6 @@ mod tests {
             Id::new(7).unwrap(),
             vec![order],
             solution(vec![single_trade()]),
-            200_000,
             Vec::new(),
         )
         .unwrap()
@@ -428,7 +430,6 @@ mod tests {
             Id::new(7).unwrap(),
             vec![order],
             solution(vec![single_trade()]),
-            200_000,
             Vec::new(),
         )
         .expect_err("a mismatched order PDA must be rejected");
@@ -449,7 +450,6 @@ mod tests {
             Id::new(7).unwrap(),
             vec![order.clone(), order],
             solution(vec![single_trade()]),
-            200_000,
             Vec::new(),
         )
         .unwrap();
@@ -470,7 +470,6 @@ mod tests {
             Id::new(7).unwrap(),
             vec![order],
             solution(Vec::new()),
-            200_000,
             Vec::new(),
         )
         .expect_err("a solution with no trades must be rejected");
@@ -492,7 +491,6 @@ mod tests {
                 executed_sell: 1_000,
                 executed_buy: 2_000,
             }]),
-            200_000,
             Vec::new(),
         )
         .expect_err("a trade with no matching order must be rejected");
@@ -515,7 +513,6 @@ mod tests {
                 executed_sell: 500,
                 executed_buy: 1_000,
             }]),
-            200_000,
             Vec::new(),
         )
         .expect_err("a non-partially-fillable order filled below target must be rejected");
@@ -539,7 +536,6 @@ mod tests {
                 executed_sell: 500,
                 executed_buy: 1_000,
             }]),
-            200_000,
             Vec::new(),
         )
         .expect_err("a non-partially-fillable buy order filled below target must be rejected");
@@ -562,7 +558,6 @@ mod tests {
                 executed_sell: 500,
                 executed_buy: 1_000,
             }]),
-            200_000,
             Vec::new(),
         )
         .unwrap();
@@ -586,7 +581,6 @@ mod tests {
                 executed_sell: 1_200,
                 executed_buy: 2_400,
             }]),
-            200_000,
             Vec::new(),
         )
         .expect_err("an overfilled order must be rejected");
@@ -611,7 +605,6 @@ mod tests {
                 executed_sell: 1_200,
                 executed_buy: 2_400,
             }]),
-            200_000,
             Vec::new(),
         )
         .expect_err("an overfilled buy order must be rejected");
@@ -634,7 +627,6 @@ mod tests {
                 executed_sell: 1_000,
                 executed_buy: 1_500,
             }]),
-            200_000,
             Vec::new(),
         )
         .expect_err("an order that violates its limit price must be rejected");
@@ -666,7 +658,6 @@ mod tests {
                     executed_buy: 1_200,
                 },
             ]),
-            200_000,
             Vec::new(),
         )
         .unwrap();
@@ -744,9 +735,8 @@ mod tests {
                 ],
                 interactions: Vec::new(),
                 address_lookup_tables: Vec::new(),
-                cu_estimate: None,
+                cu_estimate: Some(200_000),
             },
-            200_000,
             Vec::new(),
         )
         .unwrap();
@@ -789,7 +779,6 @@ mod tests {
             Id::new(7).unwrap(),
             vec![order],
             solution(vec![single_trade()]),
-            200_000,
             missing_buffers,
         )
         .unwrap();
