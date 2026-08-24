@@ -17,12 +17,15 @@ use {
     tracing::instrument,
 };
 
-pub const SELECT: &str = r#"
+pub const SELECT: &str = const_format::concatcp!(
+    r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, NULL AS valid_from, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, '\x9008d19f58aabd9ed0d60971565aa8510560ab41'::bytea AS settlement_contract, o.sell_token_balance, o.buy_token_balance,
 'liquidity'::OrderClass AS class,
-fills.sum_buy, fills.sum_sell, fills.sum_fee, fills.gas_cost,
+(SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
+(SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
+(SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
 FALSE AS invalidated,
 FALSE AS presignature_pending,
 ARRAY[]::record[] AS pre_interactions,
@@ -32,10 +35,11 @@ NULL AS onchain_user,
 NULL AS onchain_placement_error,
 COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
 COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
-NULL AS full_app_data
-"#;
+NULL AS full_app_data, "#,
+    crate::trades::ORDER_GAS_COST,
+);
 
-pub const FROM: &str = const_format::concatcp!("jit_orders o", orders::FILLS_JOIN);
+pub const FROM: &str = "jit_orders o";
 
 #[instrument(skip_all)]
 pub async fn get_by_id(

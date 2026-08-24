@@ -33,6 +33,20 @@ pub struct TradesQueryRow {
     pub gas_cost: Option<BigDecimal>,
 }
 
+/// Select-list expression summing the gas costs of the fills of an order
+/// aliased `o`. `NULL` unless every fill's cost is known — a bare `SUM` would
+/// silently understate the total. Read through the alias `fill` so it also
+/// works in a query that joins `trades` itself.
+///
+/// Unlike the executed-amount sums beside it, this probe is not covered by the
+/// `trades_covering` index, so it visits the heap: measured at +45% plan cost
+/// for a 1000-order page. If that starts to show on the order endpoints, add
+/// `gas_cost` to that index's `INCLUDE` list to make the probe index-only
+/// again.
+pub(crate) const ORDER_GAS_COST: &str = "(SELECT CASE WHEN COUNT(*) = COUNT(fill.gas_cost) THEN \
+                                         SUM(fill.gas_cost) END FROM trades fill WHERE \
+                                         fill.order_uid = o.uid) AS gas_cost";
+
 pub fn trades<'a>(
     ex: &'a mut PgConnection,
     owner_filter: Option<&'a Address>,

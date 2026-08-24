@@ -631,12 +631,15 @@ impl FullOrderWithQuote {
 // SET enable_nestloop = false;
 // to get a better idea of what indexes postgres *could* use even if it decides
 // that with the current amount of data this wouldn't be better.
-pub const SELECT: &str = r#"
+pub const SELECT: &str = const_format::concatcp!(
+    r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.valid_from, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 o.class,
-fills.sum_buy, fills.sum_sell, fills.sum_fee, fills.gas_cost,
+(SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
+(SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
+(SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
 (o.cancellation_timestamp IS NOT NULL OR
     (SELECT COUNT(*) FROM invalidations WHERE invalidations.order_uid = o.uid) > 0 OR
     (SELECT COUNT(*) FROM onchain_order_invalidations onchain_c where onchain_c.uid = o.uid limit 1) > 0
@@ -657,27 +660,11 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
 COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
-(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
-"#;
+(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data, "#,
+    crate::trades::ORDER_GAS_COST,
+);
 
-/// Everything the order queries need from an order's fills. One probe of
-/// `trades` rather than one per column, which matters because `gas_cost` is in
-/// no index and so has to visit the heap.
-///
-/// `gas_cost` is `NULL` unless every fill's cost is known — a bare `SUM` would
-/// silently understate the total. [`SELECT`] reads this through the alias
-/// `fills`, so a query needs both or neither.
-pub(crate) const FILLS_JOIN: &str = r#" LEFT JOIN LATERAL (
-    SELECT
-        COALESCE(SUM(fill.buy_amount), 0) AS sum_buy,
-        COALESCE(SUM(fill.sell_amount), 0) AS sum_sell,
-        COALESCE(SUM(fill.fee_amount), 0) AS sum_fee,
-        CASE WHEN COUNT(*) = COUNT(fill.gas_cost) THEN SUM(fill.gas_cost) END AS gas_cost
-    FROM trades fill
-    WHERE fill.order_uid = o.uid
-) AS fills ON TRUE"#;
-
-pub const FROM: &str = const_format::concatcp!("orders o", FILLS_JOIN);
+pub const FROM: &str = "orders o";
 const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
     "SELECT ",
     SELECT,
