@@ -59,20 +59,6 @@ ORDER BY o.uid
         .context("read open solana.orders")
 }
 
-/// A row of `solana.settlements`, the indexer's record of one settlement
-/// transaction. The transaction carries no solution uid, the indexer
-/// attributes it from the recorded competition, so `solution_uid` is `None`
-/// for settlements it cannot match. A settlement is finalized once its slot
-/// is at or below `solana.indexer_state.finalized_slot`.
-#[derive(Clone, Debug, sqlx::FromRow)]
-pub struct Settlement {
-    pub slot: i64,
-    pub tx_signature: ByteArray<64>,
-    pub solver: ByteArray<32>,
-    pub auction_id: i64,
-    pub solution_uid: Option<i64>,
-}
-
 /// Latest slot the indexer fully processed. `None` before the indexer's first
 /// write. `solana.indexer_state` is a single-row table.
 pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
@@ -81,25 +67,6 @@ pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
         .fetch_optional(ex)
         .await
         .context("read solana.indexer_state slot")
-}
-
-/// Settlements the indexer recorded for an auction. More than one row when the
-/// auction had several winners.
-pub async fn settlements_by_auction(
-    ex: impl PgExecutor<'_>,
-    auction_id: i64,
-) -> Result<Vec<Settlement>> {
-    const QUERY: &str = r#"
-SELECT slot, tx_signature, solver, auction_id, solution_uid
-FROM solana.settlements
-WHERE auction_id = $1
-ORDER BY slot, tx_signature
-    "#;
-    sqlx::query_as(QUERY)
-        .bind(auction_id)
-        .fetch_all(ex)
-        .await
-        .context("read solana.settlements by auction")
 }
 
 /// A window closed as landed, for the caller's log line.
@@ -249,7 +216,7 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use {
-        super::{last_indexed_slot, open_orders, settlements_by_auction},
+        super::{last_indexed_slot, open_orders},
         bigdecimal::BigDecimal,
         database::byte_array::ByteArray,
         sqlx::{PgPool, PgTransaction},
@@ -409,35 +376,5 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
             .await
             .unwrap();
         assert_eq!(last_indexed_slot(&mut *tx).await.unwrap(), Some(42));
-    }
-
-    #[tokio::test]
-    #[ignore = "needs the solana.* schema applied to the local database"]
-    async fn solana_db_settlements_by_auction_roundtrip() {
-        let pool = PgPool::connect("postgresql://").await.unwrap();
-        let mut tx = pool.begin().await.unwrap();
-
-        for table in ["trades", "settlements"] {
-            sqlx::query(&format!("DELETE FROM solana.{table}"))
-                .execute(&mut *tx)
-                .await
-                .unwrap();
-        }
-        sqlx::query(
-            r#"
-INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, auction_id, solution_uid)
-VALUES (7, $1, 0, $2, 123, NULL)
-            "#,
-        )
-        .bind(ByteArray([9u8; 64]))
-        .bind(ByteArray([10u8; 32]))
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-        let settlements = settlements_by_auction(&mut *tx, 123).await.unwrap();
-        assert_eq!(settlements.len(), 1);
-        assert_eq!(settlements[0].auction_id, 123);
-        assert_eq!(settlements[0].solution_uid, None);
-        assert_eq!(settlements[0].slot, 7);
     }
 }
