@@ -114,18 +114,6 @@ ORDER BY slot, tx_signature
         .context("read solana.settlements by auction")
 }
 
-/// Order uids of a settlement transaction's trades.
-pub async fn trade_order_uids(
-    ex: impl PgExecutor<'_>,
-    tx_signature: &[u8],
-) -> Result<Vec<ByteArray<32>>> {
-    sqlx::query_scalar("SELECT order_uid FROM solana.trades WHERE tx_signature = $1")
-        .bind(tx_signature)
-        .fetch_all(ex)
-        .await
-        .context("read solana.trades order uids")
-}
-
 /// Cut an auction from the open orders.
 pub async fn cut(ex: impl PgExecutor<'_>, id: i64, now_unix: i64) -> Result<Auction> {
     let orders = orders_from_rows(open_orders(ex, now_unix).await?);

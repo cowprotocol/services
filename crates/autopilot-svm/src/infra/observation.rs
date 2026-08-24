@@ -11,11 +11,10 @@
 //! window.
 
 use {
-    crate::infra::{db, listen::NotifyHandler, order_events},
+    crate::infra::{db, listen::NotifyHandler},
     anyhow::{Context, Result},
     async_trait::async_trait,
-    chain_types::solana::{IntentHash, Pubkey},
-    database::order_events::OrderEventLabel,
+    chain_types::solana::Pubkey,
     sqlx::PgPool,
 };
 
@@ -186,23 +185,6 @@ impl SettlementObservation {
                     tx_signature = %const_hex::encode(settlement.tx_signature.0),
                     "settlement observed on chain"
                 );
-                // The window only closes once, so the traded events dedupe
-                // with it. Best effort end to end: an error here must not
-                // fail the observation (that would tear down the listener,
-                // and the closed window would skip this block on the
-                // re-seed).
-                let store_traded = async {
-                    let uids = db::trade_order_uids(&self.pool, &settlement.tx_signature.0).await?;
-                    order_events::store(
-                        &self.pool,
-                        uids.into_iter().map(|uid| IntentHash(uid.0)),
-                        OrderEventLabel::Traded,
-                    )
-                    .await
-                };
-                if let Err(err) = store_traded.await {
-                    tracing::error!(?err, "failed to store traded order events");
-                }
             }
         }
         Ok(())
@@ -266,23 +248,6 @@ VALUES (10, $1, 0, $2, $3, NULL)
         .execute(pool)
         .await
         .unwrap();
-        sqlx::query(
-            "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount, \
-             buy_amount, fee_amount) VALUES ($1, 0, $2, 400, 200, 0)",
-        )
-        .bind([9u8; 64])
-        .bind([0xAB_u8; 32])
-        .execute(pool)
-        .await
-        .unwrap();
-    }
-
-    async fn traded_events(pool: &PgPool) -> Vec<String> {
-        sqlx::query_scalar("SELECT label::text FROM solana.order_events WHERE order_uid = $1")
-            .bind([0xAB_u8; 32])
-            .fetch_all(pool)
-            .await
-            .unwrap()
     }
 
     async fn outcome(pool: &PgPool, auction_id: i64) -> Option<String> {
@@ -316,10 +281,8 @@ VALUES (10, $1, 0, $2, $3, NULL)
 
         insert_settlement(&pool, 4242).await;
 
-        // The traded events land after the window closes, so wait for both
-        // before tearing the listener down.
         for _ in 0..200 {
-            if outcome(&pool, 4242).await.is_some() && !traded_events(&pool).await.is_empty() {
+            if outcome(&pool, 4242).await.is_some() {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
@@ -333,9 +296,6 @@ VALUES (10, $1, 0, $2, $3, NULL)
         .await
         .unwrap();
         assert_eq!(signature, vec![9u8; 64]);
-        // The landed settlement reported its orders as traded.
-        let events = traded_events(&pool).await;
-        assert_eq!(events, ["traded"]);
     }
 
     /// Expiry closes only windows past their deadline, and closed windows
