@@ -6,7 +6,7 @@
 
 use {
     crate::domain::auction,
-    chain_types::solana::{IntentHash, Pubkey, Signature},
+    chain_types::solana::{AppData, IntentHash, Pubkey, Signature},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
@@ -49,6 +49,10 @@ pub struct Order {
     pub valid_to: u32,
     pub kind: Kind,
     pub partially_fillable: bool,
+    /// The 32-byte app-data hash of the on-chain intent, `0x`-hex on the
+    /// wire like the uid.
+    #[serde_as(as = "DisplayFromStr")]
+    pub app_data: AppData,
     #[serde_as(as = "DisplayFromStr")]
     pub order_pda: Pubkey,
 }
@@ -78,6 +82,7 @@ impl From<&auction::Order> for Order {
                 auction::OrderKind::Buy => Kind::Buy,
             },
             partially_fillable: order.partially_fillable,
+            app_data: order.app_data,
             order_pda: order.order_pda,
         }
     }
@@ -156,6 +161,7 @@ mod tests {
             valid_to: 42,
             kind: auction::OrderKind::Sell,
             partially_fillable: false,
+            app_data: AppData([0x88; 32]),
             order_pda: Pubkey([0x77; 32]),
         }
     }
@@ -179,6 +185,10 @@ mod tests {
         // u64::MAX survives as a decimal string.
         assert_eq!(json["orders"][0]["sellAmount"], "18446744073709551615");
         assert_eq!(json["orders"][0]["kind"], "sell");
+        assert_eq!(
+            json["orders"][0]["appData"],
+            "0x8888888888888888888888888888888888888888888888888888888888888888"
+        );
         // Base58 of 32 bytes of 0x22, precomputed so this does not just
         // compare the Display impl against itself.
         assert_eq!(

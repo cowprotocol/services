@@ -4,7 +4,7 @@ use {
     crate::domain::auction::{Auction, Order, OrderKind},
     anyhow::{Context, Result, bail},
     bigdecimal::{BigDecimal, ToPrimitive},
-    chain_types::solana::{IntentHash, Pubkey},
+    chain_types::solana::{AppData, IntentHash, Pubkey},
     database::byte_array::ByteArray,
     sqlx::PgExecutor,
 };
@@ -23,6 +23,7 @@ pub struct OrderRow {
     pub valid_to: i64,
     pub kind: String,
     pub partially_fillable: bool,
+    pub app_data: ByteArray<32>,
     pub order_pda: ByteArray<32>,
 }
 
@@ -35,7 +36,7 @@ pub async fn open_orders(ex: impl PgExecutor<'_>, now_unix: i64) -> Result<Vec<O
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
-       o.kind::text AS kind, o.partially_fillable, o.order_pda
+       o.kind::text AS kind, o.partially_fillable, o.app_data, o.order_pda
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.valid_to >= $1
@@ -145,6 +146,7 @@ impl TryFrom<OrderRow> for Order {
                 other => bail!("unknown order kind {other:?}"),
             },
             partially_fillable: row.partially_fillable,
+            app_data: AppData(row.app_data.0),
             order_pda: Pubkey(row.order_pda.0),
         })
     }
@@ -179,6 +181,7 @@ mod tests {
             valid_to: 42,
             kind: "sell".to_owned(),
             partially_fillable: false,
+            app_data: ByteArray([8; 32]),
             order_pda: ByteArray([7; 32]),
         }
     }

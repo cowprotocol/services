@@ -3,7 +3,7 @@
 
 use {
     crate::run_loop::AuctionInfo,
-    chain_types::solana::{IntentHash, Pubkey},
+    chain_types::solana::{AppData, IntentHash, Pubkey},
 };
 
 /// Whether the order sells an exact amount or buys an exact amount.
@@ -30,6 +30,10 @@ pub struct Order {
     pub valid_to: u32,
     pub kind: OrderKind,
     pub partially_fillable: bool,
+    /// The 32-byte app-data hash of the on-chain intent. An input to the
+    /// intent hash (the uid), so the driver needs it verbatim to rebuild the
+    /// intent at settlement.
+    pub app_data: AppData,
     pub order_pda: Pubkey,
 }
 
@@ -71,6 +75,7 @@ mod tests {
             valid_to: 42,
             kind: OrderKind::Sell,
             partially_fillable: false,
+            app_data: chain_types::solana::AppData([8; 32]),
             order_pda: chain_types::solana::Pubkey([7; 32]),
         }
     }
