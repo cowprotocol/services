@@ -1,16 +1,8 @@
 use {
-    super::{
-        DecodeFailed,
-        Decoder,
-        ResolvedOrder,
-        build_account_keys,
-        decode_settlement,
-        relevant_instructions,
-    },
+    super::{DecodeFailed, Decoder, build_account_keys, decode_settlement, relevant_instructions},
     crate::{
         indexer::ingester::Ingester,
         persistence::Postgres,
-        rpc::Rpc,
         types::{
             Signature,
             events::{
@@ -41,13 +33,14 @@ use {
         },
     },
     bytes::Bytes,
-    futures::StreamExt,
-    settlement_interface::{
+    cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
         data::intent::{OrderIntent, OrderKind as IntentOrderKind},
         pda::order::find_order_pda,
     },
+    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
+    futures::StreamExt,
     solana_sdk::pubkey::Pubkey,
     std::sync::{Arc, atomic::AtomicU64},
 };
@@ -61,7 +54,7 @@ fn pubkey(n: u8) -> Pubkey {
 /// encounter order.
 fn tx_from_instructions(
     payer: Pubkey,
-    instructions: &[settlement_interface::Instruction],
+    instructions: &[cow_settlement_interface::Instruction],
 ) -> SubscribeUpdateTransactionInfo {
     let mut keys = vec![payer];
     let index_of = |keys: &mut Vec<Pubkey>, key: Pubkey| -> u8 {
@@ -363,7 +356,7 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         partially_fillable: false,
         app_data: [0x44; 32],
     };
-    let instruction = settlement_client::instructions::CreateOrder {
+    let instruction = cow_settlement_client::instructions::CreateOrder {
         program_id: settlement,
         owner: pubkey(11),
         created_by,
@@ -418,7 +411,7 @@ fn token_account_mint_trusts_only_token_program_accounts() {
 /// A canned `getMultipleAccounts` response, in request order: the sell token
 /// account holds mint `[0xA1; 32]`, the buy token account mint `[0xA2; 32]`
 /// (the first 32 bytes of the base64 data).
-fn mock_rpc_with_token_accounts() -> Rpc {
+fn mock_rpc_with_token_accounts() -> SolanaRPC {
     let account = |data: &str| {
         serde_json::json!({
             "lamports": 1u64,
@@ -435,11 +428,8 @@ fn mock_rpc_with_token_accounts() -> Rpc {
         "context": { "slot": 1u64, "apiVersion": "2.0.0" },
         "value": [sell, buy],
     });
-    let mocks = solana_client::rpc_client::Mocks::from([(
-        solana_client::rpc_request::RpcRequest::GetMultipleAccounts,
-        response,
-    )]);
-    Rpc::new_mock(mocks)
+    let mocks = Mocks::from([(RpcRequest::GetMultipleAccounts, response)]);
+    SolanaRPC::new_mock_with_mocks(mocks)
 }
 
 /// A decoder over a lazy pool that never connects: `decode` is pure, tests
@@ -449,7 +439,7 @@ fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
     let (_sender, rx) = tokio::sync::mpsc::channel(1);
     Decoder::new(
         Postgres::new(pool),
-        Rpc::new_mock(Default::default()),
+        SolanaRPC::new_mock_with_mocks(Default::default()),
         rx,
         settlement,
         Some(solflow),
@@ -520,10 +510,7 @@ fn unknown_discriminator_fails_the_whole_transaction() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
-    assert_eq!(
-        decode_settlement(&instructions, &ctx, |_| None),
-        Err(DecodeFailed)
-    );
+    assert_eq!(decode_settlement(&instructions, &ctx), Err(DecodeFailed));
 }
 
 /// A `BeginSettle` whose named `FinalizeSettle` is not present in the
@@ -560,10 +547,7 @@ fn unpaired_begin_settle_sets_failure_flag() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
-    assert_eq!(
-        decode_settlement(&instructions, &ctx, |_| None),
-        Err(DecodeFailed)
-    );
+    assert_eq!(decode_settlement(&instructions, &ctx), Err(DecodeFailed));
 }
 
 /// A `BeginSettle` + `FinalizeSettle` pair built by the client crate decodes
@@ -574,8 +558,7 @@ fn unpaired_begin_settle_sets_failure_flag() {
 ///   from the same order's sell account),
 /// - the buy-side amount comes from the `FinalizeSettle` entry paired to its
 ///   order by position (order `i` is paid by entry `i`),
-/// - the order UID comes from the injected resolver, keyed by the canonical
-///   order PDA the builder derives,
+/// - the trade names the canonical order PDA the builder derives,
 /// - the solver is the fee payer.
 #[test]
 fn begin_and_finalize_settle_decode_to_settlement_finalized() {
@@ -594,18 +577,18 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     };
     let order_pda = find_order_pda(&settlement, &intent.uid()).0;
 
-    let begin = settlement_client::instructions::BeginSettle {
+    let begin = cow_settlement_client::instructions::BeginSettle {
         program_id: settlement,
         finalize_ix_index: 1,
         auction_id: 4242,
-        orders: &[settlement_client::instructions::InitializedIntent {
+        orders: &[cow_settlement_client::instructions::InitializedIntent {
             intent: &intent,
             pulls: &[
-                settlement_client::instructions::Pull {
+                cow_settlement_client::instructions::Pull {
                     destination: pubkey(27),
                     amount: 300,
                 },
-                settlement_client::instructions::Pull {
+                cow_settlement_client::instructions::Pull {
                     destination: pubkey(28),
                     amount: 700,
                 },
@@ -613,10 +596,10 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         }],
     }
     .into();
-    let finalize = settlement_client::instructions::FinalizeSettle {
+    let finalize = cow_settlement_client::instructions::FinalizeSettle {
         program_id: settlement,
         begin_ix_index: 0,
-        orders: &[settlement_client::instructions::FinalizedIntent {
+        orders: &[cow_settlement_client::instructions::FinalizedIntent {
             intent: &intent,
             mint: pubkey(30),
             amount: 1_234,
@@ -625,14 +608,6 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     .into();
     let tx = tx_from_instructions(solver, &[begin, finalize]);
 
-    let expected_uid = OrderUid([0x55; 32]);
-    let resolve_order = |pda: &Pubkey| {
-        (*pda == order_pda).then_some(ResolvedOrder {
-            order_uid: expected_uid,
-            order_fulfilled: true,
-        })
-    };
-
     let ctx = TxContext {
         slot: Slot(5),
         signature: signature(6),
@@ -640,7 +615,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         post_token_balances: vec![],
     };
     let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
-    let events = decode_settlement(&instructions, &ctx, resolve_order).expect("clean decode");
+    let events = decode_settlement(&instructions, &ctx).expect("clean decode");
 
     assert_eq!(
         events,
@@ -651,10 +626,9 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
             slot: Slot(5),
             instruction_index: 0,
             trades: vec![TradeDelta {
-                order_uid: expected_uid,
+                order_pda,
                 amount_withdrawn_delta: 1_000,
                 amount_received_delta: 1_234,
-                order_fulfilled: true,
             }],
         })]
     );
