@@ -9924,6 +9924,7 @@ dependencies = [
  "bytes",
  "clap",
  "configs",
+ "database",
  "derive_more 1.0.0",
  "futures",
  "humantime-serde",
