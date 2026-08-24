@@ -8,4 +8,6 @@ mod domain;
 mod infra;
 
 #[cfg(test)]
+mod test_db;
+#[cfg(test)]
 mod tests;
