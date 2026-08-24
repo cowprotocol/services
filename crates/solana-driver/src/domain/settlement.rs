@@ -137,8 +137,11 @@ impl Settlement {
 
         // BeginSettle and FinalizeSettle reference each other by index, so compute
         // their positions before pushing them.
-        let begin_ix_index = instructions.len() as u16;
-        let finalize_ix_index = (instructions.len() + 1 + self.solution.interactions.len()) as u16;
+        let begin_ix_index =
+            u16::try_from(instructions.len()).map_err(|_| Error::InstructionIndexOverflow)?;
+        let finalize_ix_index =
+            u16::try_from(instructions.len() + 1 + self.solution.interactions.len())
+                .map_err(|_| Error::InstructionIndexOverflow)?;
 
         instructions.push(
             BeginSettle {
@@ -270,6 +273,9 @@ pub enum Error {
     /// The transaction failed to sign.
     #[error("failed to sign transaction: {0}")]
     Sign(#[from] solana_sdk::signer::SignerError),
+    /// The instruction index does not fit in `u16`.
+    #[error("instruction index does not fit in u16")]
+    InstructionIndexOverflow,
 }
 
 #[cfg(test)]
