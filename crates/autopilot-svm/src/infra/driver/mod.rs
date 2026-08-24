@@ -1,7 +1,5 @@
 //! HTTP client for the Solana driver.
 
-#![expect(dead_code, reason = "consumed by the auction loop wiring")]
-
 pub mod dto;
 
 use {
