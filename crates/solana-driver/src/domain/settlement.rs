@@ -51,7 +51,9 @@ pub struct Settlement {
 impl Settlement {
     /// Build a settlement and validate its orders.
     ///
-    /// Each wire order PDA must match the PDA derived from its uid.
+    /// Each wire order PDA must match the PDA derived from its uid, and each
+    /// order must be filled within the same constraints as the EVM settlement
+    /// contract.
     pub fn new(
         program_id: Pubkey,
         auction_id: Id,
@@ -60,20 +62,7 @@ impl Settlement {
         cu_limit: u32,
         mut missing_buffers: Vec<Pubkey>,
     ) -> Result<Self, Error> {
-        // Reject orders whose wire PDA does not match the derived PDA.
-        for order in &orders {
-            let (derived_pda, _) = find_order_pda(&program_id, &Hash::new_from_array(order.uid.0));
-            if derived_pda != order.order_pda {
-                return Err(Error::OrderPdaMismatch(
-                    order.order_pda,
-                    derived_pda,
-                    order.uid,
-                ));
-            }
-        }
-        // Dedup the orders.
-        orders.sort_unstable();
-        orders.dedup();
+        validate_orders(&program_id, &mut orders, &solution)?;
         // Sort and dedup the missing buffers.
         missing_buffers.sort_unstable();
         missing_buffers.dedup();
@@ -209,6 +198,53 @@ struct ExecutedAmounts {
     buy: u64,
 }
 
+/// Validate the settlement's orders: reject mismatched PDAs, dedup, and check
+/// each order against the solution.
+fn validate_orders(
+    program_id: &Pubkey,
+    orders: &mut Vec<Order>,
+    solution: &Solution,
+) -> Result<(), Error> {
+    // Dedup the orders.
+    orders.sort_unstable();
+    orders.dedup();
+
+    // Validate each order against the solution.
+    for order in orders.iter() {
+        // Reject orders whose wire PDA does not match the derived PDA.
+        let (derived_pda, _) = find_order_pda(program_id, &Hash::new_from_array(order.uid.0));
+        if derived_pda != order.order_pda {
+            return Err(Error::OrderPdaMismatch(
+                order.order_pda,
+                derived_pda,
+                order.uid,
+            ));
+        }
+
+        let amounts = executed_amounts(order, solution)?;
+        let (filled, target) = match order.side {
+            Side::Sell => (amounts.sell, order.sell_amount),
+            Side::Buy => (amounts.buy, order.buy_amount),
+        };
+
+        // A non-partially-fillable order must be filled exactly.
+        if !order.partially_fillable && filled != target {
+            return Err(Error::NotExactlyFilled(order.uid));
+        }
+        // No order may be filled for more than its target.
+        if filled > target {
+            return Err(Error::Overfill(order.uid));
+        }
+        // The executed price must not be worse than the order's limit price.
+        if u128::from(amounts.buy) * u128::from(order.sell_amount)
+            < u128::from(amounts.sell) * u128::from(order.buy_amount)
+        {
+            return Err(Error::LimitPriceViolated(order.uid));
+        }
+    }
+    Ok(())
+}
+
 /// The total executed amounts for one order, summed across the trades that fill
 /// it.
 fn executed_amounts(order: &Order, solution: &Solution) -> Result<ExecutedAmounts, Error> {
@@ -265,6 +301,15 @@ pub enum Error {
     /// The sum of the executed amounts overflowed `u64`.
     #[error("executed amounts overflow u64")]
     ExecutedAmountOverflow,
+    /// The order is not partially fillable but was not filled exactly.
+    #[error("order {0} was not filled exactly")]
+    NotExactlyFilled(OrderUid),
+    /// The order was filled for more than its target amount.
+    #[error("order {0} was overfilled")]
+    Overfill(OrderUid),
+    /// The order's limit price was violated.
+    #[error("order {0} violated its limit price")]
+    LimitPriceViolated(OrderUid),
     /// The wire-provided order PDA does not match the derived PDA.
     #[error("order PDA {0} does not match the derived PDA {1} for uid {2}")]
     OrderPdaMismatch(Pubkey, Pubkey, OrderUid),
@@ -409,9 +454,8 @@ mod tests {
     #[test]
     fn rejects_a_solution_with_no_trades() {
         let program_id = pubkey(0xaa);
-        let payer = pubkey(0xbb);
         let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
-        let settlement = Settlement::new(
+        let err = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
@@ -419,12 +463,101 @@ mod tests {
             200_000,
             Vec::new(),
         )
+        .expect_err("a solution with no trades must be rejected");
+        assert!(matches!(err, Error::NoTradeForOrder(..)));
+    }
+
+    /// A non-partially-fillable order filled for less than its target is
+    /// rejected.
+    #[test]
+    fn rejects_a_non_partially_fillable_order_filled_below_target() {
+        let program_id = pubkey(0xaa);
+        // sell_amount: 1_000, buy_amount: 2_000, but only 500 sold / 1_000 bought.
+        let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        let err = Settlement::new(
+            program_id,
+            Id::new(7).unwrap(),
+            vec![order],
+            solution(vec![Trade {
+                order_uid: OrderUid([0x11; 32]),
+                executed_sell: 500,
+                executed_buy: 1_000,
+            }]),
+            200_000,
+            Vec::new(),
+        )
+        .expect_err("a non-partially-fillable order filled below target must be rejected");
+        assert!(matches!(err, Error::NotExactlyFilled(..)));
+    }
+
+    /// A partially-fillable order filled for less than its target is accepted.
+    #[test]
+    fn accepts_a_partially_fillable_order_filled_below_target() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let mut order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        order.partially_fillable = true;
+        let settlement = Settlement::new(
+            program_id,
+            Id::new(7).unwrap(),
+            vec![order],
+            solution(vec![Trade {
+                order_uid: OrderUid([0x11; 32]),
+                executed_sell: 500,
+                executed_buy: 1_000,
+            }]),
+            200_000,
+            Vec::new(),
+        )
         .unwrap();
 
-        let err = settlement
-            .instructions(payer)
-            .expect_err("a solution with no trades must be rejected");
-        assert!(matches!(err, Error::NoTradeForOrder(..)));
+        settlement.instructions(payer).unwrap();
+    }
+
+    /// An order filled for more than its target is rejected.
+    #[test]
+    fn rejects_an_overfilled_order() {
+        let program_id = pubkey(0xaa);
+        // sell_amount: 1_000, buy_amount: 2_000, but 1_200 sold / 2_400 bought.
+        let mut order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        order.partially_fillable = true;
+        let err = Settlement::new(
+            program_id,
+            Id::new(7).unwrap(),
+            vec![order],
+            solution(vec![Trade {
+                order_uid: OrderUid([0x11; 32]),
+                executed_sell: 1_200,
+                executed_buy: 2_400,
+            }]),
+            200_000,
+            Vec::new(),
+        )
+        .expect_err("an overfilled order must be rejected");
+        assert!(matches!(err, Error::Overfill(..)));
+    }
+
+    /// An order whose executed price is worse than its limit price is rejected.
+    #[test]
+    fn rejects_an_order_that_violates_its_limit_price() {
+        let program_id = pubkey(0xaa);
+        // sell_amount: 1_000, buy_amount: 2_000. Executed: 1_000 sold / 1_500
+        // bought. 1_500 * 1_000 < 1_000 * 2_000, so the limit price is violated.
+        let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        let err = Settlement::new(
+            program_id,
+            Id::new(7).unwrap(),
+            vec![order],
+            solution(vec![Trade {
+                order_uid: OrderUid([0x11; 32]),
+                executed_sell: 1_000,
+                executed_buy: 1_500,
+            }]),
+            200_000,
+            Vec::new(),
+        )
+        .expect_err("an order that violates its limit price must be rejected");
+        assert!(matches!(err, Error::LimitPriceViolated(..)));
     }
 
     /// More than one trade for the same order: the pull is the total
