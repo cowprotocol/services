@@ -7,8 +7,10 @@ use {
     sqlx::PgExecutor,
 };
 
-/// Append one event per order. Best effort by design: callers log failures,
-/// a lost event degrades the status endpoint, never the competition.
+/// Append one event per order, skipping orders whose latest event already
+/// carries the label, so a looping order marks each state once instead of
+/// once per cycle. Best effort by design: callers log failures, a lost event
+/// degrades the status endpoint, never the competition.
 pub async fn store(
     ex: impl PgExecutor<'_>,
     uids: impl IntoIterator<Item = IntentHash>,
@@ -20,8 +22,21 @@ pub async fn store(
     }
     sqlx::query(
         r#"
+WITH latest_events AS (
+    SELECT DISTINCT ON (order_uid) order_uid, label
+    FROM solana.order_events
+    WHERE order_uid = ANY($1)
+    ORDER BY order_uid, timestamp DESC
+),
+incoming AS (
+    SELECT t.order_uid, now() AS timestamp, $2 AS label
+    FROM unnest($1::bytea[]) AS t(order_uid)
+)
 INSERT INTO solana.order_events (order_uid, timestamp, label)
-SELECT uid, now(), $2 FROM UNNEST($1::bytea[]) AS uid
+SELECT i.order_uid, i.timestamp, i.label
+FROM incoming i
+LEFT JOIN latest_events le ON le.order_uid = i.order_uid
+WHERE le.label IS DISTINCT FROM i.label
         "#,
     )
     .bind(uids)
@@ -53,6 +68,10 @@ mod tests {
         )
         .await
         .unwrap();
+        // A repeated label on the same order is not appended again.
+        store(&pool, [IntentHash([0x11; 32])], OrderEventLabel::Ready)
+            .await
+            .unwrap();
         store(&pool, [IntentHash([0x11; 32])], OrderEventLabel::Executing)
             .await
             .unwrap();
