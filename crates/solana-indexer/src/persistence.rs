@@ -129,7 +129,7 @@ ON CONFLICT (tx_signature) DO NOTHING
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::solana.OrderKind, $11, $12, now(), $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13)
 ON CONFLICT (uid) DO NOTHING
             "#,
         )
@@ -143,8 +143,8 @@ ON CONFLICT (uid) DO NOTHING
         .bind(BigDecimal::from(order.buy_amount))
         .bind(i64::from(order.valid_to))
         .bind(match order.kind {
-            OrderKind::Sell => "sell",
-            OrderKind::Buy => "buy",
+            OrderKind::Sell => database::solana::OrderKind::Sell,
+            OrderKind::Buy => database::solana::OrderKind::Buy,
         })
         .bind(order.partially_fillable)
         .bind(order.app_data.to_vec())
@@ -330,7 +330,7 @@ mod tests {
         sell_amount: i64,
         buy_amount: i64,
         valid_to: i64,
-        kind: &'static str,
+        kind: database::solana::OrderKind,
         order_pda: [u8; 32],
     }
 
@@ -342,7 +342,7 @@ mod tests {
                 sell_amount: 1_000,
                 buy_amount: 2_000,
                 valid_to: 42,
-                kind: "sell",
+                kind: database::solana::OrderKind::Sell,
                 order_pda: uid,
             }
         }
@@ -353,7 +353,7 @@ mod tests {
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6::solana.OrderKind, false, $2, now(), $7)
+VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
                 "#,
             )
             .bind(self.uid)

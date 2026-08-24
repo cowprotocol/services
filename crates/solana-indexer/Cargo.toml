@@ -21,6 +21,7 @@ bigdecimal = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
 configs = { workspace = true }
+database = { workspace = true }
 derive_more = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
