@@ -61,6 +61,10 @@ ORDER BY o.uid
 
 /// Latest slot the indexer fully processed. `None` before the indexer's first
 /// write. `solana.indexer_state` is a single-row table.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "consumed by the freshness gating")
+)]
 pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
     const QUERY: &str = r#"SELECT slot FROM solana.indexer_state"#;
     sqlx::query_scalar(QUERY)
@@ -219,7 +223,7 @@ mod tests {
         super::{last_indexed_slot, open_orders},
         bigdecimal::BigDecimal,
         database::byte_array::ByteArray,
-        sqlx::{PgPool, PgTransaction},
+        sqlx::PgTransaction,
     };
 
     fn conversion_row() -> super::OrderRow {
@@ -315,7 +319,7 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_open_orders_applies_the_solvability_predicates() {
-        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let pool = crate::test_db::pool().await;
         let mut tx = pool.begin().await.unwrap();
 
         for table in ["trades", "order_pda", "orders"] {
@@ -362,7 +366,7 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_last_indexed_slot_roundtrip() {
-        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let pool = crate::test_db::pool().await;
         let mut tx = pool.begin().await.unwrap();
 
         sqlx::query(r#"DELETE FROM solana.indexer_state"#)

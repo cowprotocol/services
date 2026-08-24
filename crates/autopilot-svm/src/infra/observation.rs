@@ -151,7 +151,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
     async fn solana_db_settlement_notify_closes_the_window_as_landed() {
-        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
         let windows = SettlementWindows::new(pool.clone());
@@ -187,7 +187,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
     async fn solana_db_expiry_times_out_only_past_deadlines() {
-        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
         let windows = SettlementWindows::new(pool.clone());

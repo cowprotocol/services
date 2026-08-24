@@ -99,7 +99,6 @@ mod tests {
         super::{ListenSession, NotifyHandler},
         anyhow::Result,
         async_trait::async_trait,
-        sqlx::PgPool,
         std::{
             sync::{Arc, Mutex},
             time::Duration,
@@ -150,7 +149,7 @@ mod tests {
     #[ignore = "needs a local postgres"]
     async fn postgres_delivers_notify_fired_during_seed() {
         const CHANNEL: &str = "autopilot_svm_listen_test";
-        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let pool = crate::test_db::pool().await;
         let log: Log = Arc::default();
         let (started_tx, started_rx) = oneshot::channel();
         let (gate_tx, gate_rx) = oneshot::channel();

@@ -119,7 +119,7 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_mock_cycle_dispatches_the_settlement() {
-    let pool = PgPool::connect("postgresql://").await.unwrap();
+    let pool = crate::test_db::pool().await;
     let uid = [0x11; 32];
     let tip = 500_u64;
     seed_open_order(&pool, uid, i64::try_from(tip).unwrap()).await;
