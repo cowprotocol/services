@@ -14,6 +14,7 @@ pub(crate) async fn wipe(pool: &PgPool) {
         "solana.settlements",
         "solana.order_pda",
         "solana.orders",
+        "solana.order_events",
         "solana.dead_letter",
         "solana.indexer_state",
     ] {
