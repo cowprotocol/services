@@ -153,6 +153,7 @@ fn build_api_state(db: &PgPool, network: &NetworkConfig) -> Arc<AppState> {
     Arc::new(AppState {
         db: db.clone(),
         network: network.name.clone(),
+        factories: network.factories.iter().map(|f| f.address).collect(),
     })
 }
 
