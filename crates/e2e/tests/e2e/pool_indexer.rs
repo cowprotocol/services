@@ -1,7 +1,5 @@
-//! End-to-end check that the driver consumes pool data from `pool-indexer`
-//! when `pool-indexer-url` is set. Pre-seeds the indexer checkpoint so the
-//! subgraph_seeder bootstrap is skipped (Anvil has no subgraph); only the
-//! live-indexing and HTTP-serving paths are exercised.
+//! End-to-end tests for `pool-indexer`: on-chain cold-seed and catch-up, the
+//! HTTP API, and the driver consuming pool data from it.
 
 use {
     alloy::{
@@ -139,9 +137,6 @@ const POOL_INDEXER_DB_URL: &str = "postgresql:///pool_indexer";
 // sqrt(1) * 2^96 — valid starting price
 const INITIAL_SQRT_PRICE: u128 = 1u128 << 96;
 
-// Never queried — the pre-seeded checkpoint short-circuits the seeder.
-const PLACEHOLDER_SUBGRAPH_URL: &str = "http://127.0.0.1:1/never-queried";
-
 /// Typed shape of `GET /api/v1/{network}/uniswap/v3/pools`.
 #[derive(Deserialize)]
 struct PoolsListResponse {
@@ -200,12 +195,13 @@ fn pool_indexer_config(factory: Address, metrics_port: u16) -> Configuration {
             name: NetworkName::new("mainnet"),
             chain_id: 1,
             rpc_url: "http://127.0.0.1:8545".parse().unwrap(),
-            factories: vec![FactoryConfig { address: factory }],
+            factories: vec![FactoryConfig {
+                address: factory,
+                deploy_block: 0,
+            }],
             chunk_size: 1000,
             poll_interval_secs: 1,
             use_latest: true,
-            subgraph_url: PLACEHOLDER_SUBGRAPH_URL.parse().unwrap(),
-            seed_block: None,
             fetch_concurrency: 8,
             prefetch_concurrency: 50,
         },
@@ -658,17 +654,16 @@ async fn local_node_pool_indexer_bootstrap_idempotent() {
     run_test(bootstrap_idempotent).await;
 }
 
-/// `--bootstrap-only` on an already-seeded DB must be a fast no-op: detect the
-/// existing checkpoint, skip the (here unreachable) subgraph seeder, and return
-/// without binding any ports — mirroring a re-run of the bootstrap
-/// initContainer on a pod restart.
+/// `--bootstrap-only` on an already-caught-up DB must be a fast no-op: the
+/// catch-up loop sees the checkpoint is already at the head and returns without
+/// binding any ports, like a bootstrap initContainer re-run on a pod restart.
 async fn bootstrap_idempotent(web3: Web3) {
     let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
-    // A pre-seeded checkpoint marks the DB as already bootstrapped. No on-chain
-    // factory is needed: bootstrap reads the checkpoint and returns before any
-    // seeding or catch-up. The RPC is only used for the chain_id sanity check.
+    // A checkpoint at the head means the DB is already caught up, so the
+    // catch-up loop finds nothing to do. No on-chain factory is needed; the RPC
+    // only serves the chain_id check and reading the finalized head.
     let factory = Address::repeat_byte(0x11);
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory, head).await;
@@ -692,4 +687,45 @@ async fn bootstrap_idempotent(web3: Web3) {
         head.cast_signed(),
         "bootstrap mutated an already-seeded checkpoint"
     );
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_pool_indexer_onchain_cold_seed() {
+    run_test(onchain_cold_seed).await;
+}
+
+/// Cold bootstrap with no checkpoint: the indexer discovers the pool and
+/// reconstructs its state by replaying on-chain events from the factory's
+/// deploy block.
+async fn onchain_cold_seed(web3: Web3) {
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
+    clear_pool_indexer_tables(&db).await;
+
+    let (factory, pool_addr) = deploy_univ3(&web3).await;
+    let factory_addr = *factory.address();
+    let head = web3.provider.get_block_number().await.unwrap();
+
+    // No seed_checkpoint: bootstrap must cold-seed on-chain (deploy_block = 0).
+    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
+        wait_for_indexer(head, 1).await;
+
+        // Pool discovered + state rebuilt from the Initialize (sqrt_price) and
+        // Mint (liquidity) events alone; no pre-seeded checkpoint.
+        let (count, sqrt_price, _tick, liquidity) = snapshot_pool_state(&db, pool_addr).await;
+        assert_eq!(
+            count, 1,
+            "the pool should be discovered by the on-chain scan"
+        );
+        assert_eq!(
+            sqrt_price,
+            INITIAL_SQRT_PRICE.to_string(),
+            "sqrt_price reconstructed from the Initialize event"
+        );
+        assert_eq!(
+            liquidity, "1000000",
+            "liquidity reconstructed from the Mint event"
+        );
+    })
+    .await;
 }
