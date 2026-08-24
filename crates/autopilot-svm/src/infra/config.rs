@@ -102,8 +102,7 @@ pub struct Chain {
     pub wrapped_native_mint: Pubkey,
 }
 
-/// Competition parameters. The `NonZero` types reject a `0` at config load:
-/// a zero winner count would settle nothing.
+/// Competition parameters.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct Competition {
