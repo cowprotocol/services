@@ -8,7 +8,7 @@ use {
             competition::DriverCompetition,
             driver::{Driver, dto},
             executor::DriverExecutor,
-            observation::SettlementTracker,
+            observation::SettlementWindows,
             observer::LogObserver,
             provider::DbAuctionProvider,
         },
@@ -119,7 +119,7 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_mock_cycle_dispatches_the_settlement() {
-    let pool = PgPool::connect("postgresql://").await.unwrap();
+    let pool = crate::test_db::pool().await;
     let uid = [0x11; 32];
     let tip = 500_u64;
     seed_open_order(&pool, uid, i64::try_from(tip).unwrap()).await;
@@ -158,7 +158,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }
 
-    let tracker = SettlementTracker::new(pool.clone());
+    let windows = SettlementWindows::new(pool.clone());
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
         Box::new(DbAuctionProvider::new(pool.clone())),
@@ -167,8 +167,8 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             Duration::from_secs(6),
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
-        Box::new(DriverExecutor::new(vec![driver], tracker.clone(), 25)),
-        Box::new(LogObserver::new(tracker.clone())),
+        Box::new(DriverExecutor::new(vec![driver], windows.clone(), 25)),
+        Box::new(LogObserver::new(windows.clone())),
     );
     auction_loop.run_cycle().await;
 
