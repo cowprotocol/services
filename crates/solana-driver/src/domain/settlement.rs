@@ -55,7 +55,7 @@ impl Settlement {
     pub fn new(
         program_id: Pubkey,
         auction_id: Id,
-        orders: Vec<Order>,
+        mut orders: Vec<Order>,
         solution: Solution,
         cu_limit: u32,
         mut missing_buffers: Vec<Pubkey>,
@@ -71,6 +71,9 @@ impl Settlement {
                 ));
             }
         }
+        // Dedup the orders.
+        orders.sort_unstable();
+        orders.dedup();
         // Sort and dedup the missing buffers.
         missing_buffers.sort_unstable();
         missing_buffers.dedup();
@@ -380,6 +383,29 @@ mod tests {
         )
         .expect_err("a mismatched order PDA must be rejected");
         assert!(matches!(err, Error::OrderPdaMismatch(..)));
+    }
+
+    /// Duplicate orders (same uid) are deduped, keeping the first occurrence.
+    #[test]
+    fn duplicate_orders_are_deduped() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
+        let settlement = Settlement::new(
+            program_id,
+            Id::new(7).unwrap(),
+            vec![order.clone(), order],
+            solution(vec![single_trade()]),
+            200_000,
+            Vec::new(),
+        )
+        .unwrap();
+
+        let instructions = settlement.instructions(payer).unwrap();
+        let begin = &instructions[1];
+        let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
+        let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
+        assert_eq!(begin_input.orders.iter().count(), 1);
     }
 
     #[test]
