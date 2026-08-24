@@ -94,7 +94,6 @@ async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
 
 pub enum LiquidityProvider {
     UniswapV2,
-    UniswapV3 { subgraph: Url },
     ZeroEx { api_port: u16 },
 }
 
@@ -120,13 +119,6 @@ http-timeout = "10s"
 "#,
                 format!("http://0.0.0.0:{}", api_port),
                 "no-api-key".to_string()
-            ),
-            Self::UniswapV3 { subgraph } => format!(
-                r#"
-[[liquidity.uniswap-v3]]
-preset = "uniswap-v3"
-indexer-config = {{ subgraph = {{ url = "{subgraph}" }} }}
-"#
             ),
         }
     }
