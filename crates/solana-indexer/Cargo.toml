@@ -21,6 +21,7 @@ bigdecimal = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
 configs = { workspace = true }
+cow-settlement-interface = "0.2.0"
 cow-solana-rpc = { workspace = true }
 derive_more = { workspace = true }
 futures = { workspace = true }
@@ -29,11 +30,6 @@ observe = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde-ext = { workspace = true }
-settlement-interface = {
-  package = "settlement-interface",
-  git = "https://github.com/cowprotocol/solana-programs",
-  rev = "4d4fc46f594e0159246afaf148f0af2a463d0095"
-}
 solana-sdk = { workspace = true }
 spl-token-2022-interface = { workspace = true }
 spl-token-interface = { workspace = true }
@@ -48,13 +44,9 @@ yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 
 [dev-dependencies]
+cow-settlement-client = "0.2.0"
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
 serde_json = { workspace = true }
-settlement-client = {
-  package = "settlement-client",
-  git = "https://github.com/cowprotocol/solana-programs",
-  rev = "4d4fc46f594e0159246afaf148f0af2a463d0095"
-}
 
 [lints]
 workspace = true

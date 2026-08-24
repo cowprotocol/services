@@ -26,8 +26,7 @@ use {
         },
     },
     bytes::Bytes,
-    cow_solana_rpc::SolanaRPC,
-    settlement_interface::{
+    cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
         data::intent::{EncodedOrderIntent, OrderKind as InterfaceOrderKind},
@@ -39,6 +38,7 @@ use {
         },
         recover_discriminator,
     },
+    cow_solana_rpc::SolanaRPC,
     solana_sdk::{account::Account, pubkey::Pubkey},
     std::collections::{BTreeMap, HashMap},
     tokio::sync::mpsc::Receiver,
@@ -369,11 +369,12 @@ fn decode_settlement(
             SettlementInstruction::BeginSettle | SettlementInstruction::FinalizeSettle => {
                 Ok(Vec::new())
             }
-            // No domain event: `Initialize` bootstraps the program state.
+            // No domain event: `Initialize` bootstraps the program state and
+            // `ReclaimBuffer` recovers rent without touching order state.
             // TODO: map `ReclaimOrder` to `OrderClosed`.
-            SettlementInstruction::Initialize | SettlementInstruction::ReclaimOrder => {
-                Ok(Vec::new())
-            }
+            SettlementInstruction::Initialize
+            | SettlementInstruction::ReclaimOrder
+            | SettlementInstruction::ReclaimBuffer => Ok(Vec::new()),
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
@@ -409,8 +410,8 @@ fn decode_order_created(
     instruction: &ResolvedInstruction,
     ctx: &TxContext,
 ) -> Result<SettlementEvent, DecodeError> {
-    let mut accounts = instruction_account_keys(instruction, &ctx.account_keys)?;
-    let input = CreateOrderInput::parse(&instruction.data, &mut accounts)
+    let accounts = instruction_account_keys(instruction, &ctx.account_keys)?;
+    let input = CreateOrderInput::parse(&instruction.data, &accounts)
         .map_err(|_| DecodeError::SchemaMismatch)?;
     let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
         .map_err(|_| DecodeError::SchemaMismatch)?;
@@ -434,20 +435,21 @@ fn decode_order_created(
     })))
 }
 
-/// `CreateBuffer` -> one `BufferCreated` per created buffer. The parser groups
-/// the trailing accounts into `[buffer_pda, mint]` pairs, and the event's
-/// token is each pair's mint.
+/// `CreateBuffer` -> one `BufferCreated` per created buffer. The parser
+/// exposes the created buffers as typed accounts, and the event's token is
+/// each buffer's mint.
 fn decode_buffers_created(
     instruction: &ResolvedInstruction,
     account_keys: &[Pubkey],
 ) -> Result<Vec<SettlementEvent>, DecodeError> {
-    let mut accounts = instruction_account_keys(instruction, account_keys)?;
-    let input = CreateBufferInput::parse(&instruction.data, &mut accounts)
+    let accounts = instruction_account_keys(instruction, account_keys)?;
+    let input = CreateBufferInput::parse(&instruction.data, &accounts)
         .map_err(|_| DecodeError::SchemaMismatch)?;
     Ok(input
-        .buffers
-        .iter()
-        .map(|pair| SettlementEvent::BufferCreated { token: pair[1] })
+        .buffers()
+        .map(|buffer| SettlementEvent::BufferCreated {
+            token: *buffer.mint,
+        })
         .collect())
 }
 
@@ -476,7 +478,7 @@ fn decode_settlements_finalized(
         let Ok((SettlementInstruction::BeginSettle, _)) = recover_discriminator(&begin.data) else {
             continue;
         };
-        let mut begin_accounts = match instruction_account_keys(begin, &ctx.account_keys) {
+        let begin_accounts = match instruction_account_keys(begin, &ctx.account_keys) {
             Ok(accounts) => accounts,
             Err(err) => {
                 *decode_failed = true;
@@ -488,7 +490,7 @@ fn decode_settlements_finalized(
                 continue;
             }
         };
-        let begin_input = match BeginSettleInput::parse(&begin.data, &mut begin_accounts) {
+        let begin_input = match BeginSettleInput::parse(&begin.data, &begin_accounts) {
             Ok(input) => input,
             Err(err) => {
                 *decode_failed = true;
@@ -517,7 +519,7 @@ fn decode_settlements_finalized(
             );
             continue;
         };
-        let mut finalize_accounts = match instruction_account_keys(finalize, &ctx.account_keys) {
+        let finalize_accounts = match instruction_account_keys(finalize, &ctx.account_keys) {
             Ok(accounts) => accounts,
             Err(err) => {
                 *decode_failed = true;
@@ -529,19 +531,18 @@ fn decode_settlements_finalized(
                 continue;
             }
         };
-        let finalize_input =
-            match FinalizeSettleInput::parse(&finalize.data, &mut finalize_accounts) {
-                Ok(input) => input,
-                Err(err) => {
-                    *decode_failed = true;
-                    tracing::warn!(
-                                instruction_index = finalize.instruction_index,
-                        %err,
-                        "FinalizeSettle did not match the expected layout, skipping"
-                    );
-                    continue;
-                }
-            };
+        let finalize_input = match FinalizeSettleInput::parse(&finalize.data, &finalize_accounts) {
+            Ok(input) => input,
+            Err(err) => {
+                *decode_failed = true;
+                tracing::warn!(
+                            instruction_index = finalize.instruction_index,
+                    %err,
+                    "FinalizeSettle did not match the expected layout, skipping"
+                );
+                continue;
+            }
+        };
         // Orders and finalize pushes are positionally aligned: `BeginSettle`
         // enforces exactly one push per order, both sorted by order PDA, so
         // order `i` is paid by push `i`. A count mismatch breaks that
