@@ -425,6 +425,7 @@ mod tests {
         let program_id = pubkey(0xaa);
         let mut order = order(&program_id, 0x11, 0x33, 0x44, 0x55, 0x66, 1_000, 2_000);
         order.order_pda = pubkey(0xff);
+        let derived_pda = find_order_pda(&program_id, &Hash::new_from_array(order.uid.0)).0;
 
         let err = Settlement::new(
             program_id,
@@ -435,7 +436,10 @@ mod tests {
             Vec::new(),
         )
         .expect_err("a mismatched order PDA must be rejected");
-        assert!(matches!(err, Error::OrderPdaMismatch(..)));
+        assert_eq!(
+            err,
+            Error::OrderPdaMismatch(pubkey(0xff), derived_pda, OrderUid([0x11; 32]))
+        );
     }
 
     /// Duplicate orders (same uid) are deduped, keeping the first occurrence.
@@ -474,7 +478,7 @@ mod tests {
             Vec::new(),
         )
         .expect_err("a solution with no trades must be rejected");
-        assert!(matches!(err, Error::NoTradeForOrder(..)));
+        assert_eq!(err, Error::NoTradeForOrder(OrderUid([0x11; 32])));
     }
 
     /// A trade whose order uid matches no order in the settlement is rejected.
@@ -519,7 +523,7 @@ mod tests {
             Vec::new(),
         )
         .expect_err("a non-partially-fillable order filled below target must be rejected");
-        assert!(matches!(err, Error::NotExactlyFilled(..)));
+        assert_eq!(err, Error::NotExactlyFilled(OrderUid([0x11; 32])));
     }
 
     /// A partially-fillable order filled for less than its target is accepted.
@@ -566,7 +570,7 @@ mod tests {
             Vec::new(),
         )
         .expect_err("an overfilled order must be rejected");
-        assert!(matches!(err, Error::Overfill(..)));
+        assert_eq!(err, Error::Overfill(OrderUid([0x11; 32])));
     }
 
     /// An order whose executed price is worse than its limit price is rejected.
@@ -589,7 +593,7 @@ mod tests {
             Vec::new(),
         )
         .expect_err("an order that violates its limit price must be rejected");
-        assert!(matches!(err, Error::LimitPriceViolated(..)));
+        assert_eq!(err, Error::LimitPriceViolated(OrderUid([0x11; 32])));
     }
 
     /// More than one trade for the same order: the pull is the total
