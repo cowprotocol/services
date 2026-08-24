@@ -1,6 +1,6 @@
-//! Settlement observation: tracks dispatched settlements as open windows in
-//! `solana.settlement_executions` and resolves them against the
-//! indexer-written `solana.settlements` rows.
+//! Settlement windows: dispatched settlements tracked in
+//! `solana.settlement_executions` and resolved against the indexer-written
+//! `solana.settlements` rows.
 //!
 //! The executor opens a window per dispatched settlement. The indexer's
 //! insert into `solana.settlements` fires the `solana_settlement_finalized`
@@ -18,18 +18,22 @@ use {
     sqlx::PgPool,
 };
 
-/// Opens and expires settlement-execution windows.
+/// The settlement-execution windows in `solana.settlement_executions`: the
+/// executor opens one per dispatched settlement, the competition cycle
+/// expires the ones past their deadline, and the
+/// `solana_settlement_finalized` notifications close the ones the indexer
+/// saw land.
 ///
-/// `solana.settlement_executions.outcome` records what the indexer observed
-/// on chain, never a driver's report, which is why a landing observed after
-/// the deadline overwrites a timeout. The schema also allows `rejected`,
-/// unused until typed `/settle` errors are consumed.
+/// `outcome` records what the indexer observed on chain, never a driver's
+/// report, which is why a landing observed after the deadline overwrites a
+/// timeout. The schema also allows `rejected`, unused until typed `/settle`
+/// errors are consumed.
 #[derive(Clone)]
-pub struct SettlementTracker {
+pub struct SettlementWindows {
     pool: PgPool,
 }
 
-impl SettlementTracker {
+impl SettlementWindows {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
@@ -37,7 +41,7 @@ impl SettlementTracker {
     /// Open a window for a dispatched settlement. `solution_uid` is the
     /// winner's driver-local solution id until competition persistence
     /// allocates uids.
-    pub async fn open_dispatched_settlement_window(
+    pub async fn open_dispatched(
         &self,
         auction_id: i64,
         solver: Pubkey,
@@ -60,33 +64,16 @@ impl SettlementTracker {
     /// timed out, logging each. Driven by the competition cycle, so on a
     /// chain with no active auctions a timeout surfaces with the next
     /// competition, not at its deadline slot.
-    pub async fn close_expired_windows_as_timeout(&self, slot: u64) -> Result<()> {
+    pub async fn expire_past_deadline(&self, slot: u64) -> Result<()> {
         let slot = to_db_integer(slot);
         for auction_id in db::expire_settlement_windows(&self.pool, slot).await? {
             tracing::error!(auction_id, slot, "settlement missed its deadline");
         }
         Ok(())
     }
-}
-
-/// Slots and solution ids stay far below `i64::MAX`, the column type.
-fn to_db_integer(value: u64) -> i64 {
-    i64::try_from(value).expect("value exceeds i64")
-}
-
-/// Closes windows against the settlements the indexer records, driven by the
-/// `solana_settlement_finalized` notifications.
-pub struct SettlementObservation {
-    pool: PgPool,
-}
-
-impl SettlementObservation {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
-    }
 
     /// Close the auction's windows against its observed settlements.
-    async fn resolve(&self, auction_id: i64) -> Result<()> {
+    async fn close_landed(&self, auction_id: i64) -> Result<()> {
         for landed in db::close_landed_windows(&self.pool, auction_id).await? {
             tracing::info!(
                 auction_id,
@@ -100,13 +87,18 @@ impl SettlementObservation {
     }
 }
 
+/// Slots and solution ids stay far below `i64::MAX`, the column type.
+fn to_db_integer(value: u64) -> i64 {
+    i64::try_from(value).expect("value exceeds i64")
+}
+
 #[async_trait]
-impl NotifyHandler for SettlementObservation {
+impl NotifyHandler for SettlementWindows {
     /// Re-check every open window: a NOTIFY missed while the connection was
     /// down (or while the autopilot was not running) is recovered here.
     async fn seed(&mut self) -> Result<()> {
         for auction_id in db::open_window_auction_ids(&self.pool).await? {
-            self.resolve(auction_id).await?;
+            self.close_landed(auction_id).await?;
         }
         Ok(())
     }
@@ -116,14 +108,14 @@ impl NotifyHandler for SettlementObservation {
             tracing::warn!(payload, "unparsable settlement notify payload");
             return Ok(());
         };
-        self.resolve(auction_id).await
+        self.close_landed(auction_id).await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use {
-        super::{SettlementObservation, SettlementTracker},
+        super::SettlementWindows,
         crate::infra::listen::ListenSession,
         chain_types::solana::Pubkey,
         sqlx::PgPool,
@@ -162,17 +154,14 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = PgPool::connect("postgresql://").await.unwrap();
         crate::test_db::wipe(&pool).await;
 
-        let tracker = SettlementTracker::new(pool.clone());
-        tracker
-            .open_dispatched_settlement_window(4242, Pubkey([7; 32]), 1, 90, 100)
+        let windows = SettlementWindows::new(pool.clone());
+        windows
+            .open_dispatched(4242, Pubkey([7; 32]), 1, 90, 100)
             .await
             .unwrap();
 
-        let task = ListenSession::spawn(
-            pool.clone(),
-            "solana_settlement_finalized",
-            SettlementObservation::new(pool.clone()),
-        );
+        let task =
+            ListenSession::spawn(pool.clone(), "solana_settlement_finalized", windows.clone());
 
         insert_settlement(&pool, 4242).await;
 
@@ -201,17 +190,17 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = PgPool::connect("postgresql://").await.unwrap();
         crate::test_db::wipe(&pool).await;
 
-        let tracker = SettlementTracker::new(pool.clone());
-        tracker
-            .open_dispatched_settlement_window(1, Pubkey([7; 32]), 1, 90, 100)
+        let windows = SettlementWindows::new(pool.clone());
+        windows
+            .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
             .await
             .unwrap();
-        tracker
-            .open_dispatched_settlement_window(2, Pubkey([7; 32]), 1, 90, 200)
+        windows
+            .open_dispatched(2, Pubkey([7; 32]), 1, 90, 200)
             .await
             .unwrap();
 
-        tracker.close_expired_windows_as_timeout(150).await.unwrap();
+        windows.expire_past_deadline(150).await.unwrap();
         assert_eq!(outcome(&pool, 1).await.as_deref(), Some("timeout"));
         assert_eq!(outcome(&pool, 2).await, None);
 
