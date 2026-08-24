@@ -141,16 +141,15 @@ fn exp(mut x: I256) -> Result<I256, Error> {
         return Ok((*ONE_18 * *ONE_18) / exp(-x)?);
     }
 
-    let first_an;
-    if x >= constant_x_18(0) {
+    let first_an = if x >= constant_x_18(0) {
         x -= constant_x_18(0);
-        first_an = constant_a_18(0);
+        constant_a_18(0)
     } else if x >= constant_x_18(1) {
         x -= constant_x_18(1);
-        first_an = constant_a_18(1);
+        constant_a_18(1)
     } else {
-        first_an = I256::ONE;
-    }
+        I256::ONE
+    };
 
     x *= I256::try_from(100).expect("100 fits in I256");
 
