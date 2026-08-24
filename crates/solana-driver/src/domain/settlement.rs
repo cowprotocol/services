@@ -1,7 +1,7 @@
 //! Settlement encoding.
 
 use {
-    super::{Order, auction::Id, order_uid::OrderUid, solution::Solution},
+    super::{Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
     cow_settlement_client::instructions::{
         BeginSettle,
         CreateBuffers,
@@ -11,7 +11,7 @@ use {
         Pull,
     },
     cow_settlement_interface::{
-        data::intent::OrderIntent,
+        data::intent::{OrderIntent, OrderKind},
         pda::{buffer::find_buffer_pda, order::find_order_pda},
     },
     solana_compute_budget_interface::ComputeBudgetInstruction,
@@ -185,8 +185,6 @@ impl Settlement {
 
 impl From<&Order> for OrderIntent {
     fn from(order: &Order) -> Self {
-        use {super::Side, cow_settlement_interface::data::intent::OrderKind};
-
         OrderIntent {
             owner: order.owner,
             buy_token_account: order.buy_token_account,
