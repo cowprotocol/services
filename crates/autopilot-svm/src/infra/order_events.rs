@@ -29,7 +29,7 @@ WITH latest_events AS (
     ORDER BY order_uid, timestamp DESC
 ),
 incoming AS (
-    SELECT t.order_uid, now() AS timestamp, $2 AS label
+    SELECT t.order_uid, now() AS timestamp, $2::solana.OrderEventLabel AS label
     FROM unnest($1::bytea[]) AS t(order_uid)
 )
 INSERT INTO solana.order_events (order_uid, timestamp, label)
@@ -40,11 +40,27 @@ WHERE le.label IS DISTINCT FROM i.label
         "#,
     )
     .bind(uids)
-    .bind(label)
+    .bind(label_str(label))
     .execute(ex)
     .await
     .context("insert solana.order_events")?;
     Ok(())
+}
+
+/// The wire value of a label, bound as text and cast in SQL: sqlx resolves a
+/// derived enum's type by unqualified name, which is ambiguous on a database
+/// holding both the base OrderEventLabel and the solana one.
+fn label_str(label: OrderEventLabel) -> &'static str {
+    match label {
+        OrderEventLabel::Created => "created",
+        OrderEventLabel::Ready => "ready",
+        OrderEventLabel::Filtered => "filtered",
+        OrderEventLabel::Invalid => "invalid",
+        OrderEventLabel::Executing => "executing",
+        OrderEventLabel::Considered => "considered",
+        OrderEventLabel::Traded => "traded",
+        OrderEventLabel::Cancelled => "cancelled",
+    }
 }
 
 #[cfg(test)]
