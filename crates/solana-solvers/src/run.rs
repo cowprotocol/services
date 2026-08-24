@@ -34,7 +34,14 @@ pub async fn start(args: impl IntoIterator<Item = String>) {
                 addr: args.addr,
                 dex: Arc::new(dex::Dex::Jupiter(jupiter)),
             };
-            if let Err(err) = api.serve(observe::shutdown::shutdown_signal()).await {
+            let (listener, _addr) = api
+                .bind()
+                .await
+                .unwrap_or_else(|err| panic!("bind solana-solvers: {err}"));
+            if let Err(err) = api
+                .serve(listener, observe::shutdown::shutdown_signal())
+                .await
+            {
                 tracing::error!(?err, "server error");
             }
         }

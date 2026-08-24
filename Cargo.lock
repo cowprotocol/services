@@ -1497,10 +1497,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
  "bigdecimal",
  "chain-types",
+ "chrono",
  "const-hex",
+ "cow-solana-rpc",
  "database",
+ "futures",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
@@ -1510,6 +1514,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "winner-selection",
 ]
 
 [[package]]
@@ -8389,6 +8394,7 @@ dependencies = [
  "serde",
  "serde_with",
  "solana-sdk",
+ "url",
 ]
 
 [[package]]
@@ -9154,8 +9160,10 @@ name = "solana-driver"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "clap",
  "configs",
+ "const-hex",
  "cow-solana-rpc",
  "futures",
  "humantime-serde",
@@ -9163,7 +9171,12 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serde-ext",
+ "serde_json",
+ "serde_with",
  "solana-sdk",
+ "solana-solvers",
+ "solana-testlib",
+ "thiserror 1.0.69",
  "tikv-jemallocator",
  "tokio",
  "tokio-util",
@@ -9546,6 +9559,29 @@ dependencies = [
  "solana-sha256-hasher",
  "solana-signature",
  "solana-signer",
+]
+
+[[package]]
+name = "solana-orderbook"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "clap",
+ "configs",
+ "futures",
+ "observe",
+ "reqwest 0.13.4",
+ "serde",
+ "sqlx",
+ "tikv-jemallocator",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tower 0.5.3",
+ "tower-http",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -10023,6 +10059,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "chrono",
  "clap",
  "const-hex",
  "futures",
@@ -10163,6 +10200,14 @@ checksum = "17358d1e9a13e5b9c2264d301102126cf11a47fd394cdf3dec174fe7bc96e1de"
 dependencies = [
  "solana-address 2.6.1",
  "solana-sdk-ids",
+]
+
+[[package]]
+name = "solana-testlib"
+version = "0.1.0"
+dependencies = [
+ "solana-sdk",
+ "tempfile",
 ]
 
 [[package]]

@@ -102,7 +102,7 @@ ORDER BY slot, tx_signature
         .context("read solana.settlements by auction")
 }
 
-/// Cut an auction from the orders currently open for solving.
+/// Cut an auction from the open orders.
 pub async fn cut(ex: impl PgExecutor<'_>, id: i64, now_unix: i64) -> Result<Auction> {
     let orders = orders_from_rows(open_orders(ex, now_unix).await?);
     Ok(Auction { id, orders })
