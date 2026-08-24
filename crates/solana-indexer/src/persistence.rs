@@ -129,7 +129,7 @@ ON CONFLICT (tx_signature) DO NOTHING
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::OrderKind, $11, $12, now(), $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::solana.OrderKind, $11, $12, now(), $13)
 ON CONFLICT (uid) DO NOTHING
             "#,
         )
@@ -353,7 +353,7 @@ mod tests {
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6::OrderKind, false, $2, now(), $7)
+VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6::solana.OrderKind, false, $2, now(), $7)
                 "#,
             )
             .bind(self.uid)
