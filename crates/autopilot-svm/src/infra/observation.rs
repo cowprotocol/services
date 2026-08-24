@@ -69,6 +69,10 @@ ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
     /// of one auction each close on their own settlement. A window already
     /// closed as timed out upgrades to landed: the settlement executed, just
     /// late, and lateness stays visible as `end_slot` past `deadline_slot`.
+    ///
+    /// A settlement carries no solution uid, so a solver holding several
+    /// windows of one auction closes all of them on its first settlement.
+    /// Correct while one solver wins at most one solution per auction.
     async fn close_solvers_window_as_landed(
         &self,
         auction_id: i64,
