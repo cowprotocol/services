@@ -54,6 +54,7 @@ pub use {
     cow_contract_iuniswapv3factory as IUniswapV3Factory,
     cow_contract_izeroex as IZeroex,
     cow_contract_liquoricesettlement as LiquoriceSettlement,
+    cow_contract_multicall3 as Multicall3,
     cow_contract_pancakerouter as PancakeRouter,
     cow_contract_permit2 as Permit2,
     cow_contract_solver7702delegate as Solver7702Delegate,

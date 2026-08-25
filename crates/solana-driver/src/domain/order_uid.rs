@@ -4,7 +4,7 @@ use std::{fmt, str::FromStr};
 
 /// A 32-byte CoW Protocol order identifier, equal to `hash(intent)`, serialized
 /// as a `0x`-prefixed hex string on the wire.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OrderUid(pub [u8; 32]);
 
 impl fmt::Display for OrderUid {
