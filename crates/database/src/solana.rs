@@ -11,3 +11,18 @@ pub enum OrderKind {
     Buy,
     Sell,
 }
+
+/// What an order event attests about its order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "solana.OrderEventLabel")]
+#[sqlx(rename_all = "lowercase")]
+pub enum OrderEventLabel {
+    Created,
+    Ready,
+    Filtered,
+    Invalid,
+    Executing,
+    Considered,
+    Traded,
+    Cancelled,
+}
