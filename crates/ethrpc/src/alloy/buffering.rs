@@ -32,12 +32,11 @@ use {
         fmt::Debug,
         marker::PhantomData,
         pin::Pin,
-        sync::Arc,
         task::{Context, Poll},
         time::Duration,
     },
-    tokio::{sync::Semaphore, task::JoinHandle},
-    tower::{Layer, Service},
+    tokio::task::JoinHandle,
+    tower::{Layer, Service, ServiceExt as _},
 };
 
 /// Layer that buffers multiple calls into batch calls.
@@ -187,7 +186,6 @@ where
             CallContext<SerializedRequest, Result<Response, TransportError>>,
         >,
     ) -> JoinHandle<()> {
-        let semaphore = Arc::new(Semaphore::new(config.ethrpc_max_concurrent_requests));
         let max_batch_size = config.ethrpc_max_batch_size;
         let batch_delay = config.ethrpc_batch_delay;
 
@@ -196,14 +194,14 @@ where
                 FairQueue::<SerializedRequest, Result<Response, TransportError>>::default();
 
             loop {
-                // first wait for a concurrency slot to become available.
-                // that way we end up with the most up-to-data batch
-                // possible in the end.
-                let permit = semaphore
-                    .clone()
-                    .acquire_owned()
-                    .await
-                    .expect("semaphore never closed");
+                // Reserve a concurrency slot from the limit underneath *before*
+                // collecting. This bounds how many batches can be in flight.
+                if let Err(err) = inner.ready().await {
+                    // Fallthrough, as an unready service errors again leading
+                    // to spin and starving the queue. The fallthrough builds
+                    // the batch so every caller gets the error.
+                    tracing::warn!(?err, "rpc service failed to become ready");
+                }
 
                 if !queue
                     .collect_requests(&mut calls, max_batch_size, batch_delay)
@@ -220,12 +218,7 @@ where
                 let clone = inner.clone();
                 let this_inner = std::mem::replace(&mut inner, clone);
 
-                tokio::task::spawn(async move {
-                    // move permit into the task so we only return it when
-                    // task is done
-                    let _permit = permit;
-                    process_batch(this_inner, batch).await;
-                });
+                tokio::task::spawn(process_batch(this_inner, batch));
             }
         })
     }
@@ -364,7 +357,7 @@ impl<Req, Resp> FairQueue<Req, Resp> {
     }
 }
 
-async fn process_batch<S>(mut inner: S, batch: Vec<(SerializedRequest, ResponseSender)>)
+async fn process_batch<S>(inner: S, batch: Vec<(SerializedRequest, ResponseSender)>)
 where
     S: Service<RequestPacket, Response = ResponsePacket, Error = TransportError>,
 {
@@ -395,16 +388,20 @@ where
         return;
     }
 
-    let result = inner
-        .call(RequestPacket::Batch(requests))
-        .await
-        .map(|response| match response {
-            ResponsePacket::Batch(res) => res,
-            ResponsePacket::Single(res) => {
-                tracing::warn!("received single response for batch request");
-                vec![res]
-            }
-        });
+    // `oneshot` drives `poll_ready` before calling. The worker already reserved
+    // this service's slot, and re-polling a held permit is a no-op, so this
+    // satisfies the contract without taking a second slot.
+    let result =
+        inner
+            .oneshot(RequestPacket::Batch(requests))
+            .await
+            .map(|response| match response {
+                ResponsePacket::Batch(res) => res,
+                ResponsePacket::Single(res) => {
+                    tracing::warn!("received single response for batch request");
+                    vec![res]
+                }
+            });
 
     match result {
         Ok(responses) => {

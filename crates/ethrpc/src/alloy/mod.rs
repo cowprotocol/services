@@ -12,19 +12,33 @@ use {
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
     rpc_headers::{RpcHeadersLayer, TracingRequestIdLayer},
+    tokio::sync::Semaphore,
+    tower::limit::GlobalConcurrencyLimitLayer,
 };
 pub use {evm_ext::EvmProviderExt, instrumentation::ProviderLabelingExt, wallet::MutWallet};
 
+/// Permits for the concurrency limit. Tokio has no unlimited mode, hence
+/// `MAX_PERMITS` for the documented "0 means no limit".
+const fn concurrency_permits(limit: usize) -> usize {
+    match limit {
+        0 => Semaphore::MAX_PERMITS,
+        limit => limit,
+    }
+}
+
 /// Creates an [`RpcClient`] from the given URL with [`LabelingLayer`],
-/// [`InstrumentationLayer`], [`TracingRequestIdLayer`], [`BatchCallLayer`] and
-/// [`RpcHeadersLayer`].
+/// [`InstrumentationLayer`], [`TracingRequestIdLayer`], [`BatchCallLayer`],
+/// [`GlobalConcurrencyLimitLayer`] and [`RpcHeadersLayer`].
 ///
 /// [`TracingRequestIdLayer`] is installed *before* [`BatchCallLayer`] so it
 /// runs on the caller's task and can capture the tracing request id from the
 /// current span. [`RpcHeadersLayer`] is installed last so it runs innermost —
 /// it must observe the packet after [`BatchCallLayer`] has coalesced calls into
-/// a batch.
+/// a batch. [`GlobalConcurrencyLimitLayer`] shares one semaphore across every
+/// clone [`BatchCallLayer`] makes, so the cap stays global.
 fn rpc(url: &str, config: Config, label: Option<&str>) -> RpcClient {
+    let max_concurrent_requests = concurrency_permits(config.ethrpc_max_concurrent_requests);
+
     ClientBuilder::default()
         .layer(LabelingLayer {
             label: label.unwrap_or("main").into(),
@@ -32,6 +46,7 @@ fn rpc(url: &str, config: Config, label: Option<&str>) -> RpcClient {
         .layer(InstrumentationLayer)
         .layer(TracingRequestIdLayer)
         .layer(BatchCallLayer::new(config))
+        .layer(GlobalConcurrencyLimitLayer::new(max_concurrent_requests))
         .layer(RpcHeadersLayer)
         .http(url.parse().unwrap())
 }
