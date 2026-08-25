@@ -3,7 +3,7 @@
 use {
     anyhow::{Context, Result},
     chain_types::solana::IntentHash,
-    database::order_events::OrderEventLabel,
+    database::solana::OrderEventLabel,
     sqlx::PgPool,
 };
 
@@ -51,28 +51,12 @@ WHERE le.label IS DISTINCT FROM i.label
         "#,
     )
     .bind(uids)
-    .bind(label_str(label))
+    .bind(label)
     .execute(&mut *tx)
     .await
     .context("insert solana.order_events")?;
     tx.commit().await.context("commit order event write")?;
     Ok(())
-}
-
-/// The label's wire value, bound as text and cast in SQL: sqlx names a derived
-/// enum's type unqualified, ambiguous where both the base and the solana
-/// OrderEventLabel exist.
-fn label_str(label: OrderEventLabel) -> &'static str {
-    match label {
-        OrderEventLabel::Created => "created",
-        OrderEventLabel::Ready => "ready",
-        OrderEventLabel::Filtered => "filtered",
-        OrderEventLabel::Invalid => "invalid",
-        OrderEventLabel::Executing => "executing",
-        OrderEventLabel::Considered => "considered",
-        OrderEventLabel::Traded => "traded",
-        OrderEventLabel::Cancelled => "cancelled",
-    }
 }
 
 #[cfg(test)]

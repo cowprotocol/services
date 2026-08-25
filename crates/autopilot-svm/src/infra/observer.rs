@@ -14,7 +14,7 @@ use {
     },
     async_trait::async_trait,
     chain_types::solana::IntentHash,
-    database::order_events::OrderEventLabel,
+    database::solana::OrderEventLabel,
     sqlx::PgPool,
     std::collections::HashSet,
 };
