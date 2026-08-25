@@ -220,10 +220,17 @@ fn validate_orders(
 
     // Validate each order against the solution.
     for order in orders.iter() {
-        // Reject orders whose wire PDA does not match the derived PDA.
-        // TODO: Ideally we'd also verify that the uid is the hash of the order's
-        // intent (intent → uid), not just that the PDA derives from the uid.
-        let (derived_pda, _) = find_order_pda(program_id, &Hash::new_from_array(order.uid.0));
+        // Reject orders whose uid is not the hash of their reconstructed intent.
+        // This closes the intent → uid → PDA chain: the wire `order_pda` is only
+        // trusted once it derives from a uid that itself matches the intent.
+        let intent_uid = OrderIntent::from(order).uid();
+        if intent_uid != Hash::new_from_array(order.uid.0) {
+            return Err(Error::OrderIntentMismatch(intent_uid, order.uid));
+        }
+
+        // Reject orders whose wire PDA does not match the PDA derived from the
+        // (now intent-consistent) uid.
+        let (derived_pda, _) = find_order_pda(program_id, &intent_uid);
         if derived_pda != order.order_pda {
             return Err(Error::OrderPdaMismatch(
                 order.order_pda,
@@ -327,6 +334,9 @@ pub enum Error {
     /// The wire-provided order PDA does not match the derived PDA.
     #[error("order PDA {0} does not match the derived PDA {1} for uid {2}")]
     OrderPdaMismatch(Pubkey, Pubkey, OrderUid),
+    /// The uid is not the hash of the order's reconstructed intent.
+    #[error("order uid {1} does not match the hash of its intent {0}")]
+    OrderIntentMismatch(Hash, OrderUid),
     /// The transaction failed to compile.
     #[error("failed to compile transaction: {0}")]
     Compile(#[from] solana_sdk::message::CompileError),
@@ -340,11 +350,6 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    // TODO: The fixtures set `uid` to an arbitrary constant and derive the PDA from
-    // it, so the uid → PDA relationship holds. In prod, the uid is the hash of the
-    // order's intent (intent → uid → PDA), which the fixtures here don't model yet.
-    // Currently, the settlement validation logic only checks uid → PDA, so this is
-    // fine for now.
     use {
         super::*,
         crate::domain::Trade,
@@ -352,18 +357,48 @@ mod tests {
             InstructionInputParsing,
             settle::{BeginSettleInput, FinalizeSettleInput},
         },
-        solana_sdk::signer::keypair::Keypair,
     };
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
     }
 
-    fn single_trade() -> Trade {
+    /// A default sell orde with `customize` applied before the uid and order
+    /// PDA are derived.
+    fn test_order_with(program_id: &Pubkey, customize: impl FnOnce(&mut Order)) -> Order {
+        let mut order = Order {
+            uid: OrderUid([0; 32]), // re-derived below
+            owner: pubkey(0x22),
+            sell_token: pubkey(0x33),
+            buy_token: pubkey(0x44),
+            sell_token_account: pubkey(0x55),
+            buy_token_account: pubkey(0x66),
+            sell_amount: 1_000,
+            buy_amount: 2_000,
+            valid_to: 42,
+            side: Side::Sell,
+            partially_fillable: false,
+            order_pda: Pubkey::default(), // re-derived below
+            app_data: [0; 32],
+        };
+        customize(&mut order);
+        let uid = OrderIntent::from(&order).uid();
+        order.uid = OrderUid(uid.to_bytes());
+        order.order_pda = find_order_pda(program_id, &uid).0;
+        order
+    }
+
+    /// A default sell order.
+    fn test_order(program_id: &Pubkey) -> Order {
+        test_order_with(program_id, |_| ())
+    }
+
+    /// A trade filling the order with the given uid.
+    fn trade(order_uid: OrderUid, executed_sell: u64, executed_buy: u64) -> Trade {
         Trade {
-            order_uid: OrderUid([0x11; 32]),
-            executed_sell: 1_000,
-            executed_buy: 2_000,
+            order_uid,
+            executed_sell,
+            executed_buy,
         }
     }
 
@@ -382,61 +417,46 @@ mod tests {
         }
     }
 
-    /// A single-order settlement with no interactions and no setup
-    /// instructions. The instruction list is `[SetComputeUnitLimit,
-    /// BeginSettle, FinalizeSettle]`.
-    fn settlement(program_id: &Pubkey) -> Settlement {
-        let order = test_order(program_id);
-        Settlement::new(
-            *program_id,
-            Id::new(7).unwrap(),
-            vec![order],
-            solution(vec![single_trade()]),
-            Vec::new(),
-        )
-        .unwrap()
-    }
-
-    /// A default sell order. The order PDA comes from the uid.
-    fn test_order(program_id: &Pubkey) -> Order {
-        let uid = OrderUid([0x11; 32]);
-        let order_pda = find_order_pda(program_id, &Hash::new_from_array(uid.0)).0;
-        Order {
-            uid,
-            owner: pubkey(0x22),
-            sell_token: pubkey(0x33),
-            buy_token: pubkey(0x44),
-            sell_token_account: pubkey(0x55),
-            buy_token_account: pubkey(0x66),
-            sell_amount: 1_000,
-            buy_amount: 2_000,
-            valid_to: 42,
-            side: super::super::Side::Sell,
-            partially_fillable: false,
-            order_pda,
-            app_data: [0; 32],
-        }
-    }
-
     #[test]
     fn rejects_a_mismatched_order_pda() {
         let program_id = pubkey(0xaa);
         let mut order = test_order(&program_id);
+        let derived_pda = order.order_pda;
         order.order_pda = pubkey(0xff);
-        let derived_pda = find_order_pda(&program_id, &Hash::new_from_array(order.uid.0)).0;
+        let uid = order.uid;
 
         let err = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
-            solution(vec![single_trade()]),
+            solution(vec![trade(uid, 1_000, 2_000)]),
             Vec::new(),
         )
         .expect_err("a mismatched order PDA must be rejected");
-        assert_eq!(
-            err,
-            Error::OrderPdaMismatch(pubkey(0xff), derived_pda, OrderUid([0x11; 32]))
-        );
+        assert_eq!(err, Error::OrderPdaMismatch(pubkey(0xff), derived_pda, uid));
+    }
+
+    /// An order whose uid is not the hash of its reconstructed intent is
+    /// rejected.
+    #[test]
+    fn rejects_an_order_intent_uid_mismatch() {
+        let program_id = pubkey(0xaa);
+        let mut order = test_order(&program_id);
+        // The trade matches the order's stored (bogus) uid, so the intent
+        // integrity check — not the trade look-up — rejects the order.
+        let bogus_uid = OrderUid([0xff; 32]);
+        order.uid = bogus_uid;
+        let intent_uid = OrderIntent::from(&order).uid();
+
+        let err = Settlement::new(
+            program_id,
+            Id::new(7).unwrap(),
+            vec![order],
+            solution(vec![trade(bogus_uid, 1_000, 2_000)]),
+            Vec::new(),
+        )
+        .expect_err("an order whose uid does not match its intent must be rejected");
+        assert_eq!(err, Error::OrderIntentMismatch(intent_uid, bogus_uid));
     }
 
     /// Duplicate orders (same uid) are deduped, keeping the first occurrence.
@@ -445,11 +465,12 @@ mod tests {
         let program_id = pubkey(0xaa);
         let payer = pubkey(0xbb);
         let order = test_order(&program_id);
+        let trades = vec![trade(order.uid, 1_000, 2_000)];
         let settlement = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order.clone(), order],
-            solution(vec![single_trade()]),
+            solution(trades),
             Vec::new(),
         )
         .unwrap();
@@ -465,6 +486,7 @@ mod tests {
     fn rejects_a_solution_with_no_trades() {
         let program_id = pubkey(0xaa);
         let order = test_order(&program_id);
+        let uid = order.uid;
         let err = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
@@ -473,7 +495,7 @@ mod tests {
             Vec::new(),
         )
         .expect_err("a solution with no trades must be rejected");
-        assert_eq!(err, Error::NoTradeForOrder(OrderUid([0x11; 32])));
+        assert_eq!(err, Error::NoTradeForOrder(uid));
     }
 
     /// A trade whose order uid matches no order in the settlement is rejected.
@@ -481,20 +503,16 @@ mod tests {
     fn rejects_a_trade_with_no_matching_order() {
         let program_id = pubkey(0xaa);
         let order = test_order(&program_id);
-        let expected = OrderUid([0x22; 32]);
+        let stray_uid = OrderUid([0xff; 32]);
         let err = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
-            solution(vec![Trade {
-                order_uid: expected,
-                executed_sell: 1_000,
-                executed_buy: 2_000,
-            }]),
+            solution(vec![trade(stray_uid, 1_000, 2_000)]),
             Vec::new(),
         )
         .expect_err("a trade with no matching order must be rejected");
-        assert_eq!(err, Error::NoOrderForTrade(expected));
+        assert_eq!(err, Error::NoOrderForTrade(stray_uid));
     }
 
     /// A non-partially-fillable order filled for less than its target is
@@ -504,19 +522,16 @@ mod tests {
         let program_id = pubkey(0xaa);
         // sell_amount: 1_000, buy_amount: 2_000, but only 500 sold / 1_000 bought.
         let order = test_order(&program_id);
+        let uid = order.uid;
         let err = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
-            solution(vec![Trade {
-                order_uid: OrderUid([0x11; 32]),
-                executed_sell: 500,
-                executed_buy: 1_000,
-            }]),
+            solution(vec![trade(uid, 500, 1_000)]),
             Vec::new(),
         )
         .expect_err("a non-partially-fillable order filled below target must be rejected");
-        assert_eq!(err, Error::NotExactlyFilled(OrderUid([0x11; 32])));
+        assert_eq!(err, Error::NotExactlyFilled(uid));
     }
 
     /// A non-partially-fillable buy order filled for less than its target is
@@ -525,21 +540,17 @@ mod tests {
     fn rejects_a_non_partially_fillable_buy_order_filled_below_target() {
         let program_id = pubkey(0xaa);
         // sell_amount: 1_000, buy_amount: 2_000, but only 1_000 bought.
-        let mut order = test_order(&program_id);
-        order.side = Side::Buy;
+        let order = test_order_with(&program_id, |order| order.side = Side::Buy);
+        let uid = order.uid;
         let err = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
-            solution(vec![Trade {
-                order_uid: OrderUid([0x11; 32]),
-                executed_sell: 500,
-                executed_buy: 1_000,
-            }]),
+            solution(vec![trade(uid, 500, 1_000)]),
             Vec::new(),
         )
         .expect_err("a non-partially-fillable buy order filled below target must be rejected");
-        assert_eq!(err, Error::NotExactlyFilled(OrderUid([0x11; 32])));
+        assert_eq!(err, Error::NotExactlyFilled(uid));
     }
 
     /// A partially-fillable order filled for less than its target is accepted.
@@ -547,17 +558,13 @@ mod tests {
     fn accepts_a_partially_fillable_order_filled_below_target() {
         let program_id = pubkey(0xaa);
         let payer = pubkey(0xbb);
-        let mut order = test_order(&program_id);
-        order.partially_fillable = true;
+        let order = test_order_with(&program_id, |order| order.partially_fillable = true);
+        let trades = vec![trade(order.uid, 500, 1_000)];
         let settlement = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
-            solution(vec![Trade {
-                order_uid: OrderUid([0x11; 32]),
-                executed_sell: 500,
-                executed_buy: 1_000,
-            }]),
+            solution(trades),
             Vec::new(),
         )
         .unwrap();
@@ -570,21 +577,17 @@ mod tests {
     fn rejects_an_overfilled_order() {
         let program_id = pubkey(0xaa);
         // sell_amount: 1_000, buy_amount: 2_000, but 1_200 sold / 2_400 bought.
-        let mut order = test_order(&program_id);
-        order.partially_fillable = true;
+        let order = test_order_with(&program_id, |order| order.partially_fillable = true);
+        let uid = order.uid;
         let err = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
-            solution(vec![Trade {
-                order_uid: OrderUid([0x11; 32]),
-                executed_sell: 1_200,
-                executed_buy: 2_400,
-            }]),
+            solution(vec![trade(uid, 1_200, 2_400)]),
             Vec::new(),
         )
         .expect_err("an overfilled order must be rejected");
-        assert_eq!(err, Error::Overfill(OrderUid([0x11; 32])));
+        assert_eq!(err, Error::Overfill(uid));
     }
 
     /// A buy order filled for more than its target is rejected. For buy orders
@@ -593,22 +596,20 @@ mod tests {
     fn rejects_an_overfilled_buy_order() {
         let program_id = pubkey(0xaa);
         // sell_amount: 1_000, buy_amount: 2_000, but 2_400 bought.
-        let mut order = test_order(&program_id);
-        order.side = Side::Buy;
-        order.partially_fillable = true;
+        let order = test_order_with(&program_id, |order| {
+            order.side = Side::Buy;
+            order.partially_fillable = true;
+        });
+        let uid = order.uid;
         let err = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
-            solution(vec![Trade {
-                order_uid: OrderUid([0x11; 32]),
-                executed_sell: 1_200,
-                executed_buy: 2_400,
-            }]),
+            solution(vec![trade(uid, 1_200, 2_400)]),
             Vec::new(),
         )
         .expect_err("an overfilled buy order must be rejected");
-        assert_eq!(err, Error::Overfill(OrderUid([0x11; 32])));
+        assert_eq!(err, Error::Overfill(uid));
     }
 
     /// An order whose executed price is worse than its limit price is rejected.
@@ -618,19 +619,16 @@ mod tests {
         // sell_amount: 1_000, buy_amount: 2_000. Executed: 1_000 sold / 1_500
         // bought. 1_500 * 1_000 < 1_000 * 2_000, so the limit price is violated.
         let order = test_order(&program_id);
+        let uid = order.uid;
         let err = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
-            solution(vec![Trade {
-                order_uid: OrderUid([0x11; 32]),
-                executed_sell: 1_000,
-                executed_buy: 1_500,
-            }]),
+            solution(vec![trade(uid, 1_000, 1_500)]),
             Vec::new(),
         )
         .expect_err("an order that violates its limit price must be rejected");
-        assert_eq!(err, Error::LimitPriceViolated(OrderUid([0x11; 32])));
+        assert_eq!(err, Error::LimitPriceViolated(uid));
     }
 
     /// More than one trade for the same order: the pull is the total
@@ -640,24 +638,14 @@ mod tests {
         let program_id = pubkey(0xaa);
         let payer = pubkey(0xbb);
         let order = test_order(&program_id);
+        let uid = order.uid;
         // The fixture order has `sell_amount: 1_000`, `buy_amount: 2_000`. Split it
         // across two trades: 400/800 and 600/1200.
         let settlement = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
-            solution(vec![
-                Trade {
-                    order_uid: OrderUid([0x11; 32]),
-                    executed_sell: 400,
-                    executed_buy: 800,
-                },
-                Trade {
-                    order_uid: OrderUid([0x11; 32]),
-                    executed_sell: 600,
-                    executed_buy: 1_200,
-                },
-            ]),
+            solution(vec![trade(uid, 400, 800), trade(uid, 600, 1_200)]),
             Vec::new(),
         )
         .unwrap();
@@ -689,55 +677,27 @@ mod tests {
         let payer = pubkey(0xbb);
 
         let order_a = test_order(&program_id);
-        let order_b = Order {
-            uid: OrderUid([0x22; 32]),
-            owner: pubkey(0x22),
-            sell_token: pubkey(0x45),
-            buy_token: pubkey(0x46),
-            sell_token_account: pubkey(0x67),
-            buy_token_account: pubkey(0x68),
-            sell_amount: 500,
-            buy_amount: 1_000,
-            valid_to: 42,
-            side: Side::Sell,
-            partially_fillable: false,
-            order_pda: find_order_pda(&program_id, &Hash::new_from_array([0x22; 32])).0,
-            app_data: [0; 32],
-        };
+        // Order B: distinct tokens, accounts, and amounts, so its uid differs.
+        let order_b = test_order_with(&program_id, |order| {
+            order.sell_token = pubkey(0x45);
+            order.buy_token = pubkey(0x46);
+            order.sell_token_account = pubkey(0x67);
+            order.buy_token_account = pubkey(0x68);
+            order.sell_amount = 500;
+            order.buy_amount = 1_000;
+        });
+        let (uid_a, uid_b) = (order_a.uid, order_b.uid);
         let settlement = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order_a, order_b],
-            Solution {
-                id: 0,
-                solver: pubkey(0x99),
-                prices: std::collections::HashMap::from([
-                    (pubkey(0x33), std::num::NonZero::new(2_000).unwrap()),
-                    (pubkey(0x44), std::num::NonZero::new(1_000).unwrap()),
-                ]),
-                trades: vec![
-                    // Order A: two trades. Sell: 400 + 600 = 1000. Buy: 800 + 1200 = 2000.
-                    Trade {
-                        order_uid: OrderUid([0x11; 32]),
-                        executed_sell: 400,
-                        executed_buy: 800,
-                    },
-                    Trade {
-                        order_uid: OrderUid([0x11; 32]),
-                        executed_sell: 600,
-                        executed_buy: 1_200,
-                    },
-                    // Order B: one trade. Sell: 500. Buy: 1000.
-                    Trade {
-                        order_uid: OrderUid([0x22; 32]),
-                        executed_sell: 500,
-                        executed_buy: 1_000,
-                    },
-                ],
-                interactions: Vec::new(),
-                address_lookup_tables: Vec::new(),
-                cu_estimate: Some(200_000),
-            },
+            solution(vec![
+                // Order A: two trades. Sell: 400 + 600 = 1000. Buy: 800 + 1200 = 2000.
+                trade(uid_a, 400, 800),
+                trade(uid_a, 600, 1_200),
+                // Order B: one trade. Sell: 500. Buy: 1000.
+                trade(uid_b, 500, 1_000),
+            ]),
             Vec::new(),
         )
         .unwrap();
@@ -773,13 +733,14 @@ mod tests {
         let program_id = pubkey(0xaa);
         let payer = pubkey(0xbb);
         let order = test_order(&program_id);
+        let trades = vec![trade(order.uid, 1_000, 2_000)];
         // Both the sell-mint and buy-mint buffers are missing.
         let missing_buffers = vec![order.sell_token, order.buy_token];
         let settlement = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
             vec![order],
-            solution(vec![single_trade()]),
+            solution(trades),
             missing_buffers,
         )
         .unwrap();
@@ -799,25 +760,5 @@ mod tests {
         let finalize_input =
             FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
         assert_eq!(finalize_input.begin_ix_index, 2);
-    }
-
-    #[test]
-    fn encode_produces_a_signed_v0_transaction() {
-        let program_id = pubkey(0xaa);
-        let signer = Keypair::new();
-        let settlement = settlement(&program_id);
-
-        let tx = settlement
-            .encode(&signer, Hash::new_from_array([0xbb; 32]), &[])
-            .unwrap();
-
-        assert!(tx.verify_with_results().iter().all(|r| *r));
-        match tx.message {
-            VersionedMessage::V0(ref msg) => {
-                assert_eq!(msg.recent_blockhash, Hash::new_from_array([0xbb; 32]));
-                assert_eq!(msg.instructions.len(), 3);
-            }
-            VersionedMessage::Legacy(_) | VersionedMessage::V1(_) => panic!("expected v0 message"),
-        }
     }
 }
