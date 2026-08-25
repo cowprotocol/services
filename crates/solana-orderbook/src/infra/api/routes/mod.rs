@@ -1,3 +1,4 @@
 mod healthz;
+mod order;
 
-pub use healthz::healthz;
+pub use {healthz::healthz, order::order};
