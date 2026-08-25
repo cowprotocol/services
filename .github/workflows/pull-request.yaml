@@ -132,7 +132,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p orderbook -p database -p autopilot --tests &
+      - run: cargo build -p orderbook -p database -p autopilot -p solana-indexer -p solana-orderbook --tests &
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
