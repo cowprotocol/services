@@ -235,7 +235,7 @@ impl RunLoop {
             // order, new block). We only update the cache afterwards to update
             // to the most recent state.
             self_arc.wake_notify.notified().await;
-            let start_block = self_arc.wait_until_auction_start(&mut last_block).await;
+            let start_block = self_arc.wait_until_auction_start(&last_block).await;
             self_arc
                 .update_caches(start_block, leader_lock_tracker.is_leader())
                 .await;
@@ -297,7 +297,7 @@ impl RunLoop {
     }
 
     #[instrument(skip_all)]
-    async fn wait_until_auction_start(&self, prev_block: &mut Option<B256>) -> BlockInfo {
+    async fn wait_until_auction_start(&self, prev_block: &Option<B256>) -> BlockInfo {
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
         if time_since_last_block > self.config.max_run_loop_delay {
@@ -353,14 +353,13 @@ impl RunLoop {
         tracing::trace!(auction_id = ?auction.id, "auction cut");
 
         // Only run the solvers if the auction or block has changed.
-        let previous = prev_auction.replace(auction.clone());
-        if previous.as_ref() == Some(&auction)
-            && prev_block.replace(start_block.hash) == Some(start_block.hash)
-        {
+        let previous_auction = prev_auction.replace(auction.clone());
+        let previous_block = prev_block.replace(start_block.hash);
+        if previous_auction.as_ref() == Some(&auction) && previous_block == Some(start_block.hash) {
             return None;
         }
 
-        observe::log_auction_delta(previous.as_deref(), &auction, &start_block);
+        observe::log_auction_delta(previous_auction.as_deref(), &auction, &start_block);
         self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
