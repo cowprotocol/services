@@ -35,12 +35,10 @@ pub async fn store_order_events(
 
     let insert = async move {
         let mut ex = ex.begin().await?;
-        // The insert below skips an event whose label and reason already match
-        // the order's latest event, a comparison that only sees committed rows,
-        // so two overlapping writers would both append. One lock for the whole
-        // table rather than per order: these transactions are small and run
-        // detached. Writers that insert events without taking this lock stay
-        // exposed to the same race.
+        // The dedup below compares against committed rows only, so writers
+        // that overlap both append. Table-wide rather than per order: these
+        // transactions are small and detached. Only writers taking this lock
+        // are race-free.
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
             .bind(DEDUP_LOCK)
             .execute(&mut *ex)
@@ -84,9 +82,8 @@ mod tests {
         },
     };
 
-    /// Two writers reporting the same label concurrently append one event, not
-    /// two: the deduplicating insert compares against the order's latest event,
-    /// which is only sound while the writes are serialized.
+    /// Unserialized writers would append the same label twice: the dedup
+    /// reads committed rows only.
     #[tokio::test]
     #[ignore]
     async fn postgres_concurrent_writes_append_one_event() {
