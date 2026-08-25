@@ -379,7 +379,7 @@ mod tests {
             side: Side::Sell,
             partially_fillable: false,
             order_pda: Pubkey::default(), // re-derived below
-            app_data: [0; 32],
+            app_data: [0x77; 32],
         };
         customize(&mut order);
         let uid = OrderIntent::from(&order).uid();
@@ -760,5 +760,25 @@ mod tests {
         let finalize_input =
             FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
         assert_eq!(finalize_input.begin_ix_index, 2);
+    }
+
+    /// app_data is a determinant of the order uid. If the code regressed to
+    /// the old [0; 32] placeholder, the uid would change and settlement would
+    /// reject the order as a PDA mismatch.
+    #[test]
+    fn app_data_is_determinant_to_order_uid() {
+        let program_id = pubkey(0xaa);
+
+        let order_with_app_data = test_order_with(&program_id, |order| {
+            order.app_data = [0xde; 32];
+        });
+        let order_with_placeholder = test_order_with(&program_id, |order| {
+            order.app_data = [0; 32];
+        });
+
+        assert_ne!(
+            order_with_app_data.uid, order_with_placeholder.uid,
+            "orders that differ only in app_data must have different uids"
+        );
     }
 }
