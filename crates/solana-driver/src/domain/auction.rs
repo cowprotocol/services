@@ -77,6 +77,7 @@ pub struct Order {
     pub side: Side,
     pub partially_fillable: bool,
     pub order_pda: Pubkey,
+    pub app_data: [u8; 32],
 }
 
 /// Direction of the trade.
