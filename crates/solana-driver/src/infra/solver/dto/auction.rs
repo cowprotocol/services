@@ -50,14 +50,11 @@ impl Order {
     /// The swap output must land in the buy-mint buffer PDA so that
     /// `FinalizeSettle` can push it to the user's buy token account.
     ///
-    /// The wire format does not specify how the sell tokens reach the swap
-    /// because the current driver defaults `BeginSettle` to pull into the
-    /// canonical sell-mint buffer PDA. Solvers must therefore include
-    /// transfer instructions in their solutions that move sell tokens from that
-    /// buffer PDA into whatever account their swap instructions spend from
-    /// (e.g., the taker's sell ATA). A future optimization can let solvers
-    /// report per-order pull destinations so the driver routes directly to
-    /// their chosen accounts.
+    /// The wire format does not specify how the sell tokens are ultimately
+    /// used, so the driver defaults `BeginSettle` to pull sell tokens into the
+    /// taker's sell ATA. A future optimization can let solvers report per-order
+    /// pull destinations so the driver routes directly to their chosen
+    /// accounts.
     ///
     /// The engine wire carries a single `amount` on the order's side, so the
     /// driver projects the side-matching amount (`sell_amount` for sells,

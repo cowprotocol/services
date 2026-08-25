@@ -2,6 +2,7 @@
 
 use {
     super::{Order, auction::Id, order_uid::OrderUid, solution::Solution},
+    crate::util,
     cow_settlement_client::instructions::{
         BeginSettle,
         CreateBuffers,
@@ -10,10 +11,7 @@ use {
         InitializedIntent,
         Pull,
     },
-    cow_settlement_interface::{
-        data::intent::OrderIntent,
-        pda::{buffer::find_buffer_pda, order::find_order_pda},
-    },
+    cow_settlement_interface::{data::intent::OrderIntent, pda::order::find_order_pda},
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_sdk::{
         hash::Hash,
@@ -30,9 +28,9 @@ use {
 /// A `Settlement` holds the orders that a solution fills, the solution, and the
 /// facts the encode path needs (compute budget, missing buffers).
 ///
-/// The transaction runs `BeginSettle` (pulls sell tokens into buffer PDAs), the
-/// solver interactions, then `FinalizeSettle` (pushes buy tokens out of buffer
-/// PDAs).
+/// The transaction runs `BeginSettle` (pulls sell tokens into the taker's sell
+/// ATAs), the solver interactions, then `FinalizeSettle` (pushes buy tokens out
+/// of buffer PDAs).
 #[derive(Clone, Debug)]
 pub struct Settlement {
     /// The settlement program id.
@@ -93,7 +91,7 @@ impl Settlement {
             .iter()
             .map(|order| {
                 let amounts = executed_amounts(order, &self.solution)?;
-                Ok(SettlementOrder::new(order, &self.program_id, amounts))
+                Ok(SettlementOrder::new(order, &payer, amounts))
             })
             .collect::<Result<_, Error>>()?;
 
@@ -238,11 +236,11 @@ struct SettlementOrder {
 impl SettlementOrder {
     /// Build a settlement order from a domain order: its intent, its sell-mint
     /// pull, and its buy-mint push.
-    fn new(order: &Order, program_id: &Pubkey, amounts: ExecutedAmounts) -> Self {
+    fn new(order: &Order, taker: &Pubkey, amounts: ExecutedAmounts) -> Self {
         Self {
             intent: order.into(),
             pulls: vec![Pull {
-                destination: find_buffer_pda(program_id, &order.sell_token).0,
+                destination: util::associated_token_address(taker, &order.sell_token),
                 amount: amounts.sell,
             }],
             buy_mint: order.buy_token,
@@ -381,6 +379,36 @@ mod tests {
         )
         .expect_err("a mismatched order PDA must be rejected");
         assert!(matches!(err, Error::OrderPdaMismatch(..)));
+    }
+
+    #[test]
+    fn pull_destination_is_the_taker_sell_ata() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = default_order(&program_id, 0x11, 0x33, 0x44);
+        let sell_token = order.sell_token;
+        let settlement = Settlement::new(
+            program_id,
+            Id::new(7).unwrap(),
+            vec![order],
+            solution(vec![single_trade()]),
+            200_000,
+            Vec::new(),
+        )
+        .unwrap();
+
+        let instructions = settlement.instructions(payer).unwrap();
+        // [SetComputeUnitLimit, BeginSettle, FinalizeSettle].
+        let begin = &instructions[1];
+
+        let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
+        let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
+        let destination = begin_input.orders.iter().next().unwrap().destinations[0];
+
+        assert_eq!(
+            destination,
+            util::associated_token_address(&payer, &sell_token),
+        );
     }
 
     #[test]
