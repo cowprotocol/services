@@ -9,6 +9,9 @@ use {
     sqlx::PgExecutor,
 };
 
+/// The channel the schema's `solana.settlements` trigger notifies.
+pub const SETTLEMENT_FINALIZED_CHANNEL: &str = "solana_settlement_finalized";
+
 /// The `solana.orders` columns auction assembly reads.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct OrderRow {

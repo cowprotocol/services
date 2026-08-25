@@ -20,31 +20,17 @@ pub struct DriverExecutor {
     /// Opens a settlement-execution window per dispatched settlement, which
     /// the observation side later resolves or times out.
     windows: SettlementWindows,
-    /// Slots a settlement may take after ranking before it counts as late.
-    submission_deadline_slots: u64,
 }
 
 impl DriverExecutor {
-    pub fn new(
-        drivers: Vec<Arc<Driver>>,
-        windows: SettlementWindows,
-        submission_deadline_slots: u64,
-    ) -> Self {
-        Self {
-            drivers,
-            windows,
-            submission_deadline_slots,
-        }
+    pub fn new(drivers: Vec<Arc<Driver>>, windows: SettlementWindows) -> Self {
+        Self { drivers, windows }
     }
 }
 
 #[async_trait]
 impl SettlementExecutor<SolanaCycle> for DriverExecutor {
-    fn submission_deadline(&self, tip: &u64) -> u64 {
-        tip + self.submission_deadline_slots
-    }
-
-    async fn execute(&self, auction_id: i64, ranking: &Ranking, deadline: u64) {
+    async fn execute(&self, auction_id: i64, ranking: &Ranking, tip: &u64, deadline: u64) {
         for winner in ranking.inner.winners() {
             let key = (winner.solver(), winner.id());
             let Some(driver) = ranking
@@ -65,13 +51,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             // the dispatch is the priority.
             if let Err(err) = self
                 .windows
-                .open_dispatched(
-                    auction_id,
-                    winner.solver(),
-                    winner.id(),
-                    deadline.saturating_sub(self.submission_deadline_slots),
-                    deadline,
-                )
+                .open_dispatched(auction_id, winner.solver(), winner.id(), *tip, deadline)
                 .await
             {
                 tracing::error!(auction_id, ?err, "failed to open the settlement window");

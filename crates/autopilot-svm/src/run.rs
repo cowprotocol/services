@@ -6,6 +6,7 @@ use {
         infra::{
             competition::DriverCompetition,
             config::{self, Config},
+            db,
             driver::Driver,
             executor::DriverExecutor,
             listen::ListenSession,
@@ -28,9 +29,6 @@ use {
     },
 };
 
-/// The Postgres channel the schema's settlements trigger notifies.
-const SETTLEMENT_FINALIZED_CHANNEL: &str = "solana_settlement_finalized";
-
 /// Fails the liveness probe when the auction loop stops completing cycles.
 struct Liveness {
     max_auction_age: Duration,
@@ -45,7 +43,7 @@ impl Liveness {
         }
     }
 
-    fn cycle(&self) {
+    fn record_cycle(&self) {
         *self.last_cycle.write().unwrap() = Instant::now();
     }
 }
@@ -90,7 +88,7 @@ async fn run(config: Config) {
     let windows = SettlementWindows::new(pool.clone());
     let listen = ListenSession::spawn(
         pool.clone(),
-        SETTLEMENT_FINALIZED_CHANNEL,
+        db::SETTLEMENT_FINALIZED_CHANNEL,
         windows.clone(),
     );
 
@@ -106,7 +104,7 @@ async fn run(config: Config) {
         .map(|driver| Arc::new(Driver::new(driver.name.clone(), &driver.url)))
         .collect();
 
-    let mut auction_loop = AuctionLoop::new(
+    let auction_loop = AuctionLoop::new(
         Box::new(SlotTrigger::new(rpc)),
         Box::new(DbAuctionProvider::new(pool)),
         Box::new(DriverCompetition::new(
@@ -117,12 +115,9 @@ async fn run(config: Config) {
             config.competition.max_winners.get(),
             Pubkey(config.chain.wrapped_native_mint.to_bytes()),
         )),
-        Box::new(DriverExecutor::new(
-            drivers,
-            windows.clone(),
-            config.competition.submission_deadline_slots.get(),
-        )),
+        Box::new(DriverExecutor::new(drivers, windows.clone())),
         Box::new(LogObserver::new(windows)),
+        config.competition.submission_deadline_slots.get(),
     );
     let liveness = Arc::new(Liveness::new(config.max_auction_age));
     let metrics = observe::metrics::serve_metrics(
@@ -131,26 +126,17 @@ async fn run(config: Config) {
         Default::default(),
         Default::default(),
     );
-    let cycles = async move {
-        loop {
-            auction_loop.run_cycle().await;
-            // TODO: bumped even when the cycle failed, so a dead database
-            // stays live as long as the trigger fires. Distinguishing failed
-            // cycles is BE-200.
-            liveness.cycle();
-        }
-    };
+    // TODO: recorded even when the cycle failed, so a dead database stays
+    // live as long as the trigger fires. Distinguishing failed cycles is
+    // BE-200.
+    let cycles = auction_loop.run_forever(move || liveness.record_cycle());
 
+    // The metrics server and the listen session never end on their own, so an
+    // end means the task panicked.
     tokio::select! {
-        () = cycles => unreachable!("the auction loop never returns"),
-        () = ended(metrics) => panic!("metrics server stopped"),
-        () = ended(listen) => panic!("settlement listen session stopped"),
+        _ = cycles => unreachable!("the auction loop never returns"),
+        _ = metrics => panic!("metrics server stopped"),
+        _ = listen => panic!("settlement listen session stopped"),
         () = observe::shutdown::shutdown_signal() => tracing::info!("shutting down"),
     }
-}
-
-/// Resolves when the task ends, which the metrics server and the listen
-/// session never do on their own, so an end means the task panicked.
-async fn ended(task: tokio::task::JoinHandle<()>) {
-    let _ = task.await;
 }

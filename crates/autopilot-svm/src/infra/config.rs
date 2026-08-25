@@ -78,7 +78,7 @@ fn default_metrics_address() -> SocketAddr {
 }
 
 const fn default_max_auction_age() -> Duration {
-    Duration::from_secs(5 * 60)
+    Duration::from_mins(5)
 }
 
 /// JSON-RPC client configuration.

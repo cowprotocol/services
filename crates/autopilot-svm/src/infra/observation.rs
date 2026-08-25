@@ -116,7 +116,7 @@ impl NotifyHandler for SettlementWindows {
 mod tests {
     use {
         super::SettlementWindows,
-        crate::infra::listen::ListenSession,
+        crate::infra::{db, listen::ListenSession},
         chain_types::solana::Pubkey,
         sqlx::PgPool,
         std::time::Duration,
@@ -160,8 +160,11 @@ VALUES (10, $1, 0, $2, $3, NULL)
             .await
             .unwrap();
 
-        let task =
-            ListenSession::spawn(pool.clone(), "solana_settlement_finalized", windows.clone());
+        let task = ListenSession::spawn(
+            pool.clone(),
+            db::SETTLEMENT_FINALIZED_CHANNEL,
+            windows.clone(),
+        );
 
         insert_settlement(&pool, 4242).await;
 
