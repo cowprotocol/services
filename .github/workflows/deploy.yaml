@@ -145,7 +145,7 @@ jobs:
         if: ${{ github.ref == 'refs/heads/main' }}
         with:
           images: ghcr.io/cowprotocol/services:main
-          strategy: restart # Recreates the deployment
+          strategy: rollout # Rolling restart (kubectl rollout restart), zero downtime
           tag: ${{ secrets.AUTODEPLOY_TAG }}
           url: ${{ secrets.AUTODEPLOY_URL }}
           token: ${{ secrets.AUTODEPLOY_TOKEN }}
