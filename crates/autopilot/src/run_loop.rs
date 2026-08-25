@@ -353,14 +353,13 @@ impl RunLoop {
         tracing::trace!(auction_id = ?auction.id, "auction cut");
 
         // Only run the solvers if the auction or block has changed.
-        let previous = prev_auction.replace(auction.clone());
-        if previous.as_ref() == Some(&auction)
-            && prev_block.replace(start_block.hash) == Some(start_block.hash)
-        {
+        let previous_auction = prev_auction.replace(auction.clone());
+        let previous_block = prev_block.replace(start_block.hash);
+        if previous_auction.as_ref() == Some(&auction) && previous_block == Some(start_block.hash) {
             return None;
         }
 
-        observe::log_auction_delta(previous.as_deref(), &auction, &start_block);
+        observe::log_auction_delta(previous_auction.as_deref(), &auction, &start_block);
         self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)

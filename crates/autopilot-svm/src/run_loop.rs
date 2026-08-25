@@ -201,10 +201,9 @@ impl<C: Cycle> AuctionLoop<C> {
         // Only rerun the competition if the auction or tip changed. The tip
         // marker is only written when the auction was unchanged, so the
         // dedupe kicks in one cycle after the auction first repeats.
-        let previous = self.prev_auction.replace(auction.clone());
-        if previous.as_ref() == Some(&auction)
-            && self.prev_tip.replace(tip.clone()).as_ref() == Some(tip)
-        {
+        let previous_auction = self.prev_auction.replace(auction.clone());
+        let previous_tip = self.prev_tip.replace(tip.clone());
+        if previous_auction.as_ref() == Some(&auction) && previous_tip.as_ref() == Some(tip) {
             return None;
         }
 
