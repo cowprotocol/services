@@ -23,6 +23,7 @@ use {
     observe::metrics::LivenessChecking,
     sqlx::postgres::PgPoolOptions,
     std::{
+        net::SocketAddr,
         path::PathBuf,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
@@ -113,7 +114,7 @@ async fn run(config: Config) {
         )),
         Box::new(SolanaArbitrator::new(
             config.competition.max_winners.get(),
-            Pubkey(config.chain.wrapped_native_mint.to_bytes()),
+            Pubkey(config.contracts.wrapped_native_mint.to_bytes()),
         )),
         Box::new(DriverExecutor::new(drivers, windows.clone())),
         Box::new(LogObserver::new(windows)),
@@ -122,7 +123,7 @@ async fn run(config: Config) {
     let liveness = Arc::new(Liveness::new(config.max_auction_age));
     let metrics = observe::metrics::serve_metrics(
         liveness.clone(),
-        config.metrics_address,
+        SocketAddr::from(([0, 0, 0, 0], config.metrics_port)),
         Default::default(),
         Default::default(),
     );

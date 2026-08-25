@@ -1,7 +1,7 @@
 # Example configuration for the Solana autopilot.
 
 # Serves /metrics, /liveness, /ready, and /startup.
-metrics-address = "0.0.0.0:9588"
+metrics-port = 9586
 # The pod fails the liveness probe when no auction cycle completed in this
 # time.
 max-auction-age = "5m"
@@ -16,7 +16,7 @@ write-url = "postgresql://"
 endpoint = "https://api.devnet.solana.com"
 request-timeout = "10s"
 
-[chain]
+[contracts]
 wrapped-native-mint = "So11111111111111111111111111111111111111112"
 
 [competition]

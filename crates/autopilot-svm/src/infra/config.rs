@@ -5,7 +5,7 @@ use {
     serde::Deserialize,
     serde_ext::{deserialize_nonempty_vec, deserialize_solana_pubkey_b58},
     solana_sdk::pubkey::Pubkey,
-    std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
+    std::{num::NonZero, path::Path, time::Duration},
     tokio::fs,
 };
 
@@ -40,14 +40,14 @@ pub struct Config {
     pub database: DatabasePoolConfig,
     /// JSON-RPC client configuration.
     pub rpc: Rpc,
-    /// Chain and deployment-specific configuration.
-    pub chain: Chain,
+    /// On-chain addresses the autopilot reads.
+    pub contracts: Contracts,
     /// Competition parameters.
     #[serde(default)]
     pub competition: Competition,
-    /// Address the metrics and probes server binds to.
-    #[serde(default = "default_metrics_address")]
-    pub metrics_address: SocketAddr,
+    /// Port the metrics and probes server binds to, on every interface.
+    #[serde(default = "default_metrics_port")]
+    pub metrics_port: u16,
     /// If no auction cycle completed in this time the pod fails the liveness
     /// check.
     #[serde(with = "humantime_serde", default = "default_max_auction_age")]
@@ -73,8 +73,8 @@ impl Config {
     }
 }
 
-fn default_metrics_address() -> SocketAddr {
-    "0.0.0.0:9588".parse().expect("valid address literal")
+const fn default_metrics_port() -> u16 {
+    observe::metrics::DEFAULT_METRICS_PORT
 }
 
 const fn default_max_auction_age() -> Duration {
@@ -92,10 +92,10 @@ pub struct Rpc {
     pub request_timeout: Duration,
 }
 
-/// Solana chain configuration.
+/// On-chain addresses: programs and mints.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct Chain {
+pub struct Contracts {
     /// The wrapped native token mint (wSOL), the unit scores are denominated
     /// in.
     #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
@@ -145,7 +145,7 @@ mod tests {
         let config = load(std::path::Path::new("example.toml")).await;
         assert_eq!(config.database.write_url.as_str(), "postgresql://");
         assert_eq!(
-            config.chain.wrapped_native_mint,
+            config.contracts.wrapped_native_mint,
             "So11111111111111111111111111111111111111112"
                 .parse()
                 .unwrap()
