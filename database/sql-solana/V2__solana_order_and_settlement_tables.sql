@@ -1,9 +1,10 @@
 -- Order and settlement tables, the solana.* counterparts of the EVM tables.
 -- A row is final once its slot is at or below
 -- solana.indexer_state.finalized_slot.
--- Runs on top of the base sql/ series in the same database: it reuses the
--- base OrderKind, OrderClass and ExecutionTime enums, so a solana database
--- applies the base series first.
+-- The series owns every type it uses, so it applies to a database without
+-- the base sql/ series.
+
+CREATE TYPE solana.OrderKind AS ENUM ('sell', 'buy');
 
 CREATE TABLE solana.orders (
     uid                   bytea PRIMARY KEY CHECK (length(uid) = 32),
@@ -19,7 +20,7 @@ CREATE TABLE solana.orders (
     -- Earliest unix second the order may enter an auction. NULL means no
     -- lower bound.
     valid_from            bigint,
-    kind                  OrderKind NOT NULL,
+    kind                  solana.OrderKind NOT NULL,
     partially_fillable    boolean NOT NULL,
     app_data              bytea NOT NULL CHECK (length(app_data) = 32),
     intent_signature      bytea CHECK (length(intent_signature) = 64),

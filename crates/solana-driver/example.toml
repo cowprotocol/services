@@ -1,8 +1,8 @@
 # Example configuration for the Solana driver.
 
 [chain]
-# Placeholder — replace with the CoW Settlement program id.
-settlement-program-id = "MooohhPEAAHwAwEozL7JPEmnDvaahuUpccYN4Yb8ccK"
+# The CoW Settlement program id (v0.2.0, stable mainnet address).
+settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [rpc]
 endpoint = "https://api.mainnet-beta.solana.com"
@@ -20,4 +20,7 @@ filter = "info,solana_driver=debug"
 name = "baseline"
 endpoint = "http://localhost:8001"
 account = "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
+# Path to the solver's settlement signer keypair. Its public key must equal
+# `account`. TODO: plaintext keypair paths are temporary; KMS is planned.
+signer-keypair = "/path/to/keypair.json"
 max-in-flight = 1

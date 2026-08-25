@@ -10,9 +10,12 @@ name = "cow_solana_rpc"
 path = "src/lib.rs"
 
 [dependencies]
+futures = { workspace = true }
+itertools = { workspace = true }
 solana-commitment-config = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
+solana-sdk = { workspace = true }
 url = { workspace = true }
 
 [features]

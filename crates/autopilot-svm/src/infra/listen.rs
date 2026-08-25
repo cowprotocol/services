@@ -147,7 +147,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "needs a local postgres"]
-    async fn postgres_delivers_notify_fired_during_seed() {
+    async fn solana_db_delivers_notify_fired_during_seed() {
         const CHANNEL: &str = "autopilot_svm_listen_test";
         let pool = crate::test_db::pool().await;
         let log: Log = Arc::default();
