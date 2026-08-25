@@ -235,7 +235,7 @@ impl RunLoop {
             // order, new block). We only update the cache afterwards to update
             // to the most recent state.
             self_arc.wake_notify.notified().await;
-            let start_block = self_arc.wait_until_auction_start(&mut last_block).await;
+            let start_block = self_arc.wait_until_auction_start(&last_block).await;
             self_arc
                 .update_caches(start_block, leader_lock_tracker.is_leader())
                 .await;
@@ -297,7 +297,7 @@ impl RunLoop {
     }
 
     #[instrument(skip_all)]
-    async fn wait_until_auction_start(&self, prev_block: &mut Option<B256>) -> BlockInfo {
+    async fn wait_until_auction_start(&self, prev_block: &Option<B256>) -> BlockInfo {
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
         if time_since_last_block > self.config.max_run_loop_delay {

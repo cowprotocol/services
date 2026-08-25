@@ -198,9 +198,7 @@ impl<C: Cycle> AuctionLoop<C> {
     async fn next_auction(&mut self, tip: &C::Tip) -> Option<C::Auction> {
         let auction = self.provider.cut_auction(tip).await?;
 
-        // Only rerun the competition if the auction or tip changed. The tip
-        // marker is only written when the auction was unchanged, so the
-        // dedupe kicks in one cycle after the auction first repeats.
+        // Only rerun the competition if the auction or tip changed.
         let previous_auction = self.prev_auction.replace(auction.clone());
         let previous_tip = self.prev_tip.replace(tip.clone());
         if previous_auction.as_ref() == Some(&auction) && previous_tip.as_ref() == Some(tip) {
