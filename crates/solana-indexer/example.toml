@@ -12,7 +12,9 @@ write-url = "postgresql://"
 
 [yellowstone]
 endpoint = "https://yellowstone.example.com"
-# x-token = "secret"
+# A value like "%YELLOWSTONE_X_TOKEN" reads the token from that environment
+# variable.
+# x-token = "%YELLOWSTONE_X_TOKEN"
 
 [rpc]
 endpoint = "https://api.devnet.solana.com"
