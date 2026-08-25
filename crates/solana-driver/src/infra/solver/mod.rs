@@ -69,9 +69,16 @@ impl Solver {
 
     /// POST the auction to this engine's `/solve` endpoint and return the
     /// domain solutions it produced.
+    ///
+    /// `program_id` is the settlement program the swap instructions are built
+    /// for.
     #[tracing::instrument(name = "solver_engine", skip_all, fields(solver = %self.name))]
-    pub async fn solve(&self, auction: &domain::Auction) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(auction, self.account, auction.program_id);
+    pub async fn solve(
+        &self,
+        auction: &domain::Auction,
+        program_id: Pubkey,
+    ) -> Result<Vec<domain::Solution>, Error> {
+        let auction_dto = Auction::new(auction, self.account, program_id);
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
@@ -197,10 +204,12 @@ mod tests {
             deadline_slot: domain::Slot(1),
             // Well in the past: the request must be skipped entirely.
             deadline: chrono::Utc::now() - chrono::Duration::seconds(10),
-            program_id: Pubkey::default(),
         };
 
-        let err = solver.solve(&auction).await.expect_err("solve should fail");
+        let err = solver
+            .solve(&auction, Pubkey::default())
+            .await
+            .expect_err("solve should fail");
         assert!(
             matches!(err, Error::DeadlineExceeded),
             "expected DeadlineExceeded, got {err:?}"

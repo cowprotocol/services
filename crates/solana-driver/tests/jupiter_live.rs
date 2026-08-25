@@ -74,7 +74,6 @@ fn sell_auction() -> Auction {
         }],
         deadline_slot: Slot(1),
         deadline: deadline(),
-        program_id: cow_settlement_interface::id(),
     }
 }
 
@@ -133,7 +132,7 @@ async fn driver_solves_against_live_jupiter_engine() {
     // into `domain::Solution`s; an `Ok` result proves the wire deserialization
     // succeeded.
     let solutions = solver
-        .solve(&sell_auction())
+        .solve(&sell_auction(), cow_settlement_interface::id())
         .await
         .expect("solve should succeed against live Jupiter");
 
