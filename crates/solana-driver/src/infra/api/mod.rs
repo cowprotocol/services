@@ -1,9 +1,11 @@
 //! HTTP API server.
 
 use {
-    crate::{domain, infra::solver::Solver},
+    crate::{
+        domain,
+        infra::{blockchain::Solana, solver::Solver},
+    },
     axum::{Router, extract::DefaultBodyLimit, routing::get},
-    cow_solana_rpc::SolanaRPC,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     std::{net::SocketAddr, sync::Arc},
     tokio_util::sync::CancellationToken,
@@ -20,9 +22,8 @@ pub use self::error::Error;
 pub struct Api {
     /// Address the server binds to and listens on.
     pub addr: SocketAddr,
-    /// The shared Solana RPC client, wrapped in `Arc` so each solver engine's
-    /// state can hold a clone.
-    pub rpc: Arc<SolanaRPC>,
+    /// The shared Solana blockchain adapter.
+    pub blockchain: Arc<Solana>,
     /// The solver engines.
     pub solvers: Vec<Solver>,
 }
@@ -59,7 +60,7 @@ impl Api {
         for solver in self.solvers {
             let solver_name = solver.name().to_owned();
             let competition = domain::Competition::new(solver);
-            let state = State::new(self.rpc.clone(), competition);
+            let state = State::new(self.blockchain.clone(), competition);
 
             let router = Router::new()
                 .route("/solve", axum::routing::post(routes::solve))
@@ -90,20 +91,27 @@ pub struct State(Arc<Inner>);
 
 impl State {
     /// Build the shared state the handlers operate on.
-    fn new(rpc: Arc<SolanaRPC>, competition: domain::Competition) -> Self {
-        Self(Arc::new(Inner { rpc, competition }))
+    fn new(blockchain: Arc<Solana>, competition: domain::Competition) -> Self {
+        Self(Arc::new(Inner {
+            blockchain,
+            competition,
+        }))
     }
 
     /// The competition that runs auctions for this solver engine.
     fn competition(&self) -> &domain::Competition {
         &self.0.competition
     }
+
+    /// The blockchain adapter, including the settlement program id.
+    fn blockchain(&self) -> &Solana {
+        &self.0.blockchain
+    }
 }
 
 struct Inner {
-    /// The shared Solana RPC client.
-    #[expect(dead_code, reason = "used by the deadline and submission follow-ups")]
-    rpc: Arc<SolanaRPC>,
+    /// The shared Solana blockchain adapter.
+    blockchain: Arc<Solana>,
     /// The competition that runs auctions for this solver engine.
     competition: domain::Competition,
 }

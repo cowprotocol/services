@@ -15,19 +15,13 @@ use {
 /// two consecutive account snapshots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TradeDelta {
-    /// Order UID this delta applies to.
-    pub order_uid: OrderUid,
+    /// Order PDA this delta applies to, as the `BeginSettle` wire names it.
+    /// Persistence resolves it to the order UID through the orders table.
+    pub order_pda: Pubkey,
     /// Change in `amount_withdrawn` since the previous snapshot.
     pub amount_withdrawn_delta: u64,
     /// Change in `amount_received` since the previous snapshot.
     pub amount_received_delta: u64,
-    /// Whether the order is fully filled after this trade.
-    ///
-    /// Not a field of the program's event data: the decoder infers it from
-    /// the order PDA's post-trade snapshot.
-    /// It is `true` when post-trade `amount_withdrawn` equals the order's full
-    /// sell amount, or `amount_received` equals the full buy amount.
-    pub order_fulfilled: bool,
 }
 
 /// Whether an order sells an exact amount or buys an exact amount.

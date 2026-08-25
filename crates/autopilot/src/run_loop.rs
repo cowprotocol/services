@@ -29,8 +29,8 @@ use {
     chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
     eth_domain_types::{self as eth, Address, TxId},
-    ethrpc::block_stream::BlockInfo,
-    futures::{FutureExt, TryFutureExt},
+    ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
+    futures::{FutureExt, StreamExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -457,7 +457,7 @@ impl RunLoop {
             OrderEventLabel::Considered,
         );
         tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
-        Metrics::winner_declared(start_block.observed_at.elapsed());
+        Metrics::winner_declared(start_block, self.eth.current_block());
 
         for (solution_uid, winner) in ranking.enumerated().filter(|(_, bid)| bid.is_winner()) {
             let (driver, solution) = (winner.driver(), winner.solution());
@@ -465,7 +465,7 @@ impl RunLoop {
 
             self.start_settlement_execution(
                 auction.id,
-                start_block.observed_at,
+                start_block,
                 driver,
                 solution,
                 solution_uid,
@@ -481,7 +481,7 @@ impl RunLoop {
     fn start_settlement_execution(
         self: &Arc<Self>,
         auction_id: Id,
-        single_run_start: Instant,
+        start_block: BlockInfo,
         driver: &Arc<infra::Driver>,
         solution: &Solution,
         solution_uid: usize,
@@ -521,7 +521,7 @@ impl RunLoop {
                     tracing::warn!(?err, driver = %driver_.name, "settlement failed");
                 }
             }
-            Metrics::single_run_completed(single_run_start.elapsed());
+            Metrics::single_run_completed(start_block.observed_at.elapsed());
         }
         .instrument(tracing::Span::current());
 
@@ -1158,7 +1158,8 @@ struct Metrics {
     /// Total time between seeing the start block of the auction and declaring
     /// a winning driver.
     #[metric(buckets(
-        0, 1, 2, 3, 4, 5, 6, 7, 7.5, 8, 8.25, 8.5, 8.75, 9, 9.25, 9.5, 9.75, 10
+        0, 1, 2, 3, 4, 5, 6, 7, 7.25, 7.5, 7.75, 8, 8.25, 8.5, 8.75, 9, 9.25, 9.5, 9.75, 10, 10.25,
+        10.5, 10.75, 11, 11.25, 11.5, 11.75, 12, 12.5, 13, 15, 17, 20
     ))]
     winner_declared: prometheus::Histogram,
 
@@ -1170,6 +1171,18 @@ struct Metrics {
     /// function is started.
     #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
+
+    /// Blocks between the auction's start block and the `/settle` call. Zero
+    /// means the call still fits in the block the auction was built on; higher
+    /// values count the block windows a single run burns.
+    #[metric(buckets(0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64))]
+    settle_blocks_elapsed: prometheus::Histogram,
+
+    /// Seconds of runway the `/settle` call had: how long until the block after
+    /// the current head arrives. With `settle_blocks_elapsed` it predicts the
+    /// landing block, `start + blocks_elapsed + 1` when the runway suffices.
+    #[metric(buckets(0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.5, 4, 6, 8, 12))]
+    settle_headroom: prometheus::Histogram,
 
     /// Tracks the size of the `/solve` request body in bytes. The `kind` label
     /// tells the two bodies apart: `full` is sent to regular drivers, `delta`
@@ -1260,14 +1273,67 @@ impl Metrics {
         Self::get().single_run_time.observe(elapsed.as_secs_f64());
     }
 
-    fn winner_declared(elapsed: Duration) {
+    /// Records when the winner is declared, acts as a proxy to the time at
+    /// which we call `/settle` on solvers. Additionally it records more
+    /// metrics around `/settle` see [`Metrics::record_settle_block_metrics`]
+    /// for details.
+    fn winner_declared(start_block: BlockInfo, current_block: &CurrentBlockWatcher) {
+        let elapsed = start_block.observed_at.elapsed();
         Self::get().winner_declared.observe(elapsed.as_secs_f64());
+
+        Self::record_settle_block_metrics(start_block, current_block);
     }
 
     fn auction_ready(init_block_timestamp: Instant) {
         Self::get()
             .current_block_delay
             .observe(init_block_timestamp.elapsed().as_secs_f64())
+    }
+
+    /// Records where the `/settle` request lands relative to block production:
+    /// how many block windows the run burned, plus the runway left when the
+    /// targeted block is still ahead. Call immediately before the request goes
+    /// out.
+    fn record_settle_block_metrics(
+        start_block: BlockInfo,
+        current_block: &ethrpc::block_stream::CurrentBlockWatcher,
+    ) {
+        let head = current_block.borrow().number;
+        let blocks_elapsed = head.saturating_sub(start_block.number);
+        Self::get()
+            .settle_blocks_elapsed
+            .observe(blocks_elapsed as f64);
+
+        // Anchored on the head rather than on the auction's start block: once a
+        // run overran, the question is whether the request still makes the next
+        // block or loses one more. Both anchors agree when nothing overran.
+        Self::record_time_to_next_block(head + 1, Instant::now(), current_block.clone());
+    }
+
+    /// Waits in the background for `target` to arrive and records how much
+    /// runway the `/settle` request had. Waiting on an explicit block number
+    /// rather than "the next block" matters: a block landing before this task
+    /// is first polled would otherwise be skipped, overstating the runway by a
+    /// whole block.
+    fn record_time_to_next_block(
+        target: u64,
+        sent_at: Instant,
+        watcher: ethrpc::block_stream::CurrentBlockWatcher,
+    ) {
+        tokio::spawn(async move {
+            let mut stream = ethrpc::block_stream::into_stream(watcher);
+            while let Some(block) = stream.next().await {
+                if block.number >= target {
+                    Self::get().settle_headroom.observe(
+                        block
+                            .observed_at
+                            .saturating_duration_since(sent_at)
+                            .as_secs_f64(),
+                    );
+                    return;
+                }
+            }
+        });
     }
 
     fn solve_request_body_size(kind: &str, size: usize) {

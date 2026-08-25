@@ -9,7 +9,10 @@ use {
         domain,
         infra::{config, solver::dto::auction::Auction},
     },
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{
+        pubkey::Pubkey,
+        signer::{Signer, keypair::Keypair},
+    },
     std::sync::Arc,
     thiserror::Error,
     tokio::sync::Semaphore,
@@ -18,10 +21,10 @@ use {
 pub mod dto;
 
 /// A configured solver engine HTTP client.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Solver {
     name: String,
-    account: Pubkey,
+    keypair: Arc<Keypair>,
     client: reqwest::Client,
     base_url: reqwest::Url,
     in_flight: Arc<Semaphore>,
@@ -33,22 +36,48 @@ impl Solver {
         &self.name
     }
 
+    /// The solver's on-chain identity, derived from its signer keypair.
+    pub fn pubkey(&self) -> Pubkey {
+        self.keypair.pubkey()
+    }
+
     /// Build a solver client from its configuration.
-    pub fn new(config: &config::Solver) -> Self {
-        Self {
+    ///
+    /// Loads the signer keypair from `config.signer_keypair`.
+    pub fn new(config: &config::Solver) -> Result<Self, Error> {
+        let keypair = solana_sdk::signer::keypair::read_keypair_file(&config.signer_keypair)
+            .map_err(|error| Error::SignerKeypair {
+                solver: config.name.clone(),
+                path: config.signer_keypair.clone(),
+                error,
+            })?;
+        let keypair = Arc::new(keypair);
+        tracing::info!(
+            solver = %config.name,
+            pubkey = %keypair.pubkey(),
+            "loaded solver keypair"
+        );
+        Ok(Self {
             name: config.name.clone(),
-            account: config.account,
+            keypair,
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             in_flight: Arc::new(Semaphore::new(config.max_in_flight.get())),
-        }
+        })
     }
 
     /// POST the auction to this engine's `/solve` endpoint and return the
     /// domain solutions it produced.
+    ///
+    /// `program_id` is the settlement program the swap instructions are built
+    /// for.
     #[tracing::instrument(name = "solver_engine", skip_all, fields(solver = %self.name))]
-    pub async fn solve(&self, auction: &domain::Auction) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(auction, self.account);
+    pub async fn solve(
+        &self,
+        auction: &domain::Auction,
+        program_id: Pubkey,
+    ) -> Result<Vec<domain::Solution>, Error> {
+        let auction_dto = Auction::new(auction, self.pubkey(), program_id);
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
@@ -98,7 +127,7 @@ impl Solver {
 
         let solutions: dto::Solutions = response.json().await?;
         solutions
-            .into_domain(&auction_dto, self.account)
+            .into_domain(&auction_dto, self.pubkey())
             .map_err(Error::BadResponse)
     }
 }
@@ -123,23 +152,34 @@ pub enum Error {
     /// The auction deadline passed before a solve request could be sent.
     #[error("auction deadline exceeded")]
     DeadlineExceeded,
+    /// The signer keypair could not be loaded from the configured path.
+    #[error("failed to load signer keypair for solver {solver} from {path}: {error}")]
+    SignerKeypair {
+        solver: String,
+        path: std::path::PathBuf,
+        #[source]
+        error: Box<dyn std::error::Error>,
+    },
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::num::NonZero};
+    use {super::*, solana_testlib::temp_keypair, std::num::NonZero};
 
     #[tokio::test]
     async fn solve_with_past_deadline_is_rejected() {
         // Build a solver pointing at a port that is never listened on. The
         // deadline check fires before any HTTP request is sent, so this never
         // actually connects to the endpoint.
+        let keypair_file = temp_keypair();
+        let keypair_path = keypair_file.path().to_path_buf();
         let solver = Solver::new(&config::Solver {
             name: "test".to_owned(),
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
-            account: Pubkey::default(),
+            signer_keypair: keypair_path,
             max_in_flight: NonZero::new(1).unwrap(),
-        });
+        })
+        .expect("solver construction should succeed");
         let auction = domain::Auction {
             id: domain::Id::new(1).unwrap(),
             orders: Vec::new(),
@@ -148,7 +188,10 @@ mod tests {
             deadline: chrono::Utc::now() - chrono::Duration::seconds(10),
         };
 
-        let err = solver.solve(&auction).await.expect_err("solve should fail");
+        let err = solver
+            .solve(&auction, Pubkey::default())
+            .await
+            .expect_err("solve should fail");
         assert!(
             matches!(err, Error::DeadlineExceeded),
             "expected DeadlineExceeded, got {err:?}"

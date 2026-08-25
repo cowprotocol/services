@@ -9,17 +9,19 @@ use {
             ingester::{Error, INGEST_TO_DECODER_CAPACITY, Ingester, Resume},
         },
         persistence::Postgres,
-        rpc::Rpc,
         yellowstone,
     },
     clap::Parser,
-    sqlx::postgres::PgPoolOptions,
+    cow_solana_rpc::{CommitmentConfig, SolanaRPC},
+    observe::metrics::{DEFAULT_METRICS_PORT, LivenessChecking, serve_metrics},
+    sqlx::{PgPool, postgres::PgPoolOptions},
     std::{
+        net::SocketAddr,
         path::PathBuf,
         sync::{Arc, atomic::AtomicU64},
         time::Duration,
     },
-    tokio::sync::mpsc,
+    tokio::{sync::mpsc, task::JoinHandle},
     yellowstone_grpc_client::GeyserGrpcClient,
 };
 
@@ -60,8 +62,14 @@ async fn run(config: Config, start_slot: Option<u64>) {
         .connect(config.database.write_url.as_str())
         .await
         .expect("database connection");
+    let mut metrics = serve_probes(pool.clone());
     let persistence = Postgres::new(pool);
-    let rpc = Rpc::new(config.rpc.endpoint, config.rpc.request_timeout);
+    // Confirmed commitment, matching the stream subscription.
+    let rpc = SolanaRPC::new_with_timeout_and_commitment(
+        &config.rpc.endpoint,
+        config.rpc.request_timeout,
+        CommitmentConfig::confirmed(),
+    );
 
     let (tx, rx) = mpsc::channel(INGEST_TO_DECODER_CAPACITY);
     let settlement_program = config.chain.settlement_program_id;
@@ -120,7 +128,30 @@ async fn run(config: Config, start_slot: Option<u64>) {
             tracing::error!(?result, "decoder stopped");
         }
         result = &mut decoder_task => tracing::error!(?result, "decoder stopped"),
+        result = &mut metrics => tracing::error!(?result, "metrics server stopped"),
         _ = observe::shutdown::shutdown_signal() => tracing::info!("shutdown signal received"),
+    }
+}
+
+/// Serve the metrics and probe routes on the metrics port.
+fn serve_probes(pool: PgPool) -> JoinHandle<()> {
+    serve_metrics(
+        Arc::new(Liveness { pool }),
+        SocketAddr::from(([0, 0, 0, 0], DEFAULT_METRICS_PORT)),
+        Default::default(),
+        Default::default(),
+    )
+}
+
+/// Fails the liveness probe when the database is unreachable.
+struct Liveness {
+    pool: PgPool,
+}
+
+#[async_trait::async_trait]
+impl LivenessChecking for Liveness {
+    async fn is_alive(&self) -> bool {
+        sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
     }
 }
 

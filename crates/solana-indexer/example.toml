@@ -7,11 +7,14 @@ write-url = "postgresql://"
 
 [chain]
 # The settlement program deployed on devnet.
-settlement-program-id = "MooohhPEAAHwAwEozL7JPEmnDvaahuUpccYN4Yb8ccK"
+# Defaults to the official deployment the interface crate exports.
+# settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [yellowstone]
 endpoint = "https://yellowstone.example.com"
-# x-token = "secret"
+# A value like "%YELLOWSTONE_X_TOKEN" reads the token from that environment
+# variable.
+# x-token = "%YELLOWSTONE_X_TOKEN"
 
 [rpc]
 endpoint = "https://api.devnet.solana.com"
