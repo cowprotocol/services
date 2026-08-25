@@ -1185,7 +1185,7 @@ struct Metrics {
     /// Seconds of runway the `/settle` call had: how long until the block after
     /// the current head arrives. With `settle_blocks_elapsed` it predicts the
     /// landing block, `start + blocks_elapsed + 1` when the runway suffices.
-    #[metric(buckets(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12))]
+    #[metric(buckets(0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.5, 4, 6, 8, 12))]
     settle_headroom: prometheus::Histogram,
 
     /// Tracks the size of the `/solve` request body in bytes. The `kind` label
