@@ -1,4 +1,4 @@
-//! Competition bookkeeping. Everything is logged only: there are no
+//! Competition bookkeeping. Outcomes are logged only: there are no
 //! competition tables (auction snapshots, proposed executions, order
 //! events) to write.
 //!
@@ -9,6 +9,7 @@
 use {
     crate::{
         domain::{auction::Auction, cycle::Ranking},
+        infra::observation::SettlementWindows,
         run_loop::SettlementObserver,
     },
     async_trait::async_trait,
@@ -16,7 +17,17 @@ use {
     std::collections::HashSet,
 };
 
-pub struct LogObserver;
+/// Logs the competition phases and drives the settlement-timeout check off
+/// the per-cycle tip.
+pub struct LogObserver {
+    windows: SettlementWindows,
+}
+
+impl LogObserver {
+    pub fn new(windows: SettlementWindows) -> Self {
+        Self { windows }
+    }
+}
 
 #[async_trait]
 impl SettlementObserver<crate::domain::cycle::SolanaCycle> for LogObserver {
@@ -31,6 +42,11 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for LogObserver {
         ranking: &Ranking,
         deadline: u64,
     ) -> anyhow::Result<()> {
+        // Best effort: the expiry bookkeeping only touches previously
+        // dispatched windows and must not block the current dispatch.
+        if let Err(err) = self.windows.expire_past_deadline(*tip).await {
+            tracing::error!(?err, "failed to flag expired settlement windows");
+        }
         tracing::info!(
             tip,
             deadline,
