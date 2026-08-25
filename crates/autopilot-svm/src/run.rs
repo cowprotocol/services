@@ -11,7 +11,7 @@ use {
             executor::DriverExecutor,
             listen::ListenSession,
             observation::SettlementWindows,
-            observer::LogObserver,
+            observer::CompetitionObserver,
             provider::DbAuctionProvider,
             trigger::SlotTrigger,
         },
@@ -107,7 +107,7 @@ async fn run(config: Config) {
 
     let auction_loop = AuctionLoop::new(
         Box::new(SlotTrigger::new(rpc)),
-        Box::new(DbAuctionProvider::new(pool)),
+        Box::new(DbAuctionProvider::new(pool.clone())),
         Box::new(DriverCompetition::new(
             drivers.clone(),
             config.competition.solve_deadline,
@@ -117,7 +117,7 @@ async fn run(config: Config) {
             Pubkey(config.contracts.wrapped_native_mint.to_bytes()),
         )),
         Box::new(DriverExecutor::new(drivers, windows.clone())),
-        Box::new(LogObserver::new(windows)),
+        Box::new(CompetitionObserver::new(pool, windows)),
         config.competition.submission_deadline_slots.get(),
     );
     let liveness = Arc::new(Liveness::new(config.max_auction_age));

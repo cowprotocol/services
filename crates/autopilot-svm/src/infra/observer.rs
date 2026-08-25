@@ -1,6 +1,6 @@
-//! Competition bookkeeping. Outcomes are logged only: there are no
-//! competition tables (auction snapshots, proposed executions, order
-//! events) to write.
+//! Competition bookkeeping. Auction progress is written to
+//! `solana.order_events`, everything else is logged only: there are no
+//! competition tables (auction snapshots, proposed executions) to write.
 //!
 //! TODO: persist the competition outcome once the tables exist. The
 //! settlement attribution (`solana.settlements.solution_uid`) depends on
@@ -9,30 +9,48 @@
 use {
     crate::{
         domain::{auction::Auction, cycle::Ranking},
-        infra::observation::SettlementWindows,
+        infra::{observation::SettlementWindows, order_events},
         run_loop::SettlementObserver,
     },
     async_trait::async_trait,
     chain_types::solana::IntentHash,
+    database::solana::OrderEventLabel,
+    sqlx::PgPool,
     std::collections::HashSet,
 };
 
-/// Logs the competition phases and drives the settlement-timeout check off
-/// the per-cycle tip.
-pub struct LogObserver {
+/// Writes order events, logs the competition phases, and drives the
+/// settlement-timeout check off the per-cycle tip.
+pub struct CompetitionObserver {
+    pool: PgPool,
     windows: SettlementWindows,
 }
 
-impl LogObserver {
-    pub fn new(windows: SettlementWindows) -> Self {
-        Self { windows }
+impl CompetitionObserver {
+    pub fn new(pool: PgPool, windows: SettlementWindows) -> Self {
+        Self { pool, windows }
+    }
+
+    /// Store the events without blocking the cycle: a lost event degrades the
+    /// status endpoint, never the competition.
+    fn store_events(&self, uids: Vec<IntentHash>, label: OrderEventLabel) {
+        let pool = self.pool.clone();
+        tokio::spawn(async move {
+            if let Err(err) = order_events::store(&pool, uids, label).await {
+                tracing::error!(?err, ?label, "failed to store order events");
+            }
+        });
     }
 }
 
 #[async_trait]
-impl SettlementObserver<crate::domain::cycle::SolanaCycle> for LogObserver {
+impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserver {
     fn on_orders_ready(&self, auction: &Auction) {
         tracing::debug!(orders = auction.orders.len(), "auction entered competition");
+        self.store_events(
+            auction.orders.iter().map(|order| order.uid).collect(),
+            OrderEventLabel::Ready,
+        );
     }
 
     async fn persist_competition_ranking(
@@ -63,6 +81,11 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for LogObserver {
             executing = executing.len(),
             considered = considered.len(),
             "orders matched"
+        );
+        self.store_events(executing.into_iter().collect(), OrderEventLabel::Executing);
+        self.store_events(
+            considered.into_iter().collect(),
+            OrderEventLabel::Considered,
         );
     }
 
