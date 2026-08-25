@@ -4,7 +4,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
-    database::byte_array::ByteArray,
+    database::{byte_array::ByteArray, solana::OrderKind},
     sqlx::PgExecutor,
 };
 
@@ -20,7 +20,7 @@ pub struct OrderRow {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub valid_to: i64,
-    pub kind: String,
+    pub kind: OrderKind,
     pub partially_fillable: bool,
     pub app_data: ByteArray<32>,
     pub creation_timestamp: DateTime<Utc>,
@@ -35,7 +35,7 @@ pub async fn order_by_uid(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<Opti
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
-       o.kind::text AS kind, o.partially_fillable, o.app_data,
+       o.kind, o.partially_fillable, o.app_data,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
@@ -65,7 +65,7 @@ mod tests {
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now(), $5)
+VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
             "#,
         )
         .bind(ByteArray(uid))
@@ -99,7 +99,7 @@ VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
 
         let row = order_by_uid(&pool, uid).await.unwrap().unwrap();
         assert_eq!(row.uid, ByteArray(uid));
-        assert_eq!(row.kind, "sell");
+        assert_eq!(row.kind, OrderKind::Sell);
         assert_eq!(row.amount_withdrawn, BigDecimal::from(400));
         assert_eq!(row.amount_received, BigDecimal::from(0));
         assert!(row.cancellation_timestamp.is_none());
