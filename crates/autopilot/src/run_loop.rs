@@ -1169,7 +1169,9 @@ struct Metrics {
 
     /// Time difference between the current block and when the single run
     /// function is started.
-    #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
+    #[metric(buckets(
+        0.25, 0.35, 0.40, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 1, 1.25, 1.5, 2
+    ))]
     current_block_delay: prometheus::Histogram,
 
     /// Blocks between the auction's start block and the `/settle` call. Zero
