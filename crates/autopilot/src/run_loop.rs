@@ -1304,7 +1304,7 @@ impl Metrics {
         // Anchored on the head rather than on the auction's start block: once a
         // run overran, the question is whether the request still makes the next
         // block or loses one more. Both anchors agree when nothing overran.
-        Self::record_headroom(head + 1, Instant::now(), current_block.clone());
+        Self::record_time_to_next_block(head + 1, Instant::now(), current_block.clone());
     }
 
     /// Waits in the background for `target` to arrive and records how much
@@ -1312,7 +1312,7 @@ impl Metrics {
     /// rather than "the next block" matters: a block landing before this task
     /// is first polled would otherwise be skipped, overstating the runway by a
     /// whole block.
-    fn record_headroom(
+    fn record_time_to_next_block(
         target: u64,
         sent_at: Instant,
         watcher: ethrpc::block_stream::CurrentBlockWatcher,
