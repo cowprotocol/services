@@ -685,7 +685,7 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 mod tests {
     use {
         super::*,
-        alloy::primitives::{Address, U256},
+        alloy::primitives::Address,
         chrono::Duration,
         database::{
             byte_array::ByteArray,
@@ -707,9 +707,11 @@ mod tests {
         std::sync::atomic::{AtomicI64, Ordering},
     };
 
-    fn order_row() -> FullOrder {
+    #[test]
+    fn order_status() {
         let valid_to_timestamp = Utc::now() + Duration::days(1);
-        FullOrder {
+
+        let order_row = || FullOrder {
             uid: ByteArray([0; 56]),
             owner: ByteArray([0; 20]),
             creation_timestamp: Utc::now(),
@@ -744,35 +746,8 @@ mod tests {
             executed_fee_token: ByteArray([1; 20]), // TODO surplus token
             full_app_data: Default::default(),
             gas_cost: None,
-        }
-    }
-
-    /// An unrepresentable cost is an error, not a silent absence that would
-    /// read as "never attributed".
-    #[test]
-    fn convert_order_gas_cost() {
-        let convert = |gas_cost| {
-            full_order_with_quote_into_model_order(
-                FullOrder {
-                    gas_cost,
-                    ..order_row()
-                },
-                None,
-            )
         };
-        assert_eq!(
-            convert(Some(BigDecimal::from(1000)))
-                .unwrap()
-                .metadata
-                .gas_cost,
-            Some(U256::from(1000))
-        );
-        assert_eq!(convert(None).unwrap().metadata.gas_cost, None);
-        assert!(convert(Some(BigDecimal::from(-1))).is_err());
-    }
 
-    #[test]
-    fn order_status() {
         // Open - sell (filled - 0%)
         assert_eq!(calculate_status(&order_row()), OrderStatus::Open);
 

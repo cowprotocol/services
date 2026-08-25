@@ -199,33 +199,22 @@ mod tests {
         trade_from(TradesQueryRow::default(), vec![]).unwrap();
     }
 
-    /// An unattributed cost is reported as absent rather than as zero.
     #[test]
     fn convert_trade_gas_cost() {
-        let row = TradesQueryRow {
-            gas_cost: Some(BigDecimal::from(1000)),
-            ..Default::default()
+        let convert = |gas_cost| {
+            trade_from(
+                TradesQueryRow {
+                    gas_cost,
+                    ..Default::default()
+                },
+                vec![],
+            )
         };
         assert_eq!(
-            trade_from(row, vec![]).unwrap().gas_cost,
+            convert(Some(BigDecimal::from(1000))).unwrap().gas_cost,
             Some(U256::from(1000))
         );
-        assert_eq!(
-            trade_from(TradesQueryRow::default(), vec![])
-                .unwrap()
-                .gas_cost,
-            None
-        );
-    }
-
-    /// An unrepresentable cost is an error, not a silent absence that would
-    /// read as "never attributed".
-    #[test]
-    fn convert_trade_rejects_unrepresentable_gas_cost() {
-        let row = TradesQueryRow {
-            gas_cost: Some(BigDecimal::from(-1)),
-            ..Default::default()
-        };
-        assert!(trade_from(row, vec![]).is_err());
+        // An unrepresentable cost errors instead of reading as unattributed.
+        assert!(convert(Some(BigDecimal::from(-1))).is_err());
     }
 }

@@ -1410,10 +1410,8 @@ components:
           description: >
             Estimated gas cost attributed to this order, in native token wei,
             summed across its fills. Omitted unless the cost of every fill is
-            known, so an order that is not yet settled, or any of whose fills
-            predate this data being recorded, reports no cost rather than a
-            partial one. Only settlements observed after this field was
-            introduced carry a cost, so it is absent for most historical orders.
+            known, rather than reporting a partial total, so it is absent for an
+            unsettled order and for orders predating this being recorded.
           allOf:
             - $ref: "#/components/schemas/BigUint"
         fullAppData:
@@ -1800,9 +1798,8 @@ components:
             Estimated gas cost attributed to this trade, in native token wei:
             the settlement's gas cost split equally between the user trades it
             settled, not weighted by the gas each one consumed. Omitted if the
-            settlement predates this being recorded, which is the case for most
-            historical trades, and `0` for a JIT order that only provided
-            liquidity for the settlement's user trades.
+            settlement predates this being recorded, and `0` for a JIT order
+            that only provided liquidity.
           allOf:
             - $ref: "#/components/schemas/BigUint"
       required:

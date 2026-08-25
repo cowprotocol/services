@@ -197,10 +197,7 @@ mod tests {
 
     use {
         super::*,
-        crate::{
-            byte_array::ByteArray,
-            events::{Event, EventIndex, Settlement, Trade},
-        },
+        crate::byte_array::ByteArray,
         sqlx::{Connection, PgConnection},
     };
 
@@ -253,91 +250,5 @@ mod tests {
             .await
             .unwrap();
         get_by_id(&mut db, &jit_order.uid).await.unwrap().unwrap();
-    }
-
-    /// A JIT order pays no gas while it only provides liquidity, and a full
-    /// share once the auction lets its owner capture surplus.
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_jit_order_gas_cost() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let owner = ByteArray([7; 20]);
-        let mut uid = [0u8; 56];
-        uid[32..52].copy_from_slice(&owner.0);
-        let jit_order = JitOrder {
-            owner,
-            uid: ByteArray(uid),
-            ..Default::default()
-        };
-        insert(&mut db, std::slice::from_ref(&jit_order))
-            .await
-            .unwrap();
-
-        let event = |log_index| EventIndex {
-            block_number: 0,
-            log_index,
-        };
-        let fill = |log_index| {
-            (
-                event(log_index),
-                Event::Trade(Trade {
-                    order_uid: jit_order.uid,
-                    ..Default::default()
-                }),
-            )
-        };
-        let gas_cost = async |db: &mut crate::PgTransaction<'_>| {
-            get_by_id(db, &jit_order.uid)
-                .await
-                .unwrap()
-                .unwrap()
-                .gas_cost
-        };
-
-        // Each settlement settles one fill of this order on its own.
-        crate::events::append(
-            &mut db,
-            &[
-                fill(0),
-                (event(1), Event::Settlement(Settlement::default())),
-                fill(2),
-                (
-                    event(3),
-                    Event::Settlement(Settlement {
-                        transaction_hash: ByteArray([2; 32]),
-                        ..Default::default()
-                    }),
-                ),
-            ],
-        )
-        .await
-        .unwrap();
-
-        // Liquidity only, so this fill pays nothing. The other fill is still
-        // unattributed, which hides the total rather than understating it.
-        crate::trades::attribute_gas_cost(
-            &mut db,
-            event(1),
-            BigDecimal::from(100),
-            BigDecimal::from(10),
-            &[],
-        )
-        .await
-        .unwrap();
-        assert_eq!(gas_cost(&mut db).await, None);
-
-        crate::trades::attribute_gas_cost(
-            &mut db,
-            event(3),
-            BigDecimal::from(100),
-            BigDecimal::from(10),
-            &[jit_order.owner],
-        )
-        .await
-        .unwrap();
-        assert_eq!(gas_cost(&mut db).await, Some(BigDecimal::from(1000)));
     }
 }

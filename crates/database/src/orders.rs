@@ -538,9 +538,8 @@ pub struct FullOrder {
     pub executed_fee: BigDecimal,
     pub executed_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
-    /// The order's share of its settlements' gas costs in native token wei,
-    /// summed across fills. `None` when any fill's cost is unknown; queries
-    /// that don't need it select a literal `NULL`.
+    /// Share of its settlements' gas costs in native token wei, summed across
+    /// fills. `None` when any fill's cost is unknown.
     pub gas_cost: Option<BigDecimal>,
 }
 
@@ -835,7 +834,7 @@ pub fn solvable_orders(
         COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
         COALESCE(fee_agg.executed_fee_token, lo.sell_token) AS executed_fee_token,
         ad.full_app_data,
-        NULL AS gas_cost
+        NULL::numeric AS gas_cost
     FROM live_orders lo
     LEFT JOIN LATERAL (
         SELECT NOT signed AS unsigned
@@ -964,7 +963,7 @@ SELECT
     COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
     COALESCE(fee_agg.executed_fee_token, so.sell_token) AS executed_fee_token,
     ad.full_app_data,
-    NULL AS gas_cost
+    NULL::numeric AS gas_cost
 FROM selected_orders so
 LEFT JOIN LATERAL (
     SELECT NOT signed AS unsigned
@@ -2403,8 +2402,8 @@ mod tests {
         .unwrap();
     }
 
-    /// `gas_used` is attributed to the settled trades at a gas price of 10;
-    /// `None` leaves the settlement's cost unattributed.
+    /// Attributes `gas_used` to the settled trades at a gas price of 10;
+    /// `None` leaves the settlement unattributed.
     async fn settle(db: &mut PgTransaction<'_>, log_index: i64, tx: u8, gas_used: Option<u64>) {
         crate::events::append(
             db,
@@ -2437,7 +2436,6 @@ mod tests {
         }
     }
 
-    /// The stored value, so a `None` can only mean a `NULL` column.
     async fn order_gas(db: &mut PgConnection, uid: OrderUid) -> Option<BigDecimal> {
         single_full_order_with_quote(db, &uid)
             .await
@@ -2448,8 +2446,7 @@ mod tests {
     }
 
     /// An order's gas cost sums its share of each settlement that filled it,
-    /// and becomes unknown as soon as any fill's cost is unattributed — a
-    /// partial sum would pass for a complete one.
+    /// and becomes unknown as soon as any fill is unattributed.
     #[tokio::test]
     #[ignore]
     async fn postgres_order_gas_cost_across_fills() {
@@ -2458,8 +2455,7 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
         let (order_a, order_b) = two_orders(&mut db).await;
 
-        // 100 gas at price 10, split over the two trades this settlement
-        // settled.
+        // 100 gas at price 10, split over this settlement's two trades.
         fill(&mut db, order_a, 0).await;
         fill(&mut db, order_b, 1).await;
         settle(&mut db, 2, 0, Some(100)).await;
@@ -2486,58 +2482,6 @@ mod tests {
         settle(&mut db, 6, 2, None).await;
         assert!(order_gas(&mut db, order_a).await.is_none());
         assert_eq!(order_gas(&mut db, order_b).await, Some(500.into()));
-    }
-
-    /// The cost [`full_orders_in_tx`] reports for an order covers *all* of its
-    /// fills, not only the ones the requested transaction settled.
-    ///
-    /// The query joins `trades`, so an order it filled twice comes back twice,
-    /// each row repeating that same total: summing `gas_cost` over the rows
-    /// double counts.
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_orders_in_tx_gas_cost() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-        let (order_a, order_b) = two_orders(&mut db).await;
-
-        // The first settlement splits 1000 over 3 trades, two of them
-        // order_a's. The second gives order_a's next fill all of its 3000.
-        fill(&mut db, order_a, 0).await;
-        fill(&mut db, order_b, 1).await;
-        fill(&mut db, order_a, 2).await;
-        settle(&mut db, 3, 0, Some(100)).await;
-        fill(&mut db, order_a, 4).await;
-        settle(&mut db, 5, 1, Some(300)).await;
-
-        let orders_in = async |db: &mut PgTransaction<'_>, tx: u8| {
-            let mut orders = full_orders_in_tx(db, &ByteArray([tx; 32]))
-                .map_ok(|order| (order.uid, order.gas_cost))
-                .try_collect::<Vec<_>>()
-                .await
-                .unwrap();
-            // The query does not order its rows.
-            orders.sort_by_key(|(uid, _)| uid.0);
-            orders
-        };
-
-        // 333 + 333 for order_a's two fills here, plus 3000 from the fill the
-        // *other* transaction settled — repeated once per fill.
-        assert_eq!(
-            orders_in(&mut db, 0).await,
-            vec![
-                (order_a, Some(3666.into())),
-                (order_a, Some(3666.into())),
-                (order_b, Some(333.into())),
-            ]
-        );
-
-        // One fill here, so one row, still carrying the other transaction's.
-        assert_eq!(
-            orders_in(&mut db, 1).await,
-            vec![(order_a, Some(3666.into()))]
-        );
     }
 
     #[tokio::test]

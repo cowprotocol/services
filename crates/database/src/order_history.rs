@@ -360,7 +360,7 @@ mod tests {
         let none = user_orders(&mut db, &ByteArray([0xabu8; 20]), 0, Some(100)).await;
         assert!(none.is_empty());
 
-        // One fill per arm of the union. uid_a and uid_b are in `orders`, so
+        // One fill per arm of the union. uid_a and uid_b are in `orders` so
         // they split the 1000; uid_c only provides liquidity.
         let event = |log_index| EventIndex {
             block_number: 0,
@@ -406,9 +406,9 @@ mod tests {
             gas_costs,
             vec![
                 (uid_a, Some(BigDecimal::from(500))),
-                // In both tables: the row the union keeps is the `orders` one.
+                // In both tables; the union keeps the `orders` row.
                 (uid_b, Some(BigDecimal::from(500))),
-                // Read through the `jit_orders` arm of the union.
+                // Read through the `jit_orders` arm.
                 (uid_c, Some(BigDecimal::from(0))),
                 (uid_d, None),
                 (uid_e, None),

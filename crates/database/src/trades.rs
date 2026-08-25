@@ -26,26 +26,18 @@ pub struct TradesQueryRow {
     pub sell_token: Address,
     pub tx_hash: Option<TransactionHash>,
     pub auction_id: Option<AuctionId>,
-    /// This trade's share of its settlement's gas cost in native token wei, as
-    /// attributed by [`attribute_gas_cost`]. `NULL` for settlements observed
-    /// before the migration that added the column, `0` for a JIT order that
-    /// only provided liquidity.
+    /// Share of the settlement's gas cost in native token wei, as attributed
+    /// by [`attribute_gas_cost`]. `NULL` for settlements observed before the
+    /// column existed, `0` for a liquidity-only JIT order.
     pub gas_cost: Option<BigDecimal>,
 }
 
 /// Select-list expression summing the gas costs of the fills of an order
-/// aliased `o`. `NULL` unless every fill's cost is known — a bare `SUM` would
-/// silently understate the total. Read through the alias `fill` so it also
-/// works in a query that joins `trades` itself.
-///
-/// Unlike the executed-amount sums beside it, this probe is not covered by the
-/// `trades_covering` index, so it visits the heap: measured at +45% plan cost
-/// for a 1000-order page. If that starts to show on the order endpoints, add
-/// `gas_cost` to that index's `INCLUDE` list to make the probe index-only
-/// again.
-pub(crate) const ORDER_GAS_COST: &str = "(SELECT CASE WHEN COUNT(*) = COUNT(fill.gas_cost) THEN \
-                                         SUM(fill.gas_cost) END FROM trades fill WHERE \
-                                         fill.order_uid = o.uid) AS gas_cost";
+/// aliased `o`. `NULL` unless every fill's cost is known, because a bare `SUM`
+/// would silently understate the total.
+pub(crate) const ORDER_GAS_COST: &str = "(SELECT CASE WHEN COUNT(*) = COUNT(t.gas_cost) THEN \
+                                         SUM(t.gas_cost) END FROM trades t WHERE t.order_uid = \
+                                         o.uid) AS gas_cost";
 
 pub fn trades<'a>(
     ex: &'a mut PgConnection,
@@ -204,10 +196,9 @@ pub async fn get_trades_for_settlement(
 /// settlements attributes its full cost twice, once per settlement. We do not
 /// expect this to happen.
 ///
-/// The `orders` test only holds once the indexer that writes an on-chain
-/// order's row has caught up with the settlement's block, which is why the
-/// autopilot attributes from `run_optional_maintenance`. Attributing earlier
-/// would permanently class such an order as liquidity-only.
+/// The `orders` test only holds once the indexer has written an on-chain
+/// order's row, hence attribution from `run_optional_maintenance`: attributing
+/// earlier would permanently class such an order as liquidity-only.
 #[instrument(skip_all)]
 pub async fn attribute_gas_cost(
     ex: &mut PgTransaction<'_>,
@@ -1018,8 +1009,7 @@ mod tests {
         );
     }
 
-    /// The trades query reports the share stored for each trade, and no cost
-    /// at all for a trade whose settlement was never attributed.
+    /// A trade whose settlement was never attributed reports no cost at all.
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_report_attributed_gas_cost() {

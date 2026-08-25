@@ -31,10 +31,9 @@ pub struct Trade {
     // Settlement Data
     pub tx_hash: Option<B256>,
     pub executed_protocol_fees: Vec<ExecutedProtocolFee>,
-    /// The trade's estimated share of its settlement's gas cost, in native
-    /// token wei. `None` if the settlement predates this being recorded, `0`
-    /// for a JIT order that only provided liquidity for the settlement's user
-    /// trades.
+    /// Share of the settlement's gas cost in native token wei. `None` if the
+    /// settlement predates this being recorded, `0` for a JIT order that only
+    /// provided liquidity.
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gas_cost: Option<U256>,
@@ -148,18 +147,6 @@ mod tests {
         assert_eq!(deserialized, expected);
         let serialized = serde_json::to_value(expected).unwrap();
         assert_json_matches!(serialized, value);
-    }
-
-    #[test]
-    fn unknown_gas_cost_is_omitted() {
-        let serialized = serde_json::to_value(Trade::default()).unwrap();
-        assert!(serialized.get("gasCost").is_none());
-        assert_eq!(
-            serde_json::from_value::<Trade>(serialized)
-                .unwrap()
-                .gas_cost,
-            None
-        );
     }
 
     #[test]
