@@ -122,7 +122,6 @@ async fn driver_solves_against_live_jupiter_engine() {
     let solver = Solver::new(&config::Solver {
         name: "jupiter-live".to_string(),
         endpoint: format!("http://{addr}").parse().unwrap(),
-        account: solver_account,
         signer_keypair: keypair_path,
         max_in_flight: std::num::NonZero::new(1).unwrap(),
     })

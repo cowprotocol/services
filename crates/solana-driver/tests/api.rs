@@ -4,11 +4,7 @@ use {
     cow_settlement_interface::pda::order::find_order_pda,
     cow_solana_rpc::SolanaRPC,
     solana_driver::infra::{api::Api, blockchain::Solana, config, solver::Solver},
-    solana_sdk::{
-        hash::Hash,
-        pubkey::Pubkey,
-        signer::{Signer, keypair::read_keypair_file},
-    },
+    solana_sdk::{hash::Hash, pubkey::Pubkey},
     solana_testlib::temp_keypair,
     std::{net::SocketAddr, num::NonZero, sync::Arc},
     tokio_util::sync::CancellationToken,
@@ -69,15 +65,14 @@ async fn spawn_mock_solver_engine(response: serde_json::Value) -> SocketAddr {
 fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
     let keypair_file = temp_keypair();
     let keypair_path = keypair_file.path().to_path_buf();
-    let account = read_keypair_file(&keypair_path).unwrap().pubkey();
     let solver = Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: format!("http://{addr}").parse().unwrap(),
-        account,
         signer_keypair: keypair_path,
         max_in_flight: NonZero::new(1).unwrap(),
     })
     .expect("solver construction should succeed");
+    let account = solver.pubkey();
     (solver, account)
 }
 
