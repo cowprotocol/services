@@ -30,7 +30,7 @@ use {
     database::order_events::OrderEventLabel,
     eth_domain_types::{self as eth, Address, TxId},
     ethrpc::block_stream::BlockInfo,
-    futures::{FutureExt, TryFutureExt},
+    futures::{FutureExt, StreamExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -465,7 +465,7 @@ impl RunLoop {
 
             self.start_settlement_execution(
                 auction.id,
-                start_block.observed_at,
+                start_block,
                 driver,
                 solution,
                 solution_uid,
@@ -481,7 +481,7 @@ impl RunLoop {
     fn start_settlement_execution(
         self: &Arc<Self>,
         auction_id: Id,
-        single_run_start: Instant,
+        start_block: BlockInfo,
         driver: &Arc<infra::Driver>,
         solution: &Solution,
         solution_uid: usize,
@@ -505,6 +505,7 @@ impl RunLoop {
                     solution_id,
                     solution_uid,
                     block_deadline,
+                    start_block,
                 )
                 .await
             {
@@ -521,7 +522,7 @@ impl RunLoop {
                     tracing::warn!(?err, driver = %driver_.name, "settlement failed");
                 }
             }
-            Metrics::single_run_completed(single_run_start.elapsed());
+            Metrics::single_run_completed(start_block.observed_at.elapsed());
         }
         .instrument(tracing::Span::current());
 
@@ -851,6 +852,7 @@ impl RunLoop {
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
     #[instrument(skip_all, fields(driver = driver.name, solution_uid))]
+    #[expect(clippy::too_many_arguments)]
     async fn settle(
         &self,
         driver: &infra::Driver,
@@ -859,6 +861,7 @@ impl RunLoop {
         solution_id: u64,
         solution_uid: usize,
         submission_deadline_latest_block: u64,
+        start_block: BlockInfo,
     ) -> Result<TxId, SettleError> {
         let settle = async move {
             let current_block = self.eth.current_block().borrow().number;
@@ -880,6 +883,7 @@ impl RunLoop {
                 current_block,
                 submission_deadline_latest_block,
             );
+            Metrics::settle_block_position(start_block, self.eth.current_block());
             driver
                 .settle(&request, self.config.max_settlement_transaction_wait)
                 .await
@@ -1172,6 +1176,18 @@ struct Metrics {
     #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
 
+    /// Blocks between the auction's start block and the `/settle` call. Zero
+    /// means the call still fits in the block the auction was built on; higher
+    /// values count the block windows a single run burns.
+    #[metric(buckets(0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64))]
+    settle_blocks_elapsed: prometheus::Histogram,
+
+    /// Seconds of runway the `/settle` call had: how long until the block after
+    /// the current head arrives. With `settle_blocks_elapsed` it predicts the
+    /// landing block, `start + blocks_elapsed + 1` when the runway suffices.
+    #[metric(buckets(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12))]
+    settle_headroom: prometheus::Histogram,
+
     /// Tracks the size of the `/solve` request body in bytes. The `kind` label
     /// tells the two bodies apart: `full` is sent to regular drivers, `delta`
     /// to the drivers that opted into incremental auctions. Both are equal on
@@ -1269,6 +1285,52 @@ impl Metrics {
         Self::get()
             .current_block_delay
             .observe(init_block_timestamp.elapsed().as_secs_f64())
+    }
+
+    /// Records where the `/settle` request lands relative to block production:
+    /// how many block windows the run burned, plus the runway left when the
+    /// targeted block is still ahead. Call immediately before the request goes
+    /// out.
+    fn settle_block_position(
+        start_block: BlockInfo,
+        current_block: &ethrpc::block_stream::CurrentBlockWatcher,
+    ) {
+        let head = current_block.borrow().number;
+        let blocks_elapsed = head.saturating_sub(start_block.number);
+        Self::get()
+            .settle_blocks_elapsed
+            .observe(blocks_elapsed as f64);
+
+        // Anchored on the head rather than on the auction's start block: once a
+        // run overran, the question is whether the request still makes the next
+        // block or loses one more. Both anchors agree when nothing overran.
+        Self::record_headroom(head + 1, Instant::now(), current_block.clone());
+    }
+
+    /// Waits in the background for `target` to arrive and records how much
+    /// runway the `/settle` request had. Waiting on an explicit block number
+    /// rather than "the next block" matters: a block landing before this task
+    /// is first polled would otherwise be skipped, overstating the runway by a
+    /// whole block.
+    fn record_headroom(
+        target: u64,
+        sent_at: Instant,
+        watcher: ethrpc::block_stream::CurrentBlockWatcher,
+    ) {
+        tokio::spawn(async move {
+            let mut stream = ethrpc::block_stream::into_stream(watcher);
+            while let Some(block) = stream.next().await {
+                if block.number >= target {
+                    Self::get().settle_headroom.observe(
+                        block
+                            .observed_at
+                            .saturating_duration_since(sent_at)
+                            .as_secs_f64(),
+                    );
+                    return;
+                }
+            }
+        });
     }
 
     fn solve_request_body_size(kind: &str, size: usize) {
