@@ -32,13 +32,6 @@ pub struct TradesQueryRow {
     pub gas_cost: Option<BigDecimal>,
 }
 
-/// Select-list expression summing the gas costs of the fills of an order
-/// aliased `o`. `NULL` unless every fill's cost is known, because a bare `SUM`
-/// would silently understate the total.
-pub(crate) const ORDER_GAS_COST: &str = "(SELECT CASE WHEN COUNT(*) = COUNT(t.gas_cost) THEN \
-                                         SUM(t.gas_cost) END FROM trades t WHERE t.order_uid = \
-                                         o.uid) AS gas_cost";
-
 pub fn trades<'a>(
     ex: &'a mut PgConnection,
     owner_filter: Option<&'a Address>,
