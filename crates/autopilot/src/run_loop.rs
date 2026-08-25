@@ -851,7 +851,6 @@ impl RunLoop {
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
     #[instrument(skip_all, fields(driver = driver.name, solution_uid))]
-    #[expect(clippy::too_many_arguments)]
     async fn settle(
         &self,
         driver: &infra::Driver,
@@ -1282,7 +1281,7 @@ impl Metrics {
         let elapsed = start_block.observed_at.elapsed();
         Self::get().winner_declared.observe(elapsed.as_secs_f64());
 
-        Self::record_settle_block_metrics(start_block, &current_block);
+        Self::record_settle_block_metrics(start_block, current_block);
     }
 
     fn auction_ready(init_block_timestamp: Instant) {
