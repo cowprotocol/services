@@ -883,7 +883,7 @@ impl RunLoop {
                 current_block,
                 submission_deadline_latest_block,
             );
-            Metrics::settle_block_position(start_block, self.eth.current_block());
+            Metrics::record_settle_block_metrics(start_block, self.eth.current_block());
             driver
                 .settle(&request, self.config.max_settlement_transaction_wait)
                 .await
@@ -1291,7 +1291,7 @@ impl Metrics {
     /// how many block windows the run burned, plus the runway left when the
     /// targeted block is still ahead. Call immediately before the request goes
     /// out.
-    fn settle_block_position(
+    fn record_settle_block_metrics(
         start_block: BlockInfo,
         current_block: &ethrpc::block_stream::CurrentBlockWatcher,
     ) {
