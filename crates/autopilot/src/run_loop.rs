@@ -29,7 +29,7 @@ use {
     chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
     eth_domain_types::{self as eth, Address, TxId},
-    ethrpc::block_stream::BlockInfo,
+    ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     futures::{FutureExt, StreamExt, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
@@ -457,7 +457,7 @@ impl RunLoop {
             OrderEventLabel::Considered,
         );
         tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
-        Metrics::winner_declared(start_block.observed_at.elapsed());
+        Metrics::winner_declared(start_block, self.eth.current_block());
 
         for (solution_uid, winner) in ranking.enumerated().filter(|(_, bid)| bid.is_winner()) {
             let (driver, solution) = (winner.driver(), winner.solution());
@@ -505,7 +505,6 @@ impl RunLoop {
                     solution_id,
                     solution_uid,
                     block_deadline,
-                    start_block,
                 )
                 .await
             {
@@ -861,7 +860,6 @@ impl RunLoop {
         solution_id: u64,
         solution_uid: usize,
         submission_deadline_latest_block: u64,
-        start_block: BlockInfo,
     ) -> Result<TxId, SettleError> {
         let settle = async move {
             let current_block = self.eth.current_block().borrow().number;
@@ -883,7 +881,6 @@ impl RunLoop {
                 current_block,
                 submission_deadline_latest_block,
             );
-            Metrics::record_settle_block_metrics(start_block, self.eth.current_block());
             driver
                 .settle(&request, self.config.max_settlement_transaction_wait)
                 .await
@@ -1277,8 +1274,15 @@ impl Metrics {
         Self::get().single_run_time.observe(elapsed.as_secs_f64());
     }
 
-    fn winner_declared(elapsed: Duration) {
+    /// Records when the winner is declared, acts as a proxy to the time at
+    /// which we call `/settle` on solvers. Additionally it records more
+    /// metrics around `/settle` see [`Metrics::record_settle_block_metrics`]
+    /// for details.
+    fn winner_declared(start_block: BlockInfo, current_block: &CurrentBlockWatcher) {
+        let elapsed = start_block.observed_at.elapsed();
         Self::get().winner_declared.observe(elapsed.as_secs_f64());
+
+        Self::record_settle_block_metrics(start_block, &current_block);
     }
 
     fn auction_ready(init_block_timestamp: Instant) {
