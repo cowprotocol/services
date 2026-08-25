@@ -21,8 +21,8 @@ impl super::Postgres {
 /// individual queries bounded regardless of how many events are stored at once.
 const INSERT_CHUNK_SIZE: usize = 1000;
 
-/// Advisory-lock key serializing the deduplicating event insert.
-const ORDER_EVENTS_WRITE_LOCK: i64 = 0x6f_72_64_65_72_5f_65_76;
+/// Advisory-lock name serializing the deduplicating event insert.
+const DEDUP_LOCK: &str = "order_events_dedup";
 
 pub async fn store_order_events(
     ex: &mut PgConnection,
@@ -36,10 +36,13 @@ pub async fn store_order_events(
     let insert = async move {
         let mut ex = ex.begin().await?;
         // The insert below skips an event whose label and reason already match
-        // the order's latest event. That comparison reads uncommitted-invisible
-        // rows, so two overlapping writers would both append. Serialize them.
-        sqlx::query("SELECT pg_advisory_xact_lock($1)")
-            .bind(ORDER_EVENTS_WRITE_LOCK)
+        // the order's latest event, a comparison that only sees committed rows,
+        // so two overlapping writers would both append. One lock for the whole
+        // table rather than per order: these transactions are small and run
+        // detached. Writers that insert events without taking this lock stay
+        // exposed to the same race.
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(DEDUP_LOCK)
             .execute(&mut *ex)
             .await?;
         let mut order_uids = order_uids.into_iter().map(|o| ByteArray(o.0));
