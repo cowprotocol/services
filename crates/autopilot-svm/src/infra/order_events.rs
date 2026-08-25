@@ -1,4 +1,4 @@
-//! Order event writes: the per-order auction-progress log.
+//! The per-order auction-progress log.
 
 use {
     anyhow::{Context, Result},
@@ -10,10 +10,8 @@ use {
 /// Advisory-lock name serializing the deduplicating insert.
 const DEDUP_LOCK: &str = "solana_order_events_dedup";
 
-/// Append one event per order, skipping orders whose latest event already
-/// carries the label, so a looping order marks each state once instead of
-/// once per cycle. Best effort by design: callers log failures, a lost event
-/// degrades the status endpoint, never the competition.
+/// Append one event per order, skipping a label the order's latest event
+/// already carries: a looping order marks each state once, not once per cycle.
 pub async fn store(
     pool: &PgPool,
     uids: impl IntoIterator<Item = IntentHash>,
@@ -24,11 +22,10 @@ pub async fn store(
         return Ok(());
     }
     let mut tx = pool.begin().await.context("begin order event write")?;
-    // The insert skips an event that repeats the order's latest label, a
-    // comparison that only sees committed rows, so two overlapping writers
-    // would both append. One lock for the whole table rather than per order:
-    // these transactions are small and run detached. Writers that insert
-    // events without taking this lock stay exposed to the same race.
+    // The dedup below compares against committed rows only, so writers that
+    // overlap both append. Table-wide rather than per order: these
+    // transactions are small and detached. Only writers taking this lock are
+    // race-free.
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
         .bind(DEDUP_LOCK)
         .execute(&mut *tx)
@@ -62,9 +59,9 @@ WHERE le.label IS DISTINCT FROM i.label
     Ok(())
 }
 
-/// The wire value of a label, bound as text and cast in SQL: sqlx resolves a
-/// derived enum's type by unqualified name, which is ambiguous on a database
-/// holding both the base OrderEventLabel and the solana one.
+/// The label's wire value, bound as text and cast in SQL: sqlx names a derived
+/// enum's type unqualified, ambiguous where both the base and the solana
+/// OrderEventLabel exist.
 fn label_str(label: OrderEventLabel) -> &'static str {
     match label {
         OrderEventLabel::Created => "created",
@@ -82,9 +79,8 @@ fn label_str(label: OrderEventLabel) -> &'static str {
 mod tests {
     use super::*;
 
-    /// Concurrent writers reporting the same label append one event: the
-    /// insert compares against the order's latest event, which only holds
-    /// while the writes are serialized.
+    /// Unserialized writers would append the same label twice: the dedup
+    /// reads committed rows only.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_concurrent_writes_append_one_event() {
@@ -128,7 +124,7 @@ mod tests {
         )
         .await
         .unwrap();
-        // A repeated label on the same order is not appended again.
+        // A repeated label is not appended.
         store(&pool, [IntentHash([0x11; 32])], OrderEventLabel::Ready)
             .await
             .unwrap();
