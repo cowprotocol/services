@@ -4,15 +4,18 @@ use {
     anyhow::{Context, Result},
     chain_types::solana::IntentHash,
     database::order_events::OrderEventLabel,
-    sqlx::PgExecutor,
+    sqlx::PgPool,
 };
+
+/// Advisory-lock key serializing the deduplicating insert.
+const WRITE_LOCK: i64 = 0x736f_6c61_6e61_6576;
 
 /// Append one event per order, skipping orders whose latest event already
 /// carries the label, so a looping order marks each state once instead of
 /// once per cycle. Best effort by design: callers log failures, a lost event
 /// degrades the status endpoint, never the competition.
 pub async fn store(
-    ex: impl PgExecutor<'_>,
+    pool: &PgPool,
     uids: impl IntoIterator<Item = IntentHash>,
     label: OrderEventLabel,
 ) -> Result<()> {
@@ -20,6 +23,15 @@ pub async fn store(
     if uids.is_empty() {
         return Ok(());
     }
+    let mut tx = pool.begin().await.context("begin order event write")?;
+    // The insert skips an event that repeats the order's latest label, a
+    // comparison that only sees committed rows. Two overlapping writers would
+    // both read the state from before either started and both insert.
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(WRITE_LOCK)
+        .execute(&mut *tx)
+        .await
+        .context("lock solana.order_events")?;
     sqlx::query(
         r#"
 WITH latest_events AS (
@@ -33,7 +45,7 @@ incoming AS (
     FROM unnest($1::bytea[]) AS t(order_uid)
 )
 INSERT INTO solana.order_events (order_uid, timestamp, label)
-SELECT i.order_uid, i.timestamp, i.label
+SELECT DISTINCT i.order_uid, i.timestamp, i.label
 FROM incoming i
 LEFT JOIN latest_events le ON le.order_uid = i.order_uid
 WHERE le.label IS DISTINCT FROM i.label
@@ -41,9 +53,10 @@ WHERE le.label IS DISTINCT FROM i.label
     )
     .bind(uids)
     .bind(label_str(label))
-    .execute(ex)
+    .execute(&mut *tx)
     .await
     .context("insert solana.order_events")?;
+    tx.commit().await.context("commit order event write")?;
     Ok(())
 }
 
@@ -66,6 +79,35 @@ fn label_str(label: OrderEventLabel) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Concurrent writers reporting the same label append one event: the
+    /// insert compares against the order's latest event, which only holds
+    /// while the writes are serialized.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_concurrent_writes_append_one_event() {
+        let pool = crate::test_db::pool().await;
+        sqlx::query("TRUNCATE solana.order_events")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let uid = IntentHash([0x33; 32]);
+        store(&pool, [uid], OrderEventLabel::Ready).await.unwrap();
+
+        let write = || store(&pool, [uid], OrderEventLabel::Executing);
+        let (first, second) = tokio::join!(write(), write());
+        first.unwrap();
+        second.unwrap();
+
+        let labels: Vec<String> = sqlx::query_scalar(
+            "SELECT label::text FROM solana.order_events WHERE order_uid = $1 ORDER BY timestamp",
+        )
+        .bind(uid.0.to_vec())
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(labels, ["ready", "executing"]);
+    }
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
