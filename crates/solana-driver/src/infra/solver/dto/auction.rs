@@ -59,9 +59,6 @@ impl Order {
     /// report per-order pull destinations so the driver routes directly to
     /// their chosen accounts.
     ///
-    /// A future optimization can let solvers report per-order pull destinations
-    /// so the driver routes directly to their chosen accounts.
-    ///
     /// The engine wire carries a single `amount` on the order's side, so the
     /// driver projects the side-matching amount (`sell_amount` for sells,
     /// `buy_amount` for buys) from the full domain order.
