@@ -15,6 +15,7 @@ use {
         slot::Slot,
     },
     bigdecimal::BigDecimal,
+    database::solana::OrderEventLabel,
     solana_sdk::pubkey::Pubkey,
     sqlx::{PgPool, PgTransaction},
     std::collections::HashMap,
@@ -175,7 +176,7 @@ ON CONFLICT (uid) DO NOTHING
         .await?
         .rows_affected();
         if inserted > 0 {
-            Self::insert_order_event(tx, order.order_uid.0, "created").await?;
+            Self::insert_order_event(tx, order.order_uid.0, OrderEventLabel::Created).await?;
         }
         Ok(())
     }
@@ -185,11 +186,10 @@ ON CONFLICT (uid) DO NOTHING
     async fn insert_order_event(
         tx: &mut PgTransaction<'_>,
         order_uid: [u8; 32],
-        label: &str,
+        label: OrderEventLabel,
     ) -> Result<(), PersistenceError> {
         sqlx::query(
-            "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), \
-             $2::solana.OrderEventLabel)",
+            "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
         )
         .bind(order_uid)
         .bind(label)
@@ -276,7 +276,7 @@ ON CONFLICT DO NOTHING
         if inserted == 0 {
             return Ok(());
         }
-        Self::insert_order_event(tx, order_uid, "traded").await?;
+        Self::insert_order_event(tx, order_uid, OrderEventLabel::Traded).await?;
         let updated = sqlx::query(
             r#"
 UPDATE solana.order_pda
