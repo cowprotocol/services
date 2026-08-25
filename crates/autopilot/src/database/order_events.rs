@@ -36,8 +36,9 @@ pub async fn store_order_events(
     let insert = async move {
         let mut ex = ex.begin().await?;
         // The dedup below compares against committed rows only, so writers
-        // that overlap both append. Table-wide rather than per order: these
-        // transactions are small and detached. Only writers taking this lock
+        // that overlap both append. One table-wide lock, held until the
+        // outermost transaction commits: a caller passing a long-running
+        // transaction stalls every other writer. Only writers taking this lock
         // are race-free.
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
             .bind(DEDUP_LOCK)
