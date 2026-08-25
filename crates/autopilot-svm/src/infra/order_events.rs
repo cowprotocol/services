@@ -7,8 +7,8 @@ use {
     sqlx::PgPool,
 };
 
-/// Advisory-lock key serializing the deduplicating insert.
-const WRITE_LOCK: i64 = 0x736f_6c61_6e61_6576;
+/// Advisory-lock name serializing the deduplicating insert.
+const DEDUP_LOCK: &str = "solana_order_events_dedup";
 
 /// Append one event per order, skipping orders whose latest event already
 /// carries the label, so a looping order marks each state once instead of
@@ -25,10 +25,12 @@ pub async fn store(
     }
     let mut tx = pool.begin().await.context("begin order event write")?;
     // The insert skips an event that repeats the order's latest label, a
-    // comparison that only sees committed rows. Two overlapping writers would
-    // both read the state from before either started and both insert.
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(WRITE_LOCK)
+    // comparison that only sees committed rows, so two overlapping writers
+    // would both append. One lock for the whole table rather than per order:
+    // these transactions are small and run detached. Writers that insert
+    // events without taking this lock stay exposed to the same race.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(DEDUP_LOCK)
         .execute(&mut *tx)
         .await
         .context("lock solana.order_events")?;
