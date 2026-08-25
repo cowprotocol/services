@@ -187,11 +187,23 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     .await
     .unwrap();
     assert_eq!(open_windows, 1);
-    // The cycle reported the order's auction progress.
-    let mut events: Vec<String> = sqlx::query_scalar("SELECT label::text FROM solana.order_events")
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-    events.sort();
+    // The cycle reported the order's auction progress. The writes are detached
+    // from the cycle, so they can land after `run_cycle` returns.
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let mut events: Vec<String> =
+                sqlx::query_scalar("SELECT label::text FROM solana.order_events")
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap();
+            if events.len() == 2 {
+                events.sort();
+                return events;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("order events written before the timeout");
     assert_eq!(events, ["executing", "ready"]);
 }
