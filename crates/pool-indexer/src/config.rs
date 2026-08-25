@@ -82,8 +82,8 @@ pub struct NetworkConfig {
     pub chain_id: u64,
     #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
     pub rpc_url: Url,
-    /// Uniswap V3 factories to index. Exactly one is allowed in this release
-    /// (see [`NetworkConfig::validate`]); multi-factory is a follow-up.
+    /// Uniswap V3 factories to index; non-empty and unique, enforced at parse.
+    #[serde(deserialize_with = "serde_ext::deserialize_nonempty_unique_vec")]
     pub factories: Vec<FactoryConfig>,
     /// Blocks per `eth_getLogs` chunk during catch-up.
     #[serde(default = "default_chunk_size")]
@@ -102,11 +102,6 @@ pub struct NetworkConfig {
     /// against Anvil, which doesn't simulate finality.
     #[serde(skip)]
     pub use_latest: bool,
-    /// Subgraph GraphQL endpoint for the initial seed.
-    #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
-    pub subgraph_url: Url,
-    /// Block to seed at. Defaults to the subgraph's current block.
-    pub seed_block: Option<u64>,
 }
 
 impl NetworkConfig {
@@ -125,25 +120,16 @@ impl NetworkConfig {
             prefetch_concurrency: self.prefetch_concurrency,
         }
     }
-
-    /// Post-parse sanity checks.
-    fn validate(&self) -> Result<()> {
-        anyhow::ensure!(
-            self.factories.len() == 1,
-            "network {}: exactly one factory per network is supported in this release, got {}",
-            self.name,
-            self.factories.len(),
-        );
-        Ok(())
-    }
 }
 
-/// One factory address. The indexer runs a dedicated seed + live-indexing
-/// loop per entry in [`NetworkConfig::factories`].
-#[derive(Debug, Clone, Copy, Deserialize)]
+/// The factory and the block it was deployed at. The indexer cold-seeds by
+/// replaying on-chain events from `deploy_block`, then live-indexes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct FactoryConfig {
     pub address: Address,
+    /// Block the factory was deployed at; on-chain cold-seed scans from here
+    pub deploy_block: u64,
 }
 
 /// Subset of [`NetworkConfig`] handed to [`UniswapV3Indexer`] at runtime.
@@ -204,7 +190,6 @@ impl Configuration {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("reading config file {}", path.display()))?;
         let parsed: Self = toml::from_str(&content).context("parsing config file")?;
-        parsed.network.validate()?;
         Ok(parsed)
     }
 }

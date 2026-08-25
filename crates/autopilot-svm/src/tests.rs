@@ -102,7 +102,7 @@ async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now(), $5)
+VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
         "#,
     )
     .bind(uid)

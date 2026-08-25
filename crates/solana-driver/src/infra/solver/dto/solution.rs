@@ -42,7 +42,7 @@ pub struct Solution {
     pub interactions: Vec<Instruction>,
     /// Optional solver estimate of total settlement compute units.
     #[serde(default)]
-    pub cu_estimate: Option<u64>,
+    pub cu_estimate: Option<u32>,
     /// The address lookup tables the interactions assume.
     #[serde(default)]
     #[serde_as(as = "Vec<serde_with::DisplayFromStr>")]

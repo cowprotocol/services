@@ -130,7 +130,7 @@ impl From<domain::auction::InvalidAuctionId> for Error {
 
 impl SolveRequest {
     /// Convert the wire request into a domain auction.
-    pub fn into_domain(self, program_id: Pubkey) -> Result<domain::Auction, Error> {
+    pub fn into_domain(self) -> Result<domain::Auction, Error> {
         let id = domain::auction::Id::try_from(self.id)?;
         Ok(domain::Auction {
             id,
@@ -138,7 +138,6 @@ impl SolveRequest {
             // Placeholder; the domain does not consume it yet.
             deadline_slot: domain::Slot(0),
             deadline: self.deadline,
-            program_id,
         })
     }
 }
@@ -209,7 +208,7 @@ mod tests {
             orders: vec![order()],
         };
         let err = request
-            .into_domain(pubkey(0xaa))
+            .into_domain()
             .expect_err("non-positive id must be rejected");
         assert!(matches!(err, Error::InvalidAuctionId));
     }
