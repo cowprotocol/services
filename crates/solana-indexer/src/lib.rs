@@ -5,7 +5,6 @@
 pub mod config;
 pub mod indexer;
 pub mod persistence;
-pub mod rpc;
 pub mod run;
 #[cfg(test)]
 mod test_db;

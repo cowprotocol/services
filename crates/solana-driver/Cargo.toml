@@ -21,6 +21,8 @@ chrono = { workspace = true, default-features = false, features = ["clock"] }
 clap = { workspace = true }
 configs = { workspace = true }
 const-hex = { workspace = true }
+cow-settlement-client = { workspace = true }
+cow-settlement-interface = { workspace = true }
 cow-solana-rpc = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
@@ -30,6 +32,7 @@ serde = { workspace = true }
 serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+solana-compute-budget-interface = { workspace = true }
 solana-sdk = { workspace = true }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
@@ -44,6 +47,7 @@ url = { workspace = true, features = ["serde"] }
 [dev-dependencies]
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
 solana-solvers = { path = "../solana-solvers" }
+solana-testlib = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [features]

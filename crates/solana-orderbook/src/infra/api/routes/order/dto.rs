@@ -4,6 +4,7 @@ use {
     crate::infra::db::OrderRow,
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
+    database::solana::OrderKind,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
@@ -55,13 +56,10 @@ pub enum Kind {
     Buy,
 }
 
-/// The order's kind column. The DB enum only holds sell and buy, a new
-/// variant must fail loud.
 fn kind(row: &OrderRow) -> Kind {
-    match row.kind.as_str() {
-        "sell" => Kind::Sell,
-        "buy" => Kind::Buy,
-        other => unreachable!("unknown order kind {other}"),
+    match row.kind {
+        OrderKind::Sell => Kind::Sell,
+        OrderKind::Buy => Kind::Buy,
     }
 }
 
@@ -138,7 +136,7 @@ mod tests {
             sell_amount: 1_000.into(),
             buy_amount: 500.into(),
             valid_to: 2_000,
-            kind: "sell".to_string(),
+            kind: OrderKind::Sell,
             partially_fillable: false,
             app_data: ByteArray([0x77; 32]),
             creation_timestamp: DateTime::from_timestamp(1_000, 0).unwrap(),
@@ -162,7 +160,7 @@ mod tests {
         assert_eq!(status(&filled, 2_001), Status::Fulfilled);
 
         let filled_buy = OrderRow {
-            kind: "buy".to_string(),
+            kind: OrderKind::Buy,
             amount_received: 500.into(),
             ..row()
         };

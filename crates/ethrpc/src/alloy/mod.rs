@@ -134,9 +134,15 @@ mod test_util {
     use {
         super::*,
         alloy_contract::{CallBuilder, CallDecoder},
-        alloy_primitives::TxHash,
-        alloy_provider::Network,
+        alloy_primitives::{Address, TxHash, address, utils::parse_ether},
+        alloy_provider::{
+            MULTICALL3_ADDRESS,
+            Network,
+            ext::{AnvilApi, ImpersonateConfig},
+        },
         alloy_rpc_types::TransactionRequest,
+        anyhow::{Context, ensure},
+        contracts::Multicall3,
         std::time::Duration,
         tokio::time::timeout,
     };
@@ -152,6 +158,12 @@ mod test_util {
             &self,
             tx: TransactionRequest,
         ) -> impl Future<Output = anyhow::Result<TxHash>>;
+
+        /// Puts `Multicall3` where every network keeps it, which only a fresh
+        /// local node needs: forked networks inherit the real deployment.
+        /// Liquidity sources batch their pool reads through it, so without it
+        /// they cannot read anything.
+        fn deploy_multicall3(&self) -> impl Future<Output = anyhow::Result<()>>;
     }
 
     impl ProviderExt for AlloyProvider {
@@ -159,6 +171,52 @@ mod test_util {
             let pending = self.send_transaction(tx).await?;
             let result = timeout(DEFAULT_WATCH_TIMEOUT, pending.watch()).await??;
             Ok(result)
+        }
+
+        async fn deploy_multicall3(&self) -> anyhow::Result<()> {
+            // The canonical address is the one the original deployer got from its very
+            // first transaction, so replaying that transaction is the only way to land
+            // there. It works because a fresh node still has that account at nonce 0.
+            const DEPLOYER: Address = address!("0x05f32B3cC3888453ff71B01135B34FF8e41263F2");
+
+            if !self
+                .get_code_at(MULTICALL3_ADDRESS)
+                .await
+                .context("could not fetch Multicall3 code")?
+                .is_empty()
+            {
+                return Ok(());
+            }
+
+            // A wallet-less provider makes alloy hand the transaction to the node for
+            // signing instead of looking for a key we do not have.
+            let deployment = Multicall3::Instance::deploy_builder(self.without_wallet())
+                .from(DEPLOYER)
+                .into_transaction_request();
+
+            self.anvil_send_impersonated_transaction_with_config(
+                deployment,
+                ImpersonateConfig {
+                    fund_amount: Some(parse_ether("1").expect("valid ETH amount")),
+                    stop_impersonate: true,
+                },
+            )
+            .await
+            .context("failed to deploy Multicall3")?
+            .watch()
+            .await
+            .context("Multicall3 deployment was not mined")?;
+
+            ensure!(
+                !self
+                    .get_code_at(MULTICALL3_ADDRESS)
+                    .await
+                    .context("could not fetch Multicall3 code")?
+                    .is_empty(),
+                "Multicall3 did not end up at {MULTICALL3_ADDRESS}"
+            );
+
+            Ok(())
         }
     }
 

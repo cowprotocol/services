@@ -8,7 +8,8 @@ use {
             competition::DriverCompetition,
             driver::{Driver, dto},
             executor::DriverExecutor,
-            observer::LogObserver,
+            observation::SettlementWindows,
+            observer::CompetitionObserver,
             provider::DbAuctionProvider,
         },
         run_loop::{
@@ -85,13 +86,7 @@ async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
 }
 
 async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
-    sqlx::query(
-        "TRUNCATE solana.trades, solana.settlements, solana.order_pda, solana.orders, \
-         solana.indexer_state",
-    )
-    .execute(pool)
-    .await
-    .unwrap();
+    crate::test_db::wipe(pool).await;
     sqlx::query("INSERT INTO solana.indexer_state (slot) VALUES ($1)")
         .bind(tip)
         .execute(pool)
@@ -102,7 +97,7 @@ async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now(), $5)
+VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
         "#,
     )
     .bind(uid)
@@ -124,7 +119,7 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::OrderKind, false, $2, now
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_mock_cycle_dispatches_the_settlement() {
-    let pool = PgPool::connect("postgresql://").await.unwrap();
+    let pool = crate::test_db::pool().await;
     let uid = [0x11; 32];
     let tip = 500_u64;
     seed_open_order(&pool, uid, i64::try_from(tip).unwrap()).await;
@@ -163,16 +158,18 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }
 
+    let windows = SettlementWindows::new(pool.clone());
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
-        Box::new(DbAuctionProvider::new(pool)),
+        Box::new(DbAuctionProvider::new(pool.clone())),
         Box::new(DriverCompetition::new(
             vec![Arc::clone(&driver)],
             Duration::from_secs(6),
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
-        Box::new(DriverExecutor::new(vec![driver])),
-        Box::new(LogObserver),
+        Box::new(DriverExecutor::new(vec![driver], windows.clone())),
+        Box::new(CompetitionObserver::new(pool.clone(), windows.clone())),
+        25,
     );
     auction_loop.run_cycle().await;
 
@@ -182,4 +179,31 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         .expect("settle channel open");
     assert_eq!(settle.solution_id, 7);
     assert!(settle.auction_id > 0);
+    // The dispatch opened a settlement-execution window.
+    let open_windows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM solana.settlement_executions WHERE outcome IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(open_windows, 1);
+    // The cycle reported the order's auction progress. The writes are detached
+    // from the cycle, so they can land after `run_cycle` returns.
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let mut events: Vec<String> =
+                sqlx::query_scalar("SELECT label::text FROM solana.order_events")
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap();
+            if events.len() == 2 {
+                events.sort();
+                return events;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("order events written before the timeout");
+    assert_eq!(events, ["executing", "ready"]);
 }

@@ -1,7 +1,7 @@
 //! Wire shape of the order status endpoint.
 
 use {
-    database::order_events::OrderEventLabel,
+    database::solana::OrderEventLabel,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
