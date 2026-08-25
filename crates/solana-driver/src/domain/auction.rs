@@ -62,7 +62,7 @@ pub struct Auction {
 }
 
 /// One order available for solvers to fill.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Order {
     pub uid: OrderUid,
     pub owner: Pubkey,
@@ -81,7 +81,7 @@ pub struct Order {
 }
 
 /// Direction of the trade.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Side {
     Sell,

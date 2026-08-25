@@ -1,6 +1,5 @@
 //! HTTP client for the Uniswap V3 pool-indexer service. Implements
-//! [`V3PoolDataSource`] so the driver can swap this in place of the subgraph
-//! client without touching anything else.
+//! [`V3PoolDataSource`].
 //!
 //! The pool-indexer doesn't support historical queries; it always serves
 //! at-head data. To give callers a consistent snapshot, each method takes a
@@ -14,7 +13,7 @@ use {
     crate::uniswap_v3::{
         BlockTarget,
         V3PoolDataSource,
-        graph_api::{PoolData, PoolsWithTicks, RegisteredPools, TickData, Token},
+        models::{PoolData, PoolsWithTicks, RegisteredPools, TickData, Token},
     },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
@@ -56,13 +55,6 @@ impl PoolIndexerClient {
 
     fn path(&self, suffix: &str) -> Url {
         url_join(&self.base_url, suffix)
-    }
-
-    /// The indexer serves at-head from its own DB, so an on-demand cache-miss
-    /// fetch is cheap enough for the quote path (unlike the subgraph). Read at
-    /// construction to gate `UniswapV3PoolFetcher`'s on-demand fetch.
-    pub fn fetch_on_demand(&self) -> bool {
-        true
     }
 }
 
@@ -311,8 +303,7 @@ impl V3PoolDataSource for PoolIndexerClient {
 
             let page_block = page.block_number;
             fetched_block_number.get_or_insert(page_block);
-            // Drop zero-liquidity pools (matches the subgraph backend's
-            // filter, see `graph_api::get_pools`).
+            // Zero-liquidity pools can't fill any order, so drop them.
             let mut liq_filtered = page.pools;
             liq_filtered.retain(|p| !p.liquidity.is_zero());
             let filtered = drop_pools_missing_decimals(liq_filtered)

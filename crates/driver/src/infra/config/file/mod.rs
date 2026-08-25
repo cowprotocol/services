@@ -586,7 +586,7 @@ enum UniswapV3Config {
         max_pools_to_initialize: usize,
 
         /// Source of pool definitions and tick data.
-        indexer_config: IndexerConfig,
+        indexer_url: Url,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
@@ -604,31 +604,13 @@ enum UniswapV3Config {
         max_pools_to_initialize: usize,
 
         /// Source of pool definitions and tick data.
-        indexer_config: IndexerConfig,
+        indexer_url: Url,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
         #[serde(with = "humantime_serde", default = "default_reinit_interval")]
         reinit_interval: Option<Duration>,
     },
-}
-
-/// Where Uniswap V3 pool definitions and tick data are fetched from. Exactly
-/// one variant is active per `[[liquidity.uniswap-v3]]` entry.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum IndexerConfig {
-    #[serde(rename_all = "kebab-case")]
-    Subgraph {
-        url: Url,
-        /// How many pool IDs can be present in a where clause of a Tick query
-        /// at once. Some subgraphs are overloaded and throw errors when
-        /// there are too many.
-        #[serde(default = "uniswap_v3::default_max_pools_per_tick_query")]
-        max_pools_per_tick_query: usize,
-    },
-    #[serde(rename_all = "kebab-case")]
-    PoolIndexer { url: Url },
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -640,10 +622,6 @@ enum UniswapV3Preset {
 mod uniswap_v3 {
     pub fn default_max_pools_to_initialize() -> usize {
         100
-    }
-
-    pub fn default_max_pools_per_tick_query() -> usize {
-        usize::MAX
     }
 }
 
