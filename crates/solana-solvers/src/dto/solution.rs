@@ -28,7 +28,7 @@ pub struct Solution {
     pub interactions: Vec<Instruction>,
     /// Optional solver estimate of total settlement compute units.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cu_estimate: Option<u64>,
+    pub cu_estimate: Option<u32>,
     /// The address lookup tables the interactions assume, carried through so
     /// the driver can build the v0 transaction around them.
     #[serde_as(as = "Vec<serde_with::DisplayFromStr>")]

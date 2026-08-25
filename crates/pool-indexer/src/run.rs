@@ -31,14 +31,14 @@ pub async fn start(args: impl Iterator<Item = String>) {
     }
 }
 
-/// Runs the bootstrap phase (seed + catch-up to the finalized head) for every
-/// factory, then returns. Binds no HTTP ports — meant to run as a separate step
-/// ahead of serving.
+/// Runs the bootstrap phase (on-chain cold-seed + catch-up to the finalized
+/// head) for every factory, then returns. Binds no HTTP ports; meant to run as
+/// a separate step ahead of serving.
 ///
-/// Idempotent: each factory with an existing checkpoint is skipped (see
-/// [`bootstrap_factory`]), so re-running on an already-seeded DB is a fast
-/// no-op that never touches the subgraph. On return, a subsequent `run` finds
-/// the checkpoints present and flips `/startup` ready almost immediately.
+/// A factory already caught up to the head is a fast no-op, and an interrupted
+/// seed resumes from its checkpoint (see [`bootstrap_factory`]).
+/// On return every factory is indexed to the finalized head, so a later `run`
+/// flips `/startup` ready promptly.
 pub async fn bootstrap(config: Configuration) {
     let db = connect_db(&config).await;
     let network = config.network;
@@ -153,6 +153,7 @@ fn build_api_state(db: &PgPool, network: &NetworkConfig) -> Arc<AppState> {
     Arc::new(AppState {
         db: db.clone(),
         network: network.name.clone(),
+        factories: network.factories.iter().map(|f| f.address).collect(),
     })
 }
 
@@ -234,8 +235,11 @@ async fn run_factory_indexer(
     indexer.run(network.poll_interval()).await;
 }
 
-/// Seed + catch-up for a fresh factory. If a checkpoint already exists,
-/// skip straight to live indexing.
+/// Indexes a factory up to the finalized head before it's considered ready. A
+/// fresh factory cold-seeds from its deploy block; one with a checkpoint (from
+/// a finished seed, or one interrupted partway) resumes from there. Either way
+/// it returns only once caught up, so `/startup` never flips ready on a partial
+/// DB.
 async fn bootstrap_factory(
     db: &PgPool,
     indexer: &UniswapV3Indexer,
@@ -245,30 +249,26 @@ async fn bootstrap_factory(
     let checkpoint = crate::db::uniswap_v3::get_checkpoint(db, &factory.address)
         .await
         .expect("failed to read checkpoint");
-    if let Some(block) = checkpoint {
-        tracing::info!(
-            chain_id = network.chain_id,
-            factory = %factory.address,
-            block,
-            "existing checkpoint found, skipping bootstrap",
-        );
-        return;
+    match checkpoint {
+        Some(block) => {
+            tracing::info!(
+                chain_id = network.chain_id,
+                factory = %factory.address,
+                block,
+                "resuming from checkpoint",
+            );
+            indexer
+                .catch_up_to_finalized()
+                .await
+                .expect("on-chain catch-up failed");
+        }
+        None => {
+            indexer
+                .catch_up(factory.deploy_block.saturating_sub(1))
+                .await
+                .expect("on-chain cold-seed failed");
+        }
     }
-
-    let seeded_block = crate::subgraph_seeder::seed(
-        db,
-        network.name.as_str(),
-        network.chain_id,
-        factory.address,
-        &network.subgraph_url,
-        network.seed_block,
-    )
-    .await
-    .expect("subgraph seeding failed");
-    indexer
-        .catch_up(seeded_block)
-        .await
-        .expect("catch-up indexing failed");
 }
 
 fn build_provider(network: &NetworkConfig) -> AlloyProvider {
