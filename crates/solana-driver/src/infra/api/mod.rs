@@ -102,11 +102,15 @@ impl State {
     fn competition(&self) -> &domain::Competition {
         &self.0.competition
     }
+
+    /// The blockchain adapter, including the settlement program id.
+    fn blockchain(&self) -> &Solana {
+        &self.0.blockchain
+    }
 }
 
 struct Inner {
     /// The shared Solana blockchain adapter.
-    #[expect(dead_code, reason = "used by the settlement path in follow-up PRs")]
     blockchain: Arc<Solana>,
     /// The competition that runs auctions for this solver engine.
     competition: domain::Competition,
