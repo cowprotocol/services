@@ -51,9 +51,15 @@ impl Solver {
                 path: config.signer_keypair.clone(),
                 error,
             })?;
+        let keypair = Arc::new(keypair);
+        tracing::info!(
+            solver = %config.name,
+            pubkey = %keypair.pubkey(),
+            "loaded solver keypair"
+        );
         Ok(Self {
             name: config.name.clone(),
-            keypair: Arc::new(keypair),
+            keypair,
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             in_flight: Arc::new(Semaphore::new(config.max_in_flight.get())),
