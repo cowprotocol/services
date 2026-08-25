@@ -31,28 +31,26 @@ impl CompetitionObserver {
         Self { pool, windows }
     }
 
-    /// Best effort: a lost event degrades the status endpoint, never the
-    /// competition.
-    async fn store_events(
-        &self,
-        uids: impl IntoIterator<Item = IntentHash>,
-        label: OrderEventLabel,
-    ) {
-        if let Err(err) = order_events::store(&self.pool, uids, label).await {
-            tracing::error!(?err, ?label, "failed to store order events");
-        }
+    /// Store the events without blocking the cycle: a lost event degrades the
+    /// status endpoint, never the competition.
+    fn store_events(&self, uids: Vec<IntentHash>, label: OrderEventLabel) {
+        let pool = self.pool.clone();
+        tokio::spawn(async move {
+            if let Err(err) = order_events::store(&pool, uids, label).await {
+                tracing::error!(?err, ?label, "failed to store order events");
+            }
+        });
     }
 }
 
 #[async_trait]
 impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserver {
-    async fn on_orders_ready(&self, auction: &Auction) {
+    fn on_orders_ready(&self, auction: &Auction) {
         tracing::debug!(orders = auction.orders.len(), "auction entered competition");
         self.store_events(
-            auction.orders.iter().map(|order| order.uid),
+            auction.orders.iter().map(|order| order.uid).collect(),
             OrderEventLabel::Ready,
-        )
-        .await;
+        );
     }
 
     async fn persist_competition_ranking(
@@ -78,20 +76,17 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
         Ok(())
     }
 
-    async fn on_orders_matched(
-        &self,
-        executing: HashSet<IntentHash>,
-        considered: HashSet<IntentHash>,
-    ) {
+    fn on_orders_matched(&self, executing: HashSet<IntentHash>, considered: HashSet<IntentHash>) {
         tracing::debug!(
             executing = executing.len(),
             considered = considered.len(),
             "orders matched"
         );
-        self.store_events(executing, OrderEventLabel::Executing)
-            .await;
-        self.store_events(considered, OrderEventLabel::Considered)
-            .await;
+        self.store_events(executing.into_iter().collect(), OrderEventLabel::Executing);
+        self.store_events(
+            considered.into_iter().collect(),
+            OrderEventLabel::Considered,
+        );
     }
 
     fn on_competition_ended(&self, auction: &Auction, ranking: &Ranking) {
