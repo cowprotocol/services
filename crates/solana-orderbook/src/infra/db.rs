@@ -4,7 +4,10 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
-    database::{byte_array::ByteArray, solana::OrderKind},
+    database::{
+        byte_array::ByteArray,
+        solana::{OrderEventLabel, OrderKind},
+    },
     sqlx::PgExecutor,
 };
 
@@ -97,6 +100,36 @@ ORDER BY s.slot, t.tx_signature, t.instruction_index, t.order_uid
         .context("read solana.trades")
 }
 
+/// Whether the order has at least one trade.
+pub async fn order_has_trade(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<bool> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM solana.trades WHERE order_uid = $1)",
+    )
+    .bind(ByteArray(uid))
+    .fetch_one(ex)
+    .await
+    .context("check solana.trades existence")
+}
+
+/// The label of the order's most recent auction-progress event.
+pub async fn latest_order_event(
+    ex: impl PgExecutor<'_>,
+    uid: [u8; 32],
+) -> Result<Option<OrderEventLabel>> {
+    const QUERY: &str = r#"
+SELECT label
+FROM solana.order_events
+WHERE order_uid = $1
+ORDER BY timestamp DESC
+LIMIT 1
+    "#;
+    sqlx::query_scalar(QUERY)
+        .bind(ByteArray(uid))
+        .fetch_optional(ex)
+        .await
+        .context("read solana.order_events")
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, sqlx::PgPool};
@@ -157,6 +190,49 @@ VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
         seed(&pool, uid, true).await;
         let row = order_by_uid(&pool, uid).await.unwrap().unwrap();
         assert!(row.cancellation_timestamp.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_reads_order_events_and_existence() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+        sqlx::query("TRUNCATE solana.order_events")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(!order_has_trade(&pool, uid).await.unwrap());
+        assert!(latest_order_event(&pool, uid).await.unwrap().is_none());
+
+        for (at, label) in [(1, OrderEventLabel::Ready), (2, OrderEventLabel::Executing)] {
+            sqlx::query(
+                "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, \
+                 to_timestamp($2), $3)",
+            )
+            .bind(ByteArray(uid))
+            .bind(at)
+            .bind(label)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        assert_eq!(
+            latest_order_event(&pool, uid).await.unwrap(),
+            Some(OrderEventLabel::Executing)
+        );
+
+        sqlx::query(
+            "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount, \
+             buy_amount, fee_amount) VALUES ($1, 1, $2, 400, 200, 0)",
+        )
+        .bind(ByteArray([9u8; 64]))
+        .bind(ByteArray(uid))
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(order_has_trade(&pool, uid).await.unwrap());
     }
 
     #[tokio::test]
