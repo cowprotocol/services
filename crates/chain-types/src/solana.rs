@@ -17,6 +17,11 @@ pub struct Pubkey(pub [u8; 32]);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct IntentHash(pub [u8; 32]);
 
+/// Application-specific data attached to a Solana order: 32 opaque bytes.
+/// Serialized as `0x`-prefixed hex on the wire, just like [`IntentHash`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AppData(pub [u8; 32]);
+
 /// `0x`-prefixed hex, the wire and log rendering of an order uid.
 impl fmt::Display for IntentHash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -26,6 +31,24 @@ impl fmt::Display for IntentHash {
 }
 
 impl FromStr for IntentHash {
+    type Err = const_hex::FromHexError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut bytes = [0u8; 32];
+        const_hex::decode_to_slice(s.strip_prefix("0x").unwrap_or(s), &mut bytes)?;
+        Ok(Self(bytes))
+    }
+}
+
+/// `0x`-prefixed hex, the wire rendering of order `app_data`.
+impl fmt::Display for AppData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut buffer = const_hex::Buffer::<32, true>::new();
+        f.write_str(buffer.format(&self.0))
+    }
+}
+
+impl FromStr for AppData {
     type Err = const_hex::FromHexError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -150,5 +173,32 @@ impl Amount for u64 {
         (result <= u64::MAX as f64)
             .then_some(result as u64)
             .ok_or(MathError::Overflow)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_data_round_trips_as_0x_hex() {
+        let app_data = AppData([0xAB; 32]);
+        let encoded = app_data.to_string();
+        assert_eq!(
+            encoded,
+            "0xabababababababababababababababababababababababababababababababab"
+        );
+        assert_eq!(AppData::from_str(&encoded).unwrap(), app_data);
+    }
+
+    #[test]
+    fn intent_hash_round_trips_as_0x_hex() {
+        let hash = IntentHash([0xCD; 32]);
+        let encoded = hash.to_string();
+        assert_eq!(
+            encoded,
+            "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        );
+        assert_eq!(IntentHash::from_str(&encoded).unwrap(), hash);
     }
 }

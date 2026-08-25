@@ -3,7 +3,7 @@
 
 use {
     crate::run_loop::AuctionInfo,
-    chain_types::solana::{IntentHash, Pubkey},
+    chain_types::solana::{AppData, IntentHash, Pubkey},
 };
 
 /// Whether the order sells an exact amount or buys an exact amount.
@@ -31,6 +31,7 @@ pub struct Order {
     pub kind: OrderKind,
     pub partially_fillable: bool,
     pub order_pda: Pubkey,
+    pub app_data: AppData,
 }
 
 /// The cut auction the loop fans out to solvers.
@@ -56,7 +57,10 @@ impl AuctionInfo for Auction {
 
 #[cfg(test)]
 mod tests {
-    use super::{Auction, Order, OrderKind};
+    use {
+        super::{Auction, Order, OrderKind},
+        chain_types::solana::AppData,
+    };
 
     fn order(sell_amount: u64) -> Order {
         Order {
@@ -72,6 +76,7 @@ mod tests {
             kind: OrderKind::Sell,
             partially_fillable: false,
             order_pda: chain_types::solana::Pubkey([7; 32]),
+            app_data: AppData([0; 32]),
         }
     }
 

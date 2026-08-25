@@ -255,6 +255,10 @@ impl Blockchain {
         let primary_address = primary_account.address();
         web3.wallet.register_signer(primary_account);
 
+        // Liquidity sources read pool state through `Multicall3`, which a freshly
+        // started node does not have.
+        web3.provider.deploy_multicall3().await.unwrap();
+
         // Use the primary account to fund the trader, cow amm and the solver with ETH.
         let balance = web3.provider.get_balance(primary_address).await.unwrap();
         wait_for(
