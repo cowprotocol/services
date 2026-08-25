@@ -10,7 +10,31 @@ use {
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
+    std::{fmt, str::FromStr},
 };
+
+/// Application-specific data attached to a Solana order: 32 opaque bytes.
+/// Serialized as `0x`-prefixed hex on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AppData(pub [u8; 32]);
+
+impl fmt::Display for AppData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut buffer = const_hex::Buffer::<32, true>::new();
+        f.write_str(buffer.format(&self.0))
+    }
+}
+
+impl FromStr for AppData {
+    type Err = const_hex::FromHexError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut bytes = [0u8; 32];
+        const_hex::decode_to_slice(s.strip_prefix("0x").unwrap_or(s), &mut bytes)?;
+        Ok(Self(bytes))
+    }
+}
+
 /// The auction posted to `/solve`.
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -50,6 +74,8 @@ pub struct Order {
     partially_fillable: bool,
     #[serde_as(as = "DisplayFromStr")]
     order_pda: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    app_data: AppData,
 }
 
 /// Whether the order sells or buys an exact amount.
@@ -84,6 +110,7 @@ impl From<Order> for domain::Order {
             side: order.kind.into(),
             partially_fillable: order.partially_fillable,
             order_pda: order.order_pda,
+            app_data: order.app_data.0,
         }
     }
 }
@@ -137,6 +164,7 @@ mod tests {
             kind: Kind::Sell,
             partially_fillable: false,
             order_pda: Pubkey::new_from_array([0x77; 32]),
+            app_data: AppData([0; 32]),
         }
     }
 
@@ -166,6 +194,7 @@ mod tests {
                 "kind": "sell",
                 "partiallyFillable": false,
                 "orderPda": pubkey(0x77).to_string(),
+                "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
             }]
         });
         assert_eq!(serde_json::to_value(&request).unwrap(), expected);

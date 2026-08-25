@@ -1,9 +1,15 @@
 //! Integration tests for the HTTP API server.
 
 use {
+    cow_settlement_interface::pda::order::find_order_pda,
     cow_solana_rpc::SolanaRPC,
-    solana_driver::infra::{api::Api, config, solver::Solver},
-    solana_sdk::pubkey::Pubkey,
+    solana_driver::infra::{api::Api, blockchain::Solana, config, solver::Solver},
+    solana_sdk::{
+        hash::Hash,
+        pubkey::Pubkey,
+        signer::{Signer, keypair::read_keypair_file},
+    },
+    solana_testlib::temp_keypair,
     std::{net::SocketAddr, num::NonZero, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
@@ -17,10 +23,17 @@ fn uid() -> String {
     format!("0x{}", "11".repeat(32))
 }
 
+fn blockchain() -> Arc<Solana> {
+    Arc::new(Solana::new(
+        SolanaRPC::new_mock("succeeds".to_string()),
+        cow_settlement_interface::id(),
+    ))
+}
+
 fn api_with(solvers: Vec<Solver>) -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
-        rpc: Arc::new(SolanaRPC::new_mock("succeeds".to_string())),
+        blockchain: blockchain(),
         solvers,
     }
 }
@@ -51,13 +64,34 @@ async fn spawn_mock_solver_engine(response: serde_json::Value) -> SocketAddr {
     addr
 }
 
-fn solver(addr: SocketAddr, account: Pubkey) -> Solver {
-    Solver::new(&config::Solver {
+/// A solver client whose on-chain identity is a freshly generated keypair,
+/// so the test can register a matching settlement signer.
+fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
+    let keypair_file = temp_keypair();
+    let keypair_path = keypair_file.path().to_path_buf();
+    let account = read_keypair_file(&keypair_path).unwrap().pubkey();
+    let solver = Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: format!("http://{addr}").parse().unwrap(),
         account,
+        signer_keypair: keypair_path,
         max_in_flight: NonZero::new(1).unwrap(),
     })
+    .expect("solver construction should succeed");
+    (solver, account)
+}
+
+/// A solver client pointing at a dead endpoint (no listener).
+fn dead_solver() -> (Solver, Pubkey) {
+    solver_with_keypair("127.0.0.1:1".parse().unwrap())
+}
+
+fn order_pda() -> Pubkey {
+    find_order_pda(
+        &cow_settlement_interface::id(),
+        &Hash::new_from_array([0x11; 32]),
+    )
+    .0
 }
 
 /// The autopilot's own literal `/solve` request JSON.
@@ -81,7 +115,8 @@ fn solve_request() -> serde_json::Value {
             "validTo": 42,
             "kind": "sell",
             "partiallyFillable": false,
-            "orderPda": pubkey(0x77).to_string(),
+            "orderPda": order_pda().to_string(),
+            "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
         }]
     })
 }
@@ -120,7 +155,6 @@ async fn shuts_down_cleanly_on_signal() {
 
 #[tokio::test]
 async fn solve_returns_converted_solutions() {
-    let account = pubkey(0x99);
     let engine = spawn_mock_solver_engine(serde_json::json!({
         "solutions": [{
             "id": 42,
@@ -136,7 +170,8 @@ async fn solve_returns_converted_solutions() {
         }]
     }))
     .await;
-    let addr = spawn_server(vec![solver(engine, account)]).await;
+    let (solver, account) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/mock/solve"))
@@ -168,7 +203,7 @@ async fn solve_returns_converted_solutions() {
 #[tokio::test]
 async fn solve_with_engine_down_returns_solver_failed() {
     // Point the solver at a port with no listener.
-    let dead = solver("127.0.0.1:1".parse().unwrap(), pubkey(0x99));
+    let (dead, _) = dead_solver();
     let addr = spawn_server(vec![dead]).await;
 
     let response = reqwest::Client::new()
@@ -188,7 +223,7 @@ async fn solve_with_engine_down_returns_solver_failed() {
 
 #[tokio::test]
 async fn settle_rejects_non_positive_auction_id() {
-    let dead = solver("127.0.0.1:1".parse().unwrap(), pubkey(0x99));
+    let (dead, _) = dead_solver();
     let addr = spawn_server(vec![dead]).await;
 
     let response = reqwest::Client::new()

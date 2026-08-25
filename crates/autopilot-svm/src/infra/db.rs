@@ -2,9 +2,9 @@
 
 use {
     crate::domain::auction::{Auction, Order, OrderKind},
-    anyhow::{Context, Result, bail},
+    anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
-    chain_types::solana::{IntentHash, Pubkey},
+    chain_types::solana::{AppData, IntentHash, Pubkey},
     database::byte_array::ByteArray,
     sqlx::PgExecutor,
 };
@@ -21,9 +21,10 @@ pub struct OrderRow {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub valid_to: i64,
-    pub kind: String,
+    pub kind: database::solana::OrderKind,
     pub partially_fillable: bool,
     pub order_pda: ByteArray<32>,
+    pub app_data: ByteArray<32>,
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
@@ -35,7 +36,7 @@ pub async fn open_orders(ex: impl PgExecutor<'_>, now_unix: i64) -> Result<Vec<O
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
-       o.kind::text AS kind, o.partially_fillable, o.order_pda
+       o.kind, o.partially_fillable, o.order_pda, o.app_data
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.valid_to >= $1
@@ -199,13 +200,13 @@ impl TryFrom<OrderRow> for Order {
             sell_amount: to_amount(&row.sell_amount).context("sell_amount")?,
             buy_amount: to_amount(&row.buy_amount).context("buy_amount")?,
             valid_to: row.valid_to.try_into().context("valid_to")?,
-            kind: match row.kind.as_str() {
-                "sell" => OrderKind::Sell,
-                "buy" => OrderKind::Buy,
-                other => bail!("unknown order kind {other:?}"),
+            kind: match row.kind {
+                database::solana::OrderKind::Sell => OrderKind::Sell,
+                database::solana::OrderKind::Buy => OrderKind::Buy,
             },
             partially_fillable: row.partially_fillable,
             order_pda: Pubkey(row.order_pda.0),
+            app_data: AppData(row.app_data.0),
         })
     }
 }
@@ -237,9 +238,10 @@ mod tests {
             sell_amount: BigDecimal::from(u64::MAX),
             buy_amount: BigDecimal::from(1_000u64),
             valid_to: 42,
-            kind: "sell".to_owned(),
+            kind: database::solana::OrderKind::Sell,
             partially_fillable: false,
             order_pda: ByteArray([7; 32]),
+            app_data: ByteArray([0; 32]),
         }
     }
 
@@ -252,10 +254,6 @@ mod tests {
         let mut too_big = conversion_row();
         too_big.sell_amount = BigDecimal::from(u64::MAX) + BigDecimal::from(1u64);
         assert!(super::Order::try_from(too_big).is_err());
-
-        let mut bad_kind = conversion_row();
-        bad_kind.kind = "liquidity".to_owned();
-        assert!(super::Order::try_from(bad_kind).is_err());
     }
 
     #[test]
@@ -271,14 +269,14 @@ mod tests {
         n: u8,
         valid_to: i64,
         signed: bool,
-        kind: &str,
+        kind: database::solana::OrderKind,
     ) {
         sqlx::query(
             r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, intent_signature, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, $3, $6::OrderKind, false, $2, $4, now(), $5)
+VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, $3, $6, false, $2, $4, now(), $5)
             "#,
         )
         .bind(ByteArray([n; 32]))
@@ -330,32 +328,32 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         }
 
         // Kept: signed and unexpired, no PDA yet.
-        insert_order(&mut tx, 1, 2_000, true, "sell").await;
+        insert_order(&mut tx, 1, 2_000, true, database::solana::OrderKind::Sell).await;
         // Dropped: expired.
-        insert_order(&mut tx, 2, 500, true, "sell").await;
+        insert_order(&mut tx, 2, 500, true, database::solana::OrderKind::Sell).await;
         // Dropped: no PDA and nothing for the driver to create it from.
-        insert_order(&mut tx, 3, 2_000, false, "sell").await;
+        insert_order(&mut tx, 3, 2_000, false, database::solana::OrderKind::Sell).await;
         // Dropped: cancelled on chain.
-        insert_order(&mut tx, 4, 2_000, true, "sell").await;
+        insert_order(&mut tx, 4, 2_000, true, database::solana::OrderKind::Sell).await;
         insert_pda(&mut tx, 4, true, 0, 0).await;
         // Dropped: not yet valid.
-        insert_order(&mut tx, 9, 2_000, true, "sell").await;
+        insert_order(&mut tx, 9, 2_000, true, database::solana::OrderKind::Sell).await;
         sqlx::query(r#"UPDATE solana.orders SET valid_from = 1_500 WHERE uid = $1"#)
             .bind(database::byte_array::ByteArray([9u8; 32]))
             .execute(&mut *tx)
             .await
             .unwrap();
         // Kept: live PDA, partially filled.
-        insert_order(&mut tx, 5, 2_000, true, "sell").await;
+        insert_order(&mut tx, 5, 2_000, true, database::solana::OrderKind::Sell).await;
         insert_pda(&mut tx, 5, false, 999, 0).await;
         // Kept: created directly on chain, no off-chain material.
-        insert_order(&mut tx, 6, 2_000, false, "sell").await;
+        insert_order(&mut tx, 6, 2_000, false, database::solana::OrderKind::Sell).await;
         insert_pda(&mut tx, 6, false, 0, 0).await;
         // Dropped: sell side fully withdrawn.
-        insert_order(&mut tx, 7, 2_000, true, "sell").await;
+        insert_order(&mut tx, 7, 2_000, true, database::solana::OrderKind::Sell).await;
         insert_pda(&mut tx, 7, false, 1_000, 0).await;
         // Dropped: buy side fully received.
-        insert_order(&mut tx, 8, 2_000, true, "buy").await;
+        insert_order(&mut tx, 8, 2_000, true, database::solana::OrderKind::Buy).await;
         insert_pda(&mut tx, 8, false, 0, 2_000).await;
 
         let orders = open_orders(&mut *tx, 1_000).await.unwrap();
