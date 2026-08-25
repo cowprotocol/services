@@ -9,10 +9,10 @@ use {
             ingester::{Error, INGEST_TO_DECODER_CAPACITY, Ingester, Resume},
         },
         persistence::Postgres,
-        rpc::Rpc,
         yellowstone,
     },
     clap::Parser,
+    cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     observe::metrics::{DEFAULT_METRICS_PORT, LivenessChecking, serve_metrics},
     sqlx::{PgPool, postgres::PgPoolOptions},
     std::{
@@ -64,7 +64,12 @@ async fn run(config: Config, start_slot: Option<u64>) {
         .expect("database connection");
     let mut metrics = serve_probes(pool.clone());
     let persistence = Postgres::new(pool);
-    let rpc = Rpc::new(config.rpc.endpoint, config.rpc.request_timeout);
+    // Confirmed commitment, matching the stream subscription.
+    let rpc = SolanaRPC::new_with_timeout_and_commitment(
+        &config.rpc.endpoint,
+        config.rpc.request_timeout,
+        CommitmentConfig::confirmed(),
+    );
 
     let (tx, rx) = mpsc::channel(INGEST_TO_DECODER_CAPACITY);
     let settlement_program = config.chain.settlement_program_id;

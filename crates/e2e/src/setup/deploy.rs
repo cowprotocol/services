@@ -18,7 +18,7 @@ use {
         WETH9,
         support::{Balances, Signatures},
     },
-    ethrpc::alloy::CallBuilderExt,
+    ethrpc::alloy::{CallBuilderExt, ProviderExt},
     model::DomainSeparator,
     shared::web3::Web3,
 };
@@ -127,6 +127,8 @@ impl Contracts {
             .expect("get network ID failed")
             .to_string();
         tracing::info!("connected to test network {}", network_id);
+
+        web3.provider.deploy_multicall3().await.unwrap();
 
         let accounts = web3
             .provider
