@@ -7,6 +7,7 @@
 use {
     super::{Auction, auction::Id, solution::Solution},
     crate::infra::solver::{Error as SolverError, Solver},
+    solana_sdk::pubkey::Pubkey,
 };
 
 /// Orchestrates one auction through a single solver engine.
@@ -22,9 +23,16 @@ impl Competition {
 
     /// Send the auction to the solver engine and return its solutions.
     ///
+    /// `program_id` is the settlement program the swap instructions are built
+    /// for.
+    ///
     /// If the engine fails, the driver returns `Error::Solver`.
-    pub async fn solve(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
-        let solutions = self.solver.solve(auction).await?;
+    pub async fn solve(
+        &self,
+        auction: &Auction,
+        program_id: Pubkey,
+    ) -> Result<Vec<Solution>, Error> {
+        let solutions = self.solver.solve(auction, program_id).await?;
 
         // TODO: store the proposed solutions in the solution cache keyed by
         // (auction_id, solution_id) once the cache lands. The cache also
