@@ -321,14 +321,12 @@ pub(crate) enum Resume {
 /// Drops `from_slot` when it sits below the provider's replay buffer, so the
 /// subscription starts from the live tip instead.
 ///
-/// The buffer holds only a short window. Asking below it fails the stream, and
-/// the client's `AutoReconnect` clears its checkpoint on `OutOfRange` alone:
-/// the provider answers a stale replay with `Internal` ("failed to get replay
-/// response"), so the wrapper retries the same unavailable slot in a tight loop
-/// and the watermark never moves again.
+/// The client's `AutoReconnect` only abandons a checkpoint on `OutOfRange`. A
+/// slot that has aged out of the buffer comes back as `Internal`, which it
+/// retries indefinitely against the same unavailable slot.
 ///
-/// TODO(BE-204): the skipped range is backfilled over JSON-RPC. Until then the
-/// gap stays unindexed, and the error below is the only record of it.
+/// TODO(BE-204): backfill the skipped range over JSON-RPC. Until then it stays
+/// unindexed.
 async fn clamp_to_replay_window(
     client: &mut GeyserGrpcClient,
     from_slot: Option<u64>,
