@@ -23,6 +23,8 @@ const WAD: U256 = U256::from_limbs([1_000_000_000_000_000_000, 0, 0, 0]);
 /// a configured bucket (e.g. correlated tokens).
 pub struct PenaltyCapCalculator {
     default_factor: PenaltyFactor,
+    /// Default factor overrides for orders where both traded tokens belong
+    /// to the same bucket.
     overrides: Vec<Override>,
     /// The USD bound converted into atoms of the reference token.
     absolute_cap_atoms: U256,
@@ -74,9 +76,9 @@ impl PenaltyCapCalculator {
         self.usd_reference_token
     }
 
-    /// Records the latest native price of the USD reference token. Staleness
+    /// Sets the latest native price of the USD reference token. Staleness
     /// (i.e. this not being called) is monitored via the last update metric.
-    pub fn record_usd_price(&self, price: U256) {
+    pub fn set_usd_price(&self, price: U256) {
         *self.usd_reference_price.lock().unwrap() = price;
         Metrics::get()
             .usd_price_last_update
@@ -85,7 +87,7 @@ impl PenaltyCapCalculator {
 
     /// Computes the penalty cap for an order, in native token.
     ///
-    /// The order's volume is its buy amount for sell orders and its sell
+    /// The order's volume is its sell amount for sell orders and its buy
     /// amount for buy orders, converted using the auction's native prices.
     /// If the volume cannot be determined (missing native price or
     /// overflow) the absolute USD bound applies.
@@ -95,8 +97,8 @@ impl PenaltyCapCalculator {
         prices: &BTreeMap<Address, U256>,
     ) -> eth::Ether {
         let (token, amount) = match order.data.kind {
-            OrderKind::Sell => (order.data.buy_token, order.data.buy_amount),
-            OrderKind::Buy => (order.data.sell_token, order.data.sell_amount),
+            OrderKind::Sell => (order.data.sell_token, order.data.sell_amount),
+            OrderKind::Buy => (order.data.buy_token, order.data.buy_amount),
         };
         let absolute_cap = self.absolute_cap_in_native();
         let factor = self.factor(order.data.sell_token, order.data.buy_token);
@@ -113,8 +115,12 @@ impl PenaltyCapCalculator {
         eth::Ether(cap)
     }
 
-    /// Determines the applicable volume factor for a token pair.
+    /// Determines the applicable volume factor for a token pair. The first
+    /// matching override wins, so more specific buckets should be listed
+    /// before broader ones.
     fn factor(&self, sell_token: Address, buy_token: Address) -> PenaltyFactor {
+        // Only the buy side needs normalizing: orders can buy native ETH
+        // but can only ever sell the wrapped token.
         let buy_token = self.wrapped(buy_token);
         self.overrides
             .iter()
@@ -137,6 +143,7 @@ impl PenaltyCapCalculator {
 
     /// The absolute USD bound converted into native token using the last
     /// known price of the reference token.
+    /// Returns `U256::MAX` if `absolute_cap_atoms * price` overflows.
     fn absolute_cap_in_native(&self) -> U256 {
         let price = *self.usd_reference_price.lock().unwrap();
         self.absolute_cap_atoms
@@ -207,13 +214,13 @@ mod tests {
     }
 
     #[test]
-    fn sell_order_uses_buy_amount() {
-        // 1 native token of buy volume capped at 4 bps. The sell token has
+    fn sell_order_uses_sell_amount() {
+        // 1 native token of sell volume capped at 4 bps. The buy token has
         // no native price, which must not matter for sell orders.
         let order = order(
             OrderKind::Sell,
-            (USDC, 4_000_000_000),
             (COW, 1_000_000_000_000_000_000),
+            (USDC, 4_000_000_000),
         );
         // 1e18 COW atoms are worth 1 native token.
         let prices = BTreeMap::from([(COW, U256::from(1_000_000_000_000_000_000_u128))]);
@@ -222,12 +229,13 @@ mod tests {
     }
 
     #[test]
-    fn buy_order_uses_sell_amount() {
-        // 2 native tokens of sell volume capped at 4 bps.
+    fn buy_order_uses_buy_amount() {
+        // 2 native tokens of buy volume capped at 4 bps. The sell token has
+        // no native price, which must not matter for buy orders.
         let order = order(
             OrderKind::Buy,
-            (COW, 2_000_000_000_000_000_000),
             (USDC, 8_000_000_000),
+            (COW, 2_000_000_000_000_000_000),
         );
         // 1e18 COW atoms are worth 1 native token.
         let prices = BTreeMap::from([(COW, U256::from(1_000_000_000_000_000_000_u128))]);
@@ -239,7 +247,7 @@ mod tests {
     fn applies_bucket_override() {
         // Both tokens in the override bucket: 0.1 bps applies.
         let order = order(
-            OrderKind::Buy,
+            OrderKind::Sell,
             (WSTETH, 1_000_000_000_000_000_000),
             (NATIVE, 1_000_000_000_000_000_000),
         );
@@ -255,8 +263,8 @@ mod tests {
         // $20 bound (5e15 wei) applies.
         let order = order(
             OrderKind::Sell,
-            (USDC, 400_000_000_000),
             (COW, 100_000_000_000_000_000_000),
+            (USDC, 400_000_000_000),
         );
         // 1e18 COW atoms are worth 1 native token.
         let prices = BTreeMap::from([(COW, U256::from(1_000_000_000_000_000_000_u128))]);
@@ -268,10 +276,10 @@ mod tests {
     fn overflowing_volume_falls_back_to_absolute_cap() {
         let order = Order {
             data: OrderData {
-                sell_token: COW,
-                sell_amount: U256::MAX,
-                buy_token: USDC,
-                buy_amount: U256::from(1_u128),
+                sell_token: USDC,
+                sell_amount: U256::from(1_u128),
+                buy_token: COW,
+                buy_amount: U256::MAX,
                 kind: OrderKind::Buy,
                 ..Default::default()
             },
@@ -285,7 +293,7 @@ mod tests {
 
     #[test]
     fn missing_price_falls_back_to_absolute_cap() {
-        // Buy orders need the sell token's native price, which is missing.
+        // Buy orders need the buy token's native price, which is missing.
         let order = order(
             OrderKind::Buy,
             (USDC, 4_000_000_000),
@@ -317,14 +325,14 @@ mod tests {
         // A large enough order for the absolute cap to apply.
         let order = order(
             OrderKind::Sell,
-            (USDC, 400_000_000_000),
             (COW, 100_000_000_000_000_000_000),
+            (USDC, 400_000_000_000),
         );
         // 1e18 COW atoms are worth 1 native token.
         let prices = BTreeMap::from([(COW, U256::from(1_000_000_000_000_000_000_u128))]);
 
         // Halving the reference token's price halves the absolute cap.
-        calculator.record_usd_price(U256::from(125_000_000_000_000_000_000_000_000_u128));
+        calculator.set_usd_price(U256::from(125_000_000_000_000_000_000_000_000_u128));
         let cap = calculator.calculate(&order, &prices);
         assert_eq!(cap.0, U256::from(2_500_000_000_000_000_u128));
     }

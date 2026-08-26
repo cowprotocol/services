@@ -293,10 +293,10 @@ impl SolvableOrdersCache {
         prices
             .entry(self.weth)
             .or_insert_with(|| to_normalized_price(1.0).unwrap());
-        if let Some(calculator) = &self.penalty_cap_calculator {
-            if let Some(price) = prices.get(&calculator.usd_reference_token()) {
-                calculator.record_usd_price(*price);
-            }
+        if let Some(calculator) = &self.penalty_cap_calculator
+            && let Some(price) = prices.get(&calculator.usd_reference_token())
+        {
+            calculator.set_usd_price(*price);
         }
         Metrics::track_filtered_orders(MissingNativePrice, &removed);
         filtered_order_events.extend(removed.into_iter().map(|uid| (uid, MissingNativePrice)));
