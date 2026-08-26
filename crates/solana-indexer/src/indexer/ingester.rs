@@ -285,6 +285,7 @@ impl Ingester<GeyserStream> {
             Resume::LiveTip => None,
             Resume::From(slot) => Some(slot),
         };
+        let from_slot = clamp_to_replay_window(&mut client, from_slot).await?;
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
@@ -317,6 +318,39 @@ pub(crate) enum Resume {
 }
 
 /// The wire-level filter shape: the two named transaction filters and the
+/// Drops `from_slot` when it sits below the provider's replay buffer, so the
+/// subscription starts from the live tip instead.
+///
+/// The buffer holds only a short window. Asking below it fails the stream, and
+/// the client's `AutoReconnect` clears its checkpoint on `OutOfRange` alone:
+/// the provider answers a stale replay with `Internal` ("failed to get replay
+/// response"), so the wrapper retries the same unavailable slot in a tight loop
+/// and the watermark never moves again.
+///
+/// TODO(BE-204): the skipped range is backfilled over JSON-RPC. Until then the
+/// gap stays unindexed, and the error below is the only record of it.
+async fn clamp_to_replay_window(
+    client: &mut GeyserGrpcClient,
+    from_slot: Option<u64>,
+) -> Result<Option<u64>, Error> {
+    let Some(slot) = from_slot else {
+        return Ok(None);
+    };
+    let first_available = client.subscribe_replay_info().await?.first_available;
+    match first_available {
+        Some(first) if slot < first => {
+            tracing::error!(
+                requested = slot,
+                first_available = first,
+                skipped = first - slot,
+                "resume slot older than the replay window, starting from the live tip"
+            );
+            Ok(None)
+        }
+        _ => Ok(Some(slot)),
+    }
+}
+
 /// `chain_tip` slot filter, multiplexed into a single subscription at
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
 /// [`Ingester::serve`] (`last_indexed_slot + 1`, or `None` for the live tip).
