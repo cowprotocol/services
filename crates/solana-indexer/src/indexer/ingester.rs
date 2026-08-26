@@ -285,7 +285,7 @@ impl Ingester<GeyserStream> {
             Resume::LiveTip => None,
             Resume::From(slot) => Some(slot),
         };
-        let from_slot = clamp_to_replay_window(&mut client, from_slot).await?;
+        let from_slot = resume_slot_within_replay_window(&mut client, from_slot).await?;
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
@@ -318,35 +318,39 @@ pub(crate) enum Resume {
 }
 
 /// The wire-level filter shape: the two named transaction filters and the
-/// Drops `from_slot` when it sits below the provider's replay buffer, so the
-/// subscription starts from the live tip instead.
+/// Slots of headroom demanded above the provider's oldest replayable slot. The
+/// buffer slides forward while the subscribe request is in flight, so a resume
+/// slot that only just clears it can age out before the stream opens.
+const REPLAY_WINDOW_MARGIN: u64 = 32;
+
+/// Returns the resume slot to subscribe from, or `None` for the live tip.
 ///
-/// The client's `AutoReconnect` only abandons a checkpoint on `OutOfRange`. A
-/// slot that has aged out of the buffer comes back as `Internal`, which it
-/// retries indefinitely against the same unavailable slot.
+/// Subscribing below the provider's replay buffer cannot be recovered from:
+/// the client's `AutoReconnect` clears its checkpoint on `OutOfRange` alone,
+/// and an aged-out slot comes back as `Internal`, so it retries that same slot
+/// indefinitely.
 ///
-/// TODO(BE-204): backfill the skipped range over JSON-RPC. Until then it stays
-/// unindexed.
-async fn clamp_to_replay_window(
+/// TODO(BE-204): backfill the skipped range rather than abandoning it.
+async fn resume_slot_within_replay_window(
     client: &mut GeyserGrpcClient,
     from_slot: Option<u64>,
 ) -> Result<Option<u64>, Error> {
     let Some(slot) = from_slot else {
         return Ok(None);
     };
-    let first_available = client.subscribe_replay_info().await?.first_available;
-    match first_available {
-        Some(first) if slot < first => {
-            tracing::error!(
-                requested = slot,
-                first_available = first,
-                skipped = first - slot,
-                "resume slot older than the replay window, starting from the live tip"
-            );
-            Ok(None)
-        }
-        _ => Ok(Some(slot)),
+    let Some(first_available) = client.subscribe_replay_info().await?.first_available else {
+        return Ok(Some(slot));
+    };
+    if slot >= first_available.saturating_add(REPLAY_WINDOW_MARGIN) {
+        return Ok(Some(slot));
     }
+    tracing::error!(
+        requested = slot,
+        first_available,
+        skipped = first_available.saturating_sub(slot),
+        "resume slot outside the replay window, starting from the live tip"
+    );
+    Ok(None)
 }
 
 /// `chain_tip` slot filter, multiplexed into a single subscription at
