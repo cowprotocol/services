@@ -135,7 +135,7 @@ async fn run(config: Config, start_slot: Option<u64>) {
             match result {
                 // The decoder hung up, the select below reports why.
                 Ok(()) => break,
-                // The provider no longer holds the requested slot. The gap
+                // The provider has discarded the requested slot. The gap
                 // stays unindexed until a backfill (BE-204).
                 Err(Error::Stream(status)) if status.code() == Code::OutOfRange => {
                     tracing::error!(%status, "resume slot rejected, resubscribing from the live tip");

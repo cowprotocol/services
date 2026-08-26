@@ -719,8 +719,8 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
         geyser_tx.send(update).await.unwrap();
     }
     // The hold-back keeps both slots buffered: the newest observed slot (43)
-    // is not two past either of them, so no events may be persisted yet. The
-    // resume point still tracks the cutoff below them.
+    // is not two past either of them, so the events stay buffered. The resume
+    // point still tracks the cutoff below them.
     let reader = Postgres::new(pool.clone());
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(41)));
