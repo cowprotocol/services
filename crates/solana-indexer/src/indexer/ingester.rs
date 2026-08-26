@@ -305,7 +305,6 @@ pub(crate) enum Resume {
     From(u64),
 }
 
-/// The wire-level filter shape: the two named transaction filters and the
 /// Slots of headroom demanded above the provider's oldest replayable slot. The
 /// buffer slides forward while the subscribe request is in flight, so a resume
 /// slot that only just clears it can age out before the stream opens.
@@ -349,6 +348,7 @@ fn resume_slot(slot: u64, first_available: Option<u64>) -> Option<u64> {
     None
 }
 
+/// The wire-level filter shape: the two named transaction filters and the
 /// `chain_tip` slot filter, multiplexed into a single subscription at
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
 /// [`Ingester::serve`] (`last_indexed_slot + 1`, or `None` for the live tip).

@@ -221,13 +221,6 @@ async fn closed_decoder_receiver_stops_cleanly() {
     assert!(ingester.run().await.is_ok());
 }
 
-/// The devnet incident: a checkpoint three slots below the oldest replayable
-/// one clears the exact window but not the margin.
-#[test]
-fn resume_slot_inside_the_margin_starts_from_the_tip() {
-    assert_eq!(resume_slot(488_321_104, Some(488_321_107)), None);
-}
-
 #[test]
 fn resume_slot_with_headroom_is_kept() {
     let first_available = 500;

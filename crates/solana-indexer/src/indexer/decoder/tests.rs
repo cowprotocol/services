@@ -772,9 +772,8 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     assert_eq!(buy_token, vec![0xA2; 32]);
 }
 
-/// Slot statuses alone move the resume point. Without this, a quiet stretch
-/// longer than the provider's replay window leaves the stored slot too old to
-/// resume from.
+/// Slot statuses alone move the resume point, so it keeps up with the chain
+/// through stretches with no settlements.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
 async fn solana_db_slot_statuses_alone_advance_the_watermark() {
