@@ -373,9 +373,28 @@ pub async fn run(config: Configuration) {
         )
     };
 
-    let optimal_quoter = Arc::new(
+    let verified_quoter = Arc::new(
         create_quoter(price_estimator.clone()).with_streaming_estimator(price_estimator.clone()),
     );
+
+    let unverified_price_estimator = price_estimator_factory
+        .unverified_price_estimator(
+            &config
+                .order_quoting
+                .price_estimation_drivers
+                .iter()
+                .map(
+                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
+                        name: price_estimator_driver.name.clone(),
+                        url: price_estimator_driver.url.clone(),
+                    },
+                )
+                .collect::<Vec<_>>(),
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
+        )
+        .unwrap();
+    let optimal_quoter = Arc::new(create_quoter(unverified_price_estimator));
 
     // Fast quoting is able to return early and if none of the produced quotes are
     // verifiable we are left with no quote at all. Since fast estimates don't
@@ -418,7 +437,7 @@ pub async fn run(config: Configuration) {
         config.eip1271_skip_creation_validation,
         deny_listed_tokens.clone(),
         hooks_contract,
-        optimal_quoter.clone(),
+        verified_quoter.clone(),
         balance_fetcher,
         signature_validator,
         validator_simulator,
@@ -471,8 +490,9 @@ pub async fn run(config: Configuration) {
         *native_token.address(),
         token_info_fetcher.clone(),
     )
+    .with_verified_quoter(verified_quoter.clone())
     .with_fast_quoter(fast_quoter)
-    .with_streaming_quoter(optimal_quoter.clone());
+    .with_streaming_quoter(verified_quoter.clone());
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
