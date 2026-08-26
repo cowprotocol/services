@@ -21,7 +21,8 @@ impl super::Postgres {
 /// individual queries bounded regardless of how many events are stored at once.
 const INSERT_CHUNK_SIZE: usize = 1000;
 
-/// Advisory-lock name serializing the deduplicating event insert.
+/// Advisory-lock namespace for the deduplicating event insert, one lock per
+/// label.
 const DEDUP_LOCK: &str = "order_events_dedup";
 
 pub async fn store_order_events(
@@ -36,12 +37,14 @@ pub async fn store_order_events(
     let insert = async move {
         let mut ex = ex.begin().await?;
         // The dedup below compares against committed rows only, so writers
-        // that overlap both append. One table-wide lock, held until the
-        // outermost transaction commits: a caller passing a long-running
-        // transaction stalls every other writer. Only writers taking this lock
-        // are race-free.
-        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        // that overlap both append. Keyed per label because writers carrying
+        // different labels append in either order for the same result, leaving
+        // only same-label writers to serialize. The lock lives until the
+        // outermost transaction commits, and only writers taking it are
+        // race-free.
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text || $2::text, 0))")
             .bind(DEDUP_LOCK)
+            .bind(label)
             .execute(&mut *ex)
             .await?;
         let mut order_uids = order_uids.into_iter().map(|o| ByteArray(o.0));
@@ -126,5 +129,39 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(labels, ["created", "invalid"]);
+    }
+
+    /// Writers carrying different labels take different locks, so both append
+    /// whichever order they land in.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_concurrent_writes_of_distinct_labels_both_append() {
+        let db = Postgres::with_defaults().await.unwrap();
+        let mut ex = db.pool.begin().await.unwrap();
+        database::clear_DANGER_(&mut ex).await.unwrap();
+        ex.commit().await.unwrap();
+        let uid = ByteArray([7; 56]);
+
+        let write = |label| {
+            let pool = db.pool.clone();
+            async move {
+                let mut ex = pool.acquire().await.unwrap();
+                store_order_events(&mut ex, [domain::OrderUid(uid.0)], label, None, Utc::now())
+                    .await;
+            }
+        };
+        tokio::join!(
+            write(OrderEventLabel::Invalid),
+            write(OrderEventLabel::Filtered)
+        );
+
+        let mut labels: Vec<String> =
+            sqlx::query_scalar("SELECT label::text FROM order_events WHERE order_uid = $1")
+                .bind(uid)
+                .fetch_all(&db.pool)
+                .await
+                .unwrap();
+        labels.sort();
+        assert_eq!(labels, ["filtered", "invalid"]);
     }
 }
