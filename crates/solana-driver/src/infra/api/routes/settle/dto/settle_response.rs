@@ -2,9 +2,8 @@
 //! settlement.
 //!
 //! This is the driver's own mirror of `autopilot-svm`'s
-//! `infra/driver/dto.rs::SettleResponse`. The driver pins the wire shape here
-//! even though on-chain submission is not implemented yet. The autopilot
-//! already deserializes this shape.
+//! `infra/driver/dto.rs::SettleResponse`. The autopilot already deserializes
+//! this shape.
 
 use {
     serde::{Deserialize, Serialize},
@@ -20,6 +19,13 @@ pub struct SettleResponse {
     /// Transaction signature of the submitted settlement.
     #[serde_as(as = "DisplayFromStr")]
     tx_signature: Signature,
+}
+
+impl SettleResponse {
+    /// Build a settle response from the submitted transaction signature.
+    pub fn new(tx_signature: Signature) -> Self {
+        Self { tx_signature }
+    }
 }
 
 #[cfg(test)]

@@ -45,12 +45,16 @@ pub enum Dex {
 }
 
 impl Dex {
-    /// Quote `order` for settlement signer `user`.
+    /// Build the swap for `order` that the settlement signer `user` executes.
     ///
-    /// The route spends its input from `user`'s ATA for the sell mint.
-    /// Jupiter has no source-account override, so the settlement must pull
-    /// the sell funds into that ATA, creating it if missing, before the
-    /// swap executes.
+    /// The route spends its input from the solver's sell-mint ATA. Jupiter
+    /// has no source-account override, so the settlement must pull the sell
+    /// funds into that ATA, creating it if missing, before the swap executes.
+    ///
+    /// Note: the driver creates the solver's missing sell-mint ATA with an
+    /// idempotent setup instruction inserted before `BeginSettle` (see the
+    /// `solana-driver`'s `Settlement::prepare`/`instructions`), so the pull
+    /// destination always exists by the time the swap runs.
     pub async fn swap(&self, order: &Order, user: &Pubkey) -> Result<Swap, jupiter::Error> {
         match self {
             Dex::Jupiter(jupiter) => jupiter.swap(order, user).await,

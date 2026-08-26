@@ -59,8 +59,8 @@ impl Api {
         // Mount one router per solver engine under `/{solver_name}`.
         for solver in self.solvers {
             let solver_name = solver.name().to_owned();
-            let competition = domain::Competition::new(solver);
-            let state = State::new(self.blockchain.clone(), competition);
+            let competition = domain::Competition::new(solver, self.blockchain.clone());
+            let state = State::new(competition);
 
             let router = Router::new()
                 .route("/solve", axum::routing::post(routes::solve))
@@ -91,27 +91,17 @@ pub struct State(Arc<Inner>);
 
 impl State {
     /// Build the shared state the handlers operate on.
-    fn new(blockchain: Arc<Solana>, competition: domain::Competition) -> Self {
-        Self(Arc::new(Inner {
-            blockchain,
-            competition,
-        }))
+    fn new(competition: domain::Competition) -> Self {
+        Self(Arc::new(Inner { competition }))
     }
 
     /// The competition that runs auctions for this solver engine.
     fn competition(&self) -> &domain::Competition {
         &self.0.competition
     }
-
-    /// The blockchain adapter, including the settlement program id.
-    fn blockchain(&self) -> &Solana {
-        &self.0.blockchain
-    }
 }
 
 struct Inner {
-    /// The shared Solana blockchain adapter.
-    blockchain: Arc<Solana>,
     /// The competition that runs auctions for this solver engine.
     competition: domain::Competition,
 }

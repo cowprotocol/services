@@ -9200,10 +9200,12 @@ dependencies = [
  "serde-ext",
  "serde_json",
  "serde_with",
+ "solana-address-lookup-table-interface",
  "solana-compute-budget-interface",
  "solana-sdk",
  "solana-solvers",
  "solana-testlib",
+ "spl-associated-token-account-interface",
  "thiserror 1.0.69",
  "tikv-jemallocator",
  "tokio",
@@ -10536,6 +10538,16 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
+]
+
+[[package]]
+name = "spl-associated-token-account-interface"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6433917b60441d68d99a17e121d9db0ea15a9a69c0e5afa34649cf5ba12612f"
+dependencies = [
+ "solana-instruction",
+ "solana-pubkey 3.0.0",
 ]
 
 [[package]]

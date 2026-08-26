@@ -41,6 +41,11 @@ impl Solver {
         self.keypair.pubkey()
     }
 
+    /// The solver's settlement signer keypair.
+    pub(crate) fn keypair(&self) -> &Keypair {
+        &self.keypair
+    }
+
     /// Build a solver client from its configuration.
     ///
     /// Loads the signer keypair from `config.signer_keypair`.
