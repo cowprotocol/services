@@ -1,5 +1,12 @@
 use {
-    super::{DecodeFailed, Decoder, build_account_keys, decode_settlement, relevant_instructions},
+    super::{
+        DecodeFailed,
+        Decoder,
+        FLUSH_HOLDBACK_SLOTS,
+        build_account_keys,
+        decode_settlement,
+        relevant_instructions,
+    },
     crate::{
         indexer::ingester::Ingester,
         persistence::Postgres,
@@ -712,10 +719,16 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
         geyser_tx.send(update).await.unwrap();
     }
     // The hold-back keeps both slots buffered: the newest observed slot (43)
-    // is not two past either of them, so nothing may be persisted yet.
+    // is not two past either of them, so no events may be persisted yet. The
+    // resume point still tracks the cutoff below them.
     let reader = Postgres::new(pool.clone());
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert_eq!(reader.last_indexed_slot().await.unwrap(), None);
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(41)));
+    let pda_rows: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_pda")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(pda_rows, 0);
 
     // The slot-45 status moves the stream two past 43 and flushes both slots.
     // Closing the channel ends the ingester (a terminal stream end) and the
@@ -757,4 +770,41 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
             .unwrap();
     assert_eq!(sell_token, vec![0xA1; 32]);
     assert_eq!(buy_token, vec![0xA2; 32]);
+}
+
+/// Slot statuses alone move the resume point. Without this, a quiet stretch
+/// longer than the provider's replay window leaves the stored slot too old to
+/// resume from.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_slot_statuses_alone_advance_the_watermark() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+
+    let (geyser_tx, mut geyser_rx) = tokio::sync::mpsc::channel(16);
+    let geyser_stream = futures::stream::poll_fn(move |cx| geyser_rx.poll_recv(cx)).boxed();
+    let (sender, receiver) = tokio::sync::mpsc::channel(16);
+    let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
+    let mut decoder = Decoder::new(
+        Postgres::new(pool.clone()),
+        mock_rpc_with_token_accounts(),
+        receiver,
+        pubkey(1),
+        None,
+    );
+    let ingester_task = tokio::spawn(async move { ingester.run().await });
+    let decoder_task = tokio::spawn(async move { decoder.run().await });
+
+    for slot in [100, 101, 105] {
+        geyser_tx.send(Ok(slot_status_update(slot))).await.unwrap();
+    }
+    drop(geyser_tx);
+    assert!(ingester_task.await.unwrap().is_err());
+    assert!(decoder_task.await.unwrap().is_ok());
+
+    let reader = Postgres::new(pool);
+    assert_eq!(
+        reader.last_indexed_slot().await.unwrap(),
+        Some(Slot(105 - FLUSH_HOLDBACK_SLOTS))
+    );
 }

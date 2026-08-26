@@ -149,21 +149,27 @@ impl Decoder {
     }
 
     /// Flushes every buffer at least [`FLUSH_HOLDBACK_SLOTS`] behind the
-    /// observed slot. The hold-back gives late-delivered transactions a
-    /// window to join their slot's still unflushed buffer, keeping them
-    /// crash-safe: resume replays everything past the last indexed slot.
+    /// observed slot and moves the last indexed slot up to that cutoff. The
+    /// hold-back gives late-delivered transactions a window to join their
+    /// slot's still unflushed buffer, keeping them crash-safe: resume replays
+    /// everything past the last indexed slot.
+    ///
+    /// The cutoff advances on every slot status, transactions or not. A resume
+    /// point that only moved with settlements would fall behind the provider's
+    /// replay window on any quiet stretch longer than that window.
     async fn flush_up_to(
         &self,
         pending: &mut BTreeMap<Slot, SlotBuffer>,
         observed: Slot,
         flushed_through: &mut Option<Slot>,
     ) -> Result<(), PersistenceError> {
-        let cutoff = u64::from(observed).saturating_sub(FLUSH_HOLDBACK_SLOTS);
-        let keep = pending.split_off(&Slot(cutoff.saturating_add(1)));
+        let cutoff = Slot(u64::from(observed).saturating_sub(FLUSH_HOLDBACK_SLOTS));
+        let keep = pending.split_off(&Slot(u64::from(cutoff).saturating_add(1)));
         for (slot, buffer) in std::mem::replace(pending, keep) {
             self.flush_slot(slot, buffer, true).await?;
-            *flushed_through = (*flushed_through).max(Some(slot));
         }
+        self.persistence.write_last_indexed_slot(cutoff).await?;
+        *flushed_through = (*flushed_through).max(Some(cutoff));
         Ok(())
     }
 
