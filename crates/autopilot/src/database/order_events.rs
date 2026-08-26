@@ -135,13 +135,23 @@ mod tests {
         assert_eq!(labels, ["created", "invalid"]);
     }
 
-    /// Only same-label writers exclude each other. Holding the `Invalid` lock
-    /// stalls an `Invalid` write while a `Filtered` write runs through, the one
-    /// difference a per-label key makes over a table-wide one: the rows either
-    /// key produces are the same.
+    /// Only same-label writers exclude each other. While the `Invalid` lock is
+    /// held, a `Filtered` write runs through and an `Invalid` write queues
+    /// behind that exact lock, the one difference a per-label key makes over a
+    /// table-wide one: the rows either key produces are the same.
     #[tokio::test]
     #[ignore]
     async fn postgres_dedup_lock_is_per_label() {
+        /// A writer waiting on the advisory lock another session holds.
+        const QUEUED_ON_HELD_LOCK: &str = r#"
+SELECT EXISTS (
+    SELECT 1
+    FROM pg_locks held
+    JOIN pg_locks waiting USING (locktype, classid, objid, objsubid)
+    WHERE held.locktype = 'advisory' AND held.granted AND NOT waiting.granted
+)
+        "#;
+
         let db = Postgres::with_defaults().await.unwrap();
         let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
@@ -170,22 +180,25 @@ mod tests {
         )
         .await
         .expect("a different label does not wait for the invalid lock");
-        assert!(
-            tokio::time::timeout(
-                std::time::Duration::from_millis(500),
-                write(OrderEventLabel::Invalid)
-            )
-            .await
-            .is_err(),
-            "the same label waits for the lock holder"
-        );
+
+        let blocked = tokio::spawn(write(OrderEventLabel::Invalid));
+        let mut queued = false;
+        for _ in 0..50 {
+            queued = sqlx::query_scalar(QUEUED_ON_HELD_LOCK)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+            if queued {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(queued, "the same label waits on the held lock");
 
         holder.rollback().await.unwrap();
-        tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            write(OrderEventLabel::Invalid),
-        )
-        .await
-        .expect("the write proceeds once the lock is released");
+        tokio::time::timeout(std::time::Duration::from_secs(5), blocked)
+            .await
+            .expect("the write proceeds once the lock is released")
+            .unwrap();
     }
 }
