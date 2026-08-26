@@ -338,11 +338,19 @@ async fn resume_slot_within_replay_window(
     let Some(slot) = from_slot else {
         return Ok(None);
     };
-    let Some(first_available) = client.subscribe_replay_info().await?.first_available else {
-        return Ok(Some(slot));
+    let first_available = client.subscribe_replay_info().await?.first_available;
+    Ok(resume_slot(slot, first_available))
+}
+
+/// `Some(slot)` when the provider can still replay it with
+/// [`REPLAY_WINDOW_MARGIN`] to spare, `None` for the live tip. A provider
+/// that reports no oldest slot is taken at its word.
+fn resume_slot(slot: u64, first_available: Option<u64>) -> Option<u64> {
+    let Some(first_available) = first_available else {
+        return Some(slot);
     };
     if slot >= first_available.saturating_add(REPLAY_WINDOW_MARGIN) {
-        return Ok(Some(slot));
+        return Some(slot);
     }
     tracing::error!(
         requested = slot,
@@ -350,7 +358,7 @@ async fn resume_slot_within_replay_window(
         skipped = first_available.saturating_sub(slot),
         "resume slot outside the replay window, starting from the live tip"
     );
-    Ok(None)
+    None
 }
 
 /// `chain_tip` slot filter, multiplexed into a single subscription at

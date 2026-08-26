@@ -1,5 +1,5 @@
 use {
-    super::{Error, INGEST_TO_DECODER_CAPACITY, Ingester},
+    super::{Error, INGEST_TO_DECODER_CAPACITY, Ingester, REPLAY_WINDOW_MARGIN, resume_slot},
     crate::types::{
         Signature,
         channel::StreamUpdate,
@@ -219,4 +219,28 @@ async fn closed_decoder_receiver_stops_cleanly() {
     drop(rx);
 
     assert!(ingester.run().await.is_ok());
+}
+
+/// The devnet incident: a checkpoint three slots below the oldest replayable
+/// one clears the exact window but not the margin.
+#[test]
+fn resume_slot_inside_the_margin_starts_from_the_tip() {
+    assert_eq!(resume_slot(488_321_104, Some(488_321_107)), None);
+}
+
+#[test]
+fn resume_slot_with_headroom_is_kept() {
+    let first_available = 500;
+    let edge = first_available + REPLAY_WINDOW_MARGIN;
+    assert_eq!(resume_slot(edge, Some(first_available)), Some(edge));
+    assert_eq!(resume_slot(edge - 1, Some(first_available)), None);
+    assert_eq!(
+        resume_slot(1_000_000, Some(first_available)),
+        Some(1_000_000)
+    );
+}
+
+#[test]
+fn resume_slot_without_replay_info_is_kept() {
+    assert_eq!(resume_slot(7, None), Some(7));
 }
