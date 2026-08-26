@@ -187,7 +187,12 @@ where
             CallContext<SerializedRequest, Result<Response, TransportError>>,
         >,
     ) -> JoinHandle<()> {
-        let semaphore = Arc::new(Semaphore::new(config.ethrpc_max_concurrent_requests));
+        let permits = if config.ethrpc_max_concurrent_requests == 0 {
+            Semaphore::MAX_PERMITS
+        } else {
+            config.ethrpc_max_concurrent_requests
+        };
+        let semaphore = Arc::new(Semaphore::new(permits));
         let max_batch_size = config.ethrpc_max_batch_size;
         let batch_delay = config.ethrpc_batch_delay;
 
