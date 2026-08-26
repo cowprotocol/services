@@ -6,13 +6,7 @@
 use {
     std::time::Duration,
     url::Url,
-    yellowstone_grpc_client::{
-        Backoff,
-        GeyserGrpcBuilder,
-        GeyserGrpcBuilderError,
-        GeyserGrpcClient,
-        ReconnectConfig,
-    },
+    yellowstone_grpc_client::{GeyserGrpcBuilder, GeyserGrpcBuilderError, GeyserGrpcClient},
     yellowstone_grpc_proto::tonic::transport::ClientTlsConfig,
 };
 
@@ -25,16 +19,6 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// How often the transport sends HTTP/2 keepalive pings.
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
-
-/// First reconnect delay, doubled per attempt.
-const RECONNECT_BACKOFF_INITIAL: Duration = Duration::from_millis(200);
-
-/// Reconnect delay growth factor.
-const RECONNECT_BACKOFF_MULTIPLIER: f64 = 2.0;
-
-/// Dial attempts per outage, about 3.5 minutes in total. Exhausting them ends
-/// the stream, the process restart resumes from the last indexed slot.
-const RECONNECT_MAX_RETRIES: u32 = 10;
 
 /// Cap on one decoded gRPC message, a limit, not an allocation. Our largest
 /// message is a single transaction with meta, far below this, but a message
@@ -75,16 +59,10 @@ fn builder(
         let _ = rustls::crypto::ring::default_provider().install_default();
         builder = builder.tls_config(ClientTlsConfig::new().with_native_roots())?;
     }
-    // The builder default is `no_reconnect`, under which the `AutoReconnect`
-    // wrapper gives up on the first stream error. Every stream drop gets a
-    // fresh retry budget: ten doubling attempts from 200ms cover an outage of
-    // a few minutes, anything longer ends the stream and the process restart
-    // resumes from the last indexed slot.
-    builder.reconnect_config = ReconnectConfig::default().with_backoff(Backoff::new(
-        RECONNECT_BACKOFF_INITIAL,
-        RECONNECT_BACKOFF_MULTIPLIER,
-        RECONNECT_MAX_RETRIES,
-    ));
+    // The builder default never reconnects, and that is required: a stream
+    // error must reach the caller, which re-checks the resume slot against the
+    // replay window. The library's `AutoReconnect` would retry a rejected
+    // `from_slot` with no delay and abandon it only on `OutOfRange`.
     Ok(builder)
 }
 
@@ -93,15 +71,14 @@ mod tests {
     use super::*;
 
     /// The TLS path is where a missing rustls crypto provider panics, and the
-    /// retry assert catches losing the reconnect config (the builder default
-    /// never reconnects).
+    /// retry assert catches a reconnect config sneaking back in.
     #[test]
-    fn builder_configures_tls_and_reconnects() {
+    fn builder_configures_tls_without_reconnects() {
         let builder = builder(
             Url::parse("https://yellowstone.example.com:443").unwrap(),
             Some("secret".to_owned()),
         )
         .unwrap();
-        assert!(builder.reconnect_config.backoff.max_retries > 0);
+        assert_eq!(builder.reconnect_config.backoff.max_retries, 0);
     }
 }

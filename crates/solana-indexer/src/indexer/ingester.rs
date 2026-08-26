@@ -2,22 +2,17 @@
 //! pushes tagged updates into the channel, and advances the latest-chain-slot
 //! counter on every slot-filter message. It performs no decoding.
 //!
-//! The stream it drains is an `AutoReconnect`-backed
-//! [`GeyserStream`](yellowstone_grpc_client::GeyserStream) from
-//! `yellowstone-grpc-client`: reconnects, backoff, and resume-from-checkpoint
-//! are handled inside that stream and never surface
-//! here. The ingester's [`Ingester::run`] loop therefore has no backoff of its
-//! own; it returns when the stream ends (the wrapper gave up on an
-//! unrecoverable error) or when the decoder hangs up.
+//! The stream it drains is a
+//! [`GeyserStream`](yellowstone_grpc_client::GeyserStream) built without the
+//! library's reconnects, so every stream error ends [`Ingester::run`] and
+//! reaches the caller, which decides where to resume. The ingester has no
+//! backoff of its own.
 //!
-//! [`Ingester::serve`] is the production entrypoint — the "actual caller" —
-//! that builds the subscription request, resumes past the last indexed slot,
-//! opens the `GeyserStream`, and runs the drain loop. It expects the
-//! [`GeyserGrpcClient`] it receives to have been built with a reconnect config
-//! (via `set_reconnect_config`), otherwise the `AutoReconnect` wrapper won't
-//! actually reconnect, and with HTTP/2 keepalive (`http2_keep_alive_interval`
-//! / `keep_alive_while_idle`). The ingester does not answer server `Ping`
-//! frames itself, so the transport keepalive is what holds an otherwise idle
+//! [`Ingester::serve`] is the production entrypoint: it checks the resume slot
+//! against the provider's replay window, opens the stream, and runs the drain
+//! loop. It expects a [`GeyserGrpcClient`] built with HTTP/2 keepalive
+//! (`http2_keep_alive_interval` / `keep_alive_while_idle`): the ingester does
+//! not answer server `Ping` frames, so the transport keepalive holds an idle
 //! connection open.
 
 use {
@@ -107,11 +102,9 @@ where
 
     /// Drain the update stream until it ends or the decoder hangs up.
     ///
-    /// Recoverable stream errors never reach this loop: the `AutoReconnect`
-    /// wrapper handles them internally. Returns `Ok(())` when the decoder
-    /// dropped its receiver (clean shutdown), or [`Err(Error)`] when the stream
-    /// ended terminally (the wrapper gave up on an unrecoverable error, or the
-    /// stream closed).
+    /// Returns `Ok(())` when the decoder dropped its receiver (clean
+    /// shutdown), or [`Err(Error)`] when the stream errored or closed.
+    /// Reconnecting is the caller's job.
     pub async fn run(&mut self) -> Result<(), Error> {
         while let Some(update) = self.stream.next().await {
             match update {
@@ -241,24 +234,19 @@ pub(crate) enum Error {
     /// The yellowstone subscription could not be opened.
     #[error("failed to open the yellowstone subscription: {0}")]
     Subscribe(#[from] GeyserGrpcClientError),
-    /// The stream returned a terminal gRPC error — the `AutoReconnect` wrapper
-    /// gave up on an unrecoverable failure.
+    /// The stream returned a gRPC error.
     #[error("yellowstone stream error: {0}")]
     Stream(#[from] Status),
-    /// The stream ended without an error — the `AutoReconnect` wrapper stopped.
+    /// The stream ended without an error.
     #[error("yellowstone stream ended")]
     StreamEnded,
 }
 
 impl Ingester<GeyserStream> {
-    /// Production entrypoint: build the subscription request, resume past
-    /// the persisted last indexed slot, open an `AutoReconnect`-backed
-    /// `GeyserStream`, and run the drain loop.
-    ///
-    /// The initial `from_slot` is `last_indexed_slot + 1`, or `None` on a cold
-    /// start (the provider subscribes from the live tip). Reconnect
-    /// `from_slot` is driven by the `AutoReconnect` wrapper's `BlockMeta`
-    /// checkpoint, not this method.
+    /// Production entrypoint: resume past the persisted last indexed slot when
+    /// the provider can still replay it, open the stream, and run the drain
+    /// loop. `from_slot` is `last_indexed_slot + 1`, or `None` for the live
+    /// tip.
     ///
     /// Returns `Ok(())` on a clean shutdown (the decoder dropped its receiver),
     /// or `Err(Error)` if setup failed or the stream ended terminally. The
@@ -325,10 +313,10 @@ const REPLAY_WINDOW_MARGIN: u64 = 32;
 
 /// Returns the resume slot to subscribe from, or `None` for the live tip.
 ///
-/// Subscribing below the provider's replay buffer cannot be recovered from:
-/// the client's `AutoReconnect` clears its checkpoint on `OutOfRange` alone,
-/// and an aged-out slot comes back as `Internal`, so it retries that same slot
-/// indefinitely.
+/// A `from_slot` below the provider's replay buffer passes the subscribe
+/// handshake and fails as the first stream message, and a provider that has
+/// just restarted reports it as `Internal` rather than `OutOfRange`. Asking
+/// first keeps that request from being sent at all.
 ///
 /// TODO(BE-204): backfill the skipped range rather than abandoning it.
 async fn resume_slot_within_replay_window(
