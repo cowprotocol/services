@@ -164,7 +164,7 @@ async fn test(web3: Web3) {
         .unwrap();
     let orders_updated = || async {
         onchain.mint_block().await;
-        let events_a = crate::database::events_of_order(services.db(), &uid_b).await;
+        let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
         events_a.last().map(|o| o.label) == Some(OrderEventLabel::Traded)
             && events_b.last().map(|o| o.label) == Some(OrderEventLabel::Traded)
