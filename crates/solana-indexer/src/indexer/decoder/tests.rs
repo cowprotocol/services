@@ -3,6 +3,7 @@ use {
         DecodeFailed,
         Decoder,
         FLUSH_HOLDBACK_SLOTS,
+        WATERMARK_WRITE_INTERVAL_SLOTS,
         build_account_keys,
         decode_settlement,
         relevant_instructions,
@@ -723,7 +724,7 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     // point still tracks the cutoff below them.
     let reader = Postgres::new(pool.clone());
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(41)));
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(40)));
     let pda_rows: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_pda")
         .fetch_one(&pool)
         .await
@@ -794,16 +795,26 @@ async fn solana_db_slot_statuses_alone_advance_the_watermark() {
     let ingester_task = tokio::spawn(async move { ingester.run().await });
     let decoder_task = tokio::spawn(async move { decoder.run().await });
 
-    for slot in [100, 101, 105] {
+    // The first status writes right away, the next one is inside the write
+    // interval and does not, the third has moved a full interval past the
+    // first write and does.
+    let first = 100;
+    let skipped = first + 1;
+    let written = first + WATERMARK_WRITE_INTERVAL_SLOTS;
+    let reader = Postgres::new(pool.clone());
+    for (slot, expected) in [
+        (first, first - FLUSH_HOLDBACK_SLOTS),
+        (skipped, first - FLUSH_HOLDBACK_SLOTS),
+        (written, written - FLUSH_HOLDBACK_SLOTS),
+    ] {
         geyser_tx.send(Ok(slot_status_update(slot))).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(
+            reader.last_indexed_slot().await.unwrap(),
+            Some(Slot(expected))
+        );
     }
     drop(geyser_tx);
     assert!(ingester_task.await.unwrap().is_err());
     assert!(decoder_task.await.unwrap().is_ok());
-
-    let reader = Postgres::new(pool);
-    assert_eq!(
-        reader.last_indexed_slot().await.unwrap(),
-        Some(Slot(105 - FLUSH_HOLDBACK_SLOTS))
-    );
 }
