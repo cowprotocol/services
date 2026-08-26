@@ -25,6 +25,10 @@ const INSERT_CHUNK_SIZE: usize = 1000;
 /// label.
 const DEDUP_LOCK: &str = "order_events_dedup";
 
+/// Takes the [`DEDUP_LOCK`] of the bound label.
+const DEDUP_LOCK_QUERY: &str =
+    "SELECT pg_advisory_xact_lock(hashtextextended($1::text || $2::text, 0))";
+
 pub async fn store_order_events(
     ex: &mut PgConnection,
     order_uids: impl IntoIterator<Item = domain::OrderUid>,
@@ -42,7 +46,7 @@ pub async fn store_order_events(
         // only same-label writers to serialize. The lock lives until the
         // outermost transaction commits, and only writers taking it are
         // race-free.
-        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text || $2::text, 0))")
+        sqlx::query(DEDUP_LOCK_QUERY)
             .bind(DEDUP_LOCK)
             .bind(label)
             .execute(&mut *ex)
@@ -131,16 +135,26 @@ mod tests {
         assert_eq!(labels, ["created", "invalid"]);
     }
 
-    /// Writers carrying different labels take different locks, so both append
-    /// whichever order they land in.
+    /// Only same-label writers exclude each other. Holding the `Invalid` lock
+    /// stalls an `Invalid` write while a `Filtered` write runs through, the one
+    /// difference a per-label key makes over a table-wide one: the rows either
+    /// key produces are the same.
     #[tokio::test]
     #[ignore]
-    async fn postgres_concurrent_writes_of_distinct_labels_both_append() {
+    async fn postgres_dedup_lock_is_per_label() {
         let db = Postgres::with_defaults().await.unwrap();
         let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
         ex.commit().await.unwrap();
         let uid = ByteArray([7; 56]);
+
+        let mut holder = db.pool.begin().await.unwrap();
+        sqlx::query(DEDUP_LOCK_QUERY)
+            .bind(DEDUP_LOCK)
+            .bind(OrderEventLabel::Invalid)
+            .execute(&mut *holder)
+            .await
+            .unwrap();
 
         let write = |label| {
             let pool = db.pool.clone();
@@ -150,18 +164,28 @@ mod tests {
                     .await;
             }
         };
-        tokio::join!(
-            write(OrderEventLabel::Invalid),
-            write(OrderEventLabel::Filtered)
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            write(OrderEventLabel::Filtered),
+        )
+        .await
+        .expect("a different label does not wait for the invalid lock");
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                write(OrderEventLabel::Invalid)
+            )
+            .await
+            .is_err(),
+            "the same label waits for the lock holder"
         );
 
-        let mut labels: Vec<String> =
-            sqlx::query_scalar("SELECT label::text FROM order_events WHERE order_uid = $1")
-                .bind(uid)
-                .fetch_all(&db.pool)
-                .await
-                .unwrap();
-        labels.sort();
-        assert_eq!(labels, ["filtered", "invalid"]);
+        holder.rollback().await.unwrap();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            write(OrderEventLabel::Invalid),
+        )
+        .await
+        .expect("the write proceeds once the lock is released");
     }
 }
