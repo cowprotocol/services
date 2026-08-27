@@ -47,7 +47,7 @@ use {
         num::NonZeroUsize,
         sync::{
             Arc,
-            atomic::{AtomicBool, Ordering},
+            atomic::{AtomicBool, AtomicU64, Ordering},
         },
         time::{Duration, Instant},
     },
@@ -175,6 +175,8 @@ pub struct RunLoop {
 
     /// Drivers that do NOT support delta auctions
     drivers: Vec<Arc<infra::Driver>>,
+
+    skip_counter: AtomicU64,
 }
 
 impl RunLoop {
@@ -209,6 +211,7 @@ impl RunLoop {
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify: wake_runloop,
             drivers,
+            skip_counter: AtomicU64::new(0),
         }
     }
 
@@ -289,12 +292,25 @@ impl RunLoop {
     fn pick_solve_deadline(&self) -> Option<DateTime<Utc>> {
         let now = chrono::Utc::now();
         let last_block = *self.eth.current_block().borrow();
-        pick_solve_deadline_impl(
+
+        if self.skip_counter.load(Ordering::Relaxed) > 2 {
+            let minimum_deadline = now + self.config.min_solve_time;
+            self.skip_counter.store(0, Ordering::Relaxed);
+            tracing::debug!("reseting auction counter");
+            return Some(minimum_deadline);
+        }
+
+        let deadline = pick_solve_deadline_impl(
             now,
             self.config.min_solve_time,
             self.config.sync_solve_deadline_to_blockchain.as_ref(),
             last_block,
-        )
+        );
+        if deadline.is_none() {
+            self.skip_counter.fetch_add(1, Ordering::Relaxed);
+        }
+
+        deadline
     }
 
     #[instrument(skip_all)]
