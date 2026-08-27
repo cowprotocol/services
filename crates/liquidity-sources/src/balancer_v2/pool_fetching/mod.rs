@@ -12,8 +12,8 @@ use {
         registry::Registry,
     },
     super::{
-        graph_api::{BalancerSubgraphClient, RegisteredPools},
-        pool_init::PoolInitializing,
+        PoolInitializing,
+        models::RegisteredPools,
         pools::{
             FactoryIndexing,
             Pool,
@@ -50,7 +50,6 @@ use {
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     event_indexing::block_retriever::BlockRetrieving,
     model::TokenPair,
-    reqwest::{Client, Url},
     std::{
         collections::{BTreeMap, HashSet},
         sync::Arc,
@@ -234,17 +233,15 @@ pub struct BalancerContracts {
 impl BalancerPoolFetcher {
     #[expect(clippy::too_many_arguments)]
     pub async fn new(
-        subgraph_url: &Url,
+        pool_initializer: Box<dyn PoolInitializing>,
         block_retriever: Arc<dyn BlockRetrieving>,
         token_infos: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
         block_stream: CurrentBlockWatcher,
-        client: Client,
         web3: Web3,
         contracts: &BalancerContracts,
         deny_listed_pool_ids: Vec<B256>,
     ) -> Result<Self> {
-        let pool_initializer = BalancerSubgraphClient::from_subgraph_url(subgraph_url, client)?;
         let web3 = web3.labeled("balancerV2");
         let fetcher = Arc::new(Cache::new(
             create_aggregate_pool_fetcher(
@@ -316,7 +313,7 @@ impl BalancerPoolFetching for BalancerPoolFetcher {
 /// Creates an aggregate fetcher for all supported pool factories.
 async fn create_aggregate_pool_fetcher(
     web3: Web3,
-    pool_initializer: impl PoolInitializing,
+    pool_initializer: Box<dyn PoolInitializing>,
     block_retriever: Arc<dyn BlockRetrieving>,
     token_infos: Arc<dyn TokenInfoFetching>,
     contracts: &BalancerContracts,

@@ -3,7 +3,7 @@
 use {
     super::{FactoryIndexing, PoolIndexing, common},
     crate::balancer_v2::{
-        graph_api::{PoolData, PoolType},
+        models::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
     alloy::{eips::BlockId, primitives::Address},
@@ -145,7 +145,7 @@ fn pool_state(
 mod tests {
     use {
         super::*,
-        crate::{balancer_v2::graph_api::Token, bfp},
+        crate::{balancer_v2::models::Token, bfp},
         alloy::{
             primitives::{Address, B256, U256},
             providers::{Provider, ProviderBuilder, mock::Asserter},

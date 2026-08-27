@@ -75,7 +75,7 @@ max-order-age = "1m"
 
 # [[liquidity.balancer-v2]] # Balancer V2 configuration
 # preset = "balancer-v2"
-# graph-url = "http://localhost:1234" # which subgraph url to fetch the data from
+# indexer-url = "http://localhost:7777" # pool-indexer base URL to fetch pool data from
 # pool-deny-list = [] # optional
 
 # [[liquidity.balancer-v2]] # Custom Balancer V2 configuration
@@ -83,6 +83,7 @@ max-order-age = "1m"
 # weighted = [] # weighted pool factory addresses
 # stable = [] # stable pool factory addresses
 # liquidity-bootstrapping = [] # liquidity bootstrapping pool factory addresses
+# indexer-url = "http://localhost:7777" # pool-indexer base URL to fetch pool data from
 # pool-deny-list = [] # which pools to ignore
 
 # [[liquidity.uniswap-v3]] # Uniswap V3 configuration (pool-indexer as data source)

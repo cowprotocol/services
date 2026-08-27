@@ -30,20 +30,29 @@
 //!    respectively along with the current balances of each of the pool's tokens
 //!    (aka the pool's "reserves").
 //!
-//! For this reason, only the `event_handler`, `pool_cache`, `pool_fetching` and
-//!     `swap` are declared as public, others merely contain internal logic
-//!     regarding how information is collected and stored.
+//! For this reason, only the `models`, `pool_fetching`, `pool_indexer`, `pools`
+//! and `swap` modules are declared as public; others merely contain internal
+//! logic regarding how information is collected and stored.
 //!
 //! Once should think of `PoolStorage` as a type of Database for which one is
 //!     not concerned with how it maintains itself.
 
-mod graph_api;
+pub mod models;
 pub mod pool_fetching;
-mod pool_init;
+pub mod pool_indexer;
 pub mod pools;
 pub mod swap;
+
+use {anyhow::Result, models::RegisteredPools};
 
 pub use self::{
     pool_fetching::{BalancerPoolFetcher, BalancerPoolFetching},
     pools::{Pool, PoolKind},
 };
+
+/// Seeds the balancer pool registry at start-up with the currently registered
+/// pools. Implemented by [`pool_indexer::BalancerIndexerClient`].
+#[async_trait::async_trait]
+pub trait PoolInitializing: Send + Sync + 'static {
+    async fn initialize_pools(&self) -> Result<RegisteredPools>;
+}

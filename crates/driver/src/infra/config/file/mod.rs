@@ -636,8 +636,8 @@ enum BalancerV2Config {
         #[serde(default)]
         pool_deny_list: Vec<eth::B256>,
 
-        /// The URL used to connect to balancer v2 subgraph client.
-        graph_url: Url,
+        /// Base URL of the pool-indexer that seeds the pool registry.
+        indexer_url: Url,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
@@ -677,8 +677,8 @@ enum BalancerV2Config {
         #[serde(default)]
         pool_deny_list: Vec<eth::B256>,
 
-        /// The URL used to connect to balancer v2 subgraph client.
-        graph_url: Url,
+        /// Base URL of the pool-indexer that seeds the pool registry.
+        indexer_url: Url,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.

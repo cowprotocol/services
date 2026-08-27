@@ -22,6 +22,7 @@ use {
     liquidity_sources::balancer_v2::{
         BalancerPoolFetcher,
         pool_fetching::{BalancerContracts, BalancerFactoryInstance},
+        pool_indexer::BalancerIndexerClient,
     },
     shared::http_solver::model::TokenAmount,
     solver::{
@@ -171,12 +172,15 @@ async fn init_liquidity(
 
     let balancer_pool_fetcher = Arc::new(
         BalancerPoolFetcher::new(
-            &config.graph_url,
+            Box::new(BalancerIndexerClient::new(
+                config.indexer_url.clone(),
+                eth.chain(),
+                boundary::liquidity::http_client(),
+            )),
             block_retriever.clone(),
             token_info_fetcher.clone(),
             boundary::liquidity::cache_config(),
             block_stream.clone(),
-            boundary::liquidity::http_client(),
             web3.clone(),
             &contracts,
             config.pool_deny_list.to_vec(),

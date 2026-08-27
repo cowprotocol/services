@@ -3,7 +3,7 @@
 use {
     super::{FactoryIndexing, PoolIndexing, common},
     crate::balancer_v2::{
-        graph_api::{PoolData, PoolType},
+        models::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
     alloy::eips::BlockId,
@@ -112,7 +112,7 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory::Instance {
 mod tests {
     use {
         super::*,
-        crate::balancer_v2::graph_api::Token,
+        crate::balancer_v2::models::Token,
         alloy::primitives::{Address, B256},
     };
 
