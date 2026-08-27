@@ -285,7 +285,7 @@ impl RunLoop {
         });
     }
 
-    fn pick_solve_deadline(&self) -> DateTime<Utc> {
+    fn pick_solve_deadline(&self) -> Option<DateTime<Utc>> {
         let now = chrono::Utc::now();
         let last_block = *self.eth.current_block().borrow();
         pick_solve_deadline_impl(
@@ -406,7 +406,10 @@ impl RunLoop {
         tracing::trace!(auction_id = ?auction.id, "orders marked as ready");
 
         // Collect valid solutions from all drivers
-        let solutions = self.fetch_solutions(auction).await;
+        let Some(solutions) = self.fetch_solutions(auction).await else {
+            tracing::debug!("auction skipped");
+            return;
+        };
         observe::bids(&solutions);
         if solutions.is_empty() {
             return;
@@ -655,8 +658,10 @@ impl RunLoop {
     async fn build_auction_requests(
         &self,
         auction: &Arc<domain::Auction>,
-    ) -> (solve::Request, solve::Request) {
-        let deadline = self.pick_solve_deadline();
+    ) -> Option<(solve::Request, solve::Request)> {
+        let Some(deadline) = self.pick_solve_deadline() else {
+            return None;
+        };
         let trusted_tokens = self.trusted_tokens.all();
 
         let (request, delta_request) = tokio::join!(
@@ -677,7 +682,7 @@ impl RunLoop {
         let delta_request = delta_request.unwrap_or_else(|| request.clone());
         Metrics::solve_request_body_size("delta", delta_request.body_size());
 
-        (request, delta_request)
+        Some((request, delta_request))
     }
 
     /// Runs the solver competition, making all configured drivers participate.
@@ -686,8 +691,10 @@ impl RunLoop {
     async fn fetch_solutions(
         &self,
         auction: &Arc<domain::Auction>,
-    ) -> Vec<competition::Bid<Unscored>> {
-        let (request, delta_request) = self.build_auction_requests(auction).await;
+    ) -> Option<Vec<competition::Bid<Unscored>>> {
+        let Some((request, delta_request)) = self.build_auction_requests(auction).await else {
+            return None;
+        };
 
         let mut bids = futures::future::join_all(self.drivers.iter().cloned().map(|driver| {
             let solve_request = if driver.supports_auction_deltas {
@@ -727,7 +734,7 @@ impl RunLoop {
 
         // Shuffle so that sorting randomly splits ties.
         bids.shuffle(&mut rand::rng());
-        bids
+        Some(bids)
     }
 
     /// Builds the delta request for this auction, shared by all drivers that
@@ -1037,7 +1044,7 @@ fn pick_solve_deadline_impl(
     min_solve_time: Duration,
     slot_config: Option<&SlotConfig>,
     current_block: BlockInfo,
-) -> chrono::DateTime<chrono::Utc> {
+) -> Option<chrono::DateTime<chrono::Utc>> {
     let minimum_deadline = now + min_solve_time;
 
     let Some(SlotConfig {
@@ -1045,37 +1052,28 @@ fn pick_solve_deadline_impl(
         tx_propagation_latency,
     }) = slot_config
     else {
-        return minimum_deadline;
+        return Some(minimum_deadline);
     };
 
     let current_block_time =
         DateTime::from_timestamp_secs(current_block.timestamp.try_into().unwrap()).unwrap();
 
-    for delay_in_blocks in 1..10 {
-        let target = current_block_time + slot_length.saturating_mul(delay_in_blocks)
-            - *tx_propagation_latency;
-        if target >= minimum_deadline {
-            if delay_in_blocks == 1 {
-                tracing::debug!(
-                    deadline = target.to_string(),
-                    current_block = current_block.number,
-                    "optimal solve deadline is before next block"
-                );
-            } else {
-                tracing::debug!(
-                    delay_in_blocks,
-                    deadline = target.to_string(),
-                    current_block = current_block.number,
-                    "delay auction for optimal deadline"
-                );
-            }
-            // first timestamp that gives at least the required amount of time
-            // and is aligned with the chain's block production
-            return target;
-        }
+    let target = current_block_time + *slot_length - *tx_propagation_latency;
+    if target >= minimum_deadline {
+        tracing::debug!(
+            deadline = target.to_string(),
+            current_block = current_block.number,
+            "optimal solve deadline is before next block"
+        );
+        return Some(target);
+    } else {
+        tracing::debug!(
+            deadline = target.to_string(),
+            current_block = current_block.number,
+            "skip auction for optimal deadline"
+        );
+        return None;
     }
-
-    minimum_deadline
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1454,7 +1452,7 @@ mod tests {
 
         // syncing to blockchain is not configured -> deadline = now + min_solve_time
         let deadline = pick_solve_deadline_impl(now, min_solve_time, None, last_block);
-        assert_eq!(deadline, standard_deadline);
+        assert_eq!(deadline, Some(standard_deadline));
 
         // both sync parameters provided -> deadline gets synced to expected block
         // production
@@ -1467,7 +1465,7 @@ mod tests {
         // now is 1s after the last block (n), 11s left before the slot ends, 9s before
         // we are supposed to submit a solution, 9s minimum solve time => synced
         // deadline is equal to standard deadline (2s before block n+1)
-        assert_eq!(deadline, standard_deadline);
+        assert_eq!(deadline, Some(standard_deadline));
 
         // now is 2s after the last block (n), 10s left before the slot ends, 8s before
         // we are supposed to submit a solution for this slot, 9s minimum solve
@@ -1479,7 +1477,7 @@ mod tests {
             slot_config.as_ref(),
             last_block,
         );
-        assert_eq!(deadline, "2026-06-01T12:00:22Z".parse::<Ts>().unwrap());
+        assert_eq!(deadline, None);
 
         // let's move to gnosis chain where 1 block is 5s (1 block is not enough for
         // the solve deadline)
@@ -1494,7 +1492,7 @@ mod tests {
         // before a block, min_solve_time 9s => deadline is 2s before block n+3
         let deadline =
             pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
-        assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());
+        assert_eq!(deadline, None);
     }
 
     #[test]
