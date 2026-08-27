@@ -182,11 +182,17 @@ fn build_api_state(db: &PgPool, network: &NetworkConfig) -> Arc<AppState> {
     Arc::new(AppState {
         db: db.clone(),
         network: network.name.clone(),
-        factories: network
+        uniswap_v3_factories: network
             .uniswap_v3
             .iter()
             .flat_map(|u| &u.factories)
             .map(|f| f.address)
+            .collect(),
+        balancer_v2_factories: network
+            .balancer_v2
+            .iter()
+            .flat_map(balancer_v2::configured_factories)
+            .map(|(_, factory)| factory.address)
             .collect(),
     })
 }

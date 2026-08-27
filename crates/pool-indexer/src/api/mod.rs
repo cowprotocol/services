@@ -1,3 +1,4 @@
+pub mod balancer_v2;
 pub mod routes;
 pub mod uniswap_v3;
 
@@ -19,9 +20,11 @@ pub struct AppState {
     /// The network this process indexes. Requests whose `{network}` path
     /// segment doesn't match get a 404.
     pub network: NetworkName,
-    /// Configured factory addresses; the served envelope block is scoped to
-    /// these so a removed factory's stale checkpoint can't pin it.
-    pub factories: BTreeSet<Address>,
+    /// Uniswap V3 factories. The served envelope block is scoped to these so a
+    /// removed factory's stale checkpoint can't pin it.
+    pub uniswap_v3_factories: BTreeSet<Address>,
+    /// Balancer V2 factories, scoping the balancer envelope block likewise.
+    pub balancer_v2_factories: BTreeSet<Address>,
 }
 
 impl AppState {
@@ -62,8 +65,11 @@ impl From<anyhow::Error> for ApiError {
     }
 }
 
-pub(super) async fn latest_indexed_block(state: &AppState) -> Result<u64, ApiError> {
-    crate::db::uniswap_v3::get_latest_indexed_block(&state.db, &state.factories)
+pub(super) async fn latest_indexed_block(
+    db: &PgPool,
+    factories: &BTreeSet<Address>,
+) -> Result<u64, ApiError> {
+    crate::db::get_latest_indexed_block(db, factories)
         .await?
         .ok_or(ApiError::NotReady)
 }

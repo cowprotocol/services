@@ -2,14 +2,20 @@ pub mod balancer_v2;
 pub mod uniswap_v3;
 
 use {
-    alloy_primitives::Address,
+    alloy_primitives::{Address, B256},
     anyhow::{Context, Result},
     sqlx::{PgPool, Postgres, Row, Transaction},
+    std::collections::BTreeSet,
 };
 
 /// Decodes a Postgres `BYTEA` column into an [`Address`].
 pub(crate) fn bytes_to_addr(b: Vec<u8>) -> Result<Address> {
     Address::try_from(b.as_slice()).context("invalid address bytes")
+}
+
+/// Decodes a Postgres `BYTEA` column into a 32-byte [`B256`] Balancer pool id.
+pub(crate) fn bytes_to_b256(b: &[u8]) -> Result<B256> {
+    B256::try_from(b).context("invalid pool_id bytes")
 }
 
 /// Highest block scanned for a factory's `PoolCreated` events. Shared by both
@@ -43,4 +49,26 @@ pub async fn set_checkpoint(
     .await
     .context("set_checkpoint")?;
     Ok(())
+}
+
+/// The block every configured factory is indexed through, so every served pool
+/// is current at least to here. Scoped to `factories` so a decommissioned
+/// factory's leftover checkpoint row can't pin the value.
+pub async fn get_latest_indexed_block(
+    pool: &PgPool,
+    factories: &BTreeSet<Address>,
+) -> Result<Option<u64>> {
+    let factories: Vec<&[u8]> = factories.iter().map(|f| f.as_slice()).collect();
+    let row = sqlx::query(
+        "SELECT MIN(block_number) AS block FROM pool_indexer_checkpoints
+         WHERE contract_address = ANY($1)",
+    )
+    .bind(factories)
+    .fetch_one(pool)
+    .await
+    .context("get_latest_indexed_block")?;
+
+    Ok(row
+        .get::<Option<i64>, _>("block")
+        .map(|b| b.cast_unsigned()))
 }
