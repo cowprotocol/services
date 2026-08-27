@@ -19,41 +19,14 @@ use {
         net::SocketAddr,
         path::PathBuf,
         sync::{Arc, atomic::AtomicU64},
-        time::{Duration, Instant},
+        time::Duration,
     },
     tokio::{sync::mpsc, task::JoinHandle},
     yellowstone_grpc_client::GeyserGrpcClient,
-    yellowstone_grpc_proto::tonic::Code,
 };
 
-/// First delay before bringing the stream back up, doubled per consecutive
-/// failure.
-const RECONNECT_BACKOFF_INITIAL: Duration = Duration::from_millis(500);
-
-/// Longest delay between reconnect attempts.
-const RECONNECT_BACKOFF_MAX: Duration = Duration::from_secs(30);
-
-/// Doubling delay with a cap.
-struct Backoff {
-    next: Duration,
-}
-
-impl Backoff {
-    fn new() -> Self {
-        Self {
-            next: RECONNECT_BACKOFF_INITIAL,
-        }
-    }
-
-    async fn wait(&mut self) {
-        tokio::time::sleep(self.next).await;
-        self.next = (self.next * 2).min(RECONNECT_BACKOFF_MAX);
-    }
-
-    fn reset(&mut self) {
-        self.next = RECONNECT_BACKOFF_INITIAL;
-    }
-}
+/// Wait between attempts to bring the stream back up.
+const STREAM_RETRY: Duration = Duration::from_secs(5);
 
 /// The Solana indexer command line arguments.
 #[derive(Debug, Parser)]
@@ -113,11 +86,9 @@ async fn run(config: Config, start_slot: Option<u64>) {
     let latest_chain_slot = Arc::new(AtomicU64::default());
     let stream_loop = async {
         let mut resume = start_slot.map_or(Resume::Watermark, Resume::From);
-        let mut backoff = Backoff::new();
         loop {
             let client = connect_yellowstone(&config.yellowstone).await;
-            let started = Instant::now();
-            let result = Ingester::serve(
+            match Ingester::serve(
                 client,
                 tx.clone(),
                 persistence.clone(),
@@ -126,25 +97,24 @@ async fn run(config: Config, start_slot: Option<u64>) {
                 solflow_program,
                 resume,
             )
-            .await;
-            // A stream that outlived the longest delay was healthy, so the
-            // next outage starts the backoff over.
-            if started.elapsed() > RECONNECT_BACKOFF_MAX {
-                backoff.reset();
-            }
-            match result {
+            .await
+            {
                 // The decoder hung up, the select below reports why.
                 Ok(()) => break,
-                // The provider has discarded the requested slot. The gap
-                // stays unindexed until a backfill (BE-204).
-                Err(Error::Stream(status)) if status.code() == Code::OutOfRange => {
-                    tracing::error!(%status, "resume slot rejected, resubscribing from the live tip");
+                // A rejected resume usually means the last indexed slot fell
+                // out of the provider's replay window. Continue from the live
+                // tip, the gap stays unindexed until a backfill.
+                Err(Error::Subscribe(err)) if resume != Resume::LiveTip => {
+                    tracing::error!(
+                        ?err,
+                        "resume subscription rejected, resubscribing from the live tip"
+                    );
                     resume = Resume::LiveTip;
                 }
                 Err(err) => {
                     tracing::error!(?err, "stream ended, reconnecting");
                     resume = Resume::Watermark;
-                    backoff.wait().await;
+                    tokio::time::sleep(STREAM_RETRY).await;
                 }
             }
         }
@@ -187,13 +157,12 @@ impl LivenessChecking for Liveness {
 
 /// Retries the yellowstone connection until it succeeds.
 async fn connect_yellowstone(config: &config::Yellowstone) -> GeyserGrpcClient {
-    let mut backoff = Backoff::new();
     loop {
         match yellowstone::connect(config.endpoint.clone(), config.x_token.clone()).await {
             Ok(client) => return client,
             Err(err) => {
                 tracing::error!(?err, "yellowstone connection failed");
-                backoff.wait().await;
+                tokio::time::sleep(STREAM_RETRY).await;
             }
         }
     }
