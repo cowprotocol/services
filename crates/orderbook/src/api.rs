@@ -481,7 +481,8 @@ impl IntoResponse for PriceEstimationErrorWrapper {
                 .into_response(),
             PriceEstimationError::NoLiquidity
             | PriceEstimationError::RateLimited
-            | PriceEstimationError::EstimatorInternal(_) => (
+            | PriceEstimationError::EstimatorInternal(_)
+            | PriceEstimationError::CustomSolverError { .. } => (
                 StatusCode::NOT_FOUND,
                 error("NoLiquidity", "no route found"),
             )
@@ -501,9 +502,6 @@ impl IntoResponse for PriceEstimationErrorWrapper {
                 error("InsufficientLiquidity", message),
             )
                 .into_response(),
-            PriceEstimationError::CustomSolverError { message } => {
-                (StatusCode::BAD_REQUEST, error("CustomSolverError", message)).into_response()
-            }
             PriceEstimationError::ProtocolInternal(err) => {
                 tracing::error!(?err, "PriceEstimationError::Other");
                 internal_error_reply()
