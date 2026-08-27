@@ -171,8 +171,8 @@ mod tests {
     #[tokio::test]
     async fn maps_unknown_solver_errors_to_no_liquidity() {
         let response = error_to_response(PriceEstimationError::CustomSolverError {
-                message: "custom".to_string(),
-            });
+            message: "custom".to_string(),
+        });
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let body = response.into_body();
