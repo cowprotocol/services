@@ -100,7 +100,9 @@ async fn get_native_price(
 
 fn error_to_response(err: PriceEstimationError) -> Response {
     match err {
-        PriceEstimationError::NoLiquidity | PriceEstimationError::EstimatorInternal(_) => {
+        PriceEstimationError::NoLiquidity
+        | PriceEstimationError::EstimatorInternal(_)
+        | PriceEstimationError::CustomSolverError { .. } => {
             (StatusCode::NOT_FOUND, "No liquidity").into_response()
         }
         PriceEstimationError::UnsupportedToken { token: _, reason } => (
@@ -113,8 +115,7 @@ fn error_to_response(err: PriceEstimationError) -> Response {
         }
         PriceEstimationError::TradingOutsideAllowedWindow { message }
         | PriceEstimationError::TokenTemporarilySuspended { message }
-        | PriceEstimationError::InsufficientLiquidity { message }
-        | PriceEstimationError::CustomSolverError { message } => {
+        | PriceEstimationError::InsufficientLiquidity { message } => {
             (StatusCode::BAD_REQUEST, message).into_response()
         }
         PriceEstimationError::UnsupportedOrderType(reason) => (
