@@ -5,10 +5,9 @@
 //! The stream it drains is an `AutoReconnect`-backed
 //! [`GeyserStream`](yellowstone_grpc_client::GeyserStream) from
 //! `yellowstone-grpc-client`: reconnects and backoff are handled inside that
-//! stream and never surface here. A reconnect continues from the live head, so
-//! whatever the provider produced during the outage stays unindexed until a
-//! backfill. The ingester's [`Ingester::run`] loop therefore has no backoff of
-//! its own; it returns when the stream ends (the wrapper gave up on an
+//! stream and never surface here, and a reconnect continues from the live
+//! head. The ingester's [`Ingester::run`] loop therefore has no backoff of its
+//! own; it returns when the stream ends (the wrapper gave up on an
 //! unrecoverable error) or when the decoder hangs up.
 //!
 //! [`Ingester::serve`] is the production entrypoint — the "actual caller" —
@@ -256,9 +255,9 @@ impl Ingester<GeyserStream> {
     /// the persisted last indexed slot, open an `AutoReconnect`-backed
     /// `GeyserStream`, and run the drain loop.
     ///
-    /// `from_slot` is `last_indexed_slot + 1` when the provider can still
-    /// replay it, or `None` for the live tip. Reconnects inside the stream
-    /// start from the live head, not from this slot.
+    /// The initial `from_slot` is `last_indexed_slot + 1`, or `None` on a cold
+    /// start (the provider subscribes from the live tip). Reconnects inside
+    /// the stream start from the live head, not from this slot.
     ///
     /// Returns `Ok(())` on a clean shutdown (the decoder dropped its receiver),
     /// or `Err(Error)` if setup failed or the stream ended terminally. The
@@ -285,7 +284,6 @@ impl Ingester<GeyserStream> {
             Resume::LiveTip => None,
             Resume::From(slot) => Some(slot),
         };
-        let from_slot = resume_slot_within_replay_window(&mut client, from_slot).await?;
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
@@ -315,49 +313,6 @@ pub(crate) enum Resume {
     LiveTip,
     /// A caller-chosen slot, still bounded by the provider's replay window.
     From(u64),
-}
-
-/// Slots of headroom demanded above the provider's oldest replayable slot. The
-/// buffer slides forward while the subscribe request is in flight, so a resume
-/// slot that only just clears it can age out before the stream opens.
-const REPLAY_WINDOW_MARGIN: u64 = 32;
-
-/// Returns the resume slot to subscribe from, or `None` for the live tip.
-///
-/// A `from_slot` below the provider's replay buffer passes the subscribe
-/// handshake and fails as the first stream message, and a provider that has
-/// just restarted reports it as `Internal` rather than `OutOfRange`. Asking
-/// first keeps that request from being sent at all.
-///
-/// TODO(BE-204): backfill the skipped range rather than abandoning it.
-async fn resume_slot_within_replay_window(
-    client: &mut GeyserGrpcClient,
-    from_slot: Option<u64>,
-) -> Result<Option<u64>, Error> {
-    let Some(slot) = from_slot else {
-        return Ok(None);
-    };
-    let first_available = client.subscribe_replay_info().await?.first_available;
-    Ok(resume_slot(slot, first_available))
-}
-
-/// `Some(slot)` when the provider can still replay it with
-/// [`REPLAY_WINDOW_MARGIN`] to spare, `None` for the live tip. A provider
-/// that reports no oldest slot is taken at its word.
-fn resume_slot(slot: u64, first_available: Option<u64>) -> Option<u64> {
-    let Some(first_available) = first_available else {
-        return Some(slot);
-    };
-    if slot >= first_available.saturating_add(REPLAY_WINDOW_MARGIN) {
-        return Some(slot);
-    }
-    tracing::error!(
-        requested = slot,
-        first_available,
-        skipped = first_available.saturating_sub(slot),
-        "resume slot outside the replay window, starting from the live tip"
-    );
-    None
 }
 
 /// The wire-level filter shape: the two named transaction filters and the

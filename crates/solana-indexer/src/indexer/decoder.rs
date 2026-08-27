@@ -149,31 +149,20 @@ impl Decoder {
     }
 
     /// Flushes every buffer at least [`FLUSH_HOLDBACK_SLOTS`] behind the
-    /// observed slot. The hold-back gives late-delivered transactions a window
-    /// to join their slot's still unflushed buffer, keeping them crash-safe:
-    /// resume replays everything past the last indexed slot.
-    ///
-    /// Flushed buffers carry the last indexed slot with them. Between
-    /// settlements it is written every [`WATERMARK_WRITE_INTERVAL_SLOTS`], so
-    /// it never trails the chain by more than the provider's replay window.
+    /// observed slot. The hold-back gives late-delivered transactions a
+    /// window to join their slot's still unflushed buffer, keeping them
+    /// crash-safe: resume replays everything past the last indexed slot.
     async fn flush_up_to(
         &self,
         pending: &mut BTreeMap<Slot, SlotBuffer>,
         observed: Slot,
         flushed_through: &mut Option<Slot>,
     ) -> Result<(), PersistenceError> {
-        let cutoff = Slot(u64::from(observed).saturating_sub(FLUSH_HOLDBACK_SLOTS));
-        let keep = pending.split_off(&Slot(u64::from(cutoff).saturating_add(1)));
+        let cutoff = u64::from(observed).saturating_sub(FLUSH_HOLDBACK_SLOTS);
+        let keep = pending.split_off(&Slot(cutoff.saturating_add(1)));
         for (slot, buffer) in std::mem::replace(pending, keep) {
             self.flush_slot(slot, buffer, true).await?;
             *flushed_through = (*flushed_through).max(Some(slot));
-        }
-        let trailing = flushed_through.map_or(u64::MAX, |written| {
-            u64::from(cutoff).saturating_sub(u64::from(written))
-        });
-        if trailing >= WATERMARK_WRITE_INTERVAL_SLOTS {
-            self.persistence.write_last_indexed_slot(cutoff).await?;
-            *flushed_through = Some(cutoff);
         }
         Ok(())
     }
@@ -321,11 +310,6 @@ impl Decoder {
 /// A transaction delivered up to this many slots late still joins its own
 /// unflushed buffer instead of racing the last-indexed-slot advance.
 const FLUSH_HOLDBACK_SLOTS: u64 = 2;
-
-/// Slot statuses between watermark writes on a stretch with no settlements.
-/// A restart re-reads at most this many slots plus the hold-back, well inside
-/// the provider's replay window, at a fraction of one write per slot.
-const WATERMARK_WRITE_INTERVAL_SLOTS: u64 = 32;
 
 /// One slot's accumulated output, flushed once the stream moves past the
 /// hold-back window.
