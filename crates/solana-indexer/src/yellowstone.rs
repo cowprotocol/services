@@ -11,6 +11,7 @@ use {
         GeyserGrpcBuilder,
         GeyserGrpcBuilderError,
         GeyserGrpcClient,
+        GeyserStream,
         ReconnectConfig,
         ReconnectionPolicy,
     },
@@ -94,7 +95,19 @@ fn builder(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        futures::StreamExt,
+        yellowstone_grpc_proto::{
+            geyser::{
+                CommitmentLevel,
+                SubscribeRequest,
+                SubscribeRequestFilterSlots,
+                subscribe_update::UpdateOneof,
+            },
+            tonic::{Code, Status},
+        },
+    };
 
     /// The TLS path is where a missing rustls crypto provider panics, and the
     /// reconnect asserts catch losing the config or falling back to replaying
@@ -109,5 +122,77 @@ mod tests {
         let config = builder.reconnect_config.expect("reconnect config");
         assert!(config.backoff.max_retries > 0);
         assert!(matches!(config.policy, ReconnectionPolicy::SkipMissedData));
+    }
+
+    /// A slot-status subscription with the reconnect wrapper off, so the node's
+    /// own answers reach the caller. The library still injects its internal
+    /// `BlockMeta` filter, so the stream carries more than slot statuses.
+    async fn subscribe(url: &Url, from_slot: Option<u64>) -> GeyserStream {
+        let x_token = std::env::var("YELLOWSTONE_X_TOKEN").ok();
+        let mut builder = builder(url.clone(), x_token).unwrap();
+        builder.reconnect_config = None;
+        let mut client = builder.connect().await.unwrap();
+        let request = SubscribeRequest {
+            slots: [(
+                "slots".to_owned(),
+                SubscribeRequestFilterSlots {
+                    filter_by_commitment: Some(true),
+                    ..Default::default()
+                },
+            )]
+            .into(),
+            commitment: Some(CommitmentLevel::Confirmed as i32),
+            from_slot,
+            ..Default::default()
+        };
+        let (_sink, stream) = client.subscribe_with_request(Some(request)).await.unwrap();
+        stream
+    }
+
+    async fn next_item(stream: &mut GeyserStream) -> Result<UpdateOneof, Status> {
+        let update = tokio::time::timeout(Duration::from_secs(15), stream.next())
+            .await
+            .expect("node answered within 15s")
+            .expect("stream open")?;
+        Ok(update.update_oneof.expect("payload"))
+    }
+
+    /// The replay path only runs when `from_slot` is set: a live subscription
+    /// streams at once, a recent `from_slot` is replayed, and one below the
+    /// node's buffer is rejected before any data flows.
+    #[tokio::test]
+    #[ignore = "needs SOLANA_YELLOWSTONE_URL and, if the node requires one, YELLOWSTONE_X_TOKEN"]
+    async fn node_rejects_only_replays_below_its_buffer() {
+        let url = std::env::var("SOLANA_YELLOWSTONE_URL").expect("SOLANA_YELLOWSTONE_URL");
+        let url = Url::parse(&url).unwrap();
+
+        let mut live = subscribe(&url, None).await;
+        let mut tip = None;
+        for _ in 0..50 {
+            if let UpdateOneof::Slot(slot) = next_item(&mut live).await.unwrap() {
+                tip = Some(slot.slot);
+                break;
+            }
+        }
+        let tip = tip.expect("a slot status within the first 50 messages");
+        println!("live subscription: streaming, tip {tip}");
+
+        let recent = tip - 50;
+        assert!(
+            next_item(&mut subscribe(&url, Some(recent)).await)
+                .await
+                .is_ok()
+        );
+        println!("from_slot {recent}: replayed");
+
+        let stale = tip - 100_000;
+        let err = next_item(&mut subscribe(&url, Some(stale)).await)
+            .await
+            .unwrap_err();
+        println!("from_slot {stale}: {} \"{}\"", err.code(), err.message());
+        assert!(
+            matches!(err.code(), Code::OutOfRange | Code::Internal),
+            "{err}"
+        );
     }
 }
