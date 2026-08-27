@@ -94,6 +94,7 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
 
 /// Specifies the timing of the block timings of PoS chains
 /// and how to synchronize tx submission to it.
+/// See [`SlotConfig`](`configs::autopilot::run_loop::SlotConfig`) for details.
 pub struct SlotConfig {
     pub slot_length: Duration,
     pub tx_propagation_latency: Duration,
@@ -406,11 +407,14 @@ impl RunLoop {
             .store_order_events(auction.orders.iter().map(|o| o.uid), OrderEventLabel::Ready);
         tracing::trace!(auction_id = ?auction.id, "orders marked as ready");
 
-        // Collect valid solutions from all drivers
-        let Some(solutions) = self.fetch_solutions(auction).await else {
+        // Pick the deadline early, if we're late already, we skip the auction
+        let Some(deadline) = self.pick_solve_deadline() else {
             tracing::debug!("auction skipped");
             return;
         };
+
+        // Collect valid solutions from all drivers
+        let solutions = self.fetch_solutions(auction, deadline).await;
         observe::bids(&solutions);
         if solutions.is_empty() {
             return;
@@ -659,10 +663,8 @@ impl RunLoop {
     async fn build_auction_requests(
         &self,
         auction: &Arc<domain::Auction>,
-    ) -> Option<(solve::Request, solve::Request)> {
-        let Some(deadline) = self.pick_solve_deadline() else {
-            return None;
-        };
+        deadline: chrono::DateTime<Utc>,
+    ) -> (solve::Request, solve::Request) {
         let trusted_tokens = self.trusted_tokens.all();
 
         let (request, delta_request) = tokio::join!(
@@ -683,7 +685,7 @@ impl RunLoop {
         let delta_request = delta_request.unwrap_or_else(|| request.clone());
         Metrics::solve_request_body_size("delta", delta_request.body_size());
 
-        Some((request, delta_request))
+        (request, delta_request)
     }
 
     /// Runs the solver competition, making all configured drivers participate.
@@ -692,10 +694,9 @@ impl RunLoop {
     async fn fetch_solutions(
         &self,
         auction: &Arc<domain::Auction>,
-    ) -> Option<Vec<competition::Bid<Unscored>>> {
-        let Some((request, delta_request)) = self.build_auction_requests(auction).await else {
-            return None;
-        };
+        deadline: chrono::DateTime<Utc>,
+    ) -> Vec<competition::Bid<Unscored>> {
+        let (request, delta_request) = self.build_auction_requests(auction, deadline).await;
 
         let mut bids = futures::future::join_all(self.drivers.iter().cloned().map(|driver| {
             let solve_request = if driver.supports_auction_deltas {
@@ -735,7 +736,7 @@ impl RunLoop {
 
         // Shuffle so that sorting randomly splits ties.
         bids.shuffle(&mut rand::rng());
-        Some(bids)
+        bids
     }
 
     /// Builds the delta request for this auction, shared by all drivers that
@@ -1469,28 +1470,13 @@ mod tests {
         // now is 2s after the last block (n), 10s left before the slot ends, 8s before
         // we are supposed to submit a solution for this slot, 9s minimum solve
         // time => we barely missed the deadline of the current slot so now
-        // solvers get until 2s before the block n+2
+        // we skip the auction
         let deadline = pick_solve_deadline_impl(
             now + Duration::from_secs(1),
             min_solve_time,
             slot_config.as_ref(),
             last_block,
         );
-        assert_eq!(deadline, None);
-
-        // let's move to gnosis chain where 1 block is 5s (1 block is not enough for
-        // the solve deadline)
-        let slot_config = Some(SlotConfig {
-            slot_length: Duration::from_secs(5),
-            tx_propagation_latency: Duration::from_secs(2),
-        });
-        let last_block_time = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
-        let last_block = block_with_timestamp(last_block_time);
-        let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
-        // now is 1s after the last block n, 4s left in the block, we need to submit 2s
-        // before a block, min_solve_time 9s => deadline is 2s before block n+3
-        let deadline =
-            pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
         assert_eq!(deadline, None);
     }
 
