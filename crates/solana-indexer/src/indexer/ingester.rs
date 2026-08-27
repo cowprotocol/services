@@ -4,9 +4,9 @@
 //!
 //! The stream it drains is an `AutoReconnect`-backed
 //! [`GeyserStream`](yellowstone_grpc_client::GeyserStream) from
-//! `yellowstone-grpc-client`: reconnects, backoff, and resume-from-checkpoint
-//! are handled inside that stream and never surface
-//! here. The ingester's [`Ingester::run`] loop therefore has no backoff of its
+//! `yellowstone-grpc-client`: reconnects and backoff are handled inside that
+//! stream and never surface here, and a reconnect continues from the live
+//! head. The ingester's [`Ingester::run`] loop therefore has no backoff of its
 //! own; it returns when the stream ends (the wrapper gave up on an
 //! unrecoverable error) or when the decoder hangs up.
 //!
@@ -256,9 +256,8 @@ impl Ingester<GeyserStream> {
     /// `GeyserStream`, and run the drain loop.
     ///
     /// The initial `from_slot` is `last_indexed_slot + 1`, or `None` on a cold
-    /// start (the provider subscribes from the live tip). Reconnect
-    /// `from_slot` is driven by the `AutoReconnect` wrapper's `BlockMeta`
-    /// checkpoint, not this method.
+    /// start (the provider subscribes from the live tip). Reconnects inside
+    /// the stream start from the live head, not from this slot.
     ///
     /// Returns `Ok(())` on a clean shutdown (the decoder dropped its receiver),
     /// or `Err(Error)` if setup failed or the stream ended terminally. The
@@ -321,9 +320,8 @@ pub(crate) enum Resume {
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
 /// [`Ingester::serve`] (`last_indexed_slot + 1`, or `None` for the live tip).
 ///
-/// The library auto-adds a `BlockMeta` + `slot` filter (under its
-/// `__autoreconnect` key) so the `AutoReconnect` wrapper can checkpoint and
-/// resume on reconnect; those messages are consumed inside the wrapper and
+/// The library auto-adds a `BlockMeta` + `slot` filter under its
+/// `__autoreconnect` key. Those messages are consumed inside the wrapper and
 /// never reach the ingester.
 fn subscribe_request(
     settlement_program: Pubkey,
