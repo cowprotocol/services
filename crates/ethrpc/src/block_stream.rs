@@ -9,7 +9,7 @@ use {
     futures::StreamExt,
     std::{
         fmt::Debug,
-        time::{Duration, Instant},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
@@ -337,6 +337,10 @@ pub struct Metrics {
         13.75, 14. // 12s
     ))]
     time_since_last_block: prometheus::Histogram,
+
+    /// The drift (in seconds) between the block timestamp and the time at which
+    /// we've seen it
+    block_timestamp_drift: prometheus::Gauge,
 }
 
 fn update_block_metrics(previous_block: &BlockInfo, new_block: &BlockInfo) {
@@ -355,10 +359,28 @@ fn update_block_metrics(previous_block: &BlockInfo, new_block: &BlockInfo) {
             .observe(delta.abs());
     }
 
+    metrics
+        .block_timestamp_drift
+        .set(block_timestamp_drift(new_block));
+
     metrics.last_block_number.set(new_block.number);
     metrics
         .time_since_last_block
         .observe(previous_block.observed_at.elapsed().as_secs_f64());
+}
+
+/// Seconds between a block's own timestamp and when we observed it.
+/// Negative if the block claims a timestamp in the future.
+/// Includes any local clock skew, and chains that derive the timestamp from a
+/// sequencer or L1 clock report a steady offset here.
+fn block_timestamp_drift(block: &BlockInfo) -> f64 {
+    // `observed_at` is monotonic, so map it back onto the wall clock.
+    let observed_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64()
+        - block.observed_at.elapsed().as_secs_f64();
+    observed_at - block.timestamp as f64
 }
 
 /// Awaits and returns the next block that will be pushed into the stream.
