@@ -143,7 +143,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn maps_custom_solver_errors_to_bad_request_with_message() {
+    async fn maps_known_solver_errors_to_bad_request_with_message() {
         assert_bad_request_message(
             PriceEstimationError::TradingOutsideAllowedWindow {
                 message: "outside window".to_string(),
@@ -167,13 +167,16 @@ mod tests {
             "insufficient",
         )
         .await;
-
-        assert_bad_request_message(
-            PriceEstimationError::CustomSolverError {
+    }
+    #[tokio::test]
+    async fn maps_unknown_solver_errors_to_no_liquidity() {
+        let response = error_to_response(PriceEstimationError::CustomSolverError {
                 message: "custom".to_string(),
-            },
-            "custom",
-        )
-        .await;
+            });
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        assert_eq!(std::str::from_utf8(&body).unwrap(), "No liquidity");
     }
 }
