@@ -1,4 +1,4 @@
-use {crate::Event, schemars::JsonSchema, serde::Serialize};
+use {crate::Event, alloy_primitives::Address, schemars::JsonSchema, serde::Serialize};
 
 /// Emitted once a native price competition has picked the winning estimate,
 /// i.e. the price that gets cached and used to price orders. Its job is
@@ -11,9 +11,9 @@ use {crate::Event, schemars::JsonSchema, serde::Serialize};
 #[derive(Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WinningNativePriceEstimateEvent {
-    /// Token the price was estimated for (hex-encoded, including the `0x`
-    /// prefix).
-    pub token: String,
+    /// Token the price was estimated for.
+    #[schemars(with = "String")]
+    pub token: Address,
     /// Name of the estimator whose price estimate won the competition.
     pub estimator: String,
 }
@@ -24,18 +24,18 @@ impl Event for WinningNativePriceEstimateEvent {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json};
+    use {super::*, alloy_primitives::address, serde_json::json};
 
     #[test]
     fn matches_wire_format() {
         let event = WinningNativePriceEstimateEvent {
-            token: "0x01".into(),
+            token: address!("0x0000000000000000000000000000000000000001"),
             estimator: "CoinGecko".into(),
         };
         assert_eq!(
             serde_json::to_value(&event).unwrap(),
             json!({
-                "token": "0x01",
+                "token": "0x0000000000000000000000000000000000000001",
                 "estimator": "CoinGecko",
             }),
         );

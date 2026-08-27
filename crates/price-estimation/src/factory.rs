@@ -422,13 +422,10 @@ impl<'a> PriceEstimatorFactory<'a> {
             estimators.push(stages);
         }
 
-        let mut competition_estimator =
+        let competition_estimator =
             CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
                 .with_verification(self.args.quote_verification)
                 .with_early_return(results_required);
-        if self.config.publish_events {
-            competition_estimator = competition_estimator.with_event_publishing();
-        }
         Ok(Box::new(competition_estimator))
     }
 

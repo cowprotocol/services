@@ -14,51 +14,44 @@
             "type": "string"
           },
           "result": {
-            "$ref": "#/$defs/NativePriceResult"
-          },
-          "timeout": {
-            "description": "Timeout granted to the estimator's competition stage, in milliseconds.",
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
+            "$ref": "#/$defs/Result_of_double_or_string",
+            "description": "Amount of native token needed to buy 1 unit of the token, or the error\nthe estimator failed with. Prices are always normal, positive floats:\nmalformed prices are reported as errors."
           },
           "token": {
-            "description": "Token the price was estimated for (hex-encoded, including the `0x`\nprefix). For tokens configured to be approximated by another token this\nis the approximation token, i.e. the one actually priced.",
+            "description": "Token the price was estimated for. For tokens configured to be\napproximated by another token this is the approximation token, i.e. the\none actually priced.",
             "type": "string"
           }
         },
         "required": [
           "token",
-          "timeout",
           "elapsed",
           "estimator",
           "result"
         ],
         "type": "object"
       },
-      "NativePriceResult": {
-        "anyOf": [
+      "Result_of_double_or_string": {
+        "oneOf": [
           {
             "properties": {
-              "price": {
-                "description": "Amount of native token needed to buy 1 unit of the token. Always a\nnormal, positive float: malformed prices are reported as errors.",
+              "Ok": {
                 "format": "double",
                 "type": "number"
               }
             },
             "required": [
-              "price"
+              "Ok"
             ],
             "type": "object"
           },
           {
             "properties": {
-              "error": {
+              "Err": {
                 "type": "string"
               }
             },
             "required": [
-              "error"
+              "Err"
             ],
             "type": "object"
           }
@@ -422,7 +415,7 @@
             "type": "string"
           },
           "token": {
-            "description": "Token the price was estimated for (hex-encoded, including the `0x`\nprefix).",
+            "description": "Token the price was estimated for.",
             "type": "string"
           }
         },
