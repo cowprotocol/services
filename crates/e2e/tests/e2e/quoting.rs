@@ -568,31 +568,35 @@ async fn quote_custom_solver_errors(web3: Web3) {
     let cases = vec![
         (
             SolverErrorCode::TradingOutsideAllowedWindow,
+            StatusCode::BAD_REQUEST,
             "TradingOutsideAllowedWindow",
             None,
             "Token can only be traded during specific time windows",
         ),
         (
             SolverErrorCode::TokenTemporarilySuspended,
+            StatusCode::BAD_REQUEST,
             "TokenTemporarilySuspended",
             Some("token is suspended"),
             "token is suspended",
         ),
         (
             SolverErrorCode::InsufficientLiquidity,
+            StatusCode::BAD_REQUEST,
             "InsufficientLiquidity",
             Some("not enough liquidity"),
             "not enough liquidity",
         ),
         (
             SolverErrorCode::Other,
-            "CustomSolverError",
+            StatusCode::NOT_FOUND,
+            "NoLiquidity",
             Some("some solver specific error"),
-            "some solver specific error",
+            "no route found",
         ),
     ];
 
-    for (code, expected_kind, sent_message, expected_message) in cases {
+    for (code, expected_http_code, expected_kind, sent_message, expected_message) in cases {
         mock_solver.configure_response(SolverResponse::Error {
             error: SolverError {
                 code,
@@ -601,7 +605,7 @@ async fn quote_custom_solver_errors(web3: Web3) {
         });
 
         let (status, body) = services.submit_quote(&quote_request).await.unwrap_err();
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, expected_http_code);
         assert!(
             body.contains(expected_kind),
             "response should include error kind {expected_kind}, got {body}"
@@ -821,13 +825,13 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
     };
 
     let (status, body) = services.submit_quote(&quote_request).await.unwrap_err();
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::NOT_FOUND);
     assert!(
-        body.contains("CustomSolverError"),
+        body.contains("NoLiquidity"),
         "response should include custom solver error, got {body}"
     );
     assert!(
-        body.contains("priority custom solver error"),
+        body.contains("no route found"),
         "response should include prioritized custom error message, got {body}"
     );
 }
