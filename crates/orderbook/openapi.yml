@@ -1898,7 +1898,7 @@ components:
         Error quoting an order.
 
         Possible `errorType` values per HTTP status:
-        * 400: `AppDataHashMismatch`, `CustomSolverError`, `ExcessiveValidTo`,
+        * 400: `AppDataHashMismatch`, `ExcessiveValidTo`,
           `InsufficientLiquidity`, `InsufficientValidTo`, `InvalidAppData`,
           `InvalidNativeSellToken`, `QuoteNotVerified`, `SameBuyAndSellToken`,
           `SellAmountDoesNotCoverFee`, `TokenTemporarilySuspended`,
