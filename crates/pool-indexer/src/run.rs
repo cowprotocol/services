@@ -2,8 +2,11 @@ use {
     crate::{
         api::AppState,
         arguments::Arguments,
-        config::{Configuration, NetworkConfig},
-        indexer::uniswap_v3::UniswapV3Indexer,
+        config::{BalancerV2Config, Configuration, FactoryConfig, NetworkConfig},
+        indexer::{
+            balancer_v2::{self, BalancerV2Indexer, PoolType},
+            uniswap_v3::UniswapV3Indexer,
+        },
     },
     alloy_provider::Provider,
     clap::Parser,
@@ -61,6 +64,21 @@ pub async fn bootstrap(config: Configuration) {
             });
         }
     }
+    if let Some(balancer) = &network.balancer_v2 {
+        for (pool_type, factory) in balancer_v2::configured_factories(balancer) {
+            let indexer = BalancerV2Indexer::new(
+                provider.clone(),
+                db.clone(),
+                balancer_indexer_config(&network, balancer, pool_type, factory),
+            );
+            factory_set.spawn(async move {
+                indexer
+                    .bootstrap()
+                    .await
+                    .expect("balancer bootstrap failed");
+            });
+        }
+    }
     while let Some(result) = factory_set.join_next().await {
         result.expect("bootstrap task panicked");
     }
@@ -78,7 +96,12 @@ pub async fn run(config: Configuration) {
             .network
             .uniswap_v3
             .as_ref()
-            .map_or(0, |u| u.factories.len()),
+            .map_or(0, |u| u.factories.len())
+            + config
+                .network
+                .balancer_v2
+                .as_ref()
+                .map_or(0, |b| b.factory_count()),
     ));
 
     // Abort the metrics task when `run` exits, so tests can rebind the port.
@@ -178,10 +201,11 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
     let provider = build_provider_checked(&network).await;
     let network = Arc::new(network);
 
+    // One task per factory (provider and DB pool shared; checkpoints are keyed
+    // by factory address, so tasks never contend), plus a process-wide token
+    // backfill. All tasks share one JoinSet, so any panic crashes the process.
     let mut factory_set = JoinSet::new();
     if let Some(uniswap_v3) = &network.uniswap_v3 {
-        // One task per factory. Provider + DB pool are shared; checkpoints are
-        // per-factory because they're keyed by `contract_address`.
         for factory in uniswap_v3.factories.iter().copied() {
             let indexer = UniswapV3Indexer::new(
                 provider.clone(),
@@ -197,9 +221,6 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
             ));
         }
 
-        // The symbol/decimals backfill scans every token missing the field, so
-        // one pair per process is enough (not per-factory). Spawned into the
-        // same JoinSet so a panic crashes the process via the same supervisor.
         let backfill_concurrency = network.prefetch_concurrency;
         let backfill_interval = network.poll_interval();
         factory_set.spawn(crate::indexer::uniswap_v3::backfill_symbols(
@@ -217,6 +238,32 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
             backfill_interval,
         ));
     }
+    if let Some(balancer) = &network.balancer_v2 {
+        let poll_interval = network.poll_interval();
+        for (pool_type, factory) in balancer_v2::configured_factories(balancer) {
+            let indexer = BalancerV2Indexer::new(
+                provider.clone(),
+                db.clone(),
+                balancer_indexer_config(&network, balancer, pool_type, factory),
+            );
+            let barrier = barrier.clone();
+            factory_set.spawn(async move {
+                indexer
+                    .bootstrap()
+                    .await
+                    .expect("balancer bootstrap failed");
+                barrier.factory_bootstrapped();
+                indexer.run(poll_interval).await;
+            });
+        }
+        factory_set.spawn(balancer_v2::backfill_decimals(
+            provider.clone(),
+            db.clone(),
+            network.name.clone(),
+            network.prefetch_concurrency,
+            poll_interval,
+        ));
+    }
 
     // Factory indexers + backfill are all infinite loops; any return is a
     // bug, so crash and let the orchestrator restart the pod.
@@ -225,6 +272,26 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
             "pool-indexer {}: task exited (expected infinite loop): {result:?}",
             network.name,
         );
+    }
+}
+
+/// Per-factory Balancer indexer config from the shared network settings.
+fn balancer_indexer_config(
+    network: &NetworkConfig,
+    balancer: &BalancerV2Config,
+    pool_type: PoolType,
+    factory: FactoryConfig,
+) -> balancer_v2::IndexerConfig {
+    balancer_v2::IndexerConfig {
+        network: network.name.clone(),
+        vault: balancer.vault,
+        factory: factory.address,
+        pool_type,
+        deploy_block: factory.deploy_block,
+        chunk_size: balancer.chunk_size,
+        use_latest: network.use_latest,
+        fetch_concurrency: network.fetch_concurrency,
+        enrich_concurrency: network.prefetch_concurrency,
     }
 }
 
@@ -258,7 +325,7 @@ async fn bootstrap_factory(
     network: &NetworkConfig,
     factory: &crate::config::FactoryConfig,
 ) {
-    let checkpoint = crate::db::uniswap_v3::get_checkpoint(db, &factory.address)
+    let checkpoint = crate::db::get_checkpoint(db, &factory.address)
         .await
         .expect("failed to read checkpoint");
     match checkpoint {
