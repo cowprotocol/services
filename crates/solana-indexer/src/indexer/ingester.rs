@@ -320,9 +320,8 @@ pub(crate) enum Resume {
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
 /// [`Ingester::serve`] (`last_indexed_slot + 1`, or `None` for the live tip).
 ///
-/// The library auto-adds a `BlockMeta` + `slot` filter (under its
-/// `__autoreconnect` key) so the `AutoReconnect` wrapper can checkpoint and
-/// resume on reconnect; those messages are consumed inside the wrapper and
+/// The library auto-adds a `BlockMeta` + `slot` filter under its
+/// `__autoreconnect` key. Those messages are consumed inside the wrapper and
 /// never reach the ingester.
 fn subscribe_request(
     settlement_program: Pubkey,
