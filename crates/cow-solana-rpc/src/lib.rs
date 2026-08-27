@@ -5,7 +5,13 @@ use {
     itertools::Itertools,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
     solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
-    solana_sdk::{account::Account, pubkey::Pubkey},
+    solana_sdk::{
+        account::Account,
+        hash::Hash,
+        pubkey::Pubkey,
+        signature::Signature,
+        transaction::VersionedTransaction,
+    },
     std::{collections::HashMap, time::Duration},
     url::Url,
 };
@@ -78,5 +84,29 @@ impl SolanaRPC {
     /// The node's current slot at the client's commitment level.
     pub async fn slot(&self) -> Result<u64, Error> {
         self.inner.get_slot().await
+    }
+
+    /// The latest blockhash and the last block height at which it remains valid
+    /// (so consumers know whether the blockhash is still usable), fetched at
+    /// the client's configured commitment level.
+    ///
+    /// Note: this uses the same commitment level the client was configured
+    /// with. It's important to consider that a `processed` blockhash may come
+    /// from an abandoned fork, a `finalized` blockhash comes at the expense of
+    /// shortening the transaction's ~150-block validity window. `confirmed` is
+    /// usually the safest default.
+    pub async fn latest_blockhash(&self) -> Result<(Hash, u64), Error> {
+        self.inner
+            .get_latest_blockhash_with_commitment(self.inner.commitment())
+            .await
+    }
+
+    /// Send a versioned transaction and wait until it reaches the client's
+    /// configured commitment level.
+    pub async fn send_and_confirm_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Signature, Error> {
+        self.inner.send_and_confirm_transaction(transaction).await
     }
 }
