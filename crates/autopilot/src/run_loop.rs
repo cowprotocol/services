@@ -290,13 +290,17 @@ impl RunLoop {
     }
 
     fn pick_solve_deadline(&self) -> Option<DateTime<Utc>> {
+        let reset_counter = || {
+            self.skip_counter.store(0, Ordering::Relaxed);
+            tracing::debug!("reseting auction counter");
+        };
+
         let now = chrono::Utc::now();
         let last_block = *self.eth.current_block().borrow();
 
         if self.skip_counter.load(Ordering::Relaxed) > 2 {
             let minimum_deadline = now + self.config.min_solve_time;
-            self.skip_counter.store(0, Ordering::Relaxed);
-            tracing::debug!("reseting auction counter");
+            reset_counter();
             return Some(minimum_deadline);
         }
 
@@ -308,6 +312,8 @@ impl RunLoop {
         );
         if deadline.is_none() {
             self.skip_counter.fetch_add(1, Ordering::Relaxed);
+        } else {
+            reset_counter();
         }
 
         deadline
