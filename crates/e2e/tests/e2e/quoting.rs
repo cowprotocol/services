@@ -678,27 +678,31 @@ async fn native_price_custom_solver_errors(web3: Web3) {
     let cases = vec![
         (
             SolverErrorCode::TradingOutsideAllowedWindow,
+            StatusCode::BAD_REQUEST,
             "TradingOutsideAllowedWindow",
             "native window closed",
         ),
         (
             SolverErrorCode::TokenTemporarilySuspended,
+            StatusCode::BAD_REQUEST,
             "TokenTemporarilySuspended",
             "native token suspended",
         ),
         (
             SolverErrorCode::InsufficientLiquidity,
+            StatusCode::BAD_REQUEST,
             "InsufficientLiquidity",
             "native not enough liquidity",
         ),
         (
             SolverErrorCode::Other,
-            "CustomSolverError",
-            "native custom solver reason",
+            StatusCode::NOT_FOUND,
+            "NoLiquidity",
+            "no route found",
         ),
     ];
 
-    for (code, expected_kind, message) in cases {
+    for (code, expected_http_code, expected_kind, message) in cases {
         mock_solver.configure_response(SolverResponse::Error {
             error: SolverError {
                 code,
@@ -710,7 +714,7 @@ async fn native_price_custom_solver_errors(web3: Web3) {
             .get_native_price(sell_token.address())
             .await
             .unwrap_err();
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, expected_http_code);
         assert!(
             body.contains(expected_kind),
             "response should include error kind {expected_kind}, got {body}"
