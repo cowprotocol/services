@@ -3,7 +3,7 @@
 //! Serves the `/solve` contract the driver calls.
 
 use {
-    crate::{dex::Dex, domain::solver, dto::auction::Auction},
+    crate::{dex::Dex, domain::solver, dto::auction::Auction, extract::LoggingJson},
     axum::{
         Json,
         Router,
@@ -56,7 +56,10 @@ async fn healthz() -> &'static str {
 }
 
 /// Quote every order in the auction and return the single-order solutions.
-async fn solve(State(dex): State<Arc<Dex>>, Json(auction): Json<Auction>) -> Json<Value> {
+async fn solve(
+    State(dex): State<Arc<Dex>>,
+    LoggingJson(auction): LoggingJson<Auction>,
+) -> Json<Value> {
     let solutions = solver::solve(dex.as_ref(), &auction).await;
     Json(json!({ "solutions": solutions }))
 }
