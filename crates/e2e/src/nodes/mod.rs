@@ -43,6 +43,11 @@ impl Node {
             "1",
             "--timestamp",
             "1577836800",
+            // Anvil derives the fork schedule from the chain id, and a 2020
+            // genesis on chain 1 sits before London. Pin the fork so EIP-1559
+            // transactions are accepted.
+            "--hardfork",
+            "prague",
         ])
         .await
     }
