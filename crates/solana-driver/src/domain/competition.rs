@@ -21,6 +21,11 @@ impl Competition {
         Self { solver }
     }
 
+    /// The human-readable name of the solver engine this competition uses.
+    pub fn solver_name(&self) -> &str {
+        self.solver.name()
+    }
+
     /// Send the auction to the solver engine and return its solutions.
     ///
     /// `program_id` is the settlement program the swap instructions are built
