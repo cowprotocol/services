@@ -172,7 +172,6 @@ impl Solver {
                 },
                 "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
                 "class": match quote.order.kind {
-                    _ if config.quote => "market",
                     order::Kind::Market => "market",
                     order::Kind::Limit => "limit",
                 },

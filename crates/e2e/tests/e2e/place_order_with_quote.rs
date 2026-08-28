@@ -240,7 +240,6 @@ async fn fallback_native_price_estimator(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     let (manual_shutdown, control) = ShutdownController::new_manual_shutdown();

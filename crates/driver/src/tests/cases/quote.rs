@@ -30,26 +30,25 @@ fn extract_buy_amount(response_body: &str, sell_amount: eth::U256) -> eth::U256 
     sell_amount * price_low / price_high
 }
 
-/// Run a matrix of tests for all meaningful combinations of order kind and
-/// side, verifying that they get quoted successfully.
+/// Run a matrix of tests for all meaningful order sides, verifying that they
+/// get quoted successfully. Quotes always use limit orders, so there is no
+/// order-kind dimension.
 #[tokio::test]
 #[ignore]
 async fn matrix() {
     for side in [order::Side::Buy, order::Side::Sell] {
-        for kind in [order::Kind::Market, order::Kind::Limit] {
-            let test = tests::setup()
-                .name(format!("{side:?} {kind:?}"))
-                .pool(ab_pool())
-                .order(ab_order().side(side).kind(kind))
-                .solution(ab_solution())
-                .quote()
-                .done()
-                .await;
+        let test = tests::setup()
+            .name(format!("{side:?}"))
+            .pool(ab_pool())
+            .order(ab_order().side(side))
+            .solution(ab_solution())
+            .quote()
+            .done()
+            .await;
 
-            let quote = test.quote().await;
+        let quote = test.quote().await;
 
-            quote.ok().amount().interactions();
-        }
+        quote.ok().amount().interactions();
     }
 }
 
