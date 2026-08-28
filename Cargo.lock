@@ -9193,6 +9193,7 @@ name = "solana-driver"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "configs",
@@ -9210,10 +9211,13 @@ dependencies = [
  "serde_with",
  "solana-address-lookup-table-interface",
  "solana-compute-budget-interface",
+ "solana-rpc-client",
  "solana-sdk",
  "solana-solvers",
+ "solana-system-interface 3.2.0",
  "solana-testlib",
  "spl-associated-token-account-interface",
+ "spl-token-interface 2.0.0",
  "thiserror 1.0.69",
  "tikv-jemallocator",
  "tokio",

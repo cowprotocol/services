@@ -46,15 +46,15 @@ impl Api {
         listener: tokio::net::TcpListener,
         shutdown: CancellationToken,
     ) -> Result<(), std::io::Error> {
-        // Propagate the OpenTelemetry trace context from incoming request headers and
-        // record the trace id on the request span, so the driver can correlate logs
+        // Propagate the OpenTelemetry trace context from incoming request
+        // headers. Record the trace id on the request span to correlate logs
         // across services. `make_span` sets the parent context and an empty
         // `trace_id` field. `record_trace_id` then fills it in.
         let tracing_layer = ServiceBuilder::new()
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
-        // Global routes (healthz) live at the root.
+        // Mount global routes (healthz) at the root.
         let mut app = Router::new().route("/healthz", get(routes::healthz));
 
         // Mount one router per solver engine under `/{solver_name}`.
@@ -88,21 +88,23 @@ impl Api {
 
 /// Shared state available to all route handlers for one solver engine.
 #[derive(Clone)]
-pub struct State(Arc<Inner>);
+pub(crate) struct State(Arc<Inner>);
 
 impl State {
     /// Build the shared state the handlers operate on.
     fn new(competition: domain::Competition) -> Self {
-        Self(Arc::new(Inner { competition }))
+        Self(Arc::new(Inner {
+            competition: Arc::new(competition),
+        }))
     }
 
     /// The competition that runs auctions for this solver engine.
-    fn competition(&self) -> &domain::Competition {
+    fn competition(&self) -> &Arc<domain::Competition> {
         &self.0.competition
     }
 }
 
 struct Inner {
     /// The competition that runs auctions for this solver engine.
-    competition: domain::Competition,
+    competition: Arc<domain::Competition>,
 }

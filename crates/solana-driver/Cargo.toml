@@ -47,9 +47,13 @@ tracing = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
+base64 = { workspace = true }
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
+solana-rpc-client = { workspace = true }
 solana-solvers = { path = "../solana-solvers" }
+solana-system-interface = "3"
 solana-testlib = { workspace = true }
+spl-token-interface = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [features]

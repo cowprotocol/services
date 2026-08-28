@@ -85,6 +85,14 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
                 | settlement::Error::OrderPdaMismatch(..)
                 | settlement::Error::OrderIntentMismatch(..) => Kind::InvalidSolution,
             },
+            competition::Error::Prepare(error) => match error {
+                // The solver supplied the lookup table keys.
+                settlement::PrepareError::InvalidAddressLookupTable { .. } => Kind::InvalidSolution,
+                // RPC failures and unexpected setup accounts are outside solver
+                // control. Map them to Unknown.
+                settlement::PrepareError::Rpc(_)
+                | settlement::PrepareError::UnexpectedSetupAccount { .. } => Kind::Unknown,
+            },
         }
         .into()
     }
