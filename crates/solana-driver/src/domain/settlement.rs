@@ -195,6 +195,7 @@ impl Settlement {
         let message =
             MessageV0::try_compile(&signer.pubkey(), &instructions, lookup_tables, blockhash)?;
         let transaction = VersionedTransaction::try_new(VersionedMessage::V0(message), &[signer])?;
+        tracing::debug!(signature = %transaction.signatures[0], "settlement transaction signed");
         Ok(transaction)
     }
 

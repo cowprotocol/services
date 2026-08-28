@@ -229,7 +229,7 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         if let Some(err) = &simulation.err {
-            tracing::warn!(?err, "settlement simulation failed");
+            tracing::warn!(?err, logs = ?simulation.logs, "settlement simulation failed");
             return Err(err.clone().into());
         }
         tracing::debug!("settlement simulation passed");
