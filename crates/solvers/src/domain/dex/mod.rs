@@ -116,7 +116,7 @@ impl Swap {
         simulator: &infra::dex::Simulator,
         gas_offset: eth::Gas,
     ) -> Option<solution::Solution> {
-        let gas = if order.class == order::Class::Limit {
+        let gas = if order.class == order::Class::Limit && sell_token.is_some() {
             match simulator.gas(order.owner(), &self).await {
                 Ok(value) => value,
                 Err(infra::dex::simulator::Error::SettlementContractIsOwner) => self.gas,
@@ -126,7 +126,8 @@ impl Swap {
                 }
             }
         } else {
-            // We are fine with just using heuristic gas for market orders,
+            // We are fine with just using heuristic gas for market orders and quote
+            // aucitons (recognizable by the missing sell token),
             // since it doesn't really play a role in the final solution.
             self.gas
         };

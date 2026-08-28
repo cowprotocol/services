@@ -235,13 +235,21 @@ impl Single {
             // full order fee as well as a solver computed fee. Note that this
             // is fine for now, since there is no way to create limit orders
             // with non-zero fees.
-            eth::SellTokenAmount(
-                sell_token?.ether_value(eth::Ether(
-                    swap.0
-                        .checked_add(gas_offset.0)?
-                        .checked_mul(gas_price.0.0)?,
-                ))?,
-            )
+            match sell_token {
+                Some(price) => eth::SellTokenAmount(
+                    price.ether_value(eth::Ether(
+                        swap.0
+                            .checked_add(gas_offset.0)?
+                            .checked_mul(gas_price.0.0)?,
+                    ))?,
+                ),
+                // The auction carries no reference price for the sell token,
+                // which only happens for quote auctions. Fall back to a zero
+                // fee: it is never charged on the quote path anyway (the
+                // orderbook derives the fee shown to the user from its own
+                // gas measurement).
+                None => Default::default(),
+            }
         } else {
             // Orders whose fee the solver doesn't determine (market orders,
             // whose fee was pre-determined by the protocol) are not charged
