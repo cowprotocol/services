@@ -1,4 +1,4 @@
-//! The driver client behind the quote endpoint.
+//! Client for a driver's quote route.
 
 use {
     reqwest::Client,

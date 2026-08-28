@@ -30,7 +30,7 @@ pub struct Api {
     pub addr: SocketAddr,
     /// The database the indexer writes to.
     pub pool: PgPool,
-    /// The driver the quote endpoint asks.
+    /// The driver that quotes orders.
     pub quoter: Quoter,
 }
 
@@ -105,7 +105,7 @@ impl State {
         &self.0.pool
     }
 
-    /// The driver client the quote endpoint asks.
+    /// The driver that quotes orders.
     pub fn quoter(&self) -> &Quoter {
         &self.0.quoter
     }
@@ -114,6 +114,6 @@ impl State {
 struct Inner {
     /// The database the indexer writes to.
     pool: PgPool,
-    /// The driver the quote endpoint asks.
+    /// The driver that quotes orders.
     quoter: Quoter,
 }

@@ -64,7 +64,7 @@ impl Config {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Quoting {
-    /// Base URL of the driver that quotes orders.
+    /// Base URL of the driver asked to quote orders.
     pub driver_url: Url,
     /// How long the driver has to answer before the quote fails.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]

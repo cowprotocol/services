@@ -1,5 +1,4 @@
-//! Wire shape of the quote endpoint, mirroring the EVM orderbook so the
-//! frontend can reuse its models.
+//! Wire shape of the quote endpoint, mirroring the EVM orderbook.
 
 use {
     bigdecimal::BigDecimal,
@@ -9,8 +8,8 @@ use {
     solana_sdk::pubkey::Pubkey,
 };
 
-/// A quote request. Unknown fields are ignored rather than rejected: the
-/// frontend sends the EVM body, which carries fields with no Solana meaning.
+/// A quote request. Unknown fields are ignored rather than rejected: the EVM
+/// request body carries fields with no Solana meaning.
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,7 +108,7 @@ pub struct Response {
     pub from: Pubkey,
     /// When the quoted amounts stop being honored.
     pub expiration: DateTime<Utc>,
-    /// The quote's database id, which nothing persists yet.
+    /// The quote's database id. Always absent: quotes are not persisted.
     pub id: Option<i64>,
     /// Whether the amounts were confirmed by simulating the settlement. No
     /// component simulates, so a quote is indicative.
@@ -147,7 +146,7 @@ mod tests {
 
     #[test]
     fn accepts_the_evm_request_body() {
-        // Fields with no Solana meaning, which the frontend still sends.
+        // Fields with no Solana meaning.
         let raw = serde_json::json!({
             "from": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
             "sellToken": "So11111111111111111111111111111111111111112",
