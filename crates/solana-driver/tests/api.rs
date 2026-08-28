@@ -207,10 +207,7 @@ async fn solve_with_engine_down_returns_solver_failed() {
         .send()
         .await
         .unwrap();
-    assert_eq!(
-        response.status(),
-        reqwest::StatusCode::INTERNAL_SERVER_ERROR
-    );
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
 
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "SolverFailed");

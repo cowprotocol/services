@@ -87,8 +87,33 @@ impl Competition {
 
 /// An error the competition reports to the API layer.
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum Error {
     /// The solver engine failed to produce solutions.
     #[error("solver engine failed: {0}")]
     Solver(#[from] crate::infra::solver::Error),
+    /// The requested solution is not available (never solved or already
+    /// settled).
+    #[error("solution not available")]
+    SolutionNotAvailable,
+    /// The submission deadline slot has passed.
+    #[error("submission deadline slot exceeded")]
+    DeadlineExceeded,
+    /// Too many settlements are already pending submission.
+    #[error("too many pending settlements")]
+    TooManyPendingSettlements,
+    /// A pre-submission RPC read failed (blockhash fetch); nothing was
+    /// submitted.
+    #[error("rpc request failed: {0}")]
+    Rpc(#[source] cow_solana_rpc::Error),
+    /// The settlement transaction could not be submitted or confirmed.
+    #[error("failed to submit or confirm settlement: {0}")]
+    FailedToSubmit(#[source] cow_solana_rpc::Error),
+    /// The settlement could not be encoded.
+    #[error("failed to encode settlement: {0}")]
+    Settlement(#[from] super::settlement::Error),
+    /// The spawned settle task panicked before it completed. The driver does
+    /// not know whether the transaction reached the network.
+    #[error("settle task panicked")]
+    TaskPanicked,
 }

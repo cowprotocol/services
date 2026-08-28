@@ -336,6 +336,9 @@ pub enum Error {
     /// The order's limit price was violated.
     #[error("order {0} violated its limit price")]
     LimitPriceViolated(OrderUid),
+    /// The order has already expired.
+    #[error("order {0} expired")]
+    OrderExpired(OrderUid),
     /// The wire-provided order PDA does not match the derived PDA.
     #[error("order PDA {0} does not match the derived PDA {1} for uid {2}")]
     OrderPdaMismatch(Pubkey, Pubkey, OrderUid),
