@@ -4,7 +4,7 @@ pub mod dto;
 
 use {
     crate::infra::{
-        api::{State, error},
+        api::{State, error, extract},
         quoter,
     },
     axum::{Json, http::StatusCode},
@@ -22,7 +22,7 @@ const QUOTE_EXPIRY: Duration = Duration::from_secs(60);
 /// Handle `POST /api/v1/quote`.
 pub async fn quote(
     state: axum::extract::State<State>,
-    Json(request): Json<dto::Request>,
+    extract::Json(request): extract::Json<dto::Request>,
 ) -> Result<Json<dto::Response>, error::Reply> {
     if request.sell_token == request.buy_token {
         return Err(error::reply(

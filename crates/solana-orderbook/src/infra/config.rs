@@ -64,7 +64,10 @@ impl Config {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Quoting {
-    /// Base URL of the driver asked to quote orders.
+    /// Base URL of the driver asked to quote orders. A missing trailing slash
+    /// is added: routes resolve relative to this, so without it the last path
+    /// segment would be replaced rather than extended.
+    #[serde(deserialize_with = "serde_ext::deserialize_url_with_trailing_slash")]
     pub driver_url: Url,
     /// How long the driver has to answer before the quote fails.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
@@ -96,5 +99,30 @@ mod tests {
         assert_eq!(config.logging.filter, "info,solana_orderbook=debug");
         assert_eq!(config.quoting.driver_url.as_str(), "http://localhost:8000/");
         assert_eq!(config.quoting.timeout, Duration::from_secs(5));
+    }
+
+    /// Routes resolve relative to `driver-url`, so a base URL with a path
+    /// keeps it instead of having its last segment replaced.
+    #[test]
+    fn driver_url_gets_a_trailing_slash() {
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            quoting: Quoting,
+        }
+        let wrapper: Wrapper = toml::de::from_str(
+            r#"
+            [quoting]
+            driver-url = "http://driver/baseline"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            wrapper.quoting.driver_url.as_str(),
+            "http://driver/baseline/"
+        );
+        assert_eq!(
+            wrapper.quoting.driver_url.join("quote").unwrap().as_str(),
+            "http://driver/baseline/quote"
+        );
     }
 }

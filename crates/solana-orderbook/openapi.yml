@@ -129,8 +129,9 @@ paths:
                 $ref: "#/components/schemas/QuoteResponse"
         "400":
           description: |
-            Buy and sell token are the same (`SameBuyAndSellToken`), or the
-            amount is zero (`ZeroAmount`).
+            The body could not be parsed (`InvalidRequestBody`), buy and sell
+            token are the same (`SameBuyAndSellToken`), or the amount is zero
+            (`ZeroAmount`).
           content:
             application/json:
               schema:

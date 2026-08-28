@@ -62,3 +62,24 @@ async fn shuts_down_cleanly_on_signal() {
     shutdown_token.cancel();
     handle.await.unwrap();
 }
+
+/// A malformed quote body is rejected in the API's error shape, not axum's
+/// plain-text default.
+#[tokio::test]
+async fn malformed_quote_body_keeps_the_error_shape() {
+    let addr = spawn_server().await;
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&serde_json::json!({"sellToken": "not-a-pubkey"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.unwrap(),
+        serde_json::json!({
+            "errorType": "InvalidRequestBody",
+            "description": "The request body could not be parsed."
+        })
+    );
+}

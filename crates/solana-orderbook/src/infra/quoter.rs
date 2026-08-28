@@ -9,6 +9,12 @@ use {
     url::Url,
 };
 
+/// Time reserved out of the budget for the driver to convert a solution and
+/// for the response to travel back. The driver spends everything up to the
+/// deadline it is given, so without a reserve a near-deadline answer races
+/// this client's own timeout.
+const RESPONSE_RESERVE: Duration = Duration::from_millis(500);
+
 /// Asks a driver to quote one order.
 #[derive(Clone, Debug)]
 pub struct Quoter {
@@ -93,7 +99,7 @@ impl Quoter {
             buy_token: order.buy_token,
             amount: order.amount,
             kind: order.kind,
-            deadline: chrono::Utc::now() + self.timeout,
+            deadline: chrono::Utc::now() + self.timeout.saturating_sub(RESPONSE_RESERVE),
         };
         let response = self
             .client
