@@ -7,7 +7,7 @@
 use {
     super::{Auction, Order, auction::Id, solution::Solution},
     crate::infra::{blockchain::Solana, solver::Solver},
-    solana_sdk::signature::Signature,
+    solana_sdk::{signature::Signature, transaction::VersionedTransaction},
     std::{collections::HashMap, sync::Arc},
     tokio::sync::Mutex,
     tracing::Instrument,
@@ -194,6 +194,8 @@ impl Competition {
         let transaction =
             settlement.encode(self.solver.keypair(), blockhash, &accounts.lookup_tables)?;
 
+        self.simulate_settlement(&transaction).await?;
+
         // Consume the auction's entries only now, when the transaction is
         // about to reach the network. One critical section removes the
         // chosen solution and its siblings. A concurrent `/settle` for
@@ -216,6 +218,22 @@ impl Competition {
             .map_err(Error::FailedToSubmit)?;
 
         Ok(signature)
+    }
+
+    /// Simulate a settlement transaction before sending it.
+    async fn simulate_settlement(&self, transaction: &VersionedTransaction) -> Result<(), Error> {
+        tracing::debug!("simulating settlement transaction");
+        let simulation = self
+            .blockchain
+            .simulate_transaction(transaction)
+            .await
+            .map_err(Error::Rpc)?;
+        if let Some(err) = &simulation.err {
+            tracing::warn!(?err, "settlement simulation failed");
+            return Err(err.clone().into());
+        }
+        tracing::debug!("settlement simulation passed");
+        Ok(())
     }
 }
 
@@ -264,6 +282,9 @@ pub(crate) enum Error {
     /// The settlement could not be encoded.
     #[error("failed to encode settlement: {0}")]
     Settlement(#[from] super::settlement::Error),
+    /// The pre-submission simulation failed. The transaction was not sent.
+    #[error("settlement simulation failed: {0}")]
+    SimulationFailed(#[from] cow_solana_rpc::UiTransactionError),
     /// The spawned settle task panicked before it completed. The driver does
     /// not know whether the transaction reached the network.
     #[error("settle task panicked")]

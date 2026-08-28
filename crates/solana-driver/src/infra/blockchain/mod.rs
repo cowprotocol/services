@@ -51,6 +51,15 @@ impl Solana {
         self.rpc.send_and_confirm_transaction(transaction).await
     }
 
+    /// Simulate a signed transaction without sending it. Returns the
+    /// simulation result including logs and any error.
+    pub async fn simulate_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<cow_solana_rpc::RpcSimulateTransactionResult, Error> {
+        self.rpc.simulate_transaction(transaction).await
+    }
+
     /// Fetch the accounts at `keys` in a single batched fetch (split into
     /// parallel requests above the server's per-request cap) and return them
     /// as a snapshot ready for typed interpretation.
