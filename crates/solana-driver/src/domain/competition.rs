@@ -45,10 +45,7 @@ impl Competition {
     /// The cache stores the auction and every solution keyed by
     /// `(auction_id, solution_id)` so `settle` can later retrieve and submit
     /// the chosen solution.
-    pub async fn solve(
-        &self,
-        auction: &Auction,
-    ) -> Result<Vec<Solution>, Error> {
+    pub async fn solve(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
         let auction_id = auction.id;
         let solutions = self
             .solver
