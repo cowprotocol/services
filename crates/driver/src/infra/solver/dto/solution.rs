@@ -65,12 +65,10 @@ impl Solutions {
                                 competition::solution::trade::Fulfillment::new(
                                     order,
                                     fulfillment.executed_amount.into(),
-                                    match fulfillment.fee {
-                                        Some(fee) => competition::solution::trade::Fee::Dynamic(
-                                            competition::order::SellAmount(fee),
-                                        ),
-                                        None => competition::solution::trade::Fee::Static,
-                                    },
+                                    // An absent fee is treated as a fee of 0.
+                                    competition::order::SellAmount(
+                                        fulfillment.fee.unwrap_or_default(),
+                                    ),
                                     haircut_fee,
                                 )
                                     .map(competition::solution::Trade::Fulfillment)
