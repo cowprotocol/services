@@ -3,7 +3,7 @@ pub mod dto;
 use {
     crate::{
         domain::auction,
-        infra::api::{State, error::Error},
+        infra::api::{LoggingJson, State, error::Error},
     },
     axum::{Json, http::StatusCode},
     tracing::Instrument,
@@ -13,9 +13,9 @@ use {
 ///
 /// On-chain settlement will be implemented in follow-up PRs; until then
 /// this route will panic.
-pub async fn settle(
+pub(crate) async fn settle(
     state: axum::extract::State<State>,
-    Json(request): Json<dto::SettleRequest>,
+    LoggingJson(request): LoggingJson<dto::SettleRequest>,
 ) -> Result<Json<dto::SettleResponse>, (StatusCode, Json<Error>)> {
     let auction_id = auction::Id::try_from(request.auction_id)?;
     let solution_id = request.solution_id;
@@ -28,6 +28,7 @@ pub async fn settle(
     handle_request
         .instrument(tracing::info_span!(
             "/settle",
+            solver = %state.competition().solver_name(),
             auction_id = %auction_id,
             solution_id
         ))
