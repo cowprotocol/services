@@ -515,10 +515,7 @@ mod tests {
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
         let destination = begin_input.orders.iter().next().unwrap().destinations[0];
-        assert_eq!(
-            destination,
-            associated_token_address(&payer, &sell_token),
-        );
+        assert_eq!(destination, associated_token_address(&payer, &sell_token),);
     }
 
     #[test]

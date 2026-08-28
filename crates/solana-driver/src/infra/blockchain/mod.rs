@@ -10,7 +10,10 @@ pub use {
     accounts::{AccountsSnapshot, InvalidAddressLookupTableReason, TokenAccountState},
     token::{associated_token_address, create_associated_token_account_idempotent},
 };
-use {cow_solana_rpc::{Error, SolanaRPC}, solana_sdk::pubkey::Pubkey};
+use {
+    cow_solana_rpc::{Error, SolanaRPC},
+    solana_sdk::pubkey::Pubkey,
+};
 
 /// The Solana blockchain adapter.
 pub struct Solana {
