@@ -9,6 +9,12 @@ write-url = "postgresql://"
 [http]
 bind-address = "0.0.0.0:8080"
 
+[quoting]
+# The driver asked to quote orders.
+driver-url = "http://localhost:8000"
+# How long the driver has to answer. Defaults to 5s.
+# timeout = "5s"
+
 [logging]
 filter = "info,solana_orderbook=debug"
 # stderr-threshold = "warn"

@@ -1,7 +1,12 @@
 //! HTTP API server.
 
 use {
-    axum::{Router, http, routing::get},
+    super::quoter::Quoter,
+    axum::{
+        Router,
+        http,
+        routing::{get, post},
+    },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     sqlx::PgPool,
     std::{io, net::SocketAddr, sync::Arc},
@@ -25,6 +30,8 @@ pub struct Api {
     pub addr: SocketAddr,
     /// The database the indexer writes to.
     pub pool: PgPool,
+    /// The driver the quote endpoint asks.
+    pub quoter: Quoter,
 }
 
 impl Api {
@@ -52,13 +59,18 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
-        let state = State::new(self.pool);
+        let state = State::new(self.pool, self.quoter);
 
         // Browsers call this API directly, so it answers cross-origin
         // requests like the EVM orderbook does.
         let cors = CorsLayer::new()
             .allow_origin(Any)
-            .allow_methods([http::Method::GET, http::Method::OPTIONS, http::Method::HEAD])
+            .allow_methods([
+                http::Method::GET,
+                http::Method::POST,
+                http::Method::OPTIONS,
+                http::Method::HEAD,
+            ])
             .allow_headers([http::header::ORIGIN, http::header::CONTENT_TYPE]);
 
         let app = Router::new()
@@ -66,6 +78,7 @@ impl Api {
             .route("/api/v1/orders/{uid}", get(routes::order))
             .route("/api/v1/orders/{uid}/status", get(routes::order_status))
             .route("/api/v1/trades", get(routes::trades))
+            .route("/api/v1/quote", post(routes::quote))
             .layer(cors)
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
@@ -82,8 +95,8 @@ impl Api {
 pub struct State(Arc<Inner>);
 
 impl State {
-    fn new(pool: PgPool) -> Self {
-        Self(Arc::new(Inner { pool }))
+    fn new(pool: PgPool, quoter: Quoter) -> Self {
+        Self(Arc::new(Inner { pool, quoter }))
     }
 
     /// The database handle the order, trades, and auction endpoints read
@@ -91,9 +104,16 @@ impl State {
     pub fn pool(&self) -> &PgPool {
         &self.0.pool
     }
+
+    /// The driver client the quote endpoint asks.
+    pub fn quoter(&self) -> &Quoter {
+        &self.0.quoter
+    }
 }
 
 struct Inner {
     /// The database the indexer writes to.
     pool: PgPool,
+    /// The driver the quote endpoint asks.
+    quoter: Quoter,
 }

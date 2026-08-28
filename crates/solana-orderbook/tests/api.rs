@@ -1,9 +1,9 @@
 //! Integration tests for the HTTP API server.
 
 use {
-    solana_orderbook::infra::api::Api,
+    solana_orderbook::infra::{api::Api, quoter::Quoter},
     sqlx::PgPool,
-    std::net::SocketAddr,
+    std::{net::SocketAddr, time::Duration},
     tokio_util::sync::CancellationToken,
 };
 
@@ -13,6 +13,11 @@ fn mock_api() -> Api {
         // A lazy pool never connects unless queried, and `/healthz` does not
         // query, so the tests run without a database.
         pool: PgPool::connect_lazy("postgresql://").unwrap(),
+        // Points at a dead endpoint: `/healthz` never quotes.
+        quoter: Quoter::new(
+            "http://127.0.0.1:1".parse().unwrap(),
+            Duration::from_secs(1),
+        ),
     }
 }
 

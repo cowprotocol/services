@@ -3,8 +3,9 @@
 use {
     configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
-    std::{net::SocketAddr, path::Path},
+    std::{net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
+    url::Url,
 };
 
 /// Load the orderbook configuration from a TOML file.
@@ -39,6 +40,8 @@ pub struct Config {
     pub database: DatabasePoolConfig,
     /// HTTP API server configuration.
     pub http: Http,
+    /// Quote endpoint configuration.
+    pub quoting: Quoting,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -55,6 +58,21 @@ impl Config {
             None,
         )
     }
+}
+
+/// Quote endpoint configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Quoting {
+    /// Base URL of the driver that quotes orders.
+    pub driver_url: Url,
+    /// How long the driver has to answer before the quote fails.
+    #[serde(with = "humantime_serde", default = "default_quote_timeout")]
+    pub timeout: Duration,
+}
+
+fn default_quote_timeout() -> Duration {
+    Duration::from_secs(5)
 }
 
 /// HTTP API server configuration.
@@ -76,5 +94,7 @@ mod tests {
         assert!(config.database.read_url.is_none());
         assert_eq!(config.http.bind_address, "0.0.0.0:8080".parse().unwrap());
         assert_eq!(config.logging.filter, "info,solana_orderbook=debug");
+        assert_eq!(config.quoting.driver_url.as_str(), "http://localhost:8000/");
+        assert_eq!(config.quoting.timeout, Duration::from_secs(5));
     }
 }

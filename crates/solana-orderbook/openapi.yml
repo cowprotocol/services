@@ -107,6 +107,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/quote:
+    post:
+      operationId: postQuote
+      description: |
+        What one order would trade for right now. Indicative: no component
+        simulates the settlement, so `verified` is always false and the
+        amounts are not a commitment.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteRequest"
+      responses:
+        "200":
+          description: The quoted order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteResponse"
+        "400":
+          description: |
+            Buy and sell token are the same (`SameBuyAndSellToken`), or the
+            amount is zero (`ZeroAmount`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No route was found for the pair (`NoLiquidity`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   schemas:
     OrderUid:
@@ -306,6 +340,116 @@ components:
           type: integer
           format: int64
           nullable: true
+    QuoteRequest:
+      description: |
+        A quote request. Fields with no Solana meaning (`signingScheme`,
+        `priceQuality`, `sellTokenBalance`, `buyTokenBalance`) are accepted
+        and ignored, so the EVM request body works unchanged.
+      type: object
+      required:
+        - from
+        - sellToken
+        - buyToken
+        - kind
+      properties:
+        from:
+          $ref: "#/components/schemas/Pubkey"
+        sellToken:
+          $ref: "#/components/schemas/Pubkey"
+        buyToken:
+          $ref: "#/components/schemas/Pubkey"
+        receiver:
+          description: The buy token account proceeds land in. Echoed back untouched.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        kind:
+          $ref: "#/components/schemas/OrderKind"
+        sellAmountBeforeFee:
+          description: "For `kind: sell`. No component charges a fee, so this equals `sellAmountAfterFee`."
+          $ref: "#/components/schemas/TokenAmount"
+        sellAmountAfterFee:
+          description: "For `kind: sell`."
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmountAfterFee:
+          description: "For `kind: buy`."
+          $ref: "#/components/schemas/TokenAmount"
+        validTo:
+          description: Unix seconds the quoted order would expire at.
+          type: integer
+          format: int64
+        validFor:
+          description: Seconds from now the quoted order would expire after.
+          type: integer
+          format: int64
+        appData:
+          description: The 32-byte app-data hash as hex.
+          type: string
+    QuoteResponse:
+      type: object
+      required:
+        - quote
+        - from
+        - expiration
+        - verified
+      properties:
+        quote:
+          $ref: "#/components/schemas/Quote"
+        from:
+          $ref: "#/components/schemas/Pubkey"
+        expiration:
+          description: When the quoted amounts stop being honored.
+          type: string
+          format: date-time
+        id:
+          description: The quote's database id. Null until quotes are persisted.
+          type: integer
+          format: int64
+          nullable: true
+        verified:
+          description: Whether the amounts were confirmed by simulation. Always false.
+          type: boolean
+    Quote:
+      description: |
+        The quoted order. `gasAmount`, `gasPrice` and `sellTokenPrice` from the
+        EVM shape are absent: Solana meters compute units rather than gas, and
+        no component estimates native prices yet.
+      type: object
+      required:
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - validTo
+        - feeAmount
+        - kind
+        - partiallyFillable
+      properties:
+        sellToken:
+          $ref: "#/components/schemas/Pubkey"
+        buyToken:
+          $ref: "#/components/schemas/Pubkey"
+        receiver:
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+          nullable: true
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        validTo:
+          type: integer
+          format: int64
+        appData:
+          description: The 32-byte app-data hash as hex.
+          type: string
+          nullable: true
+        feeAmount:
+          description: Always zero. No component charges a fee.
+          $ref: "#/components/schemas/TokenAmount"
+        kind:
+          $ref: "#/components/schemas/OrderKind"
+        partiallyFillable:
+          type: boolean
     Error:
       description: A machine-readable error type and a human-readable description.
       type: object

@@ -1,7 +1,7 @@
 //! Orderbook entry-point logic.
 
 use {
-    crate::infra::{Api, config, observe as infra_observe},
+    crate::infra::{Api, config, observe as infra_observe, quoter::Quoter},
     clap::Parser,
     configs::database::DatabasePoolConfig,
     observe::metrics::{DEFAULT_METRICS_PORT, LivenessChecking, serve_metrics},
@@ -88,6 +88,7 @@ pub async fn run(args: Args) {
     let api = Api {
         addr: config.http.bind_address,
         pool,
+        quoter: Quoter::new(config.quoting.driver_url.clone(), config.quoting.timeout),
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());
