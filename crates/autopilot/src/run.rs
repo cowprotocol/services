@@ -30,7 +30,7 @@ use {
     chain::Chain,
     clap::Parser,
     configs::autopilot::{Configuration, solver::Account},
-    contracts::{GPv2Settlement, WETH9},
+    contracts::{GPv2Settlement, WETH9, support::Balances},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
     http_client::HttpClientFactory,
@@ -88,6 +88,27 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::web3::Arguments) -> infra::bloc
     infra::blockchain::Rpc::new(url, ethrpc_args)
         .await
         .expect("connect ethereum RPC")
+}
+
+/// Splits the configured RPC concurrency into the share reserved for balance
+/// fetching (2/3) and the share left for every other component (1/3).
+fn split_ethrpc_concurrency(
+    args: &shared::web3::Arguments,
+) -> (shared::web3::Arguments, shared::web3::Arguments) {
+    // A limit of `0` means "unlimited" and must be preserved as is. Any other
+    // limit must not be rounded down to `0` because that would silently turn
+    // into "unlimited".
+    let share = |numerator: usize| match args.ethrpc_max_concurrent_requests {
+        0 => 0,
+        limit => (limit * numerator / 3).max(1),
+    };
+    let with_concurrency = |ethrpc_max_concurrent_requests| shared::web3::Arguments {
+        ethrpc_max_batch_size: args.ethrpc_max_batch_size,
+        ethrpc_max_concurrent_requests,
+        ethrpc_batch_delay: args.ethrpc_batch_delay,
+    };
+
+    (with_concurrency(share(2)), with_concurrency(share(1)))
 }
 
 /// Creates unbuffered Web3 transport.
@@ -205,7 +226,15 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::from(config.http_client);
-    let ethrpc_args = shared::web3::Arguments::from(&config.shared.ethrpc);
+    // Balance fetching runs on its own provider so that its per-block refresh
+    // does not compete with the rest of the system for batching slots.
+    let (balances_ethrpc_args, ethrpc_args) =
+        split_ethrpc_concurrency(&shared::web3::Arguments::from(&config.shared.ethrpc));
+    tracing::info!(
+        balances = balances_ethrpc_args.ethrpc_max_concurrent_requests,
+        rest = ethrpc_args.ethrpc_max_concurrent_requests,
+        "split ethrpc concurrency"
+    );
     let web3 = shared::web3::web3(&ethrpc_args, &config.shared.node_url, "base");
     let simulation_web3 = config
         .shared
@@ -260,13 +289,25 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
-    let balance_overrider = config.price_estimation.balance_overrides.init(web3.clone());
+    let balances_web3 =
+        shared::web3::web3(&balances_ethrpc_args, &config.shared.node_url, "balances");
+
+    let balance_overrider = config
+        .price_estimation
+        .balance_overrides
+        .init(balances_web3.clone());
 
     let balance_fetcher = account_balances::cached(
-        &web3,
+        &balances_web3,
         BalanceSimulator::new(
-            eth.contracts().settlement().clone(),
-            eth.contracts().balances().clone(),
+            GPv2Settlement::Instance::new(
+                *eth.contracts().settlement().address(),
+                balances_web3.provider.clone(),
+            ),
+            Balances::Instance::new(
+                *eth.contracts().balances().address(),
+                balances_web3.provider.clone(),
+            ),
             vault_relayer,
             balance_overrider,
         ),
@@ -745,4 +786,36 @@ async fn shadow_mode(config: Configuration) -> ! {
         (*weth.address()).into(),
     );
     shadow.run_forever().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(ethrpc_max_concurrent_requests: usize) -> shared::web3::Arguments {
+        shared::web3::Arguments {
+            ethrpc_max_batch_size: 100,
+            ethrpc_max_concurrent_requests,
+            ethrpc_batch_delay: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn ethrpc_concurrency_split() {
+        let split = |limit| {
+            let (balances, rest) = split_ethrpc_concurrency(&args(limit));
+            (
+                balances.ethrpc_max_concurrent_requests,
+                rest.ethrpc_max_concurrent_requests,
+            )
+        };
+
+        // `0` means "unlimited" for both shares.
+        assert_eq!(split(0), (0, 0));
+        // Rounding never yields the "unlimited" value.
+        assert_eq!(split(1), (1, 1));
+        assert_eq!(split(2), (1, 1));
+        assert_eq!(split(3), (2, 1));
+        assert_eq!(split(30), (20, 10));
+    }
 }
