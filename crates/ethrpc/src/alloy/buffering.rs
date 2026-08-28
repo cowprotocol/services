@@ -232,13 +232,15 @@ where
                 let clone = inner.clone();
                 let this_inner = std::mem::replace(&mut inner, clone);
 
-                Metrics::get().batches_inflight.inc();
                 tokio::task::spawn(async move {
                     // move permit into the task so we only return it when
                     // task is done
                     let _permit = permit;
+                    Metrics::get().batches_inflight.inc();
+                    // In case the current task panics, this handle's drop will run,
+                    // correctly decrementing the metric
+                    let _guard = scopeguard::guard((), |()| Metrics::get().batches_inflight.dec());
                     process_batch(this_inner, batch).await;
-                    Metrics::get().batches_inflight.dec()
                 });
             }
         })
@@ -372,8 +374,9 @@ impl<Req, Resp> FairQueue<Req, Resp> {
             let Some(call) = self.pop() else {
                 break;
             };
+            // If the caller is no longer waiting for the response,
+            // we don't add it to the batch
             if call.response_sender.is_canceled() {
-                // only add to batch if caller is still waiting for response
                 Metrics::get().requests_canceled.inc();
                 continue;
             }
