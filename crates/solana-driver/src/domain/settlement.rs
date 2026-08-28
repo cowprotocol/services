@@ -2,7 +2,7 @@
 
 use {
     super::{Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
-    crate::util,
+    crate::infra::blockchain::associated_token_address,
     cow_settlement_client::instructions::{
         BeginSettle,
         CreateBuffers,
@@ -306,7 +306,7 @@ impl SettlementOrder {
         Self {
             intent: order.into(),
             pulls: vec![Pull {
-                destination: util::associated_token_address(taker, &order.sell_token),
+                destination: associated_token_address(taker, &order.sell_token),
                 amount: amounts.sell,
             }],
             buy_mint: order.buy_token,
@@ -517,7 +517,7 @@ mod tests {
         let destination = begin_input.orders.iter().next().unwrap().destinations[0];
         assert_eq!(
             destination,
-            util::associated_token_address(&payer, &sell_token),
+            associated_token_address(&payer, &sell_token),
         );
     }
 
