@@ -22,6 +22,7 @@ use {
         MetricsConfig,
         NetworkConfig,
         NetworkName,
+        UniswapV3Config,
     },
     serde::Deserialize,
     sqlx::PgPool,
@@ -204,18 +205,21 @@ fn pool_indexer_config(
             name: NetworkName::new("mainnet"),
             chain_id: 1,
             rpc_url: "http://127.0.0.1:8545".parse().unwrap(),
-            factories: factories
-                .into_iter()
-                .map(|address| FactoryConfig {
-                    address,
-                    deploy_block: 0,
-                })
-                .collect(),
-            chunk_size: 1000,
+            uniswap_v3: Some(UniswapV3Config {
+                factories: factories
+                    .into_iter()
+                    .map(|address| FactoryConfig {
+                        address,
+                        deploy_block: 0,
+                    })
+                    .collect(),
+                chunk_size: 1000,
+            }),
             poll_interval_secs: 1,
             use_latest: true,
             fetch_concurrency: 8,
             prefetch_concurrency: 50,
+            balancer_v2: None,
         },
         api: ApiConfig {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, POOL_INDEXER_PORT)),

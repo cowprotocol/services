@@ -47,17 +47,19 @@ pub async fn bootstrap(config: Configuration) {
 
     // Seed every factory concurrently, like the serve path.
     let mut factory_set = JoinSet::new();
-    for factory in network.factories.iter().copied() {
-        let indexer = UniswapV3Indexer::new(
-            provider.clone(),
-            db.clone(),
-            &network.indexer_config(factory.address),
-        );
-        let db = db.clone();
-        let network = network.clone();
-        factory_set.spawn(async move {
-            bootstrap_factory(&db, &indexer, &network, &factory).await;
-        });
+    if let Some(uniswap_v3) = &network.uniswap_v3 {
+        for factory in uniswap_v3.factories.iter().copied() {
+            let indexer = UniswapV3Indexer::new(
+                provider.clone(),
+                db.clone(),
+                &network.indexer_config(uniswap_v3.chunk_size, factory.address),
+            );
+            let db = db.clone();
+            let network = network.clone();
+            factory_set.spawn(async move {
+                bootstrap_factory(&db, &indexer, &network, &factory).await;
+            });
+        }
     }
     while let Some(result) = factory_set.join_next().await {
         result.expect("bootstrap task panicked");
@@ -72,7 +74,11 @@ pub async fn run(config: Configuration) {
     let startup = Arc::new(Some(AtomicBool::new(false)));
     let barrier = Arc::new(StartupBarrier::new(
         startup.clone(),
-        config.network.factories.len(),
+        config
+            .network
+            .uniswap_v3
+            .as_ref()
+            .map_or(0, |u| u.factories.len()),
     ));
 
     // Abort the metrics task when `run` exits, so tests can rebind the port.
@@ -153,7 +159,12 @@ fn build_api_state(db: &PgPool, network: &NetworkConfig) -> Arc<AppState> {
     Arc::new(AppState {
         db: db.clone(),
         network: network.name.clone(),
-        factories: network.factories.iter().map(|f| f.address).collect(),
+        factories: network
+            .uniswap_v3
+            .iter()
+            .flat_map(|u| &u.factories)
+            .map(|f| f.address)
+            .collect(),
     })
 }
 
@@ -161,50 +172,51 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
     tracing::info!(
         network = %network.name,
         chain_id = network.chain_id,
-        factories = network.factories.len(),
         "starting network indexer",
     );
 
     let provider = build_provider_checked(&network).await;
     let network = Arc::new(network);
 
-    // One task per factory. Provider + DB pool are shared; checkpoints are
-    // per-factory because they're keyed by `contract_address`.
     let mut factory_set = JoinSet::new();
-    for factory in network.factories.iter().copied() {
-        let indexer = UniswapV3Indexer::new(
+    if let Some(uniswap_v3) = &network.uniswap_v3 {
+        // One task per factory. Provider + DB pool are shared; checkpoints are
+        // per-factory because they're keyed by `contract_address`.
+        for factory in uniswap_v3.factories.iter().copied() {
+            let indexer = UniswapV3Indexer::new(
+                provider.clone(),
+                db.clone(),
+                &network.indexer_config(uniswap_v3.chunk_size, factory.address),
+            );
+            factory_set.spawn(run_factory_indexer(
+                db.clone(),
+                indexer,
+                network.clone(),
+                factory,
+                barrier.clone(),
+            ));
+        }
+
+        // The symbol/decimals backfill scans every token missing the field, so
+        // one pair per process is enough (not per-factory). Spawned into the
+        // same JoinSet so a panic crashes the process via the same supervisor.
+        let backfill_concurrency = network.prefetch_concurrency;
+        let backfill_interval = network.poll_interval();
+        factory_set.spawn(crate::indexer::uniswap_v3::backfill_symbols(
             provider.clone(),
             db.clone(),
-            &network.indexer_config(factory.address),
-        );
-        factory_set.spawn(run_factory_indexer(
+            network.name.clone(),
+            backfill_concurrency,
+            backfill_interval,
+        ));
+        factory_set.spawn(crate::indexer::uniswap_v3::backfill_decimals(
+            provider.clone(),
             db.clone(),
-            indexer,
-            network.clone(),
-            factory,
-            barrier.clone(),
+            network.name.clone(),
+            backfill_concurrency,
+            backfill_interval,
         ));
     }
-
-    // The symbol/decimals backfill scans every token missing the field, so
-    // one pair per process is enough (not per-factory). Spawned into the
-    // same JoinSet so a panic crashes the process via the same supervisor.
-    let backfill_concurrency = network.prefetch_concurrency;
-    let backfill_interval = network.poll_interval();
-    factory_set.spawn(crate::indexer::uniswap_v3::backfill_symbols(
-        provider.clone(),
-        db.clone(),
-        network.name.clone(),
-        backfill_concurrency,
-        backfill_interval,
-    ));
-    factory_set.spawn(crate::indexer::uniswap_v3::backfill_decimals(
-        provider.clone(),
-        db.clone(),
-        network.name.clone(),
-        backfill_concurrency,
-        backfill_interval,
-    ));
 
     // Factory indexers + backfill are all infinite loops; any return is a
     // bug, so crash and let the orchestrator restart the pod.
