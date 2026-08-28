@@ -27,10 +27,12 @@ use {
 pub enum PriceQuality {
     /// We pick the best quote of the fastest `n` price estimators.
     Fast,
-    #[default]
-    /// We pick the best quote of all price estimators.
+    /// We pick the best quote of all price estimators, ranked purely by the
+    /// promised price without verifying quotes by simulation.
     Optimal,
-    /// Quotes may by discarde when they failed to be verified by simulation.
+    #[default]
+    /// Quotes get verified by simulation whenever possible and verified
+    /// quotes are preferred over unverified ones, even at a worse price.
     Verified,
 }
 
@@ -389,7 +391,7 @@ mod tests {
                 "buyTokenBalance": "erc20",
                 "signingScheme": "eip712",
                 "timeout": null,
-                "priceQuality": "optimal",
+                "priceQuality": "verified",
             })
         );
     }

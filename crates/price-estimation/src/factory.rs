@@ -37,8 +37,11 @@ use {
 
 #[derive(Clone)]
 struct EstimatorEntry {
-    optimal: Arc<dyn PriceEstimating>,
-    fast: Arc<dyn PriceEstimating>,
+    /// The estimator wrapped in trade verification (falls back to the
+    /// unverified estimator when no trade verifier is configured).
+    verified: Arc<dyn PriceEstimating>,
+    /// The raw estimator without trade verification.
+    unverified: Arc<dyn PriceEstimating>,
     native: Arc<dyn PriceEstimating>,
 }
 
@@ -185,24 +188,24 @@ impl<'a> PriceEstimatorFactory<'a> {
             .as_ref()
             .and_then(|trade_verifier| estimator.verified(trade_verifier));
 
-        let fast = instrument(estimator, name);
-        let optimal = match verified {
+        let unverified = instrument(estimator, name);
+        let verified = match verified {
             Some(verified) => instrument(verified, name),
-            None => fast.clone(),
+            None => unverified.clone(),
         };
 
         // Eagerly create the native price estimator, even if we don't use it.
         // It just simplifies price estimator creation code and only costs a few
         // extra cycles during initialization. Also note that we intentionally
-        // don't share price estimators between optimal/fast and the native
-        // price estimator (this is because request sharing isn't benificial),
-        // nor do we configure the trade verifier (because external price
-        // precision is less critical).
+        // don't share price estimators between verified/unverified and the
+        // native price estimator (this is because request sharing isn't
+        // benificial), nor do we configure the trade verifier (because
+        // external price precision is less critical).
         let native = instrument(T::init(self, name, params)?, name);
 
         Ok(EstimatorEntry {
-            optimal,
-            fast,
+            verified,
+            unverified,
             native,
         })
     }
@@ -385,11 +388,28 @@ impl<'a> PriceEstimatorFactory<'a> {
         native: Arc<dyn NativePriceEstimating>,
         gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<CompetitionEstimator<Arc<dyn PriceEstimating>>>> {
-        let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
+        let estimators = self.get_estimators(solvers, |entry| &entry.verified)?;
         Ok(Arc::new(
             self.sanitized_competition(estimators, PriceRanking::BestBangForBuck { native, gas })
                 .with_verification(self.args.quote_verification),
         ))
+    }
+
+    /// Like [`Self::price_estimator`] but without quote verification: all
+    /// estimators are queried and the best quote wins ranked purely by the
+    /// promised price, without simulating estimates or preferring verified
+    /// ones.
+    pub fn unverified_price_estimator(
+        &mut self,
+        solvers: &[ExternalSolver],
+        native: Arc<dyn NativePriceEstimating>,
+        gas: Arc<dyn GasPriceEstimating>,
+    ) -> Result<Arc<CompetitionEstimator<Arc<dyn PriceEstimating>>>> {
+        let estimators = self.get_estimators(solvers, |entry| &entry.unverified)?;
+        Ok(Arc::new(self.sanitized_competition(
+            estimators,
+            PriceRanking::BestBangForBuck { native, gas },
+        )))
     }
 
     pub fn fast_price_estimator(
@@ -399,7 +419,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         native: Arc<dyn NativePriceEstimating>,
         gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<CompetitionEstimator<Arc<dyn PriceEstimating>>>> {
-        let estimators = self.get_estimators(solvers, |entry| &entry.fast)?;
+        let estimators = self.get_estimators(solvers, |entry| &entry.unverified)?;
         Ok(Arc::new(
             self.sanitized_competition(estimators, PriceRanking::BestBangForBuck { native, gas })
                 .with_early_return(fast_price_estimation_results_required),

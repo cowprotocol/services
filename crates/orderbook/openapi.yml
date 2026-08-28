@@ -1004,9 +1004,16 @@ components:
         How good should the price estimate be?
 
         Fast: The price estimate is chosen among the fastest N price estimates.
-        Optimal: The price estimate is chosen among all price estimates.
-        Verified: The price estimate is chosen among all verified/simulated
-        price estimates.
+        Estimates do not get verified by
+        simulation.
+        Optimal: The price estimate is chosen among all price estimates, ranked
+        purely by the promised price. Estimates do not get verified by
+        simulation.
+        Verified: All price estimates get verified by simulation whenever
+        possible and verified estimates are preferred over unverified ones,
+        even when an unverified estimate promises a better price. The
+        response's `verified` flag indicates whether the returned estimate
+        was actually verified.
 
         **NOTE**: Orders are supposed to be created from `verified` or `optimal`
         price estimates.
