@@ -3,7 +3,7 @@
 use {
     super::{FactoryIndexing, Pool, PoolIndexing as _, PoolStatus},
     crate::balancer_v2::{
-        graph_api::{PoolData, PoolType},
+        models::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
     alloy::{
@@ -357,7 +357,7 @@ mod tests {
         crate::{
             balancer_v2::{
                 PoolKind,
-                graph_api::{PoolType, Token},
+                models::{PoolType, Token},
                 pools::{MockFactoryIndexing, weighted},
             },
             bfp,

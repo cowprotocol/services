@@ -224,8 +224,8 @@ pub struct BalancerV2 {
     /// ignored.
     pub pool_deny_list: Vec<eth::B256>,
 
-    /// The base URL used to connect to balancer v2 subgraph client.
-    pub graph_url: Url,
+    /// Base URL of the pool-indexer that seeds the pool registry.
+    pub indexer_url: Url,
 
     /// How often the liquidty source should be re-initialized to become
     /// aware of new pools.
@@ -235,7 +235,7 @@ pub struct BalancerV2 {
 impl BalancerV2 {
     /// Returns the liquidity configuration for Balancer V2.
     #[expect(clippy::self_named_constructors)]
-    pub fn balancer_v2(graph_url: &Url, chain: Chain) -> Option<Self> {
+    pub fn balancer_v2(indexer_url: &Url, chain: Chain) -> Option<Self> {
         macro_rules! address_for {
             ( $chain:expr, [ $( $($p:ident)::+ ),* $(,)? ] ) => {{
                 let arr = [ $({
@@ -282,7 +282,7 @@ impl BalancerV2 {
                 ]
             ),
             pool_deny_list: Vec::new(),
-            graph_url: graph_url.clone(),
+            indexer_url: indexer_url.clone(),
             reinit_interval: None,
         })
     }

@@ -9,7 +9,6 @@ use {
     num::ToPrimitive,
     number::conversions::u160_to_big_decimal,
     sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow},
-    std::collections::BTreeSet,
 };
 
 fn address_bytes_list(addresses: &[Address]) -> Vec<&[u8]> {
@@ -579,26 +578,4 @@ pub async fn batch_set_token_symbols(
     .context("batch_set_token_symbols")?;
 
     Ok(())
-}
-
-/// The block every configured factory is indexed through, so every served pool
-/// is current at least to here. Scoped to `factories` so a decommissioned
-/// factory's leftover checkpoint row can't pin the value.
-pub async fn get_latest_indexed_block(
-    pool: &PgPool,
-    factories: &BTreeSet<Address>,
-) -> Result<Option<u64>> {
-    let factories: Vec<&[u8]> = factories.iter().map(|f| f.as_slice()).collect();
-    let row = sqlx::query(
-        "SELECT MIN(block_number) AS block FROM pool_indexer_checkpoints
-         WHERE contract_address = ANY($1)",
-    )
-    .bind(factories)
-    .fetch_one(pool)
-    .await
-    .context("get_latest_indexed_block")?;
-
-    Ok(row
-        .get::<Option<i64>, _>("block")
-        .map(|b| b.cast_unsigned()))
 }

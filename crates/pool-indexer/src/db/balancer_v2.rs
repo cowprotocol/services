@@ -1,9 +1,13 @@
 use {
-    crate::{db::bytes_to_addr, indexer::balancer_v2::NewBalancerPool},
-    alloy_primitives::Address,
+    crate::{
+        db::{bytes_to_addr, bytes_to_b256},
+        indexer::balancer_v2::NewBalancerPool,
+    },
+    alloy_primitives::{Address, B256},
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
-    sqlx::{PgPool, Postgres, Row, Transaction},
+    sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow},
+    std::collections::HashMap,
 };
 
 /// Inserts discovered pools and their tokens. Pools are written before tokens
@@ -113,4 +117,123 @@ pub async fn batch_set_token_decimals(
     .await
     .context("batch_set_token_decimals")?;
     Ok(())
+}
+
+/// A discovered pool plus its `getPoolTokens`-ordered tokens, for the read API.
+pub struct BalancerPoolRow {
+    pub pool_id: B256,
+    pub address: Address,
+    pub factory: Address,
+    pub pool_type: String,
+    pub tokens: Vec<BalancerTokenRow>,
+}
+
+/// One token of a pool, in registration order. `decimals` is always present:
+/// pools with an unresolved-decimals token are excluded from the read path.
+pub struct BalancerTokenRow {
+    pub address: Address,
+    pub decimals: u8,
+    pub weight: Option<BigDecimal>,
+}
+
+/// Pools sorted by `pool_id`, paginated via `cursor` (the last-seen `pool_id`).
+/// Only pools whose every token has resolved decimals are returned; a pool with
+/// an unresolved token isn't servable (the driver requires `decimals`).
+pub async fn get_pools(
+    pool: &PgPool,
+    cursor: Option<Vec<u8>>,
+    limit: u64,
+) -> Result<Vec<BalancerPoolRow>> {
+    let rows = sqlx::query(
+        "SELECT pool_id, address, factory, pool_type
+         FROM balancer_v2_pools p
+         WHERE ($1::BYTEA IS NULL OR pool_id > $1)
+           AND NOT EXISTS (
+               SELECT 1 FROM balancer_v2_pool_tokens t
+               WHERE t.pool_id = p.pool_id AND (t.decimals IS NULL OR t.decimals < 0)
+           )
+         ORDER BY pool_id
+         LIMIT $2",
+    )
+    .bind(cursor)
+    .bind(limit.cast_signed())
+    .fetch_all(pool)
+    .await
+    .context("balancer get_pools")?;
+
+    assemble_pools(pool, rows).await
+}
+
+/// Pools matching `pool_ids`, sorted by `pool_id`. Unknown ids and pools with
+/// an unresolved-decimals token are skipped.
+pub async fn get_pools_by_ids(pool: &PgPool, pool_ids: &[B256]) -> Result<Vec<BalancerPoolRow>> {
+    if pool_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<&[u8]> = pool_ids.iter().map(|id| id.as_slice()).collect();
+    let rows = sqlx::query(
+        "SELECT pool_id, address, factory, pool_type
+         FROM balancer_v2_pools p
+         WHERE pool_id = ANY($1)
+           AND NOT EXISTS (
+               SELECT 1 FROM balancer_v2_pool_tokens t
+               WHERE t.pool_id = p.pool_id AND (t.decimals IS NULL OR t.decimals < 0)
+           )
+         ORDER BY pool_id",
+    )
+    .bind(ids)
+    .fetch_all(pool)
+    .await
+    .context("balancer get_pools_by_ids")?;
+
+    assemble_pools(pool, rows).await
+}
+
+/// Loads the tokens for `pool_rows` in one query and attaches them in
+/// `position` order. Callers restrict to pools with complete decimals, so each
+/// `decimals` decodes as a plain `u8`.
+async fn assemble_pools(pool: &PgPool, pool_rows: Vec<PgRow>) -> Result<Vec<BalancerPoolRow>> {
+    if pool_rows.is_empty() {
+        return Ok(Vec::new());
+    }
+    let pool_ids: Vec<Vec<u8>> = pool_rows.iter().map(|r| r.get("pool_id")).collect();
+    let ids: Vec<&[u8]> = pool_ids.iter().map(|v| v.as_slice()).collect();
+
+    let token_rows = sqlx::query(
+        "SELECT pool_id, token, decimals, weight
+         FROM balancer_v2_pool_tokens
+         WHERE pool_id = ANY($1)
+         ORDER BY pool_id, position",
+    )
+    .bind(ids)
+    .fetch_all(pool)
+    .await
+    .context("balancer pool tokens")?;
+
+    let mut tokens: HashMap<Vec<u8>, Vec<BalancerTokenRow>> = HashMap::new();
+    for row in token_rows {
+        let decimals: i16 = row.get("decimals");
+        tokens
+            .entry(row.get("pool_id"))
+            .or_default()
+            .push(BalancerTokenRow {
+                address: bytes_to_addr(row.get("token"))?,
+                decimals: u8::try_from(decimals).context("token decimals out of range")?,
+                weight: row.get("weight"),
+            });
+    }
+
+    pool_rows
+        .into_iter()
+        .map(|r| {
+            let pool_id: Vec<u8> = r.get("pool_id");
+            Ok(BalancerPoolRow {
+                tokens: tokens.remove(&pool_id).unwrap_or_default(),
+                pool_id: bytes_to_b256(&pool_id)?,
+                address: bytes_to_addr(r.get("address"))?,
+                factory: bytes_to_addr(r.get("factory"))?,
+                pool_type: r.get("pool_type"),
+            })
+        })
+        .collect()
 }

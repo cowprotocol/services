@@ -28,7 +28,7 @@ pub async fn get_ticks(
     Path((_network, pool)): Path<(String, Address)>,
 ) -> Result<Response, ApiError> {
     let (block, ticks) = tokio::join!(
-        latest_indexed_block(&state),
+        latest_indexed_block(&state.db, &state.uniswap_v3_factories),
         db::get_ticks(&state.db, &pool),
     );
 

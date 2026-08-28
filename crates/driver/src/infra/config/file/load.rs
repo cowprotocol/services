@@ -265,14 +265,14 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::BalancerV2Config::Preset {
                         preset,
                         pool_deny_list,
-                        graph_url,
+                        indexer_url,
                         reinit_interval,
                     } => liquidity::config::BalancerV2 {
                         pool_deny_list: pool_deny_list.clone(),
                         reinit_interval,
                         ..match preset {
                             file::BalancerV2Preset::BalancerV2 => {
-                                liquidity::config::BalancerV2::balancer_v2(&graph_url, chain)
+                                liquidity::config::BalancerV2::balancer_v2(&indexer_url, chain)
                             }
                         }
                         .expect("no Balancer V2 preset for current network")
@@ -285,7 +285,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         liquidity_bootstrapping,
                         composable_stable,
                         pool_deny_list,
-                        graph_url,
+                        indexer_url,
                         reinit_interval,
                     } => liquidity::config::BalancerV2 {
                         vault: vault.into(),
@@ -295,7 +295,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         liquidity_bootstrapping,
                         composable_stable,
                         pool_deny_list: pool_deny_list.clone(),
-                        graph_url,
+                        indexer_url,
                         reinit_interval,
                     },
                 })
