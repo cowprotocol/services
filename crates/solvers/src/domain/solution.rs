@@ -332,7 +332,7 @@ pub struct Fulfillment {
     order: order::Order,
     executed: U256,
     /// The fee that is charged to the user for executing the order, in sell
-    /// token. Zero for orders whose fee the solver does not determine.
+    /// token.
     fee: eth::SellTokenAmount,
 }
 
@@ -384,9 +384,7 @@ impl Fulfillment {
     }
 
     /// Returns the solver computed fee that was charged to the order as an
-    /// asset (token address and amount). Returns `None` for orders whose fee
-    /// the solver does not determine, so that old drivers (which reject fees
-    /// on such orders) keep accepting our responses.
+    /// asset (token address and amount).
     pub fn surplus_fee(&self) -> Option<eth::Asset> {
         self.order.solver_determines_fee().then_some(eth::Asset {
             token: self.order.sell.token,

@@ -116,8 +116,7 @@ pub struct Fulfillment {
     /// order.
     executed: order::TargetAmount,
     /// The fee that is charged to the user for executing the order, in sell
-    /// token. An absent fee in the solver's response is treated as a fee of
-    /// 0.
+    /// token.
     fee: order::SellAmount,
     /// Additional fee for conservative bidding (haircut). Applied on top of
     /// the regular fee to reduce reported surplus without affecting executed
