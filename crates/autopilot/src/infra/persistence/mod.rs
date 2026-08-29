@@ -313,31 +313,6 @@ impl Persistence {
         ex.commit().await.context("commit")
     }
 
-    /// Saves the given per-order penalty caps to the DB as a single batch.
-    pub async fn store_order_penalty_caps(
-        &self,
-        auction_id: domain::auction::Id,
-        penalty_caps: Vec<(domain::OrderUid, eth::Ether)>,
-    ) -> anyhow::Result<()> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["store_order_penalty_caps"])
-            .start_timer();
-
-        let mut ex = self.postgres.pool.begin().await.context("begin")?;
-        for chunk in penalty_caps.chunks(self.postgres.config.insert_batch_size.get()) {
-            crate::database::order_penalty_caps::insert_batch(
-                &mut ex,
-                auction_id,
-                chunk.iter().cloned(),
-            )
-            .await
-            .context("order_penalty_caps::insert_batch")?;
-        }
-
-        ex.commit().await.context("commit")
-    }
-
     /// Tries to find the transaction executing a given solution proposed
     /// by the solver.
     pub async fn find_settlement_transaction(
@@ -402,6 +377,18 @@ impl Persistence {
                     .surplus_capturing_jit_order_owners
                     .iter()
                     .map(|owner| ByteArray(owner.0.0))
+                    .collect(),
+                // Mapped one-to-one with `order_uids` above; all-or-nothing
+                // because caps are computed for every order iff penalties are
+                // enabled.
+                penalty_caps_native: auction
+                    .orders
+                    .iter()
+                    .map(|order| {
+                        order
+                            .penalty_cap_native
+                            .map(|cap| u256_to_big_decimal(&cap.0))
+                    })
                     .collect(),
             },
         )

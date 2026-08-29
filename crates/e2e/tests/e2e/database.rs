@@ -21,17 +21,19 @@ pub async fn events_of_order(db: &Db, uid: &OrderUid) -> Vec<order_events::Order
 }
 
 /// Returns the persisted penalty caps of that order across all auctions.
-pub async fn penalty_caps_of_order(
-    db: &Db,
-    uid: &OrderUid,
-) -> Vec<database::order_penalty_caps::OrderPenaltyCap> {
-    const QUERY: &str = "SELECT * FROM order_penalty_caps WHERE order_uid = $1";
+pub async fn penalty_caps_of_order(db: &Db, uid: &OrderUid) -> Vec<bigdecimal::BigDecimal> {
+    const QUERY: &str = r#"
+SELECT penalty_caps_native[array_position(order_uids, $1)]
+FROM competition_auctions
+WHERE order_uids @> ARRAY[$1::bytea]
+    "#;
     let mut db = db.acquire().await.unwrap();
-    sqlx::query_as(QUERY)
+    let rows: Vec<(Option<bigdecimal::BigDecimal>,)> = sqlx::query_as(QUERY)
         .bind(ByteArray(uid.0))
         .fetch_all(db.deref_mut())
         .await
-        .unwrap()
+        .unwrap();
+    rows.into_iter().filter_map(|(cap,)| cap).collect()
 }
 
 /// Returns quote.

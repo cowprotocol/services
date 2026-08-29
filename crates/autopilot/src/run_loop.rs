@@ -567,14 +567,6 @@ impl RunLoop {
             })
             .collect();
 
-        let penalty_caps: Vec<_> = fee_policies
-            .iter()
-            .filter_map(|(uid, _)| {
-                let cap = order_lookup.get(uid)?.penalty_cap_native?;
-                Some((*uid, cap))
-            })
-            .collect();
-
         let mut solutions: Vec<_> = ranking
             .enumerated()
             .map(|(index, bid)| SolverSettlement {
@@ -652,9 +644,6 @@ impl RunLoop {
             self.persistence
                 .store_fee_policies(auction.id, fee_policies)
                 .map_err(|e| e.context("failed to fee_policies")),
-            self.persistence
-                .store_order_penalty_caps(auction.id, penalty_caps)
-                .map_err(|e| e.context("failed to store order penalty caps")),
         )
         .inspect_err(|err| tracing::warn!(?err, "failed to write post processed data to DB"))?;
 

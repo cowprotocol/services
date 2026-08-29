@@ -17,7 +17,6 @@ pub mod events;
 pub mod fee_policies;
 pub mod onchain_order_events;
 pub mod order_events;
-pub mod order_penalty_caps;
 mod quotes;
 
 pub const INSERT_BATCH_SIZE_DEFAULT: NonZeroUsize = NonZeroUsize::new(500).unwrap();

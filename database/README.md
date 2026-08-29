@@ -62,6 +62,7 @@ Contains all auctions for which a valid solver competition exists.
  price\_tokens | bytea[]   | not null | native price tokens
  price\_values | numeric[] | not null | native price values, mapped one-to-one with `price\_tokens`
  surplus\_capturing\_jit\_order\_owners | bytea[] | not null | surplus capturing jit order owners that are part of the auction
+ penalty\_caps\_native | numeric[] | nullable | caps on the penalty a solver can incur for winning an order but failing to execute it, in native token wei, mapped one-to-one with `order\_uids`; null for auctions created before this column existed or while penalties were disabled
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
@@ -219,20 +220,6 @@ Indexes:
 - user\_order\_creation\_timestamp: btree(`owner`, `creation_timestamp` DESC)
 - user\_valid\_to: btree(`valid_to`)
 - version\_idx: btree(`settlement_contract`)
-
-### order\_penalty\_caps
-
-Per-order penalty caps: the maximum penalty a solver can incur for winning an order but failing to execute it, denominated in the native token.
-Stored for every order that appears in a ranked solution of the auction, so the solver accounting can compute penalties for solutions that were not executed.
-
- Column                 | Type      | Nullable | Details
-------------------------|-----------|----------|--------
- auction\_id            | bigint    | not null | unique identifier for the auction
- order\_uid             | bytea     | not null | 56 bytes identifier linking to the order in the `orders` table
- penalty\_cap\_native   | numeric   | not null | cap on the penalty for not executing this order, in native token wei
-
-Indexes:
-- PRIMARY KEY: composite key(`auction_id`, `order_uid`)
 
 ### order\_quotes
 
