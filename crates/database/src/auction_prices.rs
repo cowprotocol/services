@@ -73,12 +73,11 @@ pub async fn fetch_latest_token_price(
 ) -> Result<Option<BigDecimal>, sqlx::Error> {
     const QUERY: &str = r#"
     SELECT
-        id,
+        id AS auction_id,
         $1 AS token,
-        price_values[(
-            SELECT array_position(price_tokens, $1)
-        )] AS price
+        price_values[array_position(price_tokens, $1)] AS price
     FROM competition_auctions
+    WHERE $1 = ANY(price_tokens)
     ORDER BY id DESC
     LIMIT 1
     "#;
