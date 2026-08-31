@@ -1184,11 +1184,13 @@ struct Metrics {
     #[metric(buckets(0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64))]
     settle_blocks_elapsed: prometheus::Histogram,
 
-    /// Seconds of runway the `/settle` call had: how long until the block after
-    /// the current head arrives. With `settle_blocks_elapsed` it predicts the
-    /// landing block, `start + blocks_elapsed + 1` when the runway suffices.
-    #[metric(buckets(0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.5, 4, 6, 8, 12))]
-    settle_headroom: prometheus::Histogram,
+    /// Seconds from the `/settle` call to the nominal start of the block the
+    /// auction aimed at. Negative once that block was already due.
+    #[metric(buckets(
+        -4, -3, -2, -1.5, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5,
+        3, 4, 6, 8, 12
+    ))]
+    settle_time_to_next_block: prometheus::Histogram,
 
     /// Tracks the size of the `/solve` request body in bytes. The `kind` label
     /// tells the two bodies apart: `full` is sent to regular drivers, `delta`
@@ -1297,45 +1299,45 @@ impl Metrics {
     }
 
     /// Records where the `/settle` request lands relative to block production:
-    /// how many block windows the run burned, plus the runway left when the
-    /// targeted block is still ahead. Call immediately before the request goes
-    /// out.
+    /// block windows burned, plus the runway to the block the auction aimed at.
+    /// Call immediately before the request goes out.
     fn record_settle_block_metrics(
         start_block: BlockInfo,
         current_block: &ethrpc::block_stream::CurrentBlockWatcher,
     ) {
         let head = current_block.borrow().number;
-        let blocks_elapsed = head.saturating_sub(start_block.number);
         Self::get()
             .settle_blocks_elapsed
-            .observe(blocks_elapsed as f64);
+            .observe(head.saturating_sub(start_block.number) as f64);
 
-        // Anchored on the head rather than on the auction's start block: once a
-        // run overran, the question is whether the request still makes the next
-        // block or loses one more. Both anchors agree when nothing overran.
-        Self::record_time_to_next_block(head + 1, Instant::now(), current_block.clone());
+        Self::record_settle_time_to_next_block(
+            start_block.number + 1,
+            Utc::now(),
+            current_block.clone(),
+        );
     }
 
-    /// Waits in the background for `target` to arrive and records how much
-    /// runway the `/settle` request had. Waiting on an explicit block number
-    /// rather than "the next block" matters: a block landing before this task
-    /// is first polled would otherwise be skipped, overstating the runway by a
-    /// whole block.
-    fn record_time_to_next_block(
+    /// Runway to `target`, the block the auction aimed at; negative once it was
+    /// already due. Referenced to `block.timestamp`, not `observed_at`, which
+    /// trails the nominal start by the block observation lag.
+    fn record_settle_time_to_next_block(
         target: u64,
-        sent_at: Instant,
+        sent_at: DateTime<Utc>,
         watcher: ethrpc::block_stream::CurrentBlockWatcher,
     ) {
+        if watcher.borrow().number > target {
+            // The watcher holds only the head, so `target`'s timestamp is gone.
+            // These calls are `settle_blocks_elapsed` past its `le=1` bucket.
+            return;
+        }
+        let sent_at = sent_at.timestamp_millis() as f64 / 1e3;
         tokio::spawn(async move {
             let mut stream = ethrpc::block_stream::into_stream(watcher);
             while let Some(block) = stream.next().await {
                 if block.number >= target {
-                    Self::get().settle_headroom.observe(
-                        block
-                            .observed_at
-                            .saturating_duration_since(sent_at)
-                            .as_secs_f64(),
-                    );
+                    Self::get()
+                        .settle_time_to_next_block
+                        .observe(block.timestamp as f64 - sent_at);
                     return;
                 }
             }
