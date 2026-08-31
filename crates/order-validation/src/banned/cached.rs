@@ -19,31 +19,27 @@ const MAX_CONCURRENT_LOOKUPS: usize = 10;
 const CACHE_EXPIRY: Duration = Duration::from_secs(60 * 60);
 const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(60);
 
+#[derive(Clone, Copy, PartialEq)]
+enum Verdict {
+    Banned,
+    NotBanned,
+    /// Every lookup failed. Treated as not banned until a maintenance-task
+    /// retry succeeds.
+    Unknown,
+}
+
 #[derive(Clone)]
 struct Entry {
-    is_banned: bool,
+    verdict: Verdict,
     last_updated: Instant,
-    /// The lookup failed and `is_banned` is a fail-open placeholder until
-    /// a maintenance-task retry succeeds.
-    uncertain: bool,
 }
 
 impl Entry {
     /// Creates a new [`Entry`] with `last_updated` set to [`Instant::now`]-
-    fn new(is_banned: bool) -> Self {
+    fn new(verdict: Verdict) -> Self {
         Self {
-            is_banned,
+            verdict,
             last_updated: Instant::now(),
-            uncertain: false,
-        }
-    }
-
-    /// Creates an [`Entry`] for a failed lookup.
-    fn uncertain() -> Self {
-        Self {
-            is_banned: false,
-            last_updated: Instant::now(),
-            uncertain: true,
         }
     }
 }
@@ -94,7 +90,7 @@ impl Cached {
         for address in addresses {
             match self.cache.get(address) {
                 Some(entry) => {
-                    entry.is_banned.then(|| banned.insert(*address));
+                    (entry.verdict == Verdict::Banned).then(|| banned.insert(*address));
                 }
                 None => need_lookup.push(*address),
             }
@@ -107,14 +103,15 @@ impl Cached {
             .await;
 
         for (address, is_banned) in fetched {
-            let entry = match is_banned {
-                Some(is_banned) => Entry::new(is_banned),
-                None => Entry::uncertain(),
+            let verdict = match is_banned {
+                Some(true) => Verdict::Banned,
+                Some(false) => Verdict::NotBanned,
+                None => Verdict::Unknown,
             };
-            if entry.is_banned {
+            if verdict == Verdict::Banned {
                 banned.insert(address);
             }
-            self.cache.insert(address, entry);
+            self.cache.insert(address, Entry::new(verdict));
         }
 
         banned
@@ -135,12 +132,13 @@ impl Cached {
     }
 
     /// Collects cache entries close enough to expiry that the next maintenance
-    /// tick may miss the window, plus uncertain entries awaiting a retry.
+    /// tick may miss the window, plus [`Verdict::Unknown`] entries awaiting
+    /// a retry.
     fn expired(&self, now: Instant) -> Vec<Arc<Address>> {
         self.cache
             .iter()
             .filter_map(|(address, entry)| {
-                let due = entry.uncertain
+                let due = entry.verdict == Verdict::Unknown
                     || now
                         .checked_duration_since(entry.last_updated)
                         .unwrap_or_default()
@@ -154,7 +152,12 @@ impl Cached {
     /// positive confirmation and at least one backend failed.
     async fn refresh(&self, address: Address) -> Option<(Address, Entry)> {
         let is_banned = self.fetch_all(address).await?;
-        Some((address, Entry::new(is_banned)))
+        let verdict = if is_banned {
+            Verdict::Banned
+        } else {
+            Verdict::NotBanned
+        };
+        Some((address, Entry::new(verdict)))
     }
 
     /// Spawns a background task that periodically refreshes near-expiry cache
@@ -257,7 +260,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn uncertain_entries_are_due_for_maintenance_and_recover() {
+    async fn unknown_entries_are_due_for_maintenance_and_recover() {
         let (cached, _calls, failing) = setup(true);
         let address = Address::repeat_byte(1);
         let addresses = HashSet::from([address]);
