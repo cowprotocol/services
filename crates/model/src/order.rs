@@ -236,8 +236,8 @@ impl OrderData {
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 416];
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
-        // Some slots are not assigned (stay 0) because all values are extended to 256
-        // bits.
+        // Some slots are not assigned (stay 0) because all values are extended
+        // to 256 bits.
         hash_data[44..64].copy_from_slice(self.sell_token.as_slice());
         hash_data[76..96].copy_from_slice(self.buy_token.as_slice());
         hash_data[108..128].copy_from_slice(self.receiver.unwrap_or(Address::ZERO).as_slice());
@@ -270,7 +270,8 @@ impl OrderData {
 
     /// Checks if the order is a market order.
     pub fn within_market(&self, quote: QuoteAmounts) -> bool {
-        // Using let here because widening_mul isn't able to infer the result size
+        // Using let here because widening_mul isn't able to infer the result
+        // size
         let lhs: U512 = (self.sell_amount + self.fee_amount).widening_mul(quote.buy);
         let rhs: U512 = (quote.sell + quote.fee).widening_mul(self.buy_amount);
         lhs >= rhs
@@ -1078,8 +1079,9 @@ mod tests {
 
     #[test]
     fn deserialization_and_back() {
-        // Input JSON has v=0x01, which gets normalized to v=28 (0x1c) for Solidity
-        // ecrecover compatibility. Serialization then outputs v=0x1c.
+        // Input JSON has v=0x01, which gets normalized to v=28 (0x1c) for
+        // Solidity ecrecover compatibility. Serialization then outputs
+        // v=0x1c.
         let input_json = json!(
         {
             "creationDate": "1970-01-01T00:00:03Z",
@@ -1365,8 +1367,8 @@ mod tests {
         assert_eq!(serde_json::from_value::<S>(json).unwrap(), s);
     }
 
-    // from the test `should recover signing address for all supported ECDSA-based
-    // schemes` in <https://github.com/cowprotocol/contracts/blob/v1.1.2/test/GPv2Signing.test.ts#L280>.
+    // from the test `should recover signing address for all supported
+    // ECDSA-based schemes` in <https://github.com/cowprotocol/contracts/blob/v1.1.2/test/GPv2Signing.test.ts#L280>.
     #[test]
     fn order_creation_signature() {
         let domain_separator = DomainSeparator(hex!(

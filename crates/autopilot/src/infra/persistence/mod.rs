@@ -382,9 +382,10 @@ impl Persistence {
         )
         .await?;
 
-        // Inserting into `competition_auctions` grows the pending list of its GIN
-        // index, which periodically causes DB latency spikes. Clean it right
-        // where the need originates, without blocking auction post-processing.
+        // Inserting into `competition_auctions` grows the pending list of its
+        // GIN index, which periodically causes DB latency spikes. Clean
+        // it right where the need originates, without blocking auction
+        // post-processing.
         let postgres = self.postgres.clone();
         tokio::spawn(async move {
             if let Err(err) = postgres.gin_clean_pending_list().await {
@@ -443,11 +444,13 @@ impl Persistence {
             .into();
 
         let orders = {
-            // Code that uses the data assembled by this function determines JIT orders
-            // by their presence in the `orders => fee_policies` mapping. If an order has
-            // a mapping it is assumed that this was a regular order and not a JIT order.
-            // So in order to not misclassify JIT orders as regular orders we only fetch
-            // fee policies for orders that were part of the original auction.
+            // Code that uses the data assembled by this function determines JIT
+            // orders by their presence in the `orders =>
+            // fee_policies` mapping. If an order has a mapping it
+            // is assumed that this was a regular order and not a JIT order.
+            // So in order to not misclassify JIT orders as regular orders we
+            // only fetch fee policies for orders that were part of
+            // the original auction.
             let auction_orders: HashSet<domain::OrderUid> = auction_row
                 .order_uids
                 .into_iter()
@@ -459,7 +462,8 @@ impl Persistence {
                 .map(|t| t.uid)
                 .collect();
 
-            // get fee policies for all orders that were part of the competition auction
+            // get fee policies for all orders that were part of the competition
+            // auction
             let fee_policies = database::fee_policies::fetch_all(
                 &mut ex,
                 relevant_orders
@@ -534,8 +538,9 @@ impl Persistence {
         let started_at = chrono::offset::Utc::now();
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
         // Set the transaction isolation level to REPEATABLE READ
-        // so all the SELECT queries below are executed in the same database snapshot
-        // taken at the moment before the first query is executed.
+        // so all the SELECT queries below are executed in the same database
+        // snapshot taken at the moment before the first query is
+        // executed.
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(tx.deref_mut())
             .await?;
@@ -550,8 +555,8 @@ impl Persistence {
             database::orders::updated_order_uids_after(&mut tx, after_block).await?
         };
 
-        // Fetch the orders that were updated after the given block and were created or
-        // cancelled after the given timestamp.
+        // Fetch the orders that were updated after the given block and were
+        // created or cancelled after the given timestamp.
         let next_orders: HashMap<domain::OrderUid, Arc<model::order::Order>> = {
             let _timer = Metrics::get()
                 .database_queries
@@ -631,9 +636,10 @@ impl Persistence {
                 .with_label_values(&["read_quotes"])
                 .start_timer();
 
-            // Fetch quotes only for newly created and also on-chain placed orders due to
-            // the following case: if a block containing an on-chain order
-            // (e.g., ethflow) gets reorganized, the same order with the same
+            // Fetch quotes only for newly created and also on-chain placed
+            // orders due to the following case: if a block
+            // containing an on-chain order (e.g., ethflow) gets
+            // reorganized, the same order with the same
             // UID might be created in the new block, and the temporary quote
             // associated with it may have changed in the meantime.
             let order_uids = current_orders
@@ -835,7 +841,8 @@ impl Persistence {
             }
 
             if !jit_orders.is_empty() {
-                // each jit order should have a corresponding trade event, try to find them
+                // each jit order should have a corresponding trade event, try
+                // to find them
                 let trade_events = self
                     .get_trades_for_settlement(&event)
                     .await?

@@ -2435,8 +2435,8 @@ mod tests {
 
     #[tokio::test]
     async fn streaming_before_fee_scales_sell_and_buy_amounts() {
-        // sell_before_fee = 1000, gas = 10, gas_price = 1, sell_token_price = 1.0
-        // fee = ceil((10 * 1) / 1.0) = 10
+        // sell_before_fee = 1000, gas = 10, gas_price = 1, sell_token_price =
+        // 1.0 fee = ceil((10 * 1) / 1.0) = 10
         // sell_amount = 1000 - 10 = 990
         // buy_amount = 500 * 990 / 1000 = 495
         let params = QuoteParameters {
@@ -2497,8 +2497,9 @@ mod tests {
     #[tokio::test]
     async fn streaming_defers_fee_error_until_no_quote_succeeds() {
         // sell_before_fee = 100, gas_price = 1, sell_token_price = 1.0, so
-        // fee = ceil(gas * 1 / 1.0) = gas. A gas of 2000 saturates 100 - 2000 to
-        // 0 -> SellAmountDoesNotCoverFee; a gas of 10 leaves 90 -> a good quote.
+        // fee = ceil(gas * 1 / 1.0) = gas. A gas of 2000 saturates 100 - 2000
+        // to 0 -> SellAmountDoesNotCoverFee; a gas of 10 leaves 90 -> a
+        // good quote.
         fn params() -> QuoteParameters {
             QuoteParameters {
                 sell_token: Address::repeat_byte(1),
@@ -2559,7 +2560,8 @@ mod tests {
             );
         };
 
-        // Only a fee-exceeding estimate: the deferred error surfaces at the end.
+        // Only a fee-exceeding estimate: the deferred error surfaces at the
+        // end.
         let (quoter, params) = make(vec![Ok(estimate(2000))]);
         let mut s = quoter
             .calculate_quote_stream(params)
@@ -2568,8 +2570,8 @@ mod tests {
         assert_sell_amount_error(s.next().await.expect("error item").unwrap_err());
         assert!(s.next().await.is_none());
 
-        // A later quote covers its fee: the deferred error is suppressed and only
-        // the good quote is yielded.
+        // A later quote covers its fee: the deferred error is suppressed and
+        // only the good quote is yielded.
         let (quoter, params) = make(vec![Ok(estimate(2000)), Ok(estimate(10))]);
         let mut s = quoter
             .calculate_quote_stream(params)

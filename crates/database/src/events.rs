@@ -95,9 +95,9 @@ async fn insert_invalidation(
     index: &EventIndex,
     event: &Invalidation,
 ) -> Result<(), sqlx::Error> {
-    // We use ON CONFLICT so that multiple updates running at the same do not error
-    // because of events already existing. This can happen when multiple
-    // orderbook apis run in HPA. See #444 .
+    // We use ON CONFLICT so that multiple updates running at the same do not
+    // error because of events already existing. This can happen when
+    // multiple orderbook apis run in HPA. See #444 .
     const QUERY: &str = "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES \
                          ($1, $2, $3) ON CONFLICT DO NOTHING;";
     sqlx::query(QUERY)

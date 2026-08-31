@@ -720,11 +720,11 @@ async fn same_path() {
     // meaning that we actually need to sell a bit more than computed in order
     // to cover the buy order. Specifically, in this example:
     // - the computed input amount is `15503270361045187239 xCOW`
-    // - the corresponding output amount is `9056454904357125 xGNO` (`403` less than
-    //   what is actually needed)
+    // - the corresponding output amount is `9056454904357125 xGNO` (`403` less
+    //   than what is actually needed)
     // - the optimal input amount is `15503270361046529181 xCOW`, such that this
-    //   amount -1 would result in an output amount that is not enough to cover the
-    //   order
+    //   amount -1 would result in an output amount that is not enough to cover
+    //   the order
     //
     // Interestingly, in the same path, we have an constant product pool (i.e.
     // Uniswap-like pool) L1 which if used for a solution would result in

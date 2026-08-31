@@ -188,9 +188,9 @@ impl Settlement {
         if settled.block > auction.block + max_settlement_age(chain) {
             // A settled transaction references a VERY old auction.
             //
-            // A hacky way to detect processing of production settlements in the staging
-            // environment, as production is lagging with auction ids by ~270 days on
-            // Ethereum mainnet.
+            // A hacky way to detect processing of production settlements in the
+            // staging environment, as production is lagging with
+            // auction ids by ~270 days on Ethereum mainnet.
             //
             // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
             return Err(Error::WrongEnvironment);
@@ -517,8 +517,8 @@ mod tests {
     }
 
     // https://etherscan.io/tx/0x030623e438f28446329d8f4ff84db897907fcac59b9943b31b7be66f23c877af
-    // A transfer transaction that emits a settlement event, but it's not actually a
-    // swap.
+    // A transfer transaction that emits a settlement event, but it's not
+    // actually a swap.
     #[tokio::test]
     async fn not_a_swap() {
         let calldata = hex!(
@@ -746,8 +746,8 @@ mod tests {
         .await
         .unwrap_err();
 
-        // These transfer transactions don't have the auction_id attached so overall bad
-        // calldata is expected
+        // These transfer transactions don't have the auction_id attached so
+        // overall bad calldata is expected
         assert!(matches!(
             transaction,
             super::transaction::Error::Decoding(_)
@@ -883,8 +883,9 @@ mod tests {
             eth::U256::from(52937525819789126u128)
         );
         // fee read from "executedFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
-        // but not equal to 6890975030480504 anymore, since after this tx we switched to
-        // convert the fee from surplus token directly to ether
+        // but not equal to 6890975030480504 anymore, since after this tx we
+        // switched to convert the fee from surplus token directly to
+        // ether
         assert_eq!(
             trade.fee_in_ether(&auction.prices).unwrap().0,
             eth::U256::from(6752697350740628u128)
@@ -1199,9 +1200,9 @@ mod tests {
     }
 
     // https://etherscan.io/tx/0x0ee0a609c54cb006d024a4d009db8751730c064b26524379793144c07c3575b3
-    // A special case where the user order and a liquidity order trade the common
-    // token, where liquidity order is supposed to be executed at its limit price
-    // and without fees.
+    // A special case where the user order and a liquidity order trade the
+    // common token, where liquidity order is supposed to be executed at its
+    // limit price and without fees.
     #[tokio::test]
     async fn settlement_with_liquidity_order_and_user_order() {
         let calldata = hex!(
@@ -1399,8 +1400,8 @@ mod tests {
     }
 
     // https://gnosisscan.io/tx/0xf4556c35d421623c63571d1006fd1888932c1b78a6e0f3b9b9590bb9781b02af
-    // A special case to reproduce an issue where we don't match a settled trade due
-    // to a mismatch in executed token amounts. The smart contract, for
+    // A special case to reproduce an issue where we don't match a settled trade
+    // due to a mismatch in executed token amounts. The smart contract, for
     // non-partially-fillable orders, does force executed = sellAmount on the
     // transaction events. https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L385-L386
     // https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L407-L408

@@ -178,8 +178,8 @@ impl Maintenance {
             );
         }
 
-        // only after we informed the run_loop that the essential updates are done we
-        // kick off the optional maintenance tasks
+        // only after we informed the run_loop that the essential updates are
+        // done we kick off the optional maintenance tasks
         let start = Instant::now();
         if let Err(err) = self.run_optional_maintenance().await {
             tracing::warn!(?err, "failed to run optional maintenance");
