@@ -53,14 +53,14 @@ Indexes:
 
 Contains all auctions for which a valid solver competition exists.
 
- Column        | Type    | Nullable | Details
----------------|---------|----------|--------
- id            | bigint  | not null | other tables refer to this as `auction\_id`
- block         | bigint  | not null | the block number on top of which the auction was created
- deadline      | bigint  | not null | the block number until which all winning solutions are expected to be settled on-chain.
- order\_uids   | bytea[] | not null | orders that are part of the auction
- price\_tokens | bytea[] | not null | native price tokens
- price\_values | numeric | not null | native price values, mapped one-to-one with `price\_tokens`
+ Column        | Type      | Nullable | Details
+---------------|-----------|----------|--------
+ id            | bigint    | not null | other tables refer to this as `auction\_id`
+ block         | bigint    | not null | the block number on top of which the auction was created
+ deadline      | bigint    | not null | the block number until which all winning solutions are expected to be settled on-chain.
+ order\_uids   | bytea[]   | not null | orders that are part of the auction
+ price\_tokens | bytea[]   | not null | native price tokens
+ price\_values | numeric[] | not null | native price values, mapped one-to-one with `price\_tokens`
  surplus\_capturing\_jit\_order\_owners | bytea[] | not null | surplus capturing jit order owners that are part of the auction
 
 Indexes:
