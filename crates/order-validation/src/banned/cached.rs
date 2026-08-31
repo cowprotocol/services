@@ -248,30 +248,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_lookup_is_cached_not_refetched_inline() {
-        let (cached, calls, _failing) = setup(true);
-        let addresses = HashSet::from([Address::repeat_byte(1)]);
-
-        assert!(cached.check(&addresses).await.is_empty());
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-
-        assert!(cached.check(&addresses).await.is_empty());
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn unknown_entries_are_due_for_maintenance_and_recover() {
-        let (cached, _calls, failing) = setup(true);
+    async fn failed_lookup_is_cached_until_retry_succeeds() {
+        let (cached, calls, failing) = setup(true);
         let address = Address::repeat_byte(1);
         let addresses = HashSet::from([address]);
 
+        // A failed lookup is cached; a second check is served from cache
+        // instead of fetching inline again.
         assert!(cached.check(&addresses).await.is_empty());
-        assert_eq!(cached.expired(Instant::now()).len(), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(cached.check(&addresses).await.is_empty());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
 
+        // The unknown entry stays due for a background retry until a lookup
+        // succeeds.
+        assert_eq!(cached.expired(Instant::now()).len(), 1);
         failing.store(false, Ordering::SeqCst);
         let (address, entry) = cached.refresh(address).await.unwrap();
         cached.cache.insert(address, entry);
-
         assert!(cached.expired(Instant::now()).is_empty());
     }
 }
