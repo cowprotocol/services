@@ -5,6 +5,7 @@ use {
     alloy::{
         primitives::{
             Address,
+            U256,
             aliases::{I24, U24, U160},
         },
         providers::Provider,
@@ -16,12 +17,14 @@ use {
     number::units::EthUnit,
     pool_indexer::config::{
         ApiConfig,
+        BalancerV2Config,
         Configuration,
         DatabaseConfig,
         FactoryConfig,
         MetricsConfig,
         NetworkConfig,
         NetworkName,
+        UniswapV3Config,
     },
     serde::Deserialize,
     sqlx::PgPool,
@@ -126,6 +129,97 @@ sol! {
     }
 }
 
+// Mock Balancer token. Bytecode compiled from the .sol below with solc 0.8.30,
+// evm-version paris (no PUSH0, so it deploys at the node's pre-Shanghai
+// genesis).
+//
+// contract MockToken {
+//     uint8 public decimals;
+//     constructor(uint8 d) { decimals = d; }
+// }
+sol! {
+    #[allow(missing_docs)]
+    #[sol(rpc, bytecode = "0x6080604052348015600f57600080fd5b506040516100ff3803806100ff833981016040819052602c916044565b6000805460ff191660ff92909216919091179055606c565b600060208284031215605557600080fd5b815160ff81168114606557600080fd5b9392505050565b60858061007a6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063313ce56714602d575b600080fd5b60005460399060ff1681565b60405160ff909116815260200160405180910390f3fea26469706673582212203e94d89ff9b8c4622833664d804ac0db01e8d6d8e741c93b5071047b13962bc364736f6c634300081e0033")]
+    contract MockToken {
+        constructor(uint8 d);
+        function decimals() external view returns (uint8);
+    }
+}
+
+// Mock Balancer Vault. Compiled identically.
+//
+// contract MockBalancerVault {
+//     uint256 public nonce;
+//     mapping(bytes32 => address[]) tokens;
+//     mapping(bytes32 => uint256[]) balances;
+//     function registerPool() external returns (bytes32 id) {
+//         id = bytes32((uint256(uint160(msg.sender)) << 96) | nonce++);
+//     }
+//     function registerTokens(
+//         bytes32 id, address[] memory t, uint256[] memory b
+//     ) external { tokens[id] = t; balances[id] = b; }
+//     function getPoolTokens(bytes32 id) external view
+//         returns (address[] memory, uint256[] memory, uint256)
+//     { return (tokens[id], balances[id], 0); }
+// }
+sol! {
+    #[allow(missing_docs)]
+    #[sol(rpc, bytecode = "0x6080604052348015600f57600080fd5b506106158061001f6000396000f3fe608060405234801561001057600080fd5b506004361061004c5760003560e01c80637b09f30314610051578063affed0e014610066578063d7740ee114610082578063f94d46681461008a575b600080fd5b61006461005f3660046103da565b6100ac565b005b61006f60005481565b6040519081526020015b60405180910390f35b61006f6100f1565b61009d6100983660046104c7565b61010e565b604051610079939291906104e0565b600083815260016020908152604090912083516100cb928501906101f1565b50600083815260026020908152604090912082516100eb9284019061027b565b50505050565b60008054818061010083610580565b909155503360601b17919050565b6000818152600160209081526040808320600283528184208154835181860281018601909452808452606095869590948592909185919083018282801561018b57602002820191906000526020600020905b815473ffffffffffffffffffffffffffffffffffffffff168152600190910190602001808311610160575b50505050509250818054806020026020016040519081016040528092919081815260200182805480156101dd57602002820191906000526020600020905b8154815260200190600101908083116101c9575b505050505091509250925092509193909250565b82805482825590600052602060002090810192821561026b579160200282015b8281111561026b57825182547fffffffffffffffffffffffff00000000000000000000000000000000000000001673ffffffffffffffffffffffffffffffffffffffff909116178255602090920191600190910190610211565b506102779291506102b6565b5090565b82805482825590600052602060002090810192821561026b579160200282015b8281111561026b57825182559160200191906001019061029b565b5b8082111561027757600081556001016102b7565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b604051601f82017fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe016810167ffffffffffffffff81118282101715610341576103416102cb565b604052919050565b600067ffffffffffffffff821115610363576103636102cb565b5060051b60200190565b600082601f83011261037e57600080fd5b813561039161038c82610349565b6102fa565b8082825260208201915060208360051b8601019250858311156103b357600080fd5b602085015b838110156103d05780358352602092830192016103b8565b5095945050505050565b6000806000606084860312156103ef57600080fd5b83359250602084013567ffffffffffffffff81111561040d57600080fd5b8401601f8101861361041e57600080fd5b803561042c61038c82610349565b8082825260208201915060208360051b85010192508883111561044e57600080fd5b6020840193505b8284101561049257833573ffffffffffffffffffffffffffffffffffffffff8116811461048157600080fd5b825260209384019390910190610455565b9450505050604084013567ffffffffffffffff8111156104b157600080fd5b6104bd8682870161036d565b9150509250925092565b6000602082840312156104d957600080fd5b5035919050565b6060808252845190820181905260009060208601906080840190835b8181101561053057835173ffffffffffffffffffffffffffffffffffffffff168352602093840193909201916001016104fc565b50508381036020808601919091528651808352918101925086019060005b8181101561056c57825184526020938401939092019160010161054e565b505050604092909201929092529392505050565b60007fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff82036105d8577f4e487b7100000000000000000000000000000000000000000000000000000000600052601160045260246000fd5b506001019056fea26469706673582212203197a76519149c61c64bfd3037184cfc3e2c3d6205ecff64443e2b0a2dec88de64736f6c634300081e0033")]
+    contract MockBalancerVault {
+        function getPoolTokens(bytes32 poolId)
+            external view returns (address[] memory, uint256[] memory, uint256);
+    }
+}
+
+// Mock Balancer weighted-pool factory + the pool it deploys. Compiled
+// identically.
+//
+// contract MockBalancerPool {
+//     bytes32 public poolId;
+//     uint256[] weights;
+//     constructor(
+//         MockBalancerVault v, address[] memory t,
+//         uint256[] memory w, uint256[] memory b
+//     ) {
+//         poolId = v.registerPool();
+//         v.registerTokens(poolId, t, b);
+//         weights = w;
+//     }
+//     function getPoolId() external view returns (bytes32) { return poolId; }
+//     function getNormalizedWeights()
+//         external view returns (uint256[] memory) { return weights; }
+//     function getSwapFeePercentage()
+//         external pure returns (uint256) { return 1e15; } // 0.1%
+//     function getPausedState()
+//         external pure returns (bool, uint256, uint256)
+//     { return (false, 0, 0); }
+// }
+//
+// contract MockBalancerPoolFactory {
+//     MockBalancerVault vault;
+//     event PoolCreated(address indexed pool);
+//     constructor(MockBalancerVault v) { vault = v; }
+//     function createPool(
+//         address[] memory t, uint256[] memory w, uint256[] memory b
+//     ) external returns (address pool) {
+//         pool = address(new MockBalancerPool(vault, t, w, b));
+//         emit PoolCreated(pool);
+//     }
+// }
+sol! {
+    #[allow(missing_docs)]
+    #[sol(rpc, bytecode = "0x6080604052348015600f57600080fd5b50604051610ad1380380610ad1833981016040819052602c916050565b600080546001600160a01b0319166001600160a01b0392909216919091179055607e565b600060208284031215606157600080fd5b81516001600160a01b0381168114607757600080fd5b9392505050565b610a448061008d6000396000f3fe608060405234801561001057600080fd5b50600436106100365760003560e01c80637ac1eb8e1461003b578063fbfa77cf14610077575b600080fd5b61004e610049366004610257565b610097565b60405173ffffffffffffffffffffffffffffffffffffffff909116815260200160405180910390f35b60005461004e9073ffffffffffffffffffffffffffffffffffffffff1681565b6000805460405173ffffffffffffffffffffffffffffffffffffffff909116908590859085906100c69061013b565b6100d394939291906103a2565b604051809103906000f0801580156100ef573d6000803e3d6000fd5b5060405190915073ffffffffffffffffffffffffffffffffffffffff8216907f83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc90600090a29392505050565b6105c98061044683390190565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b604051601f82017fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe016810167ffffffffffffffff811182821017156101be576101be610148565b604052919050565b600067ffffffffffffffff8211156101e0576101e0610148565b5060051b60200190565b600082601f8301126101fb57600080fd5b813561020e610209826101c6565b610177565b8082825260208201915060208360051b86010192508583111561023057600080fd5b602085015b8381101561024d578035835260209283019201610235565b5095945050505050565b60008060006060848603121561026c57600080fd5b833567ffffffffffffffff81111561028357600080fd5b8401601f8101861361029457600080fd5b80356102a2610209826101c6565b8082825260208201915060208360051b8501019250888311156102c457600080fd5b6020840193505b8284101561030857833573ffffffffffffffffffffffffffffffffffffffff811681146102f757600080fd5b8252602093840193909101906102cb565b9550505050602084013567ffffffffffffffff81111561032757600080fd5b610333868287016101ea565b925050604084013567ffffffffffffffff81111561035057600080fd5b61035c868287016101ea565b9150509250925092565b600081518084526020840193506020830160005b8281101561039857815186526020958601959091019060010161037a565b5093949350505050565b60006080820173ffffffffffffffffffffffffffffffffffffffff871683526080602084015280865180835260a08501915060208801925060005b8181101561041157835173ffffffffffffffffffffffffffffffffffffffff168352602093840193909201916001016103dd565b505083810360408501526104258187610366565b915050828103606084015261043a8185610366565b97965050505050505056fe608060405234801561001057600080fd5b506040516105c93803806105c983398101604081905261002f91610264565b836001600160a01b031663d7740ee16040518163ffffffff1660e01b81526004016020604051808303816000875af115801561006f573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610093919061036f565b6000819055604051637b09f30360e01b81526001600160a01b03861691637b09f303916100c7919087908690600401610388565b600060405180830381600087803b1580156100e157600080fd5b505af11580156100f5573d6000803e3d6000fd5b5050835161010c9250600191506020850190610116565b505050505061041c565b828054828255906000526020600020908101928215610151579160200282015b82811115610151578251825591602001919060010190610136565b5061015d929150610161565b5090565b5b8082111561015d5760008155600101610162565b6001600160a01b038116811461018b57600080fd5b50565b634e487b7160e01b600052604160045260246000fd5b604051601f8201601f191681016001600160401b03811182821017156101cc576101cc61018e565b604052919050565b60006001600160401b038211156101ed576101ed61018e565b5060051b60200190565b600082601f83011261020857600080fd5b815161021b610216826101d4565b6101a4565b8082825260208201915060208360051b86010192508583111561023d57600080fd5b602085015b8381101561025a578051835260209283019201610242565b5095945050505050565b6000806000806080858703121561027a57600080fd5b845161028581610176565b60208601519094506001600160401b038111156102a157600080fd5b8501601f810187136102b257600080fd5b80516102c0610216826101d4565b8082825260208201915060208360051b8501019250898311156102e257600080fd5b6020840193505b8284101561030d5783516102fc81610176565b8252602093840193909101906102e9565b6040890151909650925050506001600160401b0381111561032d57600080fd5b610339878288016101f7565b606087015190935090506001600160401b0381111561035757600080fd5b610363878288016101f7565b91505092959194509250565b60006020828403121561038157600080fd5b5051919050565b6000606082018583526060602084015280855180835260808501915060208701925060005b818110156103d45783516001600160a01b03168352602093840193909201916001016103ad565b505083810360408501528451808252602091820192509085019060005b8181101561040f5782518452602093840193909201916001016103f1565b5091979650505050505050565b61019e8061042b6000396000f3fe608060405234801561001057600080fd5b50600436106100675760003560e01c80633e0dc34e116100505780633e0dc34e146100a257806355c67628146100ab578063f89f27ed146100b857600080fd5b80631c0de0511461006c57806338fff2d014610090575b600080fd5b60408051600080825260208201819052918101919091526060015b60405180910390f35b6000545b604051908152602001610087565b61009460005481565b66038d7ea4c68000610094565b6100c06100cd565b6040516100879190610125565b6060600180548060200260200160405190810160405280929190818152602001828054801561011b57602002820191906000526020600020905b815481526020019060010190808311610107575b5050505050905090565b602080825282518282018190526000918401906040840190835b8181101561015d57835183526020938401939092019160010161013f565b50909594505050505056fea26469706673582212208263ec4ec001151dc4ddf8de16bd3bd182b409db8ddd3052a793aded797c56dd64736f6c634300081e0033a2646970667358221220b108d4f0e3109c7d72ed7ff943b08bc35c01f9716f63de3414ca057482ccecb864736f6c634300081e0033")]
+    contract MockBalancerPoolFactory {
+        constructor(address vault);
+        event PoolCreated(address indexed pool);
+        function createPool(
+            address[] memory tokens,
+            uint256[] memory weights,
+            uint256[] memory balances,
+        ) external returns (address pool);
+    }
+}
+
 const POOL_INDEXER_PORT: u16 = 7778;
 const POOL_INDEXER_HOST: &str = "http://127.0.0.1:7778";
 const POOL_INDEXER_METRICS_PORT: u16 = 7779;
@@ -171,7 +265,7 @@ struct TickEntry {}
 async fn clear_pool_indexer_tables(db: &PgPool) {
     sqlx::query(
         "TRUNCATE uniswap_v3_ticks, uniswap_v3_pool_states, uniswap_v3_pools, \
-         pool_indexer_checkpoints",
+         balancer_v2_pool_tokens, balancer_v2_pools, pool_indexer_checkpoints",
     )
     .execute(db)
     .await
@@ -204,18 +298,21 @@ fn pool_indexer_config(
             name: NetworkName::new("mainnet"),
             chain_id: 1,
             rpc_url: "http://127.0.0.1:8545".parse().unwrap(),
-            factories: factories
-                .into_iter()
-                .map(|address| FactoryConfig {
-                    address,
-                    deploy_block: 0,
-                })
-                .collect(),
-            chunk_size: 1000,
+            uniswap_v3: Some(UniswapV3Config {
+                factories: factories
+                    .into_iter()
+                    .map(|address| FactoryConfig {
+                        address,
+                        deploy_block: 0,
+                    })
+                    .collect(),
+                chunk_size: 1000,
+            }),
             poll_interval_secs: 1,
             use_latest: true,
             fetch_concurrency: 8,
             prefetch_concurrency: 50,
+            balancer_v2: None,
         },
         api: ApiConfig {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, POOL_INDEXER_PORT)),
@@ -228,11 +325,7 @@ fn pool_indexer_config(
 
 /// Spawns the pool-indexer task and waits for its `/health` endpoint to come
 /// up.
-async fn spawn_pool_indexer(
-    factories: &[Address],
-    metrics_port: u16,
-) -> tokio::task::JoinHandle<()> {
-    let config = pool_indexer_config(factories.iter().copied(), metrics_port);
+async fn spawn_pool_indexer(config: Configuration) -> tokio::task::JoinHandle<()> {
     let handle = tokio::task::spawn(pool_indexer::run(config));
     wait_for_condition(TIMEOUT, || async {
         reqwest::get(format!("{POOL_INDEXER_HOST}/health"))
@@ -252,7 +345,8 @@ where
     F: FnOnce() -> Fut,
     Fut: Future<Output = T>,
 {
-    let handle = spawn_pool_indexer(factories, metrics_port).await;
+    let handle =
+        spawn_pool_indexer(pool_indexer_config(factories.iter().copied(), metrics_port)).await;
     let result = body().await;
     handle.abort();
     let _ = handle.await;
@@ -867,4 +961,330 @@ async fn min_envelope(_web3: Web3) {
         },
     )
     .await;
+}
+
+/// Pool-indexer config indexing the given balancer factories against `vault`.
+fn balancer_pool_indexer_config(
+    vault: Address,
+    weighted: Vec<Address>,
+    stable: Vec<Address>,
+    metrics_port: u16,
+) -> Configuration {
+    let factory = |address| FactoryConfig {
+        address,
+        deploy_block: 0,
+    };
+    Configuration {
+        database: DatabaseConfig {
+            url: POOL_INDEXER_DB_URL.parse().unwrap(),
+            max_connections: NonZeroU32::new(5).unwrap(),
+        },
+        network: NetworkConfig {
+            name: NetworkName::new("mainnet"),
+            chain_id: 1,
+            rpc_url: "http://127.0.0.1:8545".parse().unwrap(),
+            uniswap_v3: None,
+            balancer_v2: Some(BalancerV2Config {
+                vault,
+                chunk_size: 1000,
+                weighted: weighted.into_iter().map(factory).collect(),
+                weighted_v3plus: vec![],
+                stable: stable.into_iter().map(factory).collect(),
+                liquidity_bootstrapping: vec![],
+                composable_stable: vec![],
+            }),
+            poll_interval_secs: 1,
+            use_latest: true,
+            fetch_concurrency: 8,
+            prefetch_concurrency: 50,
+        },
+        api: ApiConfig {
+            bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, POOL_INDEXER_PORT)),
+        },
+        metrics: MetricsConfig {
+            bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, metrics_port)),
+        },
+    }
+}
+
+fn balancer_api(path: &str) -> String {
+    format!("{POOL_INDEXER_HOST}/api/v1/mainnet/balancer/v2/{path}")
+}
+
+#[derive(Debug, Deserialize)]
+struct BalancerPoolsListResponse {
+    block_number: u64,
+    pools: Vec<BalancerPoolResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BalancerPoolResponse {
+    pool_type: String,
+    address: Address,
+    factory: Address,
+    swap_enabled: bool,
+    tokens: Vec<BalancerTokenResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BalancerTokenResponse {
+    address: Address,
+    decimals: u8,
+    #[serde(default)]
+    weight: Option<String>,
+}
+
+/// Creates a mock balancer pool and returns its address (from `PoolCreated`).
+async fn create_balancer_pool(
+    factory: &MockBalancerPoolFactory::MockBalancerPoolFactoryInstance<impl Provider>,
+    tokens: Vec<Address>,
+    weights: Vec<U256>,
+    balances: Vec<U256>,
+) -> Address {
+    let provider = factory.provider();
+    factory
+        .createPool(tokens, weights, balances)
+        .send()
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
+    let block = provider.get_block_number().await.unwrap();
+    let logs = provider
+        .get_logs(
+            &alloy::rpc::types::Filter::new()
+                .from_block(block)
+                .to_block(block)
+                .event_signature(MockBalancerPoolFactory::PoolCreated::SIGNATURE_HASH),
+        )
+        .await
+        .unwrap();
+    MockBalancerPoolFactory::PoolCreated::decode_log(&logs[0].inner)
+        .unwrap()
+        .data
+        .pool
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_pool_indexer_balancer_discovery() {
+    run_test(balancer_discovery).await;
+}
+
+/// Asserts the indexer discovers a weighted + a stable pool and serves both
+/// with the right type, token order, decimals, and weights (weighted only).
+async fn balancer_discovery(web3: Web3) {
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
+    clear_pool_indexer_tables(&db).await;
+    let provider = web3.provider.clone().erased();
+
+    let vault = MockBalancerVault::deploy(provider.clone()).await.unwrap();
+    let weighted_factory = MockBalancerPoolFactory::deploy(provider.clone(), *vault.address())
+        .await
+        .unwrap();
+    let stable_factory = MockBalancerPoolFactory::deploy(provider.clone(), *vault.address())
+        .await
+        .unwrap();
+    let token18 = MockToken::deploy(provider.clone(), 18u8).await.unwrap();
+    let token6 = MockToken::deploy(provider.clone(), 6u8).await.unwrap();
+
+    // Weighted pool with 60/40 weights; stable pool carries no weights.
+    let weighted_tokens = vec![*token18.address(), *token6.address()];
+    let weighted_pool = create_balancer_pool(
+        &weighted_factory,
+        weighted_tokens.clone(),
+        vec![
+            U256::from(600_000_000_000_000_000u128),
+            U256::from(400_000_000_000_000_000u128),
+        ],
+        vec![U256::ZERO, U256::ZERO],
+    )
+    .await;
+    let stable_tokens = vec![*token6.address(), *token18.address()];
+    let stable_pool = create_balancer_pool(
+        &stable_factory,
+        stable_tokens.clone(),
+        vec![],
+        vec![U256::ZERO, U256::ZERO],
+    )
+    .await;
+
+    seed_checkpoint(&db, *weighted_factory.address(), 0).await;
+    seed_checkpoint(&db, *stable_factory.address(), 0).await;
+    let head = provider.get_block_number().await.unwrap();
+
+    let config = balancer_pool_indexer_config(
+        *vault.address(),
+        vec![*weighted_factory.address()],
+        vec![*stable_factory.address()],
+        POOL_INDEXER_METRICS_PORT,
+    );
+    let handle = spawn_pool_indexer(config).await;
+
+    wait_for_condition(TIMEOUT, || async {
+        let body: BalancerPoolsListResponse = reqwest::get(balancer_api("pools"))
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        Some(body.block_number >= head && body.pools.len() >= 2)
+    })
+    .await
+    .expect("indexer did not serve both balancer pools");
+
+    let body: BalancerPoolsListResponse = reqwest::get(balancer_api("pools"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let by_addr = |addr: Address| body.pools.iter().find(|p| p.address == addr).unwrap();
+
+    // Weighted: type + tokens (getPoolTokens order) + decimals + weights.
+    let w = by_addr(weighted_pool);
+    assert_eq!(w.pool_type, "Weighted");
+    assert_eq!(w.factory, *weighted_factory.address());
+    assert!(w.swap_enabled);
+    assert_eq!(
+        w.tokens.iter().map(|t| t.address).collect::<Vec<_>>(),
+        weighted_tokens
+    );
+    assert_eq!(w.tokens[0].decimals, 18);
+    assert_eq!(w.tokens[1].decimals, 6);
+    assert_eq!(w.tokens[0].weight.as_deref(), Some("0.6"));
+    assert_eq!(w.tokens[1].weight.as_deref(), Some("0.4"));
+
+    // Stable: type + tokens (order) + decimals; no weights.
+    let s = by_addr(stable_pool);
+    assert_eq!(s.pool_type, "Stable");
+    assert_eq!(s.factory, *stable_factory.address());
+    assert_eq!(
+        s.tokens.iter().map(|t| t.address).collect::<Vec<_>>(),
+        stable_tokens
+    );
+    assert_eq!(s.tokens[0].decimals, 6);
+    assert_eq!(s.tokens[1].decimals, 18);
+    assert!(s.tokens.iter().all(|t| t.weight.is_none()));
+
+    handle.abort();
+    let _ = handle.await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_pool_indexer_balancer_driver_integration() {
+    run_test(balancer_driver_integration).await;
+}
+
+/// Balancer analog of `driver_integration`: asserts (via the indexer's request
+/// counter) that a driver with a `[[liquidity.balancer-v2]]` + `indexer-url`
+/// source cold-reads the pool registry from the indexer at startup. Balancer
+/// pool state is on-chain, so `/balancer/v2/pools` is the single cold-read
+/// route (uni-v3 additionally serves ticks).
+async fn balancer_driver_integration(web3: Web3) {
+    const POOLS_ROUTE: &str = "/api/v1/{network}/balancer/v2/pools";
+
+    let db = PgPool::connect(POOL_INDEXER_DB_URL).await.unwrap();
+    clear_pool_indexer_tables(&db).await;
+
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let weth = *onchain.contracts().weth.address();
+
+    // WETH/token weighted pool via the mock factory the indexer scans and the
+    // driver's balancer config points at.
+    let provider = web3.provider.clone().erased();
+    let vault = MockBalancerVault::deploy(provider.clone()).await.unwrap();
+    let factory = MockBalancerPoolFactory::deploy(provider.clone(), *vault.address())
+        .await
+        .unwrap();
+    let token = MockToken::deploy(provider.clone(), 6u8).await.unwrap();
+    create_balancer_pool(
+        &factory,
+        vec![weth, *token.address()],
+        vec![
+            U256::from(500_000_000_000_000_000u128),
+            U256::from(500_000_000_000_000_000u128),
+        ],
+        vec![
+            U256::from(100u128) * U256::from(10).pow(U256::from(18)), // 100 WETH
+            U256::from(300_000u128) * U256::from(10).pow(U256::from(6)), // 300k token
+        ],
+    )
+    .await;
+
+    let vault_addr = *vault.address();
+    let factory_addr = *factory.address();
+    seed_checkpoint(&db, factory_addr, 0).await;
+    let head = provider.get_block_number().await.unwrap();
+
+    let config = balancer_pool_indexer_config(
+        vault_addr,
+        vec![factory_addr],
+        vec![],
+        POOL_INDEXER_METRICS_PORT,
+    );
+    let indexer = spawn_pool_indexer(config).await;
+
+    wait_for_condition(TIMEOUT, || async {
+        let body: BalancerPoolsListResponse = reqwest::get(balancer_api("pools"))
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        Some(body.block_number >= head && !body.pools.is_empty())
+    })
+    .await
+    .expect("indexer did not discover the balancer pool");
+
+    // Baseline AFTER warm-up so the bump below is driver-attributable.
+    let baseline_pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
+
+    let baseline_solver = colocation::start_baseline_solver(
+        "test_solver".into(),
+        solver.clone(),
+        weth,
+        vec![],
+        1,
+        true,
+    )
+    .await;
+
+    let config_override = format!(
+        r#"
+[[liquidity.balancer-v2]]
+vault = "{vault_addr:?}"
+weighted = ["{factory_addr:?}"]
+indexer-url = "{POOL_INDEXER_HOST}"
+"#
+    );
+    let driver_handle = colocation::start_driver_with_config_override(
+        onchain.contracts(),
+        vec![baseline_solver],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+        Some(&config_override),
+    );
+
+    // The driver seeds its balancer registry from the indexer in the
+    // background, bumping the counter.
+    wait_for_condition(TIMEOUT, || async {
+        api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await > baseline_pools
+    })
+    .await
+    .expect("driver did not cold-read balancer pools from the pool-indexer within timeout");
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM balancer_v2_pools")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert!(count > 0, "expected balancer pools persisted to DB");
+
+    driver_handle.abort();
+    indexer.abort();
+    let _ = indexer.await;
 }

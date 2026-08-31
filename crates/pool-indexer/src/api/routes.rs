@@ -1,7 +1,7 @@
 //! HTTP routing for the pool-indexer API.
 
 use {
-    super::{ApiError, AppState, uniswap_v3},
+    super::{ApiError, AppState, balancer_v2, uniswap_v3},
     axum::{
         Router,
         extract::{MatchedPath, Path, Request, State},
@@ -26,9 +26,15 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/pools/{pool_address}/ticks", get(uniswap_v3::get_ticks))
         .route_layer(middleware::from_fn_with_state(state.clone(), network_guard));
 
+    let balancer_v2_routes = Router::new()
+        .route("/pools", get(balancer_v2::get_pools))
+        .route("/pools/by-ids", get(balancer_v2::get_pools_by_ids))
+        .route_layer(middleware::from_fn_with_state(state.clone(), network_guard));
+
     Router::new()
         .route("/health", get(health))
         .nest("/api/v1/{network}/uniswap/v3", v3_routes)
+        .nest("/api/v1/{network}/balancer/v2", balancer_v2_routes)
         .with_state(state)
         .layer(middleware::from_fn(record_request_metrics))
         .layer(

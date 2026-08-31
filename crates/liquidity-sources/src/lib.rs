@@ -5,7 +5,6 @@ pub mod base_tokens;
 pub mod baseline_solvable;
 mod macros;
 pub mod recent_block_cache;
-pub mod subgraph;
 pub mod swapr;
 pub mod uniswap_v2;
 pub mod uniswap_v3;

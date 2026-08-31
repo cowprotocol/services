@@ -1,17 +1,15 @@
 use {
-    crate::indexer::uniswap_v3::{LiquidityUpdateData, NewPoolData, PoolStateData, TickDeltaData},
+    crate::{
+        db::bytes_to_addr,
+        indexer::uniswap_v3::{LiquidityUpdateData, NewPoolData, PoolStateData, TickDeltaData},
+    },
     alloy_primitives::Address,
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     num::ToPrimitive,
     number::conversions::u160_to_big_decimal,
     sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow},
-    std::collections::BTreeSet,
 };
-
-fn bytes_to_addr(b: Vec<u8>) -> Result<Address> {
-    Address::try_from(b.as_slice()).context("invalid address bytes")
-}
 
 fn address_bytes_list(addresses: &[Address]) -> Vec<&[u8]> {
     addresses.iter().map(|address| address.as_slice()).collect()
@@ -19,36 +17,6 @@ fn address_bytes_list(addresses: &[Address]) -> Vec<&[u8]> {
 
 fn decode_pool_rows(rows: Vec<PgRow>) -> Result<Vec<PoolRow>> {
     rows.into_iter().map(PoolRow::try_from).collect()
-}
-
-pub async fn get_checkpoint(pool: &PgPool, contract: &Address) -> Result<Option<u64>> {
-    let row = sqlx::query(
-        "SELECT block_number FROM pool_indexer_checkpoints WHERE contract_address = $1",
-    )
-    .bind(contract.as_slice())
-    .fetch_optional(pool)
-    .await
-    .context("get_checkpoint")?;
-
-    Ok(row.map(|r| r.get::<i64, _>("block_number").cast_unsigned()))
-}
-
-pub async fn set_checkpoint(
-    tx: &mut Transaction<'_, Postgres>,
-    contract: &Address,
-    block_number: u64,
-) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO pool_indexer_checkpoints (contract_address, block_number)
-         VALUES ($1, $2)
-         ON CONFLICT (contract_address) DO UPDATE SET block_number = EXCLUDED.block_number",
-    )
-    .bind(contract.as_slice())
-    .bind(block_number.cast_signed())
-    .execute(&mut **tx)
-    .await
-    .context("set_checkpoint")?;
-    Ok(())
 }
 
 pub async fn insert_pools(
@@ -610,26 +578,4 @@ pub async fn batch_set_token_symbols(
     .context("batch_set_token_symbols")?;
 
     Ok(())
-}
-
-/// The block every configured factory is indexed through, so every served pool
-/// is current at least to here. Scoped to `factories` so a decommissioned
-/// factory's leftover checkpoint row can't pin the value.
-pub async fn get_latest_indexed_block(
-    pool: &PgPool,
-    factories: &BTreeSet<Address>,
-) -> Result<Option<u64>> {
-    let factories: Vec<&[u8]> = factories.iter().map(|f| f.as_slice()).collect();
-    let row = sqlx::query(
-        "SELECT MIN(block_number) AS block FROM pool_indexer_checkpoints
-         WHERE contract_address = ANY($1)",
-    )
-    .bind(factories)
-    .fetch_one(pool)
-    .await
-    .context("get_latest_indexed_block")?;
-
-    Ok(row
-        .get::<Option<i64>, _>("block")
-        .map(|b| b.cast_unsigned()))
 }

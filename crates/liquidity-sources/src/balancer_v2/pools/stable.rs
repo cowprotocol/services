@@ -3,7 +3,7 @@
 use {
     super::{FactoryIndexing, PoolIndexing, common},
     crate::balancer_v2::{
-        graph_api::{PoolData, PoolType},
+        models::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
     alloy::{
@@ -127,7 +127,7 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2::Instance {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::balancer_v2::graph_api::Token, alloy::primitives::B256};
+    use {super::*, crate::balancer_v2::models::Token, alloy::primitives::B256};
 
     #[test]
     fn errors_when_converting_wrong_pool_type() {

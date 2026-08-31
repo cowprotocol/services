@@ -14,7 +14,7 @@ pub mod stable;
 pub mod weighted;
 
 use {
-    super::graph_api::PoolData,
+    super::models::PoolData,
     alloy::{eips::BlockId, primitives::B256},
     anyhow::Result,
     futures::future::BoxFuture,

@@ -80,6 +80,13 @@ pub fn u256_to_big_decimal(u256: &U256) -> BigDecimal {
     BigDecimal::from(BigInt::from(big_uint))
 }
 
+/// Converts a `ufixed256x18` value (1e18 fixed-point — e.g. a Balancer `Bfp`
+/// normalized weight) to its decimal value: `500000000000000000` ->
+/// `0.500000000000000000`.
+pub fn ufixed18_to_big_decimal(value: &U256) -> BigDecimal {
+    BigDecimal::new(u256_to_big_int(value), 18)
+}
+
 pub fn u160_to_big_decimal(u160: &U160) -> BigDecimal {
     let big_uint = BigUint::from_bytes_be(&u160.to_be_bytes::<20>());
     BigDecimal::from(BigInt::from(big_uint))

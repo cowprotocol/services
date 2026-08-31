@@ -18,11 +18,13 @@ applied migrations) so it's cancelled there by `../sql/V111`.
 ## Schema
 
 The tables below live in the indexer's own per-network database (e.g.
-`ink_pool_indexer`), created by the migrations in this directory.
+`ink_pool_indexer`), created by the migrations in this directory. `V110` defines
+the Uniswap V3 discovery schema and `V111` the Balancer V2 one; a pool-indexer
+process indexes whichever protocol(s) its network config enables.
 
 ### pool\_indexer\_checkpoints
 
-Highest finalized block processed per `contract_address` by `pool-indexer`. `contract_address` is the factory address. The indexer runs one process per network against its own DB, so there's no `chain_id` column.
+Highest finalized block processed per `contract_address` (the factory address) by `pool-indexer`. Shared by the Uniswap V3 and Balancer V2 indexers: their factory addresses are distinct contracts so rows never collide, and each protocol's queries filter to its own configured factories. One process per network against its own DB, so there's no `chain_id` column.
 
  Column             | Type   | Nullable | Details
 --------------------|--------|----------|--------
@@ -97,3 +99,34 @@ Quoters consult these to predict liquidity changes at tick crossings during swap
 
 Indexes:
 - PRIMARY KEY: btree (`pool_address`, `tick_idx`)
+
+### balancer\_v2\_pools
+
+One row per pool, discovered from each factory's `PoolCreated` event. `pool_type` is derived from the creating factory (weighted V0 and V3-plus both map to `Weighted`) and stored as the string the API serves. Referenced by `balancer_v2_pool_tokens`. Discovery metadata only — dynamic state (balances, amplification, LBP weights, scaling factors, swap fee) stays on-chain and is fetched by the driver at query time.
+
+ Column         | Type   | Nullable | Details
+----------------|--------|----------|--------
+ pool\_id       | bytea  | not null | 32-byte Balancer poolId
+ address        | bytea  | not null | Pool address (poolId's first 20 bytes)
+ factory        | bytea  | not null | Factory that emitted `PoolCreated`
+ pool\_type     | text   | not null | `Weighted`, `Stable`, `ComposableStable`, or `LiquidityBootstrapping` (`CHECK`)
+ created\_block | bigint | not null | Block the pool was created on-chain
+
+Indexes:
+- PRIMARY KEY: btree (`pool_id`)
+
+### balancer\_v2\_pool\_tokens
+
+Tokens per pool in `Vault.getPoolTokens` order. `decimals` is backfilled; `weight` is set only for weighted pools. FK → `balancer_v2_pools`.
+
+ Column    | Type     | Nullable | Details
+-----------|----------|----------|--------
+ pool\_id  | bytea    | not null | FK → `balancer_v2_pools(pool_id)`
+ position  | int      | not null | Index in `getPoolTokens` order
+ token     | bytea    | not null | Token address
+ decimals  | smallint | nullable | `NULL` = not yet fetched. `-1` = sentinel for "fetched but call failed"
+ weight    | numeric  | nullable | Bfp (1e18) normalized weight; weighted pools only, else `NULL`
+
+Indexes:
+- PRIMARY KEY: btree (`pool_id`, `position`)
+- Partial index on `(token)` with predicate `decimals IS NULL` to power the backfill scan.
