@@ -40,17 +40,18 @@ use {
     price_estimation::{
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
-        native::NativePriceEstimating,
+        native::{NativePriceEstimating, to_normalized_price},
     },
     shared::{
         order_quoting::{self, OrderQuoter},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
+        collections::HashSet,
         sync::{Arc, RwLock, atomic::AtomicBool},
         time::{Duration, Instant},
     },
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
     tracing::{Instrument, info_span, instrument},
     url::Url,
 };
@@ -475,6 +476,19 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     infra::order_notify::Notifier::new(banned_users.clone(), wake_runloop.clone())
         .spawn(db_write.pool.clone());
 
+    let penalty_cap_calculator = match &config.penalty_cap {
+        Some(penalty_cap_config) => Some(
+            build_penalty_cap_calculator(
+                penalty_cap_config,
+                *eth.contracts().weth().address(),
+                token_info_fetcher.as_ref(),
+                &competition_native_price_updater,
+            )
+            .await,
+        ),
+        None => None,
+    };
+
     let solvable_orders_cache = SolvableOrdersCache::new(
         config.min_order_validity_period,
         persistence.clone(),
@@ -494,6 +508,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             config.shared.enable_sell_equals_buy_volume_fee,
             *eth.contracts().weth().address(),
         ),
+        penalty_cap_calculator,
         config.surplus_capturing_jit_order_owners,
         config.native_price_timeout,
         *eth.contracts().settlement().address(),
@@ -745,4 +760,33 @@ async fn shadow_mode(config: Configuration) -> ! {
         (*weth.address()).into(),
     );
     shadow.run_forever().await;
+}
+
+/// Builds the penalty cap calculator by fetching the USD reference token's
+/// decimals and initial native price. Panics when either fetch fails.
+async fn build_penalty_cap_calculator(
+    config: &configs::autopilot::penalty_cap::PenaltyCapConfig,
+    native_token: Address,
+    token_infos: &dyn TokenInfoFetching,
+    native_price_updater: &price_estimation::native_price_cache::NativePriceUpdater,
+) -> domain::penalty_cap::PenaltyCapCalculator {
+    const STARTUP_PRICE_TIMEOUT: Duration = Duration::from_secs(5);
+
+    let decimals = token_infos
+        .get_token_info(config.usd_reference_token)
+        .await
+        .ok()
+        .and_then(|info| info.decimals)
+        .expect("could not fetch decimals of the penalty cap USD reference token");
+    let price = native_price_updater
+        .update_tokens_and_fetch_prices(
+            HashSet::from([config.usd_reference_token]),
+            STARTUP_PRICE_TIMEOUT,
+        )
+        .await
+        .remove(&config.usd_reference_token)
+        .and_then(|result| result.ok())
+        .and_then(to_normalized_price)
+        .expect("could not fetch the native price of the penalty cap USD reference token");
+    domain::penalty_cap::PenaltyCapCalculator::new(config, native_token, decimals, price)
 }
