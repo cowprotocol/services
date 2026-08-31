@@ -19,17 +19,21 @@
 //! ```
 
 use {
+    cow_settlement_interface::pda::buffer::find_buffer_pda,
     solana_driver::{
         domain::{Auction, Id, Order, Side, Slot, order_uid::OrderUid},
         infra::{config, solver::Solver},
-        util::associated_token_address,
     },
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{
+        pubkey::Pubkey,
+        signer::{Signer, keypair::read_keypair_file},
+    },
     solana_solvers::{
         api::Api,
         config::JupiterConfig,
         dex::{Dex, jupiter::Jupiter},
     },
+    solana_testlib::temp_keypair,
     std::{str::FromStr, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
@@ -48,8 +52,8 @@ fn deadline() -> chrono::DateTime<chrono::Utc> {
     chrono::Utc::now() + chrono::Duration::seconds(secs)
 }
 
-/// A sell of 10 USDC for USDT. The driver derives the buy-side ATA from the
-/// solver's account, so the domain order carries no destination.
+/// A sell of 10 USDC for USDT. The driver derives the buy destination as the
+/// USDT buffer PDA.
 fn sell_auction() -> Auction {
     Auction {
         id: Id::new(1).unwrap(),
@@ -66,6 +70,7 @@ fn sell_auction() -> Auction {
             side: Side::Sell,
             partially_fillable: false,
             order_pda: Pubkey::default(),
+            app_data: [0; 32],
         }],
         deadline_slot: Slot(1),
         deadline: deadline(),
@@ -111,19 +116,22 @@ async fn driver_solves_against_live_jupiter_engine() {
 
     // Any valid pubkey works: Jupiter builds instructions for this account,
     // the swap only runs for real once the driver submits the settlement.
-    let solver_account = Pubkey::new_unique();
+    let keypair_file = temp_keypair();
+    let keypair_path = keypair_file.path().to_path_buf();
+    let solver_account = read_keypair_file(&keypair_path).unwrap().pubkey();
     let solver = Solver::new(&config::Solver {
         name: "jupiter-live".to_string(),
         endpoint: format!("http://{addr}").parse().unwrap(),
-        account: solver_account,
+        signer_keypair: keypair_path,
         max_in_flight: std::num::NonZero::new(1).unwrap(),
-    });
+    })
+    .expect("solver construction should succeed");
 
     // `Solver::solve` posts the auction and deserializes the JSON response
     // into `domain::Solution`s; an `Ok` result proves the wire deserialization
     // succeeded.
     let solutions = solver
-        .solve(&sell_auction())
+        .solve(&sell_auction(), cow_settlement_interface::id())
         .await
         .expect("solve should succeed against live Jupiter");
 
@@ -162,11 +170,15 @@ async fn driver_solves_against_live_jupiter_engine() {
     );
 
     // The swap instructions must be built for our settlement signer and land
-    // the buy output in the ATA the driver derived from it. This is the
-    // end-to-end check that the `buy_destination` derivation flows through the
-    // whole driver <-> solver <-> Jupiter path.
-    let buy_destination =
-        associated_token_address(&solver_account, &Pubkey::from_str(USDT).unwrap());
+    // the buy output in the buy-mint buffer PDA the driver derived from the
+    // settlement program id. This is the end-to-end check that the
+    // `buy_destination` derivation flows through the whole driver <-> solver
+    // <-> Jupiter path.
+    let buy_destination = find_buffer_pda(
+        &cow_settlement_interface::id(),
+        &Pubkey::from_str(USDT).unwrap(),
+    )
+    .0;
     let touched: Vec<Pubkey> = solution
         .interactions
         .iter()

@@ -96,14 +96,16 @@ impl Trade {
             // `surplus` of sell orders is already in buy tokens so we simply convert it to ETH
             Side::Sell => native_price_buy.in_eth(eth::TokenAmount(surplus_in_surplus_token)),
             Side::Buy => {
-                // `surplus` of buy orders is in sell tokens. We start with following formula:
-                // buy_amount / sell_amount == buy_price / sell_price
+                // `surplus` of buy orders is in sell tokens. We start with
+                // following formula: buy_amount / sell_amount
+                // == buy_price / sell_price
                 //
-                // since `surplus` of buy orders is in sell tokens we convert to buy amount via:
-                // buy_amount == (buy_price / sell_price) * surplus
+                // since `surplus` of buy orders is in sell tokens we convert to
+                // buy amount via: buy_amount == (buy_price /
+                // sell_price) * surplus
                 //
-                // to avoid loss of precision because we work with integers we first multiply
-                // and then divide:
+                // to avoid loss of precision because we work with integers we
+                // first multiply and then divide:
                 // buy_amount = surplus * buy_price / sell_price
                 let surplus_in_buy_tokens = surplus_in_surplus_token
                     .widening_mul(self.signed_buy.amount.0)
@@ -112,7 +114,8 @@ impl Trade {
                 let surplus_in_buy_tokens = eth::U256::uint_try_from(surplus_in_buy_tokens)
                     .map_err(|_| Error::Math(Math::Overflow))?;
 
-                // Afterwards we convert the buy token surplus to the native token.
+                // Afterwards we convert the buy token surplus to the native
+                // token.
                 native_price_buy.in_eth(surplus_in_buy_tokens.into())
             }
         };
@@ -144,10 +147,11 @@ impl Trade {
             Side::Sell => {
                 // scale limit buy to support partially fillable orders
 
-                // `checked_ceil_div`` to be consistent with how settlement contract calculates
-                // traded buy amounts
-                // smallest allowed executed_buy_amount per settlement contract is
-                // executed_sell_amount * ceil(price_limits.buy / price_limits.sell)
+                // `checked_ceil_div`` to be consistent with how settlement
+                // contract calculates traded buy amounts
+                // smallest allowed executed_buy_amount per settlement contract
+                // is executed_sell_amount *
+                // ceil(price_limits.buy / price_limits.sell)
                 let limit_buy = self
                     .executed
                     .0
@@ -290,8 +294,8 @@ impl Trade {
             },
         )?;
         let surplus = self.surplus_over(quote);
-        // negative surplus is not error in this case, as solutions often have no
-        // improvement over quote which results in negative surplus
+        // negative surplus is not error in this case, as solutions often have
+        // no improvement over quote which results in negative surplus
         if let Err(Math::Negative) = surplus {
             return Ok(eth::SurplusTokenAmount(eth::U256::ZERO));
         }
@@ -314,10 +318,11 @@ impl Trade {
         surplus: eth::SurplusTokenAmount,
         factor: f64,
     ) -> Result<eth::SurplusTokenAmount, Error> {
-        // Surplus fee is specified as a `factor` from raw surplus (before fee). Since
-        // this module works with trades that already have the protocol fee applied, we
-        // need to calculate the protocol fee as an observation of the eventually traded
-        // amounts using a different factor `factor'`.
+        // Surplus fee is specified as a `factor` from raw surplus (before fee).
+        // Since this module works with trades that already have the
+        // protocol fee applied, we need to calculate the protocol fee
+        // as an observation of the eventually traded amounts using a
+        // different factor `factor'`.
         //
         // The protocol fee before being applied is:
         //    fee = surplus_before_fee * factor
@@ -340,16 +345,17 @@ impl Trade {
 
     /// Protocol fee as a cut of the trade volume.
     fn volume_fee(&self, factor: f64) -> Result<eth::SurplusTokenAmount, Error> {
-        // Volume fee is specified as a `factor` from raw volume (before fee). Since
-        // this module works with trades that already have the protocol fee applied, we
-        // need to calculate the protocol fee as an observation of a the eventually
-        // traded amount using a different factor `factor'` .
+        // Volume fee is specified as a `factor` from raw volume (before fee).
+        // Since this module works with trades that already have the
+        // protocol fee applied, we need to calculate the protocol fee
+        // as an observation of a the eventually traded amount using a
+        // different factor `factor'` .
         //
         // The protocol fee before being applied is:
         // case Sell: fee = traded_buy_amount * factor, resulting in the REDUCED
         // buy amount
-        // case Buy: fee = traded_sell_amount * factor, resulting in the INCREASED
-        // sell amount
+        // case Buy: fee = traded_sell_amount * factor, resulting in the
+        // INCREASED sell amount
         //
         // The protocol fee after being applied is:
         // case Sell: fee = traded_buy_amount' * factor',

@@ -15,6 +15,8 @@ use {
     },
 };
 
+pub mod error;
+pub mod extract;
 pub mod routes;
 
 /// The Solana orderbook HTTP API server.
@@ -42,9 +44,10 @@ impl Api {
         listener: TcpListener,
         shutdown: CancellationToken,
     ) -> Result<(), io::Error> {
-        // Propagate the OpenTelemetry trace context from incoming request headers and
-        // record the trace id on the request span, so logs can be correlated across
-        // services. `make_span` sets the parent context and an empty `trace_id` field;
+        // Propagate the OpenTelemetry trace context from incoming request
+        // headers and record the trace id on the request span, so logs
+        // can be correlated across services. `make_span` sets the
+        // parent context and an empty `trace_id` field;
         // `record_trace_id` then fills it in.
         let tracing_layer = ServiceBuilder::new()
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
@@ -61,6 +64,9 @@ impl Api {
 
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
+            .route("/api/v1/orders/{uid}", get(routes::order))
+            .route("/api/v1/orders/{uid}/status", get(routes::order_status))
+            .route("/api/v1/trades", get(routes::trades))
             .layer(cors)
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)

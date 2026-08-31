@@ -18,6 +18,7 @@ pub mod quotes;
 pub mod reference_scores;
 pub mod settlement_executions;
 pub mod settlements;
+pub mod solana;
 pub mod solver_competition_v2;
 pub mod trades;
 

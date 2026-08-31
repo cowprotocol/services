@@ -8,7 +8,7 @@ use {
                 uniswap::v3::{Fee, Liquidity, Pool, SqrtPrice, Tick},
             },
         },
-        infra::{self, blockchain::Ethereum, liquidity::config::UniswapV3PoolSource},
+        infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
     eth_domain_types as eth,
@@ -17,8 +17,6 @@ use {
         maintenance::{Maintaining, ServiceMaintenance},
     },
     liquidity_sources::uniswap_v3::{
-        V3PoolDataSource,
-        graph_api::UniV3SubgraphClient,
         pool_fetching::UniswapV3PoolFetcher,
         pool_indexer::PoolIndexerClient,
     },
@@ -115,31 +113,17 @@ async fn init_liquidity(
 ) -> anyhow::Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
     let http = boundary::liquidity::http_client();
-    let mut fetch_on_demand = false;
-    let source: Arc<dyn V3PoolDataSource> = match &config.pool_source {
-        UniswapV3PoolSource::PoolIndexer(indexer) => {
-            tracing::info!(url = %indexer.url, "uniswap v3: using pool-indexer as data source");
-            let client = PoolIndexerClient::new(indexer.url.clone(), eth.chain(), http);
-            fetch_on_demand = client.fetch_on_demand();
-            Arc::new(client)
-        }
-        UniswapV3PoolSource::Subgraph(subgraph) => {
-            tracing::info!(url = %subgraph.url, "uniswap v3: using subgraph as data source");
-            let client = UniV3SubgraphClient::from_subgraph_url(
-                &subgraph.url,
-                http,
-                subgraph.max_pools_per_tick_query,
-            )
-            .await
-            .context("failed to construct UniV3 subgraph client")?;
-            Arc::new(client)
-        }
-    };
+    let indexer = &config.pool_indexer;
+    tracing::info!(url = %indexer.url, "uniswap v3: using pool-indexer as data source");
+    let source = Arc::new(PoolIndexerClient::new(
+        indexer.url.clone(),
+        eth.chain(),
+        http,
+    ));
 
     let pool_fetcher = Arc::new(
         UniswapV3PoolFetcher::new(
             source,
-            fetch_on_demand,
             web3.clone(),
             block_retriever,
             config.max_pools_to_initialize,
@@ -148,7 +132,8 @@ async fn init_liquidity(
         .context("failed to initialise UniswapV3 liquidity")?,
     );
 
-    // only run maintenance as long as someone is using the original pool_fetcher
+    // only run maintenance as long as someone is using the original
+    // pool_fetcher
     let maintenance = Arc::downgrade(&(pool_fetcher.clone() as Arc<dyn Maintaining>));
     let update_task = ServiceMaintenance::new(vec![maintenance])
         .run_maintenance_on_new_block(eth.current_block().clone());

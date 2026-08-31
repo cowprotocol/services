@@ -245,13 +245,14 @@ impl SolvableOrdersCache {
             )
         };
 
-        // Remove in-flight orders - already won a previous auction, being settled
-        // on-chain.
+        // Remove in-flight orders - already won a previous auction, being
+        // settled on-chain.
         let (orders, removed) = filter_out_in_flight_orders(orders, &in_flight);
         Metrics::track_filtered_orders(InFlight, &removed);
         filtered_order_events.extend(removed.into_iter().map(|uid| (uid, InFlight)));
-        // It's possible that some orders got marked as invalid due to missing balance
-        // or so, but the order is perfectly fine if it's in-flight
+        // It's possible that some orders got marked as invalid due to missing
+        // balance or so, but the order is perfectly fine if it's
+        // in-flight
         invalid_order_uids.retain(|uid, _| !in_flight.contains(uid));
 
         let orders = if self.disable_order_balance_filter {
@@ -308,9 +309,10 @@ impl SolvableOrdersCache {
             self.store_events_by_reason(filtered_order_events, OrderEventLabel::Filtered);
         }
 
-        // Exclude any owner that already has an order in-flight (i.e. won a previous
-        // auction and is being settled on-chain). A surplus-capturing JIT order created
-        // on its behalf could conflict with the settling order, so we drop the owner
+        // Exclude any owner that already has an order in-flight (i.e. won a
+        // previous auction and is being settled on-chain). A
+        // surplus-capturing JIT order created on its behalf could
+        // conflict with the settling order, so we drop the owner
         // from this auction until the in-flight order clears.
         let in_flight_owners: HashSet<Address> = in_flight
             .iter()
@@ -435,10 +437,10 @@ impl SolvableOrdersCache {
         let mut orders = fetch_orders.await?;
 
         // Move the checkpoint slightly back in time to mitigate race conditions
-        // caused by inconsistencies of stored timestamps. See #2959 for more details.
-        // This will cause us to fetch orders created or cancelled in the buffer
-        // period multiple times but that is a small price to pay for not missing
-        // orders.
+        // caused by inconsistencies of stored timestamps. See #2959 for more
+        // details. This will cause us to fetch orders created or
+        // cancelled in the buffer period multiple times but that is a
+        // small price to pay for not missing orders.
         orders.fetched_from_db -= chrono::TimeDelta::seconds(60);
         Ok(orders)
     }
@@ -584,9 +586,9 @@ fn orders_with_balance<'a>(
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     let mut filtered_orders = vec![];
     let keep = |order: &Order| {
-        // Skip balance check for all EIP-1271 orders (they can rely on pre-interactions
-        // to unlock funds) or orders with wrappers (wrappers produce the required
-        // balance at settlement time).
+        // Skip balance check for all EIP-1271 orders (they can rely on
+        // pre-interactions to unlock funds) or orders with wrappers
+        // (wrappers produce the required balance at settlement time).
         if matches!(order.signature, Signature::Eip1271(_))
             || filter_bypass_orders.contains(&order.metadata.uid)
         {
@@ -1303,7 +1305,8 @@ mod tests {
         ];
         let balances: Balances = Default::default(); // No balances
 
-        // EIP-1271 order and wrapper order should be retained, regular order filtered
+        // EIP-1271 order and wrapper order should be retained, regular order
+        // filtered
         let wrapper_set = HashSet::from([wrapper_order_uid]);
         let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let (alive_orders, _removed_orders) =

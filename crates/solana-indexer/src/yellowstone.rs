@@ -12,6 +12,7 @@ use {
         GeyserGrpcBuilderError,
         GeyserGrpcClient,
         ReconnectConfig,
+        ReconnectionPolicy,
     },
     yellowstone_grpc_proto::tonic::transport::ClientTlsConfig,
 };
@@ -26,10 +27,10 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// How often the transport sends HTTP/2 keepalive pings.
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
 
-/// First reconnect delay, doubled per attempt.
+/// First redial delay, doubled per attempt.
 const RECONNECT_BACKOFF_INITIAL: Duration = Duration::from_millis(200);
 
-/// Reconnect delay growth factor.
+/// Redial delay growth factor.
 const RECONNECT_BACKOFF_MULTIPLIER: f64 = 2.0;
 
 /// Dial attempts per outage, about 3.5 minutes in total. Exhausting them ends
@@ -75,16 +76,19 @@ fn builder(
         let _ = rustls::crypto::ring::default_provider().install_default();
         builder = builder.tls_config(ClientTlsConfig::new().with_native_roots())?;
     }
-    // The builder default is `no_reconnect`, under which the `AutoReconnect`
-    // wrapper gives up on the first stream error. Every stream drop gets a
-    // fresh retry budget: ten doubling attempts from 200ms cover an outage of
-    // a few minutes, anything longer ends the stream and the process restart
-    // resumes from the last indexed slot.
-    builder.reconnect_config = ReconnectConfig::default().with_backoff(Backoff::new(
-        RECONNECT_BACKOFF_INITIAL,
-        RECONNECT_BACKOFF_MULTIPLIER,
-        RECONNECT_MAX_RETRIES,
-    ));
+    // Reconnects continue from the live head rather than a checkpoint. A
+    // checkpoint the provider has discarded is rejected as `Internal` while
+    // the provider is fresh from a restart, and the wrapper retries it without
+    // delay, so replaying across a reconnect is left to a backfill (BE-204).
+    // The backoff covers dial failures only.
+    builder.reconnect_config = Some(ReconnectConfig {
+        backoff: Backoff::new(
+            RECONNECT_BACKOFF_INITIAL,
+            RECONNECT_BACKOFF_MULTIPLIER,
+            RECONNECT_MAX_RETRIES,
+        ),
+        policy: ReconnectionPolicy::SkipMissedData,
+    });
     Ok(builder)
 }
 
@@ -93,15 +97,17 @@ mod tests {
     use super::*;
 
     /// The TLS path is where a missing rustls crypto provider panics, and the
-    /// retry assert catches losing the reconnect config (the builder default
-    /// never reconnects).
+    /// reconnect asserts catch losing the config or falling back to replaying
+    /// a checkpoint.
     #[test]
-    fn builder_configures_tls_and_reconnects() {
+    fn builder_configures_tls_and_reconnects_from_the_head() {
         let builder = builder(
             Url::parse("https://yellowstone.example.com:443").unwrap(),
             Some("secret".to_owned()),
         )
         .unwrap();
-        assert!(builder.reconnect_config.backoff.max_retries > 0);
+        let config = builder.reconnect_config.expect("reconnect config");
+        assert!(config.backoff.max_retries > 0);
+        assert!(matches!(config.policy, ReconnectionPolicy::SkipMissedData));
     }
 }

@@ -244,7 +244,8 @@ async fn single_limit_order_test(web3: Web3) {
     .unwrap();
 
     wait_for_condition(TIMEOUT, || async {
-        // after the order got filled we are able to see the quote's execution plan
+        // after the order got filled we are able to see the quote's execution
+        // plan
         let order = services.get_order(&order_id).await.unwrap();
         tracing::error!(?order);
         order.metadata.quote.unwrap().metadata != serde_json::Value::default()
@@ -449,8 +450,8 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     token_b.mint(trader_b.address(), 10u64.eth()).await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
-    // (base_b). base_a has more liquidity than base_b, leading to the solver that
-    // knows about base_a to offer different solution.
+    // (base_b). base_a has more liquidity than base_b, leading to the solver
+    // that knows about base_a to offer different solution.
     let [base_a, base_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
@@ -790,8 +791,8 @@ async fn too_many_limit_orders_test(web3: Web3) {
     );
     services.create_order(&order).await.unwrap();
 
-    // Attempt to place another order, but the orderbook is configured to allow only
-    // one limit order per user.
+    // Attempt to place another order, but the orderbook is configured to allow
+    // only one limit order per user.
     let order = OrderCreation {
         sell_token: *token_a.address(),
         sell_amount: 1u64.eth(),
@@ -1028,8 +1029,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         &trader.signer,
     );
 
-    // Warm up co-located driver by quoting the order (otherwise placing an order
-    // may time out)
+    // Warm up co-located driver by quoting the order (otherwise placing an
+    // order may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
             sell_token: *token_usdt.address(),
@@ -1256,9 +1257,9 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     // wait for trade to be indexed and post-processed
     wait_for_condition(TIMEOUT, || async {
-        // Keep minting blocks to eventually invalidate the liquidity cached by the
-        // driver making it refetch the current state which allows it to finally compute
-        // a solution.
+        // Keep minting blocks to eventually invalidate the liquidity cached by
+        // the driver making it refetch the current state which allows
+        // it to finally compute a solution.
         onchain.mint_block().await;
         services
             .get_trades(&order_id)
@@ -1433,16 +1434,16 @@ async fn sell_order_with_haircut_test(web3: Web3) {
         .checked_sub(settlement_balance_before)
         .unwrap();
 
-    // With 500 bps (5%) haircut on ~9.87 ETH buy amount, settlement should receive
-    // ~0.49 ETH. Allow some tolerance for AMM fees and rounding.
+    // With 500 bps (5%) haircut on ~9.87 ETH buy amount, settlement should
+    // receive ~0.49 ETH. Allow some tolerance for AMM fees and rounding.
     assert!(
         settlement_received >= 0.4.eth() && settlement_received <= 0.6.eth(),
         "Settlement contract should have received haircut (~0.49 ETH), but got {}",
         settlement_received
     );
 
-    // Expected trader amount: AMM output minus haircut (~9.87 - 0.49 = ~9.38 ETH).
-    // Haircut reduces what trader receives on-chain.
+    // Expected trader amount: AMM output minus haircut (~9.87 - 0.49 = ~9.38
+    // ETH). Haircut reduces what trader receives on-chain.
     assert!(
         trader_received >= 9u64.eth() && trader_received <= 9.5.eth(),
         "Trader should have received AMM output minus haircut (~9.38 ETH), but got {}",
@@ -1578,8 +1579,8 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         )
         .await;
 
-    // Create BUY order: want to buy 5 token_b, willing to sell up to 10 token_a.
-    // At 1:1 ratio (with ~0.3% AMM fee), we'd need ~5.04 token_a.
+    // Create BUY order: want to buy 5 token_b, willing to sell up to 10
+    // token_a. At 1:1 ratio (with ~0.3% AMM fee), we'd need ~5.04 token_a.
     // We use a generous sell_limit to ensure the order executes, then verify
     // that the driver's reported sell_amount doesn't exceed reasonable bounds.
     let signed_buy_amount = 5u64.eth();
@@ -1668,9 +1669,9 @@ async fn buy_order_with_haircut_test(web3: Web3) {
     );
 
     // 3. For buy orders, haircut INCREASES sell_amount (user pays more). Base
-    //    needed is ~5.04 ETH, with 5% haircut on 5 ETH buy amount = 0.25 ETH. So
-    //    sell_amount should be ~5.04 + 0.25 = ~5.29 ETH. We allow up to 5.5 ETH to
-    //    account for variance.
+    //    needed is ~5.04 ETH, with 5% haircut on 5 ETH buy amount = 0.25 ETH.
+    //    So sell_amount should be ~5.04 + 0.25 = ~5.29 ETH. We allow up to 5.5
+    //    ETH to account for variance.
     let reasonable_max_sell = 5.5.eth();
     assert!(
         reported_sell_amount <= reasonable_max_sell,

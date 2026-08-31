@@ -381,8 +381,8 @@ mod tests {
             );
         }
 
-        // A partially fillable order that has has been partially executed scales
-        // to the remaining execution and available balance.
+        // A partially fillable order that has has been partially executed
+        // scales to the remaining execution and available balance.
         let order = ModelOrder {
             data: OrderData {
                 sell_amount: U256::from(800),

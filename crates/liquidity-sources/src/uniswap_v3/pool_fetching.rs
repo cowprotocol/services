@@ -3,7 +3,7 @@ use {
         BlockTarget,
         V3PoolDataSource,
         event_fetching::{RecentEventsCache, UniswapV3PoolEventFetcher},
-        graph_api::{PoolData, Token},
+        models::{PoolData, Token},
     },
     crate::{recent_block_cache::Block, uniswap_v3::event_fetching::WithAddress},
     alloy::{
@@ -128,9 +128,6 @@ struct PoolsCheckpoint {
 
 struct PoolsCheckpointHandler {
     source: Arc<dyn V3PoolDataSource>,
-    /// Whether the source can serve cache-miss fetches cheaply on the quote
-    /// path (the indexer). Decided at construction; false for the subgraph.
-    fetch_on_demand: bool,
     /// Address is pool id while TokenPair is a pair or tokens for each pool.
     pools_by_token_pair: HashMap<TokenPair, Vec<Address>>,
     /// Pools state on a specific block number in history considered reorg safe
@@ -163,7 +160,6 @@ impl PoolsCheckpointHandler {
     /// it would apply that event twice.
     pub async fn new(
         source: Arc<dyn V3PoolDataSource>,
-        fetch_on_demand: bool,
         block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize_cache: usize,
     ) -> Result<Self> {
@@ -183,8 +179,9 @@ impl PoolsCheckpointHandler {
         );
 
         let pools_by_token_pair = {
-            // we store addresses in a `Vec` instead of a `HashSet` to save on memory but
-            // we still ensure there are no duplicated pools.
+            // we store addresses in a `Vec` instead of a `HashSet` to save on
+            // memory but we still ensure there are no duplicated
+            // pools.
             let mut pools_by_token_pair: HashMap<TokenPair, Vec<Address>> = HashMap::new();
             for pool in &registered_pools.pools {
                 let pair =
@@ -201,8 +198,9 @@ impl PoolsCheckpointHandler {
             pools_by_token_pair
         };
 
-        // can't fetch the state of all pools in constructor for performance reasons,
-        // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest
+        // can't fetch the state of all pools in constructor for performance
+        // reasons, so let's fetch the top
+        // `max_pools_to_initialize_cache` pools with the highest
         // liquidity
         registered_pools
             .pools
@@ -240,7 +238,6 @@ impl PoolsCheckpointHandler {
 
         Ok(Self {
             source,
-            fetch_on_demand,
             pools_by_token_pair,
             pools_checkpoint,
         })
@@ -303,15 +300,12 @@ impl PoolsCheckpointHandler {
             .collect())
     }
 
-    /// Fetches `missing` at the source's head. Gated on `fetch_on_demand` (set
-    /// at construction from the source type), so it is a no-op for the
-    /// subgraph; those misses wait for the maintenance run instead. It
-    /// fetches at the head, not the checkpoint block: the checkpoint can
-    /// sit ahead of the indexer's served head, so waiting on it would hang
-    /// the quote. A failed fetch yields fewer pools rather than failing the
-    /// whole quote.
+    /// Fetches `missing` at the source's head, not the checkpoint block: the
+    /// checkpoint can sit ahead of the indexer's served head, so waiting on it
+    /// would hang the quote. A failed fetch yields fewer pools rather than
+    /// failing the whole quote.
     async fn fetch_missing_on_demand(&self, missing: &[Address]) -> Vec<(Address, Arc<PoolInfo>)> {
-        if missing.is_empty() || !self.fetch_on_demand {
+        if missing.is_empty() {
             return Vec::new();
         }
         self.fetch_pools(missing, BlockTarget::Latest)
@@ -363,19 +357,14 @@ pub struct UniswapV3PoolFetcher {
 impl UniswapV3PoolFetcher {
     pub async fn new(
         source: Arc<dyn V3PoolDataSource>,
-        fetch_on_demand: bool,
         web3: Web3,
         block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize: usize,
     ) -> Result<Self> {
         let web3 = web3.labeled("uniswapV3");
-        let checkpoint = PoolsCheckpointHandler::new(
-            source,
-            fetch_on_demand,
-            block_retriever.clone(),
-            max_pools_to_initialize,
-        )
-        .await?;
+        let checkpoint =
+            PoolsCheckpointHandler::new(source, block_retriever.clone(), max_pools_to_initialize)
+                .await?;
 
         let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
         let init_block = block_retriever.block(init_block).await?;
@@ -463,17 +452,18 @@ impl PoolFetching for UniswapV3PoolFetcher {
                 block_number,
                 last_handled_block
             );
-            // we call run_maintenance() here because that is the only way to update the
-            // event storage with the events from the block range
-            // last_handled_block..=block_number which are missing
+            // we call run_maintenance() here because that is the only way to
+            // update the event storage with the events from the
+            // block range last_handled_block..=block_number which
+            // are missing
             if let Err(err) = self.events.run_maintenance().await {
                 tracing::debug!("failed to update events on fetch because {}", err);
                 return Ok(Default::default());
             }
         }
 
-        // this is the only place where this function uses checkpoint - no data racing
-        // between maintenance
+        // this is the only place where this function uses checkpoint - no data
+        // racing between maintenance
         let CachedPools {
             pools: mut checkpoint,
             missing,
@@ -493,7 +483,8 @@ impl PoolFetching for UniswapV3PoolFetcher {
 
         // The warm cache holds only the top pools by liquidity, so many
         // registered pairs are absent. Resolve those misses on-demand and merge
-        // them after the replay; they come back current, so they aren't replayed.
+        // them after the replay; they come back current, so they aren't
+        // replayed.
         checkpoint.extend(self.checkpoint.fetch_missing_on_demand(&missing).await);
 
         // return only pools which current liquidity is positive
@@ -516,10 +507,12 @@ fn append_events(
                 UniswapV3PoolEvents::Burn(burn) => {
                     let tick_lower = burn.tickLower.as_i32();
                     let tick_upper = burn.tickUpper.as_i32();
-                    // `amount` is the position's `uint128` liquidity and always fits
-                    // `i128`: it's capped on-chain by `maxLiquidityPerTick` (~1.9e32) which
-                    // is far below `i128::MAX` (~1.7e38), so this branch is unreachable for
-                    // any valid event. We skip the whole event (not just the tick deltas)
+                    // `amount` is the position's `uint128` liquidity and always
+                    // fits `i128`: it's capped on-chain by
+                    // `maxLiquidityPerTick` (~1.9e32) which
+                    // is far below `i128::MAX` (~1.7e38), so this branch is
+                    // unreachable for any valid event. We
+                    // skip the whole event (not just the tick deltas)
                     // so `liquidity` and `liquidity_net` can't desync.
                     let Ok(amount) = i128::try_from(burn.amount) else {
                         tracing::warn!(amount = %burn.amount, "burn liquidity exceeds i128; skipping event");
@@ -527,7 +520,8 @@ fn append_events(
                     };
 
                     // liquidity tracks the liquidity on recent tick,
-                    // only need to update it if the new position includes the recent tick.
+                    // only need to update it if the new position includes the
+                    // recent tick.
                     if tick_lower <= pool.tick && pool.tick < tick_upper {
                         pool.liquidity -= U256::from(burn.amount);
                     }
@@ -539,8 +533,9 @@ fn append_events(
                 UniswapV3PoolEvents::Mint(mint) => {
                     let tick_lower = mint.tickLower.as_i32();
                     let tick_upper = mint.tickUpper.as_i32();
-                    // Unreachable for the same reason as the `Burn` arm (per-position
-                    // liquidity is capped well below `i128::MAX`); skip the whole event to
+                    // Unreachable for the same reason as the `Burn` arm
+                    // (per-position liquidity is capped
+                    // well below `i128::MAX`); skip the whole event to
                     // avoid desyncing `liquidity` from `liquidity_net`.
                     let Ok(amount) = i128::try_from(mint.amount) else {
                         tracing::warn!(amount = %mint.amount, "mint liquidity exceeds i128; skipping event");
@@ -548,7 +543,8 @@ fn append_events(
                     };
 
                     // liquidity tracks the liquidity on recent tick,
-                    // only need to update it if the new position includes the recent tick.
+                    // only need to update it if the new position includes the
+                    // recent tick.
                     if tick_lower <= pool.tick && pool.tick < tick_upper {
                         pool.liquidity += U256::from(mint.amount);
                     }
@@ -609,6 +605,7 @@ impl Maintaining for UniswapV3PoolFetcher {
 mod tests {
     use {
         super::*,
+        crate::uniswap_v3::models,
         alloy::primitives::{U160, address, aliases::I24},
         contracts::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
         serde_json::json,
@@ -840,7 +837,7 @@ mod tests {
         async fn get_registered_pools(
             &self,
             _target_block: BlockTarget,
-        ) -> Result<crate::uniswap_v3::graph_api::RegisteredPools> {
+        ) -> Result<models::RegisteredPools> {
             Ok(Default::default())
         }
 
@@ -848,7 +845,7 @@ mod tests {
             &self,
             ids: &[Address],
             target_block: BlockTarget,
-        ) -> Result<crate::uniswap_v3::graph_api::PoolsWithTicks> {
+        ) -> Result<models::PoolsWithTicks> {
             let target_block = match target_block {
                 BlockTarget::Latest => self.served_block,
                 BlockTarget::Number(n) => n,
@@ -862,7 +859,7 @@ mod tests {
                 .iter()
                 .filter_map(|id| self.with_ticks.get(id).cloned())
                 .collect();
-            Ok(crate::uniswap_v3::graph_api::PoolsWithTicks {
+            Ok(models::PoolsWithTicks {
                 fetched_block_number: self.served_block,
                 pools,
             })
@@ -884,7 +881,7 @@ mod tests {
             liquidity: U256::from(1_000_000u64),
             sqrt_price: U256::from(1u64),
             tick: 0,
-            ticks: Some(vec![crate::uniswap_v3::graph_api::TickData {
+            ticks: Some(vec![models::TickData {
                 tick_idx: -100,
                 liquidity_net: 1_000,
                 pool_address: id,
@@ -896,7 +893,6 @@ mod tests {
     fn handler(source: StubSource, checkpoint: PoolsCheckpoint) -> PoolsCheckpointHandler {
         PoolsCheckpointHandler {
             source: Arc::new(source),
-            fetch_on_demand: false,
             pools_by_token_pair: HashMap::new(),
             pools_checkpoint: Mutex::new(checkpoint),
         }
@@ -948,7 +944,8 @@ mod tests {
             },
         );
 
-        // Latest serves at-head, so it succeeds despite served_block < checkpoint.
+        // Latest serves at-head, so it succeeds despite served_block <
+        // checkpoint.
         let fetched = handler
             .fetch_pools(&[pool], BlockTarget::Latest)
             .await
@@ -956,7 +953,8 @@ mod tests {
         assert_eq!(fetched.len(), 1);
         assert_eq!(fetched[0].0, pool);
 
-        // Fetching at the checkpoint block would fail (indexer hasn't reached it).
+        // Fetching at the checkpoint block would fail (indexer hasn't reached
+        // it).
         assert!(
             handler
                 .fetch_pools(&[pool], BlockTarget::Number(100))

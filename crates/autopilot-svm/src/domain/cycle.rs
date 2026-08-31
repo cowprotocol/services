@@ -20,6 +20,10 @@ impl Cycle for SolanaCycle {
     type Solution = Solution;
     /// The chain progress marker is the slot.
     type Tip = u64;
+
+    fn submission_deadline(tip: &u64, allowance: u64) -> u64 {
+        tip + allowance
+    }
 }
 
 /// One driver's solution, attributed to the driver that proposed it so the

@@ -21,5 +21,10 @@ COPY --from=binaries orderbook /usr/local/bin/orderbook
 COPY --from=binaries refunder /usr/local/bin/refunder
 COPY --from=binaries solvers /usr/local/bin/solvers
 COPY --from=binaries pool-indexer /usr/local/bin/pool-indexer
+COPY --from=binaries solana-indexer /usr/local/bin/solana-indexer
+COPY --from=binaries solana-orderbook /usr/local/bin/solana-orderbook
+COPY --from=binaries solana-driver /usr/local/bin/solana-driver
+COPY --from=binaries solana-solvers /usr/local/bin/solana-solvers
+COPY --from=binaries autopilot-svm /usr/local/bin/autopilot-svm
 
 ENTRYPOINT ["/usr/bin/tini", "-s", "--"]

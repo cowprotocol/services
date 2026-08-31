@@ -6,6 +6,7 @@ use {
     super::{BalanceFetching, Query, TransferSimulationError},
     crate::BalanceSimulator,
     alloy_primitives::{Address, U256},
+    alloy_provider::Provider,
     anyhow::Result,
     contracts::ERC20,
     ethrpc::{Web3, alloy::ProviderLabelingExt},
@@ -33,8 +34,8 @@ impl Balances {
     }
 
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
-        // Only ERC20 sell-token balances are supported; other sources are deprecated
-        // and rejected at order creation.
+        // Only ERC20 sell-token balances are supported; other sources are
+        // deprecated and rejected at order creation.
         if query.source != SellTokenSource::Erc20 {
             anyhow::bail!("unsupported sell token source: {:?}", query.source);
         }
@@ -61,15 +62,19 @@ impl Balances {
         query: &Query,
         token: &ERC20::Instance,
     ) -> Result<U256> {
-        // Only ERC20 sell-token balances are supported. Other sources are deprecated
-        // and rejected at order creation.
+        // Only ERC20 sell-token balances are supported. Other sources are
+        // deprecated and rejected at order creation.
         if query.source != SellTokenSource::Erc20 {
             anyhow::bail!("unsupported sell token source: {:?}", query.source);
         }
-        let balance = token.balanceOf(query.owner);
-        let allowance = token.allowance(query.owner, self.vault_relayer());
-        let (balance, allowance) =
-            futures::try_join!(balance.call().into_future(), allowance.call().into_future())?;
+        let (balance, allowance) = self
+            .web3
+            .provider
+            .multicall()
+            .add(token.balanceOf(query.owner))
+            .add(token.allowance(query.owner, self.vault_relayer()))
+            .aggregate()
+            .await?;
         Ok(std::cmp::min(balance, allowance))
     }
 }
@@ -77,7 +82,8 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
-        // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
+        // TODO(jmg-duarte): Batch the queries themselves into one `Multicall`
+        // too
         let futures = queries
             .iter()
             .map(|query| async {
@@ -132,8 +138,8 @@ impl BalanceFetching for Balances {
         token: Address,
         source: SellTokenSource,
     ) -> Result<U256> {
-        // Only ERC20 sell-token balances are supported; other sources are deprecated
-        // and rejected at order creation.
+        // Only ERC20 sell-token balances are supported; other sources are
+        // deprecated and rejected at order creation.
         if source != SellTokenSource::Erc20 {
             anyhow::bail!("unsupported sell token source: {:?}", source);
         }

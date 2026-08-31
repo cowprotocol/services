@@ -9,7 +9,12 @@ use {
         deserialize_url_with_trailing_slash,
     },
     solana_sdk::pubkey::Pubkey,
-    std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
+    std::{
+        net::SocketAddr,
+        num::NonZero,
+        path::{Path, PathBuf},
+        time::Duration,
+    },
     tokio::fs,
 };
 
@@ -104,10 +109,13 @@ pub struct Solver {
     /// HTTP endpoint of the solver engine API.
     #[serde(deserialize_with = "deserialize_url_with_trailing_slash")]
     pub endpoint: url::Url,
-    /// The solver's on-chain identity. Reported on every `domain::Solution`
-    /// produced by this engine.
-    #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
-    pub account: Pubkey,
+    /// Path to the solver's settlement signer keypair. The driver's on-chain
+    /// identity for this solver is derived from this keypair.
+    ///
+    /// TODO: plaintext keypair paths are temporary. Secrets must not live in
+    /// plaintext config long-term; KMS-backed signers are planned, mirroring
+    /// the EVM driver's `submission_accounts`.
+    pub signer_keypair: PathBuf,
     /// Maximum number of concurrent solve requests kept in flight per solver.
     pub max_in_flight: NonZero<usize>,
 }
@@ -129,16 +137,8 @@ mod tests {
         assert_eq!(config.solvers[0].name, "baseline");
         assert_eq!(config.solvers[0].max_in_flight.get(), 1);
         assert_eq!(
-            config.chain.settlement_program_id,
-            "MooohhPEAAHwAwEozL7JPEmnDvaahuUpccYN4Yb8ccK"
-                .parse()
-                .unwrap()
-        );
-        assert_eq!(
-            config.solvers[0].account,
-            "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
-                .parse()
-                .unwrap()
+            config.solvers[0].signer_keypair,
+            Path::new("/path/to/keypair.json")
         );
         assert_eq!(config.logging.filter, "info,solana_driver=debug");
         assert_eq!(config.logging.stderr_threshold, None);
@@ -150,12 +150,12 @@ mod tests {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
-            account = "11111111111111111111111111111111"
+            signer-keypair = "/path/to/keypair.json"
             max-in-flight = 1
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
         assert_eq!(solver.name, "baseline");
-        assert_eq!(solver.account, Pubkey::default());
+        assert_eq!(solver.signer_keypair, Path::new("/path/to/keypair.json"));
         assert_eq!(solver.max_in_flight.get(), 1);
     }
 
@@ -164,6 +164,7 @@ mod tests {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
+            signer-keypair = "/path/to/keypair.json"
             max-in-flight = 0
         "#;
         let err = toml::de::from_str::<Solver>(solver_config)

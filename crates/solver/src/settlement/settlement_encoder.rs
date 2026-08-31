@@ -266,11 +266,12 @@ impl SettlementEncoder {
             "this function should only be called with valid executed amounts"
         );
 
-        // The order passed into this function is the original order signed by the user.
-        // But the solver actually computed a solution for an order with `sell_amount -=
-        // surplus_fee`. To account for the `surplus_fee` we first have to
-        // compute the expected `sell_amount` and `buy_amount` adjusted for the
-        // order kind and `surplus_fee`. Afterwards we compute a slightly worse
+        // The order passed into this function is the original order signed by
+        // the user. But the solver actually computed a solution for an
+        // order with `sell_amount -= surplus_fee`. To account for the
+        // `surplus_fee` we first have to compute the expected
+        // `sell_amount` and `buy_amount` adjusted for the order kind
+        // and `surplus_fee`. Afterwards we compute a slightly worse
         // `buy_price` that allows us to buy the expected number of `buy_token`s
         // while pocketing the `surplus_fee` from the `sell_token`s.
         let uniform_buy_price = *self
@@ -291,7 +292,8 @@ impl SettlementEncoder {
                     .context("sell_amount computation failed")?
                     .checked_div(uniform_sell_price)
                     .context("sell_amount computation failed")?;
-                // We have to sell slightly more `sell_token` to capture the `surplus_fee`
+                // We have to sell slightly more `sell_token` to capture the
+                // `surplus_fee`
                 let sell_amount_adjusted_for_fees = sell_amount
                     .checked_add(fee)
                     .context("sell_amount computation failed")?;
@@ -435,7 +437,8 @@ impl SettlementEncoder {
             .iter()
             .flat_map(|trade| {
                 // For user order trades, always keep uniform clearing prices
-                // for all tokens (even if we could technically skip limit orders).
+                // for all tokens (even if we could technically skip limit
+                // orders).
                 if trade.data.order.is_user_order() {
                     Either::Left(
                         [
@@ -477,8 +480,8 @@ impl SettlementEncoder {
             .collect();
 
         {
-            // add tokens/prices for custom price orders, since they are not contained in
-            // the UCP vector
+            // add tokens/prices for custom price orders, since they are not
+            // contained in the UCP vector
             let (mut custom_price_order_tokens, mut custom_price_order_prices) = self
                 .trades
                 .iter()
@@ -726,8 +729,8 @@ pub mod tests {
                 .add_trade(order01.clone(), U256::from(10), U256::ZERO)
                 .is_ok()
         );
-        // ensures that the output of add_liquidity_order is not changed after adding
-        // liquidity order
+        // ensures that the output of add_liquidity_order is not changed after
+        // adding liquidity order
         assert_eq!(settlement.tokens, vec![Address::with_last_byte(1)]);
         let finished_settlement =
             settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
@@ -911,7 +914,8 @@ pub mod tests {
             )
             .unwrap();
 
-        // add second trade to verify that interactions get appended and not just set
+        // add second trade to verify that interactions get appended and not
+        // just set
         encoder
             .add_trade(
                 Order {
@@ -979,7 +983,8 @@ pub mod tests {
         let expected_tokens: Vec<_> = [1, 3].into_iter().map(Address::with_last_byte).collect();
         assert_eq!(expected_tokens, encoded.tokens);
 
-        // only the prices for token 1 and 2 remain and they are in the correct order
+        // only the prices for token 1 and 2 remain and they are in the correct
+        // order
         let expected_prices: Vec<_> = [7, 9].into_iter().map(U256::from).collect();
         assert_eq!(expected_prices, encoded.clearing_prices);
 

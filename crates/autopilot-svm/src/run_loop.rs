@@ -43,6 +43,10 @@ pub trait Cycle: Sized + Send + Sync + 'static {
 
     /// Winner selection output over all solutions of one auction.
     type Ranking: RankingInfo<Self> + Send + Sync + 'static;
+
+    /// Submission cutoff for settlements ranked at the given tip, the chain's
+    /// own arithmetic over the loop's configured allowance.
+    fn submission_deadline(tip: &Self::Tip, allowance: u64) -> u64;
 }
 
 /// What the loop needs to know about an auction.
@@ -97,13 +101,10 @@ pub trait WinnerSelection<C: Cycle>: Send + Sync {
 /// Dispatches winning solutions for execution.
 #[async_trait]
 pub trait SettlementExecutor<C: Cycle>: Send + Sync {
-    /// Submission cutoff for settlements of an auction ranked at the given
-    /// tip.
-    fn submission_deadline(&self, tip: &C::Tip) -> u64;
-
-    /// Dispatches every winner. Implementations submit in the background,
-    /// the loop does not wait for settlement results.
-    async fn execute(&self, auction_id: i64, ranking: &C::Ranking, deadline: u64);
+    /// Dispatches every winner, from the tip the ranking was made at until
+    /// the deadline. Implementations submit in the background, the loop does
+    /// not wait for settlement results.
+    async fn execute(&self, auction_id: i64, ranking: &C::Ranking, tip: &C::Tip, deadline: u64);
 }
 
 /// Competition bookkeeping around the settlement outcome.
@@ -139,6 +140,8 @@ pub struct AuctionLoop<C: Cycle> {
     winner_selection: Box<dyn WinnerSelection<C>>,
     executor: Box<dyn SettlementExecutor<C>>,
     observer: Box<dyn SettlementObserver<C>>,
+    /// Slots a settlement may take after ranking before it counts as late.
+    submission_deadline_allowance: u64,
     prev_auction: Option<C::Auction>,
     prev_tip: Option<C::Tip>,
 }
@@ -151,6 +154,7 @@ impl<C: Cycle> AuctionLoop<C> {
         winner_selection: Box<dyn WinnerSelection<C>>,
         executor: Box<dyn SettlementExecutor<C>>,
         observer: Box<dyn SettlementObserver<C>>,
+        submission_deadline_allowance: u64,
     ) -> Self {
         Self {
             trigger,
@@ -159,8 +163,17 @@ impl<C: Cycle> AuctionLoop<C> {
             winner_selection,
             executor,
             observer,
+            submission_deadline_allowance,
             prev_auction: None,
             prev_tip: None,
+        }
+    }
+
+    /// Run cycles until the process ends, reporting each completed cycle.
+    pub async fn run_forever(mut self, mut cycle_completed: impl FnMut() + Send) -> ! {
+        loop {
+            self.run_cycle().await;
+            cycle_completed();
         }
     }
 
@@ -185,13 +198,10 @@ impl<C: Cycle> AuctionLoop<C> {
     async fn next_auction(&mut self, tip: &C::Tip) -> Option<C::Auction> {
         let auction = self.provider.cut_auction(tip).await?;
 
-        // Only rerun the competition if the auction or tip changed. The tip
-        // marker is only written when the auction was unchanged, so the
-        // dedupe kicks in one cycle after the auction first repeats.
-        let previous = self.prev_auction.replace(auction.clone());
-        if previous.as_ref() == Some(&auction)
-            && self.prev_tip.replace(tip.clone()).as_ref() == Some(tip)
-        {
+        // Only rerun the competition if the auction or tip changed.
+        let previous_auction = self.prev_auction.replace(auction.clone());
+        let previous_tip = self.prev_tip.replace(tip.clone());
+        if previous_auction.as_ref() == Some(&auction) && previous_tip.as_ref() == Some(tip) {
             return None;
         }
 
@@ -212,7 +222,7 @@ impl<C: Cycle> AuctionLoop<C> {
 
         // the deadline derives from the tip observed after ranking
         let ranking_tip = self.trigger.current_tip();
-        let deadline = self.executor.submission_deadline(&ranking_tip);
+        let deadline = C::submission_deadline(&ranking_tip, self.submission_deadline_allowance);
 
         // storing the outcome must finish before any settlement starts
         if let Err(err) = self
@@ -235,7 +245,7 @@ impl<C: Cycle> AuctionLoop<C> {
         self.observer.on_orders_matched(executing, considered);
 
         self.executor
-            .execute(auction.id(), &ranking, deadline)
+            .execute(auction.id(), &ranking, &ranking_tip, deadline)
             .await;
 
         self.observer.on_competition_ended(auction, &ranking);

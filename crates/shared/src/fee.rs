@@ -2,6 +2,7 @@ use {
     crate::{arguments::TokenBucketFeeOverride, order_validation::is_same_buy_and_sell_token},
     alloy::primitives::{Address, U256},
     configs::fee_factor::FeeFactor,
+    model::order::BUY_ETH_ADDRESS,
 };
 
 /// Everything required to compute the fee amount in sell token
@@ -42,8 +43,8 @@ impl FeeParameters {
         let fee_in_eth = (self.gas_amount + additional_cost as f64) * self.gas_price;
 
         // We want the conversion from f64 to U256 to use ceil because:
-        // 1. For final amounts that end up close to 0 atoms we always take a fee so we
-        //    are not attackable through low decimal tokens.
+        // 1. For final amounts that end up close to 0 atoms we always take a
+        //    fee so we are not attackable through low decimal tokens.
         // 2. When validating fees this consistently picks the same amount.
         U256::from((fee_in_eth / self.sell_token_price).ceil())
     }
@@ -63,6 +64,16 @@ impl VolumeFeePolicy {
         enable_sell_equals_buy_volume_fee: bool,
         native_token: Address,
     ) -> Self {
+        // Treat native-ETH trades as wrapped native token trades
+        let bucket_overrides = bucket_overrides
+            .into_iter()
+            .map(|mut bucket| {
+                if bucket.tokens.contains(&BUY_ETH_ADDRESS) {
+                    bucket.tokens.insert(native_token);
+                }
+                bucket
+            })
+            .collect();
         Self {
             bucket_overrides,
             default_factor,
@@ -83,16 +94,25 @@ impl VolumeFeePolicy {
         sell_token: Address,
         fee_factor: Option<FeeFactor>,
     ) -> Option<FeeFactor> {
-        // Skip the volume fee for same-token trades (treating a native-ETH buy as
-        // the wrapped token, so e.g. WETH->ETH is a no-op) unless the flag is set.
+        // Skip the volume fee for same-token trades (treating a native-ETH buy
+        // as the wrapped token, so e.g. WETH->ETH is a no-op) unless
+        // the flag is set.
         if !self.enable_sell_equals_buy_volume_fee
             && is_same_buy_and_sell_token(sell_token, buy_token, self.native_token)
         {
             return None;
         }
 
-        // Check for token bucket overrides first (both tokens must be in the same
-        // bucket)
+        // Treat native-ETH buys as the wrapped native token so buckets don't
+        // need to list the ETH marker address explicitly.
+        let buy_token = if buy_token == BUY_ETH_ADDRESS {
+            self.native_token
+        } else {
+            buy_token
+        };
+
+        // Check for token bucket overrides first (both tokens must be in the
+        // same bucket)
         for fee_override in &self.bucket_overrides {
             if fee_override.tokens.contains(&buy_token) && fee_override.tokens.contains(&sell_token)
             {
@@ -100,14 +120,15 @@ impl VolumeFeePolicy {
             }
         }
 
-        // Fall back to default factor either from argument or configured default
+        // Fall back to default factor either from argument or configured
+        // default
         fee_factor.or(self.default_factor)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, model::order::BUY_ETH_ADDRESS};
+    use super::*;
 
     #[test]
     fn test_volume_fee_bucket_override() {
@@ -144,6 +165,51 @@ mod tests {
         // WETH-DAI (only one in bucket) - should fall back to default fee
         let override_ = volume_fee_policy.get_applicable_volume_fee_factor(weth, dai, None);
         assert_eq!(override_, Some(default_fee));
+    }
+
+    #[test]
+    fn test_eth_buy_matches_wrapped_native_token_bucket() {
+        let weth = testlib::tokens::WETH;
+        let steth = testlib::tokens::STETH;
+
+        let bucket_override = TokenBucketFeeOverride {
+            tokens: [weth, steth].into_iter().collect(),
+            factor: FeeFactor::try_from(0.00001).unwrap(),
+        };
+
+        let default_fee = FeeFactor::try_from(0.001).unwrap();
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![bucket_override], Some(default_fee), false, weth);
+
+        // Buying native ETH is classified like buying the wrapped native token,
+        // so the bucket applies even though it doesn't list BUY_ETH_ADDRESS.
+        let override_ =
+            volume_fee_policy.get_applicable_volume_fee_factor(BUY_ETH_ADDRESS, steth, None);
+        assert_eq!(override_, Some(FeeFactor::try_from(0.00001).unwrap()));
+    }
+
+    #[test]
+    fn test_bucket_listing_eth_marker_matches_wrapped_native_token() {
+        let weth = testlib::tokens::WETH;
+        let steth = testlib::tokens::STETH;
+
+        // The bucket lists the native-ETH marker instead of the wrapped
+        // native token.
+        let bucket_override = TokenBucketFeeOverride {
+            tokens: [BUY_ETH_ADDRESS, steth].into_iter().collect(),
+            factor: FeeFactor::try_from(0.00001).unwrap(),
+        };
+
+        let default_fee = FeeFactor::try_from(0.001).unwrap();
+        let volume_fee_policy =
+            VolumeFeePolicy::new(vec![bucket_override], Some(default_fee), false, weth);
+
+        // Both native-ETH buys and wrapped native token buys match the bucket.
+        let override_ =
+            volume_fee_policy.get_applicable_volume_fee_factor(BUY_ETH_ADDRESS, steth, None);
+        assert_eq!(override_, Some(FeeFactor::try_from(0.00001).unwrap()));
+        let override_ = volume_fee_policy.get_applicable_volume_fee_factor(weth, steth, None);
+        assert_eq!(override_, Some(FeeFactor::try_from(0.00001).unwrap()));
     }
 
     #[test]

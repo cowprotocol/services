@@ -956,7 +956,8 @@ mod tests {
         assert!(got.is_ok(), "did not observe the newest overrides in time");
     }
 
-    // Real frames captured from wss://eu.rpc.titanbuilder.xyz/ws/pamm_quote_stream.
+    // Real frames captured from
+    // wss://eu.rpc.titanbuilder.xyz/ws/pamm_quote_stream.
     const FERMI_FRAME: &str = r#"{
         "slot":14711587,
         "blockNumber":25475333,

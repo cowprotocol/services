@@ -136,7 +136,8 @@ impl ProtocolFees {
         ) -> FeeFactor {
             // Calculate how much more we can compound before hitting the cap.
             //
-            // When dealing with fee factors or percentages in compounding operations:
+            // When dealing with fee factors or percentages in compounding
+            // operations:
             // - We use (1 + x) where x is the percentage as a decimal (e.g., 5% = 0.05 →
             //   1.05)
             // - This is because applying a fee means multiplying by (1 + fee_rate)
@@ -149,8 +150,9 @@ impl ProtocolFees {
             // 3. To find the remaining factor we can apply: (1 + cap) / (1 + accumulated) -
             //    1
             //
-            // The subtraction of 1 at the end converts back from the multiplier form (1.xx)
-            // to the percentage form (0.xx) that our FeeFactor expects.
+            // The subtraction of 1 at the end converts back from the multiplier
+            // form (1.xx) to the percentage form (0.xx) that our
+            // FeeFactor expects.
             let remaining_factor =
                 (Decimal::ONE + cap) / (Decimal::ONE + *accumulated) - Decimal::ONE;
 
@@ -199,7 +201,8 @@ impl ProtocolFees {
                         // Convert bps to decimal percentage
                         let fee_decimal = Decimal::from(max_volume_bps) / Decimal::from(MAX_BPS);
 
-                        // Compute max_volume_factor limited by the global volume cap.
+                        // Compute max_volume_factor limited by the global
+                        // volume cap.
                         let max_volume_factor =
                             fee_factor_from_capped(fee_decimal, max_partner_fee, &mut accumulated);
 
@@ -217,7 +220,8 @@ impl ProtocolFees {
                         // Convert bps to decimal percentage
                         let fee_decimal = Decimal::from(max_volume_bps) / Decimal::from(MAX_BPS);
 
-                        // Compute max_volume_factor limited by the global volume cap.
+                        // Compute max_volume_factor limited by the global
+                        // volume cap.
                         let max_volume_factor =
                             fee_factor_from_capped(fee_decimal, max_partner_fee, &mut accumulated);
 
@@ -413,8 +417,8 @@ mod test {
         let max_partner_fee = 0.3; // 30%
         let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
 
-        // Expected: The compounded percentage (1 + 0.05) * (1 + 0.20) - 1 = 0.26 < 0.3
-        // (not capped)
+        // Expected: The compounded percentage (1 + 0.05) * (1 + 0.20) - 1 =
+        // 0.26 < 0.3 (not capped)
         assert_eq!(
             result,
             vec![
@@ -680,9 +684,10 @@ mod test {
 
         // Expected: With compounding, fees accumulate as follows:
         // First fee: 0.1
-        // Second fee: 0.2 (accumulated to this point: (1+0.1)*(1+0.2)-1 = 0.32 > 0.3)
-        // Second fee gets capped to 0.1818... to make total exactly 0.3
-        // Third fee: Capped to 0 since we already hit the cap
+        // Second fee: 0.2 (accumulated to this point: (1+0.1)*(1+0.2)-1 = 0.32
+        // > 0.3) Second fee gets capped to 0.1818... to make total
+        // exactly 0.3 Third fee: Capped to 0 since we already hit the
+        // cap
         assert_eq!(
             result,
             vec![

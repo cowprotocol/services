@@ -180,21 +180,23 @@ impl TradeVerifier {
         query: &PriceQuery,
         verification: &Verification,
     ) -> Result<SwapCall, Error> {
-        // Use `tx_origin` if response indicates that a special address is needed for
-        // the simulation to pass. Otherwise just use the solver address.
+        // Use `tx_origin` if response indicates that a special address is
+        // needed for the simulation to pass. Otherwise just use the
+        // solver address.
         let solver_contract =
             Solver::Instance::new(trade.simulation_solver_address(), self.simulator.provider());
 
-        // `tokens` is passed to `Solver::swap` so it can measure balance changes;
-        // it is independent of the settlement's token/price vectors.
+        // `tokens` is passed to `Solver::swap` so it can measure balance
+        // changes; it is independent of the settlement's token/price
+        // vectors.
         let tokens: Vec<Address> = match trade {
             TradeKind::Legacy(_) => vec![query.sell_token, query.buy_token],
             TradeKind::Regular(trade) => trade.clearing_prices.keys().copied().collect(),
         };
 
-        // compute the sell amount the user needs to have (solver sends the difference
-        // between current balance and required balance from the piggy bank to the
-        // trader).
+        // compute the sell amount the user needs to have (solver sends the
+        // difference between current balance and required balance from
+        // the piggy bank to the trader).
         let sell_amount = match query.kind {
             OrderKind::Sell => query.in_amount.get(),
             OrderKind::Buy => trade.out_amount(query)?,
@@ -322,8 +324,8 @@ impl TradeVerifier {
         verification: &Verification,
         solver: Address,
     ) -> InteractionData {
-        // storeBalance interactions surrounding the settlement to measure the actual
-        // out_amount
+        // storeBalance interactions surrounding the settlement to measure the
+        // actual out_amount
         let (tracked_token, tracked_owner) = match query.kind {
             OrderKind::Sell => (query.buy_token, *verification.effective_receiver()),
             OrderKind::Buy => (query.sell_token, verification.from),
@@ -351,25 +353,27 @@ impl TradeVerifier {
         query: &PriceQuery,
         verification: &Verification,
     ) -> Result<SettleOutput, Error> {
-        // Quote accuracy gets determined by how many tokens had to be paid out of the
-        // settlement buffers to make the quote happen. When the settlement contract
-        // itself is the trader or receiver these values need to be adjusted slightly.
+        // Quote accuracy gets determined by how many tokens had to be paid out
+        // of the settlement buffers to make the quote happen. When the
+        // settlement contract itself is the trader or receiver these
+        // values need to be adjusted slightly.
         let (sell_amount, buy_amount) = match query.kind {
             OrderKind::Sell => (I512::from(query.in_amount.get()), summary.out_amount),
             OrderKind::Buy => (summary.out_amount, I512::from(query.in_amount.get())),
         };
 
-        // It looks like the contract lost a lot of sell tokens but only because it was
-        // the trader and had to pay for the trade. Adjust tokens lost downward.
+        // It looks like the contract lost a lot of sell tokens but only because
+        // it was the trader and had to pay for the trade. Adjust tokens
+        // lost downward.
         if verification.from == settlement_address {
             summary
                 .tokens_lost
                 .entry(query.sell_token)
                 .and_modify(|balance| *balance -= i512_to_big_rational(&sell_amount));
         }
-        // It looks like the contract gained a lot of buy tokens (negative loss) but
-        // only because it was the receiver and got the payout. Adjust the tokens lost
-        // upward.
+        // It looks like the contract gained a lot of buy tokens (negative loss)
+        // but only because it was the receiver and got the payout.
+        // Adjust the tokens lost upward.
         if verification.receiver == settlement_address {
             summary
                 .tokens_lost
@@ -378,38 +382,42 @@ impl TradeVerifier {
         }
 
         // The swap simulation computes the out_amount like this:
-        // sell order => receiver_buy_balance_before - receiver_buy_balance_after
-        // buy_order => trader_sell_balance_after - trader_sell_balance_before
+        // sell order => receiver_buy_balance_before -
+        // receiver_buy_balance_after buy_order =>
+        // trader_sell_balance_after - trader_sell_balance_before
         //
-        // The trade verification assumes that the sell tokens don't flow back into
-        // the same account.
-        // However, in case of sell=buy where the receiver is also the owner, this
-        // assumption is broken. The balance is only ever getting smaller, as the
-        // trader will always get less tokens out, which causes the above calculations
-        // to result in 0 or (more likely) negative values.
+        // The trade verification assumes that the sell tokens don't flow back
+        // into the same account.
+        // However, in case of sell=buy where the receiver is also the owner,
+        // this assumption is broken. The balance is only ever getting
+        // smaller, as the trader will always get less tokens out, which
+        // causes the above calculations to result in 0 or (more likely)
+        // negative values.
         //
         // Example sell order:
-        // Trader having 1 ETH in their account, selling 0.3 ETH, with tx hooks cost of
-        // 0.1 ETH: in_amount = 0.3 ETH
+        // Trader having 1 ETH in their account, selling 0.3 ETH, with tx hooks
+        // cost of 0.1 ETH: in_amount = 0.3 ETH
         // trader_balance_before = 1 ETH
         // trader_balance_after = 0.9 ETH
         // out_amount = 0.9 ETH - 1 ETH = -0.1 ETH
-        // The correct out_amount = 0.3 ETH (input) + (-0.1ETH) (out_amount) = 0.2 ETH
+        // The correct out_amount = 0.3 ETH (input) + (-0.1ETH) (out_amount) =
+        // 0.2 ETH
         //
         // Meaning they can sell 0.3 ETH for 0.2 ETH, considering the costs
         //
         // Example buy order:
-        // Trader having 1 ETH in their account, buying 1 wei, with tx hooks cost of 0.1
-        // ETH in_amount = 1 wei
+        // Trader having 1 ETH in their account, buying 1 wei, with tx hooks
+        // cost of 0.1 ETH in_amount = 1 wei
         // trader_balance_before = 1 ETH
         // trader_balance_after = 0.9 ETH
         // out_amount = 1 ETH - 0.9 ETH = 0.1 ETH
-        // The correct out_amount = 1 wei (input) + 0.1 ETH (out_amount) = 0.1000...1
-        // ETH
+        // The correct out_amount = 1 wei (input) + 0.1 ETH (out_amount) =
+        // 0.1000...1 ETH
         //
         // Meaning they can buy 1 wei for 0.1ETH + 1 wei, considering the costs
         //
-        // The general formula being: correct_out_amount = query.input + out_amount
+        // The general formula being: correct_out_amount = query.input +
+        // out_amount
         let owner_is_receiver =
             verification.receiver.is_zero() || verification.receiver == verification.from;
         if query.sell_token == query.buy_token && owner_is_receiver {
@@ -536,36 +544,40 @@ impl TradeVerifier {
             },
         ];
 
-        // Set up mocked solver with enough ETH to proceed even if the real account
-        // holds none.
+        // Set up mocked solver with enough ETH to proceed even if the real
+        // account holds none.
         requests.push(AccountOverrideRequest::Code {
             account: solver,
             code: Solver::Solver::DEPLOYED_BYTECODE.clone(),
         });
-        // Usually we would require the solver accounts to actually have enough ETH
-        // to execute the proposed quote. Otherwise we might get many great quotes
-        // which lead to orders that don't get filled because the solver that can
-        // settle them actually has no funds.
-        // However, this is quite rare and there are also smart contract solvers. Those
-        // contracts basically just manage a list of EOAs that are allowed to submit txs
-        // on its behalf (similar to our EIP-7702 submission setup). In practice
+        // Usually we would require the solver accounts to actually have enough
+        // ETH to execute the proposed quote. Otherwise we might get
+        // many great quotes which lead to orders that don't get filled
+        // because the solver that can settle them actually has no
+        // funds. However, this is quite rare and there are also smart
+        // contract solvers. Those contracts basically just manage a
+        // list of EOAs that are allowed to submit txs on its behalf
+        // (similar to our EIP-7702 submission setup). In practice
         // it doesn't make sense for smart contract solvers to hold ETH
-        // as they are not the ones paying for the ETH anyway. So in order to avoid
-        // teams having to send small amounts of ETH to their contract we fund the
-        // solver address with ETH during our simulation.
+        // as they are not the ones paying for the ETH anyway. So in order to
+        // avoid teams having to send small amounts of ETH to their
+        // contract we fund the solver address with ETH during our
+        // simulation.
         requests.push(AccountOverrideRequest::SufficientEthBalance(solver));
 
         // Some solvers are also market makers and quote via their own inventory
-        // - effectively giving out signed orders swapping tokens directly with the
+        // - effectively giving out signed orders swapping tokens directly with
+        //   the
         // user.
-        // Due to their security policies some don't want to give out signatures that
-        // could actually be used onchain as those would effectively be free options.
-        // To still generate verifiable quotes solvers can sign orders that only work
-        // for a specific `tx.origin` they are sure nobody actually has control over.
-        // For example they would sign an order that can be executed if the tx is
-        // executed by account `0x1111..111111`.
-        // Since such an address is not a registered solver we register it via state
-        // overrides.
+        // Due to their security policies some don't want to give out signatures
+        // that could actually be used onchain as those would
+        // effectively be free options. To still generate verifiable
+        // quotes solvers can sign orders that only work for a specific
+        // `tx.origin` they are sure nobody actually has control over.
+        // For example they would sign an order that can be executed if the tx
+        // is executed by account `0x1111..111111`.
+        // Since such an address is not a registered solver we register it via
+        // state overrides.
         if let Some(custom_origin) = trade.tx_origin()
             && custom_origin != trade.solver()
         {
@@ -597,7 +609,8 @@ impl TradeVerifying for TradeVerifier {
 
         let mut verification = verification.clone();
         // if the user does not have their wallet connected we use a random
-        // address because many tokens revert when transfers involve the 0 address.
+        // address because many tokens revert when transfers involve the 0
+        // address.
         if verification.from.is_zero() {
             verification.from = Address::random();
             tracing::debug!(
@@ -634,7 +647,8 @@ impl TradeVerifying for TradeVerifier {
         };
 
         // because this log is extremely large we only emit the resimulation
-        // command if the trade had some interactions and it didn't pass verification
+        // command if the trade had some interactions and it didn't pass
+        // verification
         if trade.has_execution_plan()
             && let Some(tenderly) = &self.tenderly
             && let Err(log_err) = tenderly.log_simulation_command(
@@ -646,21 +660,22 @@ impl TradeVerifying for TradeVerifier {
             tracing::debug!(?log_err, "could not log tenderly simulation command");
         }
 
-        // For some tokens it's not possible to provide verifiable calldata in the
-        // quote (e.g. when they require the use of proprietary APIs which don't give
-        // out calldata willy nilly).
+        // For some tokens it's not possible to provide verifiable calldata in
+        // the quote (e.g. when they require the use of proprietary APIs
+        // which don't give out calldata willy nilly).
         //
-        // Since you can't magically make up calldata that makes your quote verifiable
-        // solvers don't provide any call data in those cases.
-        // This has 2 possible outcomes:
-        // 1. the settlement contract has enough buy_tokens to pay for the order =>
-        //    Error::BuffersPayForOrder
+        // Since you can't magically make up calldata that makes your quote
+        // verifiable solvers don't provide any call data in those
+        // cases. This has 2 possible outcomes:
+        // 1. the settlement contract has enough buy_tokens to pay for the order
+        //    => Error::BuffersPayForOrder
         // 2. not enough buy tokens in buffer => Error::SimulationFailed
         //
         // To make handling of these quotes more predictable we'll only discard
-        // `Error::BuffersPayForOrder` errors if the solver actually tried to provide
-        // an execution plan but it's just not correct. In all other cases we just
-        // flag the solution as unverified but let it pass.
+        // `Error::BuffersPayForOrder` errors if the solver actually tried to
+        // provide an execution plan but it's just not correct. In all
+        // other cases we just flag the solution as unverified but let
+        // it pass.
         if trade.has_execution_plan() && matches!(verification_err, Error::BuffersPayForOrder) {
             tracing::debug!("discarding quote because buffers pay for order");
             Err(verification_err.into())
@@ -709,7 +724,8 @@ impl SettleOutput {
         tokens_vec: &[Address],
     ) -> Result<Self> {
         // The balances are stored in the following order:
-        // [...tokens_before, user_balance_before, user_balance_after, ...tokens_after]
+        // [...tokens_before, user_balance_before, user_balance_after,
+        // ...tokens_after]
         let expected_len = tokens_vec.len() * 2 + 2;
         anyhow::ensure!(
             queriedBalances.len() == expected_len,
@@ -956,8 +972,8 @@ mod tests {
 
     #[test]
     fn discards_inaccurate_quotes() {
-        // let's use 0.5 as the base case to avoid rounding issues introduced by float
-        // conversion
+        // let's use 0.5 as the base case to avoid rounding issues introduced by
+        // float conversion
         let low_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.5").unwrap());
         let high_threshold = big_decimal_to_big_rational(&BigDecimal::from_str("0.51").unwrap());
 
@@ -1180,7 +1196,8 @@ mod tests {
         assert_eq!(out.out_amount, I512::try_from(98).unwrap());
 
         // Sanity: with distinct tokens the correction must NOT fire, so a
-        // negative out amount is still rejected as the buffers paying the order.
+        // negative out amount is still rejected as the buffers paying the
+        // order.
         let distinct_query = PriceQuery {
             in_amount: 100.try_into().unwrap(),
             kind: OrderKind::Buy,
