@@ -128,6 +128,26 @@ mod tests {
         insert(&mut db, &auction_2).await.unwrap();
         insert(&mut db, &auction_3).await.unwrap();
 
+        // The latest price helpers read from `competition_auctions`, so the
+        // same prices have to be stored there as well.
+        // TODO: unify after migration
+        for prices in [&auction_1, &auction_2, &auction_3] {
+            crate::auction::save(
+                &mut db,
+                crate::auction::Auction {
+                    id: prices[0].auction_id,
+                    block: 0,
+                    deadline: 0,
+                    order_uids: vec![],
+                    price_tokens: prices.iter().map(|price| price.token).collect(),
+                    price_values: prices.iter().map(|price| price.price.clone()).collect(),
+                    surplus_capturing_jit_order_owners: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        }
+
         // check that all auctions are there
         let output = fetch(&mut db, 1).await.unwrap();
         assert_eq!(output, auction_1);
