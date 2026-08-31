@@ -55,9 +55,9 @@ pub async fn fetch(
 pub async fn fetch_latest_prices(ex: &mut PgConnection) -> Result<Vec<AuctionPrice>, sqlx::Error> {
     const QUERY: &str = r#"
     SELECT
-        c.id,
-        unnest(c.price_tokens) AS price_token,
-        unnest(c.price_values) AS price_value
+        c.id AS auction_id,
+        unnest(c.price_tokens) AS token,
+        unnest(c.price_values) AS price
     FROM competition_auctions c
     WHERE c.id = (
         SELECT MAX(id) FROM competition_auctions
