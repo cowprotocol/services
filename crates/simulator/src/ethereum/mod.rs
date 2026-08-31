@@ -54,13 +54,15 @@ impl Ethereum {
     #[instrument(skip(self), ret(level = Level::DEBUG))]
     pub(super) async fn simulation_gas_price(&self) -> Option<u128> {
         let base_fee = self.inner.current_block.borrow().base_fee;
-        // Some nodes don't pick a reasonable default value when you don't specify a gas
-        // price and default to 0. Additionally some sneaky tokens have special code
-        // paths that detect that case to try to behave differently during simulations
-        // than they normally would. To not rely on the node picking a reasonable
-        // default value we estimate the current gas price upfront. But because it's
-        // extremely rare that tokens behave that way we are fine with falling back to
-        // the node specific fallback value instead of failing the whole call.
+        // Some nodes don't pick a reasonable default value when you don't
+        // specify a gas price and default to 0. Additionally some
+        // sneaky tokens have special code paths that detect that case
+        // to try to behave differently during simulations
+        // than they normally would. To not rely on the node picking a
+        // reasonable default value we estimate the current gas price
+        // upfront. But because it's extremely rare that tokens behave
+        // that way we are fine with falling back to the node specific
+        // fallback value instead of failing the whole call.
         Some(self.inner.gas.estimate().await.ok()?.effective(base_fee))
     }
 

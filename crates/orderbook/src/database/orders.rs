@@ -1011,7 +1011,8 @@ mod tests {
         };
         db.insert_order(&new_order).await.unwrap();
 
-        // Attempt to replace an old order with one that already exists should fail.
+        // Attempt to replace an old order with one that already exists should
+        // fail.
         let err = db
             .replace_order(&old_order.metadata.uid, &new_order)
             .await

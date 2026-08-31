@@ -11,10 +11,10 @@ pub struct Signature {
 
 impl Signature {
     pub fn to_boundary_signature(&self) -> anyhow::Result<model::signature::Signature> {
-        // TODO Different signing schemes imply different sizes of signature data, which
-        // indicates that I'm missing an invariant in my types and I need to fix
-        // that PreSign, for example, carries no data. Everything should be
-        // reflected in the types!
+        // TODO Different signing schemes imply different sizes of signature
+        // data, which indicates that I'm missing an invariant in my
+        // types and I need to fix that PreSign, for example, carries no
+        // data. Everything should be reflected in the types!
         Ok(match self.scheme {
             Scheme::Eip712 => model::signature::Signature::Eip712(EcdsaSignature::from_bytes(
                 self.data

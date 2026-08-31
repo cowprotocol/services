@@ -45,10 +45,11 @@ impl Api {
         listener: tokio::net::TcpListener,
         shutdown: CancellationToken,
     ) -> Result<(), std::io::Error> {
-        // Propagate the OpenTelemetry trace context from incoming request headers and
-        // record the trace id on the request span, so the driver can correlate logs
-        // across services. `make_span` sets the parent context and an empty
-        // `trace_id` field. `record_trace_id` then fills it in.
+        // Propagate the OpenTelemetry trace context from incoming request
+        // headers and record the trace id on the request span, so the
+        // driver can correlate logs across services. `make_span` sets
+        // the parent context and an empty `trace_id` field.
+        // `record_trace_id` then fills it in.
         let tracing_layer = ServiceBuilder::new()
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);

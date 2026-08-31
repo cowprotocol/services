@@ -118,8 +118,8 @@ impl BatchRequestEntry {
             self.value.is_some(),
             "cannot push_back after you start pop_front"
         );
-        // Never puts anything in `value` because it would break the whole premise of
-        // "pushing back"
+        // Never puts anything in `value` because it would break the whole
+        // premise of "pushing back"
         self.duplicates.push_back(sender);
     }
 
@@ -164,8 +164,9 @@ where
         let caller = tokio::task::try_id();
         // Theoreticallly we could propagate the error to the caller, however
         // this is a critical error we can't recover from (i.e. we'll not be
-        // able to send any more RPC calls). That's why we panic ASAP to immediately
-        // cause a restart of the pod if this is running in kubernetes.
+        // able to send any more RPC calls). That's why we panic ASAP to
+        // immediately cause a restart of the pod if this is running in
+        // kubernetes.
         self.calls
             .unbounded_send(CallContext {
                 caller,
@@ -237,8 +238,9 @@ where
                     // task is done
                     let _permit = permit;
                     Metrics::get().batches_inflight.inc();
-                    // In case the current task panics, this handle's drop will run,
-                    // correctly decrementing the metric
+                    // In case the current task panics, this handle's drop will
+                    // run, correctly decrementing the
+                    // metric
                     let _guard = scopeguard::guard((), |()| Metrics::get().batches_inflight.dec());
                     process_batch(this_inner, batch).await;
                 });
@@ -395,7 +397,8 @@ where
 {
     // Map<Id, Senders> because even with random IDs we might get duplicates,
     // (e.g. some ID outgrew another and now they overlap) in that case
-    // we use the Deque to enforce FIFO and hope the node didn't re-order responses
+    // we use the Deque to enforce FIFO and hope the node didn't re-order
+    // responses
     let mut senders: HashMap<_, BatchRequestEntry> = HashMap::with_capacity(batch.len());
     let mut requests = Vec::with_capacity(batch.len());
 
@@ -653,8 +656,8 @@ mod test {
         assert_eq!(request, 102);
         sender.send(102).unwrap();
 
-        // round robin wrapped around so this is the second request of the spammy
-        // producer
+        // round robin wrapped around so this is the second request of the
+        // spammy producer
         let (request, sender) = iter.next().unwrap();
         assert_eq!(request, 1);
         sender.send(1).unwrap();

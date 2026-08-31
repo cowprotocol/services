@@ -57,10 +57,11 @@ impl Validator {
         &self,
         check: SignatureCheck,
     ) -> Result<(), SignatureValidationError> {
-        // Since there are no interactions (no dynamic conditions / complex pre-state
-        // change), the order's validity can be directly determined by whether
-        // the signature matches the expected hash of the order data, checked
-        // with isValidSignature method called on the owner's contract
+        // Since there are no interactions (no dynamic conditions / complex
+        // pre-state change), the order's validity can be directly
+        // determined by whether the signature matches the expected hash
+        // of the order data, checked with isValidSignature method
+        // called on the owner's contract
         let contract = ERC1271SignatureValidator::new(check.signer, &self.web3.provider);
         let magic_bytes = contract
             .isValidSignature(check.hash.into(), check.signature.clone().into())
@@ -105,8 +106,8 @@ impl Validator {
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
-        // 2. Simulate the actual `isValidSignature` calls that would happen as part of
-        //    a settlement
+        // 2. Simulate the actual `isValidSignature` calls that would happen as
+        //    part of a settlement
         let validate_call = Signatures::Signatures::validateCall {
             contracts: Signatures::Signatures::Contracts {
                 settlement: *self.settlement.address(),
@@ -126,8 +127,9 @@ impl Validator {
                 .collect(),
         };
 
-        // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
-        // specified, so we need to use a random account when sending a simulation tx.
+        // ZKSync-based chains don't use the default 0x0 account when `tx.from`
+        // is not specified, so we need to use a random account when
+        // sending a simulation tx.
         static SIMULATION_ACCOUNT: LazyLock<Address> = LazyLock::new(|| Address::random());
         let simulation = self
             .settlement

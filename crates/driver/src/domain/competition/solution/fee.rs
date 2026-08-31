@@ -69,9 +69,9 @@ impl Fulfillment {
             }
         };
 
-        // Reduce the executed amount by the protocol fee. This is because solvers are
-        // unaware of the protocol fee that driver introduces and they only account
-        // for their own fee.
+        // Reduce the executed amount by the protocol fee. This is because
+        // solvers are unaware of the protocol fee that driver
+        // introduces and they only account for their own fee.
         let order = self.order().clone();
         let executed = match order.side {
             order::Side::Buy => self.executed(),

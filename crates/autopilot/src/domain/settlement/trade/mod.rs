@@ -94,9 +94,10 @@ impl Trade {
                 prices: trade.prices,
             })
         } else {
-            // All orders that were settled outside of the auction are JIT orders. This
-            // includes regular JIT orders that the protocol is not aware of upfront, as
-            // well as user orders that were not listed in the auction during competition.
+            // All orders that were settled outside of the auction are JIT
+            // orders. This includes regular JIT orders that the
+            // protocol is not aware of upfront, as well as user
+            // orders that were not listed in the auction during competition.
             let surplus_capturing = auction
                 .surplus_capturing_jit_order_owners
                 .contains(&trade.uid.owner());
@@ -117,8 +118,9 @@ impl Trade {
                 prices: if surplus_capturing {
                     trade.prices
                 } else {
-                    // for non-surplus capturing jit orders (AKA liquidity JIT orders) the
-                    // expectation is that the trade was executed at its limit price, without
+                    // for non-surplus capturing jit orders (AKA liquidity JIT
+                    // orders) the expectation is that the
+                    // trade was executed at its limit price, without
                     // incurred fees.
                     Prices {
                         uniform: trade.prices.custom,
