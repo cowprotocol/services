@@ -23,6 +23,11 @@ const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(60);
 struct Entry {
     is_banned: bool,
     last_updated: Instant,
+    /// The lookup failed, so `is_banned` is a fail-open placeholder. The
+    /// maintenance task retries uncertain entries on every tick; the read
+    /// path serves them from cache instead of re-paying the backend
+    /// timeout inline on every check.
+    uncertain: bool,
 }
 
 impl Entry {
@@ -31,6 +36,17 @@ impl Entry {
         Self {
             is_banned,
             last_updated: Instant::now(),
+            uncertain: false,
+        }
+    }
+
+    /// Creates an [`Entry`] recording a failed lookup, treated as not banned
+    /// until a retry succeeds.
+    fn uncertain() -> Self {
+        Self {
+            is_banned: false,
+            last_updated: Instant::now(),
+            uncertain: true,
         }
     }
 }
@@ -93,27 +109,23 @@ impl Cached {
             .collect()
             .await;
 
-        let now = Instant::now();
         for (address, is_banned) in fetched {
-            let Some(is_banned) = is_banned else { continue };
-            self.cache.insert(
-                address,
-                Entry {
-                    is_banned,
-                    last_updated: now,
-                },
-            );
-            if is_banned {
+            let entry = match is_banned {
+                Some(is_banned) => Entry::new(is_banned),
+                None => Entry::uncertain(),
+            };
+            if entry.is_banned {
                 banned.insert(address);
             }
+            self.cache.insert(address, entry);
         }
 
         banned
     }
 
-    /// `Some(true)` as soon as any backend confirms a ban — a failure
+    /// `Some(true)` as soon as any backend confirms a ban, since a failure
     /// elsewhere must not mask a positive hit. `None` means no confirmation
-    /// and at least one failure, so the caller skips caching.
+    /// and at least one failure, cached as an uncertain entry.
     async fn fetch_all(&self, address: Address) -> Option<bool> {
         let results = join_all(self.backends.iter().map(|b| fetch_one(b.as_ref(), address))).await;
         if results.iter().any(|r| matches!(r, Some(true))) {
@@ -126,15 +138,16 @@ impl Cached {
     }
 
     /// Collects cache entries close enough to expiry that the next maintenance
-    /// tick may miss the window.
+    /// tick may miss the window, plus uncertain entries awaiting a retry.
     fn expired(&self, now: Instant) -> Vec<Arc<Address>> {
         self.cache
             .iter()
             .filter_map(|(address, entry)| {
-                let due = now
-                    .checked_duration_since(entry.last_updated)
-                    .unwrap_or_default()
-                    >= CACHE_EXPIRY - MAINTENANCE_TIMEOUT;
+                let due = entry.uncertain
+                    || now
+                        .checked_duration_since(entry.last_updated)
+                        .unwrap_or_default()
+                        >= CACHE_EXPIRY - MAINTENANCE_TIMEOUT;
                 due.then_some(address)
             })
             .collect()
@@ -188,5 +201,80 @@ async fn fetch_one(backend: &dyn Backend, address: Address) -> Option<bool> {
             );
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        std::sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+
+    struct FlakyBackend {
+        calls: Arc<AtomicUsize>,
+        fail: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl Backend for FlakyBackend {
+        async fn fetch(&self, _: Address) -> Result<bool, BackendError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail.load(Ordering::SeqCst) {
+                Err(BackendError::Hermod(
+                    super::super::hermod::Error::UnexpectedStatus(
+                        reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                    ),
+                ))
+            } else {
+                Ok(false)
+            }
+        }
+
+        fn name(&self) -> &'static str {
+            "flaky"
+        }
+    }
+
+    fn setup(fail: bool) -> (Arc<Cached>, Arc<AtomicUsize>, Arc<AtomicBool>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let failing = Arc::new(AtomicBool::new(fail));
+        let backend = FlakyBackend {
+            calls: calls.clone(),
+            fail: failing.clone(),
+        };
+        let cached = Cached::new(vec![Box::new(backend)], 100).unwrap();
+        (cached, calls, failing)
+    }
+
+    #[tokio::test]
+    async fn failed_lookup_is_cached_not_refetched_inline() {
+        let (cached, calls, _failing) = setup(true);
+        let addresses = HashSet::from([Address::repeat_byte(1)]);
+
+        assert!(cached.check(&addresses).await.is_empty());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        // The failure is cached as uncertain, so a second check must not
+        // trigger another inline lookup.
+        assert!(cached.check(&addresses).await.is_empty());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn uncertain_entries_are_due_for_maintenance_and_recover() {
+        let (cached, _calls, failing) = setup(true);
+        let address = Address::repeat_byte(1);
+        let addresses = HashSet::from([address]);
+
+        assert!(cached.check(&addresses).await.is_empty());
+        // The failed lookup is due for a background retry right away.
+        assert_eq!(cached.expired(Instant::now()).len(), 1);
+
+        failing.store(false, Ordering::SeqCst);
+        let (address, entry) = cached.refresh(address).await.unwrap();
+        cached.cache.insert(address, entry);
+
+        assert!(cached.expired(Instant::now()).is_empty());
     }
 }
