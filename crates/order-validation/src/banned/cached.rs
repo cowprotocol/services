@@ -23,10 +23,8 @@ const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(60);
 struct Entry {
     is_banned: bool,
     last_updated: Instant,
-    /// The lookup failed, so `is_banned` is a fail-open placeholder. The
-    /// maintenance task retries uncertain entries on every tick; the read
-    /// path serves them from cache instead of re-paying the backend
-    /// timeout inline on every check.
+    /// The lookup failed and `is_banned` is a fail-open placeholder until
+    /// a maintenance-task retry succeeds.
     uncertain: bool,
 }
 
@@ -40,8 +38,7 @@ impl Entry {
         }
     }
 
-    /// Creates an [`Entry`] recording a failed lookup, treated as not banned
-    /// until a retry succeeds.
+    /// Creates an [`Entry`] for a failed lookup.
     fn uncertain() -> Self {
         Self {
             is_banned: false,
@@ -125,7 +122,7 @@ impl Cached {
 
     /// `Some(true)` as soon as any backend confirms a ban, since a failure
     /// elsewhere must not mask a positive hit. `None` means no confirmation
-    /// and at least one failure, cached as an uncertain entry.
+    /// and at least one failure.
     async fn fetch_all(&self, address: Address) -> Option<bool> {
         let results = join_all(self.backends.iter().map(|b| fetch_one(b.as_ref(), address))).await;
         if results.iter().any(|r| matches!(r, Some(true))) {
@@ -255,8 +252,6 @@ mod tests {
         assert!(cached.check(&addresses).await.is_empty());
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
-        // The failure is cached as uncertain, so a second check must not
-        // trigger another inline lookup.
         assert!(cached.check(&addresses).await.is_empty());
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
@@ -268,7 +263,6 @@ mod tests {
         let addresses = HashSet::from([address]);
 
         assert!(cached.check(&addresses).await.is_empty());
-        // The failed lookup is due for a background retry right away.
         assert_eq!(cached.expired(Instant::now()).len(), 1);
 
         failing.store(false, Ordering::SeqCst);
