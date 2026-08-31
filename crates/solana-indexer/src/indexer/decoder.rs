@@ -244,11 +244,12 @@ impl Decoder {
         slot: Slot,
         signature: Signature,
     ) -> Result<Vec<DecodedEvent>, DecodeFailed> {
-        // `meta` carries whether the transaction succeeded, so without it there is
-        // no way to tell, and emitting events for a transaction that may have
-        // reverted is the failure this guard exists to prevent. Dead-letter it
-        // instead of skipping: replay re-fetches by signature, and
-        // `getTransaction` returns the meta.
+        // `meta` carries whether the transaction succeeded, so without it there
+        // is no way to tell, and emitting events for a transaction that
+        // may have reverted is the failure this guard exists to
+        // prevent. Dead-letter it instead of skipping: replay
+        // re-fetches by signature, and `getTransaction` returns the
+        // meta.
         let Some(meta) = tx.meta.as_ref() else {
             tracing::warn!("transaction update without meta");
             return Err(DecodeFailed);
@@ -345,8 +346,8 @@ fn decode_settlement(
     for instruction in instructions {
         let Ok((discriminator, _)) = recover_discriminator(&instruction.data) else {
             decode_failed = true;
-            // Warn, not debug: this dead-letters the transaction, so it needs to
-            // be findable in the logs alongside the row.
+            // Warn, not debug: this dead-letters the transaction, so it needs
+            // to be findable in the logs alongside the row.
             tracing::warn!(
                 instruction_index = instruction.instruction_index,
                 err = %DecodeError::UnknownDiscriminator,
@@ -354,10 +355,11 @@ fn decode_settlement(
             );
             continue;
         };
-        // A landed (non-reverted) transaction carries valid instruction data, so
-        // a decode failure here means a decoder bug or an unannounced program
-        // layout change, not a normal case. Surface it as a warning and set the
-        // failure flag so the transaction is dead-lettered.
+        // A landed (non-reverted) transaction carries valid instruction data,
+        // so a decode failure here means a decoder bug or an
+        // unannounced program layout change, not a normal case. Surface
+        // it as a warning and set the failure flag so the transaction
+        // is dead-lettered.
         let decoded = match discriminator {
             SettlementInstruction::CreateOrder => {
                 decode_order_created(instruction, ctx).map(|event| vec![event])
@@ -773,12 +775,13 @@ fn relevant_instructions(
         };
 
         // `group.instructions` is a depth-first, execution-ordered flat list of
-        // every CPI under this top-level instruction, across all nesting levels.
-        // `stack_height` is the only per-CPI depth signal (2 = a direct CPI, 3 =
-        // a CPI that one made, ...), so rebuild the sibling position at each
-        // level from it. A dropped (untracked) inner still advances the counter,
-        // so kept siblings keep their true position. A missing stack_height
-        // (pre-Solana-1.14.6 data) falls back to depth 1.
+        // every CPI under this top-level instruction, across all nesting
+        // levels. `stack_height` is the only per-CPI depth signal (2 =
+        // a direct CPI, 3 = a CPI that one made, ...), so rebuild the
+        // sibling position at each level from it. A dropped (untracked)
+        // inner still advances the counter, so kept siblings keep their
+        // true position. A missing stack_height (pre-Solana-1.14.6
+        // data) falls back to depth 1.
         let mut path: Vec<u8> = Vec::new();
         for inner in &group.instructions {
             let depth = inner

@@ -45,8 +45,8 @@ impl SubgraphClient {
         T: DeserializeOwned,
     {
         // for long lasting queries subgraph call might randomly fail
-        // introduced retry mechanism that should efficiently help since failures are
-        // quick and we need 1 or 2 retries to succeed.
+        // introduced retry mechanism that should efficiently help since
+        // failures are quick and we need 1 or 2 retries to succeed.
         let mut error: Option<anyhow::Error> = None;
         for _ in 0..self.max_number_of_attempts {
             match self.query_without_retry(query, &variables).await {

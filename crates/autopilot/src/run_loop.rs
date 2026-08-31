@@ -302,7 +302,8 @@ impl RunLoop {
         let time_since_last_block = current_block.observed_at.elapsed();
         if time_since_last_block > self.config.max_run_loop_delay {
             if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
-                // don't emit warning if we finished prev run loop within the same block
+                // don't emit warning if we finished prev run loop within the
+                // same block
                 tracing::warn!(
                     missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
                     "missed optimal auction start, wait for new block"
@@ -378,11 +379,13 @@ impl RunLoop {
             .ok()?;
         Metrics::auction(id);
 
-        // always update the auction because the tests use this as a readiness probe
+        // always update the auction because the tests use this as a readiness
+        // probe
         self.persistence.archive_auction(id, &auction);
 
         if auction.orders.is_empty() {
-            // Updating liveness probe to not report unhealthy due to this optimization
+            // Updating liveness probe to not report unhealthy due to this
+            // optimization
             self.probes.liveness.auction();
             tracing::debug!("skipping empty auction");
             return None;
@@ -423,8 +426,9 @@ impl RunLoop {
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
 
-        // Post-processing should not be executed asynchronously since it includes steps
-        // of storing all the competition/auction-related data to the DB.
+        // Post-processing should not be executed asynchronously since it
+        // includes steps of storing all the competition/auction-related
+        // data to the DB.
         if let Err(err) = self
             .post_processing(
                 auction,
@@ -707,8 +711,8 @@ impl RunLoop {
             let submission_address = bid.driver().submission_address;
             let is_solution_from_driver = bid.solution().solver() == submission_address;
 
-            // Filter out solutions that don't come from their corresponding submission
-            // address
+            // Filter out solutions that don't come from their corresponding
+            // submission address
             if !is_solution_from_driver {
                 tracing::warn!(
                     driver = bid.driver().name,
@@ -894,8 +898,8 @@ impl RunLoop {
             )
             .boxed();
 
-        // Wait for either the settlement transaction to be mined or the driver returned
-        // a result.
+        // Wait for either the settlement transaction to be mined or the driver
+        // returned a result.
         let result = match futures::future::select(wait_for_settlement_transaction, settle).await {
             futures::future::Either::Left((res, _)) => res,
             futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
@@ -994,8 +998,9 @@ impl RunLoop {
         tracing::debug!(%current, deadline=%submission_deadline_latest_block, %auction_id, "waiting for tag");
         loop {
             let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
-            // Run maintenance to ensure the system processed the last available block so
-            // it's possible to find the tx in the DB in the next line.
+            // Run maintenance to ensure the system processed the last available
+            // block so it's possible to find the tx in the DB in
+            // the next line.
             self.maintenance
                 .wait_until_block_processed(SyncTarget::FullyProcessed(block.number))
                 .await;
@@ -1452,27 +1457,29 @@ mod tests {
         // default deadline is `now + min_solve_time` (now + 9s)
         let standard_deadline = "2026-06-01T12:00:10Z".parse::<Ts>().unwrap();
 
-        // syncing to blockchain is not configured -> deadline = now + min_solve_time
+        // syncing to blockchain is not configured -> deadline = now +
+        // min_solve_time
         let deadline = pick_solve_deadline_impl(now, min_solve_time, None, last_block);
         assert_eq!(deadline, standard_deadline);
 
-        // both sync parameters provided -> deadline gets synced to expected block
-        // production
+        // both sync parameters provided -> deadline gets synced to expected
+        // block production
         let slot_config = Some(SlotConfig {
             slot_length: Duration::from_secs(12),
             tx_propagation_latency: Duration::from_secs(2),
         });
         let deadline =
             pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
-        // now is 1s after the last block (n), 11s left before the slot ends, 9s before
-        // we are supposed to submit a solution, 9s minimum solve time => synced
-        // deadline is equal to standard deadline (2s before block n+1)
+        // now is 1s after the last block (n), 11s left before the slot ends, 9s
+        // before we are supposed to submit a solution, 9s minimum solve
+        // time => synced deadline is equal to standard deadline (2s
+        // before block n+1)
         assert_eq!(deadline, standard_deadline);
 
-        // now is 2s after the last block (n), 10s left before the slot ends, 8s before
-        // we are supposed to submit a solution for this slot, 9s minimum solve
-        // time => we barely missed the deadline of the current slot so now
-        // solvers get until 2s before the block n+2
+        // now is 2s after the last block (n), 10s left before the slot ends, 8s
+        // before we are supposed to submit a solution for this slot, 9s
+        // minimum solve time => we barely missed the deadline of the
+        // current slot so now solvers get until 2s before the block n+2
         let deadline = pick_solve_deadline_impl(
             now + Duration::from_secs(1),
             min_solve_time,
@@ -1481,8 +1488,8 @@ mod tests {
         );
         assert_eq!(deadline, "2026-06-01T12:00:22Z".parse::<Ts>().unwrap());
 
-        // let's move to gnosis chain where 1 block is 5s (1 block is not enough for
-        // the solve deadline)
+        // let's move to gnosis chain where 1 block is 5s (1 block is not enough
+        // for the solve deadline)
         let slot_config = Some(SlotConfig {
             slot_length: Duration::from_secs(5),
             tx_propagation_latency: Duration::from_secs(2),
@@ -1490,8 +1497,9 @@ mod tests {
         let last_block_time = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
         let last_block = block_with_timestamp(last_block_time);
         let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
-        // now is 1s after the last block n, 4s left in the block, we need to submit 2s
-        // before a block, min_solve_time 9s => deadline is 2s before block n+3
+        // now is 1s after the last block n, 4s left in the block, we need to
+        // submit 2s before a block, min_solve_time 9s => deadline is 2s
+        // before block n+3
         let deadline =
             pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
         assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());

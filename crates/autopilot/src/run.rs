@@ -411,9 +411,10 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             block
         }
         _ => {
-            // If the deployment information can't be found, start from 0 (default
-            // behaviour). For real contracts, the deployment information is specified
-            // for all the networks, but it isn't specified for the e2e tests which deploy
+            // If the deployment information can't be found, start from 0
+            // (default behaviour). For real contracts, the
+            // deployment information is specified for all the
+            // networks, but it isn't specified for the e2e tests which deploy
             // the contracts from scratch
             tracing::warn!("Settlement contract deployment information not found");
             0

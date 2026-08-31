@@ -77,8 +77,9 @@ impl Postgres {
         let start = chrono::offset::Utc::now();
         let mut ex = self.pool.begin().await?;
         // Set the transaction isolation level to REPEATABLE READ
-        // so the both SELECT queries below are executed in the same database snapshot
-        // taken at the moment before the first query is executed.
+        // so the both SELECT queries below are executed in the same database
+        // snapshot taken at the moment before the first query is
+        // executed.
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(ex.deref_mut())
             .await?;

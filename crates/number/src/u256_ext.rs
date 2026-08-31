@@ -255,7 +255,8 @@ mod tests {
         // 1e18 / 256 = 3906250000000000
         assert_eq!(result, U256::from(3_906_250_000_000_000u64));
 
-        // Multiplying a large U256 by a large factor should overflow and return None
+        // Multiplying a large U256 by a large factor should overflow and return
+        // None
         let max_u256 = U256::MAX;
         assert_eq!(max_u256.checked_mul_f64(1.1), None);
     }

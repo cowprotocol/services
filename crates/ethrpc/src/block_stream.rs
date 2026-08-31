@@ -108,22 +108,24 @@ pub async fn current_block_ws_stream(
 ) -> Result<CurrentBlockWatcher> {
     tracing::info!(?ws_url, "initializing block stream");
 
-    // Create a WS transport, which implements an automatic reconnection mechanism
+    // Create a WS transport, which implements an automatic reconnection
+    // mechanism
     let ws_connect = WsConnect::new(ws_url.as_str());
     let ws_provider = ProviderBuilder::new()
         .connect_ws(ws_connect)
         .await
         .context("failed to connect to websocket")?;
 
-    // Init the block subscription stream before fetching the first block to reduce
-    // chance of missing blocks due to race conditions
+    // Init the block subscription stream before fetching the first block to
+    // reduce chance of missing blocks due to race conditions
     let mut stream = ws_provider
         .subscribe_blocks()
         .await
         .context("failed to subscribe to blocks")?
         .into_stream();
 
-    // Fetch the current block immediately via HTTP instead of waiting for WebSocket
+    // Fetch the current block immediately via HTTP instead of waiting for
+    // WebSocket
     tracing::info!("fetching initial block via HTTP");
     let first_block = alloy_provider
         .get_block(BlockId::Number(BlockNumberOrTag::Latest))
@@ -139,8 +141,9 @@ pub async fn current_block_ws_stream(
         let _ws_provider = ws_provider;
         let mut previous_block = first_block;
 
-        // Process incoming blocks. WsConnect handles reconnection automatically,
-        // so we don't need manual reconnection logic here.
+        // Process incoming blocks. WsConnect handles reconnection
+        // automatically, so we don't need manual reconnection logic
+        // here.
         while let Some(block) = stream.next().await {
             convert_block_and_process(block, &mut previous_block, &sender);
         }
@@ -189,8 +192,9 @@ pub async fn current_block_stream(
     url: Url,
     poll_interval: Duration,
 ) -> Result<CurrentBlockWatcher> {
-    // Build an alloy transport specifically for the current block stream to avoid
-    // batching requests together on chains with a very high block frequency.
+    // Build an alloy transport specifically for the current block stream to
+    // avoid batching requests together on chains with a very high block
+    // frequency.
     let (provider, _) =
         crate::alloy::unbuffered_provider(url.as_str(), Some("base_currentBlockStream"));
 
@@ -432,7 +436,8 @@ mod tests {
         let (sender, receiver) = watch::channel(new_block(0));
         const TIMEOUT: Duration = Duration::from_millis(10);
         let result = timeout(TIMEOUT, next_block(&receiver)).await;
-        // although there is already 1 block in the stream it does not get returned
+        // although there is already 1 block in the stream it does not get
+        // returned
         assert!(result.is_err());
 
         tokio::spawn(async move {

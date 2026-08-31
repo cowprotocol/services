@@ -407,7 +407,8 @@ impl CachingNativePriceEstimator {
         })
         .await;
 
-        // Return whatever was collected up to that point, regardless of the timeout
+        // Return whatever was collected up to that point, regardless of the
+        // timeout
         prices
     }
 }
@@ -530,16 +531,18 @@ impl NativePriceUpdater {
         // before starting the next. This ensures all tokens in a chunk reach
         // the BufferedRequest channel simultaneously, producing full CoinGecko
         // API batches instead of trickling tokens one-by-one. Normally it's
-        // better to just pass the whole vector to `estimate_prices_and_update_cache`
-        // and let it handle the chunking, but in this case we want to ensure that all
-        // tokens go in in chunks of 19 to fetch as many tokens from CoinGecko as is
-        // allowed. We debounce request to CoinGecko to happen once every 100ms
-        // to build the batches and if we use buffer_unordered deeper in the stack the
-        // execution will happen faster, but we will build more smaller batches that we
-        // send to CoinGecko. This happens because we also use estimations from solvers
-        // which vary in time, so as requests in the buffer_unorderd() stream
-        // finish, new ones start immediately, tokens "trickle in" and we build smaller
-        // batches.
+        // better to just pass the whole vector to
+        // `estimate_prices_and_update_cache` and let it handle the
+        // chunking, but in this case we want to ensure that all
+        // tokens go in in chunks of 19 to fetch as many tokens from CoinGecko
+        // as is allowed. We debounce request to CoinGecko to happen
+        // once every 100ms to build the batches and if we use
+        // buffer_unordered deeper in the stack the execution will
+        // happen faster, but we will build more smaller batches that we
+        // send to CoinGecko. This happens because we also use estimations from
+        // solvers which vary in time, so as requests in the
+        // buffer_unorderd() stream finish, new ones start immediately,
+        // tokens "trickle in" and we build smaller batches.
         let chunk_size = self.estimator.0.concurrent_requests;
         for chunk in expired_tokens.chunks(chunk_size) {
             self.estimator
@@ -661,8 +664,8 @@ mod tests {
     async fn deduplicates_concurrent_requests_for_same_token() {
         let mut inner = MockNativePriceEstimating::new();
         // Even though many callers request the same uncached token at once, the
-        // underlying estimator must be queried exactly once (sleep keeps the leader's
-        // request in flight while others arrive).
+        // underlying estimator must be queried exactly once (sleep keeps the
+        // leader's request in flight while others arrive).
         inner
             .expect_estimate_native_price()
             .times(1)
@@ -759,8 +762,9 @@ mod tests {
 
     #[tokio::test]
     async fn approximation_normalizes_when_target_has_more_decimals() {
-        // Scenario: Token 1 is USDC-like (6 decimals), approximated by DAI-like token
-        // 100 (18 decimals) Both worth $1, so they're pegged 1:1 in value
+        // Scenario: Token 1 is USDC-like (6 decimals), approximated by DAI-like
+        // token 100 (18 decimals) Both worth $1, so they're pegged 1:1
+        // in value
         let mut inner = MockNativePriceEstimating::new();
         // DAI-like token returns price of 5e-22 ETH per wei (smallest unit)
         inner
@@ -787,7 +791,8 @@ mod tests {
             .await
             .unwrap();
         // 5e-22 * 10^12 = 5e-10
-        // Note: small floating point error due to 10^12 not being exactly representable
+        // Note: small floating point error due to 10^12 not being exactly
+        // representable
         let expected = 5e-10;
         assert!(
             (price - expected).abs() / expected < f64::EPSILON,
@@ -797,10 +802,12 @@ mod tests {
 
     #[tokio::test]
     async fn approximation_normalizes_when_target_has_fewer_decimals() {
-        // Scenario: Token 1 is DAI-like (18 decimals), approximated by USDC-like token
-        // 100 (6 decimals) Both worth $1, so they're pegged 1:1 in value
+        // Scenario: Token 1 is DAI-like (18 decimals), approximated by
+        // USDC-like token 100 (6 decimals) Both worth $1, so they're
+        // pegged 1:1 in value
         let mut inner = MockNativePriceEstimating::new();
-        // USDC-like token returns price of 5e-10 ETH per microunit (smallest unit)
+        // USDC-like token returns price of 5e-10 ETH per microunit (smallest
+        // unit)
         inner
             .expect_estimate_native_price()
             .times(1)
@@ -861,7 +868,8 @@ mod tests {
         let mut inner = MockNativePriceEstimating::new();
         let mut seq = mockall::Sequence::new();
 
-        // First 3 calls: Return EstimatorInternal error. Increment the errors counter.
+        // First 3 calls: Return EstimatorInternal error. Increment the errors
+        // counter.
         inner
             .expect_estimate_native_price()
             .times(3)
@@ -877,8 +885,8 @@ mod tests {
             .in_sequence(&mut seq)
             .returning(|_, _| async { Ok(1.0) }.boxed());
 
-        // Next 2 calls: Return EstimatorInternal error. Start incrementing the errors
-        // counter from the beginning.
+        // Next 2 calls: Return EstimatorInternal error. Start incrementing the
+        // errors counter from the beginning.
         inner
             .expect_estimate_native_price()
             .times(2)
@@ -887,16 +895,17 @@ mod tests {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!("boom"))) }.boxed()
             });
 
-        // Next call: Return a recoverable error, which doesn't affect the errors
-        // counter.
+        // Next call: Return a recoverable error, which doesn't affect the
+        // errors counter.
         inner
             .expect_estimate_native_price()
             .once()
             .in_sequence(&mut seq)
             .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
 
-        // Since the ACCUMULATIVE_ERRORS_THRESHOLD is 5, there are only 3 more calls
-        // remain. Anything exceeding that must return the cached value.
+        // Since the ACCUMULATIVE_ERRORS_THRESHOLD is 5, there are only 3 more
+        // calls remain. Anything exceeding that must return the cached
+        // value.
         inner
             .expect_estimate_native_price()
             .times(3)
@@ -948,8 +957,8 @@ mod tests {
             PriceEstimationError::RateLimited
         ));
 
-        // Make more than expected calls. The cache should be used once the threshold is
-        // reached.
+        // Make more than expected calls. The cache should be used once the
+        // threshold is reached.
         for _ in 0..(ACCUMULATIVE_ERRORS_THRESHOLD * 2) {
             let result = estimator
                 .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)

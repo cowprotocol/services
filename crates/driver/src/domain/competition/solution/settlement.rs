@@ -84,11 +84,12 @@ impl Settlement {
         simulator: &Simulator,
         solver_native_token: ManageNativeToken,
     ) -> Result<Self, Error> {
-        // For a settlement to be valid, the solution has to respect some rules which
-        // would otherwise lead to slashing. Check those rules first.
+        // For a settlement to be valid, the solution has to respect some rules
+        // which would otherwise lead to slashing. Check those rules
+        // first.
 
-        // Internalization rule: check that internalized interactions only use trusted
-        // tokens.
+        // Internalization rule: check that internalized interactions only use
+        // trusted tokens.
         let untrusted_tokens = solution
             .interactions
             .iter()
@@ -144,25 +145,27 @@ impl Settlement {
         eth: &Ethereum,
         simulator: &Simulator,
     ) -> Result<Self, Error> {
-        // <address payable>.transfer(ETH) is allowed to use at most 2300 gas units (
-        // see <https://fravoll.github.io/solidity-patterns/secure_ether_transfer.html>).
-        // This is not enough when the receiver is a smart contract wallet which does
-        // non-trivial work in the `fallback` handler.
+        // <address payable>.transfer(ETH) is allowed to use at most 2300 gas
+        // units ( see <https://fravoll.github.io/solidity-patterns/secure_ether_transfer.html>).
+        // This is not enough when the receiver is a smart contract wallet which
+        // does non-trivial work in the `fallback` handler.
         // To support sending native ETH to SC wallets we use access lists which
-        // effectively move the cost of accessing storage out of the critical section
-        // and into the tx's initial gas cost.
+        // effectively move the cost of accessing storage out of the critical
+        // section and into the tx's initial gas cost.
         // While correctly built access lists provide a very minor net cost
         // reduction an access list with unused storage slots increases the cost
-        // significantly. Since the risk is high and the reward is very low we only
-        // compute access list items which are absolutely necessary for the tx to work.
+        // significantly. Since the risk is high and the reward is very low we
+        // only compute access list items which are absolutely necessary
+        // for the tx to work.
         //
-        // We compute those access lists by using `eth_createAccessList` for a call
-        // sending 1 wei to each SC wallet that is supposed to get ETH during the
-        // settlement. Those lists get merged and added to the settlement transaction.
+        // We compute those access lists by using `eth_createAccessList` for a
+        // call sending 1 wei to each SC wallet that is supposed to get
+        // ETH during the settlement. Those lists get merged and added
+        // to the settlement transaction.
         //
         // `Some(..)` means at least one trade strictly requires an access list;
-        // `None` means it is purely a gas optimization for this settlement, so a
-        // non-revert fetch failure below can be tolerated.
+        // `None` means it is purely a gas optimization for this settlement, so
+        // a non-revert fetch failure below can be tolerated.
         let partial_access_list: Option<RequiredAccessList> = try_join_all(
             solution
                 .user_trades()
@@ -190,15 +193,17 @@ impl Settlement {
                 )
             });
 
-        // run everything concurrently to minimize latency added through RPC roundtrips
+        // run everything concurrently to minimize latency added through RPC
+        // roundtrips
         let (gas_used, gas_price, solver_eth) = tokio::join!(
             gas_used_fut,
             eth.gas_price(),
             eth.balance(solution.solver().address()),
         );
 
-        // Ensure the solver can cover the gas the node reserves to admit the settlement
-        // tx, which is `gas_limit * max_fee_per_gas` at whichever price we submit with.
+        // Ensure the solver can cover the gas the node reserves to admit the
+        // settlement tx, which is `gas_limit * max_fee_per_gas` at
+        // whichever price we submit with.
         let gas = Gas::new(gas_used?, eth.block_gas_limit(), eth.tx_gas_limit())?;
         let required_eth_balance = gas.required_balance(submission_max_fee_per_gas(
             gas_price?.max_fee_per_gas,
@@ -272,8 +277,8 @@ impl Settlement {
     /// The settled user orders with their in/out amounts.
     pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
         let log_err = |trade: &Trade, err: error::Math, kind: &str| -> eth::TokenAmount {
-            // This should never happen, returning 0 is better than panicking, but we
-            // should still alert.
+            // This should never happen, returning 0 is better than panicking,
+            // but we should still alert.
             let msg = format!("could not compute {kind}");
             tracing::error!(?trade, prices=?self.solution.prices, ?err, msg);
             0.into()
@@ -391,16 +396,17 @@ impl Gas {
         block_limit: eth::Gas,
         tx_gas_limit: eth::Gas,
     ) -> Result<Self, solution::Error> {
-        // We don't allow for solutions to take up more than half of the block's gas
-        // limit. This is to ensure that block producers attempt to include the
-        // settlement transaction in the next block as long as it is reasonably
-        // priced. If we were to allow for solutions very close to the block
-        // gas limit, validators may discard the settlement transaction unless it is
-        // paying a very high priority fee. This is because the default block
-        // building algorithm picks the highest paying transaction whose gas limit
-        // will not exceed the remaining space in the block next and ignore transactions
-        // whose gas limit exceed the remaining space (without simulating the actual
-        // gas required).
+        // We don't allow for solutions to take up more than half of the block's
+        // gas limit. This is to ensure that block producers attempt to
+        // include the settlement transaction in the next block as long
+        // as it is reasonably priced. If we were to allow for solutions
+        // very close to the block gas limit, validators may discard the
+        // settlement transaction unless it is paying a very high
+        // priority fee. This is because the default block
+        // building algorithm picks the highest paying transaction whose gas
+        // limit will not exceed the remaining space in the block next
+        // and ignore transactions whose gas limit exceed the remaining
+        // space (without simulating the actual gas required).
         // Additionally cap by the configured per-tx gas limit. Operators set
         // this per chain (e.g. to EIP-7825's 16,777,215 cap on Mainnet Fusaka)
         // so the mempool can't reject the settlement for exceeding the per-tx
@@ -413,9 +419,10 @@ impl Gas {
         // Specify a different gas limit than the estimated gas when executing a
         // settlement transaction. This allows the transaction to be resilient
         // to small variations in actual gas usage.
-        // Also, some solutions can have significant gas refunds that are refunded at
-        // the end of execution, so we want to increase gas limit enough so
-        // those solutions don't revert with out of gas error.
+        // Also, some solutions can have significant gas refunds that are
+        // refunded at the end of execution, so we want to increase gas
+        // limit enough so those solutions don't revert with out of gas
+        // error.
         const GAS_LIMIT_FACTOR: f64 = 2.0;
         let estimate_with_buffer = eth::U256::from(f64::from(estimate.0) * GAS_LIMIT_FACTOR).into();
 
@@ -522,7 +529,8 @@ mod tests {
         assert_eq!(submission_max_fee_per_gas(100, None), U256::from(200));
         // Override above the doubled estimate: use the override.
         assert_eq!(submission_max_fee_per_gas(100, Some(500)), U256::from(500));
-        // Override below the doubled estimate: still the override, not driver * 2.
+        // Override below the doubled estimate: still the override, not driver *
+        // 2.
         assert_eq!(submission_max_fee_per_gas(100, Some(50)), U256::from(50));
     }
 }

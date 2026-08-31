@@ -379,8 +379,9 @@ impl<'a> Services<'a> {
                 .await,
             );
 
-            // Here we call the baseline_solver "test_quoter" to make the native price
-            // estimation use the baseline_solver instead of the test_quoter
+            // Here we call the baseline_solver "test_quoter" to make the native
+            // price estimation use the baseline_solver instead of
+            // the test_quoter
             vec![
                 ExternalSolver::new("test_quoter", "http://localhost:11088/baseline_solver"),
                 ExternalSolver::new("test_solver", "http://localhost:11088/test_solver"),
@@ -962,8 +963,8 @@ pub async fn ensure_e2e_readonly_user() {
             if e.code()
                 .is_some_and(|c| c == PSQL_DUPLICATE_OBJECT_ERROR_CODE) =>
         {
-            // this is considered expected, if multiple tests are run against the same
-            // database
+            // this is considered expected, if multiple tests are run against
+            // the same database
             tracing::info!("Read-only user already exists! {:?}", e);
         }
         Err(e) => {

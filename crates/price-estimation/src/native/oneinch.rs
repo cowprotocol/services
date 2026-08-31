@@ -215,8 +215,8 @@ mod tests {
             1.
         );
 
-        // Inverse price of USDC is >100 (this will fail if the price ETH goes below
-        // $100)
+        // Inverse price of USDC is >100 (this will fail if the price ETH goes
+        // below $100)
         assert!(
             1. / instance
                 .estimate_native_price(
