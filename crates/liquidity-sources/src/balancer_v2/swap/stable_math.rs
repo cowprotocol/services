@@ -42,7 +42,8 @@ fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Resul
             .bdiv_down(*AMP_PRECISION)?
             .badd(d_p.bmul(num_tokens)?)?
             .bmul(invariant)?;
-        // ((ampTimesTotal - _AMP_PRECISION) * invariant) / _AMP_PRECISION + (numTokens
+        // ((ampTimesTotal - _AMP_PRECISION) * invariant) / _AMP_PRECISION +
+        // (numTokens
         // + 1) * D_P
         let denominator = amp_times_total
             .bsub(*AMP_PRECISION)?
@@ -79,8 +80,8 @@ pub fn calc_out_given_in(
         invariant,
         token_index_out,
     )?;
-    // No need to use checked arithmetic since `tokenAmountIn` was actually added to
-    // the same balance right before
+    // No need to use checked arithmetic since `tokenAmountIn` was actually
+    // added to the same balance right before
     // calling `_getTokenBalanceGivenInvariantAndAllOtherBalances` which doesn't
     // alter the balances array.
     balances[token_index_in] = balances[token_index_in]
@@ -116,8 +117,8 @@ pub fn calc_in_given_out(
 
     // No need to use checked arithmetic since `tokenAmountOut` was actually
     // subtracted from the same balance right before calling
-    // `_getTokenBalanceGivenInvariantAndAllOtherBalances` which doesn't alter the
-    // balances array.
+    // `_getTokenBalanceGivenInvariantAndAllOtherBalances` which doesn't alter
+    // the balances array.
     balances[token_index_out] = balances[token_index_out]
         .add(token_amount_out)
         .expect("Will not overflow");
@@ -142,21 +143,22 @@ fn get_token_balance_given_invariant_and_all_other_balances(
     let mut sum = balances[0].as_uint256();
     let mut p_d = sum.bmul(num_tokens)?;
     for balance_j in &balances[1..] {
-        // P_D = Math.divDown(Math.mul(Math.mul(P_D, balances[j]), balances.length),
-        // invariant);
+        // P_D = Math.divDown(Math.mul(Math.mul(P_D, balances[j]),
+        // balances.length), invariant);
         p_d = p_d
             .bmul(balance_j.as_uint256())?
             .bmul(num_tokens)?
             .bdiv_down(invariant)?;
         sum = sum.badd(balance_j.as_uint256())?;
     }
-    // No need to use safe math: loop above implies `sum >= balances[tokenIndex]`
+    // No need to use safe math: loop above implies `sum >=
+    // balances[tokenIndex]`
     sum -= balances[token_index].as_uint256();
     let inv2 = invariant.bmul(invariant)?;
     // remove the balance from c by multiplying it
     // uint256 c = Math.mul(
-    //     Math.mul(Math.divUp(inv2, Math.mul(ampTimesTotal, P_D)), _AMP_PRECISION),
-    //     balances[tokenIndex]
+    //     Math.mul(Math.divUp(inv2, Math.mul(ampTimesTotal, P_D)),
+    // _AMP_PRECISION),     balances[tokenIndex]
     // );
     let c = inv2
         .bdiv_up(amp_times_total.bmul(p_d)?)?
@@ -167,8 +169,8 @@ fn get_token_balance_given_invariant_and_all_other_balances(
     // _AMP_PRECISION));
     let b = sum.badd(invariant.bdiv_down(amp_times_total)?.bmul(*AMP_PRECISION)?)?;
     // iterate to find the balance
-    // multiply the first iteration outside the loop with `invariant` to set initial
-    // approximation. uint256 tokenBalance = Math.divUp(inv2.add(c),
+    // multiply the first iteration outside the loop with `invariant` to set
+    // initial approximation. uint256 tokenBalance = Math.divUp(inv2.add(c),
     // invariant.add(b));
     let mut token_balance = inv2.badd(c)?.bdiv_up(invariant.badd(b)?)?;
     for _ in 0..255 {

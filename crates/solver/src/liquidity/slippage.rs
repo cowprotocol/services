@@ -39,8 +39,8 @@ impl SlippageContext<'_> {
         // It is possible for AMMs to use tokens that don't have external
         // prices. In order to handle these cases, we do in order:
         // 1. Compute the capped slippage using the sell token amount
-        // 2. If no sell token price is available, compute the capped slippage using the
-        //    buy token amount
+        // 2. If no sell token price is available, compute the capped slippage
+        //    using the buy token amount
         // 3. Fall back to using the default relative slippage without capping
         let relative = match relative_ratio(&execution.input_max) {
             Ok(relative) => {

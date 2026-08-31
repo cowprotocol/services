@@ -18,8 +18,8 @@ impl FromStr for Arn {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        // Could be more strict here, but this should suffice to catch unintended
-        // configuration mistakes
+        // Could be more strict here, but this should suffice to catch
+        // unintended configuration mistakes
         if s.starts_with("arn:aws:kms:") {
             Ok(Self(s.to_string()))
         } else {

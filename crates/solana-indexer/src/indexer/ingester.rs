@@ -137,9 +137,10 @@ where
     /// Dispatch one wire message. Breaks when the decoder is gone.
     //
     // Associated function taking the channel and chain-tip counter by reference
-    // rather than `&self`, so the future borrows only those (both `Sync`) fields
-    // across awaits. That keeps `run`'s future `Send` without requiring
-    // `Ingester: Sync`. The `GeyserStream` field is `Send` but not `Sync`.
+    // rather than `&self`, so the future borrows only those (both `Sync`)
+    // fields across awaits. That keeps `run`'s future `Send` without
+    // requiring `Ingester: Sync`. The `GeyserStream` field is `Send` but
+    // not `Sync`.
     async fn handle_update(
         tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
@@ -274,8 +275,8 @@ impl Ingester<GeyserStream> {
         solflow_program: Option<Pubkey>,
         resume: Resume,
     ) -> Result<(), Error> {
-        // The proto field is a bare slot number, and `from_slot` is inclusive, so
-        // resume one past the last fully persisted slot.
+        // The proto field is a bare slot number, and `from_slot` is inclusive,
+        // so resume one past the last fully persisted slot.
         let from_slot = match resume {
             Resume::Watermark => persistence
                 .last_indexed_slot()
@@ -287,9 +288,10 @@ impl Ingester<GeyserStream> {
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
-        // subscription at runtime (add/remove a tracked program, change commitment,
-        // narrow filters). Not used for this puprose at this time, but worth
-        // considering in case our indexing requirements get more dynamic.
+        // subscription at runtime (add/remove a tracked program, change
+        // commitment, narrow filters). Not used for this puprose at
+        // this time, but worth considering in case our indexing
+        // requirements get more dynamic.
         let (_sink, stream) = client.subscribe_with_request(Some(request)).await?;
 
         let mut ingester = Ingester::new(stream, tx, latest_chain_slot);

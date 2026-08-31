@@ -263,9 +263,10 @@ async fn fast_path_settle_rejects_tight_limit() {
 #[tokio::test]
 #[ignore]
 async fn with_quote_haircut() {
-    // Test with a sell order - haircut should reduce the buy amount user receives
-    // Set up an order that sells 50 A tokens for at least 40 B tokens (creating
-    // slack) The solver will quote ~41-42 B tokens, leaving room for 2% haircut
+    // Test with a sell order - haircut should reduce the buy amount user
+    // receives Set up an order that sells 50 A tokens for at least 40 B
+    // tokens (creating slack) The solver will quote ~41-42 B tokens,
+    // leaving room for 2% haircut
     let test_no_haircut = tests::setup()
         .name("Sell order without haircut (baseline)")
         .pool(ab_pool())
@@ -324,7 +325,8 @@ async fn with_quote_haircut() {
         "Comparing buy amounts with and without haircut"
     );
 
-    // The haircutted amount should be approximately 2% less (within 1% tolerance)
+    // The haircutted amount should be approximately 2% less (within 1%
+    // tolerance)
     assert!(
         buy_amount_with_haircut.is_approx_eq(&expected_haircutted, Some(0.01)),
         "Haircutted amount {} should be approximately 2% less than baseline {} (expected: {}, \

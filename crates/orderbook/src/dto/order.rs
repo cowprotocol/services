@@ -40,7 +40,7 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: Signature,
-    pub quote: Quote,
+    pub quote: Option<Quote>,
 }
 
 #[serde_as]

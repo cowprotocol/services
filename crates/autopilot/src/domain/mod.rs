@@ -2,6 +2,7 @@ pub mod auction;
 pub mod blockchain;
 pub mod competition;
 pub mod fee;
+pub mod penalty_cap;
 pub mod quote;
 pub mod settlement;
 

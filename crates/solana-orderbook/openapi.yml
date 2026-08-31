@@ -5,6 +5,9 @@ info:
     Read-only API over the orders and settlements the indexer records from the
     Solana settlement program.
   version: 0.0.1
+servers:
+  - description: Solana (Staging)
+    url: "https://barn.api.cow.fi/solana"
 paths:
   /api/v1/orders/{uid}:
     get:
