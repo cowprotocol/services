@@ -21,13 +21,14 @@ WITH trade_components AS (
             WHEN 'buy' THEN t.buy_amount * o.sell_amount / o.buy_amount
         END AS limit_amount,
         o.kind,
-        ap.price AS surplus_token_native_price
+        ca.price_values[array_position(
+            ca.price_tokens,
+            CASE o.kind WHEN 'sell' THEN o.buy_token ELSE o.sell_token END
+        )] AS surplus_token_native_price
     FROM orders o
     JOIN trades t ON t.order_uid = o.uid
     JOIN order_execution oe ON oe.order_uid = t.order_uid
-    LEFT JOIN auction_prices ap
-        ON ap.auction_id = oe.auction_id
-        AND ap.token = CASE o.kind WHEN 'sell' THEN o.buy_token ELSE o.sell_token END
+    LEFT JOIN competition_auctions ca ON ca.id = oe.auction_id
     WHERE o.owner = $1
 
     UNION ALL
@@ -47,14 +48,15 @@ WITH trade_components AS (
             WHEN 'buy' THEN t.buy_amount * o.sell_amount / o.buy_amount
         END AS limit_amount,
         o.kind,
-        ap.price AS surplus_token_native_price
+        ca.price_values[array_position(
+            ca.price_tokens,
+            CASE o.kind WHEN 'sell' THEN o.buy_token ELSE o.sell_token END
+        )] AS surplus_token_native_price
     FROM onchain_placed_orders opo
     JOIN orders o ON o.uid = opo.uid AND o.owner != $1
     JOIN trades t ON t.order_uid = o.uid
     JOIN order_execution oe ON oe.order_uid = t.order_uid
-    LEFT JOIN auction_prices ap
-        ON ap.auction_id = oe.auction_id
-        AND ap.token = CASE o.kind WHEN 'sell' THEN o.buy_token ELSE o.sell_token END
+    LEFT JOIN competition_auctions ca ON ca.id = oe.auction_id
     WHERE opo.sender = $1
 
     UNION ALL
@@ -71,13 +73,14 @@ WITH trade_components AS (
             WHEN 'buy' THEN t.buy_amount * j.sell_amount / j.buy_amount
         END AS limit_amount,
         j.kind,
-        ap.price AS surplus_token_native_price
+        ca.price_values[array_position(
+            ca.price_tokens,
+            CASE j.kind WHEN 'sell' THEN j.buy_token ELSE j.sell_token END
+        )] AS surplus_token_native_price
     FROM jit_orders j
     JOIN trades t ON j.uid = t.order_uid
     JOIN order_execution oe ON t.order_uid = oe.order_uid
-    LEFT JOIN auction_prices ap
-        ON ap.auction_id = oe.auction_id
-        AND ap.token = CASE j.kind WHEN 'sell' THEN j.buy_token ELSE j.sell_token END
+    LEFT JOIN competition_auctions ca ON ca.id = oe.auction_id
     WHERE j.owner = $1
       AND NOT EXISTS (
         SELECT 1
