@@ -138,17 +138,18 @@ impl ProtocolFees {
             //
             // When dealing with fee factors or percentages in compounding
             // operations:
-            // - We use (1 + x) where x is the percentage as a decimal (e.g., 5% = 0.05 →
-            //   1.05)
-            // - This is because applying a fee means multiplying by (1 + fee_rate)
+            // - We use (1 + x) where x is the percentage as a decimal (e.g., 5%
+            //   = 0.05 → 1.05)
+            // - This is because applying a fee means multiplying by (1 +
+            //   fee_rate)
             //
             // The total accumulated factor can't exceed (1 + cap), and we've
             // already accumulated to (1 + accumulated), then:
             //
             // 1. Current value with accumulated fees: (1 + accumulated)
             // 2. Maximum allowed value: (1 + cap)
-            // 3. To find the remaining factor we can apply: (1 + cap) / (1 + accumulated) -
-            //    1
+            // 3. To find the remaining factor we can apply: (1 + cap) / (1 +
+            //    accumulated) - 1
             //
             // The subtraction of 1 at the end converts back from the multiplier
             // form (1.xx) to the percentage form (0.xx) that our
@@ -250,8 +251,8 @@ impl ProtocolFees {
         quote: Option<&domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
     ) -> Vec<Policy> {
-        // In case there is no quote, we assume 0 buy amount so that the order ends up
-        // being considered out of market price.
+        // In case there is no quote, we assume 0 buy amount so that the order
+        // ends up being considered out of market price.
         let reference_quote = quote.cloned().unwrap_or(domain::Quote {
             order_uid: order.metadata.uid.into(),
             sell_amount: order.data.sell_amount.into(),
