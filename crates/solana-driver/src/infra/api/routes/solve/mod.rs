@@ -19,7 +19,11 @@ pub(crate) async fn solve(
     let solutions = state
         .competition()
         .solve(&auction, program_id)
-        .instrument(tracing::info_span!("/solve", solver = %state.competition().solver_name(), auction_id = %auction_id))
+        .instrument(tracing::info_span!(
+            "/solve",
+            solver = %state.competition().solver_name(),
+            auction_id = %auction_id
+        ))
         .await?;
     Ok(Json(dto::SolveResponse::new(solutions)))
 }
