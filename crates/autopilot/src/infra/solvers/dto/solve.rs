@@ -16,12 +16,13 @@ use {
     number::serialization::HexOrDecimalU256,
     observe::http_body::Measured,
     reqwest::{RequestBuilder, header::HeaderValue},
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Deserializer, Serialize, de},
     serde_with::{DisplayFromStr, serde_as},
     std::{
         borrow::Cow,
         collections::{HashMap, HashSet},
         convert::Infallible,
+        fmt,
         io::Write,
         time::Duration,
     },
@@ -388,6 +389,7 @@ pub struct Solution {
     pub solution_id: u64,
     /// Address used by the driver to submit the settlement onchain.
     pub submission_address: Address,
+    #[serde(deserialize_with = "deserialize_orders")]
     pub orders: HashMap<boundary::OrderUid, TradedOrder>,
     /// Deprecated: uniform clearing prices are no longer used by the
     /// autopilot. Kept here purely so we can detect and log drivers that
@@ -397,6 +399,43 @@ pub struct Solution {
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<Address, U256>,
     pub gas: Option<u64>,
+}
+
+/// A partially fillable order may be split across several solutions, but a
+/// single solution settles each order exactly once. Collecting the entries into
+/// a map would silently keep only the last of a repeated order.
+fn deserialize_orders<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<boundary::OrderUid, TradedOrder>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct Visitor;
+
+    impl<'de> de::Visitor<'de> for Visitor {
+        type Value = HashMap<boundary::OrderUid, TradedOrder>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a map of order uid to executed amounts")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::MapAccess<'de>,
+        {
+            let mut orders = HashMap::with_capacity(map.size_hint().unwrap_or_default());
+            while let Some((uid, order)) = map.next_entry::<boundary::OrderUid, TradedOrder>()? {
+                if orders.insert(uid, order).is_some() {
+                    return Err(de::Error::custom(format!(
+                        "multiple fills for a single order (uid: {uid})"
+                    )));
+                }
+            }
+            Ok(orders)
+        }
+    }
+
+    deserializer.deserialize_map(Visitor)
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -448,6 +487,58 @@ mod tests {
             content_encoding: Some(HeaderValue::from_static("br")),
             deadline: Utc::now(),
         }
+    }
+
+    fn order_uid(byte: u8) -> String {
+        const_hex::encode_prefixed([byte; 56])
+    }
+
+    fn traded_order() -> serde_json::Value {
+        serde_json::json!({
+            "side": "sell",
+            "sellToken": format!("0x{:040x}", 1),
+            "buyToken": format!("0x{:040x}", 2),
+            "limitSell": "1000",
+            "limitBuy": "900",
+            "executedSell": "500",
+            "executedBuy": "450",
+        })
+    }
+
+    fn response_with_orders(orders: &[String]) -> String {
+        let orders = orders
+            .iter()
+            .map(|uid| format!("\"{uid}\": {}", traded_order()))
+            .join(",");
+        format!(
+            r#"{{"solutions": [{{
+                "solutionId": 1,
+                "submissionAddress": "0x{:040x}",
+                "orders": {{{orders}}}
+            }}]}}"#,
+            3
+        )
+    }
+
+    #[test]
+    fn rejects_solutions_settling_the_same_order_twice() {
+        let uid = order_uid(1);
+        let response = response_with_orders(&[uid.clone(), uid.clone()]);
+
+        let err = serde_json::from_str::<Response>(&response).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains(&format!("order {uid} is settled by more than one trade")),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn accepts_one_entry_per_order() {
+        let response = response_with_orders(&[order_uid(1), order_uid(2)]);
+
+        let response = serde_json::from_str::<Response>(&response).unwrap();
+        assert_eq!(response.solutions[0].orders.len(), 2);
     }
 
     #[test]
