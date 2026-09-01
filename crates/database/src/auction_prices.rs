@@ -54,10 +54,14 @@ pub async fn fetch(
 #[instrument(skip_all)]
 pub async fn fetch_latest_prices(ex: &mut PgConnection) -> Result<Vec<AuctionPrice>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT * FROM auction_prices WHERE auction_id = (
-    SELECT MAX(auction_id)
-    FROM auction_prices
-)
+    SELECT
+        c.id AS auction_id,
+        unnest(c.price_tokens) AS token,
+        unnest(c.price_values) AS price
+    FROM competition_auctions c
+    WHERE c.id = (
+        SELECT MAX(id) FROM competition_auctions
+    )
     "#;
     sqlx::query_as(QUERY).fetch_all(ex).await
 }
@@ -123,6 +127,27 @@ mod tests {
         insert(&mut db, &auction_1).await.unwrap();
         insert(&mut db, &auction_2).await.unwrap();
         insert(&mut db, &auction_3).await.unwrap();
+
+        // The latest price helpers read from `competition_auctions`, so the
+        // same prices have to be stored there as well.
+        // TODO: unify after migration
+        for prices in [&auction_1, &auction_2, &auction_3] {
+            crate::auction::save(
+                &mut db,
+                crate::auction::Auction {
+                    id: prices[0].auction_id,
+                    block: 0,
+                    deadline: 0,
+                    order_uids: vec![],
+                    price_tokens: prices.iter().map(|price| price.token).collect(),
+                    price_values: prices.iter().map(|price| price.price.clone()).collect(),
+                    surplus_capturing_jit_order_owners: vec![],
+                    penalty_caps_native: None,
+                },
+            )
+            .await
+            .unwrap();
+        }
 
         // check that all auctions are there
         let output = fetch(&mut db, 1).await.unwrap();

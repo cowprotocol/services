@@ -423,6 +423,7 @@ where
         return;
     }
 
+    let started_at = Instant::now();
     let result = inner
         .call(RequestPacket::Batch(requests))
         .await
@@ -433,6 +434,11 @@ where
                 vec![res]
             }
         });
+    let result_label = if result.is_ok() { "ok" } else { "error" };
+    Metrics::get()
+        .batch_execution_seconds
+        .with_label_values(&[result_label])
+        .observe(started_at.elapsed().as_secs_f64());
 
     match result {
         Ok(responses) => {
@@ -538,6 +544,14 @@ struct Metrics {
         0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5
     ))]
     concurrency_wait_seconds: prometheus::Histogram,
+
+    /// Round-trip time of a single dispatched batch, from sending the batch
+    /// request until the node's response arrives.
+    #[metric(
+        labels("result"),
+        buckets(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+    )]
+    batch_execution_seconds: prometheus::HistogramVec,
 
     /// Number of calls dropped before execution because the caller stopped
     /// awaiting the response.
