@@ -30,4 +30,5 @@ pub struct Config {
     pub app_data_fetching: AppDataFetching,
     pub tx_gas_limit: eth::U256,
     pub http: configs::http_client::HttpClient,
+    pub balance_cache: configs::balance_cache::BalanceCacheConfig,
 }

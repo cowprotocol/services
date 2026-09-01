@@ -40,6 +40,7 @@ pub struct Api {
     pub mempools: Mempools,
     pub addr: SocketAddr,
     pub bad_token_detector: risk_detector::bad_tokens::Detector,
+    pub balance_cache: configs::balance_cache::BalanceCacheConfig,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -59,6 +60,8 @@ impl Api {
             self.eth.web3(),
             self.eth.balance_simulator().clone(),
             self.eth.current_block().clone(),
+            self.balance_cache.eviction_time,
+            self.balance_cache.refresh_delay,
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);
