@@ -25,14 +25,13 @@
 use {
     super::{
         error::Math,
-        trade::{ClearingPrices, Fee, Fulfillment},
+        trade::{ClearingPrices, Fulfillment},
     },
     crate::domain::competition::{
         PriceLimits,
         order::{self, FeePolicy, Side},
         solution::error::Trade,
     },
-    bigdecimal::Zero,
     eth_domain_types as eth,
     number::u256_ext::U256Ext,
 };
@@ -57,17 +56,12 @@ impl Fulfillment {
         let protocol_fee = self.protocol_fee_in_sell_token(prices, protocol_fee)?;
 
         // Increase the fee by the protocol fee
-        let fee = match self.surplus_fee() {
-            None => {
-                if !protocol_fee.is_zero() {
-                    return Err(Error::ProtocolFeeOnStaticOrder);
-                }
-                Fee::Static
-            }
-            Some(fee) => {
-                Fee::Dynamic((fee.0.checked_add(protocol_fee.0).ok_or(Math::Overflow)?).into())
-            }
-        };
+        let fee = order::SellAmount(
+            self.fee()
+                .0
+                .checked_add(protocol_fee.0)
+                .ok_or(Math::Overflow)?,
+        );
 
         // Reduce the executed amount by the protocol fee. This is because
         // solvers are unaware of the protocol fee that driver
@@ -130,7 +124,7 @@ impl Fulfillment {
                     uid = ?self.order().uid,
                     ?fee_from_volume,
                     executed = ?self.executed(),
-                    surplus_fee = ?self.surplus_fee(),
+                    fee = ?self.fee(),
                     "calculated protocol fee"
                 );
                 Ok(fee_from_volume)
@@ -160,7 +154,7 @@ impl Fulfillment {
             ?fee_from_volume,
             ?protocol_fee,
             executed = ?self.executed(),
-            surplus_fee = ?self.surplus_fee(),
+            fee = ?self.fee(),
             "calculated protocol fee"
         );
         Ok(protocol_fee)
@@ -298,8 +292,6 @@ pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceL
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("orders with non solver determined gas cost fees are not supported")]
-    ProtocolFeeOnStaticOrder,
     #[error(transparent)]
     Math(#[from] Math),
     #[error(transparent)]
