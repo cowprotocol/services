@@ -1060,7 +1060,7 @@ impl Persistence {
         let model_order = fast_path_order_into_model(&row)?;
         // Fast-path fills at the recorded executed amounts; the order's fee
         // policies and quote are not applied in the re-encode.
-        let order = boundary::order::to_domain(&model_order, vec![], None);
+        let order = boundary::order::to_domain(&model_order, vec![], None, None);
 
         let native_prices = row
             .price_tokens

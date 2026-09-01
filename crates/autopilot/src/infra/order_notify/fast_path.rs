@@ -194,6 +194,7 @@ mod tests {
                 price_tokens: vec![ByteArray([4u8; 20]), ByteArray([5u8; 20])],
                 price_values: vec![BigDecimal::from(1), BigDecimal::from(2)],
                 surplus_capturing_jit_order_owners: vec![],
+                penalty_caps_native: None,
             },
         )
         .await
@@ -226,6 +227,7 @@ mod tests {
                 "http://fast-path-solver".parse().unwrap(),
                 "fast-path-solver".into(),
                 Account::Address(eth::Address::from(solver.0)),
+                false,
             )
             .await
             .unwrap(),
@@ -235,6 +237,7 @@ mod tests {
                 "http://other".parse().unwrap(),
                 "other".into(),
                 Account::Address(eth::Address::from([9u8; 20])),
+                false,
             )
             .await
             .unwrap(),

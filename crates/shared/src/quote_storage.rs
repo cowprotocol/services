@@ -103,6 +103,7 @@ async fn write_competition_tables(
         price_tokens: native_price_tokens,
         price_values: native_price_values,
         surplus_capturing_jit_order_owners: Vec::new(),
+        penalty_caps_native: Some(Vec::new()),
     };
     database::auction::save(&mut *tx, auction)
         .await

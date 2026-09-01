@@ -85,9 +85,9 @@ async fn fast_path_quote_promotion(web3: Web3) {
         .id
         .expect("fast-path quote should carry an id");
 
-    // 2) The transient `quotes` row must be tagged with the fast-path `auction_id`,
-    //    and that auction id must be present across all competition tables written
-    //    at quote time.
+    // 2) The transient `quotes` row must be tagged with the fast-path
+    //    `auction_id`, and that auction id must be present across all
+    //    competition tables written at quote time.
     tracing::info!("Verifying competition tables written at quote time");
     let auction_id = {
         let mut db = services.db().acquire().await.unwrap();
@@ -272,8 +272,9 @@ async fn fast_path_ethflow_promotion(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // 1) Register the app-data JSON that carries the fast-path opt-in and grab the
-    //    returned hash — that's what the ethflow contract will emit on-chain.
+    // 1) Register the app-data JSON that carries the fast-path opt-in and grab
+    //    the returned hash — that's what the ethflow contract will emit
+    //    on-chain.
     tracing::info!("Registering fast-path app data");
     let fast_path_app_data = r#"{"metadata":{"enableFastPath":true}}"#;
     let app_data_hex = services
@@ -288,8 +289,8 @@ async fn fast_path_ethflow_promotion(web3: Web3) {
     );
 
     // 2) Fast-path quote for the future ethflow order. Ethflow orders sign via
-    //    EIP-1271 (owner is the ethflow contract), so the quote must be requested
-    //    with that signing scheme.
+    //    EIP-1271 (owner is the ethflow contract), so the quote must be
+    //    requested with that signing scheme.
     tracing::info!("Quoting with enableFastPath");
     let sell_amount = 1u64.eth();
     let quote_request = OrderQuoteRequest {
@@ -346,9 +347,9 @@ async fn fast_path_ethflow_promotion(web3: Web3) {
         );
     }
 
-    // 4) Place the ethflow order on-chain and wait for the autopilot to index it.
-    //    Ethflow orders don't reach the DB via `POST /orders` — they show up when
-    //    the autopilot picks up the `OrderPlacement` event.
+    // 4) Place the ethflow order on-chain and wait for the autopilot to index
+    //    it. Ethflow orders don't reach the DB via `POST /orders` — they show
+    //    up when the autopilot picks up the `OrderPlacement` event.
     tracing::info!("Placing ethflow order on-chain");
     let valid_to = chrono::offset::Utc::now().timestamp() as u32 + 3600;
     let ethflow_order =
