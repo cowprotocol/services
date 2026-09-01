@@ -166,6 +166,7 @@ mod tests {
                     price_tokens: prices.iter().map(|price| price.token).collect(),
                     price_values: prices.iter().map(|price| price.price.clone()).collect(),
                     surplus_capturing_jit_order_owners: vec![],
+                    penalty_caps_native: None,
                 },
             )
             .await
