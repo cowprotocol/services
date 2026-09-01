@@ -1,6 +1,7 @@
 use {
     crate::ethflow::ExtendedEthFlowOrder,
     app_data::AppDataHash,
+    configs::test_util::TestDefault,
     database::byte_array::ByteArray,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
@@ -18,7 +19,7 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     shared::web3::Web3,
-    std::ops::DerefMut,
+    std::{ops::DerefMut, time::Duration},
 };
 
 #[tokio::test]
@@ -59,7 +60,22 @@ async fn fast_path_quote_promotion(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver.clone()).await;
+
+    let exclusivity = Duration::from_secs(100);
+    let orderbook_config = configs::orderbook::Configuration {
+        order_validation: configs::orderbook::order_validation::OrderValidationConfig {
+            min_fast_path_exclusivity: Some(exclusivity),
+            ..Default::default()
+        },
+        ..configs::orderbook::Configuration::test_default()
+    };
+    services
+        .start_protocol_with_args(
+            configs::autopilot::Configuration::test("test_solver", solver.address()),
+            orderbook_config,
+            solver,
+        )
+        .await;
 
     // 1) Fast-path quote request. The opt-in lives on the app-data metadata
     //    (`enableFastPath: true`), not on the quote payload directly.
