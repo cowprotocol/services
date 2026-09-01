@@ -1,12 +1,12 @@
 use {
     crate::domain::competition::Score,
-    alloy::primitives::{Address, U256},
+    alloy::primitives::Address,
     anyhow::Context,
     database::{auction::AuctionId, auction_prices::AuctionPrice, byte_array::ByteArray},
     derive_more::Debug,
     model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
-    std::collections::{BTreeMap, HashMap, HashSet},
+    std::collections::{HashMap, HashSet},
 };
 
 #[derive(Clone, Default, Debug)]

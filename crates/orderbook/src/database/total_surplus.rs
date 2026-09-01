@@ -12,6 +12,7 @@ async fn fetch_total_surplus(ex: &mut PgConnection, user: &Address) -> Result<f6
 WITH trade_components AS (
     SELECT
         o.uid,
+        oe.auction_id,
         CASE o.kind
             WHEN 'sell' THEN t.buy_amount
             WHEN 'buy' THEN t.sell_amount - t.fee_amount
@@ -21,20 +22,17 @@ WITH trade_components AS (
             WHEN 'buy' THEN t.buy_amount * o.sell_amount / o.buy_amount
         END AS limit_amount,
         o.kind,
-        ca.price_values[array_position(
-            ca.price_tokens,
-            CASE o.kind WHEN 'sell' THEN o.buy_token ELSE o.sell_token END
-        )] AS surplus_token_native_price
+        CASE o.kind WHEN 'sell' THEN o.buy_token ELSE o.sell_token END AS surplus_token
     FROM orders o
     JOIN trades t ON t.order_uid = o.uid
     JOIN order_execution oe ON oe.order_uid = t.order_uid
-    LEFT JOIN competition_auctions ca ON ca.id = oe.auction_id
     WHERE o.owner = $1
 
     UNION ALL
 
     SELECT
         o.uid,
+        oe.auction_id,
         CASE o.kind
             -- so much was actually bought
             WHEN 'sell' THEN t.buy_amount
@@ -48,15 +46,11 @@ WITH trade_components AS (
             WHEN 'buy' THEN t.buy_amount * o.sell_amount / o.buy_amount
         END AS limit_amount,
         o.kind,
-        ca.price_values[array_position(
-            ca.price_tokens,
-            CASE o.kind WHEN 'sell' THEN o.buy_token ELSE o.sell_token END
-        )] AS surplus_token_native_price
+        CASE o.kind WHEN 'sell' THEN o.buy_token ELSE o.sell_token END AS surplus_token
     FROM onchain_placed_orders opo
     JOIN orders o ON o.uid = opo.uid AND o.owner != $1
     JOIN trades t ON t.order_uid = o.uid
     JOIN order_execution oe ON oe.order_uid = t.order_uid
-    LEFT JOIN competition_auctions ca ON ca.id = oe.auction_id
     WHERE opo.sender = $1
 
     UNION ALL
@@ -64,6 +58,7 @@ WITH trade_components AS (
     -- Additional query for jit_orders
     SELECT
         j.uid,
+        oe.auction_id,
         CASE j.kind
             WHEN 'sell' THEN t.buy_amount
             WHEN 'buy' THEN t.sell_amount - t.fee_amount
@@ -73,31 +68,41 @@ WITH trade_components AS (
             WHEN 'buy' THEN t.buy_amount * j.sell_amount / j.buy_amount
         END AS limit_amount,
         j.kind,
-        ca.price_values[array_position(
-            ca.price_tokens,
-            CASE j.kind WHEN 'sell' THEN j.buy_token ELSE j.sell_token END
-        )] AS surplus_token_native_price
+        CASE j.kind WHEN 'sell' THEN j.buy_token ELSE j.sell_token END AS surplus_token
     FROM jit_orders j
     JOIN trades t ON j.uid = t.order_uid
     JOIN order_execution oe ON t.order_uid = oe.order_uid
-    LEFT JOIN competition_auctions ca ON ca.id = oe.auction_id
     WHERE j.owner = $1
       AND NOT EXISTS (
         SELECT 1
         FROM orders o
         WHERE o.uid = j.uid
     )
+),
+-- Price the distinct (auction, token) pairs only. `price_tokens`/`price_values`
+-- are TOASTed, so every `array_position` call detoasts ~34 kB, and an order can
+-- have many `order_execution` rows.
+native_prices AS (
+    SELECT
+        p.auction_id,
+        p.surplus_token,
+        ca.price_values[array_position(ca.price_tokens, p.surplus_token)] AS price
+    FROM (SELECT DISTINCT auction_id, surplus_token FROM trade_components) p
+    LEFT JOIN competition_auctions ca ON ca.id = p.auction_id
 )
 SELECT
     COALESCE(SUM(surplus_in_wei ORDER BY uid), 0) AS total_surplus_in_wei
 FROM (
     SELECT
-        uid,
-        CASE kind
-            WHEN 'sell' THEN (trade_amount - limit_amount) * surplus_token_native_price
-            WHEN 'buy' THEN (limit_amount - trade_amount) * surplus_token_native_price
+        tc.uid,
+        CASE tc.kind
+            WHEN 'sell' THEN (tc.trade_amount - tc.limit_amount) * np.price
+            WHEN 'buy' THEN (tc.limit_amount - tc.trade_amount) * np.price
         END / POWER(10, 18) AS surplus_in_wei
-    FROM trade_components
+    FROM trade_components tc
+    LEFT JOIN native_prices np
+        ON np.auction_id = tc.auction_id
+        AND np.surplus_token = tc.surplus_token
 ) ts;
 "#;
 
