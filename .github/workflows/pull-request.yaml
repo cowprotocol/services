@@ -186,7 +186,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
           version: v1.7.1
@@ -225,7 +225,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           # the latest version introduced a bug caused forked node tests to fail
           # only switch back to latest stable version after it was fixed in anvil
@@ -258,7 +258,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
           version: v1.7.1
@@ -330,7 +330,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
           version: v1.7.1
