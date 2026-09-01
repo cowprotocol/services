@@ -1,4 +1,8 @@
 //! Axum extractors that log deserialization failures.
+//!
+//! TODO: This duplicates the EVM driver's `LoggingJson` extractor. Factor
+//! the logic out into a shared axum utils crate and reuse it across all
+//! crates.
 
 use {
     axum::{
