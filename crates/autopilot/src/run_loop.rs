@@ -312,7 +312,10 @@ impl RunLoop {
             .iter()
             .find(|driver| driver.submission_address == fast_path_data.solver)
         else {
-            tracing::error!(solver = ?fast_path_data.solver, "winning driver is currently not configured");
+            tracing::error!(
+                solver = ?fast_path_data.solver,
+                "winning driver is currently not configured"
+            );
             return;
         };
         // TODO: consider making this smarter for orders mainnet orders shortly
@@ -341,6 +344,7 @@ impl RunLoop {
                 request,
             )
             .await;
+        Metrics::fast_path_finished(&winner.name, res.is_ok());
         match res {
             Ok(tx) => tracing::info!(?tx, "settled order"),
             Err(err) => tracing::debug!(?err, "failed to settle order"),
@@ -1179,6 +1183,10 @@ struct Metrics {
         )
     )]
     solve_request_body_size: prometheus::HistogramVec,
+
+    /// Counts how many fast path orders were settled or failed by solver
+    #[metric(labels("solver", "result"))]
+    fast_path_executions: prometheus::IntCounterVec,
 }
 
 impl Metrics {
@@ -1324,6 +1332,14 @@ impl Metrics {
             .solve_request_body_size
             .with_label_values(&[kind])
             .observe(size as f64)
+    }
+
+    fn fast_path_finished(solver: &str, success: bool) {
+        let result_label = if success { "success" } else { "failure" };
+        Self::get()
+            .fast_path_executions
+            .with_label_values(&[solver, result_label])
+            .inc();
     }
 }
 
