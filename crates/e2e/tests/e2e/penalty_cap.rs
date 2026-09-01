@@ -84,4 +84,14 @@ async fn penalty_cap(web3: Web3) {
     })
     .await
     .unwrap();
+
+    // Once the auction's competition is saved, the order's penalty cap gets
+    // persisted alongside it for penalty accounting.
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        let caps = crate::database::penalty_caps_of_order(services.db(), &uid).await;
+        caps.iter().any(bigdecimal::Signed::is_positive)
+    })
+    .await
+    .unwrap();
 }

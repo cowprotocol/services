@@ -378,6 +378,18 @@ impl Persistence {
                     .iter()
                     .map(|owner| ByteArray(owner.0.0))
                     .collect(),
+                // Mapped one-to-one with `order_uids` above; all-or-nothing
+                // because caps are computed for every order iff penalties are
+                // enabled.
+                penalty_caps_native: auction
+                    .orders
+                    .iter()
+                    .map(|order| {
+                        order
+                            .penalty_cap_native
+                            .map(|cap| u256_to_big_decimal(&cap.0))
+                    })
+                    .collect(),
             },
         )
         .await?;

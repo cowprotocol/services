@@ -717,6 +717,7 @@ mod tests {
             price_tokens: vec![ByteArray([1u8; 20])],
             price_values: vec![BigDecimal::from(100)],
             surplus_capturing_jit_order_owners: vec![],
+            penalty_caps_native: None,
         };
         auction::save(&mut db, auction).await.unwrap();
 
@@ -763,6 +764,7 @@ mod tests {
             price_tokens: vec![order_sell_token],
             price_values: vec![order_limit_sell.clone()],
             surplus_capturing_jit_order_owners: vec![],
+            penalty_caps_native: None,
         };
         auction::save(&mut db, auction).await.unwrap();
 
@@ -939,6 +941,7 @@ mod tests {
                 price_tokens: Default::default(),
                 price_values: Default::default(),
                 surplus_capturing_jit_order_owners: Default::default(),
+                penalty_caps_native: None,
             },
         )
         .await
@@ -971,6 +974,7 @@ mod tests {
                 price_tokens: Default::default(),
                 price_values: Default::default(),
                 surplus_capturing_jit_order_owners: Default::default(),
+                penalty_caps_native: None,
             },
         )
         .await
