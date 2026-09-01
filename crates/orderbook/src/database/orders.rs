@@ -1216,6 +1216,8 @@ mod tests {
             },
         };
 
+        let quote_id = save_quote_for_test(&db, &quote).await;
+
         let uid = OrderUid([0x42; 56]);
         let order = Order {
             data: OrderData {
@@ -1235,7 +1237,7 @@ mod tests {
             ..Default::default()
         };
 
-        db.insert_order(&order, None).await.unwrap();
+        db.insert_order(&order, Some(quote_id)).await.unwrap();
 
         let single_order = db.single_order(&uid).await.unwrap().unwrap();
         assert_eq!(
@@ -1283,6 +1285,8 @@ mod tests {
             ..Default::default()
         };
 
+        let quote_id = save_quote_for_test(&db, &quote).await;
+
         let uid = OrderUid([0x42; 56]);
         let order = Order {
             data: OrderData {
@@ -1298,7 +1302,7 @@ mod tests {
             ..Default::default()
         };
 
-        db.insert_order(&order, None).await.unwrap();
+        db.insert_order(&order, Some(quote_id)).await.unwrap();
 
         let single_order = db.single_order(&uid).await.unwrap().unwrap();
 
@@ -1307,5 +1311,30 @@ mod tests {
             Some(quote.try_to_model_order_quote().unwrap())
         );
         assert_eq!(single_order, order);
+    }
+
+    /// Persists a transient `quotes` row for the given quote and returns its
+    /// id — mirrors what the quoting flow does before `insert_order` promotes
+    /// the row into `order_quotes`.
+    async fn save_quote_for_test(db: &Postgres, quote: &Quote) -> model::quote::QuoteId {
+        let db_quote = database::quotes::Quote {
+            id: 0,
+            sell_token: Default::default(),
+            buy_token: Default::default(),
+            sell_amount: u256_to_big_decimal(&quote.sell_amount),
+            buy_amount: u256_to_big_decimal(&quote.buy_amount),
+            gas_amount: quote.data.fee_parameters.gas_amount,
+            gas_price: quote.data.fee_parameters.gas_price,
+            sell_token_price: quote.data.fee_parameters.sell_token_price,
+            order_kind: DbOrderKind::Sell,
+            expiration_timestamp: Utc::now(),
+            quote_kind: Default::default(),
+            solver: ByteArray(quote.data.solver.0.0),
+            verified: quote.data.verified,
+            metadata: quote.data.metadata.clone().try_into().unwrap(),
+            auction_id: None,
+        };
+        let mut conn = db.pool.acquire().await.unwrap();
+        database::quotes::save(&mut conn, &db_quote).await.unwrap()
     }
 }
