@@ -1,5 +1,5 @@
 use {
-    self::trade::{ClearingPrices, Fee, Fulfillment},
+    self::trade::{ClearingPrices, Fulfillment},
     super::auction,
     crate::{
         boundary,
@@ -177,7 +177,7 @@ impl Solution {
                         partial: jit.order().partially_fillable(),
                     },
                     jit.executed(),
-                    Fee::Dynamic(jit.fee()),
+                    jit.fee(),
                     // JIT orders don't get haircut because they supply private
                     // liquidity which should not prone to negative slippage.
                     eth::U256::ZERO,
@@ -872,8 +872,6 @@ pub mod error {
 
     #[derive(Debug, thiserror::Error)]
     pub enum Trade {
-        #[error("orders with non solver determined gas cost fees are not supported")]
-        ProtocolFeeOnStaticOrder,
         #[error("invalid executed amount")]
         InvalidExecutedAmount,
         #[error(transparent)]

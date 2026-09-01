@@ -50,8 +50,7 @@ impl Dex {
     /// The route spends its input from the sell-mint ATA of the solver.
     /// Jupiter has no source-account override. The sell funds must already be
     /// in that ATA. The caller must make sure that the ATA exists before the
-    /// pull instructions of the swap run. Settlement setup creates the ATA
-    /// idempotently.
+    /// pull instructions of the swap run.
     pub async fn swap(&self, order: &Order, user: &Pubkey) -> Result<Swap, jupiter::Error> {
         match self {
             Dex::Jupiter(jupiter) => jupiter.swap(order, user).await,

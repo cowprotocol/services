@@ -1,4 +1,8 @@
 //! Axum extractors that log deserialization failures.
+//!
+//! TODO: This duplicates the EVM driver's `LoggingJson` extractor. Factor
+//! the logic out into a shared axum utils crate and reuse it across all
+//! crates.
 
 use {
     axum::{
@@ -25,7 +29,7 @@ where
             Err(rejection) => {
                 tracing::warn!(
                     err = %rejection,
-                    target = std::any::type_name::<T>(),
+                    type_name = std::any::type_name::<T>(),
                     "failed to deserialize JSON request body",
                 );
                 Err(rejection)
