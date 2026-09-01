@@ -522,6 +522,17 @@ mod tests {
         dto::order::to_domain(serde_json::from_value(order_json(uid_byte, executed)).unwrap())
     }
 
+    #[test]
+    fn order_penalty_cap_round_trips() {
+        let mut json = order_json(0x11, 0);
+        json.as_object_mut()
+            .unwrap()
+            .insert("penaltyCapNative".into(), serde_json::json!("1234"));
+        let order = dto::order::to_domain(serde_json::from_value(json.clone()).unwrap());
+        let serialized = serde_json::to_value(dto::order::from_domain(&order)).unwrap();
+        assert_eq!(serialized, json);
+    }
+
     fn test_auction(id: i64, orders: Vec<domain::Order>) -> domain::Auction {
         domain::Auction {
             id,

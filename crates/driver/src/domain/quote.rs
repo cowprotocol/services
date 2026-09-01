@@ -229,6 +229,7 @@ impl Order {
                     },
                     protocol_fees: Default::default(),
                     quote: Default::default(),
+                    penalty_cap_native: Default::default(),
                 }),
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
