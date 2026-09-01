@@ -121,8 +121,7 @@ impl SolanaRPC {
     }
 }
 
-/// A Solana block height. The newtype prevents accidental comparison
-/// against a slot.
+/// A Solana block height.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockHeight(u64);
 
@@ -146,12 +145,12 @@ impl From<BlockHeight> for u64 {
 }
 
 /// The latest confirmed blockhash and the last block height at which
-/// it stays usable. [`SolanaRPC::latest_confirmed_blockhash`] returns
-/// this type.
+/// it stays usable.
 #[derive(Debug)]
 pub struct LatestBlockhash {
     /// The blockhash to sign transactions with.
     pub blockhash: Hash,
-    /// The last block height at which `blockhash` stays usable.
+    /// The last block height at which transactions signed with this
+    /// blockhash as `recent_blockhash` remain valid.
     pub last_valid_block_height: BlockHeight,
 }
