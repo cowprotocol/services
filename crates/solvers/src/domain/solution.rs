@@ -356,15 +356,6 @@ impl Fulfillment {
         })
     }
 
-    /// Creates a new trade for a fully executed order.
-    pub fn fill(order: order::Order) -> Option<Self> {
-        let executed = match order.side {
-            order::Side::Buy => order.buy.amount,
-            order::Side::Sell => order.sell.amount,
-        };
-        Self::new(order, executed, Default::default())
-    }
-
     /// Get a reference to the traded order.
     pub fn order(&self) -> &order::Order {
         &self.order
