@@ -91,8 +91,10 @@ pub async fn fetch_latest_token_price(
     "#;
 
     let mut ex = ex.begin().await?;
-    // `work_mem` is raised to keep the bitmap exact, since a lossy one
-    // rechecks `@>` and detoasts every match.
+    // The GIN scan returns a bitmap of matching tuples. Past `work_mem` it does
+    // not spill to disk, it degrades pages to "something here matched", and
+    // those pages recheck `@>` per tuple — reading `price_tokens` back out of
+    // TOAST every time. 32MB holds a bitmap over the whole heap.
     sqlx::query("SET LOCAL work_mem = '32MB'")
         .execute(ex.deref_mut())
         .await?;
