@@ -136,21 +136,24 @@ impl ProtocolFees {
         ) -> FeeFactor {
             // Calculate how much more we can compound before hitting the cap.
             //
-            // When dealing with fee factors or percentages in compounding operations:
-            // - We use (1 + x) where x is the percentage as a decimal (e.g., 5% = 0.05 →
-            //   1.05)
-            // - This is because applying a fee means multiplying by (1 + fee_rate)
+            // When dealing with fee factors or percentages in compounding
+            // operations:
+            // - We use (1 + x) where x is the percentage as a decimal (e.g., 5%
+            //   = 0.05 → 1.05)
+            // - This is because applying a fee means multiplying by (1 +
+            //   fee_rate)
             //
             // The total accumulated factor can't exceed (1 + cap), and we've
             // already accumulated to (1 + accumulated), then:
             //
             // 1. Current value with accumulated fees: (1 + accumulated)
             // 2. Maximum allowed value: (1 + cap)
-            // 3. To find the remaining factor we can apply: (1 + cap) / (1 + accumulated) -
-            //    1
+            // 3. To find the remaining factor we can apply: (1 + cap) / (1 +
+            //    accumulated) - 1
             //
-            // The subtraction of 1 at the end converts back from the multiplier form (1.xx)
-            // to the percentage form (0.xx) that our FeeFactor expects.
+            // The subtraction of 1 at the end converts back from the multiplier
+            // form (1.xx) to the percentage form (0.xx) that our
+            // FeeFactor expects.
             let remaining_factor =
                 (Decimal::ONE + cap) / (Decimal::ONE + *accumulated) - Decimal::ONE;
 
@@ -199,7 +202,8 @@ impl ProtocolFees {
                         // Convert bps to decimal percentage
                         let fee_decimal = Decimal::from(max_volume_bps) / Decimal::from(MAX_BPS);
 
-                        // Compute max_volume_factor limited by the global volume cap.
+                        // Compute max_volume_factor limited by the global
+                        // volume cap.
                         let max_volume_factor =
                             fee_factor_from_capped(fee_decimal, max_partner_fee, &mut accumulated);
 
@@ -217,7 +221,8 @@ impl ProtocolFees {
                         // Convert bps to decimal percentage
                         let fee_decimal = Decimal::from(max_volume_bps) / Decimal::from(MAX_BPS);
 
-                        // Compute max_volume_factor limited by the global volume cap.
+                        // Compute max_volume_factor limited by the global
+                        // volume cap.
                         let max_volume_factor =
                             fee_factor_from_capped(fee_decimal, max_partner_fee, &mut accumulated);
 
@@ -239,17 +244,16 @@ impl ProtocolFees {
             .collect::<Vec<_>>()
     }
 
-    /// Converts an order from the boundary layer to the domain layer, applying
-    /// protocol fees if necessary.
+    /// Computes the protocol fee policies that apply to an order.
     pub fn apply(
         &self,
         order: &boundary::Order,
-        quote: Option<domain::Quote>,
+        quote: Option<&domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
-    ) -> domain::Order {
-        // In case there is no quote, we assume 0 buy amount so that the order ends up
-        // being considered out of market price.
-        let reference_quote = quote.clone().unwrap_or(domain::Quote {
+    ) -> Vec<Policy> {
+        // In case there is no quote, we assume 0 buy amount so that the order
+        // ends up being considered out of market price.
+        let reference_quote = quote.cloned().unwrap_or(domain::Quote {
             order_uid: order.metadata.uid.into(),
             sell_amount: order.data.sell_amount.into(),
             buy_amount: U256::ZERO.into(),
@@ -261,18 +265,18 @@ impl ProtocolFees {
             Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get());
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner) {
-            return boundary::order::to_domain(order, partner_fee, quote);
+            return partner_fee;
         }
 
-        self.apply_policies(order, reference_quote, partner_fee)
+        self.apply_policies(order, &reference_quote, partner_fee)
     }
 
     fn apply_policies(
         &self,
         order: &boundary::Order,
-        quote: domain::Quote,
+        quote: &domain::Quote,
         partner_fees: Vec<Policy>,
-    ) -> domain::Order {
+    ) -> Vec<Policy> {
         let now = Utc::now();
         let fee_policies = self
             .upcoming_fee_policies
@@ -281,14 +285,12 @@ impl ProtocolFees {
             .map(|upcoming| &upcoming.fee_policies)
             .unwrap_or(&self.fee_policies);
 
-        let protocol_fees = fee_policies
+        fee_policies
             .iter()
-            .filter_map(|fee_policy| Self::protocol_fee_into_policy(order, &quote, fee_policy))
-            .flat_map(|policy| self.variant_fee_apply(order, &quote, policy))
+            .filter_map(|fee_policy| Self::protocol_fee_into_policy(order, quote, fee_policy))
+            .flat_map(|policy| self.variant_fee_apply(order, quote, policy))
             .chain(partner_fees)
-            .collect::<Vec<_>>();
-
-        boundary::order::to_domain(order, protocol_fees, Some(quote))
+            .collect()
     }
 
     fn variant_fee_apply(
@@ -416,8 +418,8 @@ mod test {
         let max_partner_fee = 0.3; // 30%
         let result = ProtocolFees::get_partner_fee(&order, &Default::default(), max_partner_fee);
 
-        // Expected: The compounded percentage (1 + 0.05) * (1 + 0.20) - 1 = 0.26 < 0.3
-        // (not capped)
+        // Expected: The compounded percentage (1 + 0.05) * (1 + 0.20) - 1 =
+        // 0.26 < 0.3 (not capped)
         assert_eq!(
             result,
             vec![
@@ -683,9 +685,10 @@ mod test {
 
         // Expected: With compounding, fees accumulate as follows:
         // First fee: 0.1
-        // Second fee: 0.2 (accumulated to this point: (1+0.1)*(1+0.2)-1 = 0.32 > 0.3)
-        // Second fee gets capped to 0.1818... to make total exactly 0.3
-        // Third fee: Capped to 0 since we already hit the cap
+        // Second fee: 0.2 (accumulated to this point: (1+0.1)*(1+0.2)-1 = 0.32
+        // > 0.3) Second fee gets capped to 0.1818... to make total
+        // exactly 0.3 Third fee: Capped to 0 since we already hit the
+        // cap
         assert_eq!(
             result,
             vec![

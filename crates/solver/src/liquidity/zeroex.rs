@@ -335,8 +335,8 @@ pub mod tests {
         let order_buckets = group_by_token_pair(vec![order_1, order_2, order_3].into_iter());
         let filtered_zeroex_orders = get_useful_orders(&order_buckets, &relevant_pairs, 1);
         assert_eq!(filtered_zeroex_orders.len(), 2);
-        // First item in the list will be on the basis of maker_amount/taker_amount
-        // ratio
+        // First item in the list will be on the basis of
+        // maker_amount/taker_amount ratio
         assert_eq!(filtered_zeroex_orders[0].order().taker_amount, 1_000);
         // Second item in the list will be on the basis of
         // remaining_fillable_taker_amount

@@ -208,7 +208,8 @@ mod tests {
         assert_eq!(sharing.in_flight.lock().unwrap().len(), 1);
         assert!(sharing.in_flight.lock().unwrap().get(&0).is_some());
 
-        // Complete second shared — proves sharing since its factory would panic.
+        // Complete second shared — proves sharing since its factory would
+        // panic.
         assert_eq!(result1.await, 0);
 
         RequestSharing::collect_garbage(&sharing.in_flight, &label);

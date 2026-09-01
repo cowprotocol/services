@@ -1418,8 +1418,8 @@ impl SolveOk<'_> {
         )
         .unwrap();
 
-        // Since JIT orders don't have UID at creation time, we need to search for
-        // matching token pair
+        // Since JIT orders don't have UID at creation time, we need to search
+        // for matching token pair
         for expected in jit_orders.iter() {
             let exist = trades
                 .values()

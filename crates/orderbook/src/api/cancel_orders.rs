@@ -16,8 +16,8 @@ pub async fn cancel_orders_handler(
     State(state): State<Arc<AppState>>,
     body: body::Bytes,
 ) -> Response {
-    // TODO: remove after all downstream callers have been notified of the status
-    // code changes
+    // TODO: remove after all downstream callers have been notified of the
+    // status code changes
     let Ok(cancellations) = serde_json::from_slice::<SignedOrderCancellations>(&body) else {
         return StatusCode::BAD_REQUEST.into_response();
     };

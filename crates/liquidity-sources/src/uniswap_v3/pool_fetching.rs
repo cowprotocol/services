@@ -179,8 +179,9 @@ impl PoolsCheckpointHandler {
         );
 
         let pools_by_token_pair = {
-            // we store addresses in a `Vec` instead of a `HashSet` to save on memory but
-            // we still ensure there are no duplicated pools.
+            // we store addresses in a `Vec` instead of a `HashSet` to save on
+            // memory but we still ensure there are no duplicated
+            // pools.
             let mut pools_by_token_pair: HashMap<TokenPair, Vec<Address>> = HashMap::new();
             for pool in &registered_pools.pools {
                 let pair =
@@ -197,8 +198,9 @@ impl PoolsCheckpointHandler {
             pools_by_token_pair
         };
 
-        // can't fetch the state of all pools in constructor for performance reasons,
-        // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest
+        // can't fetch the state of all pools in constructor for performance
+        // reasons, so let's fetch the top
+        // `max_pools_to_initialize_cache` pools with the highest
         // liquidity
         registered_pools
             .pools
@@ -450,17 +452,18 @@ impl PoolFetching for UniswapV3PoolFetcher {
                 block_number,
                 last_handled_block
             );
-            // we call run_maintenance() here because that is the only way to update the
-            // event storage with the events from the block range
-            // last_handled_block..=block_number which are missing
+            // we call run_maintenance() here because that is the only way to
+            // update the event storage with the events from the
+            // block range last_handled_block..=block_number which
+            // are missing
             if let Err(err) = self.events.run_maintenance().await {
                 tracing::debug!("failed to update events on fetch because {}", err);
                 return Ok(Default::default());
             }
         }
 
-        // this is the only place where this function uses checkpoint - no data racing
-        // between maintenance
+        // this is the only place where this function uses checkpoint - no data
+        // racing between maintenance
         let CachedPools {
             pools: mut checkpoint,
             missing,
@@ -480,7 +483,8 @@ impl PoolFetching for UniswapV3PoolFetcher {
 
         // The warm cache holds only the top pools by liquidity, so many
         // registered pairs are absent. Resolve those misses on-demand and merge
-        // them after the replay; they come back current, so they aren't replayed.
+        // them after the replay; they come back current, so they aren't
+        // replayed.
         checkpoint.extend(self.checkpoint.fetch_missing_on_demand(&missing).await);
 
         // return only pools which current liquidity is positive
@@ -503,10 +507,12 @@ fn append_events(
                 UniswapV3PoolEvents::Burn(burn) => {
                     let tick_lower = burn.tickLower.as_i32();
                     let tick_upper = burn.tickUpper.as_i32();
-                    // `amount` is the position's `uint128` liquidity and always fits
-                    // `i128`: it's capped on-chain by `maxLiquidityPerTick` (~1.9e32) which
-                    // is far below `i128::MAX` (~1.7e38), so this branch is unreachable for
-                    // any valid event. We skip the whole event (not just the tick deltas)
+                    // `amount` is the position's `uint128` liquidity and always
+                    // fits `i128`: it's capped on-chain by
+                    // `maxLiquidityPerTick` (~1.9e32) which
+                    // is far below `i128::MAX` (~1.7e38), so this branch is
+                    // unreachable for any valid event. We
+                    // skip the whole event (not just the tick deltas)
                     // so `liquidity` and `liquidity_net` can't desync.
                     let Ok(amount) = i128::try_from(burn.amount) else {
                         tracing::warn!(amount = %burn.amount, "burn liquidity exceeds i128; skipping event");
@@ -514,7 +520,8 @@ fn append_events(
                     };
 
                     // liquidity tracks the liquidity on recent tick,
-                    // only need to update it if the new position includes the recent tick.
+                    // only need to update it if the new position includes the
+                    // recent tick.
                     if tick_lower <= pool.tick && pool.tick < tick_upper {
                         pool.liquidity -= U256::from(burn.amount);
                     }
@@ -526,8 +533,9 @@ fn append_events(
                 UniswapV3PoolEvents::Mint(mint) => {
                     let tick_lower = mint.tickLower.as_i32();
                     let tick_upper = mint.tickUpper.as_i32();
-                    // Unreachable for the same reason as the `Burn` arm (per-position
-                    // liquidity is capped well below `i128::MAX`); skip the whole event to
+                    // Unreachable for the same reason as the `Burn` arm
+                    // (per-position liquidity is capped
+                    // well below `i128::MAX`); skip the whole event to
                     // avoid desyncing `liquidity` from `liquidity_net`.
                     let Ok(amount) = i128::try_from(mint.amount) else {
                         tracing::warn!(amount = %mint.amount, "mint liquidity exceeds i128; skipping event");
@@ -535,7 +543,8 @@ fn append_events(
                     };
 
                     // liquidity tracks the liquidity on recent tick,
-                    // only need to update it if the new position includes the recent tick.
+                    // only need to update it if the new position includes the
+                    // recent tick.
                     if tick_lower <= pool.tick && pool.tick < tick_upper {
                         pool.liquidity += U256::from(mint.amount);
                     }
@@ -935,7 +944,8 @@ mod tests {
             },
         );
 
-        // Latest serves at-head, so it succeeds despite served_block < checkpoint.
+        // Latest serves at-head, so it succeeds despite served_block <
+        // checkpoint.
         let fetched = handler
             .fetch_pools(&[pool], BlockTarget::Latest)
             .await
@@ -943,7 +953,8 @@ mod tests {
         assert_eq!(fetched.len(), 1);
         assert_eq!(fetched[0].0, pool);
 
-        // Fetching at the checkpoint block would fail (indexer hasn't reached it).
+        // Fetching at the checkpoint block would fail (indexer hasn't reached
+        // it).
         assert!(
             handler
                 .fetch_pools(&[pool], BlockTarget::Number(100))

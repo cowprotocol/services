@@ -172,10 +172,10 @@ pub async fn insert_order_and_ignore_conflicts(
     ex: &mut PgConnection,
     order: &Order,
 ) -> Result<bool, sqlx::Error> {
-    // To be used only for the ethflow contract order placement, where reorgs force
-    // us to update orders
-    // Since each order has a unique UID even after a reorg onchain placed orders
-    // have the same data. Hence, we can disregard any conflicts.
+    // To be used only for the ethflow contract order placement, where reorgs
+    // force us to update orders
+    // Since each order has a unique UID even after a reorg onchain placed
+    // orders have the same data. Hence, we can disregard any conflicts.
     const QUERY: &str = const_format::concatcp!(INSERT_ORDER_QUERY, "ON CONFLICT (uid) DO NOTHING");
     insert_order_execute_sqlx(QUERY, ex, order).await
 }
@@ -875,16 +875,18 @@ pub fn open_orders_by_time_or_uids<'a>(
     after_timestamp: DateTime<Utc>,
     now: i64,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
-    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL joins.
+    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL
+    // joins.
     //
     // `selected_orders` has two branches:
     // - Branch 1: the usual "changed since $1" set (created/cancelled since the
-    //   checkpoint, or explicitly requested by uid), gated by `valid_from <= now`.
-    // - Branch 2: re-selects orders whose `valid_from` crossed since $1. Becoming
-    //   valid is not a DB write, so branch 1 never sees them. It also skips orders
-    //   that already expired (`true_valid_to < now`), so an order with an empty
-    //   window (`valid_from >= valid_to`) or one that already closed is not picked
-    //   up again.
+    //   checkpoint, or explicitly requested by uid), gated by `valid_from <=
+    //   now`.
+    // - Branch 2: re-selects orders whose `valid_from` crossed since $1.
+    //   Becoming valid is not a DB write, so branch 1 never sees them. It also
+    //   skips orders that already expired (`true_valid_to < now`), so an order
+    //   with an empty window (`valid_from >= valid_to`) or one that already
+    //   closed is not picked up again.
     #[rustfmt::skip]
     const QUERY: &str = r#"
 WITH selected_orders AS (
@@ -1537,8 +1539,8 @@ mod tests {
             "First insert should create exactly one event"
         );
 
-        // Second insert should be skipped (conflict) and should NOT create another
-        // event
+        // Second insert should be skipped (conflict) and should NOT create
+        // another event
         insert_orders_and_ignore_conflicts(&mut db, vec![order.clone()].as_slice())
             .await
             .unwrap();
@@ -1773,16 +1775,17 @@ mod tests {
         assert_eq!(time, order.cancellation_timestamp.unwrap());
     }
 
-    // In the schema we set the type of executed amounts in individual events to a
-    // 78 decimal digit number. Summing over multiple events could overflow this
-    // because the smart contract only guarantees that the filled amount (which
-    // amount that is depends on order type) does not overflow a U256. This test
-    // shows that postgres does not error if this happens because inside the SUM
-    // the number can have more digits. In particular:
-    // - `executed_buy_amount` may overflow after repeated buys (since there is no
-    //   upper bound)
-    // - `executed_sell_amount` (with fees) may overflow since the total fits into a
-    //   `U512`.
+    // In the schema we set the type of executed amounts in individual events to
+    // a 78 decimal digit number. Summing over multiple events could
+    // overflow this because the smart contract only guarantees that the
+    // filled amount (which amount that is depends on order type) does not
+    // overflow a U256. This test shows that postgres does not error if this
+    // happens because inside the SUM the number can have more digits. In
+    // particular:
+    // - `executed_buy_amount` may overflow after repeated buys (since there is
+    //   no upper bound)
+    // - `executed_sell_amount` (with fees) may overflow since the total fits
+    //   into a `U512`.
     #[tokio::test]
     #[ignore]
     async fn postgres_summed_executed_amount_does_not_overflow() {
@@ -2144,8 +2147,9 @@ mod tests {
             .await,
             hashset![ByteArray([3u8; 56]),]
         );
-        // Even though no orders should be returned after the provided timestamp,
-        // specified order UIDs list helps to return all the requested orders.
+        // Even though no orders should be returned after the provided
+        // timestamp, specified order UIDs list helps to return all the
+        // requested orders.
         assert_eq!(
             get_open_orders_by_time_or_uids(
                 &mut db,
@@ -2173,7 +2177,8 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         async fn solvable_uids(ex: &mut PgConnection, now: i64) -> HashSet<OrderUid> {
-            // `min_valid_to = now` mirrors production so `valid_to` expiry is enforced.
+            // `min_valid_to = now` mirrors production so `valid_to` expiry is
+            // enforced.
             solvable_orders(ex, now, now)
                 .map_ok(|o| o.uid)
                 .try_collect()
@@ -2235,13 +2240,14 @@ mod tests {
                 .unwrap()
         }
 
-        // Anchor all times to one base so the margins survive second boundaries.
+        // Anchor all times to one base so the margins survive second
+        // boundaries.
         let base = Utc::now();
         let checkpoint = base;
         let valid_from = base.timestamp() + 50; // future relative to the checkpoint
 
-        // Created before the checkpoint, so only a `valid_from` crossing can pick them
-        // up.
+        // Created before the checkpoint, so only a `valid_from` crossing can
+        // pick them up.
         let created_before = base - Duration::seconds(100);
 
         let valid = Order {

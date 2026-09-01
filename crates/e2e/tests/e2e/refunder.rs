@@ -28,8 +28,8 @@ const RECEIVER: Address = Address::repeat_byte(42);
 
 /// Advances the blockchain time past the given expiration timestamp.
 async fn advance_time_past_expiration(web3: &Web3, valid_to: u32) {
-    // Add 60 seconds buffer so the order is definitively expired, not just at the
-    // boundary.
+    // Add 60 seconds buffer so the order is definitively expired, not just at
+    // the boundary.
     let target_timestamp = valid_to as u64 + 60;
     web3.provider
         .evm_set_next_block_timestamp(target_timestamp)
@@ -282,7 +282,8 @@ async fn run_refunder_threshold_test(
         .unwrap()
         + validity.order;
 
-    // Testing slippage/validity boundaries: order slippage >= enforced threshold
+    // Testing slippage/validity boundaries: order slippage >= enforced
+    // threshold
     let (ethflow_order, _order_id, valid_to) =
         EthflowOrderBuilder::new(&services, &onchain, &user, buy_token)
             .with_slippage_bps(slippage.order)
@@ -395,10 +396,10 @@ async fn refunder_skips_invalidated_orders(web3: Web3) {
 
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
 
-    // Use wall-clock time so orders could potentially settle. The +600s (10 min)
-    // validity window allows time for indexing/invalidation before we advance
-    // blockchain time past expiration. The invalidation (not expiration) is the
-    // sole reason the refunder skips this order.
+    // Use wall-clock time so orders could potentially settle. The +600s (10
+    // min) validity window allows time for indexing/invalidation before we
+    // advance blockchain time past expiration. The invalidation (not
+    // expiration) is the sole reason the refunder skips this order.
     let valid_to = Utc::now().timestamp() as u32 + 600;
 
     // Create an invalidated order. Even though it would pass slippage/validity
@@ -440,7 +441,8 @@ async fn refunder_skips_invalidated_orders(web3: Web3) {
         "Order should already be invalidated by user"
     );
 
-    // Run the refunder - it should NOT try to refund this already-invalidated order
+    // Run the refunder - it should NOT try to refund this already-invalidated
+    // order
     refund_service
         .try_to_refund_all_eligible_orders()
         .await
@@ -497,9 +499,10 @@ async fn refunder_skips_settled_orders(web3: Web3) {
 
     let buy_token = *token.address();
 
-    // Anvil starts with a hardcoded timestamp of Jan 1, 2020 (see nodes/mod.rs).
-    // The autopilot validates orders against real-world time, so valid_to must
-    // exceed the current wall clock (which also exceeds anvil's simulated time).
+    // Anvil starts with a hardcoded timestamp of Jan 1, 2020 (see
+    // nodes/mod.rs). The autopilot validates orders against real-world
+    // time, so valid_to must exceed the current wall clock (which also
+    // exceeds anvil's simulated time).
     let valid_to = Utc::now().timestamp() as u32 + 3600;
 
     let (ethflow_order, order_id, valid_to) =

@@ -269,7 +269,8 @@ fn inner_ix_path_tracks_cpi_nesting_depth() {
     assert_eq!(relevant[0].inner_ix_path, vec![0]);
     assert_eq!(relevant[0].data, Bytes::from(vec![10]));
 
-    // the dropped depth-2 CPI still advanced the counter, so this sibling is [0, 1]
+    // the dropped depth-2 CPI still advanced the counter, so this sibling is
+    // [0, 1]
     assert_eq!(relevant[1].program_id, settlement);
     assert_eq!(relevant[1].inner_ix_path, vec![0, 1]);
     assert_eq!(relevant[1].data, Bytes::from(vec![12]));

@@ -338,6 +338,12 @@ components:
           allOf:
             - description: A winning quote.
             - $ref: "#/components/schemas/Quote"
+        penaltyCapNative:
+          allOf:
+            - description: |-
+                Cap on the penalty a solver can incur for winning this order
+                but failing to execute it, denominated in the native token.
+            - $ref: "#/components/schemas/TokenAmount"
       required:
         - uid
         - sellToken
