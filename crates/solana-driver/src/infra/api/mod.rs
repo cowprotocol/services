@@ -14,9 +14,10 @@ use {
 };
 
 pub mod error;
+pub mod extract;
 pub mod routes;
 
-pub use self::error::Error;
+pub use self::{error::Error, extract::LoggingJson};
 
 /// The Solana driver HTTP API server.
 pub struct Api {
