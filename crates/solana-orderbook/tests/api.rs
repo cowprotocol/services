@@ -83,3 +83,55 @@ async fn malformed_quote_body_keeps_the_error_shape() {
         })
     );
 }
+
+/// A quote body with the given validity fields, otherwise well formed.
+fn quote_body(validity: serde_json::Value) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "from": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "sellToken": "So11111111111111111111111111111111111111112",
+        "buyToken": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "kind": "sell",
+        "sellAmountBeforeFee": "10000000"
+    });
+    body.as_object_mut()
+        .unwrap()
+        .extend(validity.as_object().unwrap().clone());
+    body
+}
+
+async fn post_quote(addr: SocketAddr, body: serde_json::Value) -> (reqwest::StatusCode, String) {
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    let json: serde_json::Value = response.json().await.unwrap();
+    (
+        status,
+        json["errorType"].as_str().unwrap_or_default().to_owned(),
+    )
+}
+
+/// The order's validity is checked before any driver is asked, so these
+/// answer with the validation error and never reach the dead quoter.
+#[tokio::test]
+async fn quote_validity_is_bounded() {
+    let addr = spawn_server().await;
+    let (status, kind) = post_quote(addr, quote_body(serde_json::json!({"validFor": 10}))).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "InsufficientValidTo")
+    );
+
+    let (status, kind) = post_quote(
+        addr,
+        quote_body(serde_json::json!({"validFor": 4 * 60 * 60})),
+    )
+    .await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "ExcessiveValidTo")
+    );
+}

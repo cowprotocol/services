@@ -27,10 +27,10 @@ const-hex = { workspace = true }
 database = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
-serde-ext = { workspace = true }
 observe = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
+serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solana-sdk = { workspace = true }

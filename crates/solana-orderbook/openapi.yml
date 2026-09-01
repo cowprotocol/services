@@ -130,14 +130,15 @@ paths:
         "400":
           description: |
             The body could not be parsed (`InvalidRequestBody`), buy and sell
-            token are the same (`SameBuyAndSellToken`), or the amount is zero
-            (`ZeroAmount`).
+            token are the same (`SameBuyAndSellToken`), the amount is zero
+            (`ZeroAmount`), or `validTo` is under a minute or over three hours
+            away (`InsufficientValidTo`, `ExcessiveValidTo`).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
-          description: No route was found for the pair (`NoLiquidity`).
+          description: No driver returned a route for the pair (`NoLiquidity`).
           content:
             application/json:
               schema:
@@ -367,13 +368,16 @@ components:
           $ref: "#/components/schemas/OrderKind"
         sellAmountBeforeFee:
           description: "For `kind: sell`. No component charges a fee, so this equals `sellAmountAfterFee`."
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         sellAmountAfterFee:
           description: "For `kind: sell`."
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         buyAmountAfterFee:
           description: "For `kind: buy`."
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         validTo:
           description: Unix seconds the quoted order would expire at.
           type: integer
@@ -446,7 +450,8 @@ components:
           nullable: true
         feeAmount:
           description: Always zero. No component charges a fee.
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         kind:
           $ref: "#/components/schemas/OrderKind"
         partiallyFillable:

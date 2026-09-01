@@ -16,6 +16,10 @@ use {
 /// How long a quoted order stays valid when the request names no validity.
 const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
 
+/// The least and the most time a quoted order may stay valid for.
+const MIN_VALIDITY: Duration = Duration::from_secs(60);
+const MAX_VALIDITY: Duration = Duration::from_secs(3 * 60 * 60);
+
 /// How long the quoted amounts are honored for.
 const QUOTE_EXPIRY: Duration = Duration::from_secs(60);
 
@@ -24,22 +28,17 @@ pub async fn quote(
     state: axum::extract::State<State>,
     extract::Json(request): extract::Json<dto::Request>,
 ) -> Result<Json<dto::Response>, error::Reply> {
-    if request.sell_token == request.buy_token {
-        return Err(error::reply(
-            StatusCode::BAD_REQUEST,
-            "SameBuyAndSellToken",
-            "Buy and sell token must differ.",
-        ));
-    }
-    let (kind, amount) = request.side.kind_and_amount();
-    if amount == 0 {
-        return Err(error::reply(
-            StatusCode::BAD_REQUEST,
-            "ZeroAmount",
-            "The quoted amount must be positive.",
-        ));
-    }
+    let now = Utc::now();
+    let now_secs = u32::try_from(now.timestamp()).unwrap_or(u32::MAX);
+    // Fixed before validation so the value checked is the value returned.
+    let valid_to = match request.validity {
+        Some(dto::Validity::ValidTo(valid_to)) => valid_to,
+        Some(dto::Validity::ValidFor(seconds)) => now_secs.saturating_add(seconds),
+        None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
+    };
+    validate(&request, valid_to, now_secs)?;
 
+    let (kind, amount) = request.side.kind_and_amount();
     let quoted = state
         .quoter()
         .quote(&quoter::Order {
@@ -52,28 +51,12 @@ pub async fn quote(
             },
         })
         .await
-        .map_err(|err| match err {
-            quoter::Error::NoRoute => error::reply(
-                StatusCode::NOT_FOUND,
-                "NoLiquidity",
-                "No route was found for the requested pair.",
-            ),
-            err => {
-                tracing::warn!(?err, "quote lookup failed");
-                error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
-            }
+        .map_err(|err| {
+            // A driver that fails to answer is a driver with no route, not a
+            // fault of this service.
+            tracing::warn!(?err, "quote lookup failed");
+            error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
         })?;
-
-    let now = Utc::now();
-    let valid_to = match request.validity {
-        Some(dto::Validity::ValidTo(valid_to)) => valid_to,
-        Some(dto::Validity::ValidFor(seconds)) => u32::try_from(now.timestamp())
-            .unwrap_or(u32::MAX)
-            .saturating_add(seconds),
-        None => u32::try_from(now.timestamp())
-            .unwrap_or(u32::MAX)
-            .saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
-    };
 
     Ok(Json(dto::Response {
         quote: dto::Quote {
@@ -93,4 +76,37 @@ pub async fn quote(
         id: None,
         verified: false,
     }))
+}
+
+/// The checks an order must pass before it is worth quoting.
+fn validate(request: &dto::Request, valid_to: u32, now_secs: u32) -> Result<(), error::Reply> {
+    if request.sell_token == request.buy_token {
+        return Err(error::reply(
+            StatusCode::BAD_REQUEST,
+            "SameBuyAndSellToken",
+            "Buy token is the same as the sell token.",
+        ));
+    }
+    if request.side.kind_and_amount().1 == 0 {
+        return Err(error::reply(
+            StatusCode::BAD_REQUEST,
+            "ZeroAmount",
+            "The quoted amount must be positive.",
+        ));
+    }
+    if valid_to < now_secs.saturating_add(MIN_VALIDITY.as_secs() as u32) {
+        return Err(error::reply(
+            StatusCode::BAD_REQUEST,
+            "InsufficientValidTo",
+            "validTo is not far enough in the future",
+        ));
+    }
+    if valid_to > now_secs.saturating_add(MAX_VALIDITY.as_secs() as u32) {
+        return Err(error::reply(
+            StatusCode::BAD_REQUEST,
+            "ExcessiveValidTo",
+            "validTo is too far into the future",
+        ));
+    }
+    Ok(())
 }
