@@ -41,6 +41,9 @@ pub struct Order {
     #[serde(flatten)]
     pub signature: Signature,
     pub quote: Option<Quote>,
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub penalty_cap_native: Option<alloy::primitives::U256>,
 }
 
 #[serde_as]
