@@ -11,6 +11,7 @@ use {
             solver::Solver,
             trusted_tokens::TrustedTokensConfig,
         },
+        balance_cache::BalanceCacheConfig,
         banned_users::BannedUsersConfig,
         database::DatabasePoolConfig,
         http_client::HttpClient,
@@ -170,6 +171,10 @@ pub struct Configuration {
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
     pub price_estimation: PriceEstimation,
+
+    /// Settings for the on-chain balance cache.
+    #[serde(default)]
+    pub balance_cache: BalanceCacheConfig,
 }
 
 impl Configuration {
@@ -235,6 +240,7 @@ impl Configuration {
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
             price_estimation: TestDefault::test_default(),
+            balance_cache: TestDefault::test_default(),
         }
     }
 
@@ -267,6 +273,7 @@ impl Configuration {
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
             price_estimation: TestDefault::test_default(),
+            balance_cache: TestDefault::test_default(),
         }
     }
 
