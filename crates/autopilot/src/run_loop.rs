@@ -2,6 +2,7 @@ use {
     crate::{
         domain::{
             self,
+            OrderUid,
             auction::Id,
             competition::{
                 self,
@@ -13,6 +14,7 @@ use {
         },
         infra::{
             self,
+            persistence::dto,
             solvers::dto::{settle, solve},
         },
         leader_lock_tracker::LeaderLockTracker,
@@ -29,7 +31,7 @@ use {
     database::order_events::OrderEventLabel,
     eth_domain_types::{self as eth, Address, TxId},
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
-    futures::{FutureExt, StreamExt, TryFutureExt},
+    futures::{FutureExt, StreamExt, TryFutureExt, channel::mpsc},
     itertools::Itertools,
     num::ToPrimitive,
     rand::seq::SliceRandom,
@@ -179,14 +181,15 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
         maintenance: MaintenanceSync,
-        wake_runloop: Arc<tokio::sync::Notify>,
-    ) -> Self {
+        new_orders_listener: mpsc::UnboundedReceiver<OrderUid>,
+    ) -> Arc<Self> {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
 
+        let wake_runloop = Arc::new(tokio::sync::Notify::new());
         Self::spawn_block_listener(eth.current_block().clone(), wake_runloop.clone());
 
-        Self {
+        let self_ = Arc::new(Self {
             delta_state: std::sync::Mutex::new(DeltaState::new(
                 config.auction_delta_checkpoint_interval,
             )),
@@ -200,18 +203,18 @@ impl RunLoop {
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify: wake_runloop,
             drivers,
-        }
+        });
+        Self::spawn_order_listener(self_.clone(), new_orders_listener);
+        self_
     }
 
-    pub async fn run_forever(self, mut control: ShutdownController) {
+    pub async fn run_forever(self: Arc<Self>, mut control: ShutdownController) {
         let mut last_auction = None;
         let mut last_block = None;
 
-        let self_arc = Arc::new(self);
-        let leader = if self_arc.config.enable_leader_lock {
+        let leader = if self.config.enable_leader_lock {
             Some(
-                self_arc
-                    .persistence
+                self.persistence
                     .leader("autopilot_startup".to_string())
                     .await,
             )
@@ -226,14 +229,13 @@ impl RunLoop {
             // Wait for notify about some significant state change (e.g. new
             // order, new block). We only update the cache afterwards to update
             // to the most recent state.
-            self_arc.wake_notify.notified().await;
-            let start_block = self_arc.wait_until_auction_start(&last_block).await;
-            self_arc
-                .update_caches(start_block, leader_lock_tracker.is_leader())
+            self.wake_notify.notified().await;
+            let start_block = self.wait_until_auction_start(&last_block).await;
+            self.update_caches(start_block, leader_lock_tracker.is_leader())
                 .await;
 
             // caches are warmed up, we're ready to do leader work
-            if let Some(startup) = self_arc.probes.startup.as_ref() {
+            if let Some(startup) = self.probes.startup.as_ref() {
                 startup.store(true, Ordering::Release);
             }
 
@@ -242,19 +244,18 @@ impl RunLoop {
                 // the previous auction this instance recorded is not the one
                 // the drivers received; ensure we start from a checkpoint when
                 // leadership is (re)gained.
-                self_arc.delta_state.lock().unwrap().reset();
+                self.delta_state.lock().unwrap().reset();
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
             }
 
-            if let Some(auction) = self_arc
+            if let Some(auction) = self
                 .next_auction(start_block, &mut last_auction, &mut last_block)
                 .await
             {
                 let auction_id = auction.id;
-                self_arc
-                    .single_run(&auction, start_block)
+                self.single_run(&auction, start_block)
                     .instrument(tracing::info_span!("auction", auction_id))
                     .await
             }
@@ -273,6 +274,68 @@ impl RunLoop {
                 ethrpc::block_stream::next_block(&current_block).await;
                 tracing::debug!("received new block");
                 notify.notify_one();
+            }
+        });
+    }
+
+    /// Spawns a background task that listens to the creation of new orders and
+    /// notifies the runloop to kick it off if necessary and initiates the
+    /// fast path handling if an order needs it.
+    fn spawn_order_listener(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<OrderUid>) {
+        tokio::spawn(async move {
+            while let Some(order_uid) = receiver.next().await {
+                self.wake_notify.notify_one();
+                let self_ = self.clone();
+                // immediately spawn separate task to never delay processing
+                // fast path orders
+                tokio::spawn(async move {
+                    let fast_path_data = match self_.persistence.fast_path_order(order_uid).await {
+                        Err(err) => {
+                            tracing::error!(?err, "failed to look up fast path order");
+                            return;
+                        }
+                        // nothing to do
+                        Ok(None) => return,
+                        Ok(Some(order)) => order,
+                    };
+                    let Some(winner) = self_
+                        .drivers
+                        .iter()
+                        .find(|driver| driver.submission_address == fast_path_data.solver)
+                    else {
+                        tracing::error!(solver = ?fast_path_data.solver, "winning driver is currently not configured");
+                        return;
+                    };
+                    // TODO: consider making this smarter for orders mainnet orders shortly
+                    // before the deadline and L2s in general
+                    let deadline = self_.eth.current_block().borrow().number + 1;
+
+                    let request = settle::Request {
+                        auction_id: fast_path_data.auction_id,
+                        solution_id: fast_path_data.solution_id,
+                        submission_deadline_latest_block: deadline,
+                        fast_path: Some(settle::FastPath {
+                            order: dto::order::from_domain(&fast_path_data.order),
+                            limit_prices: settle::LimitPrices {
+                                sell: fast_path_data.limit_sell,
+                                buy: fast_path_data.limit_buy,
+                            },
+                            native_prices: fast_path_data.native_prices.clone(),
+                        }),
+                    };
+
+                    let res = self_.settle(
+                            winner,
+                            winner.submission_address,
+                            fast_path_data.solution_uid,
+                            request,
+                        ).await;
+                    match res {
+                        Ok(tx) => tracing::info!(?tx, "settled order"),
+                        Err(err) => tracing::debug!(?err, "failed to settle order"),
+                    };
+                }
+                .instrument(tracing::info_span!("fast_path", ?order_uid)));
             }
         });
     }
@@ -453,6 +516,8 @@ impl RunLoop {
             let (driver, solution) = (winner.driver(), winner.solution());
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
+            // should we set things up such that we can trigger this function
+            // call with our notifier??
             self.start_settlement_execution(
                 auction.id,
                 start_block,
@@ -487,17 +552,14 @@ impl RunLoop {
             tracing::info!(driver = %driver_.name, solution = %solution_id, "settling");
             let submission_start = Instant::now();
 
-            match self_
-                .settle(
-                    &driver_,
-                    solver,
-                    auction_id,
-                    solution_id,
-                    solution_uid,
-                    block_deadline,
-                )
-                .await
-            {
+            let request = settle::Request {
+                solution_id,
+                submission_deadline_latest_block: block_deadline,
+                auction_id,
+                fast_path: None,
+            };
+
+            match self_.settle(&driver_, solver, solution_uid, request).await {
                 Ok(tx_hash) => {
                     Metrics::settle_ok(
                         &driver_,
@@ -776,31 +838,25 @@ impl RunLoop {
         &self,
         driver: &infra::Driver,
         solver: eth::Address,
-        auction_id: i64,
-        solution_id: u64,
         solution_uid: usize,
-        submission_deadline_latest_block: u64,
+        request: settle::Request,
     ) -> Result<TxId, SettleError> {
+        let auction_id = request.auction_id;
+        let deadline = request.submission_deadline_latest_block;
+
         let settle = async move {
             let current_block = self.eth.current_block().borrow().number;
             anyhow::ensure!(
-                current_block < submission_deadline_latest_block,
+                current_block < request.submission_deadline_latest_block,
                 "submission deadline was missed"
             );
 
-            let request = settle::Request {
-                solution_id,
-                submission_deadline_latest_block,
-                auction_id,
-                fast_path: None,
-            };
-
             self.store_execution_started(
-                auction_id,
+                request.auction_id,
                 solver,
                 solution_uid,
                 current_block,
-                submission_deadline_latest_block,
+                request.submission_deadline_latest_block,
             );
             driver
                 .settle(&request, self.config.max_settlement_transaction_wait)
@@ -809,12 +865,7 @@ impl RunLoop {
         .boxed();
 
         let wait_for_settlement_transaction = self
-            .wait_for_settlement_transaction(
-                auction_id,
-                solver,
-                submission_deadline_latest_block,
-                solution_uid,
-            )
+            .wait_for_settlement_transaction(auction_id, solver, deadline, solution_uid)
             .boxed();
 
         // Wait for either the settlement transaction to be mined or the driver

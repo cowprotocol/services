@@ -1079,6 +1079,10 @@ impl Persistence {
                 .solution_id
                 .to_u64()
                 .context("solution id out of range")?,
+            solution_uid: row
+                .solution_uid
+                .to_usize()
+                .context("solution uid out of range")?,
             solver: eth::Address::from(row.solver.0),
             limit_sell: big_decimal_to_u256(&row.executed_sell)
                 .context("invalid executed sell amount")?,
@@ -1094,6 +1098,7 @@ pub struct FastPathOrder {
     pub order: domain::Order,
     pub auction_id: database::auction::AuctionId,
     pub solution_id: u64,
+    pub solution_uid: usize,
     pub solver: eth::Address,
     pub limit_sell: eth::U256,
     pub limit_buy: eth::U256,

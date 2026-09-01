@@ -1,17 +1,14 @@
 mod banned;
-mod fast_path;
 mod run_loop;
 
 use {
     self::run_loop::RunLoopWaker,
     crate::{domain::OrderUid, infra::order_notify::banned::CachePrewarmer},
-    futures::future::join_all,
+    futures::{channel::mpsc, future::join_all},
     order_validation::banned::Users,
     sqlx::PgPool,
     std::{sync::Arc, time::Duration},
 };
-
-pub use self::fast_path::FastPathSettler;
 
 /// A system interested in every order arriving in the orderbook.
 ///
@@ -31,14 +28,12 @@ pub struct Notifier {
 impl Notifier {
     pub fn new(
         banned_users: Arc<Users>,
-        run_loop_wake: Arc<tokio::sync::Notify>,
-        fast_path_settler: FastPathSettler,
+        run_loop_new_order_listener: mpsc::UnboundedSender<OrderUid>,
     ) -> Self {
         Self {
             listeners: vec![
-                Box::new(RunLoopWaker(run_loop_wake)),
+                Box::new(RunLoopWaker(run_loop_new_order_listener)),
                 Box::new(CachePrewarmer(banned_users)),
-                Box::new(fast_path_settler),
             ],
         }
     }

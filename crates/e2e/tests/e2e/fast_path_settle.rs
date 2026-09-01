@@ -129,7 +129,6 @@ async fn fast_path_settle(web3: Web3) {
 
     tracing::info!("Waiting for the fast-path settlement.");
     wait_for_condition(TIMEOUT, || async {
-        onchain.mint_block().await;
         services
             .get_order(&uid)
             .await

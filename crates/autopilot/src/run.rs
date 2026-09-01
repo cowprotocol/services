@@ -33,6 +33,7 @@ use {
     contracts::{GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
+    futures::channel::mpsc,
     http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
@@ -474,9 +475,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
         ));
 
-    // Wakes the run loop on new orders (via the notifier) and new blocks.
-    let wake_runloop = Arc::new(tokio::sync::Notify::new());
-
     let penalty_cap_calculator = match &config.penalty_cap {
         Some(penalty_cap_config) => Some(
             build_penalty_cap_calculator(
@@ -645,19 +643,9 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .into_iter()
         .collect();
 
-    let fast_path_settler = infra::order_notify::FastPathSettler::new(
-        persistence.clone(),
-        drivers.clone(),
-        eth.current_block().clone(),
-        run_loop_config.submission_deadline,
-        run_loop_config.max_settlement_transaction_wait,
-    );
-    infra::order_notify::Notifier::new(
-        banned_users.clone(),
-        wake_runloop.clone(),
-        fast_path_settler,
-    )
-    .spawn(db_write.pool.clone());
+    let (new_orders_sender, new_orders_receiver) = mpsc::unbounded();
+    infra::order_notify::Notifier::new(banned_users.clone(), new_orders_sender)
+        .spawn(db_write.pool.clone());
 
     let awaiter = maintenance
         .spawn_maintenance_task(eth.current_block().clone(), config.max_maintenance_timeout);
@@ -674,7 +662,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             startup,
         },
         awaiter,
-        wake_runloop,
+        new_orders_receiver,
     );
     run.run_forever(shutdown_controller).await;
 
