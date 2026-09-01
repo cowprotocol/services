@@ -14,7 +14,7 @@ use {
         },
         infra::{
             self,
-            persistence::dto,
+            persistence::{FastPathOrder, dto},
             solvers::dto::{settle, solve},
         },
         leader_lock_tracker::LeaderLockTracker,
@@ -288,56 +288,63 @@ impl RunLoop {
                 let self_ = self.clone();
                 // immediately spawn separate task to never delay processing
                 // fast path orders
-                tokio::spawn(async move {
-                    let fast_path_data = match self_.persistence.fast_path_order(order_uid).await {
-                        Err(err) => {
-                            tracing::error!(?err, "failed to look up fast path order");
-                            return;
-                        }
-                        // nothing to do
-                        Ok(None) => return,
-                        Ok(Some(order)) => order,
-                    };
-                    let Some(winner) = self_
-                        .drivers
-                        .iter()
-                        .find(|driver| driver.submission_address == fast_path_data.solver)
-                    else {
-                        tracing::error!(solver = ?fast_path_data.solver, "winning driver is currently not configured");
-                        return;
-                    };
-                    // TODO: consider making this smarter for orders mainnet orders shortly
-                    // before the deadline and L2s in general
-                    let deadline = self_.eth.current_block().borrow().number + 1;
-
-                    let request = settle::Request {
-                        auction_id: fast_path_data.auction_id,
-                        solution_id: fast_path_data.solution_id,
-                        submission_deadline_latest_block: deadline,
-                        fast_path: Some(settle::FastPath {
-                            order: dto::order::from_domain(&fast_path_data.order),
-                            limit_prices: settle::LimitPrices {
-                                sell: fast_path_data.limit_sell,
-                                buy: fast_path_data.limit_buy,
-                            },
-                            native_prices: fast_path_data.native_prices.clone(),
-                        }),
-                    };
-
-                    let res = self_.settle(
-                            winner,
-                            winner.submission_address,
-                            fast_path_data.solution_uid,
-                            request,
-                        ).await;
-                    match res {
-                        Ok(tx) => tracing::info!(?tx, "settled order"),
-                        Err(err) => tracing::debug!(?err, "failed to settle order"),
-                    };
-                }
-                .instrument(tracing::info_span!("fast_path", ?order_uid)));
+                tokio::spawn(
+                    async move {
+                        match self_.persistence.fast_path_order(order_uid).await {
+                            // not a fast path order -> do nothing
+                            Ok(None) => {}
+                            Err(err) => tracing::error!(?err, "failed to look up fast path order"),
+                            Ok(Some(order)) => self_.handle_fast_path(order).await,
+                        };
+                    }
+                    .instrument(tracing::info_span!("fast_path", ?order_uid)),
+                );
             }
         });
+    }
+
+    /// Manages the fast path execution of the given order. Picks a final
+    /// submission deadline in the exclusivity period and instructs the
+    /// winning solver to settle directly and outside the regular auction.
+    async fn handle_fast_path(self: Arc<Self>, fast_path_data: FastPathOrder) {
+        let Some(winner) = self
+            .drivers
+            .iter()
+            .find(|driver| driver.submission_address == fast_path_data.solver)
+        else {
+            tracing::error!(solver = ?fast_path_data.solver, "winning driver is currently not configured");
+            return;
+        };
+        // TODO: consider making this smarter for orders mainnet orders shortly
+        // before the deadline and L2s in general
+        let deadline = self.eth.current_block().borrow().number + 1;
+
+        let request = settle::Request {
+            auction_id: fast_path_data.auction_id,
+            solution_id: fast_path_data.solution_id,
+            submission_deadline_latest_block: deadline,
+            fast_path: Some(settle::FastPath {
+                order: dto::order::from_domain(&fast_path_data.order),
+                limit_prices: settle::LimitPrices {
+                    sell: fast_path_data.limit_sell,
+                    buy: fast_path_data.limit_buy,
+                },
+                native_prices: fast_path_data.native_prices.clone(),
+            }),
+        };
+
+        let res = self
+            .settle(
+                winner,
+                winner.submission_address,
+                fast_path_data.solution_uid,
+                request,
+            )
+            .await;
+        match res {
+            Ok(tx) => tracing::info!(?tx, "settled order"),
+            Err(err) => tracing::debug!(?err, "failed to settle order"),
+        };
     }
 
     fn pick_solve_deadline(&self) -> DateTime<Utc> {
