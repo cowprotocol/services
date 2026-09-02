@@ -6,11 +6,18 @@ use {
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::signature::Signature,
-    std::{sync::Arc, time::Duration},
+    std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     tracing::Instrument,
 };
 
 const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
+/// Target Solana slot duration in milliseconds, used to turn a submission
+/// deadline slot into a wall-clock confirmation timeout. This is mainnet's
+/// target; other clusters can drift.
+const SLOT_DURATION_MS: u64 = 400;
 
 /// Cache key for a proposed solution.
 ///
@@ -136,7 +143,7 @@ impl Competition {
     /// twice.
     ///
     /// Deferred work:
-    /// - admission semaphore and submission deadline slot checks,
+    /// - admission semaphore(1),
     /// - pre-submission simulation,
     /// - ALT caching,
     /// - re-sending / retry loop.
@@ -144,7 +151,7 @@ impl Competition {
         self: &Arc<Self>,
         auction_id: Id,
         solution_id: u64,
-        _submission_deadline_slot: u64,
+        submission_deadline_slot: u64,
     ) -> Result<Signature, Error> {
         let key = Key {
             auction_id,
@@ -155,8 +162,16 @@ impl Competition {
             .get(&key)
             .ok_or(Error::SolutionNotAvailable)?;
 
-        // TODO: admission semaphore(1) and deadline slot check once we have a
-        // slot stream.
+        let current_slot = self.blockchain.slot().await.map_err(Error::Rpc)?;
+        if current_slot >= submission_deadline_slot {
+            return Err(Error::DeadlineExceeded);
+        }
+        let deadline = Instant::now()
+            + Duration::from_millis(
+                (submission_deadline_slot - current_slot).saturating_mul(SLOT_DURATION_MS),
+            );
+
+        // TODO: admission semaphore(1).
 
         let program_id = self.blockchain.program_id();
 
@@ -189,13 +204,14 @@ impl Competition {
         // TODO: a provably unsent transaction (connect failure at send time)
         // loses the solution here; restore the cache entry on that class. Needs
         // the send/confirm split in cow-solana-rpc (planned follow-up PR).
-        // TODO: bound the confirmation wait with a `tokio::timeout` once the
-        // maximum settle latency policy is defined.
-        let signature = self
-            .blockchain
-            .send_and_confirm_transaction(&transaction)
-            .await
-            .map_err(Error::FailedToSubmit)?;
+        let confirm_timeout = deadline.saturating_duration_since(Instant::now());
+        let signature = tokio::time::timeout(
+            confirm_timeout,
+            self.blockchain.send_and_confirm_transaction(&transaction),
+        )
+        .await
+        .map_err(|_| Error::DeadlineExceeded)?
+        .map_err(Error::FailedToSubmit)?;
 
         Ok(signature)
     }
@@ -219,8 +235,7 @@ fn orders_with_trades(orders: Vec<Order>, solution: &Solution) -> Vec<Order> {
 #[derive(Debug, thiserror::Error)]
 #[expect(
     dead_code,
-    reason = "DeadlineExceeded and TooManyPendingSettlements are pending the deferred admission \
-              semaphore and deadline slot checks"
+    reason = "TooManyPendingSettlements is pending the deferred admission semaphore check"
 )]
 pub(crate) enum Error {
     #[error("solver engine failed: {0}")]

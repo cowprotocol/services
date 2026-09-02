@@ -5,7 +5,7 @@ use {
         data::intent::{OrderIntent, OrderKind},
         pda::order::find_order_pda,
     },
-    cow_solana_rpc::SolanaRPC,
+    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     solana_driver::infra::{api::Api, blockchain::Solana, config, solver::Solver},
     solana_sdk::pubkey::Pubkey,
     solana_testlib::temp_keypair,
@@ -331,6 +331,48 @@ async fn settle_rejects_non_positive_auction_id() {
 
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "InvalidAuctionId");
+}
+
+#[tokio::test]
+async fn settle_rejects_a_passed_submission_deadline() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine);
+
+    // The mock RPC reports slot 1000, so a deadline of 500 is already past.
+    let mut mocks = Mocks::new();
+    mocks.insert(RpcRequest::GetSlot, serde_json::json!(1000));
+    let blockchain = Arc::new(Solana::new(
+        SolanaRPC::new_mock_with_mocks(mocks),
+        cow_settlement_interface::id(),
+    ));
+
+    let api = Api {
+        addr: "0.0.0.0:0".parse().unwrap(),
+        blockchain,
+        solvers: vec![solver],
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    // Populate the cache with a solution for auction 7.
+    let body = call_solve(addr).await;
+    let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/settle"))
+        .json(&serde_json::json!({
+            "auctionId": 7,
+            "solutionId": solution_id,
+            "submissionDeadlineSlot": 500,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "DeadlineExceeded");
 }
 
 #[tokio::test]

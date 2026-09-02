@@ -38,6 +38,11 @@ impl Solana {
         self.rpc.latest_confirmed_blockhash().await
     }
 
+    /// The node's current slot at the client's commitment level.
+    pub async fn slot(&self) -> Result<u64, Error> {
+        self.rpc.slot().await
+    }
+
     /// Send a signed transaction and wait for confirmation.
     pub async fn send_and_confirm_transaction(
         &self,
