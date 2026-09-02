@@ -112,8 +112,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The default docker driver cannot push an image by digest. The
-      # multi-platform manifest needs this.
+      # Need buildx to push by digest, as that is unsupported by the default docker driver
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Services image metadata
@@ -221,9 +220,8 @@ jobs:
           docker buildx imagetools create "${args[@]}"
           docker buildx imagetools inspect "${SERVICES_IMAGE}:${VERSION}"
 
-      # The migration image only adds the SQL files to the flyway image. It runs
-      # no commands for the target architecture. Therefore, one build makes both
-      # architectures. It needs no emulation and no second runner.
+      # The migration image only adds SQL files to flyway, so the build step can
+      # be shared by both platforms.
       - name: Migration image metadata
         id: meta_migration
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
