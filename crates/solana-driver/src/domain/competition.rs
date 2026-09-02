@@ -87,7 +87,6 @@ impl Competition {
 
 /// An error the competition reports to the API layer.
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
 pub enum Error {
     /// The solver engine failed to produce solutions.
     #[error("solver engine failed: {0}")]
