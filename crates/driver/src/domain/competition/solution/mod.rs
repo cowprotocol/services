@@ -98,10 +98,8 @@ fn compare_orders(order: &competition::Order, quoted: &competition::Order) -> bo
         && order.target() == quoted.target()
 }
 
-fn recover_flashloans_and_wrappers(
-    order: &competition::Order,
-) -> (HashMap<order::Uid, Flashloan>, Vec<WrapperCall>) {
-    let flashloans = order
+fn recover_flashloans(order: &competition::Order) -> HashMap<order::Uid, Flashloan> {
+    order
         .app_data
         .flashloan()
         .map(|f| {
@@ -109,8 +107,11 @@ fn recover_flashloans_and_wrappers(
             (order.uid, (&flashloan).into())
         })
         .into_iter()
-        .collect();
-    let wrappers = order
+        .collect()
+}
+
+fn recover_wrappers(order: &competition::Order) -> Vec<WrapperCall> {
+    order
         .app_data
         .wrappers()
         .iter()
@@ -118,8 +119,7 @@ fn recover_flashloans_and_wrappers(
             address: w.address,
             data: w.data.clone().into(),
         })
-        .collect();
-    (flashloans, wrappers)
+        .collect()
 }
 
 impl Solution {
@@ -559,7 +559,7 @@ impl Solution {
         limit_prices: LimitPrices,
     ) -> Result<Self, error::Error> {
         let mut solution = self.clone();
-        let Ok(user) = solution
+        let Ok(user_trade) = solution
             .trades
             .iter_mut()
             .filter_map(|trade| match trade {
@@ -571,7 +571,7 @@ impl Solution {
             return Err(error::Error::FastPathTradeCount(self.user_trades().count()));
         };
 
-        if !compare_orders(&order, user.order()) {
+        if !compare_orders(&order, user_trade.order()) {
             return Err(error::Error::FastPathOrderMismatch);
         }
 
@@ -583,28 +583,25 @@ impl Solution {
                 .clearing_price(order.buy.token)
                 .ok_or(error::Error::FastPathOrderMismatch)?,
         };
+        // todo: double check if this makes sense...
         let within_limit = match order.side {
-            order::Side::Sell => user.buy_amount(&clearing)?.0 >= limit_prices.buy,
-            order::Side::Buy => user.sell_amount(&clearing)?.0 <= limit_prices.sell,
+            order::Side::Sell => user_trade.buy_amount(&clearing)?.0 >= limit_prices.buy,
+            order::Side::Buy => user_trade.sell_amount(&clearing)?.0 <= limit_prices.sell,
         };
         if !within_limit {
+            // todo: descriptive error message evaluating how much the price was
+            // off roughly
             return Err(error::Error::FastPathLimitNotMet);
         }
 
-        let (flashloans, wrappers) = recover_flashloans_and_wrappers(&order);
-        // Fill exactly the amount the autopilot recorded.
-        let executed = order::TargetAmount(match order.side {
-            order::Side::Sell => limit_prices.sell,
-            order::Side::Buy => limit_prices.buy,
-        });
-        *user = user.with_order(order, executed)?;
-        solution.flashloans = flashloans;
-        solution.wrappers = wrappers;
+        solution.flashloans = recover_flashloans(&order);
+        solution.wrappers = recover_wrappers(&order);
+        *user_trade = user_trade.with_order(order)?;
 
         // Pin the fill to the signed limit so it settles at exactly
         // the price the autopilot expects.
-        let sell = user.order().sell.token.as_erc20(self.weth);
-        let buy = user.order().buy.token.as_erc20(self.weth);
+        let sell = user_trade.order().sell.token.as_erc20(self.weth);
+        let buy = user_trade.order().buy.token.as_erc20(self.weth);
         solution.prices.insert(sell, limit_prices.buy);
         solution.prices.insert(buy, limit_prices.sell);
         Ok(solution)
