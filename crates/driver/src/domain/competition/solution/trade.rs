@@ -173,9 +173,9 @@ impl Fulfillment {
     /// Keeps the original fee and haircut.
     pub fn with_order(&self, order: competition::Order) -> Result<Self, error::Trade> {
         let fee = if order.solver_determines_fee() {
-            Fee::Dynamic(self.fee())
+            self.fee()
         } else {
-            Fee::Static
+            order::SellAmount::default()
         };
         let executed = order::TargetAmount(match order.side {
             order::Side::Sell => order.sell.amount.0,
