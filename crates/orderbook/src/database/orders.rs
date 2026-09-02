@@ -238,7 +238,7 @@ async fn insert_order(
             // that this is going to be used for a fast path execution.
             // not that we know the final order uid we can patch up the
             // `proposed_trade_executions` rows.
-            database::solver_competition_v2::finalize_quote_competition(ex, auction_id, order_uid)
+            database::fast_path::finalize_quote_competition(ex, auction_id, order_uid)
                 .await
                 .map_err(InsertionError::DbError)?;
         }

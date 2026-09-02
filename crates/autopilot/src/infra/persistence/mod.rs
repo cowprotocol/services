@@ -1053,7 +1053,7 @@ impl Persistence {
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
         let key = ByteArray(uid.0);
 
-        let Some(row) = database::orders::single_fast_path_order(&mut ex, &key).await? else {
+        let Some(row) = database::fast_path::single_fast_path_order(&mut ex, &key).await? else {
             return Ok(None);
         };
 
@@ -1116,7 +1116,7 @@ impl Persistence {
             .collect();
 
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
-        let bids = database::solver_competition_v2::fast_path_bids(tx.deref_mut(), auction_id, uid)
+        let bids = database::fast_path::fast_path_bids(tx.deref_mut(), auction_id, uid)
             .await
             .context("fetch fast-path bids")?;
         let adjusted_bids: Vec<_> = bids
@@ -1132,14 +1132,14 @@ impl Persistence {
                     order_kind,
                     volume_factors.iter().copied(),
                 );
-                anyhow::Ok(database::solver_competition_v2::FastPathBid {
+                anyhow::Ok(database::fast_path::FastPathBid {
                     solution_uid: bid.solution_uid,
                     executed_sell: u256_to_big_decimal(&adjusted_sell),
                     executed_buy: u256_to_big_decimal(&adjusted_buy),
                 })
             })
             .collect::<anyhow::Result<_>>()?;
-        database::solver_competition_v2::apply_fees_to_fast_path_bids(
+        database::fast_path::apply_fees_to_fast_path_bids(
             tx.deref_mut(),
             auction_id,
             uid,

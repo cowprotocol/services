@@ -384,13 +384,9 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             database::quotes::delete_and_return_row(transaction, *quote_id)
                 .await
                 .context("failed to delete promoted onchain quote")?;
-            database::solver_competition_v2::finalize_quote_competition(
-                transaction,
-                auction_id,
-                order.uid,
-            )
-            .await
-            .context("failed to patch competition rows for onchain order")?;
+            database::fast_path::finalize_quote_competition(transaction, auction_id, order.uid)
+                .await
+                .context("failed to patch competition rows for onchain order")?;
         }
 
         for order in &invalided_order_uids {

@@ -4,11 +4,11 @@ use {
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
     database::{
+        fast_path::FastPathOrder as FastPathOrderDb,
         onchain_broadcasted_orders::OnchainOrderPlacementError as DbOnchainOrderPlacementError,
         orders::{
             BuyTokenDestination as DbBuyTokenDestination,
             ExecutionTime,
-            FastPathOrder as FastPathOrderDb,
             FullOrder as FullOrderDb,
             OrderClass as DbOrderClass,
             OrderKind as DbOrderKind,
