@@ -412,10 +412,7 @@ components:
           description: Whether the amounts were confirmed by simulation. Always false.
           type: boolean
     Quote:
-      description: |
-        The quoted order. `gasAmount`, `gasPrice` and `sellTokenPrice` from the
-        EVM shape are absent: Solana meters compute units rather than gas, and
-        no component estimates native prices yet.
+      description: The quoted order.
       type: object
       required:
         - sellToken
