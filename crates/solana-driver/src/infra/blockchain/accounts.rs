@@ -56,6 +56,9 @@ impl AccountsSnapshot {
     /// table passes compilation and then fails on-chain after submission.
     /// These checks reject bad tables before the driver sends the
     /// transaction.
+    ///
+    /// These checks cannot catch a table extended in the snapshot's slot. Its
+    /// new addresses become usable only in the next slot.
     pub fn lookup_table(
         &self,
         key: &Pubkey,
