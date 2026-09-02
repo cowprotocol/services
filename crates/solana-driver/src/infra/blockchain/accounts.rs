@@ -9,9 +9,17 @@ use {
         program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
         state::AddressLookupTable,
     },
-    solana_sdk::{account::Account, message::AddressLookupTableAccount, pubkey::Pubkey},
+    solana_sdk::{
+        account::Account,
+        message::AddressLookupTableAccount,
+        program_pack::Pack,
+        pubkey::Pubkey,
+    },
     solana_system_interface::program::ID as SYSTEM_PROGRAM_ID,
-    spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID,
+    spl_token_interface::{
+        ID as SPL_TOKEN_PROGRAM_ID,
+        state::{Account as TokenAccount, AccountState},
+    },
     std::collections::HashMap,
 };
 
@@ -70,12 +78,32 @@ impl AccountsSnapshot {
 
     /// Classify the state of the token account at `address` for a caller that
     /// creates missing token accounts idempotently.
+    ///
+    /// An SPL-token-owned account is `Initialized` only when it unpacks as an
+    /// initialized, unfrozen token account. Anything else the token program
+    /// owns (wrong length, uninitialized, frozen) is `Unexpected`: an
+    /// idempotent create cannot replace it.
     pub fn token_account_state(&self, address: &Pubkey) -> TokenAccountState {
         match self.accounts.get(address) {
+            // The account does not exist on chain: the idempotent create makes it.
             None => TokenAccountState::NeedsCreation,
+            // An initialized, unfrozen SPL token account. Anything else the
+            // token program owns is `Unexpected`.
             Some(account) if account.owner == SPL_TOKEN_PROGRAM_ID => {
-                TokenAccountState::Initialized
+                let usable = TokenAccount::unpack(&account.data)
+                    .map(|ta| ta.state == AccountState::Initialized)
+                    .unwrap_or(false);
+                if usable {
+                    TokenAccountState::Initialized
+                } else {
+                    TokenAccountState::Unexpected {
+                        owner: account.owner,
+                        data_len: account.data.len(),
+                    }
+                }
             }
+            // A pre-funded system account (lamports only, no data): the
+            // idempotent create can allocate over it.
             Some(account) if account.owner == SYSTEM_PROGRAM_ID && account.data.is_empty() => {
                 TokenAccountState::NeedsCreation
             }
@@ -95,8 +123,8 @@ pub enum TokenAccountState {
     /// account does not exist, or it is a pre-funded system-owned account with
     /// no data.
     NeedsCreation,
-    /// An initialized SPL token account. The caller does not need to create
-    /// it.
+    /// An initialized, unfrozen SPL token account. The caller does not need to
+    /// create it.
     Initialized,
     /// Any other state: a foreign owner, or a system account with data. The
     /// caller cannot use this account, and an idempotent create cannot
@@ -219,15 +247,71 @@ mod tests {
         assert!(matches!(state, TokenAccountState::NeedsCreation));
     }
 
+    /// A 165-byte SPL token account with the given state.
+    fn token_account(state: AccountState) -> Account {
+        let mut data = [0u8; TokenAccount::LEN];
+        TokenAccount {
+            mint: pubkey(0x22),
+            owner: pubkey(0x33),
+            state,
+            ..TokenAccount::default()
+        }
+        .pack_into_slice(&mut data);
+        Account {
+            owner: SPL_TOKEN_PROGRAM_ID,
+            data: data.to_vec(),
+            ..Account::default()
+        }
+    }
+
     #[test]
-    fn a_token_owned_account_is_initialized() {
+    fn an_initialized_token_account_is_initialized() {
+        let address = pubkey(0x11);
+        let account = token_account(AccountState::Initialized);
+        let state = snapshot([(address, account)]).token_account_state(&address);
+        assert!(matches!(state, TokenAccountState::Initialized));
+    }
+
+    #[test]
+    fn a_frozen_token_account_is_unexpected() {
+        let address = pubkey(0x11);
+        let account = token_account(AccountState::Frozen);
+        let state = snapshot([(address, account)]).token_account_state(&address);
+        assert!(matches!(state, TokenAccountState::Unexpected { .. }));
+    }
+
+    #[test]
+    fn an_uninitialized_token_account_is_unexpected() {
+        let address = pubkey(0x11);
+        let account = token_account(AccountState::Uninitialized);
+        let state = snapshot([(address, account)]).token_account_state(&address);
+        assert!(matches!(state, TokenAccountState::Unexpected { .. }));
+    }
+
+    #[test]
+    fn a_token_program_owned_mint_account_is_unexpected() {
+        // A mint account is 82 bytes, so it does not unpack as a token account.
         let address = pubkey(0x11);
         let account = Account {
-            owner: spl_token_interface::ID,
+            owner: SPL_TOKEN_PROGRAM_ID,
+            data: vec![0; spl_token_interface::state::Mint::LEN],
             ..Account::default()
         };
         let state = snapshot([(address, account)]).token_account_state(&address);
-        assert!(matches!(state, TokenAccountState::Initialized));
+        assert!(matches!(state, TokenAccountState::Unexpected { .. }));
+    }
+
+    #[test]
+    fn a_token_program_owned_account_with_invalid_data_is_unexpected() {
+        // Right length, but the data does not decode as a valid token account.
+        let address = pubkey(0x11);
+        let account = Account {
+            owner: SPL_TOKEN_PROGRAM_ID,
+            data: vec![0xff; TokenAccount::LEN],
+            ..Account::default()
+        };
+        let state = snapshot([(address, account)]).token_account_state(&address);
+        assert!(matches!(state, TokenAccountState::Unexpected { .. }));
     }
 
     #[test]
