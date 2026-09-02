@@ -13,17 +13,12 @@ pub(crate) async fn solve(
     state: axum::extract::State<State>,
     LoggingJson(request): LoggingJson<dto::SolveRequest>,
 ) -> Result<Json<dto::SolveResponse>, (StatusCode, Json<ApiError>)> {
-    let program_id = state.blockchain().program_id();
     let auction = request.into_domain()?;
     let auction_id = auction.id;
     let solutions = state
         .competition()
-        .solve(&auction, program_id)
-        .instrument(tracing::info_span!(
-            "/solve",
-            solver = %state.competition().solver_name(),
-            auction_id = %auction_id
-        ))
+        .solve(&auction)
+        .instrument(tracing::info_span!("/solve", solver = %state.competition().solver_name(), auction_id = %auction_id))
         .await?;
     Ok(Json(dto::SolveResponse::new(solutions)))
 }
