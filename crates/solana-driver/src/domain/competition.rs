@@ -195,29 +195,18 @@ impl Competition {
         // exactly the orders passed to `BeginSettle`.
         let orders = orders_with_trades(auction.orders.clone(), &solution);
 
-        let accounts =
-            super::Settlement::prepare(&self.blockchain, self.solver.pubkey(), &orders, &solution)
-                .await?;
+        let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
 
-        let settlement = super::Settlement::new(
-            program_id,
-            auction_id,
-            orders,
-            solution,
-            accounts.missing_buffers,
-            accounts.missing_payer_atas,
-        )?;
+        let resolved = settlement
+            .resolve_accounts(&self.blockchain, self.solver.pubkey())
+            .await?;
 
         let latest = self
             .blockchain
             .latest_confirmed_blockhash()
             .await
             .map_err(Error::Rpc)?;
-        let transaction = settlement.encode(
-            self.solver.keypair(),
-            latest.blockhash,
-            &accounts.lookup_tables,
-        )?;
+        let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
 
         // Consume the entry only now, when the transaction is about to reach
         // the network. One atomic removal takes the chosen solution. A
@@ -283,8 +272,8 @@ pub(crate) enum Error {
     #[error("failed to submit or confirm settlement: {0}")]
     FailedToSubmit(#[source] cow_solana_rpc::Error),
     /// The settlement's on-chain accounts could not be resolved.
-    #[error("failed to prepare settlement: {0}")]
-    Prepare(#[from] super::settlement::PrepareError),
+    #[error("failed to resolve settlement accounts: {0}")]
+    Resolve(#[from] super::settlement::ResolveError),
     /// The settlement could not be encoded.
     #[error("failed to encode settlement: {0}")]
     Settlement(#[from] super::settlement::Error),
