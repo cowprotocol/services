@@ -1,8 +1,4 @@
-//! The competition: the driver runs one auction through a single solver engine.
-//!
-//! `Competition` owns the solve flow (calling the engine) and the settle entry
-//! point. It holds the concrete `infra::solver::Solver` client. One
-//! `Competition` per solver engine is mounted on the API under `/{name}`.
+//! One `Competition` per solver engine, mounted on the API under `/{name}`.
 
 use {
     super::{Auction, Order, auction::Id, solution::Solution},
@@ -14,40 +10,33 @@ use {
     tracing::Instrument,
 };
 
-/// How long a proposed solution stays available for `settle`.
 const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// Cache key for a proposed solution.
 ///
-/// The autopilot assigns `auction_id`. The engine assigns `solution_id` in its
-/// `/solve` response and may repeat ids across auctions; the driver does not
-/// control how an engine numbers them. The key needs both parts.
+/// The engine assigns `solution_id` and may repeat ids across auctions, so
+/// the key needs the autopilot-assigned `auction_id` too.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Key {
     auction_id: Id,
     solution_id: u64,
 }
 
-/// A proposed solution and the auction it solves. All solutions from one
-/// `solve` call share the same auction.
+/// All solutions from one `solve` call share the same auction, hence the
+/// `Arc`.
 #[derive(Clone)]
 struct CachedSolution {
     auction: Arc<Auction>,
     solution: Solution,
 }
 
-/// Orchestrates one auction through a single solver engine.
 pub(crate) struct Competition {
     solver: Solver,
     blockchain: Arc<Solana>,
-    /// Proposed solutions by `Key`, so `settle` can retrieve and submit the
-    /// chosen one. Entries expire after `SOLUTION_CACHE_TTL`.
     solutions: Cache<Key, CachedSolution>,
 }
 
 impl Competition {
-    /// Build a competition from a single solver engine and the blockchain
-    /// adapter.
     pub fn new(solver: Solver, blockchain: Arc<Solana>) -> Self {
         Self {
             solver,
@@ -56,17 +45,11 @@ impl Competition {
         }
     }
 
-    /// The human-readable name of the solver engine this competition uses.
     pub fn solver_name(&self) -> &str {
         self.solver.name()
     }
 
-    /// Send the auction to the solver engine, cache its solutions, and return
-    /// them.
-    ///
-    /// The cache stores the auction and every solution keyed by
-    /// `(auction_id, solution_id)` so `settle` can later retrieve and submit
-    /// the chosen solution.
+    /// Solve the auction and cache each solution for a later `settle`.
     pub async fn solve(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
         let solutions = self
             .solver
@@ -106,18 +89,20 @@ impl Competition {
 
     /// Submit a previously proposed solution on chain.
     ///
-    /// The work runs on a spawned task, so a client disconnect cannot cancel
-    /// a settlement mid-flight. Cancellation between the consume step and
-    /// the send step would destroy the solution and submit nothing.
-    /// Cancellation during the send would lose the returned signature. A
-    /// dropped join handle detaches the task, and the task runs to
-    /// completion. The RPC client timeout bounds every step, so the task
-    /// needs no abort.
+    /// The work runs on a spawned task: a client disconnect must not cancel
+    /// a settlement mid-flight, and a dropped join handle detaches the task
+    /// to run to completion. An abort between consuming the solution and the
+    /// send would destroy the solution without submitting; an abort mid-send
+    /// would lose the returned signature. The task terminates on its own:
+    /// each RPC request has the client's timeout, and the confirmation loop
+    /// exits at the latest when the blockhash expires (~150 slots), after
+    /// which the transaction can no longer land.
     ///
     /// A successful return means the transaction reached the cluster at the
     /// RPC client's configured commitment level. This makes the Solana
     /// driver's 200 semantics match the EVM driver's: the response is only
-    /// returned after the transaction is confirmed on-chain.
+    /// returned after the transaction is confirmed on-chain. The response is
+    /// informational; the indexer remains the authority on settlement state.
     pub async fn settle(
         self: &Arc<Self>,
         auction_id: Id,
@@ -144,26 +129,11 @@ impl Competition {
         })
     }
 
-    /// Perform the actual on-chain settlement.
+    /// The settlement worker spawned by [`settle`](Self::settle).
     ///
-    /// This implementation performs these steps:
-    /// - Look up the cached `(auction, solution)`.
-    /// - Fetch the solver-provided address lookup tables and the settlement
-    ///   setup accounts from RPC.
-    /// - Fetch a fresh blockhash.
-    /// - Build and sign a v0 settlement transaction.
-    /// - Send the transaction and wait for confirmation.
-    ///
-    /// The method consumes the cached solution only when it hands the
-    /// transaction to the network. Every failure before that point leaves
-    /// the solution in place, so the caller can retry the settle. At
-    /// hand-off, one atomic `Cache::remove` takes the chosen solution. A
-    /// concurrent `/settle` for it then observes a missing entry and cannot
-    /// settle the solution a second time.
-    ///
-    /// A send failure does not restore the entry. The transaction may
-    /// have reached the network despite the error. A retry with a fresh
-    /// blockhash could settle the solution twice.
+    /// A send failure does not restore the solution: the transaction may
+    /// have reached the network despite the error, and a retry could settle
+    /// twice.
     ///
     /// Deferred work:
     /// - admission semaphore and submission deadline slot checks,
@@ -190,9 +160,6 @@ impl Competition {
 
         let program_id = self.blockchain.program_id();
 
-        // The settlement carries only the orders the solution fills:
-        // validation requires a trade per order, and the program settles
-        // exactly the orders passed to `BeginSettle`.
         let orders = orders_with_trades(auction.orders.clone(), &solution);
 
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
@@ -228,9 +195,8 @@ impl Competition {
     }
 }
 
-/// The subset of `orders` the solution fills. The program settles exactly
-/// the orders passed to `BeginSettle`. The auction's unfilled orders stay
-/// out of the settlement.
+/// The program settles exactly the orders passed to `BeginSettle`, so the
+/// orders the solution does not fill must stay out of the settlement.
 fn orders_with_trades(orders: Vec<Order>, solution: &Solution) -> Vec<Order> {
     orders
         .into_iter()
@@ -251,34 +217,25 @@ fn orders_with_trades(orders: Vec<Order>, solution: &Solution) -> Vec<Order> {
               semaphore and deadline slot checks"
 )]
 pub(crate) enum Error {
-    /// The solver engine failed to produce solutions.
     #[error("solver engine failed: {0}")]
     Solver(#[from] crate::infra::solver::Error),
-    /// The requested solution is not available (never solved or already
-    /// settled).
+    /// Never solved, or already settled.
     #[error("solution not available")]
     SolutionNotAvailable,
-    /// The submission deadline slot has passed.
     #[error("submission deadline slot exceeded")]
     DeadlineExceeded,
-    /// Too many settlements are already pending submission.
     #[error("too many pending settlements")]
     TooManyPendingSettlements,
-    /// A pre-submission RPC read failed (blockhash fetch); nothing was
-    /// submitted.
+    /// A pre-submission RPC read failed; nothing was submitted.
     #[error("rpc request failed: {0}")]
     Rpc(#[source] cow_solana_rpc::Error),
-    /// The settlement transaction could not be submitted or confirmed.
     #[error("failed to submit or confirm settlement: {0}")]
     FailedToSubmit(#[source] cow_solana_rpc::Error),
-    /// The settlement's on-chain accounts could not be resolved.
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
-    /// The settlement could not be encoded.
     #[error("failed to encode settlement: {0}")]
     Settlement(#[from] super::settlement::Error),
-    /// The spawned settle task panicked before it completed. The driver does
-    /// not know whether the transaction reached the network.
+    /// The driver does not know whether the transaction reached the network.
     #[error("settle task panicked")]
     TaskPanicked,
 }
