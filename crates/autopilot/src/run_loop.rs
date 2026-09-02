@@ -205,9 +205,7 @@ impl RunLoop {
             eth.clone(),
             persistence.clone(),
             maintenance.clone(),
-            settle_call_coordinator::Config {
-                max_settlement_transaction_wait: config.max_settlement_transaction_wait,
-            },
+            config.max_settlement_transaction_wait,
         ));
 
         let fast_path = FastPathHandler::new(

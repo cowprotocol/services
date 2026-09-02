@@ -18,12 +18,6 @@ use {
     tracing::instrument,
 };
 
-pub struct Config {
-    /// How long we wait for the driver to signal the settlement completed
-    /// before considering the call timed out.
-    pub max_settlement_transaction_wait: Duration,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum SettleError {
     #[error(transparent)]
@@ -36,7 +30,9 @@ pub struct SettleCallCoordinator {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
     maintenance: MaintenanceSync,
-    config: Config,
+    /// How long we wait for the driver to signal the settlement completed
+    /// before considering the call timed out.
+    max_settlement_transaction_wait: Duration,
 }
 
 impl SettleCallCoordinator {
@@ -44,13 +40,13 @@ impl SettleCallCoordinator {
         eth: infra::Ethereum,
         persistence: infra::Persistence,
         maintenance: MaintenanceSync,
-        config: Config,
+        max_settlement_transaction_wait: Duration,
     ) -> Self {
         Self {
             eth,
             persistence,
             maintenance,
-            config,
+            max_settlement_transaction_wait,
         }
     }
 
@@ -82,7 +78,7 @@ impl SettleCallCoordinator {
                 request.submission_deadline_latest_block,
             );
             driver
-                .settle(&request, self.config.max_settlement_transaction_wait)
+                .settle(&request, self.max_settlement_transaction_wait)
                 .await
         }
         .boxed();
