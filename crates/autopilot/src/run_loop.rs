@@ -1,4 +1,11 @@
+pub mod fast_path;
+pub mod settle_call_coordinator;
+
 use {
+    self::{
+        fast_path::FastPathHandler,
+        settle_call_coordinator::{SettleCallCoordinator, SettleError},
+    },
     crate::{
         domain::{
             self,
@@ -10,11 +17,9 @@ use {
                 Unscored,
                 winner_selection::{self, Ranking},
             },
-            settlement::{ExecutionEnded, ExecutionStarted},
         },
         infra::{
             self,
-            persistence::{FastPathOrder, dto},
             solvers::dto::{settle, solve},
         },
         leader_lock_tracker::LeaderLockTracker,
@@ -29,9 +34,9 @@ use {
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
-    eth_domain_types::{self as eth, Address, TxId},
+    eth_domain_types::Address,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
-    futures::{FutureExt, StreamExt, TryFutureExt, channel::mpsc},
+    futures::{StreamExt, TryFutureExt, channel::mpsc},
     itertools::Itertools,
     num::ToPrimitive,
     rand::seq::SliceRandom,
@@ -168,13 +173,11 @@ pub struct RunLoop {
 
     /// Drivers that do NOT support delta auctions
     drivers: Vec<Arc<infra::Driver>>,
-    /// Fee policy computation — shared with `SolvableOrdersCache` so
-    /// fast-path orders see the exact same policies they would in a normal
-    /// auction.
-    protocol_fees: Arc<crate::domain::ProtocolFees>,
-    /// Owners that capture their own surplus via JIT — passed to
-    /// `ProtocolFees::apply` to skip protocol-side fee computation for them.
-    surplus_capturing_jit_order_owners: Arc<Vec<alloy::primitives::Address>>,
+    /// Sends `/settle` calls to drivers and waits for the resulting
+    /// transaction to be mined. Shared with the fast-path handler.
+    settle_coordinator: Arc<SettleCallCoordinator>,
+    /// Handles fast-path orders on the side.
+    fast_path: Arc<FastPathHandler>,
 }
 
 impl RunLoop {
@@ -198,6 +201,24 @@ impl RunLoop {
         let wake_runloop = Arc::new(tokio::sync::Notify::new());
         Self::spawn_block_listener(eth.current_block().clone(), wake_runloop.clone());
 
+        let settle_coordinator = Arc::new(SettleCallCoordinator::new(
+            eth.clone(),
+            persistence.clone(),
+            maintenance.clone(),
+            settle_call_coordinator::Config {
+                max_settlement_transaction_wait: config.max_settlement_transaction_wait,
+            },
+        ));
+
+        let fast_path = FastPathHandler::new(
+            eth.clone(),
+            persistence.clone(),
+            drivers.clone(),
+            protocol_fees,
+            surplus_capturing_jit_order_owners,
+            settle_coordinator.clone(),
+        );
+
         let self_ = Arc::new(Self {
             delta_state: std::sync::Mutex::new(DeltaState::new(
                 config.auction_delta_checkpoint_interval,
@@ -212,8 +233,8 @@ impl RunLoop {
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify: wake_runloop,
             drivers,
-            protocol_fees,
-            surplus_capturing_jit_order_owners,
+            settle_coordinator,
+            fast_path,
         });
         Self::spawn_order_listener(self_.clone(), new_orders_listener);
         self_
@@ -296,131 +317,23 @@ impl RunLoop {
         tokio::spawn(async move {
             while let Some(order_uid) = receiver.next().await {
                 self.wake_notify.notify_one();
-                let self_ = self.clone();
+                let persistence = self.persistence.clone();
+                let fast_path = self.fast_path.clone();
                 // immediately spawn separate task to never delay processing
                 // fast path orders
                 tokio::spawn(
                     async move {
-                        match self_.persistence.fast_path_order(order_uid).await {
+                        match persistence.fast_path_order(order_uid).await {
                             // not a fast path order -> do nothing
                             Ok(None) => {}
                             Err(err) => tracing::error!(?err, "failed to look up fast path order"),
-                            Ok(Some(order)) => self_.handle_fast_path(order).await,
+                            Ok(Some(order)) => fast_path.handle(order).await,
                         };
                     }
                     .instrument(tracing::info_span!("fast_path", ?order_uid)),
                 );
             }
         });
-    }
-
-    /// Manages the fast path execution of the given order. Picks a final
-    /// submission deadline in the exclusivity period and instructs the
-    /// winning solver to settle directly and outside the regular auction.
-    async fn handle_fast_path(self: Arc<Self>, fast_path_data: FastPathOrder) {
-        let Some(winner) = self
-            .drivers
-            .iter()
-            .find(|driver| driver.submission_address == fast_path_data.solver)
-        else {
-            tracing::error!(
-                solver = ?fast_path_data.solver,
-                "winning driver is currently not configured"
-            );
-            return;
-        };
-
-        // Compute the fee policies the order would receive in a regular
-        // auction. For fast-path we can only *apply* Volume-type policies to
-        // the quoted amounts — Surplus and PriceImprovement need an execution
-        // vs. quote comparison that doesn't exist here — but Surplus /
-        // PriceImprovement policies are still recorded so downstream accounting
-        // reflects reality if they ever become applicable.
-        let order_uid: domain::OrderUid = fast_path_data.model_order.metadata.uid.into();
-        // `raw_sell`/`raw_buy` are the placeholder `proposed_trade_executions`
-        // amounts written at quote time; they equal the quote's own amounts
-        // because nothing rewrites them between then and now.
-        let quote = domain::Quote {
-            order_uid,
-            sell_amount: fast_path_data.raw_sell.into(),
-            buy_amount: fast_path_data.raw_buy.into(),
-            // The synthetic competition doesn't carry a network fee — the
-            // solver's quoted amounts already include everything the user
-            // will pay. Represent that as a zero fee here.
-            fee: alloy::primitives::U256::ZERO.into(),
-            solver: fast_path_data.solver.0.into(),
-        };
-        let policies = self.protocol_fees.apply(
-            &fast_path_data.model_order,
-            Some(&quote),
-            &self.surplus_capturing_jit_order_owners,
-        );
-        let volume_factors: Vec<_> = policies
-            .iter()
-            .filter_map(|p| match p {
-                domain::fee::Policy::Volume { factor } => Some(*factor),
-                _ => None,
-            })
-            .collect();
-        let (limit_sell, limit_buy) = shared::fee::apply_volume_fees(
-            fast_path_data.raw_sell,
-            fast_path_data.raw_buy,
-            fast_path_data.model_order.data.kind,
-            volume_factors.iter().copied(),
-        );
-        if let Err(err) = self
-            .persistence
-            .record_fast_path_fees(
-                fast_path_data.auction_id,
-                order_uid,
-                fast_path_data.model_order.data.kind,
-                &volume_factors,
-                &policies,
-            )
-            .await
-        {
-            tracing::error!(?err, "failed to record fast-path fee policies");
-            return;
-        }
-
-        let domain_order = crate::boundary::order::to_domain(
-            &fast_path_data.model_order,
-            policies,
-            Some(quote),
-            None,
-        );
-
-        // TODO: consider making this smarter for orders mainnet orders shortly
-        // before the deadline and L2s in general
-        let deadline = self.eth.current_block().borrow().number + 1;
-
-        let request = settle::Request {
-            auction_id: fast_path_data.auction_id,
-            solution_id: fast_path_data.solution_id,
-            submission_deadline_latest_block: deadline,
-            fast_path: Some(settle::FastPath {
-                order: dto::order::from_domain(&domain_order),
-                limit_prices: settle::LimitPrices {
-                    sell: limit_sell,
-                    buy: limit_buy,
-                },
-                native_prices: fast_path_data.native_prices.clone(),
-            }),
-        };
-
-        let res = self
-            .settle(
-                winner,
-                winner.submission_address,
-                fast_path_data.solution_uid,
-                request,
-            )
-            .await;
-        Metrics::fast_path_finished(&winner.name, res.is_ok());
-        match res {
-            Ok(tx) => tracing::info!(?tx, "settled order"),
-            Err(err) => tracing::debug!(?err, "failed to settle order"),
-        };
     }
 
     fn pick_solve_deadline(&self) -> DateTime<Utc> {
@@ -642,7 +555,11 @@ impl RunLoop {
                 fast_path: None,
             };
 
-            match self_.settle(&driver_, solver, solution_uid, request).await {
+            match self_
+                .settle_coordinator
+                .settle(&driver_, solver, solution_uid, request)
+                .await
+            {
                 Ok(tx_hash) => {
                     Metrics::settle_ok(
                         &driver_,
@@ -913,173 +830,6 @@ impl RunLoop {
         }
         Ok(response.into_domain())
     }
-
-    /// Execute the solver's solution. Returns Ok when the corresponding
-    /// transaction has been mined.
-    #[instrument(skip_all, fields(driver = driver.name, solution_uid))]
-    async fn settle(
-        &self,
-        driver: &infra::Driver,
-        solver: eth::Address,
-        solution_uid: usize,
-        request: settle::Request,
-    ) -> Result<TxId, SettleError> {
-        let auction_id = request.auction_id;
-        let deadline = request.submission_deadline_latest_block;
-
-        let settle = async move {
-            let current_block = self.eth.current_block().borrow().number;
-            anyhow::ensure!(
-                current_block < request.submission_deadline_latest_block,
-                "submission deadline was missed"
-            );
-
-            self.store_execution_started(
-                request.auction_id,
-                solver,
-                solution_uid,
-                current_block,
-                request.submission_deadline_latest_block,
-            );
-            driver
-                .settle(&request, self.config.max_settlement_transaction_wait)
-                .await
-        }
-        .boxed();
-
-        let wait_for_settlement_transaction = self
-            .wait_for_settlement_transaction(auction_id, solver, deadline, solution_uid)
-            .boxed();
-
-        // Wait for either the settlement transaction to be mined or the driver
-        // returned a result.
-        let result = match futures::future::select(wait_for_settlement_transaction, settle).await {
-            futures::future::Either::Left((res, _)) => res,
-            futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
-                match driver_result {
-                    Ok(_) => wait_for_settlement_transaction.await,
-                    Err(err) => Err(SettleError::Other(err)),
-                }
-            }
-        };
-
-        self.store_execution_ended(solver, auction_id, solution_uid, &result);
-
-        result
-    }
-
-    /// Stores settlement execution started event in the DB in a background task
-    /// to not block the runloop.
-    fn store_execution_started(
-        &self,
-        auction_id: i64,
-        solver: eth::Address,
-        solution_uid: usize,
-        start_block: u64,
-        deadline_block: u64,
-    ) {
-        let persistence = self.persistence.clone();
-        tokio::spawn(async move {
-            let execution_started = ExecutionStarted {
-                auction_id,
-                solver,
-                solution_uid,
-                start_timestamp: chrono::Utc::now(),
-                start_block,
-                deadline_block,
-            };
-
-            if let Err(err) = persistence
-                .store_settlement_execution_started(execution_started)
-                .await
-            {
-                tracing::error!(?err, "failed to store settlement execution event");
-            }
-        });
-    }
-
-    /// Stores settlement execution ended event in the DB in a background task
-    /// to not block the runloop.
-    fn store_execution_ended(
-        &self,
-        solver: eth::Address,
-        auction_id: i64,
-        solution_uid: usize,
-        result: &Result<TxId, SettleError>,
-    ) {
-        let end_timestamp = chrono::Utc::now();
-        let current_block = self.eth.current_block().borrow().number;
-        let persistence = self.persistence.clone();
-        let outcome = match result {
-            Ok(_) => "success".to_string(),
-            Err(SettleError::Timeout) => "timeout".to_string(),
-            Err(SettleError::Other(err)) => format!("driver failed: {err}"),
-        };
-
-        tokio::spawn(async move {
-            let execution_ended = ExecutionEnded {
-                auction_id,
-                solver,
-                solution_uid,
-                end_timestamp,
-                end_block: current_block,
-                outcome,
-            };
-            if let Err(err) = persistence
-                .store_settlement_execution_ended(execution_ended)
-                .await
-            {
-                tracing::error!(?err, "failed to update settlement execution event");
-            }
-        });
-    }
-
-    /// Tries to find a `settle` contract call with calldata ending in `tag` and
-    /// originated from the `solver`.
-    ///
-    /// Returns None if no transaction was found within the deadline or the task
-    /// is cancelled.
-    #[instrument(skip_all)]
-    async fn wait_for_settlement_transaction(
-        &self,
-        auction_id: i64,
-        solver: eth::Address,
-        submission_deadline_latest_block: u64,
-        solution_uid: usize,
-    ) -> Result<eth::TxId, SettleError> {
-        let current = self.eth.current_block().borrow().number;
-        tracing::debug!(%current, deadline=%submission_deadline_latest_block, %auction_id, "waiting for tag");
-        loop {
-            let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
-            // Run maintenance to ensure the system processed the last available
-            // block so it's possible to find the tx in the DB in
-            // the next line.
-            self.maintenance
-                .wait_until_block_processed(SyncTarget::FullyProcessed(block.number))
-                .await;
-
-            match self
-                .persistence
-                .find_settlement_transaction(auction_id, solver, solution_uid)
-                .await
-            {
-                Ok(Some(transaction)) => return Ok(transaction),
-                Ok(None) => {}
-                Err(err) => {
-                    tracing::warn!(
-                        ?err,
-                        ?auction_id,
-                        ?solver,
-                        "failed to find settlement transaction"
-                    );
-                }
-            }
-            if block.number >= submission_deadline_latest_block {
-                break;
-            }
-        }
-        Err(SettleError::Timeout)
-    }
 }
 
 /// Picks a `/solve` deadline that ends shortly before a block gets
@@ -1146,14 +896,6 @@ enum SolveError {
     Failure(anyhow::Error),
     #[error("the solver got deny listed")]
     SolverDenyListed,
-}
-
-#[derive(Debug, thiserror::Error)]
-enum SettleError {
-    #[error(transparent)]
-    Other(anyhow::Error),
-    #[error("settlement transaction await reached deadline")]
-    Timeout,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -1255,10 +997,6 @@ struct Metrics {
         )
     )]
     solve_request_body_size: prometheus::HistogramVec,
-
-    /// Counts how many fast path orders were settled or failed by solver
-    #[metric(labels("solver", "result"))]
-    fast_path_executions: prometheus::IntCounterVec,
 }
 
 impl Metrics {
@@ -1404,14 +1142,6 @@ impl Metrics {
             .solve_request_body_size
             .with_label_values(&[kind])
             .observe(size as f64)
-    }
-
-    fn fast_path_finished(solver: &str, success: bool) {
-        let result_label = if success { "success" } else { "failure" };
-        Self::get()
-            .fast_path_executions
-            .with_label_values(&[solver, result_label])
-            .inc();
     }
 }
 
