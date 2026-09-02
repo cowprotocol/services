@@ -9,6 +9,10 @@ use {
 /// A single solver engine's response to one auction.
 #[derive(Clone, Debug)]
 pub struct Solution {
+    /// Id assigned by the engine in its `/solve` response. Unique within one
+    /// auction, but since engines chooses the numbering, ids may repeat across
+    /// auctions. The driver deduplicates repeated ids within one response,
+    /// keeping only the first occurrence.
     pub id: u64,
     /// The on-chain identity of the solver that produced this solution.
     pub solver: Pubkey,
