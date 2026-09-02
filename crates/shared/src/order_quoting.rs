@@ -44,7 +44,6 @@ pub struct QuoteParameters {
     pub side: OrderQuoteSide,
     pub verification: Verification,
     pub signing_scheme: QuoteSigningScheme,
-    /// Sum of the gas limits of the order's pre- and post-hooks.
     pub hook_gas: u64,
     /// Whether this quote is intended for fast-path (out-of-competition)
     /// execution.
