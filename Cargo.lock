@@ -9202,6 +9202,8 @@ dependencies = [
  "cow-solana-rpc",
  "futures",
  "humantime-serde",
+ "itertools 0.14.0",
+ "moka",
  "observe",
  "reqwest 0.13.4",
  "serde",

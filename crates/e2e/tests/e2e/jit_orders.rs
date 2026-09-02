@@ -91,8 +91,8 @@ async fn single_limit_order_test(web3: Web3) {
         false,
     );
 
-    // We start the quoter as the baseline solver, and the mock solver as the one
-    // returning the solution
+    // We start the quoter as the baseline solver, and the mock solver as the
+    // one returning the solution
     services
         .start_autopilot(
             None,
@@ -198,8 +198,8 @@ async fn single_limit_order_test(web3: Web3) {
 
         let trader_balance_increased =
             trader_balance_after.saturating_sub(trader_balance_before) >= 5u64.eth();
-        // Since the fee is 0 in the custom solution, the balance difference has to be
-        // exactly 10 wei
+        // Since the fee is 0 in the custom solution, the balance difference has
+        // to be exactly 10 wei
         let solver_balance_decreased =
             solver_balance_before.saturating_sub(solver_balance_after) == 10u64.eth();
         trader_balance_increased && solver_balance_decreased

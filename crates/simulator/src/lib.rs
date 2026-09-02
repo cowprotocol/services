@@ -99,7 +99,8 @@ impl Simulator {
         let block = self.eth.current_block().borrow().number.into();
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
-                // function assumes `from` has the needed ETH so no state overrides are needed
+                // function assumes `from` has the needed ETH so no state
+                // overrides are needed
                 tenderly
                     .simulate(tx.clone(), block, None, tenderly::GenerateAccessList::Yes)
                     .await

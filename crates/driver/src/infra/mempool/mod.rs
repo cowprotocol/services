@@ -85,7 +85,8 @@ impl std::fmt::Display for Mempool {
 impl Mempool {
     pub fn new(config: Config, solver_accounts: Vec<Account>) -> Self {
         let transport = unbuffered_web3(&config.url);
-        // Register the solver accounts into the wallet to submit txs on their behalf
+        // Register the solver accounts into the wallet to submit txs on their
+        // behalf
         for account in solver_accounts {
             transport.wallet.register_signer(account);
         }

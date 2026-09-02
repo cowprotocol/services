@@ -26,6 +26,8 @@ cow-settlement-interface = { workspace = true }
 cow-solana-rpc = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
+itertools = { workspace = true }
+moka = { workspace = true, features = ["sync"] }
 observe = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }

@@ -433,7 +433,8 @@ async fn driver_integration(web3: Web3) {
         .await
         .unwrap();
 
-        // Baseline AFTER warm-up polling so bumps below are driver-attributable.
+        // Baseline AFTER warm-up polling so bumps below are
+        // driver-attributable.
         let baseline_pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
         let baseline_pools_by_ids =
             api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_BY_IDS_ROUTE).await;

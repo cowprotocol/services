@@ -137,7 +137,8 @@ fn annotate(req: &mut RequestPacket) {
             .and_then(|h| h.get(TRACING_REQUEST_ID))
             .and_then(|v| v.to_str().ok())
         {
-            // A batch can merge several calls sharing one id; keep them distinct.
+            // A batch can merge several calls sharing one id; keep them
+            // distinct.
             if !request_ids.split(',').any(|seen| seen == id) {
                 if !request_ids.is_empty() {
                     request_ids.push(',');
@@ -146,10 +147,10 @@ fn annotate(req: &mut RequestPacket) {
             }
         }
     }
-    // The packet's HTTP headers are the union of every sub-request's headers, so
-    // a header present on multiple sub-requests would be sent repeatedly. Strip
-    // the per-sub-request tracing ids and re-emit the aggregate on the last
-    // request only.
+    // The packet's HTTP headers are the union of every sub-request's headers,
+    // so a header present on multiple sub-requests would be sent
+    // repeatedly. Strip the per-sub-request tracing ids and re-emit the
+    // aggregate on the last request only.
     for r in requests.iter_mut() {
         r.headers_mut().remove(TRACING_REQUEST_ID);
     }
@@ -241,7 +242,8 @@ mod tests {
 
     #[test]
     fn aggregates_distinct_tracing_request_ids() {
-        // A batch merged across auctions carries several ids; they are all kept.
+        // A batch merged across auctions carries several ids; they are all
+        // kept.
         let mut packet = RequestPacket::Batch(vec![
             with_request_id(request("eth_call", 1), "auction-1"),
             with_request_id(request("eth_getBalance", 2), "auction-2"),

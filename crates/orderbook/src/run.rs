@@ -377,10 +377,10 @@ pub async fn run(config: Configuration) {
         create_quoter(price_estimator.clone()).with_streaming_estimator(price_estimator.clone()),
     );
 
-    // Fast quoting is able to return early and if none of the produced quotes are
-    // verifiable we are left with no quote at all. Since fast estimates don't
-    // make any promises on correctness we can just skip quote verification for
-    // them.
+    // Fast quoting is able to return early and if none of the produced quotes
+    // are verifiable we are left with no quote at all. Since fast estimates
+    // don't make any promises on correctness we can just skip quote
+    // verification for them.
     let fast_quoter = Arc::new(create_quoter(fast_price_estimator));
 
     let app_data_validator = Validator::new(config.app_data_size_limit);

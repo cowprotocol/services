@@ -284,9 +284,9 @@ impl QuoteHandler {
         // Emit only after validation succeeds so we don't announce requests
         // that never reach the estimator (invalid app-data / order data return
         // early above). This is best-effort correlation, not a guarantee: if
-        // every estimator errors, (at the time of writing) price estimation emits no
-        // `priceEstimate` events, so a `quoteRequested` can still end up without follow
-        // up none following.
+        // every estimator errors, (at the time of writing) price estimation
+        // emits no `priceEstimate` events, so a `quoteRequested` can
+        // still end up without follow up none following.
         emit_quote_requested_event(
             request,
             sell_token_symbol,
@@ -420,7 +420,8 @@ fn get_vol_fee_adjusted_quote_data(
         return Ok(AdjustedQuoteData::unchanged(quote));
     };
 
-    // Determine applicable fee factor considering same-token config and overrides
+    // Determine applicable fee factor considering same-token config and
+    // overrides
     let factor = volume_fee_policy.get_applicable_volume_fee_factor(buy_token, sell_token, None);
 
     let Some(factor) = factor else {
@@ -429,8 +430,8 @@ fn get_vol_fee_adjusted_quote_data(
     // Calculate the volume (surplus token amount) to apply fee to
     // Following driver's logic in
     // crates/driver/src/domain/competition/solution/fee.rs:189-202:
-    // Use high precision scaling to support sub-basis-point fee factors (e.g., 0.3
-    // BPS)
+    // Use high precision scaling to support sub-basis-point fee factors (e.g.,
+    // 0.3 BPS)
     let scaled_factor = U256::from(factor.to_high_precision());
     let scale = U512::from(FeeFactor::HIGH_PRECISION_SCALE);
     let (adjusted_sell_amount, adjusted_buy_amount) = match side {
@@ -452,7 +453,8 @@ fn get_vol_fee_adjusted_quote_data(
         }
         OrderQuoteSide::Buy { .. } => {
             // For BUY orders, fee is calculated on sell amount + network fee.
-            // Network fee is already in sell token, so it is added to get the total volume.
+            // Network fee is already in sell token, so it is added to get the
+            // total volume.
             let total_sell_volume = quote.sell_amount.saturating_add(quote.fee_amount);
             let volume_scaled: Uint<512, 8> = total_sell_volume.widening_mul(scaled_factor);
             let protocol_fee = U256::uint_try_from(
@@ -620,8 +622,8 @@ mod tests {
         assert_eq!(result.buy_amount, 100u64.eth());
         assert_eq!(result.protocol_fee_bps, Some("2".to_string()));
 
-        // sell_amount should be increased by 0.02% of sell_amount (no network fee)
-        // Expected: 100 + (100 * 0.0002) = 100 + 0.02 = 100.02
+        // sell_amount should be increased by 0.02% of sell_amount (no network
+        // fee) Expected: 100 + (100 * 0.0002) = 100 + 0.02 = 100.02
         let expected_sell = 100u64.eth() + (100u64.eth() / U256::from(5000)); // 0.02% = 1/5000
         assert_eq!(result.sell_amount, expected_sell);
     }
@@ -636,7 +638,8 @@ mod tests {
         let volume_fee_policy =
             VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
 
-        // Buying 100 tokens, expecting to sell 100 tokens, with 5 token network fee
+        // Buying 100 tokens, expecting to sell 100 tokens, with 5 token network
+        // fee
         let mut quote = create_test_quote(100u64.eth(), 100u64.eth());
         quote.fee_amount = 5u64.eth(); // Network fee in sell token
         let side = OrderQuoteSide::Buy {
@@ -775,7 +778,8 @@ mod tests {
         )
         .unwrap();
 
-        // Since the effective date is in the future, no volume fee should be applied
+        // Since the effective date is in the future, no volume fee should be
+        // applied
         assert_eq!(result.sell_amount, 100u64.eth());
         assert_eq!(result.buy_amount, 100u64.eth());
         assert_eq!(result.protocol_fee_bps, None);

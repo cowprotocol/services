@@ -43,7 +43,8 @@ impl TradeRetrieving for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        // For v1 API, return all results without pagination (use large default values)
+        // For v1 API, return all results without pagination (use large default
+        // values)
         let trades = database::trades::trades(
             &mut ex,
             filter.owner.map(|owner| ByteArray(owner.0.0)).as_ref(),
@@ -62,8 +63,9 @@ impl TradeRetrieving for Postgres {
             .collect::<Vec<_>>();
 
         if auction_order_uids.len() >= u16::MAX as usize {
-            // We use these ids as arguments for an SQL query and sqlx only allows
-            // u16::MAX arguments. To avoid a panic later on we return an error here.
+            // We use these ids as arguments for an SQL query and sqlx only
+            // allows u16::MAX arguments. To avoid a panic later on
+            // we return an error here.
             anyhow::bail!("query response too large");
         }
 
@@ -122,8 +124,9 @@ impl TradeRetrievingPaginated for Postgres {
             .collect::<Vec<_>>();
 
         if auction_order_uids.len() >= u16::MAX as usize {
-            // We use these ids as arguments for an SQL query and sqlx only allows
-            // u16::MAX arguments. To avoid a panic later on we return an error here.
+            // We use these ids as arguments for an SQL query and sqlx only
+            // allows u16::MAX arguments. To avoid a panic later on
+            // we return an error here.
             anyhow::bail!("query response too large");
         }
 

@@ -172,8 +172,8 @@ async fn driver_solves_against_live_jupiter_engine() {
     // The swap instructions must be built for our settlement signer and land
     // the buy output in the buy-mint buffer PDA the driver derived from the
     // settlement program id. This is the end-to-end check that the
-    // `buy_destination` derivation flows through the whole driver <-> solver <->
-    // Jupiter path.
+    // `buy_destination` derivation flows through the whole driver <-> solver
+    // <-> Jupiter path.
     let buy_destination = find_buffer_pda(
         &cow_settlement_interface::id(),
         &Pubkey::from_str(USDT).unwrap(),

@@ -113,10 +113,10 @@ async fn submits_huge_solution() {
 
     let id = test.solve().await.ok().orders(&[ab_order()]).id();
 
-    // Assume validators downvoted gas limit, solution still settles: even though we
-    // have a rule that in the _bidding phase_ the solution needs to use less than
-    // half of the block gas limit, we want it to be submitted/settled as long as it
-    // fits in the block.
+    // Assume validators downvoted gas limit, solution still settles: even
+    // though we have a rule that in the _bidding phase_ the solution needs
+    // to use less than half of the block gas limit, we want it to be
+    // submitted/settled as long as it fits in the block.
     test.web3()
         .provider
         .raw_request::<_, bool>("evm_setBlockGasLimit".into(), (9_000_000,))
@@ -138,8 +138,8 @@ async fn does_not_bid_huge_solution() {
         .done()
         .await;
 
-    // The found solution is bigger than half of gas block limit which means it gets
-    // discarded
+    // The found solution is bigger than half of gas block limit which means it
+    // gets discarded
     test.solve().await.ok().empty();
 }
 

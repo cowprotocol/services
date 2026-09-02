@@ -432,8 +432,8 @@ mod tests {
     }
 
     #[tokio::test]
-    // Two compatible batches are both selected as winners, but this time the orders
-    // are "buy" orders
+    // Two compatible batches are both selected as winners, but this time the
+    // orders are "buy" orders
     async fn buy_orders() {
         let case = json!({
             "tokens": [
@@ -575,7 +575,8 @@ mod tests {
     }
 
     #[tokio::test]
-    // Incompatible bid does not win but increases the reference score of the winner
+    // Incompatible bid does not win but increases the reference score of the
+    // winner
     async fn incompatible_bids() {
         let case = json!({
             "tokens": [
@@ -855,8 +856,8 @@ mod tests {
     #[tokio::test]
     async fn staging_mainnet_auction_12825008() {
         // https://solver-instances.s3.eu-central-1.amazonaws.com/staging/mainnet/autopilot/12825008.json
-        // The example is an auction with one order and two competing bids for it, one
-        // having a better score than the other
+        // The example is an auction with one order and two competing bids for
+        // it, one having a better score than the other
 
         let case = json!({
             "tokens": [
@@ -981,7 +982,8 @@ mod tests {
         pub async fn validate(&self) {
             let arbitrator = create_test_arbitrator();
 
-            // map (token id -> token address) for later reference during the test
+            // map (token id -> token address) for later reference during the
+            // test
             let token_map: HashMap<String, TokenAddress> = self
                 .tokens
                 .iter()
@@ -1035,7 +1037,8 @@ mod tests {
 
             let auction = create_auction(orders, prices);
 
-            // map (solver id -> solver address) for later reference during the test
+            // map (solver id -> solver address) for later reference during the
+            // test
             let mut solver_map = HashMap::new();
 
             // map (solution id -> bid) for later reference during the test
@@ -1186,6 +1189,7 @@ mod tests {
             valid_to: Default::default(),
             signature: order::Signature::PreSign,
             quote: None,
+            penalty_cap_native: None,
         }
     }
 

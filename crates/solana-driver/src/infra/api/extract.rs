@@ -27,7 +27,7 @@ where
             Err(rejection) => {
                 tracing::warn!(
                     err = %rejection,
-                    target = std::any::type_name::<T>(),
+                    request_type = std::any::type_name::<T>(),
                     "failed to deserialize JSON request body",
                 );
                 Err(rejection)
