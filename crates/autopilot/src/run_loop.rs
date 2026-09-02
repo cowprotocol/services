@@ -618,12 +618,6 @@ impl RunLoop {
             auction_id: auction.id,
             reference_scores,
             participants,
-            prices: auction
-                .prices
-                .clone()
-                .into_iter()
-                .map(|(key, value)| (*key, value.get().0))
-                .collect(),
             block_deadline,
             competition_simulation_block,
             competition_table,
