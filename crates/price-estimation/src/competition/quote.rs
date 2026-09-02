@@ -39,9 +39,7 @@ impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating
         Arc::make_mut(&mut query).timeout /= self.stages.len() as u32;
 
         async move {
-            let get_context = self
-                .ranking
-                .provide_context(query.sell_token, query.timeout);
+            let get_context = self.ranking.provide_context(&query);
 
             let get_results = self
                 .produce_results(query.clone(), is_reasonable, |context| {
@@ -127,10 +125,7 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                 // Only errors and reasonable estimates can be ranked
                 .filter(|r| std::future::ready(r.is_err() || is_reasonable(r)));
 
-            let context_fut = self
-                .ranking
-                .provide_context(query.sell_token, query.timeout)
-                .shared();
+            let context_fut = self.ranking.provide_context(&query).shared();
 
             // Collect estimates concurrently while fetching the ranking context;
             // they can't be ranked before it resolves.
@@ -230,11 +225,7 @@ fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &RankingCon
 }
 
 impl PriceRanking {
-    async fn provide_context(
-        &self,
-        sell_token: Address,
-        timeout: Duration,
-    ) -> Result<RankingContext, PriceEstimationError> {
+    async fn provide_context(&self, query: &Query) -> Result<RankingContext, PriceEstimationError> {
         match self {
             PriceRanking::MaxOutAmount => Ok(RankingContext {
                 sell_token_native_price: 1.0,
@@ -246,8 +237,10 @@ impl PriceRanking {
                 let gas = gas
                     .effective_gas_price()
                     .map_err(PriceEstimationError::ProtocolInternal);
-                let (sell_token_native_price, gas_price) =
-                    futures::try_join!(native.estimate_native_price(sell_token, timeout), gas)?;
+                let (sell_token_native_price, gas_price) = futures::try_join!(
+                    native.estimate_native_price(query.sell_token, query.timeout),
+                    gas
+                )?;
 
                 Ok(RankingContext {
                     sell_token_native_price,
