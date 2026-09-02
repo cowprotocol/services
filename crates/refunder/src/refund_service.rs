@@ -119,9 +119,10 @@ async fn identify_uids_refunding_status<C: ChainRead>(
         }
     }
     if !invalid_uids.is_empty() {
-        // In exceptional cases, e.g. if the refunder tries to refund orders from a
-        // previous contract, the order_owners could be zero, or the owner cannot
-        // receive ETH (e.g. EOF contracts or contracts with restrictive receive logic)
+        // In exceptional cases, e.g. if the refunder tries to refund orders
+        // from a previous contract, the order_owners could be zero, or
+        // the owner cannot receive ETH (e.g. EOF contracts or contracts
+        // with restrictive receive logic)
         tracing::warn!(
             "Skipping invalid orders (not created in current contract or owner cannot receive \
              ETH). Uids: {:?}",
@@ -202,8 +203,8 @@ where
 
         // For each ethflow contract, issue a separate tx to refund
         for (contract, mut uids) in uids_by_contract.into_iter() {
-            // only try to refund MAX_NUMBER_OF_UIDS_PER_REFUND_TX uids, in order to fit
-            // into gas limit
+            // only try to refund MAX_NUMBER_OF_UIDS_PER_REFUND_TX uids, in
+            // order to fit into gas limit
             uids.truncate(MAX_NUMBER_OF_UIDS_PER_REFUND_TX);
 
             tracing::debug!("Trying to refund the following uids: {:?}", uids);
@@ -383,8 +384,9 @@ mod tests {
             // This sets up the precondition for testing the ETH receivability check
             .with_order_status(RefundStatus::NotYetRefunded(owner));
 
-        // Return parameterized ETH receivability result to test both EOA (can receive)
-        // and contract-rejecting-ETH (cannot receive) scenarios
+        // Return parameterized ETH receivability result to test both EOA (can
+        // receive) and contract-rejecting-ETH (cannot receive)
+        // scenarios
         mock_chain
             .expect_can_receive_eth()
             .withf(move |addr| *addr == owner)
@@ -428,8 +430,9 @@ mod tests {
         // Allow the order through the allowlist check
         mock_chain.with_ethflow_addresses(vec![KNOWN_ETHFLOW]);
 
-        // Return the parameterized status (Refunded, Invalid, or Error) to verify
-        // that orders with non-refundable statuses are excluded from the result
+        // Return the parameterized status (Refunded, Invalid, or Error) to
+        // verify that orders with non-refundable statuses are excluded
+        // from the result
         mock_chain
             .expect_get_order_status()
             .returning(move |_, _| status.ok_or(anyhow!("RPC error")));
@@ -495,8 +498,8 @@ mod tests {
     /// Empty order map does not trigger any submission.
     #[tokio::test]
     async fn test_send_out_refunding_tx_empty_map_skips_submission() {
-        // No expectations needed for DB or chain because empty input short-circuits
-        // before any DB and chain calls
+        // No expectations needed for DB or chain because empty input
+        // short-circuits before any DB and chain calls
         let mock_db = MockDbRead::new();
         let mock_chain = MockChainRead::new();
 
@@ -608,7 +611,8 @@ mod tests {
             .withf(|uid| uid.0[31] == 1)
             .returning(|_| Err(anyhow!("DB error")));
 
-        // Second order (uid_suffix=2) succeeds to verify partial success behavior
+        // Second order (uid_suffix=2) succeeds to verify partial success
+        // behavior
         mock_db
             .expect_get_ethflow_order_data()
             .withf(|uid| uid.0[31] == 2)
@@ -618,7 +622,8 @@ mod tests {
 
         let mut mock_submitter = MockChainWrite::new();
 
-        // Current behavior: ALL UIDs are passed, but only successful order data.
+        // Current behavior: ALL UIDs are passed, but only successful order
+        // data.
         // - uids contains both uid1 (suffix=1) and uid2 (suffix=2)
         // - orders contains only 1 entry (from uid2's successful lookup)
         mock_submitter
@@ -671,7 +676,8 @@ mod tests {
 
         let mut mock_db = MockDbRead::new();
 
-        // All DB lookups fail to test edge case where no order data is available
+        // All DB lookups fail to test edge case where no order data is
+        // available
         mock_db
             .expect_get_ethflow_order_data()
             .returning(|_| Err(anyhow!("DB connection lost")));
@@ -680,14 +686,15 @@ mod tests {
 
         let mut mock_submitter = MockChainWrite::new();
 
-        // Verify submission still happens with original UIDs but empty orders list
-        // This documents current (possibly unintended) behavior where UIDs and orders
-        // mismatch
+        // Verify submission still happens with original UIDs but empty orders
+        // list This documents current (possibly unintended) behavior
+        // where UIDs and orders mismatch
         mock_submitter
             .expect_submit_batch()
             .times(1)
             .withf(|uids, orders, contract| {
-                // UIDs are preserved, but orders is empty because all DB lookups failed
+                // UIDs are preserved, but orders is empty because all DB
+                // lookups failed
                 uids.len() == 2 && orders.is_empty() && *contract == KNOWN_ETHFLOW
             })
             .returning(|_, _, _| Ok(()));
@@ -723,7 +730,8 @@ mod tests {
 
         // Fail on first submission to verify error propagation stops processing
         // Due to HashMap's non-deterministic iteration order, we cannot predict
-        // which contract will be attempted first, but we know only one will be tried
+        // which contract will be attempted first, but we know only one will be
+        // tried
         mock_submitter
             .expect_submit_batch()
             .times(1)
@@ -798,8 +806,8 @@ mod tests {
 
         let mut mock_db = MockDbRead::new();
 
-        // Return two orders from DB: one still needs refund, one already refunded
-        // on-chain
+        // Return two orders from DB: one still needs refund, one already
+        // refunded on-chain
         mock_db.with_refundable_orders(vec![order_valid, order_refunded]);
 
         // Return order data for the order that passes on-chain validation
@@ -819,7 +827,8 @@ mod tests {
             .withf(|_, order_hash| order_hash.0[31] == 1)
             .returning(|_, _| Ok(RefundStatus::NotYetRefunded(EOA_OWNER)));
 
-        // Order 2 (uid_suffix=2) was already refunded on-chain, should be filtered out
+        // Order 2 (uid_suffix=2) was already refunded on-chain, should be
+        // filtered out
         mock_chain
             .expect_get_order_status()
             .withf(|_, order_hash| order_hash.0[31] == 2)
@@ -886,7 +895,8 @@ mod tests {
             .with_ethflow_addresses(vec![KNOWN_ETHFLOW])
             .receiving_eth();
 
-        // Capture the order_hash passed to get_order_status and verify it matches
+        // Capture the order_hash passed to get_order_status and verify it
+        // matches
         mock_chain
             .expect_get_order_status()
             .withf(move |_, order_hash| order_hash.0 == expected_hash)
@@ -1055,7 +1065,8 @@ mod tests {
             .parse()
             .unwrap();
 
-        // Test that can_receive_eth correctly identifies the problematic address
+        // Test that can_receive_eth correctly identifies the problematic
+        // address
         assert!(
             !chain.can_receive_eth(problematic).await,
             "EOF contract should be identified as unable to receive ETH"

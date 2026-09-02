@@ -22,10 +22,11 @@ pub struct Estimate<'a, V, L> {
 
 impl<V, L: BaselineSolvable> Estimate<'_, V, L> {
     pub async fn gas_cost(&self) -> usize {
-        // This could be more accurate by actually simulating the settlement (since
-        // different tokens might have more or less expensive transfer costs)
-        // For the standard OZ token the cost is roughly 110k for a direct trade, 170k
-        // for a 1 hop trade, 230k for a 2 hop trade.
+        // This could be more accurate by actually simulating the settlement
+        // (since different tokens might have more or less expensive
+        // transfer costs) For the standard OZ token the cost is roughly
+        // 110k for a direct trade, 170k for a 1 hop trade, 230k for a 2
+        // hop trade.
         let costs = self.path.iter().map(|p| p.gas_cost());
         let cost_of_hops: usize = futures::future::join_all(costs).await.into_iter().sum();
         50_000 + cost_of_hops
@@ -150,8 +151,8 @@ impl BaseTokens {
                 );
             }
         }
-        // Could be empty if the input pairs are empty. Just like path_candidates we
-        // return empty set in this case.
+        // Could be empty if the input pairs are empty. Just like
+        // path_candidates we return empty set in this case.
         if !result.is_empty() {
             result.extend(self.pairs.iter().copied());
         }
@@ -194,8 +195,8 @@ fn path_candidates(
 
     let mut candidates = HashSet::new();
 
-    // Start with just the sell token (yields the direct pair candidate in the 0th
-    // iteration)
+    // Start with just the sell token (yields the direct pair candidate in the
+    // 0th iteration)
     let mut path_prefixes = vec![vec![sell_token]];
     for _ in 0..(max_hops + 1) {
         let mut next_round_path_prefixes = vec![];
@@ -205,8 +206,8 @@ fn path_candidates(
             full_path.push(buy_token);
             candidates.insert(full_path);
 
-            // For the next round, amend current prefix with all base tokens that are not
-            // yet on the path
+            // For the next round, amend current prefix with all base tokens
+            // that are not yet on the path
             for base_token in base_tokens {
                 if base_token != &buy_token && !path_prefix.contains(base_token) {
                     let mut next_round_path_prefix = path_prefix.clone();
@@ -386,8 +387,8 @@ mod tests {
             [&first_hop_low_price, &second_hop_low_slippage]
         );
 
-        // For the reverse path we now expect to use the higher price for the first hop,
-        // but still low slippage for the second
+        // For the reverse path we now expect to use the higher price for the
+        // first hop, but still low slippage for the second
         path.reverse();
         let buy_estimate = estimate_buy_amount(U256::from(1000), &path, &pools)
             .await

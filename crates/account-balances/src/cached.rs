@@ -203,8 +203,8 @@ impl BalanceFetching for Balances {
         query: &Query,
         amount: U256,
     ) -> Result<(), TransferSimulationError> {
-        // This only gets called when creating or replacing an order which doesn't
-        // profit from caching.
+        // This only gets called when creating or replacing an order which
+        // doesn't profit from caching.
         self.inner.can_transfer(query, amount).await
     }
 
@@ -214,8 +214,8 @@ impl BalanceFetching for Balances {
         token: Address,
         source: SellTokenSource,
     ) -> Result<U256> {
-        // This only gets called when creating or replacing an order which doesn't
-        // profit from caching.
+        // This only gets called when creating or replacing an order which
+        // doesn't profit from caching.
         self.inner.allowance(owner, token, source).await
     }
 }
@@ -300,11 +300,12 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        // Wait for block to be noticed and cache to be updated. (2nd call to inner)
+        // Wait for block to be noticed and cache to be updated. (2nd call to
+        // inner)
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-        // Balance was already updated so this will hit the cache and skip calling
-        // `inner`.
+        // Balance was already updated so this will hit the cache and skip
+        // calling `inner`.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
     }
@@ -328,7 +329,8 @@ mod tests {
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
-        // Fetches balance 1 from cache and balance 2 fresh. (2nd call to `inner`)
+        // Fetches balance 1 from cache and balance 2 fresh. (2nd call to
+        // `inner`)
         let result = fetcher.get_balances(&[query(1), query(2)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
         assert_eq!(result[1].as_ref().unwrap(), &U256::from(2));

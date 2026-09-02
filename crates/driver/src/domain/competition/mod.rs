@@ -479,8 +479,8 @@ impl Competition {
                 }
             });
 
-        // Encode settlements as they arrive until there are no more new settlements or
-        // timeout is reached.
+        // Encode settlements as they arrive until there are no more new
+        // settlements or timeout is reached.
         let mut settlements = Vec::new();
         let future = async {
             let mut encoded = std::pin::pin!(encoded);
@@ -725,8 +725,9 @@ impl Competition {
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
-            // Use spawn_blocking() because a lot of CPU bound computations are happening
-            // and we don't want to block the runtime for too long.
+            // Use spawn_blocking() because a lot of CPU bound computations are
+            // happening and we don't want to block the runtime for
+            // too long.
             Self::sort_orders(auction, solver_address, order_sorting_strategies)
         });
 
@@ -738,17 +739,17 @@ impl Competition {
         );
 
         let auction = Self::run_blocking_with_timer("update_orders", move || {
-            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
-            // bound computations are happening and we want to avoid blocking
-            // the runtime.
+            // Same as before with sort_orders, we use spawn_blocking() because
+            // a lot of CPU bound computations are happening and we
+            // want to avoid blocking the runtime.
             Self::update_orders(auction, balances, app_data)
         })
         .await;
         self.without_unsupported_orders(auction).await
     }
 
-    // Oders already need to be sorted from most relevant to least relevant so that
-    // we allocate balances for the most relevants first.
+    // Oders already need to be sorted from most relevant to least relevant so
+    // that we allocate balances for the most relevants first.
     fn sort_orders(
         mut auction: Auction,
         solver: eth::Address,
@@ -772,8 +773,8 @@ impl Competition {
         balances: Arc<Balances>,
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
     ) -> Auction {
-        // Clone balances since we only aggregate data once but each solver needs
-        // to use and modify the data individually.
+        // Clone balances since we only aggregate data once but each solver
+        // needs to use and modify the data individually.
         let mut balances = balances.as_ref().clone();
 
         let mut discarded_orders = BTreeMap::<OrderExcludedFromAuctionReason, Vec<Uid>>::new();
@@ -836,15 +837,16 @@ impl Competition {
             // We need to scale the available amount in the order based on
             // allocated balance. We cannot naively just set the `available`
             // amount to equal the `allocated_balance` because of two reasons:
-            // 1. They are in different units. `available` is a `TargetAmount` which means
-            //    it would be in buy token for buy orders and not in sell token like the
-            //    `allocated_balance`
-            // 2. Account for fees. Even in the case of sell orders, `available` is
-            //    potentially different to `allocated_balance` because of fee scaling. For
-            //    example, imagine a partially fillable order selling 100 tokens with a fee
-            //    of 10 for a user with a balance of 50. The `allocated_balance` would be 50
-            //    tokens, but the `available` amount needs to be less! We want the
-            //    following: `available + (fee * available / sell) <= allocated_balance`
+            // 1. They are in different units. `available` is a `TargetAmount`
+            //    which means it would be in buy token for buy orders and not in
+            //    sell token like the `allocated_balance`
+            // 2. Account for fees. Even in the case of sell orders, `available`
+            //    is potentially different to `allocated_balance` because of fee
+            //    scaling. For example, imagine a partially fillable order
+            //    selling 100 tokens with a fee of 10 for a user with a balance
+            //    of 50. The `allocated_balance` would be 50 tokens, but the
+            //    `available` amount needs to be less! We want the following:
+            //    `available + (fee * available / sell) <= allocated_balance`
             if let order::Partial::Yes { available } = &mut order.partial {
                 *available = order::TargetAmount(
                     available
@@ -984,7 +986,8 @@ impl Competition {
                 .ok_or(Error::SolutionNotAvailable)?
         };
 
-        // Asynchronously notify liquidity sources to not block settlement execution.
+        // Asynchronously notify liquidity sources to not block settlement
+        // execution.
         {
             let liquidity_sources_notifier_clone = self.liquidity_sources_notifier.clone();
             let settlement_clone = settlement.clone();

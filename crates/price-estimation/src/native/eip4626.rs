@@ -179,7 +179,8 @@ impl Eip4626 {
 
         match asset_result {
             Ok(asset) => {
-                // EIP-4626 vaults implement ERC-20 so decimals() must succeed too.
+                // EIP-4626 vaults implement ERC-20 so decimals() must succeed
+                // too.
                 let vault_decimals = decimals_result.map_err(|err| {
                     PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
                         "failed to call decimals() on {token}: {err}"
@@ -319,7 +320,8 @@ mod tests {
         // - vault.decimals() = 18, asset.decimals() = 6
         // - convertToAssets(10^18) = 1_500_000 (= 1.5 whole USDC, in atoms)
         // - per-atom factor = 1_500_000 / 10^18 = 1.5e-12
-        // - = whole-share rate (1.5) scaled by 10^(asset_dec - vault_dec) = 10^-12.
+        // - = whole-share rate (1.5) scaled by 10^(asset_dec - vault_dec) =
+        //   10^-12.
         let assets = U256::from(1_500_000u64);
         let computed_rate = conversion_rate(assets, 18).unwrap();
 
@@ -333,7 +335,8 @@ mod tests {
         // - vault.decimals() = 6, asset.decimals() = 18
         // - convertToAssets(10^6) = 2 * 10^18 (= 2 whole tokens, in atoms)
         // - per-atom factor = 2 * 10^18 / 10^6 = 2e12
-        // - = whole-share rate (2) scaled by 10^(asset_dec - vault_dec) = 10^12.
+        // - = whole-share rate (2) scaled by 10^(asset_dec - vault_dec) =
+        //   10^12.
         let assets = U256::from(2u64) * U256::from(10u64).pow(U256::from(18u64));
         let computed_rate = conversion_rate(assets, 6).unwrap();
 

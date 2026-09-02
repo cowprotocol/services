@@ -136,16 +136,17 @@ impl Mempools {
         let tx = prepare_submission(tx, mode);
         let signer = tx.from;
 
-        // Instantiate block stream and skip the current block before we submit the
-        // settlement. This way we only run iterations in blocks that can potentially
-        // include the settlement.
+        // Instantiate block stream and skip the current block before we submit
+        // the settlement. This way we only run iterations in blocks
+        // that can potentially include the settlement.
         let mut block_stream = into_stream(self.ethereum.current_block().clone());
         block_stream.next().await;
 
         let current_block = self.ethereum.current_block().borrow().number;
-        // The tx is simulated before submitting the solution to the competition, but a
-        // delay between that and the actual execution can cause the simulation to be
-        // invalid which doesn't make sense to submit to the mempool anymore.
+        // The tx is simulated before submitting the solution to the
+        // competition, but a delay between that and the actual
+        // execution can cause the simulation to be invalid which
+        // doesn't make sense to submit to the mempool anymore.
         if mempool.reverts_can_get_mined() {
             if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
                 if err.is_revert() {
@@ -168,12 +169,13 @@ impl Mempools {
             tracing::trace!("skipping tx simulation because mempool does not mine reverting txs");
         }
 
-        // Fetch the nonce for the signing account (not the solver in 7702 mode).
+        // Fetch the nonce for the signing account (not the solver in 7702
+        // mode).
         let nonce = mempool.get_nonce(signer).await?;
 
         // estimate the gas price such that the tx should still be included
-        // even if the gas price increases the maximum amount until the submission
-        // deadline
+        // even if the gas price increases the maximum amount until the
+        // submission deadline
         let current_gas_price = self
             .ethereum
             .gas_price()
@@ -182,8 +184,8 @@ impl Mempools {
         let submission_block = self.ethereum.current_block().borrow().number.into();
         let blocks_until_deadline = submission_deadline.saturating_sub(submission_block);
 
-        // if there is still a tx pending we also have to make sure we outbid that one
-        // enough to make the node replace it in the mempool
+        // if there is still a tx pending we also have to make sure we outbid
+        // that one enough to make the node replace it in the mempool
         let replacement_gas_price = self
             .minimum_replacement_gas_price(mempool, signer, nonce)
             .await;
@@ -332,8 +334,9 @@ impl Mempools {
         .await;
 
         if result.is_err() {
-            // One last check in case the tx landed after the loop exited, e.g. the
-            // receipt finally caught up to a block we had already processed.
+            // One last check in case the tx landed after the loop exited, e.g.
+            // the receipt finally caught up to a block we had
+            // already processed.
             if let Ok(TxStatus::Executed { block_number }) =
                 self.ethereum.transaction_status(&hash).await
             {
@@ -417,9 +420,10 @@ impl Mempools {
                 None
             }
         } else {
-            // If we don't have the last submission in-memory (i.e. first submission
-            // attempt after a restart) we try to inspect the nodes transaction mempool.
-            // This is only done as a backup since it can incur significant latency and
+            // If we don't have the last submission in-memory (i.e. first
+            // submission attempt after a restart) we try to inspect
+            // the nodes transaction mempool. This is only done as a
+            // backup since it can incur significant latency and
             // is generally not very widely supported.
             let pending_tx = mempool
                 .find_pending_tx_in_mempool(signer, next_nonce)
@@ -738,9 +742,10 @@ mod tests {
 
     #[test]
     fn failed_nonce_lookup_never_cancels() {
-        // An unknown pending nonce must never trigger a cancel, even on a revert.
-        // Otherwise a flaky nonce lookup reverts to the original bug: cancelling a
-        // tx that may have mined or is still queued.
+        // An unknown pending nonce must never trigger a cancel, even on a
+        // revert. Otherwise a flaky nonce lookup reverts to the
+        // original bug: cancelling a tx that may have mined or is still
+        // queued.
         assert!(!requires_cancellation(
             true,
             &NONCE_LOOKUP_FAILED,

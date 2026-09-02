@@ -473,9 +473,9 @@ async fn wait_for_pending_txs(provider: &impl Provider, address: Address) -> any
 
     let deadline = tokio::time::Instant::now() + MAX_WAIT;
     loop {
-        // Startup can happen while transactions from the previous driver process
-        // are still pending. Reusing that nonce would replace them.
-        // only counts txs in mined blocks
+        // Startup can happen while transactions from the previous driver
+        // process are still pending. Reusing that nonce would replace
+        // them. only counts txs in mined blocks
         let latest = provider
             .get_transaction_count(address)
             .await

@@ -7,22 +7,42 @@
 use {
     super::{Auction, Order, auction::Id, solution::Solution},
     crate::infra::{blockchain::Solana, solver::Solver},
+    itertools::Itertools,
+    moka::sync::Cache,
     solana_sdk::signature::Signature,
-    std::{collections::HashMap, sync::Arc},
-    tokio::sync::Mutex,
+    std::{sync::Arc, time::Duration},
     tracing::Instrument,
 };
+
+/// How long a proposed solution stays available for `settle`.
+const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
+
+/// Cache key for a proposed solution.
+///
+/// The autopilot assigns `auction_id`. The engine assigns `solution_id` in its
+/// `/solve` response and may repeat ids across auctions; the driver does not
+/// control how an engine numbers them. The key needs both parts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct Key {
+    auction_id: Id,
+    solution_id: u64,
+}
+
+/// A proposed solution and the auction it solves. All solutions from one
+/// `solve` call share the same auction.
+#[derive(Clone)]
+struct CachedSolution {
+    auction: Arc<Auction>,
+    solution: Solution,
+}
 
 /// Orchestrates one auction through a single solver engine.
 pub(crate) struct Competition {
     solver: Solver,
     blockchain: Arc<Solana>,
-    /// In-memory store of proposed solutions keyed by `(auction_id,
-    /// solution_id)`.
-    ///
-    /// This is a minimal, temporary cache. It does not enforce admission
-    /// limits, slot deadlines, or eviction.
-    solutions: Mutex<HashMap<(Id, u64), (Auction, Solution)>>,
+    /// Proposed solutions by `Key`, so `settle` can retrieve and submit the
+    /// chosen one. Entries expire after `SOLUTION_CACHE_TTL`.
+    solutions: Cache<Key, CachedSolution>,
 }
 
 impl Competition {
@@ -32,7 +52,7 @@ impl Competition {
         Self {
             solver,
             blockchain,
-            solutions: Mutex::new(HashMap::new()),
+            solutions: Cache::builder().time_to_live(SOLUTION_CACHE_TTL).build(),
         }
     }
 
@@ -48,34 +68,37 @@ impl Competition {
     /// `(auction_id, solution_id)` so `settle` can later retrieve and submit
     /// the chosen solution.
     pub async fn solve(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
-        let auction_id = auction.id;
         let solutions = self
             .solver
             .solve(auction, self.blockchain.program_id())
             .await?;
 
-        // Discard solutions with duplicate ids
-        let mut by_id = HashMap::new();
-        for solution in solutions {
-            let id = solution.id;
-            if by_id.insert(id, solution).is_some() {
-                tracing::warn!(
-                    solver = %self.solver.name(),
-                    solution_id = id,
-                    "discarding solution with duplicate id"
-                );
-            }
+        // Discard solutions with duplicate ids. The first occurrence wins, and
+        // `unique_by` keeps response order. The engine may repeat ids across
+        // requests, so this check covers the current response and not the
+        // cache.
+        let total = solutions.len();
+        let solutions: Vec<Solution> = solutions.into_iter().unique_by(|s| s.id).collect();
+        if solutions.len() < total {
+            tracing::warn!(
+                solver = %self.solver.name(),
+                discarded = total - solutions.len(),
+                "discarding solutions with duplicate ids"
+            );
         }
-        let solutions: Vec<Solution> = by_id.into_values().collect();
 
-        {
-            let mut cache = self.solutions.lock().await;
-            for solution in &solutions {
-                cache.insert(
-                    (auction_id, solution.id),
-                    (auction.clone(), solution.clone()),
-                );
-            }
+        let auction = Arc::new(auction.clone());
+        for solution in &solutions {
+            self.solutions.insert(
+                Key {
+                    auction_id: auction.id,
+                    solution_id: solution.id,
+                },
+                CachedSolution {
+                    auction: Arc::clone(&auction),
+                    solution: solution.clone(),
+                },
+            );
         }
 
         Ok(solutions)
@@ -131,18 +154,16 @@ impl Competition {
     /// - Build and sign a v0 settlement transaction.
     /// - Send the transaction and wait for confirmation.
     ///
-    /// The method consumes the cached entries of the auction only when it
-    /// hands the transaction to the network. Every failure before that point
-    /// leaves the solutions in place, so the caller can retry the settle. At
-    /// hand-off, one critical section removes the chosen solution and its
-    /// siblings. The auction therefore cannot settle a second time through
-    /// this solution or a sibling. The autopilot requests at most one
-    /// settlement per auction. A settlement beyond that would fill orders
-    /// that the auction did not award.
+    /// The method consumes the cached solution only when it hands the
+    /// transaction to the network. Every failure before that point leaves
+    /// the solution in place, so the caller can retry the settle. At
+    /// hand-off, one atomic `Cache::remove` takes the chosen solution. A
+    /// concurrent `/settle` for it then observes a missing entry and cannot
+    /// settle the solution a second time.
     ///
-    /// A send failure does not restore the entries. The transaction may
+    /// A send failure does not restore the entry. The transaction may
     /// have reached the network despite the error. A retry with a fresh
-    /// blockhash could settle the auction twice.
+    /// blockhash could settle the solution twice.
     ///
     /// Deferred work:
     /// - admission semaphore and submission deadline slot checks,
@@ -155,23 +176,24 @@ impl Competition {
         solution_id: u64,
         _submission_deadline_slot: u64,
     ) -> Result<Signature, Error> {
-        let (auction, solution) = self
+        let key = Key {
+            auction_id,
+            solution_id,
+        };
+        let CachedSolution { auction, solution } = self
             .solutions
-            .lock()
-            .await
-            .get(&(auction_id, solution_id))
-            .cloned()
+            .get(&key)
             .ok_or(Error::SolutionNotAvailable)?;
 
         // TODO: admission semaphore(1) and deadline slot check once we have a
-        // real cache and slot stream.
+        // slot stream.
 
         let program_id = self.blockchain.program_id();
 
         // The settlement carries only the orders the solution fills:
         // validation requires a trade per order, and the program settles
         // exactly the orders passed to `BeginSettle`.
-        let orders = orders_with_trades(auction.orders, &solution);
+        let orders = orders_with_trades(auction.orders.clone(), &solution);
 
         let accounts =
             super::Settlement::prepare(&self.blockchain, self.solver.pubkey(), &orders, &solution)
@@ -186,25 +208,23 @@ impl Competition {
             accounts.missing_payer_atas,
         )?;
 
-        let (blockhash, _last_valid_block_height) = self
+        let latest = self
             .blockchain
-            .latest_blockhash()
+            .latest_confirmed_blockhash()
             .await
             .map_err(Error::Rpc)?;
-        let transaction =
-            settlement.encode(self.solver.keypair(), blockhash, &accounts.lookup_tables)?;
+        let transaction = settlement.encode(
+            self.solver.keypair(),
+            latest.blockhash,
+            &accounts.lookup_tables,
+        )?;
 
-        // Consume the auction's entries only now, when the transaction is
-        // about to reach the network. One critical section removes the
-        // chosen solution and its siblings. A concurrent `/settle` for
-        // either entry then observes a missing entry and cannot settle the
-        // auction again.
-        {
-            let mut solutions = self.solutions.lock().await;
-            if solutions.remove(&(auction_id, solution_id)).is_none() {
-                return Err(Error::SolutionNotAvailable);
-            }
-            solutions.retain(|(id, _), _| *id != auction_id);
+        // Consume the entry only now, when the transaction is about to reach
+        // the network. One atomic removal takes the chosen solution. A
+        // concurrent `/settle` for it then observes a missing entry and
+        // cannot settle the solution again.
+        if self.solutions.remove(&key).is_none() {
+            return Err(Error::SolutionNotAvailable);
         }
 
         // TODO: bound the confirmation wait with a `tokio::timeout` once the
@@ -236,7 +256,11 @@ fn orders_with_trades(orders: Vec<Order>, solution: &Solution) -> Vec<Order> {
 
 /// An error the competition reports to the API layer.
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "DeadlineExceeded and TooManyPendingSettlements are pending the deferred admission \
+              semaphore and deadline slot checks"
+)]
 pub(crate) enum Error {
     /// The solver engine failed to produce solutions.
     #[error("solver engine failed: {0}")]

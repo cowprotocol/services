@@ -92,8 +92,8 @@ impl Request {
             //
             // lgwin 22: LZ77 window = 2^22 - 16 ≈ 4 MB. How far back the
             // compressor looks for repeated patterns. The decompressor must
-            // allocate up to this much memory. Aligns with our current auction size
-            // (~3-4mb).
+            // allocate up to this much memory. Aligns with our current auction
+            // size (~3-4mb).
             //
             // 4096: internal I/O buffer for flushing to the output Vec.
             // Doesn't affect compression ratio. Tested 512 B to 256 KB with
@@ -520,6 +520,17 @@ mod tests {
 
     fn test_order(uid_byte: u8, executed: u64) -> domain::Order {
         dto::order::to_domain(serde_json::from_value(order_json(uid_byte, executed)).unwrap())
+    }
+
+    #[test]
+    fn order_penalty_cap_round_trips() {
+        let mut json = order_json(0x11, 0);
+        json.as_object_mut()
+            .unwrap()
+            .insert("penaltyCapNative".into(), serde_json::json!("1234"));
+        let order = dto::order::to_domain(serde_json::from_value(json.clone()).unwrap());
+        let serialized = serde_json::to_value(dto::order::from_domain(&order)).unwrap();
+        assert_eq!(serialized, json);
     }
 
     fn test_auction(id: i64, orders: Vec<domain::Order>) -> domain::Auction {

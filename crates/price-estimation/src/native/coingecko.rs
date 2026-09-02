@@ -102,8 +102,9 @@ impl CoinGecko {
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::utils::join_url(&self.base_url, &self.chain);
         metrics::batch_size(tokens.len());
-        // Sort to make the token order deterministic for better caching on CoinGecko
-        // egress proxy which needs the URL to be the same for cache to be hit
+        // Sort to make the token order deterministic for better caching on
+        // CoinGecko egress proxy which needs the URL to be the same for
+        // cache to be hit
         let mut sorted_tokens: Vec<_> = tokens.iter().map(|token| format!("{token:#x}")).collect();
         sorted_tokens.sort();
         url.query_pairs_mut()
@@ -204,8 +205,9 @@ impl CoinGecko {
             .try_into()
             .map_err(|e| anyhow::anyhow!("failed to convert price to decimal: {:?}", e))?;
 
-        // When the quoted token and the denominator have different number of decimals
-        // the computed price effectively needs to be shifted by the difference.
+        // When the quoted token and the denominator have different number of
+        // decimals the computed price effectively needs to be shifted
+        // by the difference.
         let adjustment = Decimal::new(10, 0)
             .checked_powi(i64::from(denominator.decimals) - i64::from(token_decimals))
             .context("price adjustment overflows Decimal")?;
@@ -365,12 +367,12 @@ mod tests {
         }
     }
 
-    // It is ok to call this API without an API for local testing purposes as it is
-    // difficulty to hit the rate limit manually
+    // It is ok to call this API without an API for local testing purposes as it
+    // is difficulty to hit the rate limit manually
     const BASE_API_URL: &str = "https://api.coingecko.com/api/v3/simple/token_price";
 
-    // We also need to test the PRO API, because batch requests aren't available in
-    // the free version
+    // We also need to test the PRO API, because batch requests aren't available
+    // in the free version
     const BASE_API_PRO_URL: &str = "https://pro-api.coingecko.com/api/v3/simple/token_price";
 
     fn default_token_info_fetcher() -> Arc<dyn TokenInfoFetching> {
@@ -411,8 +413,8 @@ mod tests {
             .estimate_native_price(native_token, HEALTHY_PRICE_ESTIMATION_TIME)
             .await
             .unwrap();
-        // Since the WETH precise price against ETH is not always exact to 1.0 (it can
-        // vary slightly)
+        // Since the WETH precise price against ETH is not always exact to 1.0
+        // (it can vary slightly)
         assert!((0.95..=1.05).contains(&estimated_price));
     }
 
@@ -539,12 +541,13 @@ mod tests {
         dbg!(usdc_price, wxdai_price);
 
         // The `USDC` token only has 6 decimals whereas `wxDai` has 18. To make
-        // the prices comparable we therefore have to shift `usdc_price` 12 decimals
-        // to the right.
+        // the prices comparable we therefore have to shift `usdc_price` 12
+        // decimals to the right.
         let usdc_price_adjusted = usdc_price / 10f64.powi(12);
 
         // Since Dai and USDC both track the US dollar they should at least be
-        // within 5% of each other after adjusting for their respective decimals.
+        // within 5% of each other after adjusting for their respective
+        // decimals.
         assert!((wxdai_price * 0.95..=wxdai_price * 1.05).contains(&usdc_price_adjusted));
         assert!((0.95..=1.05).contains(&wxdai_price))
     }
@@ -559,8 +562,9 @@ mod tests {
             tokens
                 .iter()
                 .map(|t| {
-                    // Let's pretend USDC has 21 decimals to check if the price adjustment
-                    // also works when the requested token has more decimals.
+                    // Let's pretend USDC has 21 decimals to check if the price
+                    // adjustment also works when the
+                    // requested token has more decimals.
                     let decimals = if *t == usdc { Some(21) } else { Some(18) };
                     let info = TokenInfo {
                         decimals,
@@ -592,12 +596,13 @@ mod tests {
             .unwrap();
         dbg!(usdc_price, wxdai_price);
 
-        // We pretended that `USDC` has 21 decimals now so we need to move it's price
-        // 3 decimals to the left to make it comparable.
+        // We pretended that `USDC` has 21 decimals now so we need to move it's
+        // price 3 decimals to the left to make it comparable.
         let usdc_price_adjusted = usdc_price * 10f64.powi(3);
 
         // Since Dai and USDC both track the US dollar they should at least be
-        // within 5% of each other after adjusting for their respective decimals.
+        // within 5% of each other after adjusting for their respective
+        // decimals.
         assert!((wxdai_price * 0.95..=wxdai_price * 1.05).contains(&usdc_price_adjusted));
         assert!((0.95..=1.05).contains(&wxdai_price))
     }

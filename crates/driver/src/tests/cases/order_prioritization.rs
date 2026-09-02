@@ -78,8 +78,8 @@ async fn default_sorting() {
         .done()
         .await;
 
-    // Only check that the solve endpoint can be called successfully, which means
-    // that the solver received the orders sorted.
+    // Only check that the solve endpoint can be called successfully, which
+    // means that the solver received the orders sorted.
     test.solve().await.ok();
 }
 
@@ -277,7 +277,7 @@ async fn filtering() {
         .done()
         .await;
 
-    // Only check that the solve endpoint can be called successfully, which means
-    // that the solver received the orders sorted.
+    // Only check that the solve endpoint can be called successfully, which
+    // means that the solver received the orders sorted.
     test.solve().await.ok();
 }

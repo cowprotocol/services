@@ -171,7 +171,8 @@ impl Inner {
                         .await
                     {
                         Some(route) => {
-                            // how many units of buy_token are bought for one unit of sell_token
+                            // how many units of buy_token are bought for one
+                            // unit of sell_token
                             // (buy_amount / sell_amount).
                             let price = f64::from(self.native_token_price_estimation_amount)
                                 / f64::from(route.input().amount);
@@ -182,8 +183,10 @@ impl Inner {
                             auction::Price(eth::Ether(price))
                         }
                         _ => {
-                            // This is to allow quotes to be generated for tokens for which the sell
-                            // token price is not available, so we default to fee=0
+                            // This is to allow quotes to be generated for
+                            // tokens for which the sell
+                            // token price is not available, so we default to
+                            // fee=0
                             auction::Price(eth::Ether(eth::U256::MAX))
                         }
                     }
@@ -193,8 +196,9 @@ impl Inner {
             let compute_solution = async |request: Request| -> Option<Solution> {
                 let wrappers = request.wrappers.clone();
                 let solution = if order.sell.token == order.buy.token {
-                    // When sell and buy tokens are the same, the solution does not require routing
-                    // and incurs no additional gas since the liquidity comes from the user
+                    // When sell and buy tokens are the same, the solution does
+                    // not require routing and incurs no
+                    // additional gas since the liquidity comes from the user
                     let (input, mut output) = match order.side {
                         Side::Sell => (order.sell, order.buy),
                         Side::Buy => (order.buy, order.sell),
