@@ -210,7 +210,8 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .await
         .unwrap();
 
-    // Wait for the follower to step up as leader by checking its metrics endpoint
+    // Wait for the follower to step up as leader by checking its metrics
+    // endpoint
     let is_follower_leader = || async {
         onchain.mint_block().await;
         let Ok(response) = reqwest::get("http://0.0.0.0:9591/metrics").await else {

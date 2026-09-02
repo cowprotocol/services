@@ -104,7 +104,8 @@ where
                 return;
             }
         };
-        // Measure before `finalize` so the gzip finish cost stays out of the metrics.
+        // Measure before `finalize` so the gzip finish cost stays out of the
+        // metrics.
         let total = start.elapsed();
         let serialize = total.saturating_sub(timed.elapsed());
         let _ = measurements_tx.send(Measurements { serialize, total });
@@ -241,7 +242,8 @@ mod tests {
     async fn gzip_captured_even_if_request_body_dropped() {
         let value = json!({ "a": 1, "b": [1, 2, 3], "c": "hello" });
         let (body, gzip_rx, _measurements) = stream_body_and_gzip(value.clone());
-        // The solver connection going away mid-stream must not skip the archive.
+        // The solver connection going away mid-stream must not skip the
+        // archive.
         drop(body);
 
         let compressed = gzip_rx.await.unwrap();

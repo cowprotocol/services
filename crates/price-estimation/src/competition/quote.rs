@@ -11,7 +11,7 @@ use {
         RankedEstimates,
         StreamingPriceEstimating,
     },
-    alloy::primitives::{Address, U256},
+    alloy::primitives::U256,
     event_bus_dto::{
         price_estimate::{EstimateResult, PriceEstimateEvent},
         query::{OrderKind as DtoOrderKind, QueryFields},
@@ -39,11 +39,7 @@ impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating
         Arc::make_mut(&mut query).timeout /= self.stages.len() as u32;
 
         async move {
-            let out_token = match query.kind {
-                OrderKind::Buy => query.sell_token,
-                OrderKind::Sell => query.buy_token,
-            };
-            let get_context = self.ranking.provide_context(out_token, query.timeout);
+            let get_context = self.ranking.provide_context(&query);
 
             let get_results = self
                 .produce_results(query.clone(), is_reasonable, |context| {
@@ -119,10 +115,6 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
     /// or the "unreasonable estimates" error when every quote had 0 gas or 0
     /// out_amount.
     fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
-        let out_token = match query.kind {
-            OrderKind::Buy => query.sell_token,
-            OrderKind::Sell => query.buy_token,
-        };
         async_stream::stream! {
             let mut estimates = self
                 .stages
@@ -133,7 +125,7 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                 // Only errors and reasonable estimates can be ranked
                 .filter(|r| std::future::ready(r.is_err() || is_reasonable(r)));
 
-            let context_fut = self.ranking.provide_context(out_token, query.timeout).shared();
+            let context_fut = self.ranking.provide_context(&query).shared();
 
             // Collect estimates concurrently while fetching the ranking context;
             // they can't be ranked before it resolves.
@@ -224,8 +216,8 @@ fn compare_quote_result(
 }
 
 fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &RankingContext) -> Ordering {
-    let a = context.effective_eth_out(a, query.kind);
-    let b = context.effective_eth_out(b, query.kind);
+    let a = context.effective_out_amount(a, query);
+    let b = context.effective_out_amount(b, query);
     match query.kind {
         OrderKind::Buy => a.cmp(&b).reverse(),
         OrderKind::Sell => a.cmp(&b),
@@ -233,14 +225,10 @@ fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &RankingCon
 }
 
 impl PriceRanking {
-    async fn provide_context(
-        &self,
-        token: Address,
-        timeout: Duration,
-    ) -> Result<RankingContext, PriceEstimationError> {
+    async fn provide_context(&self, query: &Query) -> Result<RankingContext, PriceEstimationError> {
         match self {
             PriceRanking::MaxOutAmount => Ok(RankingContext {
-                native_price: 1.0,
+                sell_token_native_price: 1.0,
                 gas_price: 0.,
             }),
             PriceRanking::BestBangForBuck { native, gas } => {
@@ -249,11 +237,13 @@ impl PriceRanking {
                 let gas = gas
                     .effective_gas_price()
                     .map_err(PriceEstimationError::ProtocolInternal);
-                let (native_price, gas_price) =
-                    futures::try_join!(native.estimate_native_price(token, timeout), gas)?;
+                let (sell_token_native_price, gas_price) = futures::try_join!(
+                    native.estimate_native_price(query.sell_token, query.timeout),
+                    gas
+                )?;
 
                 Ok(RankingContext {
-                    native_price,
+                    sell_token_native_price,
                     gas_price: gas_price as f64,
                 })
             }
@@ -263,26 +253,38 @@ impl PriceRanking {
 
 #[derive(Clone)]
 struct RankingContext {
-    native_price: f64,
+    /// Native price of the sell token (ETH per unit of sell_token).
+    sell_token_native_price: f64,
     gas_price: f64,
 }
 
 impl RankingContext {
-    /// Computes the actual received value from this estimate that takes `gas`
-    /// into account. If an extremely complex trade route would only result
-    /// in slightly more `out_amount` than a simple trade route the simple
-    /// trade route would report a higher `out_amount_in_eth`. This is also
-    /// referred to as "bang-for-buck" and what matters most to traders.
-    fn effective_eth_out(&self, estimate: &Estimate, kind: OrderKind) -> U256 {
-        let eth_out = f64::from(estimate.out_amount) * self.native_price;
-        let fees = estimate.gas as f64 * self.gas_price;
-        let effective_eth_out = match kind {
-            // High fees mean receiving less `buy_token` from your sell order.
-            OrderKind::Sell => eth_out - fees,
-            // High fees mean paying more `sell_token` for your buy order.
-            OrderKind::Buy => eth_out + fees,
+    /// Uses the native sell token price to compute a quote's effective out
+    /// amount that takes the quote's gas cost into account.
+    /// sell orders: buy token they receive after fees
+    /// buy orders: sell tokens they have to pay including fees
+    ///
+    /// Fees ultimately get reported to the user in the sell token so it's
+    /// important that the quote ranking logic is aligned with that and
+    /// ranks quotes always using the sell token native price and never
+    /// the buy token native price.
+    fn effective_out_amount(&self, estimate: &Estimate, query: &Query) -> U256 {
+        let gas_cost_in_eth = estimate.gas as f64 * self.gas_price;
+        let gas_cost_in_sell = gas_cost_in_eth / self.sell_token_native_price;
+        let (sell_amount, buy_amount) = estimate.amounts(query);
+        let effective_out_amount = match query.kind {
+            // Convert the sell-token gas fee to buy-token units via the
+            // quote's exchange rate, then subtract from what the user gets.
+            OrderKind::Sell => {
+                let buy_amount = f64::from(buy_amount);
+                let sell_amount = f64::from(sell_amount);
+                let gas_cost_in_buy = gas_cost_in_sell * (buy_amount / sell_amount);
+                buy_amount - gas_cost_in_buy
+            }
+            // The user pays sell_amount plus the gas fee, both in sell_token.
+            OrderKind::Buy => f64::from(sell_amount) + gas_cost_in_sell,
         };
-        match effective_eth_out {
+        match effective_out_amount {
             // converts `NaN` and `(-∞, 0]` to `0`
             v if v.is_sign_negative() || v.is_nan() => U256::ZERO,
             // Previous case already covered negative infinity
@@ -358,6 +360,7 @@ mod tests {
         alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
         gas_price_estimation::FakeGasPriceEstimator,
         model::order::OrderKind,
+        number::nonzero::NonZeroU256,
     };
 
     fn price(out_amount: u128, gas: u64) -> PriceEstimateResult {
@@ -395,9 +398,15 @@ mod tests {
 
     /// Runs all provided estimators and returns all ranked quotes best-first,
     /// or the highest-priority error if every estimator failed.
+    ///
+    /// `in_amount` is the query's sell_amount for sell orders and buy_amount
+    /// for buy orders. It's part of the sell-order ranking formula, so tests
+    /// that depend on `BestBangForBuck` sell rankings must pass a realistic
+    /// value.
     async fn competition_results(
         ranking: PriceRanking,
         kind: OrderKind,
+        in_amount: u128,
         estimates: Vec<PriceEstimateResult>,
         verification: QuoteVerificationMode,
     ) -> Result<Vec<Estimate>, PriceEstimationError> {
@@ -425,6 +434,7 @@ mod tests {
         priority
             .estimates(Arc::new(Query {
                 kind,
+                in_amount: NonZeroU256::try_from(in_amount).unwrap(),
                 ..Default::default()
             }))
             .await
@@ -439,13 +449,18 @@ mod tests {
     /// ranked output in that order.
     #[tokio::test]
     async fn best_bang_for_buck_adjusts_for_complexity() {
+        // sell_amount = 100_000, sell_token native price = 0.5, gas_price = 2
+        // => 1 unit of gas costs 4 units of sell_token.
         let quotes = competition_results(
             bang_for_buck_ranking(),
             OrderKind::Sell,
+            100_000,
             vec![
-                // User effectively receives `100_000` `buy_token`.
+                // Gas costs 4_000 sell_token; expressed in buy_token via the
+                // 1.04 quote rate that's 4_160 => effective receive 99_840.
                 price(104_000, 1_000),
-                // User effectively receives `99_999` `buy_token`.
+                // Gas costs 8_000 sell_token; at rate 1.07999 that's 8_639.92
+                // buy_token => effective receive 99_359.
                 price(107_999, 2_000),
             ],
             QuoteVerificationMode::Unverified,
@@ -463,6 +478,7 @@ mod tests {
         let quotes = competition_results(
             bang_for_buck_ranking(),
             OrderKind::Buy,
+            100_000,
             vec![
                 // User effectively pays `100_000` `sell_token`.
                 price(96_000, 1_000),
@@ -488,10 +504,11 @@ mod tests {
         let quotes = competition_results(
             bang_for_buck_ranking(),
             OrderKind::Sell,
+            100_000,
             vec![
-                // User effectively receives `100_000` `buy_token`.
+                // Effective receive 99_840 buy_token (see test above).
                 price(104_000, 1_000),
-                // User effectively receives `99_999` `buy_token`.
+                // Effective receive 99_359 buy_token (see test above).
                 price(107_999, 2_000),
                 // Would win on raw out_amount, but discarded because gas=0.
                 price(104_000, 0),
@@ -511,6 +528,7 @@ mod tests {
         let quotes = competition_results(
             bang_for_buck_ranking(),
             OrderKind::Buy,
+            100_000,
             vec![
                 // User effectively pays `100_000` `sell_token`.
                 price(96_000, 1_000),
@@ -536,6 +554,7 @@ mod tests {
         let err = competition_results(
             PriceRanking::MaxOutAmount,
             OrderKind::Sell,
+            1,
             vec![
                 error(PriceEstimationError::RateLimited),
                 error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
@@ -554,6 +573,7 @@ mod tests {
         let quotes = competition_results(
             PriceRanking::MaxOutAmount,
             OrderKind::Sell,
+            1,
             vec![
                 price(1, 1_000_000),
                 error(PriceEstimationError::RateLimited),
@@ -584,6 +604,7 @@ mod tests {
         let quotes = competition_results(
             PriceRanking::MaxOutAmount,
             OrderKind::Sell,
+            1,
             vec![
                 better_unverified_quote.clone(),
                 worse_verified_quote.clone(),
@@ -605,6 +626,7 @@ mod tests {
         let quotes = competition_results(
             PriceRanking::MaxOutAmount,
             OrderKind::Sell,
+            1,
             vec![
                 better_unverified_quote.clone(),
                 worse_verified_quote.clone(),

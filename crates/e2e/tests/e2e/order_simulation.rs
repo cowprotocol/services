@@ -65,8 +65,9 @@ async fn custom_order_simulation(web3: Web3) {
     let app_data = "{}";
 
     // Sign an OrderCreation with the same fields the simulation will encode.
-    // simulate_custom_order hashes `app_data` with keccak256; OrderCreation::Full
-    // does the same, so the signature covers exactly the same OrderData hash.
+    // simulate_custom_order hashes `app_data` with keccak256;
+    // OrderCreation::Full does the same, so the signature covers exactly
+    // the same OrderData hash.
     let signed = OrderCreation {
         sell_token: *token.address(),
         buy_token: *onchain.contracts().weth.address(),
@@ -360,7 +361,8 @@ async fn order_simulation_partial_fill(web3: Web3) {
 
     let client = services.client();
 
-    // filledAmount=0 on-chain; full 4 WETH needed; trader only has 1 → must fail.
+    // filledAmount=0 on-chain; full 4 WETH needed; trader only has 1 → must
+    // fail.
     let response = client
         .get(format!(
             "{API_HOST}/restricted/api/v1/debug/simulation/{uid}"

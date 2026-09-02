@@ -44,6 +44,11 @@ pub struct Order {
     pub full_buy_amount: U256,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fee_policies: Option<Vec<FeePolicy>>,
+    /// Cap on the penalty a solver can incur for winning this order but
+    /// failing to execute it, in native token.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub penalty_cap_native: Option<U256>,
     pub valid_to: u32,
     pub kind: Kind,
     #[serde(skip_serializing_if = "Option::is_none")]

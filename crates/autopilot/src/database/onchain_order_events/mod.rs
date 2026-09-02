@@ -1215,8 +1215,9 @@ mod test {
             ..Default::default()
         };
         let mut order_placement_2 = order_placement.clone();
-        // With the following operation, we will create an invalid event data, and hence
-        // the whole event parsing process will produce an error for this event.
+        // With the following operation, we will create an invalid event data,
+        // and hence the whole event parsing process will produce an
+        // error for this event.
         order_placement_2.data = vec![].into();
         let event_data_2 = ContractEvent::OrderPlacement(order_placement_2);
         let domain_separator = DomainSeparator([7u8; 32]);

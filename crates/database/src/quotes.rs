@@ -398,7 +398,8 @@ mod tests {
             None
         );
 
-        // Query that previously succeeded after cleaning up expired measurements.
+        // Query that previously succeeded after cleaning up expired
+        // measurements.
         remove_expired_quotes(&mut db, now + Duration::seconds(120))
             .await
             .unwrap();
@@ -414,8 +415,8 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let now = low_precision_now();
-        // All candidates quote the same sell order (same sell amount); they only
-        // differ in buy amount and fee.
+        // All candidates quote the same sell order (same sell amount); they
+        // only differ in buy amount and fee.
         let base = Quote {
             id: Default::default(),
             sell_token: ByteArray([1; 20]),
@@ -444,8 +445,8 @@ mod tests {
         };
         high_buy_high_fee.id = save(&mut db, &high_buy_high_fee).await.unwrap();
 
-        // Lower absolute buy amount, but a negligible fee -> best net-of-fee rate.
-        // net rate = 200 / (1000 + 1*1/0.1) = 200/1010 ≈ 0.198
+        // Lower absolute buy amount, but a negligible fee -> best net-of-fee
+        // rate. net rate = 200 / (1000 + 1*1/0.1) = 200/1010 ≈ 0.198
         let mut best_rate = Quote {
             buy_amount: 200.into(),
             gas_amount: 1.,
@@ -495,8 +496,8 @@ mod tests {
             auction_id: None,
         };
 
-        // Lowest absolute sell amount, but an expensive fee -> total spend 3000.
-        // net rate = 100 / (1000 + 200*1/0.1) = 100/3000 ≈ 0.033
+        // Lowest absolute sell amount, but an expensive fee -> total spend
+        // 3000. net rate = 100 / (1000 + 200*1/0.1) = 100/3000 ≈ 0.033
         let mut low_sell_high_fee = Quote {
             sell_amount: 1000.into(),
             gas_amount: 200.,
@@ -505,8 +506,8 @@ mod tests {
         };
         low_sell_high_fee.id = save(&mut db, &low_sell_high_fee).await.unwrap();
 
-        // Higher absolute sell amount, but a negligible fee -> total spend 1110.
-        // net rate = 100 / (1100 + 1*1/0.1) = 100/1110 ≈ 0.090
+        // Higher absolute sell amount, but a negligible fee -> total spend
+        // 1110. net rate = 100 / (1100 + 1*1/0.1) = 100/1110 ≈ 0.090
         let mut high_sell_low_fee = Quote {
             sell_amount: 1100.into(),
             gas_amount: 1.,

@@ -261,10 +261,10 @@ where
         Ok(fetched)
     }
 
-    // Sometimes nodes requests error when we try to get state from what we think is
-    // the current block when the node has been load balanced out to one that
-    // hasn't seen the block yet. As a workaround we repeat the request up to N
-    // times while sleeping in between.
+    // Sometimes nodes requests error when we try to get state from what we
+    // think is the current block when the node has been load balanced out
+    // to one that hasn't seen the block yet. As a workaround we repeat the
+    // request up to N times while sleeping in between.
     async fn fetch_inner(&self, key: K, block: Block) -> Result<Vec<V>> {
         let retries = self.maximum_retries;
         let delay = self.delay_between_retries;
@@ -328,8 +328,9 @@ where
 
         let cache_miss_block = block.unwrap_or(last_update_block);
         let cache_misses: Vec<_> = cache_misses.into_iter().collect();
-        // Splits fetches into chunks because we can get over 1400 requests when the
-        // cache is empty which tend to time out if we don't chunk them.
+        // Splits fetches into chunks because we can get over 1400 requests when
+        // the cache is empty which tend to time out if we don't chunk
+        // them.
         for chunk in cache_misses.chunks(REQUEST_BATCH_SIZE) {
             let keys = chunk.iter().cloned().collect();
             let fetched = self
@@ -341,8 +342,9 @@ where
             let mut mutexed = self.mutexed.lock().unwrap();
             mutexed.insert(cache_miss_block, chunk.iter().cloned(), fetched);
             if block.is_some() {
-                // Only if a block number was specified the caller actually cared about the most
-                // accurate data for these keys. Only in that case we want to be nice and
+                // Only if a block number was specified the caller actually
+                // cared about the most accurate data for these
+                // keys. Only in that case we want to be nice and
                 // remember the key for future background updates of the cached
                 // liquidity.
                 for key in found_keys {
@@ -442,8 +444,8 @@ where
         tracing::debug!("dropping blocks older than {} from cache", oldest_to_keep);
         self.entries = self.entries.split_off(&(oldest_to_keep, K::first_ord()));
 
-        // Iterate from newest block to oldest block and only keep the most recent
-        // liquidity around to reduce memory consumption.
+        // Iterate from newest block to oldest block and only keep the most
+        // recent liquidity around to reduce memory consumption.
         let mut cached_keys = HashSet::new();
         let mut items = 0;
         for ((_block, key), values) in self.entries.iter_mut().rev() {
@@ -581,18 +583,21 @@ mod tests {
             .unwrap();
         assert_keys_recently_used(&[0]);
 
-        // Don't cache this because we didn't request the liquidity on a specific block.
+        // Don't cache this because we didn't request the liquidity on a
+        // specific block.
         cache.fetch(test_keys(1..2), Block::Recent).await.unwrap();
         assert_keys_recently_used(&[0]);
 
-        // Don't cache this because there is no liquidity for this block on-chain.
+        // Don't cache this because there is no liquidity for this block
+        // on-chain.
         cache
             .fetch(test_keys(2..3), Block::Number(block_number))
             .await
             .unwrap();
         assert_keys_recently_used(&[0]);
 
-        // Cache the new key but evict the other key because we have a limited capacity.
+        // Cache the new key but evict the other key because we have a limited
+        // capacity.
         cache
             .fetch(test_keys(3..4), Block::Number(block_number))
             .await
@@ -637,8 +642,8 @@ mod tests {
         assert_eq!(result.len(), 2);
 
         let result = cache.fetch(test_keys(0..4), Block::Recent).await.unwrap();
-        // We can fetch data for keys with `Recent` but we don't schedule them for auto
-        // updates.
+        // We can fetch data for keys with `Recent` but we don't schedule them
+        // for auto updates.
         assert_eq!(result.len(), 4);
 
         // New state on the block chain on the next block.
@@ -654,10 +659,12 @@ mod tests {
 
         let result = cache.fetch(test_keys(0..4), Block::Recent).await.unwrap();
         assert_eq!(result.len(), 4);
-        // These keys were scheduled for background updates and show the new value.
+        // These keys were scheduled for background updates and show the new
+        // value.
         assert!(result.contains(&updated_values[0]));
         assert!(result.contains(&updated_values[1]));
-        // These keys were NOT scheduled for background updates and show the old value.
+        // These keys were NOT scheduled for background updates and show the old
+        // value.
         assert!(result.contains(&initial_values[2]));
         assert!(result.contains(&initial_values[3]));
     }
@@ -768,8 +775,8 @@ mod tests {
             .unwrap();
         assert_eq!(result, vec![TestValue::new(0, "bar")]);
 
-        // Now cache at an earlier block and see that it doesn't override the most
-        // recent entry.
+        // Now cache at an earlier block and see that it doesn't override the
+        // most recent entry.
         *values.lock().unwrap() = vec![TestValue::new(0, "baz")];
         let result = cache
             .fetch(test_keys(0..1), Block::Number(4))
@@ -809,8 +816,8 @@ mod tests {
         .unwrap()
         .inner;
 
-        // Fetch 10 keys on block 10; but we only have capacity to update 2 of those in
-        // the background.
+        // Fetch 10 keys on block 10; but we only have capacity to update 2 of
+        // those in the background.
         cache
             .fetch(test_keys(0..10), Block::Number(10))
             .await
@@ -830,9 +837,9 @@ mod tests {
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 4);
 
         block_sender.send(block(13)).unwrap();
-        // Update 2 blocks in background but now it's time to evict the 2 additional
-        // keys we fetched with `Block::Recent` because we are only allowed to
-        // keep state that is up to 2 blocks old.
+        // Update 2 blocks in background but now it's time to evict the 2
+        // additional keys we fetched with `Block::Recent` because we
+        // are only allowed to keep state that is up to 2 blocks old.
         cache.update_cache_at_block(13).await.unwrap();
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 2);
     }
