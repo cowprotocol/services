@@ -259,7 +259,7 @@ struct RankingContext {
 }
 
 impl RankingContext {
-    /// Uses the native sell token price to compute a qoute's effective out
+    /// Uses the native sell token price to compute a quote's effective out
     /// amount that takes the quote's gas cost into account.
     /// sell orders: buy token they receive after fees
     /// buy orders: sell tokens they have to pay including fees
