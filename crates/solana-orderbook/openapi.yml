@@ -379,13 +379,11 @@ components:
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         validTo:
-          description: Unix seconds the quoted order would expire at.
+          description: Unix timestamp (`uint32`) the quoted order would expire at.
           type: integer
-          format: int64
         validFor:
           description: Seconds from now the quoted order would expire after.
           type: integer
-          format: int64
         appData:
           description: The 32-byte app-data hash as hex.
           type: string
@@ -442,8 +440,8 @@ components:
         buyAmount:
           $ref: "#/components/schemas/TokenAmount"
         validTo:
+          description: Unix timestamp (`uint32`) the quoted order expires at.
           type: integer
-          format: int64
         appData:
           description: The 32-byte app-data hash as hex.
           type: string

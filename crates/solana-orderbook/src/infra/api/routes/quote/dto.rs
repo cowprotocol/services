@@ -1,7 +1,6 @@
 //! Wire shape of the quote endpoint, mirroring the EVM orderbook.
 
 use {
-    bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -127,15 +126,15 @@ pub struct Quote {
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub receiver: Option<Pubkey>,
     #[serde_as(as = "DisplayFromStr")]
-    pub sell_amount: BigDecimal,
+    pub sell_amount: u64,
     #[serde_as(as = "DisplayFromStr")]
-    pub buy_amount: BigDecimal,
+    pub buy_amount: u64,
     /// Unix seconds.
     pub valid_to: u32,
     pub app_data: Option<String>,
     /// Always zero: no component charges a fee.
     #[serde_as(as = "DisplayFromStr")]
-    pub fee_amount: BigDecimal,
+    pub fee_amount: u64,
     pub kind: Kind,
     pub partially_fillable: bool,
 }
@@ -208,11 +207,11 @@ mod tests {
                     .parse()
                     .unwrap(),
                 receiver: None,
-                sell_amount: 10_000_000.into(),
-                buy_amount: 1_000_000.into(),
+                sell_amount: 10_000_000,
+                buy_amount: 1_000_000,
                 valid_to: 1_787_740_563,
                 app_data: Some(format!("0x{}", "11".repeat(32))),
-                fee_amount: 0.into(),
+                fee_amount: 0,
                 kind: Kind::Sell,
                 partially_fillable: false,
             },

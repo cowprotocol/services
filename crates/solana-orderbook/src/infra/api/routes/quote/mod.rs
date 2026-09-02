@@ -8,7 +8,6 @@ use {
         quoter,
     },
     axum::{Json, http::StatusCode},
-    bigdecimal::BigDecimal,
     chrono::Utc,
     std::time::Duration,
 };
@@ -63,11 +62,11 @@ pub async fn quote(
             sell_token: request.sell_token,
             buy_token: request.buy_token,
             receiver: request.receiver,
-            sell_amount: BigDecimal::from(quoted.sell_amount),
-            buy_amount: BigDecimal::from(quoted.buy_amount),
+            sell_amount: quoted.sell_amount,
+            buy_amount: quoted.buy_amount,
             valid_to,
             app_data: request.app_data,
-            fee_amount: BigDecimal::from(0),
+            fee_amount: 0,
             kind,
             partially_fillable: false,
         },
@@ -91,7 +90,7 @@ fn validate(request: &dto::Request, valid_to: u32, now_secs: u32) -> Result<(), 
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
             "ZeroAmount",
-            "The quoted amount must be positive.",
+            "Buy or sell amount is zero.",
         ));
     }
     if valid_to < now_secs.saturating_add(MIN_VALIDITY.as_secs() as u32) {

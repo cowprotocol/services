@@ -49,9 +49,6 @@ pub struct Quote {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// The driver found no route for the pair.
-    #[error("no route for the requested pair")]
-    NoRoute,
     #[error("driver request failed: {0}")]
     Request(#[from] reqwest::Error),
     #[error("driver answered {status}: {body}")]
@@ -108,11 +105,6 @@ impl Quoter {
             .timeout(self.timeout)
             .send()
             .await?;
-        // A driver with no route answers 404, which is a normal outcome for an
-        // untradeable pair rather than a failure to report.
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(Error::NoRoute);
-        }
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
