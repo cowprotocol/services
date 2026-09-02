@@ -11,7 +11,7 @@ use {
         RankedEstimates,
         StreamingPriceEstimating,
     },
-    alloy::primitives::{Address, U256},
+    alloy::primitives::U256,
     event_bus_dto::{
         price_estimate::{EstimateResult, PriceEstimateEvent},
         query::{OrderKind as DtoOrderKind, QueryFields},
