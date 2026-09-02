@@ -712,6 +712,9 @@ pub struct FastPathOrder {
     pub buy_token_balance: BuyTokenDestination,
     pub pre_interactions: Vec<RawInteraction>,
     pub post_interactions: Vec<RawInteraction>,
+    /// Contents of the order's `app_data` document (from the `app_data`
+    /// table). `None` when the full document was never uploaded.
+    pub full_app_data: Option<Vec<u8>>,
     pub auction_id: AuctionId,
     pub solution_id: BigDecimal,
     pub solution_uid: i64,
@@ -741,6 +744,7 @@ pub async fn single_fast_path_order(
         " WHERE p.order_uid = o.uid AND p.execution = 'pre' ORDER BY p.index) AS pre_interactions, ",
         "array(SELECT (p.target, p.value, p.data) FROM interactions p",
         " WHERE p.order_uid = o.uid AND p.execution = 'post' ORDER BY p.index) AS post_interactions, ",
+        "ad.full_app_data AS full_app_data, ",
         "oq.auction_id AS auction_id, ps.id AS solution_id, ps.uid AS solution_uid, ps.solver AS solver, ",
         "pte.executed_sell AS executed_sell, pte.executed_buy AS executed_buy, ",
         "ca.price_tokens AS price_tokens, ca.price_values AS price_values",
@@ -750,6 +754,7 @@ pub async fn single_fast_path_order(
         " JOIN proposed_trade_executions pte",
         " ON pte.auction_id = ps.auction_id AND pte.solution_uid = ps.uid AND pte.order_uid = o.uid",
         " JOIN competition_auctions ca ON ca.id = oq.auction_id",
+        " LEFT JOIN app_data ad ON ad.contract_app_data = o.app_data",
         " WHERE o.uid = $1",
         " LIMIT 1",
     );

@@ -168,6 +168,13 @@ pub struct RunLoop {
 
     /// Drivers that do NOT support delta auctions
     drivers: Vec<Arc<infra::Driver>>,
+    /// Fee policy computation — shared with `SolvableOrdersCache` so
+    /// fast-path orders see the exact same policies they would in a normal
+    /// auction.
+    protocol_fees: Arc<crate::domain::ProtocolFees>,
+    /// Owners that capture their own surplus via JIT — passed to
+    /// `ProtocolFees::apply` to skip protocol-side fee computation for them.
+    surplus_capturing_jit_order_owners: Arc<Vec<alloy::primitives::Address>>,
 }
 
 impl RunLoop {
@@ -182,6 +189,8 @@ impl RunLoop {
         probes: Probes,
         maintenance: MaintenanceSync,
         new_orders_listener: mpsc::UnboundedReceiver<OrderUid>,
+        protocol_fees: Arc<crate::domain::ProtocolFees>,
+        surplus_capturing_jit_order_owners: Arc<Vec<alloy::primitives::Address>>,
     ) -> Arc<Self> {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
@@ -203,6 +212,8 @@ impl RunLoop {
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
             wake_notify: wake_runloop,
             drivers,
+            protocol_fees,
+            surplus_capturing_jit_order_owners,
         });
         Self::spawn_order_listener(self_.clone(), new_orders_listener);
         self_
@@ -318,6 +329,67 @@ impl RunLoop {
             );
             return;
         };
+
+        // Compute the fee policies the order would receive in a regular
+        // auction. For fast-path we can only *apply* Volume-type policies to
+        // the quoted amounts — Surplus and PriceImprovement need an execution
+        // vs. quote comparison that doesn't exist here — but Surplus /
+        // PriceImprovement policies are still recorded so downstream accounting
+        // reflects reality if they ever become applicable.
+        let order_uid: domain::OrderUid = fast_path_data.model_order.metadata.uid.into();
+        // `raw_sell`/`raw_buy` are the placeholder `proposed_trade_executions`
+        // amounts written at quote time; they equal the quote's own amounts
+        // because nothing rewrites them between then and now.
+        let quote = domain::Quote {
+            order_uid,
+            sell_amount: fast_path_data.raw_sell.into(),
+            buy_amount: fast_path_data.raw_buy.into(),
+            // The synthetic competition doesn't carry a network fee — the
+            // solver's quoted amounts already include everything the user
+            // will pay. Represent that as a zero fee here.
+            fee: alloy::primitives::U256::ZERO.into(),
+            solver: fast_path_data.solver.0.into(),
+        };
+        let policies = self.protocol_fees.apply(
+            &fast_path_data.model_order,
+            Some(&quote),
+            &self.surplus_capturing_jit_order_owners,
+        );
+        let volume_factors: Vec<_> = policies
+            .iter()
+            .filter_map(|p| match p {
+                domain::fee::Policy::Volume { factor } => Some(*factor),
+                _ => None,
+            })
+            .collect();
+        let (limit_sell, limit_buy) = shared::fee::apply_volume_fees(
+            fast_path_data.raw_sell,
+            fast_path_data.raw_buy,
+            fast_path_data.model_order.data.kind,
+            volume_factors.iter().copied(),
+        );
+        if let Err(err) = self
+            .persistence
+            .record_fast_path_fees(
+                fast_path_data.auction_id,
+                order_uid,
+                fast_path_data.model_order.data.kind,
+                &volume_factors,
+                &policies,
+            )
+            .await
+        {
+            tracing::error!(?err, "failed to record fast-path fee policies");
+            return;
+        }
+
+        let domain_order = crate::boundary::order::to_domain(
+            &fast_path_data.model_order,
+            policies,
+            Some(quote),
+            None,
+        );
+
         // TODO: consider making this smarter for orders mainnet orders shortly
         // before the deadline and L2s in general
         let deadline = self.eth.current_block().borrow().number + 1;
@@ -327,10 +399,10 @@ impl RunLoop {
             solution_id: fast_path_data.solution_id,
             submission_deadline_latest_block: deadline,
             fast_path: Some(settle::FastPath {
-                order: dto::order::from_domain(&fast_path_data.order),
+                order: dto::order::from_domain(&domain_order),
                 limit_prices: settle::LimitPrices {
-                    sell: fast_path_data.limit_sell,
-                    buy: fast_path_data.limit_buy,
+                    sell: limit_sell,
+                    buy: limit_buy,
                 },
                 native_prices: fast_path_data.native_prices.clone(),
             }),

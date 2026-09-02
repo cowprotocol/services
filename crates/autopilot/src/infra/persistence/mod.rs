@@ -1058,9 +1058,6 @@ impl Persistence {
         };
 
         let model_order = fast_path_order_into_model(&row)?;
-        // Fast-path fills at the recorded executed amounts; the order's fee
-        // policies and quote are not applied in the re-encode.
-        let order = boundary::order::to_domain(&model_order, vec![], None, None);
 
         let native_prices = row
             .price_tokens
@@ -1073,7 +1070,7 @@ impl Persistence {
             .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
         Ok(Some(FastPathOrder {
-            order,
+            model_order,
             auction_id: row.auction_id,
             solution_id: row
                 .solution_id
@@ -1084,24 +1081,97 @@ impl Persistence {
                 .to_usize()
                 .context("solution uid out of range")?,
             solver: eth::Address::from(row.solver.0),
-            limit_sell: big_decimal_to_u256(&row.executed_sell)
+            raw_sell: big_decimal_to_u256(&row.executed_sell)
                 .context("invalid executed sell amount")?,
-            limit_buy: big_decimal_to_u256(&row.executed_buy)
+            raw_buy: big_decimal_to_u256(&row.executed_buy)
                 .context("invalid executed buy amount")?,
             native_prices,
         }))
+    }
+
+    /// Applies fees to every solver's bid on a fast-path order and stamps
+    /// the applicable fee policies. Runs after the autopilot picks up the
+    /// placed order and computes the policies via `ProtocolFees::apply`.
+    ///
+    /// Each bid's own raw `executed_sell`/`executed_buy` is adjusted by the
+    /// same volume factors so the recorded amounts stay consistent across
+    /// the whole competition — not just the winning row.
+    pub async fn record_fast_path_fees(
+        &self,
+        auction_id: database::auction::AuctionId,
+        order_uid: domain::OrderUid,
+        order_kind: model::order::OrderKind,
+        volume_factors: &[configs::fee_factor::FeeFactor],
+        fee_policies: &[domain::fee::Policy],
+    ) -> anyhow::Result<()> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["record_fast_path_fees"])
+            .start_timer();
+
+        let uid = ByteArray(order_uid.0);
+        let policy_rows: Vec<_> = fee_policies
+            .iter()
+            .map(|p| dto::fee_policy::from_domain(auction_id, order_uid, *p))
+            .collect();
+
+        let mut tx = self.postgres.pool.begin().await.context("begin")?;
+        let bids = database::solver_competition_v2::fast_path_bids(tx.deref_mut(), auction_id, uid)
+            .await
+            .context("fetch fast-path bids")?;
+        let adjusted_bids: Vec<_> = bids
+            .into_iter()
+            .map(|bid| {
+                let raw_sell = big_decimal_to_u256(&bid.executed_sell)
+                    .context("bid executed_sell not a U256")?;
+                let raw_buy = big_decimal_to_u256(&bid.executed_buy)
+                    .context("bid executed_buy not a U256")?;
+                let (adjusted_sell, adjusted_buy) = shared::fee::apply_volume_fees(
+                    raw_sell,
+                    raw_buy,
+                    order_kind,
+                    volume_factors.iter().copied(),
+                );
+                anyhow::Ok(database::solver_competition_v2::FastPathBid {
+                    solution_uid: bid.solution_uid,
+                    executed_sell: u256_to_big_decimal(&adjusted_sell),
+                    executed_buy: u256_to_big_decimal(&adjusted_buy),
+                })
+            })
+            .collect::<anyhow::Result<_>>()?;
+        database::solver_competition_v2::apply_fees_to_fast_path_bids(
+            tx.deref_mut(),
+            auction_id,
+            uid,
+            &adjusted_bids,
+        )
+        .await
+        .context("apply_fees_to_fast_path_bids")?;
+        database::fee_policies::insert_batch(tx.deref_mut(), policy_rows)
+            .await
+            .context("insert fast-path fee policies")?;
+        tx.commit().await.context("commit")?;
+        Ok(())
     }
 }
 
 /// The data the autopilot needs to settle a fast-path order out of competition.
 pub struct FastPathOrder {
-    pub order: domain::Order,
+    /// The order in the raw API model form. Callers pass this to
+    /// `ProtocolFees::apply` and can then convert it to `domain::Order` via
+    /// `boundary::order::to_domain` once the resulting policies are known.
+    pub model_order: model::order::Order,
     pub auction_id: database::auction::AuctionId,
     pub solution_id: u64,
     pub solution_uid: usize,
     pub solver: eth::Address,
-    pub limit_sell: eth::U256,
-    pub limit_buy: eth::U256,
+    /// The `proposed_trade_executions` amounts as stored at quote time
+    /// (pre-fee-adjustment; identical to the quote's amounts since nothing
+    /// rewrites them between quote time and fast-path handling). Feed these
+    /// to `apply_volume_fees` alongside the Volume-type policies to obtain
+    /// the actual limit prices to settle at.
+    pub raw_sell: eth::U256,
+    pub raw_buy: eth::U256,
     /// Native prices (token → normalized price) from the quote's auction.
     pub native_prices: HashMap<eth::Address, eth::U256>,
 }

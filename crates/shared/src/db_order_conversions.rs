@@ -136,10 +136,17 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
 }
 
 pub fn fast_path_order_into_model(order: &FastPathOrderDb) -> Result<Order> {
+    let full_app_data = order
+        .full_app_data
+        .as_ref()
+        .map(|bytes| String::from_utf8(bytes.clone()))
+        .transpose()
+        .context("full app data isn't utf-8")?;
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: Address::new(order.owner.0),
         uid: OrderUid(order.uid.0),
+        full_app_data,
         ..Default::default()
     };
     let data = OrderData {

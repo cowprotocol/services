@@ -384,6 +384,65 @@ WHERE id = $2
     Ok(())
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct FastPathBid {
+    pub solution_uid: i64,
+    pub executed_sell: BigDecimal,
+    pub executed_buy: BigDecimal,
+}
+
+/// Returns every proposed trade execution recorded against the fast-path
+/// order — one row per competing solver. Rows for JIT orders (which use
+/// different `order_uid`s) are naturally excluded.
+#[instrument(skip_all)]
+pub async fn fast_path_bids(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+    order_uid: OrderUid,
+) -> Result<Vec<FastPathBid>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT solution_uid, executed_sell, executed_buy
+FROM proposed_trade_executions
+WHERE auction_id = $1 AND order_uid = $2
+"#;
+    sqlx::query_as(QUERY)
+        .bind(auction_id)
+        .bind(order_uid)
+        .fetch_all(ex)
+        .await
+}
+
+/// Overwrites the executed amounts on every competing solver's bid for a
+/// fast-path order in a single query. Each row is matched by its own
+/// `solution_uid`, so different bids can be updated to different values.
+#[instrument(skip_all)]
+pub async fn apply_fees_to_fast_path_bids(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+    order_uid: OrderUid,
+    bids: &[FastPathBid],
+) -> Result<(), sqlx::Error> {
+    if bids.is_empty() {
+        return Ok(());
+    }
+    let mut query_builder = QueryBuilder::new(
+        "UPDATE proposed_trade_executions AS pte SET executed_sell = v.executed_sell, \
+         executed_buy = v.executed_buy FROM (",
+    );
+    query_builder.push_values(bids.iter(), |mut b, bid| {
+        b.push_bind(bid.solution_uid)
+            .push_bind(&bid.executed_sell)
+            .push_bind(&bid.executed_buy);
+    });
+    query_builder.push(") AS v(solution_uid, executed_sell, executed_buy) WHERE pte.auction_id = ");
+    query_builder.push_bind(auction_id);
+    query_builder.push(" AND pte.order_uid = ");
+    query_builder.push_bind(order_uid);
+    query_builder.push(" AND pte.solution_uid = v.solution_uid");
+    query_builder.build().execute(ex).await?;
+    Ok(())
+}
+
 /// Deletes all competition rows associated with `auction_id` across
 /// `proposed_trade_executions`, `proposed_jit_orders`, `proposed_solutions`,
 /// and `competition_auctions`.
