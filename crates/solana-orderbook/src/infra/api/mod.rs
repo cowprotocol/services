@@ -32,6 +32,30 @@ pub struct Api {
     pub pool: PgPool,
     /// The driver that quotes orders.
     pub quoter: Quoter,
+    /// Validity bounds and expiry applied to quotes.
+    pub quote_limits: QuoteLimits,
+}
+
+/// Validity bounds and expiry applied to quotes. The defaults are the EVM
+/// orderbook's.
+#[derive(Clone, Copy, Debug)]
+pub struct QuoteLimits {
+    /// Least far in the future a quoted order's `validTo` may lie.
+    pub min_validity: std::time::Duration,
+    /// Furthest in the future a quoted order's `validTo` may lie.
+    pub max_validity: std::time::Duration,
+    /// How long the quoted amounts are honored.
+    pub quote_expiry: std::time::Duration,
+}
+
+impl Default for QuoteLimits {
+    fn default() -> Self {
+        Self {
+            min_validity: std::time::Duration::from_secs(2 * 60),
+            max_validity: std::time::Duration::from_secs(2 * 60 * 60),
+            quote_expiry: std::time::Duration::from_secs(60),
+        }
+    }
 }
 
 impl Api {
@@ -51,15 +75,16 @@ impl Api {
         listener: TcpListener,
         shutdown: CancellationToken,
     ) -> Result<(), io::Error> {
-        // Propagate the OpenTelemetry trace context from incoming request headers and
-        // record the trace id on the request span, so logs can be correlated across
-        // services. `make_span` sets the parent context and an empty `trace_id` field;
+        // Propagate the OpenTelemetry trace context from incoming request
+        // headers and record the trace id on the request span, so logs
+        // can be correlated across services. `make_span` sets the
+        // parent context and an empty `trace_id` field;
         // `record_trace_id` then fills it in.
         let tracing_layer = ServiceBuilder::new()
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
-        let state = State::new(self.pool, self.quoter);
+        let state = State::new(self.pool, self.quoter, self.quote_limits);
 
         // Browsers call this API directly, so it answers cross-origin
         // requests like the EVM orderbook does.
@@ -95,8 +120,12 @@ impl Api {
 pub struct State(Arc<Inner>);
 
 impl State {
-    fn new(pool: PgPool, quoter: Quoter) -> Self {
-        Self(Arc::new(Inner { pool, quoter }))
+    fn new(pool: PgPool, quoter: Quoter, quote_limits: QuoteLimits) -> Self {
+        Self(Arc::new(Inner {
+            pool,
+            quoter,
+            quote_limits,
+        }))
     }
 
     /// The database handle the order, trades, and auction endpoints read
@@ -109,6 +138,11 @@ impl State {
     pub fn quoter(&self) -> &Quoter {
         &self.0.quoter
     }
+
+    /// Validity bounds and expiry applied to quotes.
+    pub fn quote_limits(&self) -> QuoteLimits {
+        self.0.quote_limits
+    }
 }
 
 struct Inner {
@@ -116,4 +150,6 @@ struct Inner {
     pool: PgPool,
     /// The driver that quotes orders.
     quoter: Quoter,
+    /// Validity bounds and expiry applied to quotes.
+    quote_limits: QuoteLimits,
 }

@@ -131,8 +131,9 @@ paths:
           description: |
             The body could not be parsed (`InvalidRequestBody`), buy and sell
             token are the same (`SameBuyAndSellToken`), the amount is zero
-            (`ZeroAmount`), or `validTo` is under a minute or over three hours
-            away (`InsufficientValidTo`, `ExcessiveValidTo`).
+            (`ZeroAmount`), or `validTo` is closer than the configured minimum
+            (default two minutes) or further than the configured maximum
+            (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`).
           content:
             application/json:
               schema:

@@ -14,6 +14,10 @@ bind-address = "0.0.0.0:8080"
 driver-url = "http://localhost:8000"
 # How long the driver has to answer. Defaults to 5s.
 # timeout = "5s"
+# Bounds on a quoted order's validTo and how long the amounts are honored.
+# min-validity = "2m"
+# max-validity = "2h"
+# quote-expiry = "1m"
 
 [logging]
 filter = "info,solana_orderbook=debug"

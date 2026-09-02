@@ -4,7 +4,7 @@ pub mod dto;
 
 use {
     crate::infra::{
-        api::{State, error, extract},
+        api::{QuoteLimits, State, error, extract},
         quoter,
     },
     axum::{Json, http::StatusCode},
@@ -14,13 +14,6 @@ use {
 
 /// How long a quoted order stays valid when the request names no validity.
 const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
-
-/// The least and the most time a quoted order may stay valid for.
-const MIN_VALIDITY: Duration = Duration::from_secs(60);
-const MAX_VALIDITY: Duration = Duration::from_secs(3 * 60 * 60);
-
-/// How long the quoted amounts are honored for.
-const QUOTE_EXPIRY: Duration = Duration::from_secs(60);
 
 /// Handle `POST /api/v1/quote`.
 pub async fn quote(
@@ -35,7 +28,8 @@ pub async fn quote(
         Some(dto::Validity::ValidFor(seconds)) => now_secs.saturating_add(seconds),
         None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
     };
-    validate(&request, valid_to, now_secs)?;
+    let limits = state.quote_limits();
+    validate(&request, valid_to, now_secs, &limits)?;
 
     let (kind, amount) = request.side.kind_and_amount();
     let quoted = state
@@ -71,14 +65,19 @@ pub async fn quote(
             partially_fillable: false,
         },
         from: request.from,
-        expiration: now + QUOTE_EXPIRY,
+        expiration: now + limits.quote_expiry,
         id: None,
         verified: false,
     }))
 }
 
 /// The checks an order must pass before it is worth quoting.
-fn validate(request: &dto::Request, valid_to: u32, now_secs: u32) -> Result<(), error::Reply> {
+fn validate(
+    request: &dto::Request,
+    valid_to: u32,
+    now_secs: u32,
+    limits: &QuoteLimits,
+) -> Result<(), error::Reply> {
     if request.sell_token == request.buy_token {
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
@@ -93,14 +92,14 @@ fn validate(request: &dto::Request, valid_to: u32, now_secs: u32) -> Result<(), 
             "Buy or sell amount is zero.",
         ));
     }
-    if valid_to < now_secs.saturating_add(MIN_VALIDITY.as_secs() as u32) {
+    if valid_to < now_secs.saturating_add(limits.min_validity.as_secs() as u32) {
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
             "InsufficientValidTo",
             "validTo is not far enough in the future",
         ));
     }
-    if valid_to > now_secs.saturating_add(MAX_VALIDITY.as_secs() as u32) {
+    if valid_to > now_secs.saturating_add(limits.max_validity.as_secs() as u32) {
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
             "ExcessiveValidTo",

@@ -14,6 +14,7 @@ fn mock_api() -> Api {
         // query, so the tests run without a database.
         pool: PgPool::connect_lazy("postgresql://").unwrap(),
         quoter: dead_quoter(),
+        quote_limits: Default::default(),
     }
 }
 

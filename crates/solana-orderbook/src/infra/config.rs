@@ -1,6 +1,7 @@
 //! Configuration of infrastructural components.
 
 use {
+    crate::infra::api::QuoteLimits,
     configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
     std::{net::SocketAddr, path::Path, time::Duration},
@@ -72,10 +73,42 @@ pub struct Quoting {
     /// How long the driver has to answer before the quote fails.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
     pub timeout: Duration,
+    /// Least far in the future a quoted order's `validTo` may lie.
+    #[serde(with = "humantime_serde", default = "default_min_validity")]
+    pub min_validity: Duration,
+    /// Furthest in the future a quoted order's `validTo` may lie.
+    #[serde(with = "humantime_serde", default = "default_max_validity")]
+    pub max_validity: Duration,
+    /// How long the quoted amounts are honored.
+    #[serde(with = "humantime_serde", default = "default_quote_expiry")]
+    pub quote_expiry: Duration,
+}
+
+impl Quoting {
+    /// The validity bounds and expiry as the API consumes them.
+    pub fn limits(&self) -> QuoteLimits {
+        QuoteLimits {
+            min_validity: self.min_validity,
+            max_validity: self.max_validity,
+            quote_expiry: self.quote_expiry,
+        }
+    }
 }
 
 fn default_quote_timeout() -> Duration {
     Duration::from_secs(5)
+}
+
+fn default_min_validity() -> Duration {
+    QuoteLimits::default().min_validity
+}
+
+fn default_max_validity() -> Duration {
+    QuoteLimits::default().max_validity
+}
+
+fn default_quote_expiry() -> Duration {
+    QuoteLimits::default().quote_expiry
 }
 
 /// HTTP API server configuration.
@@ -99,6 +132,9 @@ mod tests {
         assert_eq!(config.logging.filter, "info,solana_orderbook=debug");
         assert_eq!(config.quoting.driver_url.as_str(), "http://localhost:8000/");
         assert_eq!(config.quoting.timeout, Duration::from_secs(5));
+        assert_eq!(config.quoting.min_validity, Duration::from_secs(120));
+        assert_eq!(config.quoting.max_validity, Duration::from_secs(7200));
+        assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
     }
 
     /// Routes resolve relative to `driver-url`, so a base URL with a path
