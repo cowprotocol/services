@@ -3,17 +3,10 @@
 //! The blockchain adapter keeps these helpers because they encode
 //! chain-specific program IDs and ATA derivation rules.
 
-use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
-
-#[allow(dead_code)]
-const SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID: Pubkey =
-    Pubkey::from_str_const("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
-
-pub(crate) const SPL_TOKEN_PROGRAM_ID: Pubkey =
-    Pubkey::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-
-pub(crate) const SYSTEM_PROGRAM_ID: Pubkey =
-    Pubkey::from_str_const("11111111111111111111111111111111");
+use {
+    solana_sdk::{instruction::Instruction, pubkey::Pubkey},
+    spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID,
+};
 
 /// Derive the ATA address for `owner` and `mint` under the SPL Token program.
 ///
@@ -50,4 +43,22 @@ pub fn create_associated_token_account_idempotent(
         mint,
         &SPL_TOKEN_PROGRAM_ID,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The system-program owner + the WSOL mint derive to a golden (known-good)
+    /// ATA. For now, this test guards against token-2022 addresses, as a wrong
+    /// token program id or seed results in a faliure.
+    #[test]
+    fn derives_associated_token_address() {
+        const GOLDEN_WSOL_ATA: Pubkey =
+            Pubkey::from_str_const("aqxoAhCwpy3oB1BpNw9hL1HdLYLgPpbPjzxDrrQj3Fs");
+
+        let owner = solana_system_interface::program::ID;
+        let mint = spl_token_interface::native_mint::ID;
+        assert_eq!(associated_token_address(&owner, &mint), GOLDEN_WSOL_ATA);
+    }
 }

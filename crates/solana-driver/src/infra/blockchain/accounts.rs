@@ -5,9 +5,13 @@
 //! token-account states, never raw `Account`s.
 
 use {
-    crate::infra::blockchain::token::{SPL_TOKEN_PROGRAM_ID, SYSTEM_PROGRAM_ID},
-    solana_address_lookup_table_interface::state::AddressLookupTable,
+    solana_address_lookup_table_interface::{
+        program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
+        state::AddressLookupTable,
+    },
     solana_sdk::{account::Account, message::AddressLookupTableAccount, pubkey::Pubkey},
+    solana_system_interface::program::ID as SYSTEM_PROGRAM_ID,
+    spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID,
     std::collections::HashMap,
 };
 
@@ -50,7 +54,7 @@ impl AccountsSnapshot {
     ) -> Result<AddressLookupTableAccount, InvalidAddressLookupTableReason> {
         use InvalidAddressLookupTableReason::*;
         let account = self.accounts.get(key).ok_or(AccountNotFound)?;
-        if account.owner != solana_address_lookup_table_interface::program::id() {
+        if account.owner != ADDRESS_LOOKUP_TABLE_PROGRAM_ID {
             return Err(UnexpectedOwner);
         }
         let table =
@@ -149,7 +153,7 @@ mod tests {
 
     fn table_account(data: Vec<u8>) -> Account {
         Account {
-            owner: solana_address_lookup_table_interface::program::id(),
+            owner: ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
             data,
             ..Account::default()
         }
@@ -219,7 +223,7 @@ mod tests {
     fn a_token_owned_account_is_initialized() {
         let address = pubkey(0x11);
         let account = Account {
-            owner: SPL_TOKEN_PROGRAM_ID,
+            owner: spl_token_interface::ID,
             ..Account::default()
         };
         let state = snapshot([(address, account)]).token_account_state(&address);

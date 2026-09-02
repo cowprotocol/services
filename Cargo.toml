@@ -136,6 +136,7 @@ solana-indexer = { path = "crates/solana-indexer" }
 solana-rpc-client = "4"
 solana-rpc-client-api = "4"
 solana-sdk = "4"
+solana-system-interface = "3"
 solana-testlib = { path = "crates/solana-testlib" }
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
