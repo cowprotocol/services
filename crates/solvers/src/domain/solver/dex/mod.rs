@@ -130,8 +130,9 @@ impl Dex {
             match &err {
                 err @ infra::dex::Error::NotFound => {
                     if order.partially_fillable {
-                        // Only adjust the amount to try next if we are sure the API
-                        // worked correctly yet still wasn't able to provide a swap.
+                        // Only adjust the amount to try next if we are sure the
+                        // API worked correctly yet
+                        // still wasn't able to provide a swap.
                         self.fills.reduce_next_try(order.uid);
                     } else {
                         tracing::debug!(?err, "skipping order");

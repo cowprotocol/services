@@ -170,9 +170,10 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
 
     let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
 
-    // Deploy mock EIP-4626 vaults wrapping sDAI with different conversion rates.
-    // Each wrapper applies `convertToAssets(shares) = shares * num / den`, so a
-    // (3, 2) wrapper means 1 share = 1.5 sDAI, making it 1.5x the sDAI price.
+    // Deploy mock EIP-4626 vaults wrapping sDAI with different conversion
+    // rates. Each wrapper applies `convertToAssets(shares) = shares * num /
+    // den`, so a (3, 2) wrapper means 1 share = 1.5 sDAI, making it 1.5x
+    // the sDAI price.
     let rates: &[(u64, u64)] = &[(3, 2), (2, 1), (1, 3)];
     let mut wrapper_addrs = Vec::with_capacity(rates.len());
     for &(num, den) in rates {

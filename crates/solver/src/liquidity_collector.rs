@@ -158,8 +158,8 @@ mod test {
             _pairs: HashSet<TokenPair>,
             _at_block: Block,
         ) -> Result<Vec<Liquidity>> {
-            // Yield here to verify that fetching liquidity in uninitialised state
-            // will never yield.
+            // Yield here to verify that fetching liquidity in uninitialised
+            // state will never yield.
             tokio::task::yield_now().await;
             // Use specific error message to verify initialisation
             Err(anyhow::anyhow!("I am initialised"))
@@ -198,8 +198,8 @@ mod test {
         let liquidity = source
             .get_liquidity(Default::default(), Block::Recent)
             .now_or_never();
-        // As long as the liquidity source is not initialised `get_liquidity` returns
-        // immediately with 0 liquidity.
+        // As long as the liquidity source is not initialised `get_liquidity`
+        // returns immediately with 0 liquidity.
         assert!(liquidity.unwrap().unwrap().is_empty());
 
         // wait until initialisation is finished

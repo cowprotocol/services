@@ -80,10 +80,11 @@ impl Api {
         let eth = axum::Router::new();
         app = app.merge(routes::gasprice(eth).with_state(self.eth.clone()));
 
-        // Multiplex each solver as part of the API. Multiple solvers are multiplexed
-        // on the same driver so only one liquidity collector collects the liquidity
-        // for all of them. This is important because liquidity collection is
-        // computationally expensive for the Ethereum node.
+        // Multiplex each solver as part of the API. Multiple solvers are
+        // multiplexed on the same driver so only one liquidity
+        // collector collects the liquidity for all of them. This is
+        // important because liquidity collection is computationally
+        // expensive for the Ethereum node.
         for solver in self.solvers {
             let name = solver.name().clone();
             let router = axum::Router::new();

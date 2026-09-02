@@ -295,7 +295,8 @@ async fn uses_stale_liquidity(web3: Web3) {
 
     tracing::info!("waiting for liquidity state to update");
     wait_for_condition(TIMEOUT, || async {
-        // Mint blocks until we evict the cached liquidty and fetch the new state.
+        // Mint blocks until we evict the cached liquidty and fetch the new
+        // state.
         onchain.mint_block().await;
         let Ok(next) = services.submit_quote(&quote).await else {
             return false;
@@ -867,8 +868,8 @@ async fn volume_fee(web3: Web3) {
     tracing::info!("Starting services with volume fee.");
     let services = Services::new(&onchain).await;
     // Start API with 0.02% (2 bps) default volume fee
-    // Bucket override: WETH<->override_token pair gets 5 bps (both tokens must be
-    // in bucket)
+    // Bucket override: WETH<->override_token pair gets 5 bps (both tokens must
+    // be in bucket)
     services
         .start_protocol_with_args(
             Configuration::test("test_solver", solver.address()),

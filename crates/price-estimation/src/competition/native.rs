@@ -25,10 +25,12 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
             let results = self
                 .produce_results(token, Result::is_ok, move |context| {
                     async move {
-                        // Computes timeout for current stage dynamically based on the total time
-                        // left and the remaining stages. That means if some stage finishes early,
-                        // subsequent stages will get a bit more time to always use the entire
-                        // total timeout.
+                        // Computes timeout for current stage dynamically based
+                        // on the total time
+                        // left and the remaining stages. That means if some
+                        // stage finishes early,
+                        // subsequent stages will get a bit more time to always
+                        // use the entire total timeout.
                         let stage_timeout = {
                             let time_left = total_timeout.saturating_sub(started_at.elapsed());
                             time_left

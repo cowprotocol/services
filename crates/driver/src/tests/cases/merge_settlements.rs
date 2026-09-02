@@ -116,8 +116,8 @@ async fn possible_but_forbidden() {
         .done()
         .await;
 
-    // Even though the solutions could be combined (see test "possible") they were
-    // not because solution merging is not enabled by default.
+    // Even though the solutions could be combined (see test "possible") they
+    // were not because solution merging is not enabled by default.
     let id = test.solve().await.ok().orders(&[ab_order]).id();
     test.reveal(id).await.ok().calldata();
     test.settle(id)

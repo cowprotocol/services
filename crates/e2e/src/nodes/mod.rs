@@ -43,6 +43,11 @@ impl Node {
             "1",
             "--timestamp",
             "1577836800",
+            // Anvil derives the fork schedule from the chain id, and a 2020
+            // genesis on chain 1 sits before London. Pin the fork so EIP-1559
+            // transactions are accepted.
+            "--hardfork",
+            "prague",
         ])
         .await
     }
@@ -54,8 +59,9 @@ impl Node {
     {
         use tokio::io::AsyncBufReadExt as _;
 
-        // Allow using some custom logic to spawn `anvil` by setting `ANVIL_COMMAND`.
-        // For example if you set up a command that spins up a docker container.
+        // Allow using some custom logic to spawn `anvil` by setting
+        // `ANVIL_COMMAND`. For example if you set up a command that
+        // spins up a docker container.
         let command = std::env::var("ANVIL_COMMAND").unwrap_or("anvil".to_string());
 
         let mut process = tokio::process::Command::new(command)
@@ -116,9 +122,9 @@ impl Drop for Node {
             None => return,
         };
 
-        // This only sends SIGKILL to the process but does not wait for the process to
-        // actually terminate. But since `anvil` is fairly well behaved that
-        // should be good enough in many cases.
+        // This only sends SIGKILL to the process but does not wait for the
+        // process to actually terminate. But since `anvil` is fairly
+        // well behaved that should be good enough in many cases.
         if let Err(err) = process.start_kill() {
             tracing::error!(?err, "failed to kill node process");
         }

@@ -65,12 +65,11 @@ impl Solutions {
                                 competition::solution::trade::Fulfillment::new(
                                     order,
                                     fulfillment.executed_amount.into(),
-                                    match fulfillment.fee {
-                                        Some(fee) => competition::solution::trade::Fee::Dynamic(
-                                            competition::order::SellAmount(fee),
-                                        ),
-                                        None => competition::solution::trade::Fee::Static,
-                                    },
+                                    // An absent fee is treated as a fee of 0. This only happens during quoting 
+                                    // from solvers that don't support computing fees in the sell token.
+                                    competition::order::SellAmount(
+                                        fulfillment.fee.unwrap_or_default(),
+                                    ),
                                     haircut_fee,
                                 )
                                     .map(competition::solution::Trade::Fulfillment)
@@ -305,8 +304,8 @@ fn find_order<'a>(
 pub struct JitOrder(solvers_dto::solution::JitOrder);
 
 impl JitOrder {
-    // Deprecated External/Internal arms retained for wire compatibility; solvers no
-    // longer send them in practice.
+    // Deprecated External/Internal arms retained for wire compatibility;
+    // solvers no longer send them in practice.
     #[allow(deprecated)]
     fn raw_order_data(&self) -> OrderData {
         OrderData {
@@ -373,10 +372,10 @@ impl JitOrder {
             self.0.signing_scheme,
             solvers_dto::solution::SigningScheme::Eip1271
         ) {
-            // For EIP-1271 signatures the encoding logic prepends the signer to the raw
-            // signature bytes. This leads to the owner being encoded twice in
-            // the final settlement calldata unless we remove that from the raw
-            // data.
+            // For EIP-1271 signatures the encoding logic prepends the signer to
+            // the raw signature bytes. This leads to the owner
+            // being encoded twice in the final settlement calldata
+            // unless we remove that from the raw data.
             signature.data = Bytes::copy_from_slice(&self.0.signature[20..]);
         }
 

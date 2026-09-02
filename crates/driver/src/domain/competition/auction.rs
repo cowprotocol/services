@@ -45,7 +45,8 @@ impl Auction {
         let weth = eth.contracts().weth_address();
 
         // Filter out orders with 0 amounts (can lead to numerical issues)
-        // or where the auction doesn't contain information about the traded tokens.
+        // or where the auction doesn't contain information about the traded
+        // tokens.
         orders.retain(|order| {
             if order.available().is_zero() {
                 tracing::debug!(?order, "filtered out order with 0 amounts");

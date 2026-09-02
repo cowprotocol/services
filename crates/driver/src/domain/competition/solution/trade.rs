@@ -115,7 +115,9 @@ pub struct Fulfillment {
     /// order is not partial, the executed amount must equal the amount from the
     /// order.
     executed: order::TargetAmount,
-    fee: Fee,
+    /// The fee that is charged to the user for executing the order, in sell
+    /// token.
+    fee: order::SellAmount,
     /// Additional fee for conservative bidding (haircut). Applied on top of
     /// the regular fee to reduce reported surplus without affecting executed
     /// amounts. Expressed in the order's target token (sell token for sell
@@ -127,19 +129,16 @@ impl Fulfillment {
     pub fn new(
         order: competition::Order,
         executed: order::TargetAmount,
-        fee: Fee,
+        fee: order::SellAmount,
         haircut_fee: eth::U256,
     ) -> Result<Self, error::Trade> {
-        // If the order is partial, the total executed amount can be smaller than
-        // the target amount. Otherwise, the executed amount must be equal to the target
-        // amount.
+        // If the order is partial, the total executed amount can be smaller
+        // than the target amount. Otherwise, the executed amount must
+        // be equal to the target amount.
         let valid_execution = {
             let fee = match order.side {
                 order::Side::Buy => order::TargetAmount::default(),
-                order::Side::Sell => order::TargetAmount(match fee {
-                    Fee::Static => eth::U256::default(),
-                    Fee::Dynamic(fee) => fee.0,
-                }),
+                order::Side::Sell => order::TargetAmount(fee.0),
             };
 
             let executed_with_fee = order::TargetAmount(
@@ -154,14 +153,7 @@ impl Fulfillment {
             }
         };
 
-        // Only accept solver-computed fees if the order requires them, otherwise the
-        // protocol pre-determines the fee and the solver must respect it.
-        let valid_fee = match &fee {
-            Fee::Static => !order.solver_determines_fee(),
-            Fee::Dynamic(_) => order.solver_determines_fee(),
-        };
-
-        if valid_execution && valid_fee {
+        if valid_execution {
             Ok(Self {
                 order,
                 executed,
@@ -190,23 +182,7 @@ impl Fulfillment {
     /// Returns the effectively paid fee from the user's perspective
     /// considering their signed order and the uniform clearing prices
     pub fn fee(&self) -> order::SellAmount {
-        match self.fee {
-            Fee::Static => {
-                // Orders with static fees are no longer used, except for quoting purposes, when
-                // the static fee is set to 0. This is expected to be resolved with https://github.com/cowprotocol/services/issues/2543
-                // Once resolved, this code will be simplified as part of https://github.com/cowprotocol/services/issues/2507
-                order::SellAmount(eth::U256::ZERO)
-            }
-            Fee::Dynamic(fee) => fee,
-        }
-    }
-
-    /// Returns the solver determined fee if it exists.
-    pub fn surplus_fee(&self) -> Option<order::SellAmount> {
-        match self.fee {
-            Fee::Static => None,
-            Fee::Dynamic(fee) => Some(fee),
-        }
+        self.fee
     }
 
     /// Returns the haircut fee for conservative bidding.
@@ -231,7 +207,8 @@ impl Fulfillment {
         };
 
         let with_fee = before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?;
-        // Add haircut for buy orders (haircut is in buy token, convert to sell token)
+        // Add haircut for buy orders (haircut is in buy token, convert to sell
+        // token)
         let haircut = match self.order.side {
             order::Side::Sell => eth::U256::ZERO, // Haircut applied to buy_amount for sell orders
             order::Side::Buy => self.haircut_in_sell_token(prices)?,
@@ -260,7 +237,8 @@ impl Fulfillment {
                     .ok_or(Math::Overflow)?
                     .checked_ceil_div(&prices.buy)
                     .ok_or(Math::DivisionByZero)?;
-                // Reduce by haircut (haircut is in sell token, convert to buy token)
+                // Reduce by haircut (haircut is in sell token, convert to buy
+                // token)
                 let haircut_in_buy = self
                     .haircut_fee
                     .checked_mul(prices.sell)
@@ -315,7 +293,8 @@ impl Fulfillment {
         let executed = self.executed().0;
         let executed_sell_amount = match self.order().side {
             Side::Buy => {
-                // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
+                // How much `sell_token` we need to sell to buy `executed`
+                // amount of `buy_token`
                 executed
                     .checked_mul(prices.buy)
                     .ok_or(Math::Overflow)?
@@ -324,14 +303,10 @@ impl Fulfillment {
             }
             Side::Sell => executed,
         };
-        // Sell slightly more `sell_token` to capture the `surplus_fee`
+        // Sell slightly more `sell_token` to capture the fee
         let executed_sell_amount_with_fee = executed_sell_amount
-            .checked_add(
-                // surplus_fee is always expressed in sell token
-                self.surplus_fee()
-                    .map(|fee| fee.0)
-                    .ok_or(error::Trade::ProtocolFeeOnStaticOrder)?,
-            )
+            // the fee is always expressed in sell token
+            .checked_add(self.fee().0)
             .ok_or(Math::Overflow)?;
         let surplus = match self.order().side {
             Side::Buy => {
@@ -342,8 +317,8 @@ impl Fulfillment {
                     .checked_div(limit_buy)
                     .ok_or(Math::DivisionByZero)?;
                 // Remaining surplus after fees
-                // Do not return error if `checked_sub` fails because violated limit prices will
-                // be caught by simulation
+                // Do not return error if `checked_sub` fails because violated
+                // limit prices will be caught by simulation
                 limit_sell_amount
                     .checked_sub(executed_sell_amount_with_fee)
                     .unwrap_or(eth::U256::ZERO)
@@ -351,24 +326,26 @@ impl Fulfillment {
             Side::Sell => {
                 // Scale to support partially fillable orders
 
-                // `checked_ceil_div`` to be consistent with how settlement contract calculates
-                // traded buy amounts
-                // smallest allowed executed_buy_amount per settlement contract is
-                // executed_sell_amount * ceil(price_limits.buy / price_limits.sell)
+                // `checked_ceil_div`` to be consistent with how settlement
+                // contract calculates traded buy amounts
+                // smallest allowed executed_buy_amount per settlement contract
+                // is executed_sell_amount *
+                // ceil(price_limits.buy / price_limits.sell)
                 let limit_buy_amount = limit_buy
                     .checked_mul(executed_sell_amount_with_fee)
                     .ok_or(Math::Overflow)?
                     .checked_ceil_div(&limit_sell)
                     .ok_or(Math::DivisionByZero)?;
-                // How much `buy_token` we get for `executed` amount of `sell_token`
+                // How much `buy_token` we get for `executed` amount of
+                // `sell_token`
                 let executed_buy_amount = executed
                     .checked_mul(prices.sell)
                     .ok_or(Math::Overflow)?
                     .checked_ceil_div(&prices.buy)
                     .ok_or(Math::DivisionByZero)?;
                 // Remaining surplus after fees
-                // Do not return error if `checked_sub` fails because violated limit prices will
-                // be caught by simulation
+                // Do not return error if `checked_sub` fails because violated
+                // limit prices will be caught by simulation
                 executed_buy_amount
                     .checked_sub(limit_buy_amount)
                     .unwrap_or(eth::U256::ZERO)
@@ -376,17 +353,6 @@ impl Fulfillment {
         };
         Ok(surplus.into())
     }
-}
-
-/// A fee that is charged for executing an order.
-#[derive(Clone, Copy, Debug)]
-pub enum Fee {
-    /// A static protocol computed fee.
-    ///
-    /// That is, the fee is known upfront and is signed as part of the order
-    Static,
-    /// A dynamic solver computed surplus fee.
-    Dynamic(order::SellAmount),
 }
 
 /// Uniform clearing prices at which the trade was executed.
@@ -426,9 +392,9 @@ impl Jit {
         executed: order::TargetAmount,
         fee: order::SellAmount,
     ) -> Result<Self, error::Trade> {
-        // If the order is partial, the total executed amount can be smaller than
-        // the target amount. Otherwise, the executed amount must be equal to the target
-        // amount.
+        // If the order is partial, the total executed amount can be smaller
+        // than the target amount. Otherwise, the executed amount must
+        // be equal to the target amount.
         let fee_target_amount = match order.side {
             order::Side::Buy => order::TargetAmount::default(),
             order::Side::Sell => fee.0.into(),
@@ -441,9 +407,9 @@ impl Jit {
                 .ok_or(error::Trade::InvalidExecutedAmount)?,
         );
 
-        // If the order is partially fillable, the executed amount can be smaller than
-        // the target amount. Otherwise, the executed amount must be equal to the target
-        // amount.
+        // If the order is partially fillable, the executed amount can be
+        // smaller than the target amount. Otherwise, the executed
+        // amount must be equal to the target amount.
         let is_valid = match order.partially_fillable() {
             order::Partial::Yes { available } => executed_with_fee <= available,
             order::Partial::No => executed_with_fee == order.target(),

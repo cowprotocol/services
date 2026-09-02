@@ -257,7 +257,8 @@ mod tests {
             sender: ByteArray([2; 20]),
             placement_error: None,
         };
-        // Now, we insert the order again and then it should no longer be reorged
+        // Now, we insert the order again and then it should no longer be
+        // reorged
         append(&mut db, &[(event_index_2, reorged_order.clone())])
             .await
             .unwrap();

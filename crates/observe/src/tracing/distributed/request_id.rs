@@ -155,7 +155,8 @@ mod test {
         async {
             async {
                 async {
-                    // we traverse the span hierarchy until we find a span with the request id
+                    // we traverse the span hierarchy until we find a span with
+                    // the request id
                     assert_eq!(Some("test".to_string()), from_current_span());
                 }
                 .instrument(tracing::info_span!("wrap2", value = "value2"))
@@ -174,7 +175,8 @@ mod test {
         async {
             async {
                 async {
-                    // if multiple ancestors have a request id we take the closest one
+                    // if multiple ancestors have a request id we take the
+                    // closest one
                     assert_eq!(Some("test_inner".to_string()), from_current_span());
                 }
                 .instrument(tracing::info_span!("wrap", value = "value"))
@@ -193,8 +195,9 @@ mod test {
         async {
             tokio::spawn(
                 async {
-                    // we can spawn a new task and still find the request id if the spawned task
-                    // was instrumented with a span that contains the request id
+                    // we can spawn a new task and still find the request id if
+                    // the spawned task was instrumented
+                    // with a span that contains the request id
                     assert_eq!(Some("test".to_string()), from_current_span());
                 }
                 .instrument(Span::current()),

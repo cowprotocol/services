@@ -335,7 +335,8 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
         },
         order_class: ConfigFeePolicyOrderClass::Any,
     };
-    // `AllowSell` is required for the same-token (WETH -> native ETH) quote below.
+    // `AllowSell` is required for the same-token (WETH -> native ETH) quote
+    // below.
     services
         .start_protocol_with_args(
             Configuration {
@@ -433,14 +434,15 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
     );
 
     tracing::info!("waiting for trade");
-    // The buy side is native ETH (not an ERC20), so we check the native balance.
-    // The order being settled at all proves the autopilot indexed it. We require
-    // the receiver to get back roughly the full sell amount to prove the native
-    // value actually round-tripped out, not just dust.
+    // The buy side is native ETH (not an ERC20), so we check the native
+    // balance. The order being settled at all proves the autopilot indexed
+    // it. We require the receiver to get back roughly the full sell amount
+    // to prove the native value actually round-tripped out, not just dust.
     //
-    // 95% floor = the order's 3% slippage tolerance (`include_slippage_bps(300)`
-    // above) plus a small safety margin. It's a "real value vs. dust" floor, not
-    // a tight bound; lower it if the slippage bps grow.
+    // 95% floor = the order's 3% slippage tolerance
+    // (`include_slippage_bps(300)` above) plus a small safety margin. It's
+    // a "real value vs. dust" floor, not a tight bound; lower it if the
+    // slippage bps grow.
     let min_delivered = sell_amount * U256::from(95) / U256::from(100);
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
@@ -576,7 +578,8 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .mine_order_invalidation(dummy_trader.address(), ethflow_contract)
         .await;
 
-    // Create the actual order that should be picked up by the services and matched.
+    // Create the actual order that should be picked up by the services and
+    // matched.
     let buy_token = *dai.address();
     let receiver = Address::repeat_byte(0x42);
     let sell_amount = 1u64.eth();

@@ -70,8 +70,8 @@ impl<C: ChainTypes> Arbitrator<C> {
         let (mut solutions, scores_by_solution) =
             self.compute_scores_by_solution(solutions, context);
 
-        // only keep solutions that settle at least 1 order that the mechanism "cares
-        // about"
+        // only keep solutions that settle at least 1 order that the mechanism
+        // "cares about"
         solutions.retain(|solution| {
             solution
                 .orders()
@@ -93,10 +93,10 @@ impl<C: ChainTypes> Arbitrator<C> {
                 })
                 .expect("every remaining solution has an entry");
 
-            // only keep solutions where each order execution is at least as good as
-            // the baseline solution.
-            // we only filter out unfair solutions with more than one token pair,
-            // to avoid reference scores set to 0.
+            // only keep solutions where each order execution is at least as
+            // good as the baseline solution.
+            // we only filter out unfair solutions with more than one token
+            // pair, to avoid reference scores set to 0.
             // see https://github.com/fhenneke/comb_auctions/issues/2
             if aggregated_scores.len() == 1
                 || aggregated_scores.iter().all(|(pair, score)| {
@@ -228,8 +228,8 @@ impl<C: ChainTypes> Arbitrator<C> {
 
         let custom_prices = self.calculate_custom_prices_from_executed(order);
 
-        // Calculate surplus in surplus token (buy token for sell orders, sell token for
-        // buy orders)
+        // Calculate surplus in surplus token (buy token for sell orders, sell
+        // token for buy orders)
         let surplus_in_surplus_token = {
             let user_surplus = self.surplus_over_limit_price(order, &custom_prices)?;
             let fees = self.protocol_fees(order, context, &custom_prices)?;
@@ -244,20 +244,23 @@ impl<C: ChainTypes> Arbitrator<C> {
             // native token
             Side::Sell => C::value_in_native(*native_price_buy, surplus_in_surplus_token),
             Side::Buy => {
-                // `surplus` of buy orders is in sell tokens. We start with following formula:
-                // buy_amount / sell_amount == buy_price / sell_price
+                // `surplus` of buy orders is in sell tokens. We start with
+                // following formula: buy_amount / sell_amount
+                // == buy_price / sell_price
                 //
-                // since `surplus` of buy orders is in sell tokens we convert to buy amount via:
-                // buy_amount == (buy_price / sell_price) * surplus
+                // since `surplus` of buy orders is in sell tokens we convert to
+                // buy amount via: buy_amount == (buy_price /
+                // sell_price) * surplus
                 //
-                // to avoid loss of precision because we work with integers we first multiply
-                // and then divide:
+                // to avoid loss of precision because we work with integers we
+                // first multiply and then divide:
                 // buy_amount = surplus * buy_price / sell_price
                 let surplus_in_buy_tokens = surplus_in_surplus_token
                     .try_widening_mul_div_floor(order.buy_amount, order.sell_amount)
                     .context("converting surplus to buy tokens")?;
 
-                // Afterwards we convert the buy token surplus to the native token.
+                // Afterwards we convert the buy token surplus to the native
+                // token.
                 C::value_in_native(*native_price_buy, surplus_in_buy_tokens)
             }
         };
@@ -370,7 +373,8 @@ impl<C: ChainTypes> Arbitrator<C> {
                 limit_sell.try_sub(sold)
             }
             Side::Sell => {
-                // Scale limit buy to support partially fillable orders (ceiling division)
+                // Scale limit buy to support partially fillable orders (ceiling
+                // division)
                 let limit_buy = executed.try_mul_div_ceil(limits.buy, limits.sell)?;
 
                 let bought = executed.try_mul_div_ceil(prices.sell, prices.buy)?;
@@ -549,7 +553,8 @@ impl<C: ChainTypes> Arbitrator<C> {
         // until `max_winners` are selected. A solution can only
         // win if none of the (sell_token, buy_token) pairs of the executed
         // orders have been covered by any previously selected winning solution.
-        // In other words this enforces a uniform **directional** clearing price.
+        // In other words this enforces a uniform **directional** clearing
+        // price.
         let mut already_swapped_token_pairs = HashSet::new();
         let mut winners = HashSet::default();
 

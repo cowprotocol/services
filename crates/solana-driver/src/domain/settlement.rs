@@ -75,8 +75,8 @@ impl Settlement {
 
     /// Builds the settlement instruction list
     pub fn instructions(&self, payer: Pubkey) -> Result<Vec<Instruction>, Error> {
-        // Prepare each order for settlement: resolve its executed amounts and build its
-        // intent, sell-mint pull, and buy-mint push.
+        // Prepare each order for settlement: resolve its executed amounts and
+        // build its intent, sell-mint pull, and buy-mint push.
         let settlement_orders: Vec<SettlementOrder> = self
             .orders
             .iter()
@@ -107,14 +107,15 @@ impl Settlement {
         // Start populating the instruction list.
         let mut instructions = Vec::new();
 
-        // Set the compute limit. The solver provides an optional CU estimate; if
-        // it is missing we fall back to the Solana default. TODO: Once we have CU
-        // price estimation, add the respective `ComputeBudget::set_compute_unit_price`
-        // instruction too.
+        // Set the compute limit. The solver provides an optional CU estimate;
+        // if it is missing we fall back to the Solana default. TODO:
+        // Once we have CU price estimation, add the respective
+        // `ComputeBudget::set_compute_unit_price` instruction too.
         if let Some(cu_limit) = self.solution.cu_estimate {
             instructions.push(ComputeBudgetInstruction::set_compute_unit_limit(cu_limit));
         }
-        // Insert `CreateBuffers instructions in case there are missing Buffer accounts.
+        // Insert `CreateBuffers instructions in case there are missing Buffer
+        // accounts.
         if !self.missing_buffers.is_empty() {
             instructions.push(
                 CreateBuffers {
@@ -126,8 +127,8 @@ impl Settlement {
             );
         }
 
-        // BeginSettle and FinalizeSettle reference each other by index, so compute
-        // their positions before pushing them.
+        // BeginSettle and FinalizeSettle reference each other by index, so
+        // compute their positions before pushing them.
         let begin_ix_index =
             u16::try_from(instructions.len()).map_err(|_| Error::InstructionIndexOverflow)?;
         let finalize_ix_index =
@@ -221,9 +222,10 @@ fn validate_orders(
 
     // Validate each order against the solution.
     for order in orders.iter() {
-        // Reject orders whose uid is not the hash of their reconstructed intent.
-        // This closes the intent → uid → PDA chain: the wire `order_pda` is only
-        // trusted once it derives from a uid that itself matches the intent.
+        // Reject orders whose uid is not the hash of their reconstructed
+        // intent. This closes the intent → uid → PDA chain: the wire
+        // `order_pda` is only trusted once it derives from a uid that
+        // itself matches the intent.
         let intent_uid = OrderIntent::from(order).uid();
         if intent_uid != Hash::new_from_array(order.uid.0) {
             return Err(Error::OrderIntentMismatch(intent_uid, order.uid));
@@ -559,7 +561,8 @@ mod tests {
     #[test]
     fn rejects_a_non_partially_fillable_order_filled_below_target() {
         let program_id = pubkey(0xaa);
-        // sell_amount: 1_000, buy_amount: 2_000, but only 500 sold / 1_000 bought.
+        // sell_amount: 1_000, buy_amount: 2_000, but only 500 sold / 1_000
+        // bought.
         let order = test_order(&program_id);
         let uid = order.uid;
         let err = Settlement::new(
@@ -656,7 +659,8 @@ mod tests {
     fn rejects_an_order_that_violates_its_limit_price() {
         let program_id = pubkey(0xaa);
         // sell_amount: 1_000, buy_amount: 2_000. Executed: 1_000 sold / 1_500
-        // bought. 1_500 * 1_000 < 1_000 * 2_000, so the limit price is violated.
+        // bought. 1_500 * 1_000 < 1_000 * 2_000, so the limit price is
+        // violated.
         let order = test_order(&program_id);
         let uid = order.uid;
         let err = Settlement::new(
@@ -678,8 +682,8 @@ mod tests {
         let payer = pubkey(0xbb);
         let order = test_order(&program_id);
         let uid = order.uid;
-        // The fixture order has `sell_amount: 1_000`, `buy_amount: 2_000`. Split it
-        // across two trades: 400/800 and 600/1200.
+        // The fixture order has `sell_amount: 1_000`, `buy_amount: 2_000`.
+        // Split it across two trades: 400/800 and 600/1200.
         let settlement = Settlement::new(
             program_id,
             Id::new(7).unwrap(),
