@@ -178,7 +178,10 @@ impl Competition {
         // Consume the entry only now, when the transaction is about to reach
         // the network. One atomic removal takes the chosen solution. A
         // concurrent `/settle` for it then observes a missing entry and
-        // cannot settle the solution again.
+        // cannot settle the solution again. The auction's other solutions
+        // stay in the cache because the autopilot can award several winners
+        // per auction. Those winners have disjoint token pairs, so they
+        // cannot share an order.
         if self.solutions.remove(&key).is_none() {
             return Err(Error::SolutionNotAvailable);
         }
