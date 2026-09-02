@@ -142,11 +142,17 @@ pub fn fast_path_order_into_model(order: &FastPathOrderDb) -> Result<Order> {
         .map(|bytes| String::from_utf8(bytes.clone()))
         .transpose()
         .context("full app data isn't utf-8")?;
+    let class = match order.class {
+        DbOrderClass::Market => OrderClass::Market,
+        DbOrderClass::Liquidity => OrderClass::Liquidity,
+        DbOrderClass::Limit => OrderClass::Limit,
+    };
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: Address::new(order.owner.0),
         uid: OrderUid(order.uid.0),
         full_app_data,
+        class,
         ..Default::default()
     };
     let data = OrderData {

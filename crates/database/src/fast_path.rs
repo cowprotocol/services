@@ -19,7 +19,14 @@ use {
         OrderUid,
         PgTransaction,
         auction::AuctionId,
-        orders::{BuyTokenDestination, OrderKind, RawInteraction, SellTokenSource, SigningScheme},
+        orders::{
+            BuyTokenDestination,
+            OrderClass,
+            OrderKind,
+            RawInteraction,
+            SellTokenSource,
+            SigningScheme,
+        },
     },
     sqlx::{
         PgConnection,
@@ -54,6 +61,10 @@ pub struct FastPathOrder {
     pub signing_scheme: SigningScheme,
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
+    /// The order's class (Market / Limit / Liquidity). Loaded here so
+    /// `ProtocolFees::apply` can gate the protocol Volume policy on
+    /// `OrderClass::Limit`.
+    pub class: OrderClass,
     pub pre_interactions: Vec<RawInteraction>,
     pub post_interactions: Vec<RawInteraction>,
     /// Contents of the order's `app_data` document (from the `app_data`
@@ -83,7 +94,7 @@ pub async fn single_fast_path_order(
         "o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, ",
         "o.sell_amount, o.buy_amount, o.valid_to, o.app_data, o.kind, ",
         "o.partially_fillable, o.signature, o.receiver, o.signing_scheme, ",
-        "o.sell_token_balance, o.buy_token_balance, ",
+        "o.sell_token_balance, o.buy_token_balance, o.class, ",
         "array(SELECT (p.target, p.value, p.data) FROM interactions p",
         " WHERE p.order_uid = o.uid AND p.execution = 'pre' ORDER BY p.index) AS pre_interactions, ",
         "array(SELECT (p.target, p.value, p.data) FROM interactions p",
