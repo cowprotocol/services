@@ -2,7 +2,7 @@
   "nativePriceEstimate": {
     "$defs": {
       "NativePriceEstimateEvent": {
-        "description": "Emitted once per estimator taking part in a native price competition, as\nsoon as that estimator returns. Because the native price cache absorbs the\nvast majority of lookups, these events describe the price *refreshes* that\nactually reached an estimator, not every native price the protocol used.",
+        "description": "Emitted for every estimator that returns before the competition\nshort-circuits, so slower estimators are cancelled and go unreported. Cache\nhits emit nothing: these events cover price refreshes only.",
         "properties": {
           "elapsed": {
             "description": "Wall-clock time the estimator actually spent, in milliseconds.",
@@ -18,7 +18,7 @@
             "description": "Amount of native token needed to buy 1 unit of the token, or the error\nthe estimator failed with. Prices are always normal, positive floats:\nmalformed prices are reported as errors."
           },
           "token": {
-            "description": "Token the price was estimated for. For tokens configured to be\napproximated by another token this is the approximation token, i.e. the\none actually priced.",
+            "description": "Token the price was estimated for. For approximated tokens this is the\napproximation token, i.e. the one actually priced.",
             "type": "string"
           }
         },
@@ -408,7 +408,7 @@
   "winningNativePriceEstimate": {
     "$defs": {
       "WinningNativePriceEstimateEvent": {
-        "description": "Emitted once a native price competition has picked the winning estimate,\ni.e. the price that gets cached and used to price orders. Its job is\ncorrelation: among the [`crate::NativePriceEstimateEvent`]s emitted for the\nsame token around the same time, the winning one is the one whose\n`estimator` matches this event.\n\nAt most one is emitted per competition, as all estimators may have errored\nin which case there is no winner.",
+        "description": "Emitted once a native price competition picks the estimate that gets cached,\nand not at all when every estimator errored. Correlate on `estimator` with\nthe [`crate::NativePriceEstimateEvent`]s for the same token.",
         "properties": {
           "estimator": {
             "description": "Name of the estimator whose price estimate won the competition.",

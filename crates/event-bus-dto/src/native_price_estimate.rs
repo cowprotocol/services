@@ -1,15 +1,13 @@
 use {crate::Event, alloy_primitives::Address, schemars::JsonSchema, serde::Serialize};
 
-/// Emitted once per estimator taking part in a native price competition, as
-/// soon as that estimator returns. Because the native price cache absorbs the
-/// vast majority of lookups, these events describe the price *refreshes* that
-/// actually reached an estimator, not every native price the protocol used.
+/// Emitted for every estimator that returns before the competition
+/// short-circuits, so slower estimators are cancelled and go unreported. Cache
+/// hits emit nothing: these events cover price refreshes only.
 #[derive(Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct NativePriceEstimateEvent {
-    /// Token the price was estimated for. For tokens configured to be
-    /// approximated by another token this is the approximation token, i.e. the
-    /// one actually priced.
+    /// Token the price was estimated for. For approximated tokens this is the
+    /// approximation token, i.e. the one actually priced.
     #[schemars(with = "String")]
     pub token: Address,
     /// Wall-clock time the estimator actually spent, in milliseconds.
