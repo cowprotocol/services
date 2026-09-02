@@ -183,6 +183,9 @@ impl Competition {
             return Err(Error::SolutionNotAvailable);
         }
 
+        // TODO: a provably unsent transaction (connect failure at send time)
+        // loses the solution here; restore the cache entry on that class. Needs
+        // the send/confirm split in cow-solana-rpc (planned follow-up PR).
         // TODO: bound the confirmation wait with a `tokio::timeout` once the
         // maximum settle latency policy is defined.
         let signature = self
