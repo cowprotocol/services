@@ -377,6 +377,10 @@ mod tests {
 
         [order-quoting]
         price-estimation-drivers = []
+
+        [balance-cache]
+        eviction-time = "10s"
+        refresh-delay = "1.2s"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -470,6 +474,12 @@ mod tests {
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
         assert_eq!(config.max_auction_age, Duration::from_secs(600));
         assert_eq!(config.native_price_timeout, Duration::from_secs(3));
+
+        assert_eq!(config.balance_cache.eviction_time, Duration::from_secs(10));
+        assert_eq!(
+            config.balance_cache.refresh_delay,
+            Duration::from_millis(1200)
+        );
     }
 
     #[test]
