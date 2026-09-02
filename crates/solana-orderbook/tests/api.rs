@@ -142,26 +142,34 @@ async fn post_quote(addr: SocketAddr, body: serde_json::Value) -> (reqwest::Stat
     )
 }
 
-/// The order's validity is checked before any driver is asked, so these
-/// answer with the validation error and never reach the dead quoter.
+/// Validation runs before any driver is asked, so every rejection here
+/// answers 400 without reaching the dead quoter.
 #[tokio::test]
-async fn quote_validity_is_bounded() {
+async fn quote_validation_rejects_bad_orders() {
     let addr = spawn_server().await;
-    let (status, kind) = post_quote(addr, quote_body(serde_json::json!({"validFor": 10}))).await;
-    assert_eq!(
-        (status, kind.as_str()),
-        (reqwest::StatusCode::BAD_REQUEST, "InsufficientValidTo")
-    );
+    let mut same_tokens = quote_body(serde_json::json!({"validFor": 1800}));
+    same_tokens["buyToken"] = same_tokens["sellToken"].clone();
+    let mut zero_amount = quote_body(serde_json::json!({"validFor": 1800}));
+    zero_amount["sellAmountBeforeFee"] = serde_json::json!("0");
 
-    let (status, kind) = post_quote(
-        addr,
-        quote_body(serde_json::json!({"validFor": 4 * 60 * 60})),
-    )
-    .await;
-    assert_eq!(
-        (status, kind.as_str()),
-        (reqwest::StatusCode::BAD_REQUEST, "ExcessiveValidTo")
-    );
+    for (body, expected) in [
+        (
+            quote_body(serde_json::json!({"validFor": 10})),
+            "InsufficientValidTo",
+        ),
+        (
+            quote_body(serde_json::json!({"validFor": 4 * 60 * 60})),
+            "ExcessiveValidTo",
+        ),
+        (same_tokens, "SameBuyAndSellToken"),
+        (zero_amount, "ZeroAmount"),
+    ] {
+        let (status, kind) = post_quote(addr, body).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected)
+        );
+    }
 }
 
 /// The full happy path: the driver's amounts come back in the EVM response
@@ -215,6 +223,14 @@ async fn quote_answers_in_the_evm_shape() {
             "verified": false,
         })
     );
+    // The amounts are honored for about a minute from now.
+    let expiration: chrono::DateTime<chrono::Utc> =
+        json["expiration"].as_str().unwrap().parse().unwrap();
+    let honored_for = (expiration - chrono::Utc::now()).num_seconds();
+    assert!(
+        (50..=60).contains(&honored_for),
+        "expiration {honored_for}s away"
+    );
 }
 
 /// Every driver failure reads as no liquidity, mirroring the EVM mapping of
@@ -226,29 +242,5 @@ async fn quote_without_a_route_is_no_liquidity() {
     assert_eq!(
         (status, kind.as_str()),
         (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
-    );
-}
-
-#[tokio::test]
-async fn quote_with_identical_tokens_is_rejected() {
-    let addr = spawn_server().await;
-    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
-    body["buyToken"] = body["sellToken"].clone();
-    let (status, kind) = post_quote(addr, body).await;
-    assert_eq!(
-        (status, kind.as_str()),
-        (reqwest::StatusCode::BAD_REQUEST, "SameBuyAndSellToken")
-    );
-}
-
-#[tokio::test]
-async fn quote_of_a_zero_amount_is_rejected() {
-    let addr = spawn_server().await;
-    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
-    body["sellAmountBeforeFee"] = serde_json::json!("0");
-    let (status, kind) = post_quote(addr, body).await;
-    assert_eq!(
-        (status, kind.as_str()),
-        (reqwest::StatusCode::BAD_REQUEST, "ZeroAmount")
     );
 }

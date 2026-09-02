@@ -195,42 +195,4 @@ mod tests {
         assert_eq!(request.side.kind_and_amount(), (Kind::Sell, 42));
         assert!(request.validity.is_none());
     }
-
-    #[test]
-    fn wire_format_is_stable() {
-        let response = Response {
-            quote: Quote {
-                sell_token: "So11111111111111111111111111111111111111112"
-                    .parse()
-                    .unwrap(),
-                buy_token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-                    .parse()
-                    .unwrap(),
-                receiver: None,
-                sell_amount: 10_000_000,
-                buy_amount: 1_000_000,
-                valid_to: 1_787_740_563,
-                app_data: Some(format!("0x{}", "11".repeat(32))),
-                fee_amount: 0,
-                kind: Kind::Sell,
-                partially_fillable: false,
-            },
-            from: "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
-                .parse()
-                .unwrap(),
-            expiration: DateTime::from_timestamp(1_787_740_000, 0).unwrap(),
-            id: None,
-            verified: false,
-        };
-        let json = serde_json::to_value(&response).unwrap();
-        assert_eq!(json["quote"]["sellAmount"], "10000000");
-        assert_eq!(json["quote"]["buyAmount"], "1000000");
-        assert_eq!(json["quote"]["feeAmount"], "0");
-        assert_eq!(json["quote"]["kind"], "sell");
-        assert_eq!(json["quote"]["partiallyFillable"], false);
-        assert_eq!(json["quote"]["validTo"], 1_787_740_563u32);
-        assert_eq!(json["expiration"], "2026-08-26T10:26:40Z");
-        assert_eq!(json["verified"], false);
-        assert!(json["id"].is_null());
-    }
 }
