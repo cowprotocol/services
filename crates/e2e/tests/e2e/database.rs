@@ -68,7 +68,7 @@ pub async fn auction_participants(
 pub async fn auction_prices(
     ex: &mut PgConnection,
     auction_id: i64,
-) -> anyhow::Result<Vec<database::auction_prices::AuctionPrice>> {
+) -> anyhow::Result<Vec<database::auction::AuctionPrice>> {
     const QUERY: &str = "
         SELECT
             id AS auction_id,
