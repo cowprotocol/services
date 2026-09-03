@@ -1,7 +1,7 @@
 //! Configuration of infrastructural components.
 
 use {
-    crate::infra::api::QuoteLimits,
+    crate::infra::api::ValidationParameters,
     configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
     std::{net::SocketAddr, path::Path, time::Duration},
@@ -65,11 +65,11 @@ impl Config {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Quoting {
-    /// Base URL of the driver asked to quote orders. A missing trailing slash
-    /// is added: routes resolve relative to this, so without it the last path
-    /// segment would be replaced rather than extended.
-    #[serde(deserialize_with = "serde_ext::deserialize_url_with_trailing_slash")]
-    pub driver_url: Url,
+    /// Base URLs of the drivers asked to quote orders. A missing trailing
+    /// slash is added: routes resolve relative to these, so without it the
+    /// last path segment would be replaced rather than extended.
+    #[serde(deserialize_with = "deserialize_urls_with_trailing_slash")]
+    pub drivers: Vec<Url>,
     /// How long the driver has to answer before the quote fails.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
     pub timeout: Duration,
@@ -85,14 +85,30 @@ pub struct Quoting {
 }
 
 impl Quoting {
-    /// The validity bounds and expiry as the API consumes them.
-    pub fn limits(&self) -> QuoteLimits {
-        QuoteLimits {
+    /// The `validTo` bounds as the API consumes them.
+    pub fn validation(&self) -> ValidationParameters {
+        ValidationParameters {
             min_validity: self.min_validity,
             max_validity: self.max_validity,
-            quote_expiry: self.quote_expiry,
         }
     }
+}
+
+/// Appends the trailing slash `Url::join` needs to every URL in the list.
+fn deserialize_urls_with_trailing_slash<'de, D>(deserializer: D) -> Result<Vec<Url>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let urls = Vec::<Url>::deserialize(deserializer)?;
+    Ok(urls
+        .into_iter()
+        .map(|mut url| {
+            if !url.path().ends_with('/') {
+                url.set_path(&format!("{}/", url.path()));
+            }
+            url
+        })
+        .collect())
 }
 
 fn default_quote_timeout() -> Duration {
@@ -100,15 +116,15 @@ fn default_quote_timeout() -> Duration {
 }
 
 fn default_min_validity() -> Duration {
-    QuoteLimits::default().min_validity
+    ValidationParameters::default().min_validity
 }
 
 fn default_max_validity() -> Duration {
-    QuoteLimits::default().max_validity
+    ValidationParameters::default().max_validity
 }
 
 fn default_quote_expiry() -> Duration {
-    QuoteLimits::default().quote_expiry
+    Duration::from_secs(60)
 }
 
 /// HTTP API server configuration.
@@ -130,17 +146,17 @@ mod tests {
         assert!(config.database.read_url.is_none());
         assert_eq!(config.http.bind_address, "0.0.0.0:8080".parse().unwrap());
         assert_eq!(config.logging.filter, "info,solana_orderbook=debug");
-        assert_eq!(config.quoting.driver_url.as_str(), "http://localhost:8000/");
+        assert_eq!(config.quoting.drivers[0].as_str(), "http://localhost:8000/");
         assert_eq!(config.quoting.timeout, Duration::from_secs(5));
         assert_eq!(config.quoting.min_validity, Duration::from_secs(120));
         assert_eq!(config.quoting.max_validity, Duration::from_secs(7200));
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
     }
 
-    /// Routes resolve relative to `driver-url`, so a base URL with a path
+    /// Routes resolve relative to the driver URLs, so a base URL with a path
     /// keeps it instead of having its last segment replaced.
     #[test]
-    fn driver_url_gets_a_trailing_slash() {
+    fn driver_urls_get_a_trailing_slash() {
         #[derive(Debug, Deserialize)]
         struct Wrapper {
             quoting: Quoting,
@@ -148,16 +164,16 @@ mod tests {
         let wrapper: Wrapper = toml::de::from_str(
             r#"
             [quoting]
-            driver-url = "http://driver/baseline"
+            drivers = ["http://driver/baseline"]
             "#,
         )
         .unwrap();
         assert_eq!(
-            wrapper.quoting.driver_url.as_str(),
+            wrapper.quoting.drivers[0].as_str(),
             "http://driver/baseline/"
         );
         assert_eq!(
-            wrapper.quoting.driver_url.join("quote").unwrap().as_str(),
+            wrapper.quoting.drivers[0].join("quote").unwrap().as_str(),
             "http://driver/baseline/quote"
         );
     }

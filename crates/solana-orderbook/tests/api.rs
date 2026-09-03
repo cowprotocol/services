@@ -14,14 +14,15 @@ fn mock_api() -> Api {
         // query, so the tests run without a database.
         pool: PgPool::connect_lazy("postgresql://").unwrap(),
         quoter: dead_quoter(),
-        quote_limits: Default::default(),
+        validation: Default::default(),
+        quote_expiry: Duration::from_secs(60),
     }
 }
 
 /// A quoter pointing at a dead endpoint: every quote attempt fails.
 fn dead_quoter() -> Quoter {
     Quoter::new(
-        "http://127.0.0.1:1".parse().unwrap(),
+        vec!["http://127.0.0.1:1/".parse().unwrap()],
         Duration::from_secs(1),
     )
 }
@@ -184,7 +185,7 @@ async fn quote_answers_in_the_evm_shape() {
     }))
     .await;
     let addr = spawn_server_with(Quoter::new(
-        format!("http://{driver}").parse().unwrap(),
+        vec![format!("http://{driver}/").parse().unwrap()],
         Duration::from_secs(1),
     ))
     .await;
@@ -232,6 +233,43 @@ async fn quote_answers_in_the_evm_shape() {
         (50..=60).contains(&honored_for),
         "expiration {honored_for}s away"
     );
+}
+
+/// With several drivers configured, the best answer wins: the largest buy
+/// amount for a sell order.
+#[tokio::test]
+async fn quote_picks_the_best_driver_answer() {
+    let worse = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1500000",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let better = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "2000000",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let addr = spawn_server_with(Quoter::new(
+        vec![
+            format!("http://{worse}/").parse().unwrap(),
+            format!("http://{better}/").parse().unwrap(),
+            "http://127.0.0.1:1/".parse().unwrap(),
+        ],
+        Duration::from_secs(1),
+    ))
+    .await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&quote_body(serde_json::json!({"validFor": 1800})))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["quote"]["buyAmount"], "2000000");
 }
 
 /// Every driver failure reads as no liquidity, mirroring the EVM mapping of

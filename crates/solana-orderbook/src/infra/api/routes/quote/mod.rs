@@ -4,7 +4,7 @@ pub mod dto;
 
 use {
     crate::infra::{
-        api::{QuoteLimits, State, error, extract},
+        api::{State, ValidationParameters, error, extract},
         quoter,
     },
     axum::{Json, http::StatusCode},
@@ -21,21 +21,14 @@ pub async fn quote(
     extract::Json(request): extract::Json<dto::Request>,
 ) -> Result<Json<dto::Response>, error::Reply> {
     let now = Utc::now();
-    let limits = state.quote_limits();
     let now_secs = u32::try_from(now.timestamp()).unwrap_or(u32::MAX);
     // Fixed before validation so the value checked is the value returned.
     let valid_to = match request.validity {
         Some(dto::Validity::ValidTo(valid_to)) => valid_to,
         Some(dto::Validity::ValidFor(seconds)) => now_secs.saturating_add(seconds),
-        // Clamped so a narrowed configured window never rejects a request
-        // that named no validity at all.
-        None => now_secs.saturating_add(
-            DEFAULT_VALIDITY
-                .clamp(limits.min_validity, limits.max_validity)
-                .as_secs() as u32,
-        ),
+        None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
     };
-    validate(&request, valid_to, now_secs, &limits)?;
+    validate(&request, valid_to, now_secs, &state.validation())?;
 
     let (kind, amount) = request.side.kind_and_amount();
     let quoted = state
@@ -50,17 +43,9 @@ pub async fn quote(
             },
         })
         .await
-        .map_err(|err| {
-            // Every driver failure answers as no liquidity, the EVM mapping
-            // for estimator errors. The log level keeps them apart: a driver
-            // that rejects the quote found no route, a routine outcome, while
-            // anything else is the driver misbehaving.
-            match &err {
-                quoter::Error::Status { status: 400, .. } => {
-                    tracing::debug!(?err, "driver found no quote")
-                }
-                _ => tracing::warn!(?err, "quote lookup failed"),
-            }
+        // Every driver failure answers as no liquidity, the EVM mapping for
+        // estimator errors.
+        .map_err(|quoter::Error::NoQuotes| {
             error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
         })?;
 
@@ -78,7 +63,7 @@ pub async fn quote(
             partially_fillable: false,
         },
         from: request.from,
-        expiration: now + limits.quote_expiry,
+        expiration: now + state.quote_expiry(),
         id: None,
         verified: false,
     }))
@@ -89,7 +74,7 @@ fn validate(
     request: &dto::Request,
     valid_to: u32,
     now_secs: u32,
-    limits: &QuoteLimits,
+    validation: &ValidationParameters,
 ) -> Result<(), error::Reply> {
     if request.sell_token == request.buy_token {
         return Err(error::reply(
@@ -105,14 +90,14 @@ fn validate(
             "Buy or sell amount is zero.",
         ));
     }
-    if valid_to < now_secs.saturating_add(limits.min_validity.as_secs() as u32) {
+    if valid_to < now_secs.saturating_add(validation.min_validity.as_secs() as u32) {
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
             "InsufficientValidTo",
             "validTo is not far enough in the future",
         ));
     }
-    if valid_to > now_secs.saturating_add(limits.max_validity.as_secs() as u32) {
+    if valid_to > now_secs.saturating_add(validation.max_validity.as_secs() as u32) {
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
             "ExcessiveValidTo",

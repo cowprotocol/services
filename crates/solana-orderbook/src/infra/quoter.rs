@@ -1,6 +1,7 @@
-//! Client for a driver's quote route.
+//! Client for the drivers' quote routes.
 
 use {
+    futures::future::join_all,
     reqwest::Client,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -15,11 +16,11 @@ use {
 /// this client's own timeout.
 const RESPONSE_RESERVE: Duration = Duration::from_millis(500);
 
-/// Asks a driver to quote one order.
+/// Asks every configured driver to quote an order and keeps the best answer.
 #[derive(Clone, Debug)]
 pub struct Quoter {
     client: Client,
-    endpoint: Url,
+    endpoints: Vec<Url>,
     timeout: Duration,
 }
 
@@ -40,7 +41,7 @@ pub enum Kind {
     Buy,
 }
 
-/// What the driver quoted.
+/// What a driver quoted.
 #[derive(Debug)]
 pub struct Quote {
     pub sell_amount: u64,
@@ -49,10 +50,8 @@ pub struct Quote {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("driver request failed: {0}")]
-    Request(#[from] reqwest::Error),
-    #[error("driver answered {status}: {body}")]
-    Status { status: u16, body: String },
+    #[error("no driver returned a quote")]
+    NoQuotes,
 }
 
 #[serde_as]
@@ -80,17 +79,36 @@ struct ResponseBody {
 }
 
 impl Quoter {
-    pub fn new(endpoint: Url, timeout: Duration) -> Self {
+    pub fn new(endpoints: Vec<Url>, timeout: Duration) -> Self {
         Self {
             client: Client::new(),
-            endpoint,
+            endpoints,
             timeout,
         }
     }
 
-    /// Quote `order`, giving the driver until `timeout` to answer.
+    /// Quote `order` on every driver concurrently and return the best answer:
+    /// the largest buy for a sell order, the smallest sell for a buy order.
     pub async fn quote(&self, order: &Order) -> Result<Quote, Error> {
-        let url = self.endpoint.join("quote").expect("valid /quote path");
+        let quotes = join_all(
+            self.endpoints
+                .iter()
+                .map(|endpoint| self.quote_one(endpoint, order)),
+        )
+        .await;
+        let quotes = quotes.into_iter().flatten();
+        match order.kind {
+            Kind::Sell => quotes.max_by_key(|quote| quote.buy_amount),
+            Kind::Buy => quotes.min_by_key(|quote| quote.sell_amount),
+        }
+        .ok_or(Error::NoQuotes)
+    }
+
+    /// Quote `order` on one driver. Failures are logged and swallowed: a
+    /// driver rejecting the quote found no route, which is a routine outcome,
+    /// while anything else is that driver misbehaving.
+    async fn quote_one(&self, endpoint: &Url, order: &Order) -> Option<Quote> {
+        let url = endpoint.join("quote").expect("valid /quote path");
         let body = RequestBody {
             sell_token: order.sell_token,
             buy_token: order.buy_token,
@@ -104,14 +122,25 @@ impl Quoter {
             .json(&body)
             .timeout(self.timeout)
             .send()
-            .await?;
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
+            .await
+            .inspect_err(|err| tracing::warn!(%endpoint, ?err, "driver quote request failed"))
+            .ok()?;
+        let status = response.status();
+        if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            return Err(Error::Status { status, body });
+            if status == reqwest::StatusCode::BAD_REQUEST {
+                tracing::debug!(%endpoint, body, "driver found no quote");
+            } else {
+                tracing::warn!(%endpoint, %status, body, "driver quote failed");
+            }
+            return None;
         }
-        let quoted: ResponseBody = response.json().await?;
-        Ok(Quote {
+        let quoted: ResponseBody = response
+            .json()
+            .await
+            .inspect_err(|err| tracing::warn!(%endpoint, ?err, "driver quote response malformed"))
+            .ok()?;
+        Some(Quote {
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
         })

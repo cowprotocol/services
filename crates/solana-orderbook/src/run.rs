@@ -88,8 +88,9 @@ pub async fn run(args: Args) {
     let api = Api {
         addr: config.http.bind_address,
         pool,
-        quoter: Quoter::new(config.quoting.driver_url.clone(), config.quoting.timeout),
-        quote_limits: config.quoting.limits(),
+        quoter: Quoter::new(config.quoting.drivers.clone(), config.quoting.timeout),
+        validation: config.quoting.validation(),
+        quote_expiry: config.quoting.quote_expiry,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());

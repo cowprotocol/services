@@ -32,28 +32,27 @@ pub struct Api {
     pub pool: PgPool,
     /// The driver that quotes orders.
     pub quoter: Quoter,
-    /// Validity bounds and expiry applied to quotes.
-    pub quote_limits: QuoteLimits,
-}
-
-/// Validity bounds and expiry applied to quotes. The defaults are the EVM
-/// orderbook's.
-#[derive(Clone, Copy, Debug)]
-pub struct QuoteLimits {
-    /// Least far in the future a quoted order's `validTo` may lie.
-    pub min_validity: std::time::Duration,
-    /// Furthest in the future a quoted order's `validTo` may lie.
-    pub max_validity: std::time::Duration,
+    /// Bounds on a quoted order's `validTo`.
+    pub validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     pub quote_expiry: std::time::Duration,
 }
 
-impl Default for QuoteLimits {
+/// Bounds on a quoted order's `validTo`. The defaults are the EVM
+/// orderbook's.
+#[derive(Clone, Copy, Debug)]
+pub struct ValidationParameters {
+    /// Least far in the future the `validTo` may lie.
+    pub min_validity: std::time::Duration,
+    /// Furthest in the future the `validTo` may lie.
+    pub max_validity: std::time::Duration,
+}
+
+impl Default for ValidationParameters {
     fn default() -> Self {
         Self {
             min_validity: std::time::Duration::from_secs(2 * 60),
             max_validity: std::time::Duration::from_secs(2 * 60 * 60),
-            quote_expiry: std::time::Duration::from_secs(60),
         }
     }
 }
@@ -84,7 +83,7 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
-        let state = State::new(self.pool, self.quoter, self.quote_limits);
+        let state = State::new(self.pool, self.quoter, self.validation, self.quote_expiry);
 
         // Browsers call this API directly, so it answers cross-origin
         // requests like the EVM orderbook does.
@@ -120,11 +119,17 @@ impl Api {
 pub struct State(Arc<Inner>);
 
 impl State {
-    fn new(pool: PgPool, quoter: Quoter, quote_limits: QuoteLimits) -> Self {
+    fn new(
+        pool: PgPool,
+        quoter: Quoter,
+        validation: ValidationParameters,
+        quote_expiry: std::time::Duration,
+    ) -> Self {
         Self(Arc::new(Inner {
             pool,
             quoter,
-            quote_limits,
+            validation,
+            quote_expiry,
         }))
     }
 
@@ -139,9 +144,14 @@ impl State {
         &self.0.quoter
     }
 
-    /// Validity bounds and expiry applied to quotes.
-    pub fn quote_limits(&self) -> QuoteLimits {
-        self.0.quote_limits
+    /// Bounds on a quoted order's `validTo`.
+    pub fn validation(&self) -> ValidationParameters {
+        self.0.validation
+    }
+
+    /// How long the quoted amounts are honored.
+    pub fn quote_expiry(&self) -> std::time::Duration {
+        self.0.quote_expiry
     }
 }
 
@@ -150,6 +160,8 @@ struct Inner {
     pool: PgPool,
     /// The driver that quotes orders.
     quoter: Quoter,
-    /// Validity bounds and expiry applied to quotes.
-    quote_limits: QuoteLimits,
+    /// Bounds on a quoted order's `validTo`.
+    validation: ValidationParameters,
+    /// How long the quoted amounts are honored.
+    quote_expiry: std::time::Duration,
 }
