@@ -45,7 +45,7 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
                                 .unwrap_or_default()
                         };
 
-                        let estimated_at = Instant::now();
+                        let estimate_requested = Instant::now();
                         let res = context
                             .estimator
                             .estimate_native_price(context.query, stage_timeout)
@@ -60,7 +60,7 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
                         emit_native_price_estimate_event(
                             estimator_name,
                             context.query,
-                            estimated_at.elapsed(),
+                            estimate_requested.elapsed(),
                             &res,
                         );
                         res
