@@ -1,8 +1,8 @@
 use {
     crate::{arguments::TokenBucketFeeOverride, order_validation::is_same_buy_and_sell_token},
-    alloy::primitives::{Address, U256},
+    alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
     configs::fee_factor::FeeFactor,
-    model::order::BUY_ETH_ADDRESS,
+    model::order::{BUY_ETH_ADDRESS, OrderKind},
 };
 
 /// Everything required to compute the fee amount in sell token
@@ -124,6 +124,51 @@ impl VolumeFeePolicy {
         // default
         fee_factor.or(self.default_factor)
     }
+}
+
+/// Applies a single volume fee to `(sell, buy)` for the given order kind.
+///
+/// - Sell orders: the buy amount is reduced by `buy * factor`.
+/// - Buy orders: the sell amount is increased by `sell * factor`.
+///
+/// Uses high-precision scaling so sub-BPS factors don't round to zero.
+pub fn apply_volume_fee(sell: U256, buy: U256, kind: OrderKind, factor: FeeFactor) -> (U256, U256) {
+    let scaled_factor = U256::from(factor.to_high_precision());
+    let scale = U512::from(FeeFactor::HIGH_PRECISION_SCALE);
+
+    match kind {
+        OrderKind::Sell => {
+            let fee = U256::uint_try_from(
+                buy.widening_mul(scaled_factor)
+                    .checked_div(scale)
+                    .unwrap_or_default(),
+            )
+            .unwrap_or(U256::MAX);
+            (sell, buy.saturating_sub(fee))
+        }
+        OrderKind::Buy => {
+            let fee = U256::uint_try_from(
+                sell.widening_mul(scaled_factor)
+                    .checked_div(scale)
+                    .unwrap_or_default(),
+            )
+            .unwrap_or(U256::MAX);
+            (sell.saturating_add(fee), buy)
+        }
+    }
+}
+
+/// Applies a sequence of volume fee factors to `(sell, buy)` in order,
+/// compounding each fee on the amount produced by the previous step.
+pub fn apply_volume_fees<I>(sell: U256, buy: U256, kind: OrderKind, factors: I) -> (U256, U256)
+where
+    I: IntoIterator<Item = FeeFactor>,
+{
+    factors
+        .into_iter()
+        .fold((sell, buy), |(sell, buy), factor| {
+            apply_volume_fee(sell, buy, kind, factor)
+        })
 }
 
 #[cfg(test)]
@@ -250,5 +295,63 @@ mod tests {
             policy.get_applicable_volume_fee_factor(BUY_ETH_ADDRESS, weth, None),
             Some(default_fee)
         );
+    }
+
+    fn factor(v: f64) -> FeeFactor {
+        FeeFactor::try_from(v).unwrap()
+    }
+
+    #[test]
+    fn apply_volume_fee_sell_order_reduces_buy() {
+        let (sell, buy) = apply_volume_fee(
+            U256::from(1_000u64),
+            U256::from(1_000u64),
+            OrderKind::Sell,
+            factor(0.01),
+        );
+        assert_eq!(sell, U256::from(1_000u64));
+        assert_eq!(buy, U256::from(990u64));
+    }
+
+    #[test]
+    fn apply_volume_fee_buy_order_increases_sell() {
+        let (sell, buy) = apply_volume_fee(
+            U256::from(1_000u64),
+            U256::from(1_000u64),
+            OrderKind::Buy,
+            factor(0.01),
+        );
+        assert_eq!(sell, U256::from(1_010u64));
+        assert_eq!(buy, U256::from(1_000u64));
+    }
+
+    #[test]
+    fn apply_volume_fee_sub_bps_uses_high_precision() {
+        // 0.3 BPS = 0.00003 must not round to zero.
+        let (_, buy) = apply_volume_fee(
+            U256::from(10u64),
+            U256::from(1_000_000u64),
+            OrderKind::Sell,
+            factor(0.00003),
+        );
+        assert_eq!(buy, U256::from(999_970u64));
+    }
+
+    #[test]
+    fn apply_volume_fees_compounds_in_order() {
+        let (mid_sell, mid_buy) = apply_volume_fee(
+            U256::from(1_000u64),
+            U256::from(1_000u64),
+            OrderKind::Sell,
+            factor(0.01),
+        );
+        let expected = apply_volume_fee(mid_sell, mid_buy, OrderKind::Sell, factor(0.02));
+        let actual = apply_volume_fees(
+            U256::from(1_000u64),
+            U256::from(1_000u64),
+            OrderKind::Sell,
+            [factor(0.01), factor(0.02)],
+        );
+        assert_eq!(expected, actual);
     }
 }
