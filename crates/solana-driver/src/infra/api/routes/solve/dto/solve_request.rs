@@ -6,7 +6,10 @@
 //! in sync.
 
 use {
-    crate::domain::{self, order_uid::OrderUid},
+    crate::{
+        domain::{self, order_uid::OrderUid},
+        infra::api::routes::Kind,
+    },
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
@@ -76,23 +79,6 @@ pub struct Order {
     order_pda: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     app_data: AppData,
-}
-
-/// Whether the order sells or buys an exact amount.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-enum Kind {
-    Sell,
-    Buy,
-}
-
-impl From<Kind> for domain::Side {
-    fn from(kind: Kind) -> Self {
-        match kind {
-            Kind::Sell => domain::Side::Sell,
-            Kind::Buy => domain::Side::Buy,
-        }
-    }
 }
 
 impl From<Order> for domain::Order {

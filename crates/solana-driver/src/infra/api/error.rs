@@ -19,6 +19,7 @@ pub(crate) enum Kind {
     FailedToSubmit,
     QuoteSameTokens,
     QuotingFailed,
+    SimulationFailed,
     Unknown,
 }
 
@@ -47,6 +48,7 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::FailedToSubmit => "Failed to submit the settlement transaction",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
             Kind::QuotingFailed => "No valid quote found",
+            Kind::SimulationFailed => "Settlement simulation failed",
             Kind::Unknown => "An unknown error occurred",
         };
         (
@@ -71,6 +73,7 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
             competition::Error::Rpc(_) => Kind::Unknown,
             competition::Error::FailedToSubmit(_) => Kind::FailedToSubmit,
+            competition::Error::SimulationFailed(_) => Kind::SimulationFailed,
             competition::Error::TaskPanicked => Kind::Unknown,
             // The solver is responsible for valid solutions. Map validation
             // errors to SolverFailed, as the EVM driver does. Map compile,

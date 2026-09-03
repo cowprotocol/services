@@ -43,6 +43,15 @@ impl Solana {
         self.rpc.slot().await
     }
 
+    /// Simulate a signed transaction without sending it. Returns the
+    /// simulation result including logs and any error.
+    pub async fn simulate_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<cow_solana_rpc::RpcSimulateTransactionResult, Error> {
+        self.rpc.simulate_transaction(transaction).await
+    }
+
     /// Send a signed transaction and wait for confirmation.
     pub async fn send_and_confirm_transaction(
         &self,

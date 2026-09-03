@@ -1,6 +1,7 @@
 //! Wire shape of the quote route.
 
 use {
+    crate::infra::api::routes::Kind,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
@@ -23,14 +24,6 @@ pub struct QuoteRequest {
     pub deadline: chrono::DateTime<chrono::Utc>,
 }
 
-/// Which amount the order fixes.
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Kind {
-    Sell,
-    Buy,
-}
-
 /// The quoted amounts.
 #[serde_as]
 #[derive(Debug, Serialize)]
@@ -43,13 +36,4 @@ pub struct QuoteResponse {
     /// The solver that produced the quote.
     #[serde_as(as = "DisplayFromStr")]
     pub solver: Pubkey,
-}
-
-impl From<Kind> for crate::domain::auction::Side {
-    fn from(kind: Kind) -> Self {
-        match kind {
-            Kind::Sell => Self::Sell,
-            Kind::Buy => Self::Buy,
-        }
-    }
 }

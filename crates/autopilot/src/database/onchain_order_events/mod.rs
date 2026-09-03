@@ -555,7 +555,7 @@ async fn get_quote(
         fee_amount: order_data.fee_amount,
         kind: order_data.kind,
         signing_scheme: quote_signing_scheme,
-        additional_gas: 0,
+        hook_gas: 0,
         // Verified quotes always have prices that are at most as good as unverified quotes but can
         // be lower.
         // If the best quote we can find or compute on the fly for this order suggests a worse

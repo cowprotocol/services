@@ -2,6 +2,7 @@ use {
     crate::{
         order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
+            AdditionalCost,
             CalculateQuoteError,
             OrderQuoting,
             Quote,
@@ -918,7 +919,7 @@ impl OrderValidating for OrderValidator {
                 verification_gas_limit,
             )
             .map_err(|_| ValidationError::InvalidSignature)?,
-            additional_gas: app_data.inner.protocol.hooks.gas_limit(),
+            hook_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
 
@@ -1025,9 +1026,9 @@ impl OrderValidating for OrderValidator {
         };
 
         if quote.as_ref().is_some_and(|quote| {
-            // Quoted gas does not include additional gas for hooks nor ERC1271
-            // signatures
-            quote.data.fee_parameters.gas_amount as u64 + quote_parameters.additional_cost()
+            // Quoted gas does not include gas for ERC1271 signatures.
+            quote.data.fee_parameters.gas_amount as u64
+                + quote_parameters.additional_cost(quote.data.verified)
                 > self.max_gas_per_order
         }) {
             return Err(ValidationError::TooMuchGas);
@@ -1184,7 +1185,7 @@ async fn get_or_create_quote(
                 },
                 verification: quote_search_parameters.verification.clone(),
                 signing_scheme: quote_search_parameters.signing_scheme,
-                additional_gas: quote_search_parameters.additional_gas,
+                hook_gas: quote_search_parameters.hook_gas,
                 fast_path: false,
                 timeout: None, // let &dyn OrderQuoting chose default
             };
@@ -2860,7 +2861,7 @@ mod tests {
                 onchain_order: true,
                 verification_gas_limit: default_verification_gas_limit(),
             },
-            additional_gas: 0,
+            hook_gas: 0,
             verification: Verification {
                 from: Address::from([0xf0; 20]),
                 ..Default::default()
@@ -2947,7 +2948,7 @@ mod tests {
                 },
                 verification,
                 signing_scheme: QuoteSigningScheme::Eip712,
-                additional_gas: 0,
+                hook_gas: 0,
                 fast_path: false,
                 timeout: None,
             }))
@@ -3101,7 +3102,7 @@ mod tests {
                 onchain_order: false,
                 verification_gas_limit: default_verification_gas_limit(),
             },
-            additional_gas: 0,
+            hook_gas: 0,
             verification: Verification {
                 from: Address::from([0xf0; 20]),
                 receiver: Address::from([0xf0; 20]),

@@ -4578,6 +4578,7 @@ dependencies = [
 name = "event-bus-dto"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "chrono",
  "schemars 1.2.0",
  "serde",
@@ -9620,13 +9621,16 @@ dependencies = [
  "const-hex",
  "database",
  "futures",
+ "humantime-serde",
  "observe",
  "reqwest 0.13.4",
  "serde",
+ "serde-ext",
  "serde_json",
  "serde_with",
  "solana-sdk",
  "sqlx",
+ "thiserror 1.0.69",
  "tikv-jemallocator",
  "tokio",
  "tokio-util",

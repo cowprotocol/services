@@ -14,9 +14,7 @@ pub(crate) async fn solve(
     LoggingJson(request): LoggingJson<dto::SolveRequest>,
 ) -> Result<Json<dto::SolveResponse>, (StatusCode, Json<ApiError>)> {
     let auction = request.into_domain()?;
-    let auction_id = auction
-        .id
-        .expect("a solve request always carries an auction id");
+    let auction_id = auction.id.ok_or(dto::AuctionError::InvalidAuctionId)?;
     let solutions = state
         .competition()
         .solve(auction_id, &auction)

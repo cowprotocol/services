@@ -10,6 +10,7 @@ name = "event-bus-schemas"
 path = "src/bin/print_schemas.rs"
 
 [dependencies]
+alloy-primitives = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, features = ["clock", "serde"] }
 schemars = { workspace = true }
 serde = { workspace = true }
