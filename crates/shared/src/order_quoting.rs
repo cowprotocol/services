@@ -698,10 +698,8 @@ impl OrderQuoting for OrderQuoter {
         };
 
         let now = self.now.now();
-        // `parameters` is consumed by the quote lookup, so compute the cost
-        // for both verification outcomes up front.
         let additional_cost = |verified| parameters.additional_cost(verified);
-        let additional_cost = (additional_cost(true), additional_cost(false));
+        let (additional_cost_verified, additional_cost_unverified) = (additional_cost(true), additional_cost(false));
         let quote = async {
             let (id, data) = match id {
                 Some(id) => {
@@ -730,9 +728,9 @@ impl OrderQuoting for OrderQuoter {
         }
         .await?;
         let additional_cost = if quote.data.verified {
-            additional_cost.0
+            additional_cost_verified
         } else {
-            additional_cost.1
+            additional_cost_unverified
         };
         let quote = quote.with_additional_cost(additional_cost);
 
