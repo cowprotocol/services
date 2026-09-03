@@ -9,6 +9,7 @@ use {
             ingester::{Error, INGEST_TO_DECODER_CAPACITY, Ingester, Resume},
         },
         persistence::Postgres,
+        types::slot::Slot,
         yellowstone,
     },
     clap::Parser,
@@ -18,7 +19,10 @@ use {
     std::{
         net::SocketAddr,
         path::PathBuf,
-        sync::{Arc, atomic::AtomicU64},
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
         time::Duration,
     },
     tokio::{sync::mpsc, task::JoinHandle},
@@ -27,6 +31,9 @@ use {
 
 /// Wait between attempts to bring the stream back up.
 const STREAM_RETRY: Duration = Duration::from_secs(5);
+
+/// How often the observed chain tip is written to the database.
+const CHAIN_TIP_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The Solana indexer command line arguments.
 #[derive(Debug, Parser)]
@@ -84,6 +91,30 @@ async fn run(config: Config, start_slot: Option<u64>) {
     let mut decoder_task = tokio::spawn(async move { decoder.run().await });
 
     let latest_chain_slot = Arc::new(AtomicU64::default());
+
+    // Samples the ingester's chain-tip counter: the tip stays fresh under
+    // decoder backpressure and the stream's hot path never writes to the
+    // database.
+    let chain_tip_loop = {
+        let persistence = persistence.clone();
+        let latest_chain_slot = latest_chain_slot.clone();
+        async move {
+            let mut written = 0;
+            loop {
+                tokio::time::sleep(CHAIN_TIP_INTERVAL).await;
+                let tip = latest_chain_slot.load(Ordering::Relaxed);
+                if tip <= written {
+                    continue;
+                }
+                match persistence.upsert_chain_tip(Slot(tip)).await {
+                    Ok(()) => written = tip,
+                    Err(err) => tracing::warn!(?err, "chain tip write failed"),
+                }
+            }
+        }
+    };
+    tokio::spawn(chain_tip_loop);
+
     let stream_loop = async {
         let mut resume = start_slot.map_or(Resume::Watermark, Resume::From);
         loop {

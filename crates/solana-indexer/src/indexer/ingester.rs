@@ -30,6 +30,7 @@ use {
             slot::Slot,
             wire::{
                 CommitmentLevel,
+                SlotStatus,
                 SubscribeRequest,
                 SubscribeRequestFilterSlots,
                 SubscribeRequestFilterTransactions,
@@ -197,21 +198,39 @@ where
         .await
     }
 
-    /// Consume a slot message: advance the in-memory chain-tip counter and
-    /// forward the slot to the decoder so it can flush a finished buffer.
+    /// Consume a slot message, routed by its status. A confirmed slot
+    /// advances the in-memory chain-tip counter and lets the decoder flush a
+    /// finished buffer. A finalized slot advances the finalized watermark.
+    /// Every other status is dropped: flushing on a slot ahead of the
+    /// transaction stream's commitment would declare slots complete whose
+    /// transactions are still in flight.
     async fn handle_slot(
         tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
         slot: SubscribeUpdateSlot,
     ) -> ControlFlow<()> {
-        latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
-        Self::forward(
-            tx,
-            StreamUpdate::Slot {
-                slot: Slot(slot.slot),
-            },
-        )
-        .await
+        match slot.status() {
+            SlotStatus::SlotConfirmed => {
+                latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
+                Self::forward(
+                    tx,
+                    StreamUpdate::Slot {
+                        slot: Slot(slot.slot),
+                    },
+                )
+                .await
+            }
+            SlotStatus::SlotFinalized => {
+                Self::forward(
+                    tx,
+                    StreamUpdate::Finalized {
+                        slot: Slot(slot.slot),
+                    },
+                )
+                .await
+            }
+            _ => ControlFlow::Continue(()),
+        }
     }
 
     /// Push one update into the decoder channel. A full channel is the intended
@@ -350,8 +369,10 @@ fn subscribe_request(
         slots: [(
             CHAIN_TIP_FILTER.to_owned(),
             SubscribeRequestFilterSlots {
-                // one message per slot at the subscription's commitment level
-                filter_by_commitment: Some(true),
+                // Every status transition, so finalized slots arrive next to
+                // confirmed ones. The ingester routes the two it needs and
+                // drops the rest.
+                filter_by_commitment: Some(false),
                 ..Default::default()
             },
         )]

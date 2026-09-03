@@ -21,6 +21,7 @@ use {
                 InnerInstruction,
                 InnerInstructions,
                 Message,
+                SlotStatus,
                 SubscribeUpdate,
                 SubscribeUpdateSlot,
                 SubscribeUpdateTransaction,
@@ -313,10 +314,11 @@ fn signature(n: u8) -> Signature {
 }
 
 /// A slot-status message in the proto envelope the ingester reads.
-fn slot_status_update(slot: u64) -> SubscribeUpdate {
+fn slot_status_update(slot: u64, status: SlotStatus) -> SubscribeUpdate {
     SubscribeUpdate {
         update_oneof: Some(UpdateOneof::Slot(SubscribeUpdateSlot {
             slot,
+            status: status as i32,
             ..Default::default()
         })),
         ..Default::default()
@@ -713,21 +715,41 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
         geyser_tx.send(update).await.unwrap();
     }
     // The hold-back keeps both slots buffered: the newest observed slot (43)
-    // is not two past either of them, so nothing may be persisted yet.
+    // is not two past either of them, so no events may be persisted yet. The
+    // watermark still advances to the quiet slots below the hold-back.
     let reader = Postgres::new(pool.clone());
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert_eq!(reader.last_indexed_slot().await.unwrap(), None);
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(41)));
+    let events: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_pda")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(events, 0);
 
     // The slot-45 status moves the stream two past 43 and flushes both slots.
-    // Closing the channel ends the ingester (a terminal stream end) and the
-    // decoder drains cleanly behind it, so joining both tasks is the
-    // guarantee that every write below has landed.
-    geyser_tx.send(Ok(slot_status_update(45))).await.unwrap();
+    // The finalized status advances the finalized watermark, and the quiet
+    // slot 50 carries no transactions yet still advances the last indexed
+    // slot to 48 (the hold-back behind it). Closing the channel ends the
+    // ingester (a terminal stream end) and the decoder drains cleanly behind
+    // it, so joining both tasks is the guarantee that every write below has
+    // landed.
+    for update in [
+        slot_status_update(45, SlotStatus::SlotConfirmed),
+        slot_status_update(43, SlotStatus::SlotFinalized),
+        slot_status_update(50, SlotStatus::SlotConfirmed),
+    ] {
+        geyser_tx.send(Ok(update)).await.unwrap();
+    }
     drop(geyser_tx);
     assert!(ingester_task.await.unwrap().is_err());
     assert!(decoder_task.await.unwrap().is_ok());
 
-    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(43)));
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(48)));
+    let finalized: i64 = sqlx::query_scalar("SELECT finalized_slot FROM solana.indexer_state")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(finalized, 43);
 
     // Slot 42 held only the reverted transaction: no dead letter, no rows.
     // The slot-43 transaction with the unknown discriminator is dead-lettered

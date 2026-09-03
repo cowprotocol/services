@@ -342,6 +342,35 @@ WHERE indexer_state.slot < EXCLUDED.slot
         Ok(tx.commit().await?)
     }
 
+    /// Advance the finalized watermark. Update-only: before the first flush
+    /// there is no state row and nothing indexed to finalize. A backward
+    /// write is a no-op.
+    pub(crate) async fn write_finalized_slot(&self, slot: Slot) -> Result<(), PersistenceError> {
+        sqlx::query(
+            "UPDATE solana.indexer_state SET finalized_slot = GREATEST(finalized_slot, $1)",
+        )
+        .bind(to_db_slot(slot))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Record the last observed chain tip. Not monotone: a provider
+    /// reconnect can legitimately report an older tip.
+    pub(crate) async fn upsert_chain_tip(&self, slot: Slot) -> Result<(), PersistenceError> {
+        sqlx::query(
+            r#"
+INSERT INTO solana.chain_tip (slot)
+VALUES ($1)
+ON CONFLICT (singleton) DO UPDATE SET slot = EXCLUDED.slot
+            "#,
+        )
+        .bind(to_db_slot(slot))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     /// Record a slot as fully indexed. A backward write is a no-op.
     pub(crate) async fn write_last_indexed_slot(&self, slot: Slot) -> Result<(), PersistenceError> {
         Self::upsert_last_indexed_slot(&self.pool, slot).await
@@ -399,6 +428,52 @@ mod tests {
         sqlx::{PgPool, Row},
         std::collections::HashMap,
     };
+
+    /// The finalized watermark only moves forward and needs an existing
+    /// state row: before the first flush the update is a no-op.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_finalized_watermark_is_monotone_and_update_only() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+
+        // No state row yet: the write lands nowhere.
+        postgres.write_finalized_slot(Slot(5)).await.unwrap();
+        let row: Option<i64> =
+            sqlx::query_scalar("SELECT finalized_slot FROM solana.indexer_state")
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row, None);
+
+        postgres.write_last_indexed_slot(Slot(10)).await.unwrap();
+        postgres.write_finalized_slot(Slot(8)).await.unwrap();
+        postgres.write_finalized_slot(Slot(6)).await.unwrap();
+        let finalized: i64 = sqlx::query_scalar("SELECT finalized_slot FROM solana.indexer_state")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(finalized, 8);
+    }
+
+    /// The chain tip is a plain upsert: a reconnected provider may report an
+    /// older tip and the row follows it.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_chain_tip_follows_the_last_write() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+
+        postgres.upsert_chain_tip(Slot(100)).await.unwrap();
+        postgres.upsert_chain_tip(Slot(90)).await.unwrap();
+        let tip: i64 = sqlx::query_scalar("SELECT slot FROM solana.chain_tip")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(tip, 90);
+    }
 
     /// The `solana.orders` columns a seeded test order writes.
     struct SeedOrder {

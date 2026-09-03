@@ -5,6 +5,7 @@ use {
         channel::StreamUpdate,
         slot::Slot,
         wire::{
+            SlotStatus,
             SubscribeUpdate,
             SubscribeUpdateAccount,
             SubscribeUpdateAccountInfo,
@@ -70,10 +71,11 @@ fn account_update(slot: u64, sig: u8) -> Result<SubscribeUpdate, Status> {
     })
 }
 
-fn slot_update(slot: u64) -> Result<SubscribeUpdate, Status> {
+fn slot_update(slot: u64, status: SlotStatus) -> Result<SubscribeUpdate, Status> {
     Ok(SubscribeUpdate {
         update_oneof: Some(UpdateOneof::Slot(SubscribeUpdateSlot {
             slot,
+            status: status as i32,
             ..Default::default()
         })),
         ..Default::default()
@@ -127,8 +129,11 @@ async fn account_update_is_ignored() {
 }
 
 #[tokio::test]
-async fn slot_update_advances_latest_chain_slot_and_is_forwarded() {
-    let (mut ingester, mut rx, slot) = ingester(stream::iter([slot_update(9_001)]));
+async fn confirmed_slot_advances_latest_chain_slot_and_is_forwarded() {
+    let (mut ingester, mut rx, slot) = ingester(stream::iter([slot_update(
+        9_001,
+        SlotStatus::SlotConfirmed,
+    )]));
 
     assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
     assert_eq!(slot.load(Ordering::Relaxed), 9_001);
@@ -136,6 +141,37 @@ async fn slot_update_advances_latest_chain_slot_and_is_forwarded() {
         rx.try_recv(),
         Ok(StreamUpdate::Slot { slot: Slot(9_001) })
     ));
+}
+
+/// A finalized slot becomes the finalized-watermark signal. It does not
+/// advance the chain-tip counter: the tip is the confirmed frontier.
+#[tokio::test]
+async fn finalized_slot_is_forwarded_without_moving_the_tip() {
+    let (mut ingester, mut rx, slot) = ingester(stream::iter([slot_update(
+        8_970,
+        SlotStatus::SlotFinalized,
+    )]));
+
+    assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
+    assert_eq!(slot.load(Ordering::Relaxed), 0);
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(StreamUpdate::Finalized { slot: Slot(8_970) })
+    ));
+}
+
+/// Statuses ahead of the stream's commitment must not drive flushes: a
+/// processed slot is dropped.
+#[tokio::test]
+async fn processed_slot_is_dropped() {
+    let (mut ingester, rx, slot) = ingester(stream::iter([slot_update(
+        9_002,
+        SlotStatus::SlotProcessed,
+    )]));
+
+    assert!(matches!(ingester.run().await, Err(Error::StreamEnded)));
+    assert_eq!(slot.load(Ordering::Relaxed), 0);
+    assert!(rx.is_empty());
 }
 
 #[tokio::test]
