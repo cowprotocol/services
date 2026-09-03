@@ -33,6 +33,7 @@ use {
     contracts::{GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
+    futures::channel::mpsc,
     http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
@@ -471,9 +472,10 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
         ));
 
-    // Wakes the run loop on new orders (via the notifier) and new blocks.
-    let wake_runloop = Arc::new(tokio::sync::Notify::new());
-    infra::order_notify::Notifier::new(banned_users.clone(), wake_runloop.clone())
+    // New-order notifications from the DB fan out through this channel to
+    // the run loop (which wakes) and, later on, to the fast-path handler.
+    let (new_orders_sender, new_orders_receiver) = mpsc::unbounded();
+    infra::order_notify::Notifier::new(banned_users.clone(), new_orders_sender)
         .spawn(db_write.pool.clone());
 
     let penalty_cap_calculator = match &config.penalty_cap {
@@ -659,7 +661,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             startup,
         },
         awaiter,
-        wake_runloop,
+        new_orders_receiver,
     );
     run.run_forever(shutdown_controller).await;
 
