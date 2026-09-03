@@ -11,8 +11,8 @@ pub use {
     token::{associated_token_address, create_associated_token_account_idempotent},
 };
 use {
-    cow_solana_rpc::{Error, SolanaRPC},
-    solana_sdk::pubkey::Pubkey,
+    cow_solana_rpc::{Error, LatestBlockhash, SolanaRPC},
+    solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
 };
 
 /// The Solana blockchain adapter.
@@ -30,6 +30,25 @@ impl Solana {
     /// The settlement program id this driver settles against.
     pub fn program_id(&self) -> Pubkey {
         self.program_id
+    }
+
+    /// Fetch the latest confirmed blockhash and the last block height at
+    /// which it stays usable.
+    pub async fn latest_confirmed_blockhash(&self) -> Result<LatestBlockhash, Error> {
+        self.rpc.latest_confirmed_blockhash().await
+    }
+
+    /// The node's current slot at the client's commitment level.
+    pub async fn slot(&self) -> Result<u64, Error> {
+        self.rpc.slot().await
+    }
+
+    /// Send a signed transaction and wait for confirmation.
+    pub async fn send_and_confirm_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Signature, Error> {
+        self.rpc.send_and_confirm_transaction(transaction).await
     }
 
     /// Fetch the accounts at `keys` in a single batched fetch (split into

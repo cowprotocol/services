@@ -87,6 +87,14 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
                 // fault.
                 settlement::Error::OrderExpired(_) => Kind::DeadlineExceeded,
             },
+            competition::Error::Resolve(error) => match error {
+                // The solver supplied the lookup table keys.
+                settlement::ResolveError::InvalidAddressLookupTable { .. } => Kind::SolverFailed,
+                // RPC failures and unexpected setup accounts are outside solver
+                // control. Map them to Unknown.
+                settlement::ResolveError::Rpc(_)
+                | settlement::ResolveError::UnexpectedSetupAccount { .. } => Kind::Unknown,
+            },
         }
         .into()
     }
