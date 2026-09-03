@@ -1,6 +1,5 @@
 use {
     crate::{
-        database::competition::Competition,
         domain::{
             self,
             auction::Id,
@@ -32,13 +31,6 @@ use {
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     futures::{FutureExt, StreamExt, TryFutureExt},
     itertools::Itertools,
-    model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
-    },
     num::ToPrimitive,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
@@ -430,12 +422,7 @@ impl RunLoop {
         // includes steps of storing all the competition/auction-related
         // data to the DB.
         if let Err(err) = self
-            .post_processing(
-                auction,
-                competition_simulation_block,
-                &ranking,
-                block_deadline,
-            )
+            .post_processing(auction, &ranking, block_deadline)
             .await
         {
             tracing::error!(?err, "failed to post-process competition");
@@ -535,17 +522,12 @@ impl RunLoop {
     async fn post_processing(
         &self,
         auction: &domain::Auction,
-        competition_simulation_block: u64,
         ranking: &Ranking,
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
         let reference_scores = ranking.reference_scores().clone();
 
-        let participants = ranking
-            .all()
-            .map(|bid| bid.solution().solver())
-            .collect::<HashSet<_>>();
         let order_lookup: std::collections::HashMap<_, _> = auction
             .orders
             .iter()
@@ -567,64 +549,6 @@ impl RunLoop {
             })
             .collect();
 
-        let mut solutions: Vec<_> = ranking
-            .enumerated()
-            .map(|(index, bid)| SolverSettlement {
-                solver: bid.driver().name.clone(),
-                solver_address: bid.solution().solver(),
-                score: Some(Score::Solver(bid.score().get().0)),
-                ranking: index + 1,
-                orders: bid
-                    .solution()
-                    .orders()
-                    .iter()
-                    .map(|(id, order)| Order::Colocated {
-                        id: (*id).into(),
-                        sell_amount: order.executed_sell.0,
-                        buy_amount: order.executed_buy.0,
-                    })
-                    .collect(),
-                // Always empty — kept to avoid breaking the solver competition
-                // API (`/api/v1/solver_competition`).
-                // NOTE: since the v1 has been removed,
-                // we'll probably be able to remove this soon too
-                clearing_prices: Default::default(),
-                is_winner: bid.is_winner(),
-                filtered_out: bid.is_filtered_out(),
-            })
-            .collect();
-        // reverse as solver competition table is sorted from worst to best,
-        // so we need to keep the ordering for backwards compatibility
-        solutions.reverse();
-
-        let competition_table = SolverCompetitionDB {
-            auction_start_block: auction.block,
-            competition_simulation_block,
-            auction: CompetitionAuction {
-                orders: auction
-                    .orders
-                    .iter()
-                    .map(|order| order.uid.into())
-                    .collect(),
-                prices: auction
-                    .prices
-                    .iter()
-                    .map(|(key, value)| (Address::from(*key), value.get().0))
-                    .collect(),
-            },
-            solutions,
-        };
-        let competition = Competition {
-            auction_id: auction.id,
-            reference_scores,
-            participants,
-            block_deadline,
-            competition_simulation_block,
-            competition_table,
-        };
-
-        tracing::trace!(?competition, "saving competition");
-
         futures::try_join!(
             self.persistence
                 .save_auction(auction, block_deadline)
@@ -633,7 +557,7 @@ impl RunLoop {
                 .save_solutions(auction.id, ranking.all())
                 .map_err(|e| e.0.context("failed to save solutions")),
             self.persistence
-                .save_competition(competition)
+                .save_reference_scores(auction.id, reference_scores)
                 .map_err(|e| e.0.context("failed to save competition")),
             self.persistence
                 .store_fee_policies(auction.id, fee_policies)
