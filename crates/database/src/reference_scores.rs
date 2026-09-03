@@ -1,8 +1,7 @@
 use {
-    crate::{Address, PgTransaction, auction::AuctionId},
+    crate::{Address, auction::AuctionId},
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder},
-    std::ops::DerefMut,
     tracing::instrument,
 };
 
@@ -14,7 +13,7 @@ pub struct Score {
 }
 
 #[instrument(skip_all)]
-pub async fn insert(ex: &mut PgTransaction<'_>, scores: &[Score]) -> Result<(), sqlx::Error> {
+pub async fn insert(ex: &mut PgConnection, scores: &[Score]) -> Result<(), sqlx::Error> {
     const QUERY: &str = "INSERT INTO reference_scores (auction_id, solver, reference_score) ";
 
     if scores.is_empty() {
@@ -29,7 +28,7 @@ pub async fn insert(ex: &mut PgTransaction<'_>, scores: &[Score]) -> Result<(), 
             .push_bind(score.reference_score.clone());
     });
 
-    query_builder.build().execute(ex.deref_mut()).await?;
+    query_builder.build().execute(ex).await?;
 
     Ok(())
 }
