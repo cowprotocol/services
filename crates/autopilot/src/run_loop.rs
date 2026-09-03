@@ -558,7 +558,7 @@ impl RunLoop {
                 .save_solutions(auction.id, ranking.all())
                 .map_err(|e| e.0.context("failed to save solutions")),
             self.persistence
-                .save_competition(auction.id, reference_scores)
+                .save_reference_scores(auction.id, reference_scores)
                 .map_err(|e| e.0.context("failed to save competition")),
             self.persistence
                 .store_fee_policies(auction.id, fee_policies)

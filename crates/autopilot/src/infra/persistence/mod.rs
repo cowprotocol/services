@@ -182,7 +182,7 @@ impl Persistence {
     }
 
     /// Saves the competition data to the DB
-    pub async fn save_competition(
+    pub async fn save_reference_scores(
         &self,
         auction_id: AuctionId,
         reference_scores: HashMap<Address, Score>,
