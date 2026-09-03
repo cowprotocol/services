@@ -126,6 +126,7 @@ impl SanitizedPriceEstimator {
                 solver: Default::default(),
                 verified: true,
                 supports_fast_path: false,
+                solution_id: None,
                 execution: Default::default(),
             };
             tracing::debug!(?query, ?estimation, "generate trivial price estimation");
@@ -141,6 +142,7 @@ impl SanitizedPriceEstimator {
                 solver: Default::default(),
                 verified: true,
                 supports_fast_path: false,
+                solution_id: None,
                 execution: Default::default(),
             };
             tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
@@ -156,6 +158,7 @@ impl SanitizedPriceEstimator {
                 solver: Default::default(),
                 verified: true,
                 supports_fast_path: false,
+                solution_id: None,
                 execution: Default::default(),
             };
             tracing::debug!(?query, ?estimation, "generate trivial wrap estimation");
@@ -224,6 +227,7 @@ mod tests {
                     solver: Default::default(),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -250,6 +254,7 @@ mod tests {
                     solver: Default::default(),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -293,6 +298,7 @@ mod tests {
                     solver: Default::default(),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -316,6 +322,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -338,6 +345,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -361,6 +369,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -384,6 +393,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -457,6 +467,7 @@ mod tests {
                         solver: Default::default(),
                         verified: false,
                         supports_fast_path: false,
+                        solution_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -474,6 +485,7 @@ mod tests {
                         solver: Default::default(),
                         verified: false,
                         supports_fast_path: false,
+                        solution_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -491,6 +503,7 @@ mod tests {
                         solver: Default::default(),
                         verified: false,
                         supports_fast_path: false,
+                        solution_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -508,6 +521,7 @@ mod tests {
                         solver: Default::default(),
                         verified: false,
                         supports_fast_path: false,
+                        solution_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -555,6 +569,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -576,6 +591,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -602,6 +618,7 @@ mod tests {
                         solver: Default::default(),
                         verified: true,
                         supports_fast_path: false,
+                        solution_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -619,6 +636,7 @@ mod tests {
                         solver: Default::default(),
                         verified: true,
                         supports_fast_path: false,
+                        solution_id: None,
                         execution: Default::default(),
                     })
                 }
