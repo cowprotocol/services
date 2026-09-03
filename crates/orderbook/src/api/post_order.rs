@@ -259,6 +259,14 @@ impl IntoResponse for ValidationErrorWrapper {
                 ),
             )
                 .into_response(),
+            ValidationError::FastPathDisabled => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "FastPathDisabled",
+                    "the fast path is not enabled on this environment.",
+                ),
+            )
+                .into_response(),
             ValidationError::IncompatibleSigningScheme => (
                 StatusCode::BAD_REQUEST,
                 error(

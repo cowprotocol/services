@@ -278,6 +278,9 @@ pub enum ValidationError {
     /// `valid_from` leaves too small a window before `valid_to` for the order
     /// to be settled.
     InvalidValidFrom,
+    /// The order opts into the fast path but it is not enabled on this
+    /// environment.
+    FastPathDisabled,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
     TooMuchGas,
@@ -389,6 +392,9 @@ pub struct OrderValidator {
     app_data_validator: Validator,
     max_gas_per_order: u64,
     same_tokens_policy: SameTokensPolicy,
+    /// How long a fast-path order is held out of the auction (its `valid_from`
+    /// is set to `now + this` on placement). `None` disables the fast path.
+    min_fast_path_exclusivity: Option<Duration>,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -476,7 +482,15 @@ impl OrderValidator {
             app_data_validator,
             max_gas_per_order,
             same_tokens_policy,
+            min_fast_path_exclusivity: None,
         }
+    }
+
+    /// Sets how long fast-path orders are held out of the auction. `None` (the
+    /// default) disables the fast path.
+    pub fn with_min_fast_path_exclusivity(mut self, exclusivity: Option<Duration>) -> Self {
+        self.min_fast_path_exclusivity = exclusivity;
+        self
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
@@ -772,11 +786,6 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Full { full } => validate(full)?,
         };
 
-        if app_data.protocol.enable_fast_path {
-            return Err(AppDataValidationError::Invalid(anyhow::anyhow!(
-                "'enableFastPath' is not yet supported"
-            )));
-        }
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
@@ -1033,7 +1042,20 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
-        if let Some(valid_from) = app_data.inner.protocol.valid_from {
+        let valid_from = if app_data.inner.protocol.enable_fast_path {
+            let Some(exclusivity) = self.min_fast_path_exclusivity else {
+                return Err(ValidationError::FastPathDisabled);
+            };
+            app_data
+                .inner
+                .protocol
+                .valid_from
+                .or_else(|| Some(time::now_in_epoch_seconds() + exclusivity.as_secs() as u32))
+        } else {
+            app_data.inner.protocol.valid_from
+        };
+
+        if let Some(valid_from) = valid_from {
             let min = self.validity_configuration.min.as_secs();
             if u64::from(data.valid_to) < u64::from(valid_from) + min {
                 return Err(ValidationError::InvalidValidFrom);
@@ -1057,7 +1079,7 @@ impl OrderValidating for OrderValidator {
                     .map(|q| q.try_to_model_order_quote())
                     .transpose()
                     .map_err(ValidationError::Other)?,
-                valid_from: app_data.inner.protocol.valid_from,
+                valid_from,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -1776,48 +1798,53 @@ mod tests {
 
     #[tokio::test]
     async fn enforces_minimum_validity_window() {
-        let mut order_quoter = MockOrderQuoting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter
-            .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _| Ok(()));
-        let mut signature_validating = MockSignatureValidating::new();
-        signature_validating
-            .expect_validate_signature_and_get_additional_gas()
-            .never();
-        let hooks = HooksTrampoline::Instance::new(
-            Address::from([0xcf; 20]),
-            ProviderBuilder::new()
-                .connect_mocked_client(Asserter::new())
-                .erased(),
-        );
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
-        let validator = OrderValidator::new(
-            native_token,
-            Arc::new(order_validation::banned::Users::none()),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(60),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
-            false,
-            Default::default(),
-            hooks,
-            Arc::new(order_quoter),
-            Arc::new(balance_fetcher),
-            Arc::new(signature_validating),
-            None,
-            Arc::new(limit_order_counter),
-            1,
-            Default::default(),
-            u64::MAX,
-            SameTokensPolicy::Disallow,
-        );
+        let build_validator = |exclusivity: Option<Duration>| {
+            let mut order_quoter = MockOrderQuoting::new();
+            order_quoter
+                .expect_find_quote()
+                .returning(|_, _| Ok(Default::default()));
+            let mut balance_fetcher = MockBalanceFetching::new();
+            balance_fetcher
+                .expect_can_transfer()
+                .returning(|_, _| Ok(()));
+            let mut signature_validating = MockSignatureValidating::new();
+            signature_validating
+                .expect_validate_signature_and_get_additional_gas()
+                .never();
+            let hooks = HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            );
+            let mut limit_order_counter = MockLimitOrderCounting::new();
+            limit_order_counter.expect_count().returning(|_| Ok(0u64));
+            let native_token =
+                WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+            OrderValidator::new(
+                native_token,
+                Arc::new(order_validation::banned::Users::none()),
+                OrderValidPeriodConfiguration {
+                    min: Duration::from_secs(60),
+                    max_market: Duration::from_secs(100),
+                    max_limit: Duration::from_secs(200),
+                },
+                false,
+                Default::default(),
+                hooks,
+                Arc::new(order_quoter),
+                Arc::new(balance_fetcher),
+                Arc::new(signature_validating),
+                None,
+                Arc::new(limit_order_counter),
+                1,
+                Default::default(),
+                u64::MAX,
+                SameTokensPolicy::Disallow,
+            )
+            .with_min_fast_path_exclusivity(exclusivity)
+        };
+        let validator = build_validator(Some(Duration::from_secs(30)));
 
         let now = time::now_in_epoch_seconds();
         let plain = |valid_to: u32| OrderCreation {
@@ -1866,6 +1893,45 @@ mod tests {
             Err(ValidationError::InvalidValidFrom)
         );
         validate(delayed(now + 50, now + 150)).await.unwrap();
+
+        let fast_path = |valid_to: u32| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableFastPath": true } }).to_string(),
+            },
+            ..plain(valid_to)
+        };
+        std::assert_matches!(
+            validate(fast_path(now + 60)).await,
+            Err(ValidationError::InvalidValidFrom)
+        );
+        let (order, _) = validate(fast_path(now + 150)).await.unwrap();
+        let valid_from = order.metadata.valid_from.unwrap();
+        assert!((now + 30..=now + 32).contains(&valid_from));
+
+        // A user-provided `validFrom` on a fast-path order is preserved.
+        let fast_path_user = OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableFastPath": true, "validFrom": now + 100 } })
+                    .to_string(),
+            },
+            ..plain(now + 180)
+        };
+        let (order, _) = validate(fast_path_user).await.unwrap();
+        assert_eq!(order.metadata.valid_from, Some(now + 100));
+
+        // Fast-path orders are rejected when the fast path is disabled.
+        let disabled = build_validator(None);
+        std::assert_matches!(
+            disabled
+                .validate_and_construct_order(
+                    fast_path(now + 150),
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await,
+            Err(ValidationError::FastPathDisabled)
+        );
     }
 
     #[tokio::test]
