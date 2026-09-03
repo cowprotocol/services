@@ -31,7 +31,6 @@ use {
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     futures::{FutureExt, StreamExt, TryFutureExt},
     itertools::Itertools,
-    model::solver_competition::{Order, Score, SolverSettlement},
     num::ToPrimitive,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
