@@ -322,7 +322,7 @@ impl Ingester<GeyserStream> {
 /// matching updates, nothing routes on them today.
 const SETTLEMENT_FILTER: &str = "settlement_txs";
 const SOLFLOW_FILTER: &str = "sol_flow_txs";
-const CHAIN_TIP_FILTER: &str = "chain_tip";
+const SLOT_FILTER: &str = "slot_statuses";
 
 /// Where a fresh subscription starts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -337,7 +337,7 @@ pub(crate) enum Resume {
 }
 
 /// The wire-level filter shape: the two named transaction filters and the
-/// `chain_tip` slot filter, multiplexed into a single subscription at
+/// slot-status filter, multiplexed into a single subscription at
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
 /// [`Ingester::serve`] (`last_indexed_slot + 1`, or `None` for the live tip).
 ///
@@ -367,7 +367,7 @@ fn subscribe_request(
     SubscribeRequest {
         transactions: filters,
         slots: [(
-            CHAIN_TIP_FILTER.to_owned(),
+            SLOT_FILTER.to_owned(),
             SubscribeRequestFilterSlots {
                 // Every status transition, so finalized slots arrive next to
                 // confirmed ones. The ingester routes the two it needs and

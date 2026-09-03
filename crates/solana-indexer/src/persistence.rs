@@ -355,22 +355,6 @@ WHERE indexer_state.slot < EXCLUDED.slot
         Ok(())
     }
 
-    /// Record the last observed chain tip. Not monotone: a provider
-    /// reconnect can legitimately report an older tip.
-    pub(crate) async fn upsert_chain_tip(&self, slot: Slot) -> Result<(), PersistenceError> {
-        sqlx::query(
-            r#"
-INSERT INTO solana.chain_tip (slot)
-VALUES ($1)
-ON CONFLICT (singleton) DO UPDATE SET slot = EXCLUDED.slot
-            "#,
-        )
-        .bind(to_db_slot(slot))
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
     /// Record a slot as fully indexed. A backward write is a no-op.
     pub(crate) async fn write_last_indexed_slot(&self, slot: Slot) -> Result<(), PersistenceError> {
         Self::upsert_last_indexed_slot(&self.pool, slot).await
@@ -455,24 +439,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(finalized, 8);
-    }
-
-    /// The chain tip is a plain upsert: a reconnected provider may report an
-    /// older tip and the row follows it.
-    #[tokio::test]
-    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
-    async fn solana_db_chain_tip_follows_the_last_write() {
-        let pool = pool().await;
-        wipe(&pool).await;
-        let postgres = Postgres::new(pool.clone());
-
-        postgres.upsert_chain_tip(Slot(100)).await.unwrap();
-        postgres.upsert_chain_tip(Slot(90)).await.unwrap();
-        let tip: i64 = sqlx::query_scalar("SELECT slot FROM solana.chain_tip")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(tip, 90);
     }
 
     /// The `solana.orders` columns a seeded test order writes.
