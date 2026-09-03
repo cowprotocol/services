@@ -510,8 +510,6 @@ impl RunLoop {
             let (driver, solution) = (winner.driver(), winner.solution());
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
-            // should we set things up such that we can trigger this function
-            // call with our notifier??
             self.start_settlement_execution(
                 auction.id,
                 start_block,
