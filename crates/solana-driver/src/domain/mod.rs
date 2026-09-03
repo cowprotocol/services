@@ -9,8 +9,7 @@ pub mod solution;
 
 pub use self::{
     auction::{Auction, Id, Order, Side},
-    competition::Competition,
-    settlement::Settlement,
     slot::Slot,
     solution::{Solution, Trade},
 };
+pub(crate) use self::{competition::Competition, settlement::Settlement};
