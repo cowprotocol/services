@@ -494,6 +494,20 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         None => None,
     };
 
+    let protocol_fees = Arc::new(domain::ProtocolFees::new(
+        &config.fee_policies,
+        config
+            .shared
+            .volume_fee_bucket_overrides
+            .iter()
+            .map(Into::into)
+            .collect(),
+        config.shared.enable_sell_equals_buy_volume_fee,
+        *eth.contracts().weth().address(),
+    ));
+    let surplus_capturing_jit_order_owners =
+        Arc::new(config.surplus_capturing_jit_order_owners.clone());
+
     let solvable_orders_cache = SolvableOrdersCache::new(
         config.min_order_validity_period,
         persistence.clone(),
@@ -502,19 +516,9 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         deny_listed_tokens.clone(),
         competition_native_price_updater.clone(),
         *eth.contracts().weth().address(),
-        domain::ProtocolFees::new(
-            &config.fee_policies,
-            config
-                .shared
-                .volume_fee_bucket_overrides
-                .iter()
-                .map(Into::into)
-                .collect(),
-            config.shared.enable_sell_equals_buy_volume_fee,
-            *eth.contracts().weth().address(),
-        ),
+        protocol_fees.clone(),
         penalty_cap_calculator,
-        config.surplus_capturing_jit_order_owners,
+        surplus_capturing_jit_order_owners.clone(),
         config.native_price_timeout,
         *eth.contracts().settlement().address(),
         config.disable_order_balance_filter,
@@ -665,6 +669,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         },
         awaiter,
         new_orders_receiver,
+        protocol_fees,
+        surplus_capturing_jit_order_owners,
     );
     run.run_forever(shutdown_controller).await;
 
