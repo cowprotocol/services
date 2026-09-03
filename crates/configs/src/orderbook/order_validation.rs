@@ -75,6 +75,13 @@ pub struct OrderValidationConfig {
     /// Policy for orders where the buy and sell tokens are equal.
     #[serde(default)]
     pub same_tokens_policy: SameTokensPolicy,
+
+    /// How long a fast-path order is held out of the batch auction for its
+    /// exclusive settlement (`valid_from = now + this`, unless the user set a
+    /// later one). Unset disables the fast path: orders requesting it are
+    /// rejected.
+    #[serde(with = "humantime_serde", default)]
+    pub min_fast_path_exclusivity: Option<Duration>,
 }
 
 impl Default for OrderValidationConfig {
@@ -86,6 +93,7 @@ impl Default for OrderValidationConfig {
             max_limit_orders_per_user: default_max_limit_orders_per_user(),
             max_gas_per_order: default_max_gas_per_order(),
             same_tokens_policy: Default::default(),
+            min_fast_path_exclusivity: None,
         }
     }
 }
@@ -136,6 +144,7 @@ mod tests {
             max_limit_orders_per_user: 5,
             max_gas_per_order: 5_000_000,
             same_tokens_policy: SameTokensPolicy::AllowSell,
+            min_fast_path_exclusivity: Some(Duration::from_secs(30)),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
