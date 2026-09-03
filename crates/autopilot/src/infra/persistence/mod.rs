@@ -38,7 +38,7 @@ use {
     eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
-    shared::db_order_conversions::full_order_into_model_order,
+    shared::db_order_conversions::{fast_path_order_into_model, full_order_into_model_order},
     std::{
         collections::{HashMap, HashSet},
         ops::DerefMut,
@@ -1037,6 +1037,143 @@ impl Persistence {
             .map(|o| crate::domain::OrderUid(o.0))
             .collect())
     }
+
+    /// Recovers what's needed to settle a fast-path order via the driver's
+    /// `/settle`, or `None` when `uid` is not a fast-path order (its quote's
+    /// competition was not persisted).
+    pub async fn fast_path_order(
+        &self,
+        uid: domain::OrderUid,
+    ) -> anyhow::Result<Option<FastPathOrder>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["fast_path_order"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let key = ByteArray(uid.0);
+
+        let Some(row) = database::fast_path::single_fast_path_order(&mut ex, &key).await? else {
+            return Ok(None);
+        };
+
+        let model_order = fast_path_order_into_model(&row)?;
+
+        let native_prices = row
+            .price_tokens
+            .iter()
+            .zip(&row.price_values)
+            .map(|(token, value)| {
+                let price = big_decimal_to_u256(value).context("invalid native price")?;
+                anyhow::Ok((eth::Address::from(token.0), price))
+            })
+            .collect::<anyhow::Result<HashMap<_, _>>>()?;
+
+        Ok(Some(FastPathOrder {
+            model_order,
+            auction_id: row.auction_id,
+            solution_id: row
+                .solution_id
+                .to_u64()
+                .context("solution id out of range")?,
+            solution_uid: row
+                .solution_uid
+                .to_usize()
+                .context("solution uid out of range")?,
+            solver: eth::Address::from(row.solver.0),
+            raw_sell: big_decimal_to_u256(&row.executed_sell)
+                .context("invalid executed sell amount")?,
+            raw_buy: big_decimal_to_u256(&row.executed_buy)
+                .context("invalid executed buy amount")?,
+            native_prices,
+        }))
+    }
+
+    /// Applies fees to every solver's bid on a fast-path order and stamps
+    /// the applicable fee policies. Runs after the autopilot picks up the
+    /// placed order and computes the policies via `ProtocolFees::apply`.
+    ///
+    /// Each bid's own raw `executed_sell`/`executed_buy` is adjusted by the
+    /// same volume factors so the recorded amounts stay consistent across
+    /// the whole competition — not just the winning row.
+    pub async fn record_fast_path_fees(
+        &self,
+        auction_id: database::auction::AuctionId,
+        order_uid: domain::OrderUid,
+        order_kind: model::order::OrderKind,
+        volume_factors: &[configs::fee_factor::FeeFactor],
+        fee_policies: &[domain::fee::Policy],
+    ) -> anyhow::Result<()> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["record_fast_path_fees"])
+            .start_timer();
+
+        let uid = ByteArray(order_uid.0);
+        let policy_rows: Vec<_> = fee_policies
+            .iter()
+            .map(|p| dto::fee_policy::from_domain(auction_id, order_uid, *p))
+            .collect();
+
+        let mut tx = self.postgres.pool.begin().await.context("begin")?;
+        let bids = database::fast_path::fast_path_bids(tx.deref_mut(), auction_id, uid)
+            .await
+            .context("fetch fast-path bids")?;
+        let adjusted_bids: Vec<_> = bids
+            .into_iter()
+            .map(|bid| {
+                let raw_sell = big_decimal_to_u256(&bid.executed_sell)
+                    .context("bid executed_sell not a U256")?;
+                let raw_buy = big_decimal_to_u256(&bid.executed_buy)
+                    .context("bid executed_buy not a U256")?;
+                let (adjusted_sell, adjusted_buy) = shared::fee::apply_volume_fees(
+                    raw_sell,
+                    raw_buy,
+                    order_kind,
+                    volume_factors.iter().copied(),
+                );
+                anyhow::Ok(database::fast_path::FastPathBid {
+                    solution_uid: bid.solution_uid,
+                    executed_sell: u256_to_big_decimal(&adjusted_sell),
+                    executed_buy: u256_to_big_decimal(&adjusted_buy),
+                })
+            })
+            .collect::<anyhow::Result<_>>()?;
+        database::fast_path::apply_fees_to_fast_path_bids(
+            tx.deref_mut(),
+            auction_id,
+            uid,
+            &adjusted_bids,
+        )
+        .await
+        .context("apply_fees_to_fast_path_bids")?;
+        database::fee_policies::insert_batch(tx.deref_mut(), policy_rows)
+            .await
+            .context("insert fast-path fee policies")?;
+        tx.commit().await.context("commit")?;
+        Ok(())
+    }
+}
+
+/// The data the autopilot needs to settle a fast-path order out of competition.
+pub struct FastPathOrder {
+    /// The order in the raw API model form. Callers pass this to
+    /// `ProtocolFees::apply` and can then convert it to `domain::Order` via
+    /// `boundary::order::to_domain` once the resulting policies are known.
+    pub model_order: model::order::Order,
+    pub auction_id: database::auction::AuctionId,
+    pub solution_id: u64,
+    pub solution_uid: usize,
+    pub solver: eth::Address,
+    /// The `proposed_trade_executions` amounts as stored at quote time
+    /// (pre-fee-adjustment; identical to the quote's amounts since nothing
+    /// rewrites them between quote time and fast-path handling). Feed these
+    /// to `apply_volume_fees` alongside the Volume-type policies to obtain
+    /// the actual limit prices to settle at.
+    pub raw_sell: eth::U256,
+    pub raw_buy: eth::U256,
+    /// Native prices (token → normalized price) from the quote's auction.
+    pub native_prices: HashMap<eth::Address, eth::U256>,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
