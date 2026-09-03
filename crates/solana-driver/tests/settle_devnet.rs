@@ -538,17 +538,23 @@ async fn settle_devnet() {
     );
 
     // --- POST /settle ---
+    // The driver rejects a deadline slot at or below the current slot, so
+    // base it on a live slot fetch. 100 slots ≈ 40s at the driver's
+    // SLOT_DURATION_MS (400ms) mapping.
+    let current_slot = rpc.get_slot().await.expect("getSlot failed");
+    let submission_deadline_slot = current_slot + 100;
     println!(
-        "POST /settle (auctionId={}, solutionId={})...",
+        "POST /settle (auctionId={}, solutionId={}, submissionDeadlineSlot={})...",
         auction.id.get(),
         solution_id,
+        submission_deadline_slot,
     );
     let settle_response = reqwest::Client::new()
         .post(format!("http://{driver_addr}/jupiter-live/settle"))
         .json(&serde_json::json!({
             "auctionId": auction.id.get(),
             "solutionId": solution_id,
-            "submissionDeadlineSlot": 0,
+            "submissionDeadlineSlot": submission_deadline_slot,
         }))
         .send()
         .await
