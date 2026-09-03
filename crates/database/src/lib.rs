@@ -70,7 +70,6 @@ pub const TABLES: &[&str] = &[
 
 /// The names of potentially big volume tables we use in the db.
 pub const LARGE_TABLES: &[&str] = &[
-    "auction_prices",
     "competition_auctions",
     "fee_policies",
     "orders",

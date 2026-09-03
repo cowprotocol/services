@@ -1,12 +1,12 @@
 use {
     crate::domain::competition::Score,
-    alloy::primitives::{Address, U256},
+    alloy::primitives::Address,
     anyhow::Context,
-    database::{auction::AuctionId, auction_prices::AuctionPrice, byte_array::ByteArray},
+    database::{auction::AuctionId, byte_array::ByteArray},
     derive_more::Debug,
     model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
-    std::collections::{BTreeMap, HashMap, HashSet},
+    std::collections::{HashMap, HashSet},
 };
 
 #[derive(Clone, Default, Debug)]
@@ -16,8 +16,6 @@ pub struct Competition {
     /// Addresses to which the CIP20 participation rewards will be payed out.
     /// Usually the same as the solver addresses.
     pub participants: HashSet<Address>,
-    /// External prices for auction.
-    pub prices: BTreeMap<Address, U256>,
     /// Winner receives performance rewards if a settlement is finalized on
     /// chain before this block height.
     pub block_deadline: u64,
@@ -32,7 +30,7 @@ impl super::Postgres {
             .with_label_values(&["save_competition"])
             .start_timer();
 
-        let mut ex = self.pool.begin().await.context("begin")?;
+        let mut ex = self.pool.acquire().await.context("save_competition")?;
 
         let reference_scores: Vec<_> = competition
             .reference_scores
@@ -46,24 +44,6 @@ impl super::Postgres {
 
         database::reference_scores::insert(&mut ex, &reference_scores)
             .await
-            .context("reference_scores::insert")?;
-
-        database::auction_prices::insert(
-            &mut ex,
-            competition
-                .prices
-                .into_iter()
-                .map(|(token, price)| AuctionPrice {
-                    auction_id: competition.auction_id,
-                    token: ByteArray(token.0.0),
-                    price: u256_to_big_decimal(&price),
-                })
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .await
-        .context("auction_prices::insert")?;
-
-        ex.commit().await.context("commit")
+            .context("reference_scores::insert")
     }
 }

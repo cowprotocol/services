@@ -13,7 +13,7 @@ impl Postgres {
             .with_label_values(&["fetch_latest_prices"])
             .start_timer();
 
-        let mut ex = self.pool.begin().await?;
+        let mut ex = self.pool.acquire().await?;
         Ok(database::auction_prices::fetch_latest_prices(&mut ex)
             .await?
             .into_iter()
