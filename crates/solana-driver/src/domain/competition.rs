@@ -204,7 +204,12 @@ impl Competition {
         // TODO: a provably unsent transaction (connect failure at send time)
         // loses the solution here; restore the cache entry on that class. Needs
         // the send/confirm split in cow-solana-rpc (planned follow-up PR).
+        // A zero timeout still polls the send future once, which could
+        // submit the transaction past the deadline, so handle it here.
         let confirm_timeout = deadline.saturating_duration_since(Instant::now());
+        if confirm_timeout.is_zero() {
+            return Err(Error::DeadlineExceeded);
+        }
         let signature = tokio::time::timeout(
             confirm_timeout,
             self.blockchain.send_and_confirm_transaction(&transaction),
