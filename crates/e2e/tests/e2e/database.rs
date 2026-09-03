@@ -68,8 +68,13 @@ pub async fn auction_participants(
 pub async fn auction_prices(
     ex: &mut PgConnection,
     auction_id: i64,
-) -> anyhow::Result<Vec<database::auction_prices::AuctionPrice>> {
-    const QUERY: &str = "SELECT * FROM auction_prices WHERE auction_id = $1";
+) -> anyhow::Result<Vec<database::auction::AuctionPrice>> {
+    const QUERY: &str = "
+        SELECT
+            id AS auction_id,
+            unnest(price_tokens) AS token,
+            unnest(price_values) AS price
+        FROM competition_auctions WHERE id = $1";
     Ok(sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?)
 }
 
