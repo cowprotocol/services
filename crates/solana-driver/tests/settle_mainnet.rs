@@ -17,8 +17,9 @@
 //! The solver keypair doubles as the user who creates the order: the
 //! settlement program does not require the user and the solver to be
 //! different identities, so one funded keypair plays both roles. This
-//! keypair must hold SOL (for fees + rent) and at least 15 USDC and 15 USDT
-//! (10 to sell + a 5-token safety margin).
+//! keypair must hold SOL (for fees + rent) and at least 15 units of USDC
+//! or USDT (see `MIN_TOKEN_BALANCE`) — the test sells whichever of the
+//! two the keypair holds more of.
 //!
 //! The test overrides the solver endpoint to the in-process engine's
 //! ephemeral port but keeps the keypair from the config file.
@@ -41,7 +42,7 @@ use {
             ID as PROGRAM_ID,
             Pubkey,
             data::intent::{OrderIntent, OrderKind},
-            pda::{order::find_order_pda, state::find_state_pda},
+            pda::{buffer::find_buffer_pda, order::find_order_pda, state::find_state_pda},
         },
         instructions::CreateOrder,
     },
@@ -64,20 +65,38 @@ use {
         dex::{Dex, jupiter::Jupiter},
     },
     spl_token_interface::{instruction as token_ix, state::Account as TokenAccount},
-    std::{str::FromStr, sync::Arc, time::Duration},
+    std::{sync::Arc, time::Duration},
     tokio_util::sync::CancellationToken,
 };
 
-// USDC and USDT, both 6-decimal stablecoins on Solana mainnet.
-const USDC: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const USDT: &str = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+const USDC_MINT: Pubkey = Pubkey::from_str_const("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+const USDT_MINT: Pubkey = Pubkey::from_str_const("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB");
+const SPL_TOKEN_PROGRAM: Pubkey =
+    Pubkey::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
-// 10 USDC, 6 decimals.
+// 10 sell tokens; both USDC and USDT use 6 decimals.
 const SELL_AMOUNT: u64 = 10_000_000;
 
-// Minimum token balance required to run the test (10 to sell + 5 safety
-// margin for slippage, fees, or rate movement).
+// Minimum balance on the chosen sell token (10 to sell + 5 safety margin
+// for slippage, fees, or rate movement).
 const MIN_TOKEN_BALANCE: u64 = 15_000_000;
+
+// Cushion the buy-token settlement buffer must hold. Settle pays the user by
+// Pushing the quoted buy amount out of the buffer: if the route delivers even
+// slightly less than the quote, the Push fails with SPL Token `insufficient
+// funds` (observed in practice).
+const MIN_BUY_BUFFER_BALANCE: u64 = 1_000_000;
+
+#[derive(Clone, Copy, Debug)]
+struct Token {
+    name: &'static str,
+    mint: Pubkey,
+}
+
+struct Pair {
+    sell: Token,
+    buy: Token,
+}
 
 /// Auction deadline for the test (seconds from now). Default 60.
 fn deadline_secs() -> i64 {
@@ -90,9 +109,13 @@ fn deadline_secs() -> i64 {
 
 /// Pre-flight check: print the user's pubkey, SOL balance, and USDC/USDT
 /// token account state (balance + delegate if the account exists, or "account
-/// does not exist" otherwise). Exit the test early if either USDC or USDT
-/// balance is below [`MIN_TOKEN_BALANCE`].
-async fn preflight_check(rpc: &RpcClient, user: &dyn Signer) {
+/// does not exist" otherwise), and resolve the trade direction: the sell token
+/// is whichever of USDC/USDT the user holds more of. Exit the test early if
+/// neither balance reaches [`MIN_TOKEN_BALANCE`] — the buy token needs none,
+/// and its ATA is created in `create_order_on_chain`. Also assert the buy
+/// token's settlement buffer holds at least [`MIN_BUY_BUFFER_BALANCE`]:
+/// the settle step pays the user out of it.
+async fn preflight_check(rpc: &RpcClient, user: &dyn Signer) -> Pair {
     let user_pubkey = user.pubkey();
     println!("=== pre-flight check ===");
     println!("pubkey: {user_pubkey}");
@@ -103,15 +126,22 @@ async fn preflight_check(rpc: &RpcClient, user: &dyn Signer) {
         .expect("fetch SOL balance");
     println!("SOL balance: {} SOL", sol_lamports as f64 / 1_000_000_000.0);
 
-    let usdc = Pubkey::from_str(USDC).unwrap();
-    let usdt = Pubkey::from_str(USDT).unwrap();
-    let spl_token = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
+    let usdc = Token {
+        name: "USDC",
+        mint: USDC_MINT,
+    };
+    let usdt = Token {
+        name: "USDT",
+        mint: USDT_MINT,
+    };
+    let spl_token = SPL_TOKEN_PROGRAM;
 
-    for (name, mint) in [("USDC", usdc), ("USDT", usdt)] {
+    let mut balances: Vec<(Token, u64)> = Vec::new();
+    for token in [usdc, usdt] {
         let ata =
             spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
                 &user_pubkey,
-                &mint,
+                &token.mint,
                 &spl_token,
             );
         let balance = match rpc.get_account(&ata).await {
@@ -119,29 +149,68 @@ async fn preflight_check(rpc: &RpcClient, user: &dyn Signer) {
                 let token_account =
                     TokenAccount::unpack(&account.data).expect("unpack token account data");
                 println!(
-                    "{name} balance: {:.6}, delegate: {:?}",
+                    "{} balance: {:.6}, delegate: {:?}",
+                    token.name,
                     token_account.amount as f64 / 1_000_000.0,
                     token_account.delegate,
                 );
-                Some(token_account.amount)
+                token_account.amount
             }
             Err(_) => {
-                println!("{name} account does not exist");
-                None
+                println!("{} account does not exist", token.name);
+                0
             }
         };
-        assert!(
-            balance.unwrap_or(0) >= MIN_TOKEN_BALANCE,
-            "insufficient {name}: have {} ({:.6} {name}), need at least {MIN_TOKEN_BALANCE} \
-             ({:.6}) — 10 to sell + 5 safety margin",
-            balance.unwrap_or(0),
-            balance.unwrap_or(0) as f64 / 1_000_000.0,
-            MIN_TOKEN_BALANCE as f64 / 1_000_000.0,
-        );
+        balances.push((token, balance));
     }
 
+    let [(usdc, usdc_balance), (usdt, usdt_balance)]: [(Token, u64); 2] =
+        balances.try_into().expect("balances vec holds both tokens");
+    let (sell, buy, sell_balance) = if usdc_balance >= usdt_balance {
+        (usdc, usdt, usdc_balance)
+    } else {
+        (usdt, usdc, usdt_balance)
+    };
+    assert!(
+        sell_balance >= MIN_TOKEN_BALANCE,
+        "insufficient {}: have {sell_balance} ({:.6} {}), need at least {MIN_TOKEN_BALANCE} \
+         ({:.6}) — 10 to sell + 5 safety margin; neither USDC nor USDT balance reaches the minimum",
+        sell.name,
+        sell_balance as f64 / 1_000_000.0,
+        sell.name,
+        MIN_TOKEN_BALANCE as f64 / 1_000_000.0,
+    );
+    println!("trade direction: sell {} -> buy {}", sell.name, buy.name);
+
+    let (buy_buffer, _) = find_buffer_pda(&PROGRAM_ID, &buy.mint);
+    let buy_buffer_balance = match rpc.get_account(&buy_buffer).await {
+        Ok(account) => {
+            let token_account =
+                TokenAccount::unpack(&account.data).expect("unpack buffer token account data");
+            println!(
+                "{} buffer balance: {:.6} ({buy_buffer})",
+                buy.name,
+                token_account.amount as f64 / 1_000_000.0,
+            );
+            token_account.amount
+        }
+        Err(_) => {
+            println!("{} buffer account does not exist ({buy_buffer})", buy.name);
+            0
+        }
+    };
+    assert!(
+        buy_buffer_balance >= MIN_BUY_BUFFER_BALANCE,
+        "insufficient {} buffer: have {buy_buffer_balance} ({:.6}), need at least \
+         {MIN_BUY_BUFFER_BALANCE} ({:.6}) — settle pushes the quoted amount out of this buffer \
+         and the cushion absorbs quote-vs-execution divergence",
+        buy.name,
+        buy_buffer_balance as f64 / 1_000_000.0,
+        MIN_BUY_BUFFER_BALANCE as f64 / 1_000_000.0,
+    );
     println!("pre-flight check passed");
     println!("=== end pre-flight check ===");
+    Pair { sell, buy }
 }
 
 /// Spawn the real Jupiter solver engine on an ephemeral port.
@@ -229,27 +298,25 @@ async fn spawn_driver(
 /// feed into the driver's `/solve` endpoint.
 ///
 /// The transaction:
-/// 1. Creates the user's USDT ATA if it does not exist (idempotent).
-/// 2. Approves the state PDA as delegate on the user's USDC token account.
+/// 1. Creates the user's buy-token ATA if it does not exist (idempotent).
+/// 2. Approves the state PDA as delegate on the user's sell-token account.
 /// 3. Sends the `CreateOrder` instruction.
-async fn create_order_on_chain(rpc: &RpcClient, user: &dyn Signer) -> Order {
+async fn create_order_on_chain(rpc: &RpcClient, user: &dyn Signer, pair: &Pair) -> Order {
     let program_id = PROGRAM_ID;
-    let usdc = Pubkey::from_str(USDC).unwrap();
-    let usdt = Pubkey::from_str(USDT).unwrap();
     let user_pubkey = user.pubkey();
-    let spl_token = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
+    let spl_token = SPL_TOKEN_PROGRAM;
 
     // Derive the user's token accounts (ATAs under the SPL Token program).
     let sell_token_account =
         spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
             &user_pubkey,
-            &usdc,
+            &pair.sell.mint,
             &spl_token,
         );
     let buy_token_account =
         spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
             &user_pubkey,
-            &usdt,
+            &pair.buy.mint,
             &spl_token,
         );
 
@@ -280,14 +347,11 @@ async fn create_order_on_chain(rpc: &RpcClient, user: &dyn Signer) -> Order {
     let uid = intent.uid();
     let (order_pda, _) = find_order_pda(&program_id, &uid);
 
-    // 1. Create the user's USDT ATA if it does not exist (idempotent).
-    // 2. Approve the state PDA as delegate on the user's USDC account.
-    // 3. Create the order on chain.
     let ixs = vec![
         spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &user_pubkey,
             &user_pubkey,
-            &usdt,
+            &pair.buy.mint,
             &spl_token,
         ),
         token_ix::approve(
@@ -327,8 +391,8 @@ async fn create_order_on_chain(rpc: &RpcClient, user: &dyn Signer) -> Order {
     Order {
         uid: OrderUid(uid.to_bytes()),
         owner: user_pubkey,
-        sell_token: usdc,
-        buy_token: usdt,
+        sell_token: pair.sell.mint,
+        buy_token: pair.buy.mint,
         sell_token_account,
         buy_token_account,
         sell_amount: SELL_AMOUNT,
@@ -412,9 +476,9 @@ async fn settle_on_mainnet() {
     );
 
     // --- pre-flight: verify balances before spending anything ---
-    preflight_check(&rpc, &user).await;
+    let pair = preflight_check(&rpc, &user).await;
 
-    let order = create_order_on_chain(&rpc, &user).await;
+    let order = create_order_on_chain(&rpc, &user, &pair).await;
 
     // --- spawn the solver engine ---
     println!("spawning solver engine...");
@@ -475,17 +539,23 @@ async fn settle_on_mainnet() {
     );
 
     // --- POST /settle ---
+    // The driver rejects a deadline slot at or below the current slot, so
+    // base it on a live slot fetch. 100 slots ≈ 40s at the driver's
+    // SLOT_DURATION_MS (400ms) mapping.
+    let current_slot = rpc.get_slot().await.expect("getSlot failed");
+    let submission_deadline_slot = current_slot + 100;
     println!(
-        "POST /settle (auctionId={}, solutionId={})...",
+        "POST /settle (auctionId={}, solutionId={}, submissionDeadlineSlot={})...",
         auction.id.get(),
-        solution_id
+        solution_id,
+        submission_deadline_slot,
     );
     let settle_response = reqwest::Client::new()
         .post(format!("http://{driver_addr}/jupiter-live/settle"))
         .json(&serde_json::json!({
             "auctionId": auction.id.get(),
             "solutionId": solution_id,
-            "submissionDeadlineSlot": 0,
+            "submissionDeadlineSlot": submission_deadline_slot,
         }))
         .send()
         .await
