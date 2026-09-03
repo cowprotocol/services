@@ -283,6 +283,11 @@ impl QuoteCompetition {
         }
     }
 
+    /// All quotes sorted from best to worst. Guaranteed to be non-empty.
+    pub fn quotes(&self) -> &[QuoteResponse] {
+        &self.quotes
+    }
+
     /// Flattens the winning quote and metadata from the competition in
     /// a `QuoteData`.
     pub fn to_quote_data(&self) -> QuoteData {
