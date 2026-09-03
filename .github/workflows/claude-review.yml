@@ -29,7 +29,7 @@ jobs:
       - id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
+          REPO:   ${{ github.repository }}
           AUTHOR: ${{ github.event.pull_request.user.login || github.event.comment.user.login }}
         run: |
           allowed=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" \

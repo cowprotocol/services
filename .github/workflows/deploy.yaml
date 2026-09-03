@@ -6,18 +6,18 @@ on:
   workflow_dispatch:
     inputs:
       predefined_feature:
-        description: "Select a predefined feature"
+        description: 'Select a predefined feature'
         type: choice
         options:
-          - "None"
-          - "tokio-console"
-        default: "None"
+          - 'None'
+          - 'tokio-console'
+        default: 'None'
         required: false
       custom_features:
         description: 'Additional custom features (space-separated, e.g., "feature1 feature2")'
         type: string
         required: false
-        default: ""
+        default: ''
 
 jobs:
   deploy:
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Without this the fetch depth defaults to 1, which only includes the most recent commit. We want to know the full history so that `git describe` can give more information when it is invoked in the orderbook's crate build script.
-          fetch-depth: "0"
+          fetch-depth: '0'
           persist-credentials: false
 
       # the checkout action sets the "modified" time of every file to the current time which
@@ -151,7 +151,6 @@ jobs:
           url: ${{ secrets.AUTODEPLOY_URL }}
           token: ${{ secrets.AUTODEPLOY_TOKEN }}
           timeout: 600000 # 10 minutes
-
 
       # Temporarily disabled while the automated-trades deploy setup is reworked
       # (cowprotocol/automated-trade#36). Re-enable once the new job is in place.

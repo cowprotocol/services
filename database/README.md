@@ -8,6 +8,7 @@ Some tables only store data emitted via smart contract events. Because we only h
 [CoWSwapEthFlow](https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol) we actually deployed twice so events related to the staging environment should only show up in the staging DB and likewise for production.
 It's also important to note that we only index events from blocks that we are certain will not get reorged. That means specifically that events will be indexed with a block delay of at least 64.
 
+
 ### app\_data
 
 Associates the 32 bytes contract app data with the corresponding full app data.
@@ -21,7 +22,6 @@ Column                | Type        | Nullable | Details
  creation\_timestamp  | timestamptz | not null | when the entry was created or when column was added (DEFAULT NOW() for new and 1970-01-01 for historical data)
 
 Indexes:
-
 - "app\_data\_pkey" PRIMARY KEY, btree (`contract_app_data`)
 
 ### auction\_prices
@@ -35,7 +35,6 @@ token       | bytea   | not null | address of the token the price refers to
 price       | numeric | not null | the atoms of ETH that can be bought with 1 atom of the token
 
 Indexes:
-
 - PRIMARY KEY: btree(`auction_uid`, `token`)
 
 ### auctions (and auctions\_id\_seq counter)
@@ -48,7 +47,6 @@ Contains only the current auction to decouple auction creation in the `autopilot
  json   | jsonb  | not null | serialized version of the auction. Technically the format is unspecified. The only requirement is that whatever format the `autopilot` stores can be parsed by the `orderbook`.
 
 Indexes:
-
 - PRIMARY KEY: btree(`id`)
 
 ### competition\_auctions
@@ -67,7 +65,6 @@ Contains all auctions for which a valid solver competition exists.
  penalty\_caps\_native | numeric[] | nullable | caps on the penalty a solver can incur for winning an order but failing to execute it, in native token wei, mapped one-to-one with `order\_uids`; null for auctions created before this column existed or while penalties were disabled
 
 Indexes:
-
 - PRIMARY KEY: btree(`id`)
 - competition_auction_deadline: btree(`deadline`)
 - competition_auctions_order_uids_gin: gin(`order_uids`)
@@ -82,7 +79,6 @@ EthFlow orders get created with the very generic [`ICoWSwapOnchainOrders`](https
  valid\_to | bigint | not null | unix timestamp in seconds when the order expires (the native timestamp format in the EVM)
 
 Indexes:
-
 - PRIMARY KEY: btree(`uid`)
 - ethflow\_user\_valid\_to: btree(`valid_to`)
 
@@ -97,7 +93,6 @@ For orders buying some token with native ETH users temporarily transfer ownershi
  tx\_hash      | bytea  | not null | hash of the transaction that refunded the order
 
 Indexes:
-
 - PRIMARY KEY: btree(`order_uid`)
 
 ### flyway\_schema\_history
@@ -118,8 +113,8 @@ The settlement contract allows associating user provided interactions to be exec
  execution  | [enum](#executiontime) | not null | in which phase the interaction should be executed
 
 Indexes:
-
 - PRIMARY KEY: btree(`order_uid`, `index`, `execution`)
+
 
 ### invalidations
 
@@ -132,15 +127,14 @@ Stores data of [`OrderInvalidated`](https://github.com/cowprotocol/contracts/blo
  order\_uid    | byteai | not null | order that got invalidated
 
 Indexes:
-
 - PRIMARY KEY: btree(`block_number, log_index`)
 - invalidations\_order\_uid: btree(`order_uid`, `block_number`, `log_index`)
+
 
 ### last\_indexed\_blocks
 
 Stores the last block that was indexed for a given contract. On restarts the system continues indexing events after the last stored block for the related contract. `contract` could be something like a readable name, an address, or a combination of the two.
 Should it ever become necessary events can be re-indexing by:
-
 1. shutting down the `autopilot`
 2. setting `block_number` of the relevant `contract` to the desired block in the past
 3. restarting the `autopilot`
@@ -151,8 +145,8 @@ Should it ever become necessary events can be re-indexing by:
  block\_number | bigint | not null | last block that was successfully indexed for the contract (last indexed event could be way older than this if the tracked contract emits events very rarely)
 
 Indexes:
-
 - PRIMARY KEY: btree(`contract`)
+
 
 ### onchain\_order\_invalidations
 
@@ -165,7 +159,6 @@ Stores data of [`OrderInvalidation`](https://github.com/cowprotocol/ethflowcontr
  uid           | byteai | not null | order that got invalidated
 
 Indexes:
-
 - PRIMARY KEY: btree(`uid`)
 - invalidation\_event\_index: btree(`block_number, log_index`)
 
@@ -183,7 +176,6 @@ Stores data of [`OrderPlacement`](https://github.com/cowprotocol/ethflowcontract
  placement\_error | [enum](#onchainorderplacementerror) | nullable | what error happened when placing the order
 
 Indexes:
-
 - PRIMARY KEY: btree(`uid`)
 - event\_index: btree(`block_number`, `index`)
 - order\_sender: hash(sender)
@@ -201,7 +193,6 @@ Stores timestamped events throughout an order's life cycle. This information is 
  reason           | [enum](#orderfilterreason) | nullable | why the order was filtered or marked invalid (only set for `filtered` and `invalid` labels)
 
 Indexes:
-
 - order\_events\_by\_uid: btree(`order_uid`, `timestamp`)
 
 ### order\_execution
@@ -221,7 +212,6 @@ Protocol fee tokens/amounts are stored in the same order as fee policies in fee_
  protocol\_fee\_amounts | numeric[] | not null | amounts of protocol fees taken, aligned protocol\_fee\_tokens array
 
 Indexes:
-
 - PRIMARY KEY: btree(`order_uid`, `auction_id`)
 - order\_creation\_timestamp: btree(`creation_timestamp`)
 - order\_owner: hash(`owner`)
@@ -250,7 +240,6 @@ Quotes that an order was created with. These quotes get stored persistently and 
  auction\_id         | bigint      | nullable | the auction competition that was the basis for this quote, the limit price of fast path executions will be derived from this competition
 
 Indexes:
-
 - PRIMARY KEY: btree(`order_uid`)
 - order_quotes_creation_timestamp: btree(`creation_timestamp`)
 
@@ -284,7 +273,6 @@ Column                    | Type                         | Nullable | Details
  valid\_from               | bigint                       | nullable | earliest UNIX timestamp (in seconds) at which the order may enter a batch auction. Taken from the order's app-data (`validFrom`). NULL means no lower bound, i.e. the order is eligible immediately (the default for all existing orders).
 
 Indexes:
-
 - PRIMARY KEY: btree(`uid`)
 - order_cancellation_timestamp: btree(`cancellation_timestamp`)
 - order_creation_timestamp: btree(`creation_timestamp`)
@@ -315,23 +303,22 @@ Column                               | Type                         | Nullable |
  price_improvement_max_volume_factor | double precision             |          | cap for the fee as a percentage of the order volume; value is between 0 and 1
 
 Indexes:
-
 - PRIMARY KEY: composite key(`auction_id`, `order_uid`, `application_order`)
 
 #### Enums
 
 - #### PolicyKind
-
     Enum for the `kind` column in `fee_policies` table.
 
     Values:
-  - `surplus`: The fee is based on the surplus achieved in the trade.
-  - `priceimprovement`: The fee is based on a better executed price than the top quote.
-  - `volume`: The fee is based on the volume of the order.
+    - `surplus`: The fee is based on the surplus achieved in the trade.
+    - `priceimprovement`: The fee is based on a better executed price than the top quote.
+    - `volume`: The fee is based on the volume of the order.
 
 ### presignature\_events
 
 Stores data of [`PreSignature`](https://github.com/cowprotocol/contracts/blob/5e5c28877c1690415548de7bc4b5502f87e7f222/src/contracts/mixins/GPv2Signing.sol#L59-L61) events. This is a mechanism where users can supply a signature for an order\_uid even before creating the original order in the backend. These events can give or revoke a signature.
+
 
  Column        | Type    | Nullable | Details
 ---------------|---------|----------|--------
@@ -342,7 +329,6 @@ Stores data of [`PreSignature`](https://github.com/cowprotocol/contracts/blob/5e
  signed        | boolean | not null | specifies if an a signature was given or revoked
 
 Indexes:
-
 - PRIMARY KEY: btreebtree(`block_number`, `log_index`)
 - most\_recent\_with\_orderuid: btree (`order_uid`, `block_number` DESC, `log_index` DESC)
 - presignature\_owner: hash(`owner`)
@@ -370,7 +356,6 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  auction\_id           | bigint             | nullable | the auction competition that was the basis for this quote, the limit price of fast path executions will be derived from this competition
 
 Indexes:
-
 - PRIMARY KEY: btree(`id`)
 - quotes\_token\_expiration: btree (`sell_token`, `buy_token`, `expiration_timestamp` DESC)
 
@@ -391,7 +376,6 @@ All solutions reported by solvers, that were part of a solver competition. A sol
  price\_values | numeric[] | not null | uniform prices for all tokens in `price\_tokens` list
 
 Indexes:
-
 - PRIMARY KEY: btree(`auction_id`, `uid`)
 
 ### proposed\_trade\_executions
@@ -407,7 +391,6 @@ Contains all order executions for proposed solutions.
  executed\_buy  | numeric  | not null | the effective amount the user received after all fees
 
 Indexes:
-
 - PRIMARY KEY: btree(`auction_id`, `solution_uid`, `order_uid`)
 
 ### proposed\_jit\_orders
@@ -426,7 +409,6 @@ Solvers report orders they solved on each competition. Orders that don't exist i
  side         | [enum](#orderkind) | not null | trade semantics of the order
 
 Indexes:
-
 - PRIMARY KEY: btree(`auction_id`, `solution_uid`, `order_uid`)
 
 ### reference\_scores
@@ -440,7 +422,6 @@ Stores the reference score per solver, defined as the total score of the auction
  reference\_score | numeric  | not null | reference score value
 
 Indexes:
-
 - PRIMARY KEY: btree(`auction_id, solver`)
 
 ### settlements
@@ -461,7 +442,6 @@ gas\_used              | numeric(78, 0) | nullable | gas consumed by the settlem
 The total on-chain cost of a settlement is `gas_used * effective_gas_price`. Both columns are populated by the `autopilot`'s settlement observer and are only set for settlements observed after the migration that added them; historical rows were not backfilled, so consumers (e.g. the `orderbook` attributing gas cost to individual trades and orders) must handle `NULL`.
 
 Indexes:
-
 - PRIMARY KEY: btree(`block_number`,`log_index`)
 - settlements\_tx\_hash: hash(`tx_hash`)
 - settlements\_auction\_id: btree(`auction_id`)
@@ -483,7 +463,6 @@ deadline\_block  | bigint      | not null | latest block at which the settlement
 outcome          | text        | nullable | outcome of the settlement execution
 
 Indexes:
-
 - PRIMARY KEY: btree(`auction_id`, `solver`, `solution_uid`)
 - settlement\_executions\_time\_range\_index: btree(`start_timestamp`, `end_timestamp`)
 
@@ -502,7 +481,6 @@ This table contains data of [`Trade`](https://github.com/cowprotocol/contracts/b
  gas\_cost     | numeric | nullable | this trade's share of its settlement's gas cost in wei (estimated as `gas_used` * `gas_price`), rounded down. `NULL` for settlements observed before the migration that added it.
 
 Indexes:
-
 - PRIMARY KEY: btree(`block_number`, `log_index`)
 - trade\_order\_uid: btree (`order_uid`, `block_number`, `log_index`)
 - trades_covering: btree(`order_uid`) INCLUDE (`buy_amount`, `sell_amount`, `fee_amount`)
@@ -534,7 +512,6 @@ Column                    | Type                         | Nullable | Details
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
 
 Indexes:
-
 - PRIMARY KEY: btree(`block_number`, `log_index`)
 - jit\_order\_creation\_timestamp: btree(`creation_timestamp`)
 - jit\_order\_owner: hash(`owner`)
@@ -644,8 +621,8 @@ We support different expiration times for orders with different signing schemes.
 ## Notes on Migrations
 
 Migrations that require a long running process *must* be done manually, this is due to the limitations the weekly release process imposes:
-- The deployment must complete under 5 minutes
-- The pod has a `processDeadlineSeconds` defaulting to 600 seconds
+* The deployment must complete under 5 minutes
+* The pod has a `processDeadlineSeconds` defaulting to 600 seconds
 
 To avoid extending the process, we resort to manually applying complicated migrations.
 
