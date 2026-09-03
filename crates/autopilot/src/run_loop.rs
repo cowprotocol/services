@@ -550,36 +550,6 @@ impl RunLoop {
             })
             .collect();
 
-        let mut solutions: Vec<_> = ranking
-            .enumerated()
-            .map(|(index, bid)| SolverSettlement {
-                solver: bid.driver().name.clone(),
-                solver_address: bid.solution().solver(),
-                score: Some(Score::Solver(bid.score().get().0)),
-                ranking: index + 1,
-                orders: bid
-                    .solution()
-                    .orders()
-                    .iter()
-                    .map(|(id, order)| Order::Colocated {
-                        id: (*id).into(),
-                        sell_amount: order.executed_sell.0,
-                        buy_amount: order.executed_buy.0,
-                    })
-                    .collect(),
-                // Always empty — kept to avoid breaking the solver competition
-                // API (`/api/v1/solver_competition`).
-                // NOTE: since the v1 has been removed,
-                // we'll probably be able to remove this soon too
-                clearing_prices: Default::default(),
-                is_winner: bid.is_winner(),
-                filtered_out: bid.is_filtered_out(),
-            })
-            .collect();
-        // reverse as solver competition table is sorted from worst to best,
-        // so we need to keep the ordering for backwards compatibility
-        solutions.reverse();
-
         futures::try_join!(
             self.persistence
                 .save_auction(auction, block_deadline)
