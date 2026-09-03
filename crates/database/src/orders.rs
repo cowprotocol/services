@@ -498,7 +498,7 @@ AND cancellation_timestamp IS NULL
 /// This is done as sqlx does not support reading arrays of more complicated
 /// types than just one field. The pre_ and post_interaction's data of
 /// target, value and data are composed to an array of interactions later.
-type RawInteraction = (Address, BigDecimal, Vec<u8>);
+pub type RawInteraction = (Address, BigDecimal, Vec<u8>);
 
 /// Order with extra information from other tables. Has all the information
 /// needed to construct a model::Order.
