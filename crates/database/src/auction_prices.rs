@@ -1,10 +1,7 @@
-//! This table is deprecated, since it contains duplicated data in the
-//! `competition_auctions` table. But it can't currently be removed, since the
-//! solver team is still using it.
 use {
-    crate::{Address, PgTransaction, auction::AuctionId},
+    crate::{Address, auction::AuctionId},
     bigdecimal::BigDecimal,
-    sqlx::{Connection, PgConnection, QueryBuilder},
+    sqlx::{Connection, PgConnection},
     std::ops::DerefMut,
     tracing::instrument,
 };
@@ -15,40 +12,6 @@ pub struct AuctionPrice {
     pub auction_id: AuctionId,
     pub token: Address,
     pub price: BigDecimal,
-}
-
-#[instrument(skip_all)]
-pub async fn insert(
-    ex: &mut PgTransaction<'_>,
-    prices: &[AuctionPrice],
-) -> Result<(), sqlx::Error> {
-    const BATCH_SIZE: usize = 5000;
-    const QUERY: &str = "INSERT INTO auction_prices (auction_id, token, price) ";
-
-    for chunk in prices.chunks(BATCH_SIZE) {
-        let mut query_builder = QueryBuilder::new(QUERY);
-
-        query_builder.push_values(chunk, |mut builder, price| {
-            builder
-                .push_bind(price.auction_id)
-                .push_bind(price.token)
-                .push_bind(price.price.clone());
-        });
-
-        query_builder.build().execute(ex.deref_mut()).await?;
-    }
-
-    Ok(())
-}
-
-#[instrument(skip_all)]
-pub async fn fetch(
-    ex: &mut PgConnection,
-    auction_id: AuctionId,
-) -> Result<Vec<AuctionPrice>, sqlx::Error> {
-    const QUERY: &str = "SELECT * FROM auction_prices WHERE auction_id = $1";
-    let prices = sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?;
-    Ok(prices)
 }
 
 #[instrument(skip_all)]
@@ -148,13 +111,7 @@ mod tests {
             },
         ];
 
-        insert(&mut db, &auction_1).await.unwrap();
-        insert(&mut db, &auction_2).await.unwrap();
-        insert(&mut db, &auction_3).await.unwrap();
-
-        // The latest price helpers read from `competition_auctions`, so the
-        // same prices have to be stored there as well.
-        // TODO: unify after migration
+        // Prices are stored as the parallel arrays of `competition_auctions`.
         for prices in [&auction_1, &auction_2, &auction_3] {
             crate::auction::save(
                 &mut db,
@@ -174,15 +131,18 @@ mod tests {
         }
 
         // check that all auctions are there
-        let output = fetch(&mut db, 1).await.unwrap();
-        assert_eq!(output, auction_1);
-        let output = fetch(&mut db, 2).await.unwrap();
-        assert_eq!(output, auction_2);
-        let output = fetch(&mut db, 3).await.unwrap();
-        assert_eq!(output, auction_3);
+        for prices in [&auction_1, &auction_2, &auction_3] {
+            let stored = crate::auction::fetch(&mut db, prices[0].auction_id)
+                .await
+                .unwrap()
+                .unwrap();
+            let tokens: Vec<_> = prices.iter().map(|price| price.token).collect();
+            let values: Vec<_> = prices.iter().map(|price| price.price.clone()).collect();
+            assert_eq!(stored.price_tokens, tokens);
+            assert_eq!(stored.price_values, values);
+        }
         // non-existent auction
-        let output = fetch(&mut db, 4).await.unwrap();
-        assert!(output.is_empty());
+        assert!(crate::auction::fetch(&mut db, 4).await.unwrap().is_none());
         // latest prices
         let output = fetch_latest_prices(&mut db).await.unwrap();
         assert_eq!(output, auction_3);

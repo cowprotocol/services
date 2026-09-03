@@ -70,7 +70,7 @@ jobs:
 
           echo "cargo_features=$CARGO_FEATURES" >> $GITHUB_OUTPUT
 
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-all-crates: true
           cache-workspace-crates: true
@@ -89,7 +89,7 @@ jobs:
             -p autopilot-svm \
             ${{ steps.features.outputs.cargo_features }}
 
-      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

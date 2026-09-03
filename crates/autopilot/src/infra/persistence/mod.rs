@@ -8,13 +8,14 @@ use {
         },
     },
     ::winner_selection::state::RankedItem,
-    alloy::primitives::B256,
+    alloy::primitives::{Address, B256},
     anyhow::Context,
     bigdecimal::{BigDecimal, ToPrimitive},
     boundary::database::byte_array::ByteArray,
     bytes::Bytes,
     chrono::{DateTime, Utc},
     database::{
+        auction::AuctionId,
         events::EventIndex,
         leader_pg_lock::LeaderLock,
         order_events::{OrderEventLabel, OrderFilterReason},
@@ -26,10 +27,13 @@ use {
         },
         solver_competition_v2::{self, Order, Solution},
     },
-    domain::auction::order::{
-        BuyTokenDestination as DomainBuyTokenDestination,
-        SellTokenSource as DomainSellTokenSource,
-        SigningScheme as DomainSigningScheme,
+    domain::{
+        auction::order::{
+            BuyTokenDestination as DomainBuyTokenDestination,
+            SellTokenSource as DomainSellTokenSource,
+            SigningScheme as DomainSigningScheme,
+        },
+        competition::Score,
     },
     eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
@@ -178,12 +182,13 @@ impl Persistence {
     }
 
     /// Saves the competition data to the DB
-    pub async fn save_competition(
+    pub async fn save_reference_scores(
         &self,
-        competition: boundary::Competition,
+        auction_id: AuctionId,
+        reference_scores: HashMap<Address, Score>,
     ) -> Result<(), DatabaseError> {
         self.postgres
-            .save_competition(competition)
+            .save_reference_scores(auction_id, reference_scores)
             .await
             .map_err(DatabaseError)
     }
