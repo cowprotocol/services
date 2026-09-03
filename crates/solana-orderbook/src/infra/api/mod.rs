@@ -1,7 +1,12 @@
 //! HTTP API server.
 
 use {
-    axum::{Router, http, routing::get},
+    super::quoter::Quoter,
+    axum::{
+        Router,
+        http,
+        routing::{get, post},
+    },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     sqlx::PgPool,
     std::{io, net::SocketAddr, sync::Arc},
@@ -25,6 +30,31 @@ pub struct Api {
     pub addr: SocketAddr,
     /// The database the indexer writes to.
     pub pool: PgPool,
+    /// The driver that quotes orders.
+    pub quoter: Quoter,
+    /// Bounds on a quoted order's `validTo`.
+    pub validation: ValidationParameters,
+    /// How long the quoted amounts are honored.
+    pub quote_expiry: std::time::Duration,
+}
+
+/// Bounds on a quoted order's `validTo`. The defaults are the EVM
+/// orderbook's.
+#[derive(Clone, Copy, Debug)]
+pub struct ValidationParameters {
+    /// Least far in the future the `validTo` may lie.
+    pub min_validity: std::time::Duration,
+    /// Furthest in the future the `validTo` may lie.
+    pub max_validity: std::time::Duration,
+}
+
+impl Default for ValidationParameters {
+    fn default() -> Self {
+        Self {
+            min_validity: std::time::Duration::from_secs(2 * 60),
+            max_validity: std::time::Duration::from_secs(2 * 60 * 60),
+        }
+    }
 }
 
 impl Api {
@@ -44,21 +74,27 @@ impl Api {
         listener: TcpListener,
         shutdown: CancellationToken,
     ) -> Result<(), io::Error> {
-        // Propagate the OpenTelemetry trace context from incoming request headers and
-        // record the trace id on the request span, so logs can be correlated across
-        // services. `make_span` sets the parent context and an empty `trace_id` field;
+        // Propagate the OpenTelemetry trace context from incoming request
+        // headers and record the trace id on the request span, so logs
+        // can be correlated across services. `make_span` sets the
+        // parent context and an empty `trace_id` field;
         // `record_trace_id` then fills it in.
         let tracing_layer = ServiceBuilder::new()
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
-        let state = State::new(self.pool);
+        let state = State::new(self.pool, self.quoter, self.validation, self.quote_expiry);
 
         // Browsers call this API directly, so it answers cross-origin
         // requests like the EVM orderbook does.
         let cors = CorsLayer::new()
             .allow_origin(Any)
-            .allow_methods([http::Method::GET, http::Method::OPTIONS, http::Method::HEAD])
+            .allow_methods([
+                http::Method::GET,
+                http::Method::POST,
+                http::Method::OPTIONS,
+                http::Method::HEAD,
+            ])
             .allow_headers([http::header::ORIGIN, http::header::CONTENT_TYPE]);
 
         let app = Router::new()
@@ -66,6 +102,7 @@ impl Api {
             .route("/api/v1/orders/{uid}", get(routes::order))
             .route("/api/v1/orders/{uid}/status", get(routes::order_status))
             .route("/api/v1/trades", get(routes::trades))
+            .route("/api/v1/quote", post(routes::quote))
             .layer(cors)
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
@@ -82,8 +119,18 @@ impl Api {
 pub struct State(Arc<Inner>);
 
 impl State {
-    fn new(pool: PgPool) -> Self {
-        Self(Arc::new(Inner { pool }))
+    fn new(
+        pool: PgPool,
+        quoter: Quoter,
+        validation: ValidationParameters,
+        quote_expiry: std::time::Duration,
+    ) -> Self {
+        Self(Arc::new(Inner {
+            pool,
+            quoter,
+            validation,
+            quote_expiry,
+        }))
     }
 
     /// The database handle the order, trades, and auction endpoints read
@@ -91,9 +138,30 @@ impl State {
     pub fn pool(&self) -> &PgPool {
         &self.0.pool
     }
+
+    /// The driver that quotes orders.
+    pub fn quoter(&self) -> &Quoter {
+        &self.0.quoter
+    }
+
+    /// Bounds on a quoted order's `validTo`.
+    pub fn validation(&self) -> ValidationParameters {
+        self.0.validation
+    }
+
+    /// How long the quoted amounts are honored.
+    pub fn quote_expiry(&self) -> std::time::Duration {
+        self.0.quote_expiry
+    }
 }
 
 struct Inner {
     /// The database the indexer writes to.
     pool: PgPool,
+    /// The driver that quotes orders.
+    quoter: Quoter,
+    /// Bounds on a quoted order's `validTo`.
+    validation: ValidationParameters,
+    /// How long the quoted amounts are honored.
+    quote_expiry: std::time::Duration,
 }

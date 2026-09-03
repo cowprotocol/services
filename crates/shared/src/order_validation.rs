@@ -2,6 +2,7 @@ use {
     crate::{
         order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
+            AdditionalCost,
             CalculateQuoteError,
             OrderQuoting,
             Quote,
@@ -583,15 +584,20 @@ impl OrderValidator {
                     | TransferSimulationError::TransferFailed(_)
                         if order.signature == Signature::PreSign || has_wrappers =>
                     {
-                        // Pre-sign orders do not require sufficient balance or allowance.
-                        // The idea is that this allows smart contracts to place orders bundled with
-                        // other transactions that either produce the required balance or set the
-                        // allowance. This would, for example, allow a Gnosis Safe to bundle the
-                        // pre-signature transaction with a WETH wrap and WETH approval to the vault
-                        // relayer contract.
+                        // Pre-sign orders do not require sufficient balance or
+                        // allowance. The idea is that
+                        // this allows smart contracts to place orders bundled
+                        // with other transactions that
+                        // either produce the required balance or set the
+                        // allowance. This would, for example, allow a Gnosis
+                        // Safe to bundle the
+                        // pre-signature transaction with a WETH wrap and WETH
+                        // approval to the vault relayer
+                        // contract.
                         //
-                        // Similarly, orders with wrappers may produce the required balance or
-                        // allowance as part of the wrapper execution.
+                        // Similarly, orders with wrappers may produce the
+                        // required balance or allowance
+                        // as part of the wrapper execution.
                         return Ok(());
                     }
                     TransferSimulationError::InsufficientAllowance => {
@@ -599,8 +605,9 @@ impl OrderValidator {
                         return Err(ValidationError::InsufficientAllowance);
                     }
                     TransferSimulationError::InsufficientBalance => {
-                        // Since the amount either starts at 1 atom, or is set to the full sell
-                        // token amount if this error is triggered then it
+                        // Since the amount either starts at 1 atom, or is set
+                        // to the full sell token amount
+                        // if this error is triggered then it
                         // will be triggered for the other amounts too
                         return Err(ValidationError::InsufficientBalance);
                     }
@@ -617,20 +624,22 @@ impl OrderValidator {
         };
 
         if order.full_balance_check {
-            // If requested at order creation, simulate transferring full sell_amount
-            // into the settlement contract.
+            // If requested at order creation, simulate transferring full
+            // sell_amount into the settlement contract.
             // This will ensure the account has enough allowance and balance for
             // the transfer at the order creation time.
             simulate_transfers([order.data().sell_amount].as_slice()).await
         } else {
-            // Simulate transferring a small token balance into the settlement contract.
-            // As a spam protection we require that an account must have at least 1 atom
-            // of the sell_token. However, some tokens (e.g. rebasing tokens) actually run
-            // into numerical issues with such small amounts. But there are also tokens
-            // where a single atom is already quite expensive (tokenized stocks).
-            // To cover both cases we simulate multiple small transfers. As soon as one
-            // passes we consider the token transferable. If all transfers fail we return
-            // the last error.
+            // Simulate transferring a small token balance into the settlement
+            // contract. As a spam protection we require that an
+            // account must have at least 1 atom of the sell_token.
+            // However, some tokens (e.g. rebasing tokens) actually run
+            // into numerical issues with such small amounts. But there are also
+            // tokens where a single atom is already quite expensive
+            // (tokenized stocks). To cover both cases we simulate
+            // multiple small transfers. As soon as one
+            // passes we consider the token transferable. If all transfers fail
+            // we return the last error.
             match simulate_transfers([1, 10, 100].map(U256::from).as_slice()).await {
                 // A zero/low balance is acceptable as long as the owner has already set a
                 // real on-chain approval that covers the order (spam protection).
@@ -750,8 +759,9 @@ impl OrderValidating for OrderValidator {
                     )));
                 };
 
-                // Keep the validated document, since the order creation simulator re-parses
-                // this document to rebuild the pre/post hooks, so dropping it
+                // Keep the validated document, since the order creation
+                // simulator re-parses this document to rebuild
+                // the pre/post hooks, so dropping it
                 // makes the simulation skip the hooks (e.g. a permit approval)
                 // and revert spuriously.
                 ValidatedAppData {
@@ -784,8 +794,9 @@ impl OrderValidating for OrderValidator {
         settlement_contract: Address,
         full_app_data_override: Option<String>,
     ) -> Result<(Order, Option<Quote>), ValidationError> {
-        // Happens before signature verification because a miscalculated app data hash
-        // by the API user would lead to being unable to validate the signature below.
+        // Happens before signature verification because a miscalculated app
+        // data hash by the API user would lead to being unable to
+        // validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
         let app_data_signer = app_data.inner.protocol.signer;
 
@@ -908,13 +919,13 @@ impl OrderValidating for OrderValidator {
                 verification_gas_limit,
             )
             .map_err(|_| ValidationError::InvalidSignature)?,
-            additional_gas: app_data.inner.protocol.hooks.gas_limit(),
+            hook_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
 
-        // Check if we need to re-classify the market order if it is outside the market
-        // price. We consider out-of-price orders as liquidity orders. See
-        // <https://github.com/cowprotocol/services/pull/301>.
+        // Check if we need to re-classify the market order if it is outside the
+        // market price. We consider out-of-price orders as liquidity
+        // orders. See <https://github.com/cowprotocol/services/pull/301>.
         let (class, quote) = match class {
             // This has to be here in order to keep the previous behaviour
             OrderClass::Market => {
@@ -960,7 +971,8 @@ impl OrderValidating for OrderValidator {
                 .await
                 {
                     Ok(quote) => {
-                        // If the order is not "In-Market", check for the limit orders
+                        // If the order is not "In-Market", check for the limit
+                        // orders
                         if is_order_outside_market_price(
                             &Amounts {
                                 sell: data.sell_amount,
@@ -1014,8 +1026,9 @@ impl OrderValidating for OrderValidator {
         };
 
         if quote.as_ref().is_some_and(|quote| {
-            // Quoted gas does not include additional gas for hooks nor ERC1271 signatures
-            quote.data.fee_parameters.gas_amount as u64 + quote_parameters.additional_cost()
+            // Quoted gas does not include gas for ERC1271 signatures.
+            quote.data.fee_parameters.gas_amount as u64
+                + quote_parameters.additional_cost(quote.data.verified)
                 > self.max_gas_per_order
         }) {
             return Err(ValidationError::TooMuchGas);
@@ -1172,7 +1185,7 @@ async fn get_or_create_quote(
                 },
                 verification: quote_search_parameters.verification.clone(),
                 signing_scheme: quote_search_parameters.signing_scheme,
-                additional_gas: quote_search_parameters.additional_gas,
+                hook_gas: quote_search_parameters.hook_gas,
                 fast_path: false,
                 timeout: None, // let &dyn OrderQuoting chose default
             };
@@ -1735,11 +1748,12 @@ mod tests {
         let valid_to =
             time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
 
-        // `Allow` permits same-token orders of either side. The second pair is the
-        // native-equivalent case: `validate_same_sell_and_buy_token` treats selling
-        // WETH for `BUY_ETH_ADDRESS` (native ETH) as a sell==buy order. The rejection
-        // side is covered by `pre_validate_err` (Disallow) and
-        // `pre_validate_same_tokens_allow_sell` (AllowSell).
+        // `Allow` permits same-token orders of either side. The second pair is
+        // the native-equivalent case:
+        // `validate_same_sell_and_buy_token` treats selling
+        // WETH for `BUY_ETH_ADDRESS` (native ETH) as a sell==buy order. The
+        // rejection side is covered by `pre_validate_err` (Disallow)
+        // and `pre_validate_same_tokens_allow_sell` (AllowSell).
         for (sell_token, buy_token) in [
             (Address::with_last_byte(2), Address::with_last_byte(2)),
             (*native_token.address(), BUY_ETH_ADDRESS),
@@ -1846,8 +1860,8 @@ mod tests {
         );
         validate(plain(now + 150)).await.unwrap();
 
-        // With `valid_from`: the window is measured from `valid_from`, so a far-future
-        // `valid_to` doesn't help.
+        // With `valid_from`: the window is measured from `valid_from`, so a
+        // far-future `valid_to` doesn't help.
         std::assert_matches!(
             validate(delayed(now + 50, now + 90)).await,
             Err(ValidationError::InvalidValidFrom)
@@ -2461,8 +2475,9 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
-        // ... but a pre-existing on-chain approval already covers the sell amount,
-        // so the order is accepted (it stays unfillable until the account is funded).
+        // ... but a pre-existing on-chain approval already covers the sell
+        // amount, so the order is accepted (it stays unfillable until
+        // the account is funded).
         balance_fetcher
             .expect_allowance()
             .returning(|_, _, _| Ok(alloy::primitives::U256::from(1)));
@@ -2742,7 +2757,8 @@ mod tests {
             ..Default::default()
         };
 
-        // This should succeed because the flashloan amount (150) >= sell amount (100)
+        // This should succeed because the flashloan amount (150) >= sell amount
+        // (100)
         validator
             .validate_and_construct_order(
                 order_with_sufficient_flashloan,
@@ -2779,7 +2795,8 @@ mod tests {
             ..Default::default()
         };
 
-        // This should fail because the flashloan amount (50) < sell amount (100)
+        // This should fail because the flashloan amount (50) < sell amount
+        // (100)
         let result = validator
             .validate_and_construct_order(
                 order_with_insufficient_flashloan,
@@ -2816,7 +2833,8 @@ mod tests {
             ..Default::default()
         };
 
-        // This should fail because the flashloan token doesn't match the sell token
+        // This should fail because the flashloan token doesn't match the sell
+        // token
         let result = validator
             .validate_and_construct_order(
                 order_with_wrong_token_flashloan,
@@ -2843,7 +2861,7 @@ mod tests {
                 onchain_order: true,
                 verification_gas_limit: default_verification_gas_limit(),
             },
-            additional_gas: 0,
+            hook_gas: 0,
             verification: Verification {
                 from: Address::from([0xf0; 20]),
                 ..Default::default()
@@ -2930,7 +2948,7 @@ mod tests {
                 },
                 verification,
                 signing_scheme: QuoteSigningScheme::Eip712,
-                additional_gas: 0,
+                hook_gas: 0,
                 fast_path: false,
                 timeout: None,
             }))
@@ -3084,7 +3102,7 @@ mod tests {
                 onchain_order: false,
                 verification_gas_limit: default_verification_gas_limit(),
             },
-            additional_gas: 0,
+            hook_gas: 0,
             verification: Verification {
                 from: Address::from([0xf0; 20]),
                 receiver: Address::from([0xf0; 20]),

@@ -5,7 +5,7 @@ use {
         data::intent::{OrderIntent, OrderKind},
         pda::order::find_order_pda,
     },
-    cow_solana_rpc::SolanaRPC,
+    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     solana_driver::infra::{api::Api, blockchain::Solana, config, solver::Solver},
     solana_sdk::pubkey::Pubkey,
     solana_testlib::temp_keypair,
@@ -133,6 +133,52 @@ fn solve_request() -> serde_json::Value {
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
         }]
     })
+}
+
+/// A solver-engine `/solve` response with one solution per `(id,
+/// sell_price)` pair. The `sell_price` sets the clearing price of the sell
+/// mint, so `executedBuy` identifies which payload survives an id collision.
+fn engine_response(solutions: &[(u64, &str)]) -> serde_json::Value {
+    let solutions: Vec<serde_json::Value> = solutions
+        .iter()
+        .map(|(id, sell_price)| {
+            serde_json::json!({
+                "id": id,
+                "prices": {
+                    (pubkey(0x33).to_string()): sell_price,
+                    (pubkey(0x44).to_string()): "1000",
+                },
+                "trades": [{
+                    "orderUid": uid(),
+                    "executedAmount": "1000",
+                }],
+                "interactions": [],
+            })
+        })
+        .collect();
+    serde_json::json!({ "solutions": solutions })
+}
+
+/// POST the standard solve request and return the parsed response body.
+async fn call_solve(addr: SocketAddr) -> serde_json::Value {
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/solve"))
+        .json(&solve_request())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    response.json().await.unwrap()
+}
+
+/// The solution ids in a `/solve` response body, in response order.
+fn response_ids(body: &serde_json::Value) -> Vec<u64> {
+    body["solutions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|solution| solution["solutionId"].as_u64().unwrap())
+        .collect()
 }
 
 #[tokio::test]
@@ -285,4 +331,82 @@ async fn settle_rejects_non_positive_auction_id() {
 
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "InvalidAuctionId");
+}
+
+#[tokio::test]
+async fn settle_rejects_a_passed_submission_deadline() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine);
+
+    // The mock RPC reports slot 1000, so a deadline of 500 is already past.
+    let mut mocks = Mocks::new();
+    mocks.insert(RpcRequest::GetSlot, serde_json::json!(1000));
+    let blockchain = Arc::new(Solana::new(
+        SolanaRPC::new_mock_with_mocks(mocks),
+        cow_settlement_interface::id(),
+    ));
+
+    let api = Api {
+        addr: "0.0.0.0:0".parse().unwrap(),
+        blockchain,
+        solvers: vec![solver],
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    // Populate the cache with a solution for auction 7.
+    let body = call_solve(addr).await;
+    let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/settle"))
+        .json(&serde_json::json!({
+            "auctionId": 7,
+            "solutionId": solution_id,
+            "submissionDeadlineSlot": 500,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "DeadlineExceeded");
+}
+
+#[tokio::test]
+async fn solve_keeps_the_first_of_duplicate_solution_ids() {
+    // Both solutions use id 7 but different sell prices. `executedBuy`
+    // identifies the survivor: 1000 * 2000 / 1000 = 2000 for the first one.
+    let engine = spawn_mock_solver_engine(engine_response(&[(7, "2000"), (7, "4000")])).await;
+    let (solver, account) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve(addr).await;
+    let expected = serde_json::json!({
+        "solutions": [{
+            "solutionId": 7,
+            "score": "0",
+            "solver": account.to_string(),
+            "orders": {
+                (uid()): {
+                    "executedSell": "1000",
+                    "executedBuy": "2000",
+                }
+            }
+        }]
+    });
+    assert_eq!(body, expected);
+}
+
+#[tokio::test]
+async fn solve_preserves_the_solvers_ordering() {
+    let engine =
+        spawn_mock_solver_engine(engine_response(&[(3, "2000"), (1, "2000"), (2, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve(addr).await;
+    assert_eq!(response_ids(&body), vec![3, 1, 2]);
 }

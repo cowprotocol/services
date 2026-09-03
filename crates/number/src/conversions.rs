@@ -9,8 +9,8 @@ use {
 };
 
 pub fn big_decimal_to_big_uint(big_decimal: &BigDecimal) -> Option<BigUint> {
-    // TODO(vkgnosis): It would be nice to avoid copying the underlying BigInt when
-    // converting BigDecimal to anything else but the simple
+    // TODO(vkgnosis): It would be nice to avoid copying the underlying BigInt
+    // when converting BigDecimal to anything else but the simple
     // big_decimal.to_bigint makes a copy internally.
     big_decimal.to_bigint()?.try_into().ok()
 }
@@ -239,8 +239,7 @@ mod tests {
         );
         assert!(big_decimal_to_big_uint(
             &BigDecimal::from_str(
-
-"9115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                "9115792089237316195423570985008687907853269984665640564039457584007913129639935"
             )
             .unwrap()
         )

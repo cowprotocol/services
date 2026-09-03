@@ -46,7 +46,7 @@ jobs:
         run: sudo apt-get -qq update && sudo apt-get -y -q install curl jq
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
 
       - name: Setup environment
         run: |
@@ -73,7 +73,7 @@ jobs:
         if: failure()
         uses: jwalton/gh-docker-logs@2741064ab9d7af54b0b1ffb6076cf64c16f0220e # v2.2.2
         with:
-          dest: './logs'
+          dest: "./logs"
 
       - name: Collect playground-chain-1 container health logs on failure
         if: failure()

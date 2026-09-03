@@ -3,7 +3,7 @@ use {
     alloy_sol_macro_input::{SolInput, SolInputKind},
     anyhow::{Context, Result},
     proc_macro2::{Span, TokenStream},
-    quote::{ToTokens, format_ident},
+    quote::{format_ident, ToTokens},
     rayon::prelude::*,
     std::{
         collections::HashMap,
@@ -286,7 +286,8 @@ impl Contract {
                 .iter()
                 .map(|(&chain_id, info)| NetworkArm(chain_id, (info.0.clone(), info.1)))
                 .collect();
-            // Sorting is required to keep generation stable and changes to a minimum
+            // Sorting is required to keep generation stable and changes to a
+            // minimum
             networks.sort_by_key(|arm| arm.0);
             let deployment_info = quote::quote! {
                 use {
@@ -411,8 +412,8 @@ struct NetworkArm(u64, (String, Option<u64>));
 impl ToTokens for NetworkArm {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let chain_id = self.0;
-        let address = &self.1.0;
-        let block_number = match self.1.1 {
+        let address = &self.1 .0;
+        let block_number = match self.1 .1 {
             Some(block) => quote::quote! {Some(#block)},
             None => quote::quote! {None},
         };

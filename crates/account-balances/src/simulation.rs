@@ -34,8 +34,8 @@ impl Balances {
     }
 
     async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
-        // Only ERC20 sell-token balances are supported; other sources are deprecated
-        // and rejected at order creation.
+        // Only ERC20 sell-token balances are supported; other sources are
+        // deprecated and rejected at order creation.
         if query.source != SellTokenSource::Erc20 {
             anyhow::bail!("unsupported sell token source: {:?}", query.source);
         }
@@ -62,8 +62,8 @@ impl Balances {
         query: &Query,
         token: &ERC20::Instance,
     ) -> Result<U256> {
-        // Only ERC20 sell-token balances are supported. Other sources are deprecated
-        // and rejected at order creation.
+        // Only ERC20 sell-token balances are supported. Other sources are
+        // deprecated and rejected at order creation.
         if query.source != SellTokenSource::Erc20 {
             anyhow::bail!("unsupported sell token source: {:?}", query.source);
         }
@@ -82,7 +82,8 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
-        // TODO(jmg-duarte): Batch the queries themselves into one `Multicall` too
+        // TODO(jmg-duarte): Batch the queries themselves into one `Multicall`
+        // too
         let futures = queries
             .iter()
             .map(|query| async {
@@ -137,8 +138,8 @@ impl BalanceFetching for Balances {
         token: Address,
         source: SellTokenSource,
     ) -> Result<U256> {
-        // Only ERC20 sell-token balances are supported; other sources are deprecated
-        // and rejected at order creation.
+        // Only ERC20 sell-token balances are supported; other sources are
+        // deprecated and rejected at order creation.
         if source != SellTokenSource::Erc20 {
             anyhow::bail!("unsupported sell token source: {:?}", source);
         }

@@ -258,8 +258,8 @@ impl UniswapV3Indexer {
         //
         // Instead we filter client-side in `collect_log_changes`:
         //   - PoolCreated → emitter must be `self.factory`.
-        //   - Mint/Burn/Swap/Initialize → emitter must be a known pool of our factory
-        //     (DB or in-chunk PoolCreated).
+        //   - Mint/Burn/Swap/Initialize → emitter must be a known pool of our
+        //     factory (DB or in-chunk PoolCreated).
         //
         // The `WHERE EXISTS (… uniswap_v3_pools …)` clauses in the batch
         // writers stay as defense-in-depth.

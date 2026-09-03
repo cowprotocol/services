@@ -26,6 +26,8 @@ cow-settlement-interface = { workspace = true }
 cow-solana-rpc = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
+itertools = { workspace = true }
+moka = { workspace = true, features = ["sync"] }
 observe = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
@@ -35,7 +37,9 @@ serde_with = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true, features = ["bincode", "bytemuck"] }
 solana-compute-budget-interface = { workspace = true }
 solana-sdk = { workspace = true }
+solana-system-interface = { workspace = true }
 spl-associated-token-account-interface = { workspace = true }
+spl-token-interface = { workspace = true }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }

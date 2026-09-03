@@ -90,9 +90,10 @@ where
         timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            // We must subscribe before we send the request, so we get the `rx` pointing to
-            // the current memory point, this way we avoid losing the result for
-            // the corner case in which the request is sent between the `unbounded_send()`
+            // We must subscribe before we send the request, so we get the `rx`
+            // pointing to the current memory point, this way we
+            // avoid losing the result for the corner case in which
+            // the request is sent between the `unbounded_send()`
             // and the `subscribe()`
             let mut rx = self.results.subscribe();
 
@@ -227,7 +228,8 @@ where
         let delay = tokio::time::sleep(config.debouncing_time).fuse();
         futures::pin_mut!(delay);
 
-        // Append new elements to the bulk until reaching either of the scenarios:
+        // Append new elements to the bulk until reaching either of the
+        // scenarios:
         // - reach maximum number of elements per batch (`max_batch_len)
         // - we reach the `debouncing_time`
         while chunk.len() < max_batch_size {

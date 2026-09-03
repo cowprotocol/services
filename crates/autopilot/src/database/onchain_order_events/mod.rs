@@ -555,7 +555,7 @@ async fn get_quote(
         fee_amount: order_data.fee_amount,
         kind: order_data.kind,
         signing_scheme: quote_signing_scheme,
-        additional_gas: 0,
+        hook_gas: 0,
         // Verified quotes always have prices that are at most as good as unverified quotes but can
         // be lower.
         // If the best quote we can find or compute on the fly for this order suggests a worse
@@ -1215,8 +1215,9 @@ mod test {
             ..Default::default()
         };
         let mut order_placement_2 = order_placement.clone();
-        // With the following operation, we will create an invalid event data, and hence
-        // the whole event parsing process will produce an error for this event.
+        // With the following operation, we will create an invalid event data,
+        // and hence the whole event parsing process will produce an
+        // error for this event.
         order_placement_2.data = vec![].into();
         let event_data_2 = ContractEvent::OrderPlacement(order_placement_2);
         let domain_separator = DomainSeparator([7u8; 32]);

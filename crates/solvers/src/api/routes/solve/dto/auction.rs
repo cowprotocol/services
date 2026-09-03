@@ -225,12 +225,14 @@ mod concentrated_liquidity_pool {
             liquidity::TokenPair::new(a, b)
                 .ok_or("duplicate concentrated liquidity pool token address")?
         };
-        // Convert fee from decimal to the format expected by the UniswapV3 smart
-        // contract. Uniswap expresses fees in hundredths of a basis point
-        // (1e-6):
-        //   - 0.003 (0.3%) → 0.003 × 1,000,000 = 3000 (i.e., 3000 × 1e-6 = 0.003)
+        // Convert fee from decimal to the format expected by the UniswapV3
+        // smart contract. Uniswap expresses fees in hundredths of a
+        // basis point (1e-6):
+        //   - 0.003 (0.3%) → 0.003 × 1,000,000 = 3000 (i.e., 3000 × 1e-6 =
+        //     0.003)
         //   - 1 bps = 0.0001 → 1 bps = 100 units in Uniswap format
-        // So multiplying by 1,000,000 converts a decimal fee into Uniswap fee units.
+        // So multiplying by 1,000,000 converts a decimal fee into Uniswap fee
+        // units.
         let bps = BigDecimal::from_f32(1_000_000.).unwrap();
 
         Ok(liquidity::Liquidity {

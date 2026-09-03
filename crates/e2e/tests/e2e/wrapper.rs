@@ -300,8 +300,8 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
     tracing::info!("Wrapper call data: {:?}", call_data_strings);
 
     // Check that the auction ID propogated through the wrappers ok
-    // Sometimes the API isnt ready to respond to the request immediately so we wait
-    // a bit for success
+    // Sometimes the API isnt ready to respond to the request immediately so we
+    // wait a bit for success
     wait_for_condition(TIMEOUT, || async {
         let auction_info = services.get_solver_competition(solve_tx_hash).await;
 

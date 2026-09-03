@@ -31,6 +31,7 @@ mod parallel_settlement;
 mod partial_fill;
 mod partially_fillable_balance;
 mod partially_fillable_pool;
+mod penalty_cap;
 mod place_order_with_quote;
 mod pool_indexer;
 mod protocol_fee;

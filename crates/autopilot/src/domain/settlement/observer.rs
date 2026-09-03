@@ -151,8 +151,10 @@ impl Observer {
                         Ok(None)
                     }
                     settlement::transaction::Error::Authentication(_) => {
-                        // This has to be a temporary error because the settlement contract
-                        // guarantees that SOME allow listed contract executed the transaction.
+                        // This has to be a temporary error because the
+                        // settlement contract
+                        // guarantees that SOME allow listed contract executed
+                        // the transaction.
                         Err(anyhow!(format!(
                             "could not determing solver address - err: {err:?}"
                         )))

@@ -14,7 +14,6 @@ pub(crate) enum Kind {
     InvalidAuctionId,
     SolverFailed,
     SolutionNotAvailable,
-    InvalidSolution,
     DeadlineExceeded,
     TooManyPendingSettlements,
     FailedToSubmit,
@@ -38,9 +37,10 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
         // Revisit once autopilot tooling no longer keys off the EVM contract.
         let description = match kind {
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
-            Kind::SolverFailed => "All solver engines failed to produce solutions",
+            // Same wording as the EVM driver: an invalid or unproduced
+            // solver response is the same kind of failure for autopilot.
+            Kind::SolverFailed => "Solver engine returned an invalid response",
             Kind::SolutionNotAvailable => "The requested solution is not available",
-            Kind::InvalidSolution => "The solution failed the driver's validation",
             Kind::DeadlineExceeded => "The submission deadline has passed",
             Kind::TooManyPendingSettlements => "Too many settlements are pending",
             Kind::FailedToSubmit => "Failed to submit the settlement transaction",
@@ -72,8 +72,8 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::SimulationFailed(_) => Kind::SimulationFailed,
             competition::Error::TaskPanicked => Kind::Unknown,
             // The solver is responsible for valid solutions. Map validation
-            // errors to InvalidSolution. Map compile, sign, or
-            // index-overflow errors to Unknown.
+            // errors to SolverFailed, as the EVM driver does. Map compile,
+            // sign, or index-overflow errors to Unknown.
             competition::Error::Settlement(error) => match error {
                 settlement::Error::Compile(_)
                 | settlement::Error::Sign(_)
@@ -84,17 +84,19 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
                 | settlement::Error::NotExactlyFilled(_)
                 | settlement::Error::Overfill(_)
                 | settlement::Error::LimitPriceViolated(_)
-                | settlement::Error::OrderExpired(_)
                 | settlement::Error::OrderPdaMismatch(..)
-                | settlement::Error::OrderIntentMismatch(..) => Kind::InvalidSolution,
+                | settlement::Error::OrderIntentMismatch(..) => Kind::SolverFailed,
+                // The order expired between solve and settle: not solver
+                // fault.
+                settlement::Error::OrderExpired(_) => Kind::DeadlineExceeded,
             },
-            competition::Error::Prepare(error) => match error {
+            competition::Error::Resolve(error) => match error {
                 // The solver supplied the lookup table keys.
-                settlement::PrepareError::InvalidAddressLookupTable { .. } => Kind::InvalidSolution,
+                settlement::ResolveError::InvalidAddressLookupTable { .. } => Kind::SolverFailed,
                 // RPC failures and unexpected setup accounts are outside solver
                 // control. Map them to Unknown.
-                settlement::PrepareError::Rpc(_)
-                | settlement::PrepareError::UnexpectedSetupAccount { .. } => Kind::Unknown,
+                settlement::ResolveError::Rpc(_)
+                | settlement::ResolveError::UnexpectedSetupAccount { .. } => Kind::Unknown,
             },
         }
         .into()

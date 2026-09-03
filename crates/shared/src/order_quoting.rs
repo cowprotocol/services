@@ -44,7 +44,7 @@ pub struct QuoteParameters {
     pub side: OrderQuoteSide,
     pub verification: Verification,
     pub signing_scheme: QuoteSigningScheme,
-    pub additional_gas: u64,
+    pub hook_gas: u64,
     /// Whether this quote is intended for fast-path (out-of-competition)
     /// execution.
     pub fast_path: bool,
@@ -80,11 +80,40 @@ impl QuoteParameters {
             auction_id,
         }
     }
+}
 
-    pub fn additional_cost(&self) -> u64 {
-        self.signing_scheme
+impl AdditionalCost for QuoteParameters {
+    fn signing_scheme(&self) -> &QuoteSigningScheme {
+        &self.signing_scheme
+    }
+
+    fn hook_gas(&self) -> u64 {
+        self.hook_gas
+    }
+}
+
+/// Gas the settlement will consume on top of the quote's `gas_amount`.
+pub trait AdditionalCost {
+    fn signing_scheme(&self) -> &QuoteSigningScheme;
+
+    /// The hook gas limits declared in the app data.
+    fn hook_gas(&self) -> u64;
+
+    /// Returns the gas the settlement will consume on top of the quote's
+    /// `gas_amount`: ERC-1271 signature verification and, for unverified
+    /// quotes, the order's hooks.
+    ///
+    /// The verifying simulation executes the order's hooks, so for verified
+    /// quotes their cost is already part of the measured `gas_amount` and
+    /// budgeting the declared hook gas limits again would double count them.
+    /// The simulation fakes the trader's signature with pre-sign however, so
+    /// ERC-1271 verification gas is never simulated and always needs to be
+    /// added.
+    fn additional_cost(&self, verified: bool) -> u64 {
+        let hook_gas = if verified { 0 } else { self.hook_gas() };
+        self.signing_scheme()
             .additional_gas_amount()
-            .saturating_add(self.additional_gas)
+            .saturating_add(hook_gas)
     }
 }
 
@@ -308,8 +337,9 @@ impl QuoteCompetition {
     /// additional-cost adjustments, and scales sell/buy amounts when the
     /// caller asked for a `SellAmount::BeforeFee` sell order.
     pub fn to_final_quote(&self, parameters: &QuoteParameters) -> Quote {
-        let mut quote = Quote::new(None, self.to_quote_data())
-            .with_additional_cost(parameters.additional_cost());
+        let data = self.to_quote_data();
+        let additional_cost = parameters.additional_cost(data.verified);
+        let mut quote = Quote::new(None, data).with_additional_cost(additional_cost);
 
         if let OrderQuoteSide::Sell {
             sell_amount:
@@ -442,7 +472,8 @@ pub struct QuoteSearchParameters {
     pub fee_amount: U256,
     pub kind: OrderKind,
     pub signing_scheme: QuoteSigningScheme,
-    pub additional_gas: u64,
+    /// Sum of the gas limits of the order's pre- and post-hooks.
+    pub hook_gas: u64,
     pub verification: Verification,
 }
 
@@ -462,12 +493,15 @@ impl QuoteSearchParameters {
             && (self.sell_token, self.buy_token, self.kind)
                 == (data.sell_token, data.buy_token, data.kind)
     }
+}
 
-    /// Returns additional gas costs incurred by the quote.
-    pub fn additional_cost(&self) -> u64 {
-        self.signing_scheme
-            .additional_gas_amount()
-            .saturating_add(self.additional_gas)
+impl AdditionalCost for QuoteSearchParameters {
+    fn signing_scheme(&self) -> &QuoteSigningScheme {
+        &self.signing_scheme
+    }
+
+    fn hook_gas(&self) -> u64 {
+        self.hook_gas
     }
 }
 
@@ -664,7 +698,9 @@ impl OrderQuoting for OrderQuoter {
         };
 
         let now = self.now.now();
-        let additional_cost = parameters.additional_cost();
+        let additional_cost = |verified| parameters.additional_cost(verified);
+        let (additional_cost_verified, additional_cost_unverified) =
+            (additional_cost(true), additional_cost(false));
         let quote = async {
             let (id, data) = match id {
                 Some(id) => {
@@ -691,8 +727,13 @@ impl OrderQuoting for OrderQuoter {
             };
             Ok(Quote::new(Some(id), data))
         }
-        .await?
-        .with_additional_cost(additional_cost);
+        .await?;
+        let additional_cost = if quote.data.verified {
+            additional_cost_verified
+        } else {
+            additional_cost_unverified
+        };
+        let quote = quote.with_additional_cost(additional_cost);
 
         let quote = match scaled_sell_amount {
             Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount),
@@ -957,10 +998,10 @@ fn assemble_quote_data(
         sell_amount: SellAmount::BeforeFee { value: sell_amount },
     } = &parameters.side
     {
-        let fee_amount = competition
-            .to_quote_data()
+        let data = competition.to_quote_data();
+        let fee_amount = data
             .fee_parameters
-            .fee_with_additional_cost(parameters.additional_cost());
+            .fee_with_additional_cost(parameters.additional_cost(data.verified));
         if sell_amount.get().saturating_sub(fee_amount).is_zero() {
             return Err(CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount });
         }
@@ -1094,7 +1135,7 @@ mod tests {
                 ..Default::default()
             },
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: 0,
+            hook_gas: 0,
             fast_path: false,
             timeout: None,
         };
@@ -1254,7 +1295,7 @@ mod tests {
                 onchain_order: false,
                 verification_gas_limit: 1,
             },
-            additional_gas: 2,
+            hook_gas: 2,
             fast_path: false,
             timeout: None,
         };
@@ -1409,7 +1450,7 @@ mod tests {
                 ..Default::default()
             },
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: 0,
+            hook_gas: 0,
             fast_path: false,
             timeout: None,
         };
@@ -1565,7 +1606,7 @@ mod tests {
                 ..Default::default()
             },
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: 0,
+            hook_gas: 0,
             fast_path: false,
             timeout: None,
         };
@@ -1643,7 +1684,7 @@ mod tests {
                 ..Default::default()
             },
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: 0,
+            hook_gas: 0,
             fast_path: false,
             timeout: None,
         };
@@ -1721,7 +1762,7 @@ mod tests {
             fee_amount: U256::from(15),
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: 0,
+            hook_gas: 0,
             verification: Verification {
                 from: Address::from([3; 20]),
                 ..Default::default()
@@ -1795,7 +1836,7 @@ mod tests {
             fee_amount: U256::from(30),
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: 0,
+            hook_gas: 0,
             verification: Verification {
                 from: Address::from([3; 20]),
                 ..Default::default()
@@ -1865,7 +1906,7 @@ mod tests {
             fee_amount: U256::from(30),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: 0,
+            hook_gas: 0,
             verification: Verification {
                 from: Address::from([3; 20]),
                 ..Default::default()
@@ -2140,7 +2181,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             verification: Default::default(),
-            additional_gas: 0,
+            hook_gas: 0,
             fast_path: false,
             timeout: None,
         };
@@ -2198,7 +2239,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             verification: Default::default(),
-            additional_gas: 0,
+            hook_gas: 0,
             fast_path: false,
             timeout: None,
         };
@@ -2267,7 +2308,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             verification: Default::default(),
-            additional_gas: 0,
+            hook_gas: 0,
             fast_path: false,
             timeout: None,
         }
@@ -2435,8 +2476,8 @@ mod tests {
 
     #[tokio::test]
     async fn streaming_before_fee_scales_sell_and_buy_amounts() {
-        // sell_before_fee = 1000, gas = 10, gas_price = 1, sell_token_price = 1.0
-        // fee = ceil((10 * 1) / 1.0) = 10
+        // sell_before_fee = 1000, gas = 10, gas_price = 1, sell_token_price =
+        // 1.0 fee = ceil((10 * 1) / 1.0) = 10
         // sell_amount = 1000 - 10 = 990
         // buy_amount = 500 * 990 / 1000 = 495
         let params = QuoteParameters {
@@ -2449,7 +2490,7 @@ mod tests {
             },
             signing_scheme: QuoteSigningScheme::Eip712,
             verification: Default::default(),
-            additional_gas: 0,
+            hook_gas: 0,
             fast_path: false,
             timeout: None,
         };
@@ -2497,8 +2538,9 @@ mod tests {
     #[tokio::test]
     async fn streaming_defers_fee_error_until_no_quote_succeeds() {
         // sell_before_fee = 100, gas_price = 1, sell_token_price = 1.0, so
-        // fee = ceil(gas * 1 / 1.0) = gas. A gas of 2000 saturates 100 - 2000 to
-        // 0 -> SellAmountDoesNotCoverFee; a gas of 10 leaves 90 -> a good quote.
+        // fee = ceil(gas * 1 / 1.0) = gas. A gas of 2000 saturates 100 - 2000
+        // to 0 -> SellAmountDoesNotCoverFee; a gas of 10 leaves 90 -> a
+        // good quote.
         fn params() -> QuoteParameters {
             QuoteParameters {
                 sell_token: Address::repeat_byte(1),
@@ -2510,7 +2552,7 @@ mod tests {
                 },
                 signing_scheme: QuoteSigningScheme::Eip712,
                 verification: Default::default(),
-                additional_gas: 0,
+                hook_gas: 0,
                 fast_path: false,
                 timeout: None,
             }
@@ -2559,7 +2601,8 @@ mod tests {
             );
         };
 
-        // Only a fee-exceeding estimate: the deferred error surfaces at the end.
+        // Only a fee-exceeding estimate: the deferred error surfaces at the
+        // end.
         let (quoter, params) = make(vec![Ok(estimate(2000))]);
         let mut s = quoter
             .calculate_quote_stream(params)
@@ -2568,8 +2611,8 @@ mod tests {
         assert_sell_amount_error(s.next().await.expect("error item").unwrap_err());
         assert!(s.next().await.is_none());
 
-        // A later quote covers its fee: the deferred error is suppressed and only
-        // the good quote is yielded.
+        // A later quote covers its fee: the deferred error is suppressed and
+        // only the good quote is yielded.
         let (quoter, params) = make(vec![Ok(estimate(2000)), Ok(estimate(10))]);
         let mut s = quoter
             .calculate_quote_stream(params)
@@ -2594,5 +2637,53 @@ mod tests {
             .expect("stream setup must succeed");
         assert_sell_amount_error(s.next().await.expect("error item").unwrap_err());
         assert!(s.next().await.is_none());
+    }
+
+    #[test]
+    fn hook_gas_only_added_for_unverified_quotes() {
+        let parameters = QuoteParameters {
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee {
+                    value: NonZeroU256::try_from(1_000_000).unwrap(),
+                },
+            },
+            signing_scheme: QuoteSigningScheme::Eip1271 {
+                onchain_order: false,
+                verification_gas_limit: 30_000,
+            },
+            // Hook gas limits declared in the app data.
+            hook_gas: 50_000,
+            ..Default::default()
+        };
+
+        let competition = |verified| {
+            QuoteCompetition::new(
+                QuoteRequest::default(),
+                QuoteResponse {
+                    quoted_sell_amount: U256::from(1_000_000),
+                    quoted_buy_amount: U256::from(1_000_000),
+                    gas_amount: 100_000.,
+                    verified,
+                    ..Default::default()
+                },
+                [],
+                QuoteCompetitionMetadata {
+                    gas_price: 1.,
+                    sell_token_price: 1.,
+                    ..Default::default()
+                },
+            )
+        };
+
+        // Unverified quotes budget ERC-1271 and hook gas on top of the
+        // solver's gas estimate.
+        let quote = competition(false).to_final_quote(&parameters);
+        assert_eq!(quote.fee_amount, U256::from(180_000));
+
+        // Verified quotes already executed the hooks in the simulation whose
+        // gas usage they report, so only the (never simulated) ERC-1271
+        // verification gas is added on top.
+        let quote = competition(true).to_final_quote(&parameters);
+        assert_eq!(quote.fee_amount, U256::from(130_000));
     }
 }

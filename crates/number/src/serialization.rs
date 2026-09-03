@@ -22,7 +22,8 @@ impl SerializeAs<U256> for HexOrDecimalU256 {
     where
         S: Serializer,
     {
-        // alloy_primitives::U256 serializes as hex, this gives us decimals instead
+        // alloy_primitives::U256 serializes as hex, this gives us decimals
+        // instead
         serializer.serialize_str(&source.to_string())
     }
 }

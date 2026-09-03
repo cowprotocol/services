@@ -37,9 +37,10 @@ impl ConfigurableGasPriceEstimator {
         config: EstimatorConfig,
         current_block: CurrentBlockWatcher,
     ) -> Self {
-        // use some reasonable initial value. The exact value doesn't matter much since
-        // the background task will update the gas price immediately anyway
-        // since the block stream yields the current block immediately
+        // use some reasonable initial value. The exact value doesn't matter
+        // much since the background task will update the gas price
+        // immediately anyway since the block stream yields the current
+        // block immediately
         let base_fee = current_block.borrow().base_fee;
         let init = Eip1559Estimation {
             max_fee_per_gas: u128::from(base_fee * 2),
@@ -58,10 +59,11 @@ impl ConfigurableGasPriceEstimator {
                     }
                 };
                 if let Err(err) = sender.send(gas_price) {
-                    // at this point all [`watch::Receiver`] have been dropped and new ones
-                    // could only be created with [`watch::Sender::subscribe()`] but the only
-                    // Sender instance lives in this background task and can not be accessed
-                    // anymore
+                    // at this point all [`watch::Receiver`] have been dropped
+                    // and new ones could only be created
+                    // with [`watch::Sender::subscribe()`] but the only
+                    // Sender instance lives in this background task and can not
+                    // be accessed anymore
                     tracing::debug!(
                         ?err,
                         "all gas price estimators dropped, terminating update loop"
@@ -155,9 +157,9 @@ mod tests {
         }
     }
 
-    // Pushes a fee_history JSON response where `latest_block_base_fee()` returns
-    // `base_fee` and the reward is `tip`. The resulting estimate will be:
-    //   max_priority_fee_per_gas = tip
+    // Pushes a fee_history JSON response where `latest_block_base_fee()`
+    // returns `base_fee` and the reward is `tip`. The resulting estimate
+    // will be:   max_priority_fee_per_gas = tip
     //   max_fee_per_gas          = base_fee * 2 + tip
     fn push_fee_history(asserter: &Asserter, base_fee: u128, tip: u128) {
         asserter.push_success(&serde_json::json!({
@@ -175,14 +177,16 @@ mod tests {
         let base_fee: u64 = 5_000_000_000;
         let current_block = mock_single_block(block_with_base_fee(base_fee));
         let asserter = Asserter::new();
-        // Queue one response for the background task's initial fee history fetch.
+        // Queue one response for the background task's initial fee history
+        // fetch.
         push_fee_history(&asserter, base_fee as u128, 1_000_000_000);
         let provider = mock_provider(asserter);
 
         let estimator =
             ConfigurableGasPriceEstimator::new(provider, default_config(), current_block);
 
-        // base_fee() reads from the block watcher directly — no RPC call needed.
+        // base_fee() reads from the block watcher directly — no RPC call
+        // needed.
         let result = estimator.base_fee().await.unwrap();
         assert_eq!(result, Some(base_fee));
     }
@@ -195,7 +199,8 @@ mod tests {
         // Keep the sender alive so the background task does not terminate.
         let (_block_sender, block_receiver) = watch::channel(block_with_base_fee(1));
         let asserter = Asserter::new();
-        // Only one response is queued — the estimator must not call RPC more than once.
+        // Only one response is queued — the estimator must not call RPC more
+        // than once.
         push_fee_history(&asserter, base_fee, tip);
         let provider = mock_provider(asserter.clone());
 
