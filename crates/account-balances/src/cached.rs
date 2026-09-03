@@ -32,7 +32,8 @@ impl BalanceCache {
     }
 
     /// Only updates existing balances. This should always be used in the
-    /// background task.
+    /// background task. Has no write-ordering guard, so it relies on refreshes
+    /// staying serialized (see [`Balances::spawn_background_task`]).
     fn update_balance(&mut self, query: &Query, balance: U256) {
         if let Some(entry) = self.data.get_mut(query) {
             entry.balance = balance;
@@ -111,6 +112,8 @@ impl Balances {
     }
 
     /// Spawns task that refreshes the cached balances on every new block.
+    /// Refreshes must stay serialized: a second concurrent refresh could
+    /// overwrite a newer balance with the result of an older, slower fetch.
     pub fn spawn_background_task(&self, block_stream: CurrentBlockWatcher) {
         let inner = self.inner.clone();
         let cache = self.balance_cache.clone();

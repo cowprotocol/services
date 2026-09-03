@@ -202,6 +202,7 @@ impl Configuration {
             "colocation is enabled but no drivers are configured"
         );
         self.shared.validate()?;
+        self.balance_cache.validate()?;
         Ok(self)
     }
 }

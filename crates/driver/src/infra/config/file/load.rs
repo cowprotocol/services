@@ -50,6 +50,12 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         chain,
         "The configured chain ID does not match the connected Ethereum node"
     );
+
+    config
+        .balance_cache
+        .validate()
+        .unwrap_or_else(|err| panic!("invalid balance cache config: {err:?}"));
+
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
             let account = load_account(solver_config.account, config.chain_id).await;

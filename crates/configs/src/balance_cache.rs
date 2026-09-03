@@ -1,4 +1,5 @@
 use {
+    anyhow::ensure,
     serde::{Deserialize, Serialize},
     std::time::Duration,
 };
@@ -17,8 +18,8 @@ fn default_refresh_delay() -> Duration {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BalanceCacheConfig {
     /// Cached balances that have not been queried within this duration get
-    /// evicted on the next background refresh. Should be longer than a typical
-    /// auction so that the entries survive across auctions.
+    /// evicted on the next background refresh. Below the auction cadence the
+    /// cache degrades into a pass-through.
     #[serde(with = "humantime_serde", default = "default_eviction_time")]
     pub eviction_time: Duration,
 
@@ -28,6 +29,20 @@ pub struct BalanceCacheConfig {
     /// refreshes every ~3rd block rather than every block.
     #[serde(with = "humantime_serde", default = "default_refresh_delay")]
     pub refresh_delay: Duration,
+}
+
+impl BalanceCacheConfig {
+    /// Cross-field invariants that cannot be expressed in the serde schema.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.eviction_time > self.refresh_delay,
+            "`eviction-time` ({:?}) must be longer than `refresh-delay` ({:?}), otherwise every \
+             entry is evicted before it can be refreshed",
+            self.eviction_time,
+            self.refresh_delay,
+        );
+        Ok(())
+    }
 }
 
 impl Default for BalanceCacheConfig {
@@ -71,5 +86,22 @@ mod tests {
         let config: BalanceCacheConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.eviction_time, Duration::from_secs(30));
         assert_eq!(config.refresh_delay, Duration::from_millis(500));
+    }
+
+    #[test]
+    fn validate_rejects_eviction_time_below_refresh_delay() {
+        assert!(BalanceCacheConfig::default().validate().is_ok());
+
+        let config = BalanceCacheConfig {
+            eviction_time: Duration::from_secs(1),
+            refresh_delay: Duration::from_secs(1),
+        };
+        assert!(config.validate().is_err());
+
+        let config = BalanceCacheConfig {
+            eviction_time: Duration::from_millis(500),
+            refresh_delay: Duration::from_secs(1),
+        };
+        assert!(config.validate().is_err());
     }
 }
