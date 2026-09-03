@@ -305,7 +305,7 @@ impl QuoteHandler {
                     app_data: Arc::new(app_data.inner.document.clone()),
                 },
                 signing_scheme: request.signing_scheme,
-                additional_gas: app_data.inner.protocol.hooks.gas_limit(),
+                hook_gas: app_data.inner.protocol.hooks.gas_limit(),
                 fast_path: app_data.inner.protocol.enable_fast_path,
                 timeout: request.timeout,
             },
