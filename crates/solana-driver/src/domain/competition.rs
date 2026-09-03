@@ -5,7 +5,7 @@ use {
     crate::infra::{blockchain::Solana, solver::Solver},
     itertools::Itertools,
     moka::sync::Cache,
-    solana_sdk::signature::Signature,
+    solana_sdk::{signature::Signature, transaction::VersionedTransaction},
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -190,6 +190,8 @@ impl Competition {
             .map_err(Error::Rpc)?;
         let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
 
+        self.simulate_settlement(&transaction).await?;
+
         // Consume the entry only now, when the transaction is about to reach
         // the network. One atomic removal takes the chosen solution. A
         // concurrent `/settle` for it then observes a missing entry and
@@ -219,6 +221,22 @@ impl Competition {
         .map_err(Error::FailedToSubmit)?;
 
         Ok(signature)
+    }
+
+    /// Simulate a settlement transaction before sending it.
+    async fn simulate_settlement(&self, transaction: &VersionedTransaction) -> Result<(), Error> {
+        tracing::debug!("simulating settlement transaction");
+        let simulation = self
+            .blockchain
+            .simulate_transaction(transaction)
+            .await
+            .map_err(Error::Rpc)?;
+        if let Some(err) = &simulation.err {
+            tracing::warn!(?err, logs = ?simulation.logs, "settlement simulation failed");
+            return Err(err.clone().into());
+        }
+        tracing::debug!("settlement simulation passed");
+        Ok(())
     }
 }
 
@@ -257,6 +275,9 @@ pub(crate) enum Error {
     Rpc(#[source] cow_solana_rpc::Error),
     #[error("failed to submit or confirm settlement: {0}")]
     FailedToSubmit(#[source] cow_solana_rpc::Error),
+    /// The pre-submission simulation failed. The transaction was not sent.
+    #[error("settlement simulation failed: {0}")]
+    SimulationFailed(#[from] cow_solana_rpc::UiTransactionError),
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
