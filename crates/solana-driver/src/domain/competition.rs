@@ -57,7 +57,29 @@ impl Competition {
     }
 
     /// Solve the auction and cache each solution for a later `settle`.
-    pub async fn solve(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
+    pub async fn solve(&self, auction_id: Id, auction: &Auction) -> Result<Vec<Solution>, Error> {
+        let solutions = self.compute_solutions(auction).await?;
+
+        let auction = Arc::new(auction.clone());
+        for solution in &solutions {
+            self.solutions.insert(
+                Key {
+                    auction_id,
+                    solution_id: solution.id,
+                },
+                CachedSolution {
+                    auction: Arc::clone(&auction),
+                    solution: solution.clone(),
+                },
+            );
+        }
+
+        Ok(solutions)
+    }
+
+    /// Send the auction to the solver engine and return its deduplicated
+    /// solutions without caching them.
+    pub async fn compute_solutions(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
         let solutions = self
             .solver
             .solve(auction, self.blockchain.program_id())
@@ -76,21 +98,6 @@ impl Competition {
                 "discarding solutions with duplicate ids"
             );
         }
-
-        let auction = Arc::new(auction.clone());
-        for solution in &solutions {
-            self.solutions.insert(
-                Key {
-                    auction_id: auction.id,
-                    solution_id: solution.id,
-                },
-                CachedSolution {
-                    auction: Arc::clone(&auction),
-                    solution: solution.clone(),
-                },
-            );
-        }
-
         Ok(solutions)
     }
 

@@ -14,10 +14,12 @@ pub(crate) async fn solve(
     LoggingJson(request): LoggingJson<dto::SolveRequest>,
 ) -> Result<Json<dto::SolveResponse>, (StatusCode, Json<ApiError>)> {
     let auction = request.into_domain()?;
-    let auction_id = auction.id;
+    let auction_id = auction
+        .id
+        .expect("a solve request always carries an auction id");
     let solutions = state
         .competition()
-        .solve(&auction)
+        .solve(auction_id, &auction)
         .instrument(tracing::info_span!("/solve", solver = %state.competition().solver_name(), auction_id = %auction_id))
         .await?;
     Ok(Json(dto::SolveResponse::new(solutions)))

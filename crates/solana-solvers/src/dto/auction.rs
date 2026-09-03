@@ -17,7 +17,8 @@ use {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    pub id: i64,
+    /// `None` when the auction prices a quote instead of a competition.
+    pub id: Option<i64>,
     /// Settlement signer the swap instructions are built for.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub taker: Pubkey,

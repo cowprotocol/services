@@ -133,7 +133,7 @@ impl SolveRequest {
     pub fn into_domain(self) -> Result<domain::Auction, Error> {
         let id = domain::auction::Id::try_from(self.id)?;
         Ok(domain::Auction {
-            id,
+            id: Some(id),
             orders: self.orders.into_iter().map(Into::into).collect(),
             // Placeholder; the domain does not consume it yet.
             deadline_slot: domain::Slot(0),

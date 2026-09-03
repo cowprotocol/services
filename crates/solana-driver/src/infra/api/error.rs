@@ -17,6 +17,8 @@ pub(crate) enum Kind {
     DeadlineExceeded,
     TooManyPendingSettlements,
     FailedToSubmit,
+    QuoteSameTokens,
+    QuotingFailed,
     Unknown,
 }
 
@@ -43,6 +45,8 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::DeadlineExceeded => "The submission deadline has passed",
             Kind::TooManyPendingSettlements => "Too many settlements are pending",
             Kind::FailedToSubmit => "Failed to submit the settlement transaction",
+            Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
+            Kind::QuotingFailed => "No valid quote found",
             Kind::Unknown => "An unknown error occurred",
         };
         (

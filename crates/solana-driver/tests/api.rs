@@ -410,3 +410,153 @@ async fn solve_preserves_the_solvers_ordering() {
     let body = call_solve(addr).await;
     assert_eq!(response_ids(&body), vec![3, 1, 2]);
 }
+
+/// A `/quote` request body for the given side.
+fn quote_request(kind: &str, amount: &str) -> serde_json::Value {
+    let deadline = chrono::Utc::now() + chrono::Duration::minutes(5);
+    serde_json::json!({
+        "sellToken": pubkey(0x33).to_string(),
+        "buyToken": pubkey(0x44).to_string(),
+        "amount": amount,
+        "kind": kind,
+        "deadline": deadline.to_rfc3339(),
+    })
+}
+
+/// A canned engine solution for the fabricated quote order, whose uid is
+/// zero.
+fn quote_solution(executed_amount: &str) -> serde_json::Value {
+    serde_json::json!({
+        "solutions": [{
+            "id": 42,
+            "prices": {
+                (pubkey(0x33).to_string()): "2000",
+                (pubkey(0x44).to_string()): "1000",
+            },
+            "trades": [{
+                "orderUid": format!("0x{}", "00".repeat(32)),
+                "executedAmount": executed_amount,
+            }],
+            "interactions": [],
+        }]
+    })
+}
+
+#[tokio::test]
+async fn quote_returns_the_executed_amounts() {
+    let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
+    let (solver, account) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("sell", "1000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "sellAmount": "1000",
+            "buyAmount": "2000",
+            "solver": account.to_string(),
+        })
+    );
+}
+
+#[tokio::test]
+async fn buy_quote_returns_the_executed_amounts() {
+    let engine = spawn_mock_solver_engine(quote_solution("2000")).await;
+    let (solver, account) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("buy", "2000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "sellAmount": "1000",
+            "buyAmount": "2000",
+            "solver": account.to_string(),
+        })
+    );
+}
+
+#[tokio::test]
+async fn quote_with_identical_tokens_is_rejected() {
+    // Validation short-circuits before the engine is called.
+    let (solver, _) = dead_solver();
+    let addr = spawn_server(vec![solver]).await;
+
+    let mut body = quote_request("sell", "1000");
+    body["buyToken"] = serde_json::json!(pubkey(0x33).to_string());
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "QuoteSameTokens");
+}
+
+#[tokio::test]
+async fn quote_without_a_solution_is_quoting_failed() {
+    // An engine that routes nothing answers with an empty solution list.
+    let engine = spawn_mock_solver_engine(serde_json::json!({"solutions": []})).await;
+    let (solver, _) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("sell", "1000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "QuotingFailed");
+}
+
+/// A quoted solution must not become settleable: quoting leaves the solution
+/// cache untouched, so any later `/settle` misses.
+#[tokio::test]
+async fn quoting_does_not_populate_the_settle_cache() {
+    let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
+    let (solver, _) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("sell", "1000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let response = client
+        .post(format!("http://{addr}/mock/settle"))
+        .json(&serde_json::json!({
+            "auctionId": 1,
+            "solutionId": 42,
+            "submissionDeadlineSlot": 100,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "SolutionNotAvailable");
+}
