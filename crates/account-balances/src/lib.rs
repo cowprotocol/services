@@ -98,14 +98,10 @@ pub fn cached(
     balance_simulator: BalanceSimulator,
     blocks: CurrentBlockWatcher,
     eviction_time: Duration,
-    refresh_delay: Duration,
+    refresh_cooldown: Duration,
 ) -> Arc<dyn BalanceFetching> {
-    let cached = Arc::new(cached::Balances::new(
-        fetcher(web3, balance_simulator),
-        eviction_time,
-        refresh_delay,
-    ));
-    cached.spawn_background_task(blocks);
+    let cached = Arc::new(cached::Balances::new(fetcher(web3, balance_simulator)));
+    cached.spawn_background_task(blocks, eviction_time, refresh_cooldown);
     cached
 }
 

@@ -61,7 +61,7 @@ impl Api {
             self.eth.balance_simulator().clone(),
             self.eth.current_block().clone(),
             self.balance_cache.eviction_time,
-            self.balance_cache.refresh_delay,
+            self.balance_cache.refresh_cooldown,
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);

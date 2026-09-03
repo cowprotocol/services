@@ -381,7 +381,7 @@ mod tests {
 
         [balance-cache]
         eviction-time = "10s"
-        refresh-delay = "1.2s"
+        refresh-cooldown = "1.2s"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -478,7 +478,7 @@ mod tests {
 
         assert_eq!(config.balance_cache.eviction_time, Duration::from_secs(10));
         assert_eq!(
-            config.balance_cache.refresh_delay,
+            config.balance_cache.refresh_cooldown,
             Duration::from_millis(1200)
         );
     }

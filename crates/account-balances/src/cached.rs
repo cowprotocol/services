@@ -46,11 +46,11 @@ impl BalanceCache {
 
     /// Only inserts new balances. This should always be used when we needed to
     /// fetch a balance because it was requested by a backend component.
-    fn insert_balance(&mut self, query: Query, balance: U256) {
+    fn insert_balance(&mut self, query: Query, balance: U256, now: Instant) {
         self.data.insert(
             query,
             BalanceEntry {
-                requested_at: Instant::now(),
+                requested_at: now,
                 balance,
             },
         );
@@ -66,26 +66,13 @@ struct BalanceEntry {
 pub struct Balances {
     inner: Arc<dyn BalanceFetching>,
     balance_cache: Arc<Mutex<BalanceCache>>,
-    /// Cached entries that haven't been requested for this long get evicted
-    /// on the next block refresh.
-    eviction_time: Duration,
-    /// How long to wait after a new block before refreshing. Keeps the refresh
-    /// off the block edge, and coalesces the blocks of fast chains that arrive
-    /// inside the window into a single refresh.
-    refresh_delay: Duration,
 }
 
 impl Balances {
-    pub fn new(
-        inner: Arc<dyn BalanceFetching>,
-        eviction_time: Duration,
-        refresh_delay: Duration,
-    ) -> Self {
+    pub fn new(inner: Arc<dyn BalanceFetching>) -> Self {
         Self {
             inner,
             balance_cache: Default::default(),
-            eviction_time,
-            refresh_delay,
         }
     }
 }
@@ -114,20 +101,23 @@ impl Balances {
     /// Spawns task that refreshes the cached balances on every new block.
     /// Refreshes must stay serialized: a second concurrent refresh could
     /// overwrite a newer balance with the result of an older, slower fetch.
-    pub fn spawn_background_task(&self, block_stream: CurrentBlockWatcher) {
+    pub fn spawn_background_task(
+        &self,
+        block_stream: CurrentBlockWatcher,
+        eviction_time: Duration,
+        refresh_cooldown: Duration,
+    ) {
         let inner = self.inner.clone();
         let cache = self.balance_cache.clone();
-        let eviction_time = self.eviction_time;
-        let refresh_delay = self.refresh_delay;
         let mut stream = into_stream(block_stream);
 
         let task = async move {
             while stream.next().await.is_some() {
-                // Refreshing at the block edge queues the whole cache behind
-                // the RPC burst every other component fires there. Blocks
-                // arriving during the delay get coalesced into one refresh.
-                tokio::time::sleep(refresh_delay).await;
                 Self::refresh_balances(inner.as_ref(), &cache, eviction_time).await;
+                // Blocks arriving during the cooldown collapse into a single
+                // refresh, so a fast chain does not refresh the whole cache
+                // once per block.
+                tokio::time::sleep(refresh_cooldown).await;
             }
             tracing::error!("block stream terminated unexpectedly");
         };
@@ -190,9 +180,10 @@ impl BalanceFetching for Balances {
 
         {
             let mut cache = self.balance_cache.lock().unwrap();
+            let now = Instant::now();
             for (query, result) in missing_queries.into_iter().zip(new_balances.iter()) {
                 if let Ok(balance) = result {
-                    cache.insert_balance(query, *balance)
+                    cache.insert_balance(query, *balance, now)
                 }
             }
         }
@@ -234,11 +225,8 @@ mod tests {
         model::order::SellTokenSource,
     };
 
-    const TEST_EVICTION_TIME: Duration = Duration::from_millis(500);
-    const TEST_REFRESH_DELAY: Duration = Duration::from_millis(1);
-    /// Time given to the background task to notice a block and finish a
-    /// refresh. Far above `TEST_REFRESH_DELAY` so a loaded runner cannot flake.
-    const REFRESH_MARGIN: Duration = Duration::from_millis(150);
+    const TEST_EVICTION_TIME: Duration = Duration::from_millis(200);
+    const TEST_REFRESH_COOLDOWN: Duration = Duration::from_millis(1);
 
     fn query(token: u8) -> Query {
         Query {
@@ -247,6 +235,23 @@ mod tests {
             source: SellTokenSource::Erc20,
             interactions: vec![],
             balance_override: None,
+        }
+    }
+
+    /// Reads an entry without marking it as requested, so polling for a
+    /// background update does not keep the entry alive.
+    fn cached_balance(fetcher: &Balances, query: &Query) -> Option<U256> {
+        let cache = fetcher.balance_cache.lock().unwrap();
+        cache.data.get(query).map(|entry| entry.balance)
+    }
+
+    /// Polls until the background task produced the expected state. Returns as
+    /// soon as it did, so a generous timeout costs nothing in the happy case.
+    async fn wait_for(what: &str, condition: impl Fn() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !condition() {
+            assert!(Instant::now() < deadline, "timed out waiting for {what}");
+            tokio::time::sleep(Duration::from_millis(1)).await;
         }
     }
 
@@ -259,7 +264,7 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Ok(U256::ONE)]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME, TEST_REFRESH_DELAY);
+        let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner`.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
@@ -277,7 +282,7 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Err(anyhow::anyhow!("some error"))]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME, TEST_REFRESH_DELAY);
+        let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner`.
         assert!(fetcher.get_balances(&[query(1)]).await[0].is_err());
         // 2nd call to `inner`.
@@ -286,38 +291,45 @@ mod tests {
 
     #[tokio::test]
     async fn background_task_updates_cache_on_new_block() {
-        let first_block = BlockInfo::default();
-        let (sender, receiver) = tokio::sync::watch::channel(first_block);
+        let (sender, receiver) = tokio::sync::watch::channel(BlockInfo::default());
 
         let mut inner = MockBalanceFetching::new();
+        // 1st call to `inner`. Balance gets cached.
         inner
             .expect_get_balances()
-            .times(2)
+            .times(1)
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Ok(U256::ONE)]);
+        // 2nd call to `inner`. Background refresh sees a new balance.
+        inner
+            .expect_get_balances()
+            .times(1)
+            .withf(|arg| arg == [query(1)])
+            .returning(|_| vec![Ok(U256::from(2))]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME, TEST_REFRESH_DELAY);
-        fetcher.spawn_background_task(receiver);
+        let fetcher = Balances::new(Arc::new(inner));
 
-        // 1st call to `inner`. Balance gets cached.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
-        // New block gets detected.
+        // The task only sees the latest block, so sending before it first gets
+        // polled keeps this to a single refresh.
+        fetcher.spawn_background_task(receiver, TEST_EVICTION_TIME, TEST_REFRESH_COOLDOWN);
         sender
             .send(BlockInfo {
                 number: 1,
                 ..Default::default()
             })
             .unwrap();
-        // Wait for block to be noticed and cache to be updated. (2nd call to
-        // inner)
-        tokio::time::sleep(REFRESH_MARGIN).await;
+        wait_for("refreshed balance", || {
+            cached_balance(&fetcher, &query(1)) == Some(U256::from(2))
+        })
+        .await;
 
         // Balance was already updated so this will hit the cache and skip
         // calling `inner`.
         let result = fetcher.get_balances(&[query(1)]).await;
-        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
+        assert_eq!(result[0].as_ref().unwrap(), &U256::from(2));
     }
 
     #[tokio::test]
@@ -334,7 +346,7 @@ mod tests {
             .withf(|arg| arg == [query(2)])
             .returning(|_| vec![Ok(U256::from(2))]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME, TEST_REFRESH_DELAY);
+        let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner` putting balance 1 into the cache.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
@@ -374,19 +386,22 @@ mod tests {
             .withf(|queries| queries == [query(1)])
             .returning(|_| vec![Ok(U256::from(2))]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME, TEST_REFRESH_DELAY);
+        let fetcher = Balances::new(Arc::new(inner));
 
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
-        fetcher.spawn_background_task(receiver);
+        fetcher.spawn_background_task(receiver, TEST_EVICTION_TIME, TEST_REFRESH_COOLDOWN);
         sender
             .send(BlockInfo {
                 number: 1,
                 ..Default::default()
             })
             .unwrap();
-        tokio::time::sleep(REFRESH_MARGIN).await;
+        wait_for("failed refresh to drop the entry", || {
+            cached_balance(&fetcher, &query(1)).is_none()
+        })
+        .await;
 
         // The failed refresh dropped the entry, so the next request has to go
         // to `inner` again and sees the new balance.
@@ -396,52 +411,60 @@ mod tests {
 
     #[tokio::test]
     async fn unused_balances_get_evicted() {
-        let first_block = BlockInfo::default();
-        let (sender, receiver) = tokio::sync::watch::channel(first_block);
+        let (sender, receiver) = tokio::sync::watch::channel(BlockInfo::default());
 
         let mut inner = MockBalanceFetching::new();
+        // 1st call to `inner`. Balance gets cached.
         inner
             .expect_get_balances()
-            .times(3)
+            .times(1)
+            .withf(|queries| queries == [query(1)])
             .returning(|_| vec![Ok(U256::ONE)]);
+        // 2nd call to `inner`. Entry is still within the eviction window, so it
+        // gets refreshed rather than dropped.
+        inner
+            .expect_get_balances()
+            .times(1)
+            .withf(|queries| queries == [query(1)])
+            .returning(|_| vec![Ok(U256::from(2))]);
+        // 3rd call to `inner`. Entry got evicted while building the list.
+        inner
+            .expect_get_balances()
+            .times(1)
+            .withf(|queries| queries.is_empty())
+            .returning(|_| vec![]);
 
-        let fetcher = Balances::new(Arc::new(inner), TEST_EVICTION_TIME, TEST_REFRESH_DELAY);
-        fetcher.spawn_background_task(receiver);
+        let fetcher = Balances::new(Arc::new(inner));
 
-        let cached_entry = || {
-            let cache = fetcher.balance_cache.lock().unwrap();
-            cache.data.get(&query(1)).cloned()
-        };
-
-        assert!(cached_entry().is_none());
-        // 1st call to `inner`. Balance gets cached.
+        assert!(cached_balance(&fetcher, &query(1)).is_none());
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
 
-        // Trigger a refresh while the entry is still within the eviction
-        // window. Balance stays in the cache and gets refreshed (2nd
-        // call to `inner`).
+        fetcher.spawn_background_task(receiver, TEST_EVICTION_TIME, TEST_REFRESH_COOLDOWN);
         sender
             .send(BlockInfo {
                 number: 1,
                 ..Default::default()
             })
             .unwrap();
-        tokio::time::sleep(REFRESH_MARGIN).await;
-        assert!(cached_entry().is_some());
+        wait_for("refresh within the eviction window", || {
+            cached_balance(&fetcher, &query(1)) == Some(U256::from(2))
+        })
+        .await;
 
-        // Wait past the eviction window without touching the entry.
-        tokio::time::sleep(TEST_EVICTION_TIME + REFRESH_MARGIN).await;
+        // Let the entry go stale. Refreshing does not count as a request, so
+        // this is the only place the test has to wait for real time.
+        tokio::time::sleep(TEST_EVICTION_TIME).await;
 
-        // Next block triggers a refresh that evicts the stale entry during list
-        // construction (3rd call to `inner`, with empty slice).
         sender
             .send(BlockInfo {
                 number: 2,
                 ..Default::default()
             })
             .unwrap();
-        tokio::time::sleep(REFRESH_MARGIN).await;
-        assert!(cached_entry().is_none());
+        wait_for("stale entry to be evicted", || {
+            cached_balance(&fetcher, &query(1)).is_none()
+        })
+        .await;
     }
 }

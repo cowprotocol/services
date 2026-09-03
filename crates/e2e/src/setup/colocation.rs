@@ -232,7 +232,7 @@ gas-price-cap = "1000000000000"
 url = "{NODE_HOST}"
 
 [balance-cache]
-refresh-delay = "0s"
+refresh-cooldown = "0s"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
