@@ -158,6 +158,7 @@ async fn finalized_slot_is_forwarded_without_moving_the_tip() {
         rx.try_recv(),
         Ok(StreamUpdate::Finalized { slot: Slot(8_970) })
     ));
+    assert!(rx.is_empty());
 }
 
 /// Statuses ahead of the stream's commitment must not drive flushes: a

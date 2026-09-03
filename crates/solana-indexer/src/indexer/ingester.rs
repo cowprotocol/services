@@ -1,6 +1,6 @@
 //! The ingester drains the yellowstone gRPC stream as fast as it delivers,
 //! pushes tagged updates into the channel, and advances the latest-chain-slot
-//! counter on every slot-filter message. It performs no decoding.
+//! counter on every confirmed slot message. It performs no decoding.
 //!
 //! The stream it drains is an `AutoReconnect`-backed
 //! [`GeyserStream`](yellowstone_grpc_client::GeyserStream) from

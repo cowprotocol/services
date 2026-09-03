@@ -1,6 +1,6 @@
 //! Consumer components of the Solana settlement indexer.
 //!
-//! The four components and their roles:
+//! The two components and their roles:
 //!
 //! - [`Ingester`]: subscribes to the Yellowstone gRPC stream and drains it as
 //!   fast as updates arrive, forwarding them to the decoder. It does no
