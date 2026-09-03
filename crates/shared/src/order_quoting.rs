@@ -699,7 +699,8 @@ impl OrderQuoting for OrderQuoter {
 
         let now = self.now.now();
         let additional_cost = |verified| parameters.additional_cost(verified);
-        let (additional_cost_verified, additional_cost_unverified) = (additional_cost(true), additional_cost(false));
+        let (additional_cost_verified, additional_cost_unverified) =
+            (additional_cost(true), additional_cost(false));
         let quote = async {
             let (id, data) = match id {
                 Some(id) => {
