@@ -27,8 +27,8 @@ pub struct TradesQueryRow {
     pub tx_hash: Option<TransactionHash>,
     pub auction_id: Option<AuctionId>,
     /// Share of the settlement's gas cost in native token wei, as attributed
-    /// by [`attribute_gas_cost`]. `NULL` for settlements observed before the
-    /// column existed, `0` for a liquidity-only JIT order.
+    /// by [`attribute_gas_cost`]: `NULL` until then, forever for settlements
+    /// observed before the column existed. `0` for a liquidity-only JIT order.
     pub gas_cost: Option<BigDecimal>,
 }
 
@@ -189,9 +189,8 @@ pub async fn get_trades_for_settlement(
 /// settlements attributes its full cost twice, once per settlement. We do not
 /// expect this to happen.
 ///
-/// The `orders` test only holds once the indexer has written an on-chain
-/// order's row, hence attribution from `run_optional_maintenance`: attributing
-/// earlier would permanently class such an order as liquidity-only.
+/// Must run after the settled orders' rows exist: an on-chain order whose row
+/// is not indexed yet is permanently classed as liquidity-only.
 #[instrument(skip_all)]
 pub async fn attribute_gas_cost(
     ex: &mut PgTransaction<'_>,

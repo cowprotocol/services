@@ -539,7 +539,7 @@ pub struct FullOrder {
     pub executed_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
     /// Share of its settlements' gas costs in native token wei, summed across
-    /// fills. `None` when any fill's cost is unknown.
+    /// fills. `None` unless it has fills and every fill's cost is known.
     pub gas_cost: Option<BigDecimal>,
 }
 
