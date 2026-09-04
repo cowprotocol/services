@@ -19,14 +19,33 @@ on:
         required: false
         default: ''
 
+# A job with no permissions of its own uses these, not the repository default.
+permissions:
+  contents: read
+  packages: write
+
+env:
+  SERVICES_IMAGE: ghcr.io/${{ github.repository }}
+  MIGRATION_IMAGE: ghcr.io/${{ github.repository }}-migration
+
 jobs:
-  deploy:
-    # the build runner must have a glibc version <= the docker base image we copy the build
+  # This job builds one services image for each architecture. The `publish` job
+  # then combines the digests into one multi-platform manifest.
+  # The runner compiles the release binaries. Then the build copies them into
+  # the image. A build for a different architecture needs emulation, and
+  # emulation makes the Rust build much slower.
+  build:
+    name: build ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    # each build runner must have a glibc version <= the docker base image we copy the build
     # artifacts onto to be compatible
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -76,10 +95,8 @@ jobs:
           cache-workspace-crates: true
           # shared-key is included in restore-key prefix matching, so it produces a
           # branch-scoped fallback before falling back to any-branch caches.
-          # key (run_id) makes the primary key unique so each run saves a fresh cache.
           # Restore order: same branch (most recent) → any branch (same Cargo.lock) → any branch.
           shared-key: ${{ github.ref_name }}
-          key: ${{ github.run_id }}
 
       - name: Build release binaries
         run: |
@@ -95,11 +112,90 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Need buildx to push by digest, as that is unsupported by the default docker driver
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
       - name: Services image metadata
         id: meta_services
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ env.SERVICES_IMAGE }}
+          labels: |
+            org.opencontainers.image.licenses=GPL-3.0-or-later
+
+      - name: Services image build
+        id: build_services
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile.deploy-ci
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta_services.outputs.labels }}
+          # push-by-digest makes an image with no tag. The `publish` job adds
+          # the tags to the multi-platform manifest.
+          outputs: type=image,name=${{ env.SERVICES_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          build-contexts: binaries=target/release
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            GIT_BRANCH=${{ github.ref_name }}
+
+      # The artifact name contains the architecture. The file name contains the
+      # digest. The `publish` job downloads all of these files.
+      - name: Export image digest
+        env:
+          DIGEST: ${{ steps.build_services.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload image digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # This job publishes both images. It combines the single-architecture digests
+  # into one multi-platform manifest, and all the tags point to it. It also
+  # builds the migration image. This job starts only after the `build` job is
+  # successful. Therefore, if the binaries fail, no tag moves. The `build` job
+  # already pushed the single-architecture images, but no tag points to them.
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      # The build of the migration image needs the SQL files.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download image digests
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Services image metadata
+        id: meta_services
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        env:
+          # A client that reads only the multi-platform manifest cannot see the
+          # labels of the single-architecture images. Therefore, the manifest
+          # needs the same values.
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: index
+        with:
+          images: ${{ env.SERVICES_IMAGE }}
           tags: |
             type=sha
             type=ref,event=branch
@@ -107,24 +203,30 @@ jobs:
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-or-later
 
-      - name: Services image build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: Dockerfile.deploy-ci
-          push: true
-          tags: ${{ steps.meta_services.outputs.tags }}
-          labels: ${{ steps.meta_services.outputs.labels }}
-          build-contexts: binaries=target/release
-          build-args: |
-            GIT_SHA=${{ github.sha }}
-            GIT_BRANCH=${{ github.ref_name }}
+      # The step reads its metadata through the step id, because the
+      # metadata-action step below replaces the DOCKER_METADATA_OUTPUT_*
+      # variables. The digest file names give the images to combine.
+      - name: Create multi-platform manifest
+        working-directory: /tmp/digests
+        env:
+          METADATA: ${{ steps.meta_services.outputs.json }}
+          VERSION: ${{ steps.meta_services.outputs.version }}
+        run: |
+          readarray -t args < <(jq -r '(.tags[] | "--tag", .), (.annotations[] | "--annotation", .)' <<< "$METADATA")
+          for digest in *; do
+            args+=("${SERVICES_IMAGE}@sha256:${digest}")
+          done
 
+          docker buildx imagetools create "${args[@]}"
+          docker buildx imagetools inspect "${SERVICES_IMAGE}:${VERSION}"
+
+      # The migration image only adds SQL files to flyway, so the build step can
+      # be shared by both platforms.
       - name: Migration image metadata
         id: meta_migration
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/${{ github.repository }}-migration
+          images: ${{ env.MIGRATION_IMAGE }}
           tags: |
             type=sha
             type=ref,event=branch
@@ -138,12 +240,20 @@ jobs:
           context: .
           file: Dockerfile.deploy-ci
           target: migrations
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta_migration.outputs.tags }}
           labels: ${{ steps.meta_migration.outputs.labels }}
 
+  autodeploy:
+    runs-on: ubuntu-latest
+    needs: publish
+    if: ${{ github.ref == 'refs/heads/main' }}
+    # The action only calls an external service.
+    permissions: {}
+
+    steps:
       - uses: cowprotocol/autodeploy-action@73f1163f19a584cdc34e29aa84d630d7e6a45432 # v3
-        if: ${{ github.ref == 'refs/heads/main' }}
         with:
           images: ghcr.io/cowprotocol/services:main
           strategy: restart # Recreates the deployment
@@ -158,7 +268,6 @@ jobs:
       # infrastructure repo to run an automated test trade on every network
       # to verify the deployment end-to-end.
       # - name: "📣 Dispatch automated trades to infrastructure repo"
-      #   if: ${{ github.ref == 'refs/heads/main' }}
       #   uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
       #   with:
       #     token: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
