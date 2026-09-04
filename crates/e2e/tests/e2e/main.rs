@@ -19,6 +19,8 @@ mod eip4626;
 mod eth_integration;
 mod eth_safe;
 mod ethflow;
+mod fast_path_quote_promotion;
+mod fast_path_settle;
 mod hooks;
 mod jit_orders;
 mod limit_orders;
