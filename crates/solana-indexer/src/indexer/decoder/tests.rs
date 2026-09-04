@@ -39,7 +39,6 @@ use {
         data::intent::{Flags, OrderIntent, OrderKind as IntentOrderKind},
         pda::order::find_order_pda,
     },
-    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     futures::StreamExt,
     solana_sdk::pubkey::Pubkey,
     std::sync::{Arc, atomic::AtomicU64},
@@ -377,7 +376,9 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         created_by,
         order_pda: find_order_pda(&settlement, &intent.uid()).0,
         sell_token_account: Pubkey::new_from_array([0x33; 32]),
+        sell_mint: Pubkey::new_from_array([0x66; 32]),
         buy_token_account: Pubkey::new_from_array([0x22; 32]),
+        buy_mint: Pubkey::new_from_array([0x55; 32]),
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
@@ -388,68 +389,12 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     (tx, expected)
 }
 
-#[test]
-fn token_account_mint_trusts_only_token_program_accounts() {
-    let account = |owner: Pubkey, data: Vec<u8>| solana_sdk::account::Account {
-        lamports: 1,
-        data,
-        owner,
-        executable: false,
-        rent_epoch: 0,
-    };
-    let token_program = super::TOKEN_PROGRAMS[0];
-    assert_eq!(
-        super::token_account_mint(&account(token_program, vec![0xAA; 165])),
-        Some(Pubkey::new_from_array([0xAA; 32]))
-    );
-    // A mint account: right owner, too short to be a token account.
-    assert_eq!(
-        super::token_account_mint(&account(token_program, vec![0xAA; 82])),
-        None
-    );
-    // Right size, arbitrary owner.
-    assert_eq!(
-        super::token_account_mint(&account(pubkey(1), vec![0xAA; 165])),
-        None
-    );
-}
-
-/// A canned `getMultipleAccounts` response, in request order: the sell token
-/// account holds mint `[0xA1; 32]`, the buy token account mint `[0xA2; 32]`
-/// (the first 32 bytes of the base64 data).
-fn mock_rpc_with_token_accounts() -> SolanaRPC {
-    let account = |data: &str| {
-        serde_json::json!({
-            "lamports": 1u64,
-            "data": [data, "base64"],
-            "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-            "executable": false,
-            "rentEpoch": 0u64,
-            "space": 165u64
-        })
-    };
-    let sell = account("oaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    let buy = account("oqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    let response = serde_json::json!({
-        "context": { "slot": 1u64, "apiVersion": "2.0.0" },
-        "value": [sell, buy],
-    });
-    let mocks = Mocks::from([(RpcRequest::GetMultipleAccounts, response)]);
-    SolanaRPC::new_mock_with_mocks(mocks)
-}
-
 /// A decoder over a lazy pool that never connects: `decode` is pure, tests
 /// of it stay database-free.
 fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
     let pool = sqlx::PgPool::connect_lazy("postgresql://").unwrap();
     let (_sender, rx) = tokio::sync::mpsc::channel(1);
-    Decoder::new(
-        Postgres::new(pool),
-        SolanaRPC::new_mock_with_mocks(Default::default()),
-        rx,
-        settlement,
-        Some(solflow),
-    )
+    Decoder::new(Postgres::new(pool), rx, settlement, Some(solflow))
 }
 
 /// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run`
@@ -708,7 +653,6 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
     let mut decoder = Decoder::new(
         Postgres::new(pool.clone()),
-        mock_rpc_with_token_accounts(),
         receiver,
         settlement,
         Some(solflow),
