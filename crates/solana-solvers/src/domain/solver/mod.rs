@@ -43,7 +43,16 @@ pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
     let candidates = auction.orders.iter().enumerate().map(|(index, order)| {
         let dex_order = order.to_dex_order();
         async move {
-            let swap = quoter.quote(&dex_order, &auction.taker).await.ok()?;
+            let swap = quoter
+                .quote(&dex_order, &auction.taker)
+                .await
+                .inspect_err(|err| match err {
+                    dex::jupiter::Error::NotFound | dex::jupiter::Error::OrderNotSupported => {
+                        tracing::debug!(order = %order.uid, %err, "no swap for order")
+                    }
+                    _ => tracing::warn!(order = %order.uid, %err, "quote failed"),
+                })
+                .ok()?;
             Solution::new(index as u64, order.uid, &dex_order, swap).ok()
         }
     });
