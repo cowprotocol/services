@@ -472,12 +472,6 @@ fn decode_settlements_finalized(
     ctx: &TxContext,
     decode_failed: &mut bool,
 ) -> Vec<SettlementEvent> {
-    // The solver is the transaction fee payer: the first account key, which
-    // Solana guarantees is the signer that submitted the transaction.
-    let Some(&solver) = ctx.account_keys.first() else {
-        return Vec::new();
-    };
-
     let mut events = Vec::new();
     'process_instructions: for begin in instructions {
         let Ok((SettlementInstruction::BeginSettle, _)) = recover_discriminator(&begin.data) else {
@@ -593,7 +587,9 @@ fn decode_settlements_finalized(
 
         events.push(SettlementEvent::SettlementFinalized(FinalizedSettlement {
             auction_id: begin_input.auction_id,
-            solver,
+            // The signer `BeginSettle` names, which the program requires to
+            // be registered. The transaction fee payer may be someone else.
+            solver: *begin_input.solver_account,
             tx_signature: ctx.signature,
             slot: ctx.slot,
             instruction_index: begin.instruction_index,

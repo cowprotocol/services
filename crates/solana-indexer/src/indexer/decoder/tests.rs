@@ -565,11 +565,12 @@ fn unpaired_begin_settle_sets_failure_flag() {
 /// - the buy-side amount comes from the `FinalizeSettle` entry paired to its
 ///   order by position (order `i` is paid by entry `i`),
 /// - the trade names the canonical order PDA the builder derives,
-/// - the solver is the fee payer.
+/// - the solver is the signer `BeginSettle` names, not the fee payer.
 #[test]
 fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     let solver = pubkey(10);
+    let fee_payer = pubkey(9);
     let intent = OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
         buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
@@ -617,7 +618,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         }],
     }
     .into();
-    let tx = tx_from_instructions(solver, &[begin, finalize]);
+    let tx = tx_from_instructions(fee_payer, &[begin, finalize]);
 
     let ctx = TxContext {
         slot: Slot(5),
