@@ -111,6 +111,11 @@ struct SubmissionConfig {
     #[serde_as(as = "serde_ext::U256")]
     gas_price_cap: eth::U256,
 
+    /// Factor applied to the estimated `max_fee_per_gas` to leave headroom for
+    /// a base-fee increase between submission and inclusion.
+    #[serde(default = "default_max_fee_per_gas_factor")]
+    max_fee_per_gas_factor: f64,
+
     /// The target confirmation time for settlement transactions used
     /// to estimate gas price.
     #[serde(with = "humantime_serde", default = "default_target_confirm_time")]
@@ -211,6 +216,11 @@ fn default_additional_tip_percentage() -> f64 {
 /// 1000 gwei
 fn default_gas_price_cap() -> eth::U256 {
     eth::U256::from(1000) * eth::U256::from(10).pow(eth::U256::from(9))
+}
+
+/// No headroom over the estimated `max_fee_per_gas` by default.
+fn default_max_fee_per_gas_factor() -> f64 {
+    1.0
 }
 
 fn default_target_confirm_time() -> Duration {
