@@ -1184,13 +1184,17 @@ struct Metrics {
     #[metric(buckets(0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64))]
     settle_blocks_elapsed: prometheus::Histogram,
 
-    /// Seconds from the `/settle` call to the nominal start of the block the
-    /// auction aimed at. Negative once that block was already due.
-    #[metric(buckets(
-        -4, -3, -2, -1.5, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5,
-        3, 4, 6, 8, 12
-    ))]
-    settle_time_to_next_block: prometheus::Histogram,
+    /// Seconds from the `/settle` call to the block the auction aimed at,
+    /// negative once that block was already due. The `reference` label picks
+    /// the clock: `block_timestamp` (nominal start) or `observed_at`.
+    #[metric(
+        labels("reference"),
+        buckets(
+            -4, -3, -2, -1.5, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2,
+            2.5, 3, 4, 6, 8, 12
+        )
+    )]
+    settle_time_to_next_block: prometheus::HistogramVec,
 
     /// Tracks the size of the `/solve` request body in bytes. The `kind` label
     /// tells the two bodies apart: `full` is sent to regular drivers, `delta`
@@ -1313,20 +1317,24 @@ impl Metrics {
         Self::record_settle_time_to_next_block(
             start_block.number + 1,
             Utc::now(),
+            Instant::now(),
             current_block.clone(),
         );
     }
 
     /// Runway to `target`, the block the auction aimed at; negative once it was
-    /// already due. Referenced to `block.timestamp`, not `observed_at`, which
-    /// trails the nominal start by the block observation lag.
+    /// already due. Recorded against both the block's self-reported timestamp
+    /// and `observed_at`, which trails it by the block observation lag.
     fn record_settle_time_to_next_block(
         target: u64,
+        // Two clocks: `block.timestamp` is wall clock, `block.observed_at` is
+        // monotonic, and neither is comparable to the other.
         sent_at: DateTime<Utc>,
+        sent_at_monotonic: Instant,
         watcher: ethrpc::block_stream::CurrentBlockWatcher,
     ) {
         if watcher.borrow().number > target {
-            // The watcher holds only the head, so `target`'s timestamp is gone.
+            // The watcher holds only the head, so `target`'s clocks are gone.
             // These calls are `settle_blocks_elapsed` past its `le=1` bucket.
             return;
         }
@@ -1335,9 +1343,13 @@ impl Metrics {
             let mut stream = ethrpc::block_stream::into_stream(watcher);
             while let Some(block) = stream.next().await {
                 if block.number >= target {
-                    Self::get()
-                        .settle_time_to_next_block
+                    let metric = &Self::get().settle_time_to_next_block;
+                    metric
+                        .with_label_values(&["block_timestamp"])
                         .observe(block.timestamp as f64 - sent_at);
+                    metric
+                        .with_label_values(&["observed_at"])
+                        .observe(signed_secs_between(sent_at_monotonic, block.observed_at));
                     return;
                 }
             }
@@ -1349,6 +1361,14 @@ impl Metrics {
             .solve_request_body_size
             .with_label_values(&[kind])
             .observe(size as f64)
+    }
+}
+
+/// Seconds from `from` to `to`, negative when `to` is the earlier instant.
+fn signed_secs_between(from: Instant, to: Instant) -> f64 {
+    match to.checked_duration_since(from) {
+        Some(forward) => forward.as_secs_f64(),
+        None => -from.duration_since(to).as_secs_f64(),
     }
 }
 
@@ -1445,6 +1465,16 @@ mod tests {
             base_fee: Default::default(),
             observed_at: Instant::now(),
         }
+    }
+
+    #[test]
+    fn signed_secs_between_handles_both_directions() {
+        let earlier = Instant::now();
+        let later = earlier + Duration::from_millis(1500);
+
+        assert_eq!(signed_secs_between(earlier, later), 1.5);
+        assert_eq!(signed_secs_between(later, earlier), -1.5);
+        assert_eq!(signed_secs_between(earlier, earlier), 0.0);
     }
 
     #[test]
