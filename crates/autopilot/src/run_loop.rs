@@ -1314,12 +1314,7 @@ impl Metrics {
             .settle_blocks_elapsed
             .observe(head.saturating_sub(start_block.number) as f64);
 
-        Self::record_settle_time_to_next_block(
-            start_block.number + 1,
-            Utc::now(),
-            Instant::now(),
-            current_block.clone(),
-        );
+        Self::record_settle_time_to_next_block(start_block.number + 1, current_block.clone());
     }
 
     /// Runway to `target`, the block the auction aimed at; negative once it was
@@ -1327,12 +1322,13 @@ impl Metrics {
     /// and `observed_at`, which trails it by the block observation lag.
     fn record_settle_time_to_next_block(
         target: u64,
-        // Two clocks: `block.timestamp` is wall clock, `block.observed_at` is
-        // monotonic, and neither is comparable to the other.
-        sent_at: DateTime<Utc>,
-        sent_at_monotonic: Instant,
         watcher: ethrpc::block_stream::CurrentBlockWatcher,
     ) {
+        // Two clocks: `block.timestamp` is wall clock, `block.observed_at` is
+        // monotonic, and neither is comparable to the other.
+        let sent_at = Utc::now();
+        let sent_at_monotonic = Instant::now();
+
         if watcher.borrow().number > target {
             // The watcher holds only the head, so `target`'s clocks are gone.
             // These calls are `settle_blocks_elapsed` past its `le=1` bucket.
