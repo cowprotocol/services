@@ -554,11 +554,8 @@ impl RunLoop {
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
             self.persistence
-                .save_solutions(auction.id, ranking.all())
+                .save_solutions(auction.id, ranking.all(), reference_scores)
                 .map_err(|e| e.0.context("failed to save solutions")),
-            self.persistence
-                .save_reference_scores(auction.id, reference_scores)
-                .map_err(|e| e.0.context("failed to save competition")),
             self.persistence
                 .store_fee_policies(auction.id, fee_policies)
                 .map_err(|e| e.context("failed to fee_policies")),

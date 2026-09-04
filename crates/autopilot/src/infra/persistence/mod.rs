@@ -15,7 +15,6 @@ use {
     bytes::Bytes,
     chrono::{DateTime, Utc},
     database::{
-        auction::AuctionId,
         events::EventIndex,
         leader_pg_lock::LeaderLock,
         order_events::{OrderEventLabel, OrderFilterReason},
@@ -181,29 +180,27 @@ impl Persistence {
             .context("failed to fetch all solvable orders")
     }
 
-    /// Saves the competition data to the DB
-    pub async fn save_reference_scores(
-        &self,
-        auction_id: AuctionId,
-        reference_scores: HashMap<Address, Score>,
-    ) -> Result<(), DatabaseError> {
-        self.postgres
-            .save_reference_scores(auction_id, reference_scores)
-            .await
-            .map_err(DatabaseError)
-    }
-
     /// Save all valid solutions that participated in the competition for an
-    /// auction.
+    /// auction, together with the reference score of each participating solver.
     pub async fn save_solutions(
         &self,
         auction_id: domain::auction::Id,
         solutions: impl Iterator<Item = &domain::competition::Bid>,
+        reference_scores: HashMap<Address, Score>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["save_solutions"])
             .start_timer();
+
+        let reference_scores: Vec<_> = reference_scores
+            .into_iter()
+            .map(|(solver, score)| database::reference_scores::Score {
+                auction_id,
+                solver: ByteArray(solver.0.0),
+                reference_score: u256_to_big_decimal(&score.get().0),
+            })
+            .collect();
 
         let mut ex = self.postgres.pool.begin().await?;
 
@@ -243,6 +240,8 @@ impl Persistence {
                 .collect::<Result<Vec<_>, DatabaseError>>()?,
         )
         .await?;
+
+        database::reference_scores::insert(&mut ex, &reference_scores).await?;
 
         Ok(ex.commit().await?)
     }

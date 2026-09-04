@@ -10,7 +10,6 @@ use {
 };
 
 mod auction;
-pub mod competition;
 pub mod ethflow_events;
 pub mod events;
 pub mod fee_policies;
