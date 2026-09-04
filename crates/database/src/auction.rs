@@ -1,7 +1,9 @@
 use {
     crate::{Address, OrderUid},
     bigdecimal::BigDecimal,
-    sqlx::{PgConnection, types::JsonValue},
+    sqlx::{Connection, PgConnection, types::JsonValue},
+    std::ops::DerefMut,
+    tracing::instrument,
 };
 
 pub type AuctionId = i64;
@@ -63,12 +65,16 @@ pub struct Auction {
     pub price_tokens: Vec<Address>,
     pub price_values: Vec<BigDecimal>,
     pub surplus_capturing_jit_order_owners: Vec<Address>,
+    /// Caps on the penalty for not executing an order, in native
+    /// token wei, mapped one-to-one with `order_uids`. `None` when penalties
+    /// were disabled at auction creation.
+    pub penalty_caps_native: Option<Vec<BigDecimal>>,
 }
 
 pub async fn save(ex: &mut PgConnection, auction: Auction) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO competition_auctions (id, block, deadline, order_uids, price_tokens, price_values, surplus_capturing_jit_order_owners)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO competition_auctions (id, block, deadline, order_uids, price_tokens, price_values, surplus_capturing_jit_order_owners, penalty_caps_native)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     ;"#;
 
     sqlx::query(QUERY)
@@ -79,6 +85,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
         .bind(auction.price_tokens)
         .bind(auction.price_values)
         .bind(auction.surplus_capturing_jit_order_owners)
+        .bind(auction.penalty_caps_native)
         .execute(ex)
         .await?;
 
@@ -120,9 +127,73 @@ pub async fn fetch_auction_ids_by_order_uid(
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
+/// External token price for a given auction.
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct AuctionPrice {
+    pub auction_id: AuctionId,
+    pub token: Address,
+    pub price: BigDecimal,
+}
+
+#[instrument(skip_all)]
+pub async fn fetch_latest_prices(ex: &mut PgConnection) -> Result<Vec<AuctionPrice>, sqlx::Error> {
+    const QUERY: &str = r#"
+    SELECT
+        c.id AS auction_id,
+        unnest(c.price_tokens) AS token,
+        unnest(c.price_values) AS price
+    FROM competition_auctions c
+    WHERE c.id = (
+        SELECT MAX(id) FROM competition_auctions
+    )
+    "#;
+    sqlx::query_as(QUERY).fetch_all(ex).await
+}
+
+/// Native price of `token` in the most recent auction that priced it.
+#[instrument(skip_all)]
+pub async fn fetch_latest_token_price(
+    ex: &mut PgConnection,
+    token: Address,
+) -> Result<Option<BigDecimal>, sqlx::Error> {
+    // TODO: tokens priced in the newest auctions are much cheaper to resolve if
+    // we add a lookback and fall to this query on misses
+    const QUERY: &str = r#"
+    SELECT price_values[array_position(price_tokens, $1)]
+    FROM competition_auctions
+    WHERE id = (
+        SELECT max(id)
+        FROM (
+            SELECT id
+            FROM competition_auctions
+            WHERE price_tokens @> ARRAY[$1]
+            -- `OFFSET 0` fences the subquery so the planner uses the `price_tokens` GIN
+            -- index; flattened, it picks a backward primary key scan it costs at ~1.
+            OFFSET 0
+        ) matches
+    )
+    "#;
+
+    let mut ex = ex.begin().await?;
+    // The GIN scan returns a bitmap of matching tuples. Past `work_mem` it does
+    // not spill to disk, it degrades pages to "something here matched", and
+    // those pages recheck `@>` per tuple — reading `price_tokens` back out of
+    // TOAST every time. 32MB holds a bitmap over the whole heap.
+    sqlx::query("SET LOCAL work_mem = '32MB'")
+        .execute(ex.deref_mut())
+        .await?;
+    let price = sqlx::query_scalar(QUERY)
+        .bind(token)
+        .fetch_optional(ex.deref_mut())
+        .await?;
+    ex.commit().await?;
+
+    Ok(price)
+}
+
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
+    use {super::*, crate::byte_array::ByteArray};
 
     #[tokio::test]
     #[ignore]
@@ -152,8 +223,9 @@ mod tests {
         assert_eq!(value, value_);
         assert_eq!(id_, id);
 
-        // let's assume the second auction contains a valid competition data so it's
-        // meaningful to save it into `competition_auctions` table as well
+        // let's assume the second auction contains a valid competition data so
+        // it's meaningful to save it into `competition_auctions` table
+        // as well
         let auction = Auction {
             id: id_,
             block: 1,
@@ -162,6 +234,10 @@ mod tests {
             price_tokens: vec![ByteArray([1u8; 20])],
             price_values: vec![BigDecimal::from(1)],
             surplus_capturing_jit_order_owners: vec![ByteArray([1u8; 20])],
+            penalty_caps_native: Some(vec![
+                BigDecimal::from(400_000_000_000_000_u64),
+                BigDecimal::from(0),
+            ]),
         };
         save(&mut db, auction.clone()).await.unwrap();
         let auction_ = fetch(&mut db, id_).await.unwrap().unwrap();
@@ -169,5 +245,87 @@ mod tests {
 
         let order_uids = get_order_uids(&mut db, id_).await.unwrap().unwrap();
         assert_eq!(auction.order_uids, order_uids);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_prices_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let auction_1 = vec![
+            AuctionPrice {
+                auction_id: 1,
+                token: ByteArray([2; 20]),
+                price: 1.into(),
+            },
+            AuctionPrice {
+                auction_id: 1,
+                token: ByteArray([3; 20]),
+                price: 2.into(),
+            },
+        ];
+        let auction_2 = vec![AuctionPrice {
+            auction_id: 2,
+            token: ByteArray([2; 20]),
+            price: 3.into(),
+        }];
+        let auction_3 = vec![
+            AuctionPrice {
+                auction_id: 3,
+                token: ByteArray([3; 20]),
+                price: 4.into(),
+            },
+            AuctionPrice {
+                auction_id: 3,
+                token: ByteArray([4; 20]),
+                price: 5.into(),
+            },
+        ];
+
+        // Prices are stored as the parallel arrays of `competition_auctions`.
+        for prices in [&auction_1, &auction_2, &auction_3] {
+            save(
+                &mut db,
+                Auction {
+                    id: prices[0].auction_id,
+                    block: 0,
+                    deadline: 0,
+                    order_uids: vec![],
+                    price_tokens: prices.iter().map(|price| price.token).collect(),
+                    price_values: prices.iter().map(|price| price.price.clone()).collect(),
+                    surplus_capturing_jit_order_owners: vec![],
+                    penalty_caps_native: None,
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        // check that all auctions are there
+        for prices in [&auction_1, &auction_2, &auction_3] {
+            let stored = fetch(&mut db, prices[0].auction_id).await.unwrap().unwrap();
+            let tokens: Vec<_> = prices.iter().map(|price| price.token).collect();
+            let values: Vec<_> = prices.iter().map(|price| price.price.clone()).collect();
+            assert_eq!(stored.price_tokens, tokens);
+            assert_eq!(stored.price_values, values);
+        }
+        // non-existent auction
+        assert!(fetch(&mut db, 4).await.unwrap().is_none());
+        // latest prices
+        let output = fetch_latest_prices(&mut db).await.unwrap();
+        assert_eq!(output, auction_3);
+        // latest token price
+        let output = fetch_latest_token_price(&mut db, ByteArray([2; 20]))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(output, BigDecimal::from(3));
+        // a token that was never priced
+        let output = fetch_latest_token_price(&mut db, ByteArray([9; 20]))
+            .await
+            .unwrap();
+        assert_eq!(output, None);
     }
 }

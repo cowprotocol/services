@@ -279,9 +279,10 @@ impl PoolReading for DefaultPoolReader {
         let token1 = ERC20::Instance::new(pair.get().1, self.web3.provider.clone());
 
         async move {
-            // Every sub-call is allowed to fail on its own: there may be no pool
-            // at the address, or a token may not answer `balanceOf`. A failure of
-            // the aggregate itself is a node error and propagates for retrying.
+            // Every sub-call is allowed to fail on its own: there may be no
+            // pool at the address, or a token may not answer
+            // `balanceOf`. A failure of the aggregate itself is a
+            // node error and propagates for retrying.
             let (reserves, token0_balance, token1_balance) = self
                 .web3
                 .provider
@@ -328,24 +329,28 @@ fn handle_results(fetched_pool: FetchedPool, address: Address) -> Option<Pool> {
     reserves.and_then(|reserves| {
         let r0 = u128::try_from(reserves.reserve0).ok()?;
         let r1 = u128::try_from(reserves.reserve1).ok()?;
-        // Some ERC20s (e.g. AMPL) have an elastic supply and can thus reduce the
-        // balance of their owners without any transfer or other interaction ("rebase").
-        // Such behavior can implicitly change the *k* in the pool's constant product
-        // formula. E.g. a pool with 10 USDC and 10 AMPL has k = 100. After a negative
-        // rebase the pool's AMPL balance may reduce to 9, thus k should be implicitly
-        // updated to 90 (figuratively speaking the pool is undercollateralized).
-        // Uniswap pools however only update their reserves upon swaps. Such an "out of
-        // sync" pool has numerical issues when computing the right clearing price.
-        // Note, that a positive rebase is not problematic as k would increase in this
-        // case giving the pool excess in the elastic token (an arbitrageur could
-        // benefit by withdrawing the excess from the pool without selling anything).
-        // We therefore exclude all pools where the pool's token balance of either token
-        // in the pair is less than the cached reserve.
+        // Some ERC20s (e.g. AMPL) have an elastic supply and can thus reduce
+        // the balance of their owners without any transfer or other
+        // interaction ("rebase"). Such behavior can implicitly change
+        // the *k* in the pool's constant product formula. E.g. a pool
+        // with 10 USDC and 10 AMPL has k = 100. After a negative rebase
+        // the pool's AMPL balance may reduce to 9, thus k should be implicitly
+        // updated to 90 (figuratively speaking the pool is
+        // undercollateralized). Uniswap pools however only update their
+        // reserves upon swaps. Such an "out of sync" pool has numerical
+        // issues when computing the right clearing price. Note, that a
+        // positive rebase is not problematic as k would increase in this
+        // case giving the pool excess in the elastic token (an arbitrageur
+        // could benefit by withdrawing the excess from the pool without
+        // selling anything). We therefore exclude all pools where the
+        // pool's token balance of either token in the pair is less than
+        // the cached reserve.
         if U256::from(r0) > token0_balance? || U256::from(r1) > token1_balance? {
             return None;
         }
         // Errors here should never happen because reserves are uint<112, 2>
-        // meaning they'll always fit in u128, but panicking here is not a good idea
+        // meaning they'll always fit in u128, but panicking here is not a good
+        // idea
         Some(Pool::uniswap(address, pair, (r0, r1)))
     })
 }

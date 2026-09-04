@@ -392,8 +392,9 @@ impl Solver {
 
         let url = shared::url::join(&self.config.endpoint, "solve");
 
-        // Real auctions (those with an ID) are archived to S3; quotes aren't, so
-        // they skip the gzip capture entirely and just stream the body.
+        // Real auctions (those with an ID) are archived to S3; quotes aren't,
+        // so they skip the gzip capture entirely and just stream the
+        // body.
         let archive_id = self
             .persistence
             .archives_enabled()

@@ -1,8 +1,8 @@
 //! HTTP client for solver engines.
 //!
 //! The driver posts each auction to the configured engines on `/solve` and
-//! collects their solutions. Engines are opaque HTTP services. All
-//! Jupiter-specific behavior lives in the `solana-solvers` crate, not here.
+//! collects their solutions. Engines are opaque HTTP services.
+//! Solver-specific behavior lives in the solver engine crate, not here.
 
 use {
     crate::{
@@ -41,6 +41,11 @@ impl Solver {
         self.keypair.pubkey()
     }
 
+    /// The solver's settlement signer keypair.
+    pub(crate) fn keypair(&self) -> &Keypair {
+        &self.keypair
+    }
+
     /// Build a solver client from its configuration.
     ///
     /// Loads the signer keypair from `config.signer_keypair`.
@@ -49,7 +54,7 @@ impl Solver {
             .map_err(|error| Error::SignerKeypair {
                 solver: config.name.clone(),
                 path: config.signer_keypair.clone(),
-                error,
+                error: error.to_string().into(),
             })?;
         let keypair = Arc::new(keypair);
         tracing::info!(
@@ -88,13 +93,14 @@ impl Solver {
             .await
             .expect("semaphore is never closed");
 
-        // Calculate the time remaining until the auction's deadline. This is
-        // computed *after* acquiring the permit, otherwise the wait could
-        // silently eat into the budget and let the solve run past the deadline.
+        // Calculate the time remaining until the auction's deadline. Do this
+        // after acquiring the permit. Otherwise the wait for the permit could
+        // use part of the time budget and the solve could run past the
+        // deadline.
         //
-        // TODO: Split the deadline budget between solver time and driver processing
-        // time. The EVM driver uses `solving_share_of_deadline` to give the solver a
-        // configurable fraction of the remaining time, leaving the rest for building
+        // TODO: Split the deadline budget between solver time and driver
+        // processing time. Give the solver a configurable fraction of the
+        // remaining time and reserve the rest for building the transaction.
         let timeout = {
             let remaining = auction.deadline.signed_duration_since(chrono::Utc::now());
             if remaining <= chrono::Duration::zero() {
@@ -102,7 +108,7 @@ impl Solver {
                     solver = %self.name,
                     "auction deadline exceeded before sending request to solver"
                 );
-                return Err(Error::DeadlineExceeded);
+                return Ok(Default::default());
             }
             // Safe: we just checked `remaining` is positive.
             remaining.to_std().unwrap()
@@ -149,16 +155,13 @@ pub enum Error {
     /// The request body could not be serialized.
     #[error("JSON serialization error: {0}")]
     Serialize(#[from] serde_json::Error),
-    /// The auction deadline passed before a solve request could be sent.
-    #[error("auction deadline exceeded")]
-    DeadlineExceeded,
     /// The signer keypair could not be loaded from the configured path.
     #[error("failed to load signer keypair for solver {solver} from {path}: {error}")]
     SignerKeypair {
         solver: String,
         path: std::path::PathBuf,
         #[source]
-        error: Box<dyn std::error::Error>,
+        error: Box<dyn std::error::Error + Send + Sync>,
     },
 }
 
@@ -167,7 +170,7 @@ mod tests {
     use {super::*, solana_testlib::temp_keypair, std::num::NonZero};
 
     #[tokio::test]
-    async fn solve_with_past_deadline_is_rejected() {
+    async fn solve_with_past_deadline_returns_empty() {
         // Build a solver pointing at a port that is never listened on. The
         // deadline check fires before any HTTP request is sent, so this never
         // actually connects to the endpoint.
@@ -188,13 +191,13 @@ mod tests {
             deadline: chrono::Utc::now() - chrono::Duration::seconds(10),
         };
 
-        let err = solver
+        let solutions = solver
             .solve(&auction, Pubkey::default())
             .await
-            .expect_err("solve should fail");
+            .expect("solve should succeed with no solutions");
         assert!(
-            matches!(err, Error::DeadlineExceeded),
-            "expected DeadlineExceeded, got {err:?}"
+            solutions.is_empty(),
+            "expected empty solutions, got {solutions:?}"
         );
     }
 }

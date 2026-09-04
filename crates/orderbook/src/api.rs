@@ -481,7 +481,8 @@ impl IntoResponse for PriceEstimationErrorWrapper {
                 .into_response(),
             PriceEstimationError::NoLiquidity
             | PriceEstimationError::RateLimited
-            | PriceEstimationError::EstimatorInternal(_) => (
+            | PriceEstimationError::EstimatorInternal(_)
+            | PriceEstimationError::CustomSolverError { .. } => (
                 StatusCode::NOT_FOUND,
                 error("NoLiquidity", "no route found"),
             )
@@ -501,9 +502,6 @@ impl IntoResponse for PriceEstimationErrorWrapper {
                 error("InsufficientLiquidity", message),
             )
                 .into_response(),
-            PriceEstimationError::CustomSolverError { message } => {
-                (StatusCode::BAD_REQUEST, error("CustomSolverError", message)).into_response()
-            }
             PriceEstimationError::ProtocolInternal(err) => {
                 tracing::error!(?err, "PriceEstimationError::Other");
                 internal_error_reply()
@@ -613,7 +611,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn maps_custom_price_estimation_errors_to_bad_request_responses() {
+    async fn maps_known_solver_errors_to_bad_request_responses() {
         let cases = [
             (
                 PriceEstimationError::TradingOutsideAllowedWindow {
@@ -636,13 +634,6 @@ mod tests {
                 "InsufficientLiquidity",
                 "insufficient liquidity",
             ),
-            (
-                PriceEstimationError::CustomSolverError {
-                    message: "custom solver reason".to_string(),
-                },
-                "CustomSolverError",
-                "custom solver reason",
-            ),
         ];
 
         for (err, expected_type, expected_description) in cases {
@@ -657,6 +648,20 @@ mod tests {
             assert_eq!(body.error_type, expected_type);
             assert_eq!(body.description.as_ref(), expected_description);
         }
+    }
+
+    #[tokio::test]
+    async fn maps_unknown_solver_errors_to_no_liquidity_responses() {
+        let response = PriceEstimationErrorWrapper(PriceEstimationError::CustomSolverError {
+            message: "custom solver reason".to_string(),
+        })
+        .into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Error = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body.error_type, "NoLiquidity");
     }
 
     // Tests for Axum extractor type parsing.

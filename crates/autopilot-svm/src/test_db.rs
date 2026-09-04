@@ -11,7 +11,7 @@ pub(crate) async fn pool() -> PgPool {
 pub(crate) async fn wipe(pool: &PgPool) {
     sqlx::query(
         "TRUNCATE solana.trades, solana.settlements, solana.settlement_executions, \
-         solana.order_pda, solana.orders, solana.indexer_state",
+         solana.order_pda, solana.orders, solana.indexer_state, solana.order_events",
     )
     .execute(pool)
     .await

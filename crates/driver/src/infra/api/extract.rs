@@ -1,6 +1,9 @@
 //! Axum extractors that emit a `warn` log when request deserialization
 //! fails, then delegate to the stock extractor's rejection so the HTTP
 //! response shape is unchanged.
+//!
+//! TODO: Factor these extractors out into a shared axum utils crate and
+//! reuse them across all crates instead of duplicating the logic.
 
 use {
     axum::{

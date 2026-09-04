@@ -30,11 +30,12 @@ impl Authenticator for GPv2AllowListAuthentication::Instance {
         prospective_solver: eth::Address,
         block: BlockId,
     ) -> Result<bool, Error> {
-        // It's technically possible that some time passes between the transaction
-        // happening and us indexing it. If the transaction was malicious and
-        // the solver got deny listed by the circuit breaker because of it we wouldn't
-        // find an eligible caller in the callstack. To avoid this case the
-        // underlying call needs to happen on the same block the transaction happened.
+        // It's technically possible that some time passes between the
+        // transaction happening and us indexing it. If the transaction
+        // was malicious and the solver got deny listed by the circuit
+        // breaker because of it we wouldn't find an eligible caller in
+        // the callstack. To avoid this case the underlying call needs
+        // to happen on the same block the transaction happened.
         Ok(self
             .isSolver(prospective_solver)
             .block(block)
@@ -80,9 +81,10 @@ impl Transaction {
             .ok_or(Error::MissingCalldata)?;
 
         // Find solver (submission address)
-        // In cases of solvers using EOA to submit solutions, the address is the sender
-        // of the transaction. In cases of solvers using a smart contract to
-        // submit solutions, the address is deduced from the calldata.
+        // In cases of solvers using EOA to submit solutions, the address is the
+        // sender of the transaction. In cases of solvers using a smart
+        // contract to submit solutions, the address is deduced from the
+        // calldata.
         let block = BlockId::from(transaction.block.0);
         let solver = find_solver_address(authenticator, callers, block).await?;
 

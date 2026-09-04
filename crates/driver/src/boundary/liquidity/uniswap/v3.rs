@@ -132,7 +132,8 @@ async fn init_liquidity(
         .context("failed to initialise UniswapV3 liquidity")?,
     );
 
-    // only run maintenance as long as someone is using the original pool_fetcher
+    // only run maintenance as long as someone is using the original
+    // pool_fetcher
     let maintenance = Arc::downgrade(&(pool_fetcher.clone() as Arc<dyn Maintaining>));
     let update_task = ServiceMaintenance::new(vec![maintenance])
         .run_maintenance_on_new_block(eth.current_block().clone());

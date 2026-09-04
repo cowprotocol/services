@@ -33,11 +33,11 @@ impl Parameters {
         &self,
         interaction: &Interaction,
     ) -> Result<(MaxInput, ExactOutput), super::error::Math> {
-        // It is possible for liquidity to use tokens that don't have prices. In order
-        // to handle these cases, we do in order:
+        // It is possible for liquidity to use tokens that don't have prices. In
+        // order to handle these cases, we do in order:
         // 1. Compute the capped slippage using the sell token amount
-        // 2. If no sell token price is available, compute the capped slippage using the
-        //    buy token amount
+        // 2. If no sell token price is available, compute the capped slippage
+        //    using the buy token amount
         // 3. Fall back to using the default relative slippage without capping
         let slippage = if let Some(price) = self.prices.get(&interaction.input.token) {
             let amount = price.in_eth(interaction.input.amount);

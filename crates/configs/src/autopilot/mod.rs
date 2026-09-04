@@ -5,6 +5,7 @@ use {
             fee_policy::FeePoliciesConfig,
             native_price::NativePriceConfig,
             order_events_cleanup::OrderEventsCleanupConfig,
+            penalty_cap::PenaltyCapConfig,
             run_loop::RunLoopConfig,
             s3::S3Config,
             solver::Solver,
@@ -28,6 +29,7 @@ pub mod ethflow;
 pub mod fee_policy;
 pub mod native_price;
 pub mod order_events_cleanup;
+pub mod penalty_cap;
 pub mod run_loop;
 pub mod s3;
 pub mod solver;
@@ -70,6 +72,11 @@ pub struct Configuration {
 
     /// Describes how the protocol fees should be calculated.
     pub fee_policies: FeePoliciesConfig,
+
+    /// Describes how per-order penalty caps should be calculated (CIP-87).
+    /// If absent, orders don't get a penalty cap assigned.
+    #[serde(default)]
+    pub penalty_cap: Option<PenaltyCapConfig>,
 
     /// Configuration for trusted tokens that the settlement contract is willing
     /// to internalize.
@@ -206,6 +213,7 @@ impl Configuration {
             shared: Default::default(),
             drivers: vec![],
             fee_policies: Default::default(),
+            penalty_cap: Default::default(),
             trusted_tokens: Default::default(),
             order_events_cleanup: Default::default(),
             banned_users: Default::default(),
@@ -237,6 +245,7 @@ impl Configuration {
             shared: Default::default(),
             drivers: vec![Solver::test(name, solver_address)],
             fee_policies: Default::default(),
+            penalty_cap: Default::default(),
             trusted_tokens: Default::default(),
             order_events_cleanup: Default::default(),
             banned_users: Default::default(),

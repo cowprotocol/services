@@ -295,7 +295,8 @@ async fn uses_stale_liquidity(web3: Web3) {
 
     tracing::info!("waiting for liquidity state to update");
     wait_for_condition(TIMEOUT, || async {
-        // Mint blocks until we evict the cached liquidty and fetch the new state.
+        // Mint blocks until we evict the cached liquidty and fetch the new
+        // state.
         onchain.mint_block().await;
         let Ok(next) = services.submit_quote(&quote).await else {
             return false;
@@ -568,31 +569,35 @@ async fn quote_custom_solver_errors(web3: Web3) {
     let cases = vec![
         (
             SolverErrorCode::TradingOutsideAllowedWindow,
+            StatusCode::BAD_REQUEST,
             "TradingOutsideAllowedWindow",
             None,
             "Token can only be traded during specific time windows",
         ),
         (
             SolverErrorCode::TokenTemporarilySuspended,
+            StatusCode::BAD_REQUEST,
             "TokenTemporarilySuspended",
             Some("token is suspended"),
             "token is suspended",
         ),
         (
             SolverErrorCode::InsufficientLiquidity,
+            StatusCode::BAD_REQUEST,
             "InsufficientLiquidity",
             Some("not enough liquidity"),
             "not enough liquidity",
         ),
         (
             SolverErrorCode::Other,
-            "CustomSolverError",
+            StatusCode::NOT_FOUND,
+            "NoLiquidity",
             Some("some solver specific error"),
-            "some solver specific error",
+            "no route found",
         ),
     ];
 
-    for (code, expected_kind, sent_message, expected_message) in cases {
+    for (code, expected_http_code, expected_kind, sent_message, expected_message) in cases {
         mock_solver.configure_response(SolverResponse::Error {
             error: SolverError {
                 code,
@@ -601,7 +606,7 @@ async fn quote_custom_solver_errors(web3: Web3) {
         });
 
         let (status, body) = services.submit_quote(&quote_request).await.unwrap_err();
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, expected_http_code);
         assert!(
             body.contains(expected_kind),
             "response should include error kind {expected_kind}, got {body}"
@@ -678,27 +683,31 @@ async fn native_price_custom_solver_errors(web3: Web3) {
     let cases = vec![
         (
             SolverErrorCode::TradingOutsideAllowedWindow,
+            StatusCode::BAD_REQUEST,
             "TradingOutsideAllowedWindow",
             "native window closed",
         ),
         (
             SolverErrorCode::TokenTemporarilySuspended,
+            StatusCode::BAD_REQUEST,
             "TokenTemporarilySuspended",
             "native token suspended",
         ),
         (
             SolverErrorCode::InsufficientLiquidity,
+            StatusCode::BAD_REQUEST,
             "InsufficientLiquidity",
             "native not enough liquidity",
         ),
         (
             SolverErrorCode::Other,
-            "CustomSolverError",
-            "native custom solver reason",
+            StatusCode::NOT_FOUND,
+            "NoLiquidity",
+            "no route found",
         ),
     ];
 
-    for (code, expected_kind, message) in cases {
+    for (code, expected_http_code, expected_kind, message) in cases {
         mock_solver.configure_response(SolverResponse::Error {
             error: SolverError {
                 code,
@@ -710,7 +719,7 @@ async fn native_price_custom_solver_errors(web3: Web3) {
             .get_native_price(sell_token.address())
             .await
             .unwrap_err();
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, expected_http_code);
         assert!(
             body.contains(expected_kind),
             "response should include error kind {expected_kind}, got {body}"
@@ -817,13 +826,13 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
     };
 
     let (status, body) = services.submit_quote(&quote_request).await.unwrap_err();
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::NOT_FOUND);
     assert!(
-        body.contains("CustomSolverError"),
+        body.contains("NoLiquidity"),
         "response should include custom solver error, got {body}"
     );
     assert!(
-        body.contains("priority custom solver error"),
+        body.contains("no route found"),
         "response should include prioritized custom error message, got {body}"
     );
 }
@@ -859,8 +868,8 @@ async fn volume_fee(web3: Web3) {
     tracing::info!("Starting services with volume fee.");
     let services = Services::new(&onchain).await;
     // Start API with 0.02% (2 bps) default volume fee
-    // Bucket override: WETH<->override_token pair gets 5 bps (both tokens must be
-    // in bucket)
+    // Bucket override: WETH<->override_token pair gets 5 bps (both tokens must
+    // be in bucket)
     services
         .start_protocol_with_args(
             Configuration::test("test_solver", solver.address()),

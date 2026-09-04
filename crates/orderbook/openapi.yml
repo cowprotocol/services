@@ -1580,6 +1580,12 @@ components:
             A winning quote.
           allOf:
             - $ref: "#/components/schemas/Quote"
+        penaltyCapNative:
+          description: >
+            Cap on the penalty a solver can incur for winning this order but
+            failing to execute it, denominated in the native token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
       required:
         - uid
         - sellToken
@@ -1915,7 +1921,7 @@ components:
         Error quoting an order.
 
         Possible `errorType` values per HTTP status:
-        * 400: `AppDataHashMismatch`, `CustomSolverError`, `ExcessiveValidTo`,
+        * 400: `AppDataHashMismatch`, `ExcessiveValidTo`,
           `InsufficientLiquidity`, `InsufficientValidTo`, `InvalidAppData`,
           `InvalidNativeSellToken`, `QuoteNotVerified`, `SameBuyAndSellToken`,
           `SellAmountDoesNotCoverFee`, `TokenTemporarilySuspended`,

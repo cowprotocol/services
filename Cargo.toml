@@ -127,6 +127,7 @@ sha2 = "0.10"
 shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
+solana-address-lookup-table-interface = "3"
 solana-client = "4"
 solana-commitment-config = "3"
 solana-compute-budget-interface = "3"
@@ -135,6 +136,7 @@ solana-indexer = { path = "crates/solana-indexer" }
 solana-rpc-client = "4"
 solana-rpc-client-api = "4"
 solana-sdk = "4"
+solana-system-interface = "3"
 solana-testlib = { path = "crates/solana-testlib" }
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
@@ -169,7 +171,7 @@ tracing-serde = "0.2"
 tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
 winner-selection = { path = "crates/winner-selection" }
-yellowstone-grpc-client = "13.1.0"
+yellowstone-grpc-client = "13.4.0"
 yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 
 [workspace.lints]

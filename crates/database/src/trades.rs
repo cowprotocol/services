@@ -977,7 +977,8 @@ mod tests {
         .await;
         assert_trades(&mut db, None, None, &[trade_a.clone(), trade_b.clone()]).await;
 
-        // make sure that for a settlement_a in the same block, only trade_a is returned
+        // make sure that for a settlement_a in the same block, only trade_a is
+        // returned
         assert_eq!(
             get_trades_for_settlement(&mut db, settlement_a_event)
                 .await
@@ -989,7 +990,8 @@ mod tests {
             }]
         );
 
-        // make sure that for a settlement_b in the same block, only trade_b is returned
+        // make sure that for a settlement_b in the same block, only trade_b is
+        // returned
         assert_eq!(
             get_trades_for_settlement(&mut db, settlement_b_event)
                 .await

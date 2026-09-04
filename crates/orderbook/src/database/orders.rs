@@ -457,13 +457,12 @@ impl Postgres {
             }),
             self.execute_instrumented("fetch_latest_token_price", async {
                 let mut ex = self.pool.acquire().await?;
-                Ok(database::auction_prices::fetch_latest_token_price(
-                    &mut ex,
-                    ByteArray(token.0.0),
+                Ok(
+                    database::auction::fetch_latest_token_price(&mut ex, ByteArray(token.0.0))
+                        .await
+                        .map_err(anyhow::Error::from)?
+                        .and_then(|price| big_decimal_to_u256(&price)),
                 )
-                .await
-                .map_err(anyhow::Error::from)?
-                .and_then(|price| big_decimal_to_u256(&price)))
             })
         )?;
 
@@ -1017,7 +1016,8 @@ mod tests {
         };
         db.insert_order(&new_order).await.unwrap();
 
-        // Attempt to replace an old order with one that already exists should fail.
+        // Attempt to replace an old order with one that already exists should
+        // fail.
         let err = db
             .replace_order(&old_order.metadata.uid, &new_order)
             .await

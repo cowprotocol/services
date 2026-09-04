@@ -15,6 +15,7 @@ use {
         slot::Slot,
     },
     bigdecimal::BigDecimal,
+    database::solana::OrderEventLabel,
     solana_sdk::pubkey::Pubkey,
     sqlx::{PgPool, PgTransaction},
     std::collections::HashMap,
@@ -146,7 +147,7 @@ ON CONFLICT (order_uid) DO NOTHING
         };
         // creation_timestamp is the indexing time, the stream carries no
         // block time.
-        sqlx::query(
+        let inserted = sqlx::query(
             r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
@@ -171,6 +172,27 @@ ON CONFLICT (uid) DO NOTHING
         .bind(order.partially_fillable)
         .bind(order.app_data.to_vec())
         .bind(order.order_pda.to_bytes())
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+        if inserted > 0 {
+            Self::insert_order_event(tx, order.order_uid.0, OrderEventLabel::Created).await?;
+        }
+        Ok(())
+    }
+
+    /// Append one auction-progress event, in the caller's transaction so the
+    /// event lands atomically with the row that caused it.
+    async fn insert_order_event(
+        tx: &mut PgTransaction<'_>,
+        order_uid: [u8; 32],
+        label: OrderEventLabel,
+    ) -> Result<(), PersistenceError> {
+        sqlx::query(
+            "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
+        )
+        .bind(order_uid)
+        .bind(label)
         .execute(&mut **tx)
         .await?;
         Ok(())
@@ -254,6 +276,7 @@ ON CONFLICT DO NOTHING
         if inserted == 0 {
             return Ok(());
         }
+        Self::insert_order_event(tx, order_uid, OrderEventLabel::Traded).await?;
         let updated = sqlx::query(
             r#"
 UPDATE solana.order_pda
@@ -620,6 +643,22 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
             .unwrap();
         assert_eq!((settlements, trade_uids), (2, vec![uid.to_vec()]));
         assert_eq!(postgres.last_indexed_slot().await.unwrap(), Some(Slot(20)));
+
+        // One event per actually-inserted row, stable under the replay: the
+        // fresh order was created, the seeded order (whose insert the
+        // conflict skipped) only traded.
+        let events: Vec<(Vec<u8>, String)> =
+            sqlx::query_as("SELECT order_uid, label::text FROM solana.order_events ORDER BY label")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            events,
+            vec![
+                (fresh_uid.to_vec(), "created".to_string()),
+                (uid.to_vec(), "traded".to_string()),
+            ]
+        );
     }
 
     #[tokio::test]

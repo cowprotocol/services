@@ -18,8 +18,8 @@ pub fn user_orders<'a>(
     // creation_timestamp. This way the database can start immediately at the
     // offset through the index without enumerating the first N elements
     // before as is the case with OFFSET.
-    // On the other hand that approach is less flexible so we will consider if we
-    // see that these queries are taking too long in practice.
+    // On the other hand that approach is less flexible so we will consider if
+    // we see that these queries are taking too long in practice.
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
         // Phase 1: find the page of UIDs using cheap index scans.
@@ -264,7 +264,8 @@ mod tests {
         )
         .await
         .unwrap();
-        // jit_orders primary key is (block_number, log_index) — use distinct values.
+        // jit_orders primary key is (block_number, log_index) — use distinct
+        // values.
         jit_orders::insert(
             &mut db,
             &[
@@ -347,8 +348,8 @@ mod tests {
         let page1 = uids_of(user_orders(&mut db, &owner, 0, Some(2)).await);
         assert_eq!(page1, vec![uid_a.0, uid_b.0]);
 
-        // Second page: crosses the table boundary — uid_c from jit_orders, uid_d from
-        // orders.
+        // Second page: crosses the table boundary — uid_c from jit_orders,
+        // uid_d from orders.
         let page2 = uids_of(user_orders(&mut db, &owner, 2, Some(2)).await);
         assert_eq!(page2, vec![uid_c.0, uid_d.0]);
 

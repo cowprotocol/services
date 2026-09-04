@@ -1,0 +1,278 @@
+//! Database access for the Solana orderbook.
+
+use {
+    anyhow::{Context, Result},
+    bigdecimal::BigDecimal,
+    chrono::{DateTime, Utc},
+    database::{
+        byte_array::ByteArray,
+        solana::{OrderEventLabel, OrderKind},
+    },
+    sqlx::PgExecutor,
+};
+
+/// One order joined with its fill state.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct OrderRow {
+    pub uid: ByteArray<32>,
+    pub owner: ByteArray<32>,
+    pub sell_token: ByteArray<32>,
+    pub buy_token: ByteArray<32>,
+    pub sell_token_account: ByteArray<32>,
+    pub buy_token_account: ByteArray<32>,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub valid_to: i64,
+    pub kind: OrderKind,
+    pub partially_fillable: bool,
+    pub app_data: ByteArray<32>,
+    pub creation_timestamp: DateTime<Utc>,
+    pub order_pda: ByteArray<32>,
+    pub amount_withdrawn: BigDecimal,
+    pub amount_received: BigDecimal,
+    pub cancellation_timestamp: Option<DateTime<Utc>>,
+}
+
+/// Read one order with its fill state. `None` when the uid is unknown.
+pub async fn order_by_uid(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<Option<OrderRow>> {
+    const QUERY: &str = r#"
+SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
+       o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
+       o.kind, o.partially_fillable, o.app_data,
+       o.creation_timestamp, o.order_pda,
+       COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
+       COALESCE(p.amount_received, 0) AS amount_received,
+       p.cancellation_timestamp
+FROM solana.orders o
+LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+WHERE o.uid = $1
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(ByteArray(uid))
+        .fetch_optional(ex)
+        .await
+        .context("read solana.orders by uid")
+}
+
+/// One trade joined with its order's identity and the settlement's slot.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct TradeRow {
+    pub order_uid: ByteArray<32>,
+    pub owner: ByteArray<32>,
+    pub sell_token: ByteArray<32>,
+    pub buy_token: ByteArray<32>,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub tx_signature: ByteArray<64>,
+    pub instruction_index: i32,
+    pub slot: Option<i64>,
+}
+
+/// Trades filtered by order uid or owner. The slot comes from any settlement
+/// row of the transaction because the slot is constant per transaction. A
+/// trade whose order row is not indexed yet is omitted until the order
+/// lands.
+pub async fn trades(
+    ex: impl PgExecutor<'_>,
+    order_uid: Option<[u8; 32]>,
+    owner: Option<[u8; 32]>,
+) -> Result<Vec<TradeRow>> {
+    const QUERY: &str = r#"
+SELECT t.order_uid, o.owner, o.sell_token, o.buy_token,
+       t.sell_amount, t.buy_amount, t.tx_signature,
+       t.instruction_index, s.slot
+FROM solana.trades t
+JOIN solana.orders o ON o.uid = t.order_uid
+LEFT JOIN LATERAL (
+    SELECT slot FROM solana.settlements
+    WHERE tx_signature = t.tx_signature
+    LIMIT 1
+) s ON true
+WHERE ($1::bytea IS NULL OR t.order_uid = $1)
+  AND ($2::bytea IS NULL OR o.owner = $2)
+ORDER BY s.slot, t.tx_signature, t.instruction_index, t.order_uid
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(order_uid.map(ByteArray))
+        .bind(owner.map(ByteArray))
+        .fetch_all(ex)
+        .await
+        .context("read solana.trades")
+}
+
+/// Whether the order has at least one trade.
+pub async fn order_has_trade(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<bool> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM solana.trades WHERE order_uid = $1)",
+    )
+    .bind(ByteArray(uid))
+    .fetch_one(ex)
+    .await
+    .context("check solana.trades existence")
+}
+
+/// The label of the order's most recent auction-progress event.
+pub async fn latest_order_event(
+    ex: impl PgExecutor<'_>,
+    uid: [u8; 32],
+) -> Result<Option<OrderEventLabel>> {
+    const QUERY: &str = r#"
+SELECT label
+FROM solana.order_events
+WHERE order_uid = $1
+ORDER BY timestamp DESC
+LIMIT 1
+    "#;
+    sqlx::query_scalar(QUERY)
+        .bind(ByteArray(uid))
+        .fetch_optional(ex)
+        .await
+        .context("read solana.order_events")
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, sqlx::PgPool};
+
+    async fn seed(pool: &PgPool, uid: [u8; 32], cancelled: bool) {
+        sqlx::query(
+            "TRUNCATE solana.order_pda, solana.orders, solana.trades, solana.settlements CASCADE",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
+    buy_token_account, sell_amount, buy_amount, valid_to, kind,
+    partially_fillable, app_data, creation_timestamp, order_pda)
+VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
+            "#,
+        )
+        .bind(ByteArray(uid))
+        .bind(ByteArray([0xAA; 32]))
+        .bind(ByteArray([0xAB; 32]))
+        .bind(i64::from(u32::MAX))
+        .bind(ByteArray([0xB0; 32]))
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+INSERT INTO solana.order_pda (order_uid, created_by, amount_withdrawn, cancellation_timestamp)
+VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
+            "#,
+        )
+        .bind(ByteArray(uid))
+        .bind(ByteArray([0xAA; 32]))
+        .bind(cancelled)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_reads_an_order_with_fill_state() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+
+        let row = order_by_uid(&pool, uid).await.unwrap().unwrap();
+        assert_eq!(row.uid, ByteArray(uid));
+        assert_eq!(row.kind, OrderKind::Sell);
+        assert_eq!(row.amount_withdrawn, BigDecimal::from(400));
+        assert_eq!(row.amount_received, BigDecimal::from(0));
+        assert!(row.cancellation_timestamp.is_none());
+
+        assert!(order_by_uid(&pool, [0x99; 32]).await.unwrap().is_none());
+
+        seed(&pool, uid, true).await;
+        let row = order_by_uid(&pool, uid).await.unwrap().unwrap();
+        assert!(row.cancellation_timestamp.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_reads_order_events_and_existence() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+        sqlx::query("TRUNCATE solana.order_events")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(!order_has_trade(&pool, uid).await.unwrap());
+        assert!(latest_order_event(&pool, uid).await.unwrap().is_none());
+
+        for (at, label) in [(1, OrderEventLabel::Ready), (2, OrderEventLabel::Executing)] {
+            sqlx::query(
+                "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, \
+                 to_timestamp($2), $3)",
+            )
+            .bind(ByteArray(uid))
+            .bind(at)
+            .bind(label)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        assert_eq!(
+            latest_order_event(&pool, uid).await.unwrap(),
+            Some(OrderEventLabel::Executing)
+        );
+
+        sqlx::query(
+            "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount, \
+             buy_amount, fee_amount) VALUES ($1, 1, $2, 400, 200, 0)",
+        )
+        .bind(ByteArray([9u8; 64]))
+        .bind(ByteArray(uid))
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(order_has_trade(&pool, uid).await.unwrap());
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_reads_trades_by_uid_and_owner() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+        sqlx::query(
+            "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid,              \
+             sell_amount, buy_amount, fee_amount) VALUES ($1, 1, $2, 400, 200, 0)",
+        )
+        .bind(ByteArray([9u8; 64]))
+        .bind(ByteArray(uid))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver,              auction_id) VALUES (42, $1, 1, $2, 7)",
+        )
+        .bind(ByteArray([9u8; 64]))
+        .bind(ByteArray([0xCC; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let by_uid = trades(&pool, Some(uid), None).await.unwrap();
+        assert_eq!(by_uid.len(), 1);
+        assert_eq!(by_uid[0].slot, Some(42));
+        assert_eq!(by_uid[0].instruction_index, 1);
+        assert_eq!(by_uid[0].sell_amount, BigDecimal::from(400));
+
+        let by_owner = trades(&pool, None, Some([0xAA; 32])).await.unwrap();
+        assert_eq!(by_owner.len(), 1);
+
+        assert!(
+            trades(&pool, Some([0x99; 32]), None)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+}

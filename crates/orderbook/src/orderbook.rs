@@ -106,7 +106,8 @@ impl Metrics {
             .inc();
     }
 
-    // Resets all the counters to 0 so we can always use them in Grafana queries.
+    // Resets all the counters to 0 so we can always use them in Grafana
+    // queries.
     fn initialize() {
         let metrics = Self::get();
         for op in &[OrderOperation::Created, OrderOperation::Cancelled] {
@@ -548,10 +549,11 @@ impl Orderbook {
         };
 
         // Once an order was executed we always want to return `Traded` with the
-        // competition data of the **first** time it was traded for a stable result.
-        // Under some circumstances it can happen that the latest state of an already
-        // executed order is not `Traded`. To detect that we first check the trades
-        // table and return the appropriate competition data.
+        // competition data of the **first** time it was traded for a stable
+        // result. Under some circumstances it can happen that the
+        // latest state of an already executed order is not `Traded`. To
+        // detect that we first check the trades table and return the
+        // appropriate competition data.
         let trades = self
             .database
             .trades(&TradeFilter {
