@@ -36,7 +36,7 @@ use {
     cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{OrderIntent, OrderKind as IntentOrderKind},
+        data::intent::{Flags, OrderIntent, OrderKind as IntentOrderKind},
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
@@ -350,11 +350,16 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
         buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
         sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
+        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
-        kind: IntentOrderKind::Sell,
-        partially_fillable: false,
+        flags: Flags {
+            created_on_chain: false,
+            kind: IntentOrderKind::Sell,
+            partially_fillable: false,
+        },
         app_data: [0x44; 32],
     };
     let instruction = cow_settlement_client::instructions::CreateOrder {
@@ -569,17 +574,23 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
         buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
         sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
+        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
         sell_amount: 1_000,
         buy_amount: 1_234,
         valid_to: 42,
-        kind: IntentOrderKind::Sell,
-        partially_fillable: false,
+        flags: Flags {
+            created_on_chain: false,
+            kind: IntentOrderKind::Sell,
+            partially_fillable: false,
+        },
         app_data: [0x44; 32],
     };
     let order_pda = find_order_pda(&settlement, &intent.uid()).0;
 
     let begin = cow_settlement_client::instructions::BeginSettle {
         program_id: settlement,
+        solver,
         finalize_ix_index: 1,
         auction_id: 4242,
         orders: &[cow_settlement_client::instructions::InitializedIntent {
@@ -602,7 +613,6 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         begin_ix_index: 0,
         orders: &[cow_settlement_client::instructions::FinalizedIntent {
             intent: &intent,
-            mint: pubkey(30),
             amount: 1_234,
         }],
     }

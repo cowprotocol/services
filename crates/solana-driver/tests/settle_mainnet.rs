@@ -41,7 +41,7 @@ use {
         cow_settlement_interface::{
             ID as PROGRAM_ID,
             Pubkey,
-            data::intent::{OrderIntent, OrderKind},
+            data::intent::{Flags, OrderIntent, OrderKind},
             pda::{buffer::find_buffer_pda, order::find_order_pda, state::find_state_pda},
         },
         instructions::CreateOrder,
@@ -335,12 +335,17 @@ async fn create_order_on_chain(rpc: &RpcClient, user: &dyn Signer, pair: &Pair) 
     let intent = OrderIntent {
         owner: user_pubkey,
         sell_token_account,
+        sell_mint: pair.sell.mint,
         buy_token_account,
+        buy_mint: pair.buy.mint,
         sell_amount: SELL_AMOUNT,
         buy_amount: 0,
         valid_to,
-        kind: OrderKind::Sell,
-        partially_fillable: false,
+        flags: Flags {
+            created_on_chain: false,
+            kind: OrderKind::Sell,
+            partially_fillable: false,
+        },
         app_data: [0; 32],
     };
 

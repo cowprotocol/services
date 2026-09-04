@@ -21,7 +21,7 @@ bigdecimal = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
 configs = { workspace = true }
-cow-settlement-interface = "0.2.0"
+cow-settlement-interface = "0.3.0"
 cow-solana-rpc = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
@@ -45,7 +45,7 @@ yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 
 [dev-dependencies]
-cow-settlement-client = "0.2.0"
+cow-settlement-client = "0.3.0"
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
 serde_json = { workspace = true }
 
