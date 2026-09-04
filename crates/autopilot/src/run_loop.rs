@@ -1,7 +1,11 @@
+pub mod fast_path;
 pub mod settle_call_coordinator;
 
 use {
-    self::settle_call_coordinator::{SettleCallCoordinator, SettleError},
+    self::{
+        fast_path::FastPathHandler,
+        settle_call_coordinator::{SettleCallCoordinator, SettleError},
+    },
     crate::{
         domain::{
             self,
@@ -170,8 +174,10 @@ pub struct RunLoop {
     /// Drivers that do NOT support delta auctions
     drivers: Vec<Arc<infra::Driver>>,
     /// Sends `/settle` calls to drivers and waits for the resulting
-    /// transaction to be mined.
+    /// transaction to be mined. Shared with the fast-path handler.
     settle_coordinator: Arc<SettleCallCoordinator>,
+    /// Handles fast-path orders on the side.
+    fast_path: Arc<FastPathHandler>,
 }
 
 impl RunLoop {
@@ -186,6 +192,8 @@ impl RunLoop {
         probes: Probes,
         maintenance: MaintenanceSync,
         new_orders_listener: mpsc::UnboundedReceiver<OrderUid>,
+        protocol_fees: Arc<crate::domain::ProtocolFees>,
+        surplus_capturing_jit_order_owners: Arc<Vec<alloy::primitives::Address>>,
     ) -> Arc<Self> {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
@@ -199,6 +207,16 @@ impl RunLoop {
             maintenance.clone(),
             config.max_settlement_transaction_wait,
         ));
+
+        let fast_path = FastPathHandler::new(
+            eth.clone(),
+            persistence.clone(),
+            drivers.clone(),
+            protocol_fees,
+            surplus_capturing_jit_order_owners,
+            settle_coordinator.clone(),
+            config.submission_deadline,
+        );
 
         let self_ = Arc::new(Self {
             delta_state: std::sync::Mutex::new(DeltaState::new(
@@ -215,17 +233,34 @@ impl RunLoop {
             wake_notify: wake_runloop,
             drivers,
             settle_coordinator,
+            fast_path,
         });
         Self::spawn_order_listener(self_.clone(), new_orders_listener);
         self_
     }
 
-    /// Spawns a background task that listens to the creation of new orders
-    /// and wakes the run loop for each incoming order.
+    /// Spawns a background task that listens to the creation of new orders and
+    /// notifies the runloop to kick it off if necessary and initiates the
+    /// fast path handling if an order needs it.
     fn spawn_order_listener(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<OrderUid>) {
         tokio::spawn(async move {
-            while let Some(_order_uid) = receiver.next().await {
+            while let Some(order_uid) = receiver.next().await {
                 self.wake_notify.notify_one();
+                let persistence = self.persistence.clone();
+                let fast_path = self.fast_path.clone();
+                // immediately spawn separate task to never delay processing
+                // fast path orders
+                tokio::spawn(
+                    async move {
+                        match persistence.fast_path_order(order_uid).await {
+                            // not a fast path order -> do nothing
+                            Ok(None) => {}
+                            Err(err) => tracing::error!(?err, "failed to look up fast path order"),
+                            Ok(Some(order)) => fast_path.handle(order).await,
+                        };
+                    }
+                    .instrument(tracing::info_span!("fast_path", ?order_uid)),
+                );
             }
         });
     }
@@ -518,6 +553,7 @@ impl RunLoop {
                 solution_id,
                 submission_deadline_latest_block: block_deadline,
                 auction_id,
+                fast_path: None,
             };
 
             match self_

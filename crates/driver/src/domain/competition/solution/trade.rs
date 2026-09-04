@@ -169,10 +169,20 @@ impl Fulfillment {
         &self.order
     }
 
-    /// Rebuild this fulfillment for a different `order`, keeping the executed
-    /// amount, fee and haircut.
+    /// Rebuild this fulfillment for a different `order` filling it entirely.
+    /// Keeps the original fee and haircut.
     pub fn with_order(&self, order: competition::Order) -> Result<Self, error::Trade> {
-        Self::new(order, self.executed, self.fee, self.haircut_fee)
+        let fee = if order.solver_determines_fee() {
+            self.fee()
+        } else {
+            order::SellAmount::default()
+        };
+        let executed = order::TargetAmount(match order.side {
+            order::Side::Sell => order.sell.amount.0,
+            order::Side::Buy => order.buy.amount.0,
+        });
+
+        Self::new(order, executed, fee, self.haircut_fee)
     }
 
     pub fn executed(&self) -> order::TargetAmount {
