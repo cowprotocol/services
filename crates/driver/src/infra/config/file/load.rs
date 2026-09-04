@@ -334,6 +334,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             .map(|(index, mempool)| mempool::Config {
                 min_priority_fee: config.submission.min_priority_fee,
                 gas_price_cap: config.submission.gas_price_cap,
+                max_fee_per_gas_factor: config.submission.max_fee_per_gas_factor,
                 target_confirm_time: config.submission.target_confirm_time,
                 retry_interval: config.submission.retry_interval,
                 nonce_block_number: config.submission.nonce_block_number.map(Into::into),

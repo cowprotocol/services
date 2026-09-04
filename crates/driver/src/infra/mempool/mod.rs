@@ -22,6 +22,7 @@ use {
 pub struct Config {
     pub min_priority_fee: eth::U256,
     pub gas_price_cap: eth::U256,
+    pub max_fee_per_gas_factor: f64,
     pub target_confirm_time: std::time::Duration,
     pub retry_interval: std::time::Duration,
     /// Optional block number to use when fetching nonces. If None, uses the
@@ -40,6 +41,7 @@ impl Config {
         Self {
             min_priority_fee: Default::default(),
             gas_price_cap: eth::U256::from(1000000000000_u128),
+            max_fee_per_gas_factor: 1.,
             target_confirm_time: Default::default(),
             retry_interval: Default::default(),
             name: "default_rpc".to_string(),
