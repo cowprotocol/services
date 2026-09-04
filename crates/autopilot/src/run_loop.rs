@@ -1324,17 +1324,16 @@ impl Metrics {
         target: u64,
         watcher: ethrpc::block_stream::CurrentBlockWatcher,
     ) {
-        // Two clocks: `block.timestamp` is wall clock, `block.observed_at` is
-        // monotonic, and neither is comparable to the other.
-        let sent_at = Utc::now();
-        let sent_at_monotonic = Instant::now();
-
         if watcher.borrow().number > target {
             // The watcher holds only the head, so `target`'s clocks are gone.
             // These calls are `settle_blocks_elapsed` past its `le=1` bucket.
             return;
         }
-        let sent_at = sent_at.timestamp_millis() as f64 / 1e3;
+
+        // Two clocks: `block.timestamp` is wall clock, `block.observed_at` is
+        // monotonic, and neither is comparable to the other.
+        let sent_at_monotonic = Instant::now();
+        let sent_at = Utc::now().timestamp_millis() as f64 / 1e3;
         tokio::spawn(async move {
             let mut stream = ethrpc::block_stream::into_stream(watcher);
             while let Some(block) = stream.next().await {
