@@ -34,7 +34,8 @@ NULL AS onchain_user,
 NULL AS onchain_placement_error,
 COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
 COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
-NULL AS full_app_data
+NULL AS full_app_data,
+(SELECT CASE WHEN COUNT(*) = COUNT(t.gas_cost) THEN SUM(t.gas_cost) END FROM trades t WHERE t.order_uid = o.uid) as gas_cost
 "#;
 
 pub const FROM: &str = "jit_orders o";

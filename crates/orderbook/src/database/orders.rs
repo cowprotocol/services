@@ -610,6 +610,11 @@ fn full_order_with_quote_into_model_order(
         executed_fee: big_decimal_to_u256(&order.executed_fee)
             .context("executed fee is not a valid u256")?,
         executed_fee_token: Address::new(order.executed_fee_token.0),
+        gas_cost: order
+            .gas_cost
+            .as_ref()
+            .map(|cost| big_decimal_to_u256(cost).context("gas cost is not a valid u256"))
+            .transpose()?,
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
@@ -739,6 +744,7 @@ mod tests {
             executed_fee: Default::default(),
             executed_fee_token: ByteArray([1; 20]), // TODO surplus token
             full_app_data: Default::default(),
+            gas_cost: None,
         };
 
         // Open - sell (filled - 0%)

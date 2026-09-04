@@ -1406,6 +1406,15 @@ components:
           allOf:
             - $ref: "#/components/schemas/Address"
           nullable: false
+        gasCost:
+          description: >
+            Estimated gas cost attributed to this order, in native token wei,
+            summed across its fills. Omitted unless the cost of every fill is
+            known, rather than reporting a partial total: absent for an unsettled
+            order, until the latest fill's settlement has been attributed, and
+            for orders with a fill predating this being recorded.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
         fullAppData:
           description: >
             Full `appData`, which the contract-level `appData` is a hash of. See
@@ -1791,6 +1800,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ExecutedProtocolFee"
+        gasCost:
+          description: >
+            Estimated gas cost attributed to this trade, in native token wei:
+            the settlement's gas cost split equally between the user trades it
+            settled, not weighted by the gas each one consumed. Omitted until
+            the settlement has been attributed, shortly after it is indexed,
+            and permanently if it predates this being recorded. `0` for a JIT
+            order that only provided liquidity.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
       required:
         - blockNumber
         - logIndex
