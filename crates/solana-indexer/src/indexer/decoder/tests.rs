@@ -711,6 +711,6 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(sell_token, vec![0xA1; 32]);
-    assert_eq!(buy_token, vec![0xA2; 32]);
+    assert_eq!(sell_token, expected.sell_mint.to_bytes().to_vec());
+    assert_eq!(buy_token, expected.buy_mint.to_bytes().to_vec());
 }

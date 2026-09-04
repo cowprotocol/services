@@ -529,8 +529,8 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(created.get::<Vec<u8>, _>("sell_token"), vec![0xA1; 32]);
-        assert_eq!(created.get::<Vec<u8>, _>("buy_token"), vec![0xA2; 32]);
+        assert_eq!(created.get::<Vec<u8>, _>("sell_token"), vec![8; 32]);
+        assert_eq!(created.get::<Vec<u8>, _>("buy_token"), vec![9; 32]);
 
         let pda = sqlx::query(
             "SELECT created_by, amount_withdrawn, amount_received FROM solana.order_pda WHERE \
