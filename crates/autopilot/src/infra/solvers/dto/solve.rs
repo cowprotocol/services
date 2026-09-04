@@ -427,7 +427,7 @@ where
             while let Some((uid, order)) = map.next_entry::<boundary::OrderUid, TradedOrder>()? {
                 if orders.insert(uid, order).is_some() {
                     return Err(de::Error::custom(format!(
-                        "multiple fills for a single order (uid: {uid})"
+                        "order {uid} is settled by more than one trade"
                     )));
                 }
             }

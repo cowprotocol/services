@@ -109,9 +109,9 @@ where
             continue;
         };
         if !settled.insert(&fulfillment.order) {
+            let uid = const_hex::encode_prefixed(fulfillment.order.0);
             return Err(de::Error::custom(format!(
-                "multiple fills for a single order (uid: {uid})",
-                const_hex::encode_prefixed(fulfillment.order.0)
+                "order {uid} is settled by more than one trade"
             )));
         }
     }
