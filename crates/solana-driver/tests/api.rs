@@ -30,7 +30,7 @@ fn test_order_intent() -> OrderIntent {
         // Far future so the settle path's order-expiry check passes.
         valid_to: u32::MAX,
         flags: Flags {
-            created_on_chain: false,
+            created_on_chain: true,
             kind: OrderKind::Sell,
             partially_fillable: false,
         },

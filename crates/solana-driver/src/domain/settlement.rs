@@ -347,10 +347,12 @@ impl From<&Order> for OrderIntent {
             sell_amount: order.sell_amount,
             buy_amount: order.buy_amount,
             valid_to: order.valid_to,
-            // Off-chain, Ed25519-signed orders only. On-chain-created orders
-            // would carry this from the wire.
+            // Every auction order exists as a PDA the owner created with
+            // `CreateOrder`, and the program only accepts that instruction
+            // for intents carrying this flag. An off-chain Ed25519 intent
+            // flow would carry the flag on the wire instead.
             flags: Flags {
-                created_on_chain: false,
+                created_on_chain: true,
                 kind: match order.side {
                     Side::Sell => OrderKind::Sell,
                     Side::Buy => OrderKind::Buy,

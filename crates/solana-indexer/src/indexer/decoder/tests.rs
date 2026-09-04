@@ -356,7 +356,7 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         buy_amount: 2_000,
         valid_to: 42,
         flags: Flags {
-            created_on_chain: false,
+            created_on_chain: true,
             kind: IntentOrderKind::Sell,
             partially_fillable: false,
         },
@@ -580,7 +580,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         buy_amount: 1_234,
         valid_to: 42,
         flags: Flags {
-            created_on_chain: false,
+            created_on_chain: true,
             kind: IntentOrderKind::Sell,
             partially_fillable: false,
         },

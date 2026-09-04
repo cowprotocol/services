@@ -342,7 +342,7 @@ async fn create_order_on_chain(rpc: &RpcClient, user: &dyn Signer, pair: &Pair) 
         buy_amount: 0,
         valid_to,
         flags: Flags {
-            created_on_chain: false,
+            created_on_chain: true,
             kind: OrderKind::Sell,
             partially_fillable: false,
         },

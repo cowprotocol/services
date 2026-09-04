@@ -211,7 +211,7 @@ async fn create_order_on_chain(
         buy_amount: SELL_AMOUNT, // 1:1 swap.
         valid_to,
         flags: Flags {
-            created_on_chain: false,
+            created_on_chain: true,
             kind: OrderKind::Sell,
             partially_fillable: false,
         },
