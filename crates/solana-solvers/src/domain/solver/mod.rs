@@ -104,7 +104,7 @@ mod tests {
     #[tokio::test]
     async fn emits_one_solution_per_routable_order() {
         let auction = Auction {
-            id: 1,
+            id: Some(1),
             taker: pubkey(1),
             orders: vec![
                 order(0x01, dex::Side::Sell, pubkey(0x10)), // routable
@@ -123,7 +123,7 @@ mod tests {
     #[tokio::test]
     async fn empty_auction_yields_no_solutions() {
         let auction = Auction {
-            id: 1,
+            id: Some(1),
             taker: pubkey(1),
             orders: vec![],
             deadline: deadline(),

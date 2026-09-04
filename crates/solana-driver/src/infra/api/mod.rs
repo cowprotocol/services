@@ -64,6 +64,7 @@ impl Api {
             let state = State::new(competition);
 
             let router = Router::new()
+                .route("/quote", axum::routing::post(routes::quote))
                 .route("/solve", axum::routing::post(routes::solve))
                 .route("/settle", axum::routing::post(routes::settle))
                 .with_state(state);

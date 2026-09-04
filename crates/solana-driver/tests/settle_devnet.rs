@@ -489,7 +489,7 @@ async fn settle_devnet() {
 
     // --- construct the fake auction ---
     let auction = Auction {
-        id: Id::new(1).unwrap(),
+        id: Some(Id::new(1).unwrap()),
         orders: vec![order.clone()],
         deadline_slot: Slot(0),
         deadline: chrono::Utc::now() + chrono::Duration::seconds(deadline_secs()),
@@ -500,7 +500,7 @@ async fn settle_devnet() {
     let solve_response: serde_json::Value = reqwest::Client::new()
         .post(format!("http://{driver_addr}/jupiter-live/solve"))
         .json(&serde_json::json!({
-            "id": auction.id.get(),
+            "id": auction.id.unwrap().get(),
             "deadline": auction.deadline.to_rfc3339(),
             "orders": [{
                 "uid": format!("0x{}", const_hex::encode(order.uid.0)),
@@ -545,14 +545,14 @@ async fn settle_devnet() {
     let submission_deadline_slot = current_slot + 100;
     println!(
         "POST /settle (auctionId={}, solutionId={}, submissionDeadlineSlot={})...",
-        auction.id.get(),
+        auction.id.unwrap().get(),
         solution_id,
         submission_deadline_slot,
     );
     let settle_response = reqwest::Client::new()
         .post(format!("http://{driver_addr}/jupiter-live/settle"))
         .json(&serde_json::json!({
-            "auctionId": auction.id.get(),
+            "auctionId": auction.id.unwrap().get(),
             "solutionId": solution_id,
             "submissionDeadlineSlot": submission_deadline_slot,
         }))

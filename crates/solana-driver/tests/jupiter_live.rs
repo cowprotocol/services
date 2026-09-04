@@ -56,7 +56,7 @@ fn deadline() -> chrono::DateTime<chrono::Utc> {
 /// USDT buffer PDA.
 fn sell_auction() -> Auction {
     Auction {
-        id: Id::new(1).unwrap(),
+        id: Some(Id::new(1).unwrap()),
         orders: vec![Order {
             uid: OrderUid([8; 32]),
             owner: Pubkey::default(),
