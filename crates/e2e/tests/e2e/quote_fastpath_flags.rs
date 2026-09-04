@@ -22,8 +22,8 @@ async fn local_node_fast_path_flags_rejected() {
     run_test(fast_path_flags_rejected).await;
 }
 
-/// Verifies the orderbook rejects the not-yet-supported `fast_path` quote flag
-/// and `enableFastPath` app-data field.
+/// Verifies the orderbook rejects the `fast_path` quote flag and
+/// `enableFastPath` app-data field when the fast path is not enabled by config.
 async fn fast_path_flags_rejected(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
@@ -71,8 +71,8 @@ async fn fast_path_flags_rejected(web3: Web3) {
         .unwrap_err();
     assert_eq!(err.0, StatusCode::BAD_REQUEST);
     assert!(
-        err.1.contains("enableFastPath"),
-        "error body should mention enableFastPath, got: {}",
+        err.1.contains("FastPathDisabled"),
+        "error body should mention FastPathDisabled, got: {}",
         err.1
     );
 
@@ -107,8 +107,8 @@ async fn fast_path_flags_rejected(web3: Web3) {
         .unwrap_err();
     assert_eq!(err.0, StatusCode::BAD_REQUEST);
     assert!(
-        err.1.contains("enableFastPath"),
-        "error body should mention enableFastPath, got: {}",
+        err.1.contains("FastPathDisabled"),
+        "error body should mention FastPathDisabled, got: {}",
         err.1
     );
 }
