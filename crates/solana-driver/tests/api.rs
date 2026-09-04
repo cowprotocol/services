@@ -2,7 +2,7 @@
 
 use {
     cow_settlement_interface::{
-        data::intent::{OrderIntent, OrderKind},
+        data::intent::{Flags, OrderIntent, OrderKind},
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
@@ -22,13 +22,18 @@ fn test_order_intent() -> OrderIntent {
     OrderIntent {
         owner: pubkey(0x22),
         buy_token_account: pubkey(0x66),
+        buy_mint: pubkey(0x77),
         sell_token_account: pubkey(0x55),
+        sell_mint: pubkey(0x88),
         sell_amount: 1_000,
         buy_amount: 2_000,
         // Far future so the settle path's order-expiry check passes.
         valid_to: u32::MAX,
-        kind: OrderKind::Sell,
-        partially_fillable: false,
+        flags: Flags {
+            created_on_chain: true,
+            kind: OrderKind::Sell,
+            partially_fillable: false,
+        },
         app_data: [0; 32],
     }
 }

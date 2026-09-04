@@ -19,7 +19,7 @@ use {
         Pull,
     },
     cow_settlement_interface::{
-        data::intent::{OrderIntent, OrderKind},
+        data::intent::{Flags, OrderIntent, OrderKind},
         pda::{buffer::find_buffer_pda, order::find_order_pda},
     },
     solana_compute_budget_interface::ComputeBudgetInstruction,
@@ -174,7 +174,6 @@ impl ResolvedSettlement {
                     },
                     FinalizedIntent {
                         intent: &data.intent,
-                        mint: data.buy_mint,
                         amount: data.buy_amount,
                     },
                 )
@@ -224,6 +223,7 @@ impl ResolvedSettlement {
         instructions.push(
             BeginSettle {
                 program_id: self.settlement.program_id,
+                solver: payer,
                 finalize_ix_index,
                 auction_id: self.settlement.auction_id.get(),
                 orders: &initialized_intents,
@@ -341,15 +341,24 @@ impl From<&Order> for OrderIntent {
         OrderIntent {
             owner: order.owner,
             buy_token_account: order.buy_token_account,
+            buy_mint: order.buy_token,
             sell_token_account: order.sell_token_account,
+            sell_mint: order.sell_token,
             sell_amount: order.sell_amount,
             buy_amount: order.buy_amount,
             valid_to: order.valid_to,
-            kind: match order.side {
-                Side::Sell => OrderKind::Sell,
-                Side::Buy => OrderKind::Buy,
+            // Every auction order exists as a PDA the owner created with
+            // `CreateOrder`, and the program only accepts that instruction
+            // for intents carrying this flag. An off-chain Ed25519 intent
+            // flow would carry the flag on the wire instead.
+            flags: Flags {
+                created_on_chain: true,
+                kind: match order.side {
+                    Side::Sell => OrderKind::Sell,
+                    Side::Buy => OrderKind::Buy,
+                },
+                partially_fillable: order.partially_fillable,
             },
-            partially_fillable: order.partially_fillable,
             app_data: order.app_data,
         }
     }
@@ -477,7 +486,6 @@ fn executed_amounts(order: &Order, solution: &Solution) -> Result<ExecutedAmount
 struct SettlementOrder {
     intent: OrderIntent,
     pulls: Vec<Pull>,
-    buy_mint: Pubkey,
     buy_amount: u64,
 }
 
@@ -495,7 +503,6 @@ impl SettlementOrder {
                 destination: associated_token_address(payer, &order.sell_token),
                 amount: amounts.sell,
             }],
-            buy_mint: order.buy_token,
             buy_amount: amounts.buy,
         }
     }

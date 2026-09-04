@@ -56,8 +56,8 @@ console-subscriber = "0.5.0"
 const_format = "0.2.32"
 const-hex = "1.17.0"
 contracts = { path = "contracts/generated/contracts-facade" }
-cow-settlement-client = "0.2"
-cow-settlement-interface = "0.2"
+cow-settlement-client = "0.3"
+cow-settlement-interface = "0.3"
 cow-solana-rpc = { path = "crates/cow-solana-rpc" }
 dashmap = "6.1.0"
 database = { path = "crates/database" }

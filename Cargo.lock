@@ -3739,9 +3739,9 @@ dependencies = [
 
 [[package]]
 name = "cow-settlement-client"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93949beec804859f528c0aa3d5944793f76ca007d2930eff88e9705a2fb03c3c"
+checksum = "f89153d6546523201a157c5aa32637e4edad914a0515852b81475c2ee3ad3f3f"
 dependencies = [
  "cow-settlement-interface",
  "solana-program-error",
@@ -3749,9 +3749,9 @@ dependencies = [
 
 [[package]]
 name = "cow-settlement-interface"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f74c11504033ef2f52571c0a3854c45308ee9017a31ff7b8c482448f15ac225f"
+checksum = "c496d37e96c63caf31367d532eaa88acf0b4dcfc29b644c81c061e3c5f09da91"
 dependencies = [
  "arrayref",
  "derive_more 1.0.0",

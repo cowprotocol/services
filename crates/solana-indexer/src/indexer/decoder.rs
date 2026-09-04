@@ -371,12 +371,15 @@ fn decode_settlement(
             SettlementInstruction::BeginSettle | SettlementInstruction::FinalizeSettle => {
                 Ok(Vec::new())
             }
-            // No domain event: `Initialize` bootstraps the program state and
-            // `ReclaimBuffer` recovers rent without touching order state.
+            // No domain event: `Initialize` bootstraps program state,
+            // `ReclaimBuffer` recovers rent, and `TransferAuthority`/`AddSolver`
+            // manage program governance, none touching order state.
             // TODO: map `ReclaimOrder` to `OrderClosed`.
             SettlementInstruction::Initialize
             | SettlementInstruction::ReclaimOrder
-            | SettlementInstruction::ReclaimBuffer => Ok(Vec::new()),
+            | SettlementInstruction::ReclaimBuffer
+            | SettlementInstruction::TransferAuthority
+            | SettlementInstruction::AddSolver => Ok(Vec::new()),
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
@@ -428,11 +431,11 @@ fn decode_order_created(
         sell_amount: intent.sell_amount,
         buy_amount: intent.buy_amount,
         valid_to: intent.valid_to,
-        kind: match intent.kind {
+        kind: match intent.flags.kind {
             InterfaceOrderKind::Sell => OrderKind::Sell,
             InterfaceOrderKind::Buy => OrderKind::Buy,
         },
-        partially_fillable: intent.partially_fillable,
+        partially_fillable: intent.flags.partially_fillable,
         app_data: intent.app_data,
     })))
 }
@@ -469,12 +472,6 @@ fn decode_settlements_finalized(
     ctx: &TxContext,
     decode_failed: &mut bool,
 ) -> Vec<SettlementEvent> {
-    // The solver is the transaction fee payer: the first account key, which
-    // Solana guarantees is the signer that submitted the transaction.
-    let Some(&solver) = ctx.account_keys.first() else {
-        return Vec::new();
-    };
-
     let mut events = Vec::new();
     'process_instructions: for begin in instructions {
         let Ok((SettlementInstruction::BeginSettle, _)) = recover_discriminator(&begin.data) else {
@@ -590,7 +587,9 @@ fn decode_settlements_finalized(
 
         events.push(SettlementEvent::SettlementFinalized(FinalizedSettlement {
             auction_id: begin_input.auction_id,
-            solver,
+            // The signer `BeginSettle` names, which the program requires to
+            // be registered. The transaction fee payer may be someone else.
+            solver: *begin_input.solver_account,
             tx_signature: ctx.signature,
             slot: ctx.slot,
             instruction_index: begin.instruction_index,
