@@ -108,6 +108,10 @@ impl Decoder {
                         .await?;
                     continue;
                 }
+                StreamUpdate::Finalized { slot } => {
+                    self.persistence.write_finalized_slot(slot).await?;
+                    continue;
+                }
             };
             self.flush_up_to(&mut pending, slot, &mut flushed_through)
                 .await?;
@@ -163,6 +167,15 @@ impl Decoder {
         for (slot, buffer) in std::mem::replace(pending, keep) {
             self.flush_slot(slot, buffer, true).await?;
             *flushed_through = (*flushed_through).max(Some(slot));
+        }
+        // Everything at or below the cutoff is complete even when nothing was
+        // buffered: advance the watermark on quiet slots too, so the resume
+        // point tracks the stream.
+        if cutoff > 0 && *flushed_through < Some(Slot(cutoff)) {
+            self.persistence
+                .write_last_indexed_slot(Slot(cutoff))
+                .await?;
+            *flushed_through = Some(Slot(cutoff));
         }
         Ok(())
     }

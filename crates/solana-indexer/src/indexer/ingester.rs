@@ -1,6 +1,6 @@
 //! The ingester drains the yellowstone gRPC stream as fast as it delivers,
 //! pushes tagged updates into the channel, and advances the latest-chain-slot
-//! counter on every slot-filter message. It performs no decoding.
+//! counter on every confirmed slot message. It performs no decoding.
 //!
 //! The stream it drains is an `AutoReconnect`-backed
 //! [`GeyserStream`](yellowstone_grpc_client::GeyserStream) from
@@ -30,6 +30,7 @@ use {
             slot::Slot,
             wire::{
                 CommitmentLevel,
+                SlotStatus,
                 SubscribeRequest,
                 SubscribeRequestFilterSlots,
                 SubscribeRequestFilterTransactions,
@@ -197,21 +198,39 @@ where
         .await
     }
 
-    /// Consume a slot message: advance the in-memory chain-tip counter and
-    /// forward the slot to the decoder so it can flush a finished buffer.
+    /// Consume a slot message, routed by its status. A confirmed slot
+    /// advances the in-memory chain-tip counter and lets the decoder flush a
+    /// finished buffer. A finalized slot advances the finalized watermark.
+    /// Every other status is dropped: flushing on a slot ahead of the
+    /// transaction stream's commitment would declare slots complete whose
+    /// transactions are still in flight.
     async fn handle_slot(
         tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
         slot: SubscribeUpdateSlot,
     ) -> ControlFlow<()> {
-        latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
-        Self::forward(
-            tx,
-            StreamUpdate::Slot {
-                slot: Slot(slot.slot),
-            },
-        )
-        .await
+        match slot.status() {
+            SlotStatus::SlotConfirmed => {
+                latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
+                Self::forward(
+                    tx,
+                    StreamUpdate::Slot {
+                        slot: Slot(slot.slot),
+                    },
+                )
+                .await
+            }
+            SlotStatus::SlotFinalized => {
+                Self::forward(
+                    tx,
+                    StreamUpdate::Finalized {
+                        slot: Slot(slot.slot),
+                    },
+                )
+                .await
+            }
+            _ => ControlFlow::Continue(()),
+        }
     }
 
     /// Push one update into the decoder channel. A full channel is the intended
@@ -303,7 +322,7 @@ impl Ingester<GeyserStream> {
 /// matching updates, nothing routes on them today.
 const SETTLEMENT_FILTER: &str = "settlement_txs";
 const SOLFLOW_FILTER: &str = "sol_flow_txs";
-const CHAIN_TIP_FILTER: &str = "chain_tip";
+const SLOT_FILTER: &str = "slot_statuses";
 
 /// Where a fresh subscription starts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -318,7 +337,7 @@ pub(crate) enum Resume {
 }
 
 /// The wire-level filter shape: the two named transaction filters and the
-/// `chain_tip` slot filter, multiplexed into a single subscription at
+/// slot-status filter, multiplexed into a single subscription at
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
 /// [`Ingester::serve`] (`last_indexed_slot + 1`, or `None` for the live tip).
 ///
@@ -348,10 +367,12 @@ fn subscribe_request(
     SubscribeRequest {
         transactions: filters,
         slots: [(
-            CHAIN_TIP_FILTER.to_owned(),
+            SLOT_FILTER.to_owned(),
             SubscribeRequestFilterSlots {
-                // one message per slot at the subscription's commitment level
-                filter_by_commitment: Some(true),
+                // Every status transition, so finalized slots arrive next to
+                // confirmed ones. The ingester routes the two it needs and
+                // drops the rest.
+                filter_by_commitment: Some(false),
                 ..Default::default()
             },
         )]

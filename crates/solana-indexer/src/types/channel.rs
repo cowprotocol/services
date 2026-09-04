@@ -19,13 +19,19 @@ pub(crate) enum StreamUpdate {
         /// Wire message body.
         inner: Box<SubscribeUpdateTransactionInfo>,
     },
-    /// A slot-status message. Lets the decoder flush a buffered slot without
-    /// waiting for the next tracked transaction, which can be arbitrarily far
-    /// away. Only slots at the transaction stream's commitment may be
-    /// forwarded, an earlier-commitment slot would flush a buffer whose
-    /// transactions are still in flight.
+    /// A confirmed slot-status message. Lets the decoder flush a buffered
+    /// slot without waiting for the next tracked transaction, which can be
+    /// arbitrarily far away. Only slots at the transaction stream's
+    /// commitment may be forwarded, an earlier-commitment slot would flush a
+    /// buffer whose transactions are still in flight.
     Slot {
         /// The slot the status message reports.
+        slot: Slot,
+    },
+    /// A finalized slot-status message. Advances the finalized watermark:
+    /// rows at or below it can no longer roll back.
+    Finalized {
+        /// The slot the status message reports finalized.
         slot: Slot,
     },
 }
