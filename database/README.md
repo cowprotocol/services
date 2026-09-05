@@ -519,7 +519,7 @@ Indexes:
 - jit\_user\_order\_creation\_timestamp: btree(`owner`, `creation_timestamp` DESC)
 - jit\_event\_id: btree(`block_number`, `log_index`)
 
-The `pool-indexer` service uses its own per-network database, not these shared DBs. Its tables (`pool_indexer_checkpoints`, `uniswap_v3_pools`, `uniswap_v3_pool_states`, `uniswap_v3_ticks`) and migrations live in [`sql-pool-indexer/`](sql-pool-indexer/).
+The `pool-indexer` service uses its own per-network database, not these shared DBs. Its tables (`pool_indexer_checkpoints`, `uniswap_v3_pools`, `uniswap_v3_pool_states`, `uniswap_v3_ticks`, `balancer_v2_pools`, `balancer_v2_pool_tokens`) and migrations live in [`sql-pool-indexer/`](sql-pool-indexer/).
 
 ### Enums
 
