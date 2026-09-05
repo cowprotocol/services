@@ -53,6 +53,13 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
             let account = load_account(solver_config.account, config.chain_id).await;
+            if solver_config.quote_using_limit_orders.is_some() {
+                tracing::warn!(
+                    solver = %solver_config.name,
+                    "`quote-using-limit-orders` is deprecated and ignored: quotes always use \
+                     limit orders"
+                );
+            }
             solver::Config {
                 endpoint: solver_config.endpoint,
                 name: solver_config.name.into(),

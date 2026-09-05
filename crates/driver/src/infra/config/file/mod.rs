@@ -275,6 +275,11 @@ struct SolverConfig {
     #[serde(default)]
     fee_handler: FeeHandler,
 
+    /// Deprecated and ignored: quotes are always solved as limit orders now.
+    /// The key is still accepted so that existing configs keep loading.
+    #[serde(default)]
+    quote_using_limit_orders: Option<bool>,
+
     /// Whether this solver supports fast-path (out-of-competition) execution.
     #[serde(default)]
     fast_path_enabled: bool,

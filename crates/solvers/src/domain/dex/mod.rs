@@ -126,9 +126,9 @@ impl Swap {
                 }
             }
         } else {
-            // We are fine with just using heuristic gas for market orders and quote
-            // aucitons (recognizable by the missing sell token),
-            // since it doesn't really play a role in the final solution.
+            // We are fine with just using heuristic gas for market orders and
+            // quote auctions (recognizable by the missing sell token) since it
+            // doesn't really play a role in the final solution.
             self.gas
         };
 
