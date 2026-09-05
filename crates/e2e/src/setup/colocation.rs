@@ -128,22 +128,14 @@ pub fn start_driver(
     contracts: &Contracts,
     solvers: Vec<SolverEngine>,
     liquidity: LiquidityProvider,
-    quote_using_limit_orders: bool,
 ) -> JoinHandle<()> {
-    start_driver_with_config_override(
-        contracts,
-        solvers,
-        liquidity,
-        quote_using_limit_orders,
-        None,
-    )
+    start_driver_with_config_override(contracts, solvers, liquidity, None)
 }
 
 pub fn start_driver_with_config_override(
     contracts: &Contracts,
     solvers: Vec<SolverEngine>,
     liquidity: LiquidityProvider,
-    quote_using_limit_orders: bool,
     config_override: Option<&str>,
 ) -> JoinHandle<()> {
     let base_tokens: HashSet<_> = solvers
@@ -181,7 +173,6 @@ endpoint = "{endpoint}"
 relative-slippage = "0.1"
 account = "{account}"
 merge-solutions = {merge_solutions}
-quote-using-limit-orders = {quote_using_limit_orders}
 enable-simulation-bad-token-detection = true
 enable-metrics-bad-order-detection = true
 http-time-buffer = "100ms"

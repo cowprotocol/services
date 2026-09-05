@@ -279,10 +279,6 @@ struct SolverConfig {
     #[serde(default)]
     fee_handler: FeeHandler,
 
-    /// Use limit orders for quoting
-    #[serde(default)]
-    quote_using_limit_orders: bool,
-
     /// Whether this solver supports fast-path (out-of-competition) execution.
     #[serde(default)]
     fast_path_enabled: bool,
