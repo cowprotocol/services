@@ -545,7 +545,8 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // Create an order that only exists to be cancelled.
+    // Create an order that only exists to be cancelled. It still needs a
+    // realistic amount: solvers don't quote dust that can't cover the gas fee.
     let valid_to = timestamp_of_current_block_in_seconds(&web3.provider)
         .await
         .unwrap()
@@ -554,7 +555,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         &test_submit_quote(
             &services,
             &(EthFlowTradeIntent {
-                sell_amount: alloy::primitives::U256::from(42),
+                sell_amount: 1u64.eth(),
                 buy_token: *dai.address(),
                 receiver: Address::repeat_byte(42),
             })
