@@ -431,7 +431,23 @@ fn mock_rpc_with_token_accounts() -> SolanaRPC {
         "context": { "slot": 1u64, "apiVersion": "2.0.0" },
         "value": [sell, buy],
     });
-    let mocks = Mocks::from([(RpcRequest::GetMultipleAccounts, response)]);
+    // The finalization audit asks for two signatures (the dead letter and
+    // the healthy create), both still known to the chain.
+    let status = serde_json::json!({
+        "slot": 43u64,
+        "confirmations": null,
+        "err": null,
+        "status": { "Ok": null },
+        "confirmationStatus": "finalized",
+    });
+    let statuses = serde_json::json!({
+        "context": { "slot": 43u64, "apiVersion": "2.0.0" },
+        "value": [status.clone(), status],
+    });
+    let mocks = Mocks::from([
+        (RpcRequest::GetMultipleAccounts, response),
+        (RpcRequest::GetSignatureStatuses, statuses),
+    ]);
     SolanaRPC::new_mock_with_mocks(mocks)
 }
 

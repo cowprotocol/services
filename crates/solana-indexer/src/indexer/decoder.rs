@@ -98,6 +98,7 @@ impl Decoder {
         // In-memory mirror of the persisted watermark, spares redundant
         // writes and flags late transactions.
         let mut watermark: Option<Slot> = None;
+        let mut finalized_through: Option<Slot> = None;
         while let Some(update) = self.rx.recv().await {
             let (slot, signature, inner) = match update {
                 StreamUpdate::Tx {
@@ -111,7 +112,7 @@ impl Decoder {
                     continue;
                 }
                 StreamUpdate::Finalized { slot } => {
-                    self.persistence.write_finalized_slot(slot).await?;
+                    self.finalize(slot, &mut finalized_through).await?;
                     continue;
                 }
             };
@@ -148,6 +149,55 @@ impl Decoder {
         for (slot, buffer) in pending {
             self.flush_slot(slot, buffer, false).await?;
         }
+        Ok(())
+    }
+
+    /// Advance the finalized watermark to `slot`, first auditing the rows
+    /// that finalization would freeze: every transaction indexed in the
+    /// newly final range must still exist on chain, and one that vanished
+    /// was rolled back, so its rows are reverted in the same SQL transaction
+    /// that advances the watermark. An audit RPC failure leaves the
+    /// watermark untouched, the next finalized status retries the range.
+    async fn finalize(
+        &self,
+        slot: Slot,
+        finalized_through: &mut Option<Slot>,
+    ) -> Result<(), PersistenceError> {
+        let after = match *finalized_through {
+            Some(after) => after,
+            // First finalized status since boot: resume the audit from the
+            // persisted watermark, or from this very slot on a fresh
+            // database, where nothing older was indexed.
+            None => self.persistence.finalized_slot().await?.unwrap_or(slot),
+        };
+        if slot <= after {
+            *finalized_through = Some(after);
+            return Ok(());
+        }
+        let signatures = self.persistence.unfinalized_signatures(after, slot).await?;
+        let vanished = if signatures.is_empty() {
+            Vec::new()
+        } else {
+            match self.rpc.known_signatures(&signatures).await {
+                Ok(known) => signatures
+                    .into_iter()
+                    .zip(known)
+                    .filter_map(|(signature, known)| (!known).then_some(signature))
+                    .collect(),
+                Err(err) => {
+                    tracing::warn!(?err, "signature audit failed, finalization delayed");
+                    *finalized_through = Some(after);
+                    return Ok(());
+                }
+            }
+        };
+        if vanished.is_empty() {
+            self.persistence.write_finalized_slot(slot).await?;
+        } else {
+            tracing::warn!(?vanished, "rolled-back transactions reverted");
+            self.persistence.finalize_through(slot, &vanished).await?;
+        }
+        *finalized_through = Some(slot);
         Ok(())
     }
 

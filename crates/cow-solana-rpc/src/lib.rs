@@ -107,6 +107,22 @@ impl SolanaRPC {
         })
     }
 
+    /// Whether the node knows each signature, from its recent-status cache
+    /// (roughly the last 150 slots past finality). `false` means the
+    /// transaction never landed or was rolled back.
+    pub async fn known_signatures(&self, signatures: &[Signature]) -> Result<Vec<bool>, Error> {
+        self.inner
+            .get_signature_statuses(signatures)
+            .await
+            .map(|response| {
+                response
+                    .value
+                    .into_iter()
+                    .map(|status| status.is_some())
+                    .collect()
+            })
+    }
+
     /// Send a versioned transaction and wait until it reaches the client's
     /// configured commitment level.
     ///

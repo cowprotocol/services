@@ -151,8 +151,9 @@ ON CONFLICT (order_uid) DO NOTHING
             r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
-    partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13)
+    partially_fillable, app_data, creation_timestamp, order_pda,
+    created_by_tx, created_in_slot)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
 ON CONFLICT (uid) DO NOTHING
             "#,
         )
@@ -172,6 +173,8 @@ ON CONFLICT (uid) DO NOTHING
         .bind(order.partially_fillable)
         .bind(order.app_data.to_vec())
         .bind(order.order_pda.to_bytes())
+        .bind(order.signature.as_ref())
+        .bind(to_db_slot(slot))
         .execute(&mut **tx)
         .await?
         .rows_affected();
@@ -342,6 +345,96 @@ WHERE indexer_state.slot < EXCLUDED.slot
         Ok(tx.commit().await?)
     }
 
+    /// The finalized watermark, `None` before the first flush writes the
+    /// state row.
+    pub(crate) async fn finalized_slot(&self) -> Result<Option<Slot>, PersistenceError> {
+        let slot: Option<i64> =
+            sqlx::query_scalar("SELECT finalized_slot FROM solana.indexer_state")
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(slot.map(from_db_slot))
+    }
+
+    /// The distinct transaction signatures of rows with slots in
+    /// `(after, through]`, the rows about to become final.
+    pub(crate) async fn unfinalized_signatures(
+        &self,
+        after: Slot,
+        through: Slot,
+    ) -> Result<Vec<Signature>, PersistenceError> {
+        let rows: Vec<Vec<u8>> = sqlx::query_scalar(
+            r#"
+SELECT tx_signature FROM solana.settlements WHERE slot > $1 AND slot <= $2
+UNION
+SELECT tx_signature FROM solana.dead_letter WHERE slot > $1 AND slot <= $2
+UNION
+SELECT created_by_tx FROM solana.orders
+    WHERE created_in_slot > $1 AND created_in_slot <= $2 AND created_by_tx IS NOT NULL
+ORDER BY 1
+            "#,
+        )
+        .bind(to_db_slot(after))
+        .bind(to_db_slot(through))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|bytes| Signature::try_from(bytes.as_slice()).ok())
+            .collect())
+    }
+
+    /// Advance the finalized watermark past slots whose transactions all
+    /// still exist, reverting the rows of the `vanished` ones in the same
+    /// SQL transaction: their trades (with the fill sums the trades added),
+    /// settlements, dead letters, and the orders they created.
+    pub(crate) async fn finalize_through(
+        &self,
+        finalized: Slot,
+        vanished: &[Signature],
+    ) -> Result<(), PersistenceError> {
+        let mut tx = self.pool.begin().await?;
+        for signature in vanished {
+            let signature = signature.as_ref();
+            // Aggregated per order: one transaction can carry several
+            // settlements, and Postgres applies only one FROM row per target.
+            sqlx::query(
+                r#"
+UPDATE solana.order_pda AS pda
+SET amount_withdrawn = pda.amount_withdrawn - deltas.sell,
+    amount_received  = pda.amount_received - deltas.buy
+FROM (
+    SELECT order_uid, SUM(sell_amount) AS sell, SUM(buy_amount) AS buy
+    FROM solana.trades WHERE tx_signature = $1 GROUP BY order_uid
+) AS deltas
+WHERE pda.order_uid = deltas.order_uid
+                "#,
+            )
+            .bind(signature)
+            .execute(&mut *tx)
+            .await?;
+            for delete in [
+                "DELETE FROM solana.trades WHERE tx_signature = $1",
+                "DELETE FROM solana.settlements WHERE tx_signature = $1",
+                "DELETE FROM solana.dead_letter WHERE tx_signature = $1",
+                "DELETE FROM solana.order_pda WHERE order_uid IN
+                    (SELECT uid FROM solana.orders WHERE created_by_tx = $1)",
+                "DELETE FROM solana.orders WHERE created_by_tx = $1",
+            ] {
+                sqlx::query(delete)
+                    .bind(signature)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
+        sqlx::query(
+            "UPDATE solana.indexer_state SET finalized_slot = GREATEST(finalized_slot, $1)",
+        )
+        .bind(to_db_slot(finalized))
+        .execute(&mut *tx)
+        .await?;
+        Ok(tx.commit().await?)
+    }
+
     /// Advance the finalized watermark. Update-only: before the first flush
     /// there is no state row and nothing indexed to finalize. A backward
     /// write is a no-op.
@@ -413,6 +506,136 @@ mod tests {
         std::collections::HashMap,
     };
 
+    /// The audit cascade: the vanished transaction's settlement, trades,
+    /// dead letter, and the order it created disappear, the fill sums its
+    /// trades added come back off, and rows of surviving transactions stay.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_finalize_through_reverts_vanished_transactions() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+        let survivor = Signature::from([1; 64]);
+        let vanished = Signature::from([2; 64]);
+
+        // Order O: created by the surviving transaction, traded by both.
+        SeedOrder::new([0x01; 32])
+            .created_by(survivor, 40)
+            .insert(&pool)
+            .await;
+        // Order P: created by the vanished transaction.
+        SeedOrder::new([0x02; 32])
+            .created_by(vanished, 41)
+            .insert(&pool)
+            .await;
+        for (uid, withdrawn, received) in [([0x01u8; 32], 500i64, 700i64), ([0x02u8; 32], 0, 0)] {
+            sqlx::query(
+                "INSERT INTO solana.order_pda
+                     (order_uid, created_by, amount_withdrawn, amount_received)
+                 VALUES ($1, $1, $2, $3)",
+            )
+            .bind(uid)
+            .bind(withdrawn)
+            .bind(received)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        // The vanished transaction carries two settlements trading order O,
+        // so the revert must aggregate their deltas. The survivor trades O
+        // too, its rows and sums must stay.
+        for (signature, instruction_index, slot, sell, buy) in [
+            (survivor, 0i32, 40i64, 100i64, 200i64),
+            (vanished, 0, 41, 300, 400),
+            (vanished, 5, 41, 100, 100),
+        ] {
+            sqlx::query(
+                "INSERT INTO solana.settlements
+                     (slot, tx_signature, instruction_index, solver, auction_id)
+                 VALUES ($1, $2, $3, $4, 7)",
+            )
+            .bind(slot)
+            .bind(signature.as_ref())
+            .bind(instruction_index)
+            .bind([0xCCu8; 32])
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO solana.trades
+                     (tx_signature, instruction_index, order_uid, sell_amount,
+                      buy_amount, fee_amount)
+                 VALUES ($1, $2, $3, $4, $5, 0)",
+            )
+            .bind(signature.as_ref())
+            .bind(instruction_index)
+            .bind([0x01u8; 32])
+            .bind(sell)
+            .bind(buy)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO solana.dead_letter (tx_signature, slot, reason)
+             VALUES ($1, 41, 'decoder_error')",
+        )
+        .bind(vanished.as_ref())
+        .execute(&pool)
+        .await
+        .unwrap();
+        postgres.write_last_indexed_slot(Slot(45)).await.unwrap();
+
+        // Both signatures sit in the audit window, bytewise sorted.
+        assert_eq!(
+            postgres
+                .unfinalized_signatures(Slot(39), Slot(45))
+                .await
+                .unwrap(),
+            vec![survivor, vanished]
+        );
+
+        postgres
+            .finalize_through(Slot(45), &[vanished])
+            .await
+            .unwrap();
+
+        let orders: Vec<Vec<u8>> = sqlx::query_scalar("SELECT uid FROM solana.orders")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(orders, vec![vec![0x01; 32]]);
+        let sums: Vec<(Vec<u8>, i64, i64)> = sqlx::query_as(
+            "SELECT order_uid, amount_withdrawn::bigint, amount_received::bigint
+             FROM solana.order_pda",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(sums, vec![(vec![0x01; 32], 100, 200)]);
+        let trades: Vec<(Vec<u8>, i32)> =
+            sqlx::query_as("SELECT tx_signature, instruction_index FROM solana.trades")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(trades, vec![(survivor.as_ref().to_vec(), 0)]);
+        let settlements: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.settlements")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(settlements, 1);
+        let dead: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.dead_letter")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(dead, 0);
+        let finalized: i64 = sqlx::query_scalar("SELECT finalized_slot FROM solana.indexer_state")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(finalized, 45);
+    }
+
     /// The finalized watermark only moves forward and needs an existing
     /// state row: before the first flush the update is a no-op.
     #[tokio::test]
@@ -450,6 +673,8 @@ mod tests {
         valid_to: i64,
         kind: database::solana::OrderKind,
         order_pda: [u8; 32],
+        created_by_tx: Option<Vec<u8>>,
+        created_in_slot: Option<i64>,
     }
 
     impl SeedOrder {
@@ -462,7 +687,15 @@ mod tests {
                 valid_to: 42,
                 kind: database::solana::OrderKind::Sell,
                 order_pda: uid,
+                created_by_tx: None,
+                created_in_slot: None,
             }
+        }
+
+        fn created_by(mut self, signature: Signature, slot: i64) -> Self {
+            self.created_by_tx = Some(signature.as_ref().to_vec());
+            self.created_in_slot = Some(slot);
+            self
         }
 
         async fn insert(self, pool: &PgPool) {
@@ -470,8 +703,9 @@ mod tests {
                 r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
-    partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
+    partially_fillable, app_data, creation_timestamp, order_pda,
+    created_by_tx, created_in_slot)
+VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7, $8, $9)
                 "#,
             )
             .bind(self.uid)
@@ -481,6 +715,8 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
             .bind(self.valid_to)
             .bind(self.kind)
             .bind(self.order_pda)
+            .bind(self.created_by_tx)
+            .bind(self.created_in_slot)
             .execute(pool)
             .await
             .unwrap();
