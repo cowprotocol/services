@@ -84,6 +84,25 @@ async fn run(config: Config, start_slot: Option<u64>) {
     let mut decoder_task = tokio::spawn(async move { decoder.run().await });
 
     let latest_chain_slot = Arc::new(AtomicU64::default());
+
+    // A decoder without a stream: the backfill drives its decode and flush
+    // paths from RPC history over a dedicated client.
+    let backfiller = {
+        let rpc = SolanaRPC::new_with_timeout_and_commitment(
+            &config.rpc.endpoint,
+            config.rpc.request_timeout,
+            CommitmentConfig::confirmed(),
+        );
+        let (_closed, rx) = mpsc::channel(1);
+        Decoder::new(
+            persistence.clone(),
+            rpc,
+            rx,
+            settlement_program,
+            solflow_program,
+        )
+    };
+
     let stream_loop = async {
         let mut resume = start_slot.map_or(Resume::Watermark, Resume::From);
         loop {
@@ -102,14 +121,23 @@ async fn run(config: Config, start_slot: Option<u64>) {
                 // The decoder hung up, the select below reports why.
                 Ok(()) => break,
                 // A rejected resume usually means the last indexed slot fell
-                // out of the provider's replay window. Continue from the live
-                // tip, the gap stays unindexed until a backfill.
+                // out of the provider's replay window. Recover the gap from
+                // RPC history: a successful backfill moves the watermark to
+                // the scanned tip, back inside the window. Only when the
+                // backfill itself fails does the stream continue from the
+                // live tip, with the gap recorded as lost.
                 Err(Error::Subscribe(err)) if resume != Resume::LiveTip => {
-                    tracing::error!(
-                        ?err,
-                        "resume subscription rejected, resubscribing from the live tip"
-                    );
-                    resume = Resume::LiveTip;
+                    tracing::warn!(?err, "resume subscription rejected, backfilling");
+                    match backfiller.backfill().await {
+                        Ok(()) => resume = Resume::Watermark,
+                        Err(err) => {
+                            tracing::error!(
+                                ?err,
+                                "backfill failed, resubscribing from the live tip"
+                            );
+                            resume = Resume::LiveTip;
+                        }
+                    }
                 }
                 Err(err) => {
                     tracing::error!(?err, "stream ended, reconnecting");

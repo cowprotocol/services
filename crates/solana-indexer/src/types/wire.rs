@@ -24,6 +24,8 @@ pub use yellowstone_grpc_proto::{
         InnerInstruction,
         InnerInstructions,
         Message,
+        MessageAddressTableLookup,
+        MessageHeader,
         TokenBalance,
         Transaction,
         TransactionError,

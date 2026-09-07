@@ -436,6 +436,25 @@ WHERE pda.order_uid = deltas.order_uid
         Ok(tx.commit().await?)
     }
 
+    /// Record a slot range the indexer could not recover, `(from, through]`.
+    pub(crate) async fn record_lost_range(
+        &self,
+        from: Slot,
+        through: Slot,
+        reason: &str,
+    ) -> Result<(), PersistenceError> {
+        sqlx::query(
+            "INSERT INTO solana.lost_slot_ranges (from_slot, through_slot, reason)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(to_db_slot(from))
+        .bind(to_db_slot(through))
+        .bind(reason)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     /// Advance the finalized watermark. Update-only: before the first flush
     /// there is no state row and nothing indexed to finalize. A backward
     /// write is a no-op.
@@ -642,6 +661,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(finalized, 45);
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_records_lost_ranges() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+        postgres
+            .record_lost_range(Slot(40), Slot(50), "backfill failed")
+            .await
+            .unwrap();
+        let (from, through, reason): (i64, i64, String) =
+            sqlx::query_as("SELECT from_slot, through_slot, reason FROM solana.lost_slot_ranges")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            (from, through, reason.as_str()),
+            (40, 50, "backfill failed")
+        );
     }
 
     /// The finalized watermark only moves forward and needs an existing

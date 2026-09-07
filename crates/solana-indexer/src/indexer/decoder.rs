@@ -866,5 +866,7 @@ fn relevant_instructions(
     resolved
 }
 
+mod backfill;
+
 #[cfg(test)]
 mod tests;

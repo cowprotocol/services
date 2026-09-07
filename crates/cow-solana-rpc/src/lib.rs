@@ -15,7 +15,11 @@ use {
     std::{collections::HashMap, time::Duration},
     url::Url,
 };
-pub use {solana_commitment_config::CommitmentConfig, solana_rpc_client_api::client_error::Error};
+pub use {
+    solana_commitment_config::CommitmentConfig,
+    solana_rpc_client_api::client_error::Error,
+    solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
+};
 #[cfg(feature = "test-util")]
 pub use {solana_rpc_client::mock_sender::Mocks, solana_rpc_client_api::request::RpcRequest};
 
@@ -24,6 +28,10 @@ pub struct SolanaRPC {
 }
 
 impl SolanaRPC {
+    /// Signatures per page of [`SolanaRPC::signatures_for_address`]. A page
+    /// shorter than this is the last one.
+    pub const SIGNATURES_PAGE: usize = 1000;
+
     /// Creates a client for the given HTTP URL, request timeout and
     /// commitment level.
     pub fn new_with_timeout_and_commitment(
@@ -124,6 +132,51 @@ impl SolanaRPC {
             known.extend(response.value.into_iter().map(|status| status.is_some()));
         }
         Ok(known)
+    }
+
+    /// One page of an address's transaction signatures, newest first,
+    /// starting below `before` when given. The node serves deep history, so
+    /// repeated calls walk arbitrarily far back.
+    pub async fn signatures_for_address(
+        &self,
+        address: &Pubkey,
+        before: Option<Signature>,
+    ) -> Result<Vec<(Signature, u64)>, Error> {
+        let config = solana_rpc_client::rpc_client::GetConfirmedSignaturesForAddress2Config {
+            before,
+            limit: Some(Self::SIGNATURES_PAGE),
+            ..Default::default()
+        };
+        let page = self
+            .inner
+            .get_signatures_for_address_with_config(address, config)
+            .await?;
+        Ok(page
+            .into_iter()
+            .filter_map(|status| {
+                let signature = status.signature.parse().ok()?;
+                Some((signature, status.slot))
+            })
+            .collect())
+    }
+
+    /// One confirmed transaction with its metadata, base64-encoded.
+    pub async fn transaction(
+        &self,
+        signature: &Signature,
+    ) -> Result<EncodedConfirmedTransactionWithStatusMeta, Error> {
+        self.inner
+            .get_transaction_with_config(
+                signature,
+                solana_rpc_client_api::config::RpcTransactionConfig {
+                    encoding: Some(
+                        solana_transaction_status_client_types::UiTransactionEncoding::Base64,
+                    ),
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    max_supported_transaction_version: Some(0),
+                },
+            )
+            .await
     }
 
     /// Send a versioned transaction and wait until it reaches the client's
