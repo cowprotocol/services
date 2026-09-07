@@ -116,14 +116,16 @@ impl Postgres {
     ) -> Result<(), PersistenceError> {
         sqlx::query(
             r#"
-INSERT INTO solana.order_pda (order_uid, created_by)
-VALUES ($1, $2)
+INSERT INTO solana.order_pda (order_uid, created_by, created_by_tx, created_in_slot)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (order_uid) DO UPDATE SET is_reorged = false
     WHERE order_pda.is_reorged
             "#,
         )
         .bind(order.order_uid.0)
         .bind(order.created_by.to_bytes())
+        .bind(order.signature.as_ref())
+        .bind(to_db_slot(slot))
         .execute(&mut **tx)
         .await?;
         // Without both mints the intent row cannot be written. The
@@ -152,9 +154,8 @@ ON CONFLICT (order_uid) DO UPDATE SET is_reorged = false
             r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
-    partially_fillable, app_data, creation_timestamp, order_pda,
-    created_by_tx, created_in_slot)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
+    partially_fillable, app_data, creation_timestamp, order_pda)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13)
 ON CONFLICT (uid) DO NOTHING
             "#,
         )
@@ -174,8 +175,6 @@ ON CONFLICT (uid) DO NOTHING
         .bind(order.partially_fillable)
         .bind(order.app_data.to_vec())
         .bind(order.order_pda.to_bytes())
-        .bind(order.signature.as_ref())
-        .bind(to_db_slot(slot))
         .execute(&mut **tx)
         .await?
         .rows_affected();
@@ -369,7 +368,7 @@ SELECT tx_signature FROM solana.settlements WHERE slot > $1 AND slot <= $2
 UNION
 SELECT tx_signature FROM solana.dead_letter WHERE slot > $1 AND slot <= $2
 UNION
-SELECT created_by_tx FROM solana.orders
+SELECT created_by_tx FROM solana.order_pda
     WHERE created_in_slot > $1 AND created_in_slot <= $2 AND created_by_tx IS NOT NULL
 ORDER BY 1
             "#,
@@ -421,8 +420,7 @@ WHERE pda.order_uid = deltas.order_uid
                 // Orders are marked, not deleted: the rows are the audit
                 // trail, and the stream re-delivering a re-landed creation
                 // clears the flag.
-                "UPDATE solana.order_pda SET is_reorged = true WHERE order_uid IN
-                    (SELECT uid FROM solana.orders WHERE created_by_tx = $1)",
+                "UPDATE solana.order_pda SET is_reorged = true WHERE created_by_tx = $1",
             ] {
                 sqlx::query(statement)
                     .bind(signature)
@@ -523,22 +521,22 @@ mod tests {
         let vanished = Signature::from([2; 64]);
 
         // Order O: created by the surviving transaction, traded by both.
-        SeedOrder::new([0x01; 32])
-            .created_by(survivor, 40)
-            .insert(&pool)
-            .await;
+        SeedOrder::new([0x01; 32]).insert(&pool).await;
         // Order P: created by the vanished transaction.
-        SeedOrder::new([0x02; 32])
-            .created_by(vanished, 41)
-            .insert(&pool)
-            .await;
-        for (uid, withdrawn, received) in [([0x01u8; 32], 500i64, 700i64), ([0x02u8; 32], 0, 0)] {
+        SeedOrder::new([0x02; 32]).insert(&pool).await;
+        for (uid, creation, slot, withdrawn, received) in [
+            ([0x01u8; 32], survivor, 40i64, 500i64, 700i64),
+            ([0x02u8; 32], vanished, 41, 0, 0),
+        ] {
             sqlx::query(
                 "INSERT INTO solana.order_pda
-                     (order_uid, created_by, amount_withdrawn, amount_received)
-                 VALUES ($1, $1, $2, $3)",
+                     (order_uid, created_by, created_by_tx, created_in_slot,
+                      amount_withdrawn, amount_received)
+                 VALUES ($1, $1, $2, $3, $4, $5)",
             )
             .bind(uid)
+            .bind(creation.as_ref())
+            .bind(slot)
             .bind(withdrawn)
             .bind(received)
             .execute(&pool)
@@ -684,8 +682,6 @@ mod tests {
         valid_to: i64,
         kind: database::solana::OrderKind,
         order_pda: [u8; 32],
-        created_by_tx: Option<Vec<u8>>,
-        created_in_slot: Option<i64>,
     }
 
     impl SeedOrder {
@@ -698,15 +694,7 @@ mod tests {
                 valid_to: 42,
                 kind: database::solana::OrderKind::Sell,
                 order_pda: uid,
-                created_by_tx: None,
-                created_in_slot: None,
             }
-        }
-
-        fn created_by(mut self, signature: Signature, slot: i64) -> Self {
-            self.created_by_tx = Some(signature.as_ref().to_vec());
-            self.created_in_slot = Some(slot);
-            self
         }
 
         async fn insert(self, pool: &PgPool) {
@@ -714,9 +702,8 @@ mod tests {
                 r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
-    partially_fillable, app_data, creation_timestamp, order_pda,
-    created_by_tx, created_in_slot)
-VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7, $8, $9)
+    partially_fillable, app_data, creation_timestamp, order_pda)
+VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
                 "#,
             )
             .bind(self.uid)
@@ -726,8 +713,6 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7, $8, $9)
             .bind(self.valid_to)
             .bind(self.kind)
             .bind(self.order_pda)
-            .bind(self.created_by_tx)
-            .bind(self.created_in_slot)
             .execute(pool)
             .await
             .unwrap();
