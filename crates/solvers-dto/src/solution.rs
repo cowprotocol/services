@@ -2,7 +2,7 @@ use {
     alloy_primitives::{Address, U256},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Deserializer, Serialize, de},
-    serde_with::serde_as,
+    serde_with::{MapPreventDuplicates, serde_as},
     std::collections::{HashMap, HashSet},
 };
 
@@ -76,7 +76,7 @@ impl Default for SolverResponse {
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub id: u64,
-    #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
+    #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
     pub prices: HashMap<Address, U256>,
     #[serde(deserialize_with = "deserialize_trades")]
     pub trades: Vec<Trade>,
@@ -90,6 +90,7 @@ pub struct Solution {
     #[serde(flatten)]
     pub gas_fee_override: Option<GasFeeOverride>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde_as(as = "Option<MapPreventDuplicates<_, _>>")]
     pub flashloans: Option<HashMap<OrderUid, Flashloan>>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub wrappers: Vec<WrapperCall>,

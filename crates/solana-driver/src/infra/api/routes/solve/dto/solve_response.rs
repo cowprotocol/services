@@ -8,7 +8,7 @@
 use {
     crate::domain::{self, order_uid::OrderUid},
     serde::{Deserialize, Serialize},
-    serde_with::{DisplayFromStr, serde_as},
+    serde_with::{DisplayFromStr, MapPreventDuplicates, serde_as},
     solana_sdk::pubkey::Pubkey,
     std::collections::HashMap,
 };
@@ -34,7 +34,7 @@ pub struct Solution {
     #[serde_as(as = "DisplayFromStr")]
     solver: Pubkey,
     /// Executed amounts per filled order.
-    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
+    #[serde_as(as = "MapPreventDuplicates<DisplayFromStr, _>")]
     orders: HashMap<OrderUid, TradedAmounts>,
 }
 

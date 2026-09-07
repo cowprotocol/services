@@ -2,7 +2,7 @@ use {
     alloy_primitives::{Address, B256, U256, map::B256Map},
     eth_domain_types as eth,
     serde::{Deserialize, Serialize},
-    serde_with::serde_as,
+    serde_with::{MapPreventDuplicates, serde_as},
     std::collections::HashMap,
 };
 
@@ -49,6 +49,7 @@ pub struct Request {
     pub generate_access_list: Option<bool>,
     /// Overrides for a given contract.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<MapPreventDuplicates<_, _>>")]
     pub state_objects: Option<HashMap<Address, StateObject>>,
     /// EIP-2930 access list used by the transaction.
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -5,7 +5,7 @@ use {
     eth_domain_types as eth,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
-    serde_with::serde_as,
+    serde_with::{MapPreventDuplicates, serde_as},
     std::collections::BTreeMap,
 };
 
@@ -36,7 +36,7 @@ pub fn from_domain(auction: &domain::RawAuctionData) -> RawAuctionData {
 pub struct RawAuctionData {
     pub block: u64,
     pub orders: Vec<Order>,
-    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
+    #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<Address, U256>,
     #[serde(default)]
     pub surplus_capturing_jit_order_owners: Vec<Address>,

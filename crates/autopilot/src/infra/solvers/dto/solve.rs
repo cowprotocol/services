@@ -16,13 +16,12 @@ use {
     number::serialization::HexOrDecimalU256,
     observe::http_body::Measured,
     reqwest::{RequestBuilder, header::HeaderValue},
-    serde::{Deserialize, Deserializer, Serialize, de},
-    serde_with::{DisplayFromStr, serde_as},
+    serde::{Deserialize, Serialize},
+    serde_with::{DisplayFromStr, MapPreventDuplicates, serde_as},
     std::{
         borrow::Cow,
         collections::{HashMap, HashSet},
         convert::Infallible,
-        fmt,
         io::Write,
         time::Duration,
     },
@@ -389,53 +388,18 @@ pub struct Solution {
     pub solution_id: u64,
     /// Address used by the driver to submit the settlement onchain.
     pub submission_address: Address,
-    #[serde(deserialize_with = "deserialize_orders")]
+    /// A partially fillable order may be split across several solutions, but
+    /// a single solution settles each order exactly once.
+    #[serde_as(as = "MapPreventDuplicates<_, _>")]
     pub orders: HashMap<boundary::OrderUid, TradedOrder>,
     /// Deprecated: uniform clearing prices are no longer used by the
     /// autopilot. Kept here purely so we can detect and log drivers that
     /// still send them, in order to chase them down before the field is
     /// removed entirely.
     #[serde(default)]
-    #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
+    #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<Address, U256>,
     pub gas: Option<u64>,
-}
-
-/// A partially fillable order may be split across several solutions, but a
-/// single solution settles each order exactly once. Collecting the entries into
-/// a map would silently keep only the last of a repeated order.
-fn deserialize_orders<'de, D>(
-    deserializer: D,
-) -> Result<HashMap<boundary::OrderUid, TradedOrder>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct Visitor;
-
-    impl<'de> de::Visitor<'de> for Visitor {
-        type Value = HashMap<boundary::OrderUid, TradedOrder>;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a map of order uid to executed amounts")
-        }
-
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: de::MapAccess<'de>,
-        {
-            let mut orders = HashMap::with_capacity(map.size_hint().unwrap_or_default());
-            while let Some((uid, order)) = map.next_entry::<boundary::OrderUid, TradedOrder>()? {
-                if orders.insert(uid, order).is_some() {
-                    return Err(de::Error::custom(format!(
-                        "order {uid} is settled by more than one trade"
-                    )));
-                }
-            }
-            Ok(orders)
-        }
-    }
-
-    deserializer.deserialize_map(Visitor)
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -528,7 +492,7 @@ mod tests {
         let err = serde_json::from_str::<Response>(&response).unwrap_err();
         assert!(
             err.to_string()
-                .contains(&format!("order {uid} is settled by more than one trade")),
+                .contains("invalid entry: found duplicate key"),
             "unexpected error: {err}"
         );
     }
