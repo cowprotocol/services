@@ -154,7 +154,8 @@ INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account
     partially_fillable, app_data, creation_timestamp, order_pda,
     created_by_tx, created_in_slot)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
-ON CONFLICT (uid) DO NOTHING
+ON CONFLICT (uid) DO UPDATE SET is_reorged = false
+    WHERE orders.is_reorged
             "#,
         )
         .bind(order.order_uid.0)
@@ -386,7 +387,8 @@ ORDER BY 1
     /// Advance the finalized watermark past slots whose transactions all
     /// still exist, reverting the rows of the `vanished` ones in the same
     /// SQL transaction: their trades (with the fill sums the trades added),
-    /// settlements, dead letters, and the orders they created.
+    /// settlements, and dead letters are deleted, and the orders they
+    /// created are marked `is_reorged`.
     pub(crate) async fn finalize_through(
         &self,
         finalized: Slot,
@@ -412,15 +414,16 @@ WHERE pda.order_uid = deltas.order_uid
             .bind(signature)
             .execute(&mut *tx)
             .await?;
-            for delete in [
+            for statement in [
                 "DELETE FROM solana.trades WHERE tx_signature = $1",
                 "DELETE FROM solana.settlements WHERE tx_signature = $1",
                 "DELETE FROM solana.dead_letter WHERE tx_signature = $1",
-                "DELETE FROM solana.order_pda WHERE order_uid IN
-                    (SELECT uid FROM solana.orders WHERE created_by_tx = $1)",
-                "DELETE FROM solana.orders WHERE created_by_tx = $1",
+                // Orders are marked, not deleted: the row is the audit trail,
+                // and the stream re-delivering a re-landed creation clears
+                // the flag.
+                "UPDATE solana.orders SET is_reorged = true WHERE created_by_tx = $1",
             ] {
-                sqlx::query(delete)
+                sqlx::query(statement)
                     .bind(signature)
                     .execute(&mut *tx)
                     .await?;
@@ -600,19 +603,26 @@ mod tests {
             .await
             .unwrap();
 
-        let orders: Vec<Vec<u8>> = sqlx::query_scalar("SELECT uid FROM solana.orders")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-        assert_eq!(orders, vec![vec![0x01; 32]]);
+        let orders: Vec<(Vec<u8>, bool)> =
+            sqlx::query_as("SELECT uid, is_reorged FROM solana.orders ORDER BY uid")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            orders,
+            vec![(vec![0x01; 32], false), (vec![0x02; 32], true)]
+        );
         let sums: Vec<(Vec<u8>, i64, i64)> = sqlx::query_as(
             "SELECT order_uid, amount_withdrawn::bigint, amount_received::bigint
-             FROM solana.order_pda",
+             FROM solana.order_pda ORDER BY order_uid",
         )
         .fetch_all(&pool)
         .await
         .unwrap();
-        assert_eq!(sums, vec![(vec![0x01; 32], 100, 200)]);
+        assert_eq!(
+            sums,
+            vec![(vec![0x01; 32], 100, 200), (vec![0x02; 32], 0, 0)]
+        );
         let trades: Vec<(Vec<u8>, i32)> =
             sqlx::query_as("SELECT tx_signature, instruction_index FROM solana.trades")
                 .fetch_all(&pool)

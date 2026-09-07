@@ -3,7 +3,10 @@
 -- before this migration, which the audit treats as already final.
 ALTER TABLE solana.orders
     ADD COLUMN created_by_tx bytea CHECK (created_by_tx IS NULL OR length(created_by_tx) = 64),
-    ADD COLUMN created_in_slot bigint;
+    ADD COLUMN created_in_slot bigint,
+    -- The creation rolled back before finalizing. The row stays as the audit
+    -- trail, every reader skips it, and a re-landed creation clears the flag.
+    ADD COLUMN is_reorged boolean NOT NULL DEFAULT false;
 
 -- The finalization audit scans each table by slot range.
 CREATE INDEX solana_orders_created_in_slot ON solana.orders (created_in_slot)
