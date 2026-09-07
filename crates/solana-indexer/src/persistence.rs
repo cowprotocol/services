@@ -508,9 +508,9 @@ mod tests {
         std::collections::HashMap,
     };
 
-    /// The audit cascade: the vanished transaction's settlement, trades,
-    /// dead letter, and the order it created disappear, the fill sums its
-    /// trades added come back off, and rows of surviving transactions stay.
+    /// Reverting a vanished transaction deletes its settlement, trades, and
+    /// dead letter, subtracts the fills its trades added, and marks the
+    /// order it created. Rows of surviving transactions stay.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
     async fn solana_db_finalize_through_reverts_vanished_transactions() {
