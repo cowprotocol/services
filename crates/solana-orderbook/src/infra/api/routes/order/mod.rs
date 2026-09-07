@@ -26,7 +26,7 @@ pub async fn order(
     Ok(Json(dto::Order::new(row, now_unix())))
 }
 
-fn now_unix() -> i64 {
+pub(super) fn now_unix() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock after the unix epoch")
