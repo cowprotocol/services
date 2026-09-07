@@ -118,7 +118,8 @@ impl Postgres {
             r#"
 INSERT INTO solana.order_pda (order_uid, created_by)
 VALUES ($1, $2)
-ON CONFLICT (order_uid) DO NOTHING
+ON CONFLICT (order_uid) DO UPDATE SET is_reorged = false
+    WHERE order_pda.is_reorged
             "#,
         )
         .bind(order.order_uid.0)
@@ -154,8 +155,7 @@ INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account
     partially_fillable, app_data, creation_timestamp, order_pda,
     created_by_tx, created_in_slot)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
-ON CONFLICT (uid) DO UPDATE SET is_reorged = false
-    WHERE orders.is_reorged
+ON CONFLICT (uid) DO NOTHING
             "#,
         )
         .bind(order.order_uid.0)
@@ -418,10 +418,11 @@ WHERE pda.order_uid = deltas.order_uid
                 "DELETE FROM solana.trades WHERE tx_signature = $1",
                 "DELETE FROM solana.settlements WHERE tx_signature = $1",
                 "DELETE FROM solana.dead_letter WHERE tx_signature = $1",
-                // Orders are marked, not deleted: the row is the audit trail,
-                // and the stream re-delivering a re-landed creation clears
-                // the flag.
-                "UPDATE solana.orders SET is_reorged = true WHERE created_by_tx = $1",
+                // Orders are marked, not deleted: the rows are the audit
+                // trail, and the stream re-delivering a re-landed creation
+                // clears the flag.
+                "UPDATE solana.order_pda SET is_reorged = true WHERE order_uid IN
+                    (SELECT uid FROM solana.orders WHERE created_by_tx = $1)",
             ] {
                 sqlx::query(statement)
                     .bind(signature)
@@ -603,13 +604,13 @@ mod tests {
             .await
             .unwrap();
 
-        let orders: Vec<(Vec<u8>, bool)> =
-            sqlx::query_as("SELECT uid, is_reorged FROM solana.orders ORDER BY uid")
+        let reorged: Vec<(Vec<u8>, bool)> =
+            sqlx::query_as("SELECT order_uid, is_reorged FROM solana.order_pda ORDER BY order_uid")
                 .fetch_all(&pool)
                 .await
                 .unwrap();
         assert_eq!(
-            orders,
+            reorged,
             vec![(vec![0x01; 32], false), (vec![0x02; 32], true)]
         );
         let sums: Vec<(Vec<u8>, i64, i64)> = sqlx::query_as(

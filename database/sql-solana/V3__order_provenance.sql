@@ -3,9 +3,12 @@
 -- before this migration, which the audit treats as already final.
 ALTER TABLE solana.orders
     ADD COLUMN created_by_tx bytea CHECK (created_by_tx IS NULL OR length(created_by_tx) = 64),
-    ADD COLUMN created_in_slot bigint,
-    -- The creation rolled back before finalizing. The row stays as the audit
-    -- trail, every reader skips it, and a re-landed creation clears the flag.
+    ADD COLUMN created_in_slot bigint;
+
+-- The order's creation rolled back before finalizing. The rows stay as the
+-- audit trail, every reader skips the order, and a re-landed creation clears
+-- the flag.
+ALTER TABLE solana.order_pda
     ADD COLUMN is_reorged boolean NOT NULL DEFAULT false;
 
 -- The finalization audit scans each table by slot range.
