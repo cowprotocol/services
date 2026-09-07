@@ -1,12 +1,7 @@
--- Ties order rows to the transaction that created them, so a creation that
--- rolls back before its slot finalizes can be reverted. NULL on rows written
--- before this migration, which the audit treats as already final.
--- Creation provenance next to created_by, so a creation that rolls back
--- before its slot finalizes can be found and marked. NULL on rows written
--- before this migration, which the audit treats as already final.
--- `is_reorged` set means the creation rolled back: the rows stay as the
--- audit trail, every reader skips the order, and a re-landed creation
--- clears the flag.
+-- Where the order PDA was created, so a creation that rolls back before its
+-- slot finalizes can be marked `is_reorged`. Readers skip marked orders, a
+-- re-landed creation clears the flag, and NULL provenance (rows predating
+-- this migration) counts as already final.
 ALTER TABLE solana.order_pda
     ADD COLUMN created_by_tx bytea CHECK (created_by_tx IS NULL OR length(created_by_tx) = 64),
     ADD COLUMN created_in_slot bigint,
