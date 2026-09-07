@@ -198,12 +198,10 @@ where
         .await
     }
 
-    /// Consume a slot message, routed by its status. A confirmed slot
-    /// advances the in-memory chain-tip counter and lets the decoder flush a
-    /// finished buffer. A finalized slot advances the finalized watermark.
-    /// Every other status is dropped: flushing on a slot ahead of the
-    /// transaction stream's commitment would declare slots complete whose
-    /// transactions are still in flight.
+    /// Route a slot message by status: confirmed advances the tip counter
+    /// and flushes the decoder, finalized advances the finalized watermark,
+    /// and any other status is dropped since its transactions may still be
+    /// in flight.
     async fn handle_slot(
         tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
