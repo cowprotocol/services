@@ -7,7 +7,7 @@ use {
     number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
-    serde_with::{MapPreventDuplicates, serde_as},
+    serde_with::serde_as,
     solver::solver::Arn,
     std::{collections::HashMap, num::NonZeroUsize, time::Duration},
 };
@@ -269,7 +269,6 @@ struct SolverConfig {
     timeouts: Timeouts,
 
     #[serde(default)]
-    #[serde_as(as = "MapPreventDuplicates<_, _>")]
     request_headers: HashMap<String, String>,
 
     /// Determines whether the `solver` or the `driver` handles the fees
@@ -833,7 +832,6 @@ fn default_simulation_bad_token_max_age() -> Duration {
 pub struct BadOrderDetectionConfig {
     /// Which tokens are explicitly supported or unsupported by the solver.
     #[serde(default)]
-    #[serde_as(as = "MapPreventDuplicates<_, _>")]
     pub token_supported: HashMap<eth::Address, bool>,
 
     /// Whether the solver opted into detecting unsupported

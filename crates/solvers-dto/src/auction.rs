@@ -4,7 +4,7 @@ use {
     bigdecimal::BigDecimal,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
-    serde_with::{DisplayFromStr, MapPreventDuplicates, serde_as},
+    serde_with::{DisplayFromStr, serde_as},
     std::{
         collections::{BTreeMap, HashMap},
         sync::Arc,
@@ -17,7 +17,6 @@ use {
 pub struct Auction {
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub id: Option<i64>,
-    #[serde_as(as = "MapPreventDuplicates<_, _>")]
     pub tokens: HashMap<Address, Token>,
     pub orders: Vec<Order>,
     pub liquidity: Vec<Liquidity>,
@@ -199,7 +198,6 @@ pub struct ConstantProductPool {
     pub router: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
-    #[serde_as(as = "MapPreventDuplicates<_, _>")]
     pub tokens: HashMap<Address, ConstantProductReserve>,
     pub fee: BigDecimal,
 }
@@ -221,7 +219,6 @@ pub struct WeightedProductPool {
     pub balancer_pool_id: B256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
-    #[serde_as(as = "MapPreventDuplicates<_, _>")]
     pub tokens: HashMap<Address, WeightedProductReserve>,
     pub fee: BigDecimal,
     pub version: WeightedProductVersion,
@@ -253,7 +250,6 @@ pub struct StablePool {
     pub balancer_pool_id: B256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
-    #[serde_as(as = "MapPreventDuplicates<_, _>")]
     pub tokens: HashMap<Address, StableReserve>,
     pub amplification_parameter: BigDecimal,
     pub fee: BigDecimal,

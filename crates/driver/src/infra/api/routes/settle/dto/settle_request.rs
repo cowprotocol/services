@@ -2,7 +2,7 @@ use {
     crate::infra::api::routes::solve::dto::solve_request::Order,
     eth_domain_types as eth,
     serde::Deserialize,
-    serde_with::{MapPreventDuplicates, serde_as},
+    serde_with::serde_as,
     std::collections::HashMap,
 };
 
@@ -32,7 +32,7 @@ pub struct FastPath {
     /// The sell/buy amounts defining the exact price the order must fill at.
     pub limit_prices: LimitPrices,
     /// Native prices (wei per 10**18) for the order's tokens.
-    #[serde_as(as = "MapPreventDuplicates<_, serde_ext::U256>")]
+    #[serde_as(as = "HashMap<_, serde_ext::U256>")]
     pub native_prices: HashMap<eth::Address, eth::U256>,
 }
 

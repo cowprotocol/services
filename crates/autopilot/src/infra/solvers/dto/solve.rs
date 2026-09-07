@@ -397,7 +397,7 @@ pub struct Solution {
     /// still send them, in order to chase them down before the field is
     /// removed entirely.
     #[serde(default)]
-    #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
+    #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<Address, U256>,
     pub gas: Option<u64>,
 }

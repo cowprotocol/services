@@ -297,7 +297,7 @@ mod tests {
         number::serialization::HexOrDecimalU256,
         serde::Deserialize,
         serde_json::json,
-        serde_with::{MapPreventDuplicates, serde_as},
+        serde_with::serde_as,
         std::{
             collections::HashMap,
             hash::{DefaultHasher, Hash, Hasher},
@@ -967,11 +967,10 @@ mod tests {
     struct TestCase {
         pub tokens: Vec<(String, Address)>,
         pub auction: TestAuction,
-        #[serde_as(as = "MapPreventDuplicates<_, _>")]
         pub solutions: HashMap<String, TestSolution>,
         pub expected_fair_solutions: Vec<String>,
         pub expected_winners: Vec<String>,
-        #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
+        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
         pub expected_reference_scores: HashMap<String, eth::U256>,
     }
 
@@ -1110,10 +1109,9 @@ mod tests {
     #[serde_as]
     #[derive(Deserialize, Debug)]
     struct TestAuction {
-        #[serde_as(as = "MapPreventDuplicates<_, _>")]
         pub orders: HashMap<String, TestOrder>,
         #[serde(default)]
-        #[serde_as(as = "Option<MapPreventDuplicates<_, HexOrDecimalU256>>")]
+        #[serde_as(as = "Option<HashMap<_, HexOrDecimalU256>>")]
         pub prices: Option<HashMap<String, eth::U256>>,
     }
 
@@ -1130,11 +1128,9 @@ mod tests {
         pub buy_amount: eth::U256,
     }
 
-    #[serde_as]
     #[derive(Deserialize, Debug)]
     struct TestSolution {
         pub solver: String,
-        #[serde_as(as = "MapPreventDuplicates<_, _>")]
         pub trades: HashMap<String, TestTrade>,
     }
 

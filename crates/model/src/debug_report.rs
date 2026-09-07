@@ -4,7 +4,7 @@ use {
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     serde::Serialize,
-    serde_with::{DisplayFromStr, MapPreventDuplicates, serde_as},
+    serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
 };
 
@@ -37,7 +37,7 @@ pub struct Auction {
     pub id: i64,
     pub block: i64,
     pub deadline: i64,
-    #[serde_as(as = "MapPreventDuplicates<_, DisplayFromStr>")]
+    #[serde_as(as = "HashMap<_, DisplayFromStr>")]
     pub native_prices: HashMap<Address, BigDecimal>,
     pub proposed_solutions: Vec<ProposedSolution>,
     pub executions: Vec<Execution>,

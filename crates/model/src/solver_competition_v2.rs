@@ -3,7 +3,7 @@ use {
     alloy_primitives::{Address, B256, U256},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
-    serde_with::{MapPreventDuplicates, serde_as},
+    serde_with::serde_as,
     std::collections::BTreeMap,
 };
 
@@ -15,7 +15,7 @@ pub struct Response {
     pub auction_start_block: i64,
     pub auction_deadline_block: i64,
     pub transaction_hashes: Vec<B256>,
-    #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub reference_scores: BTreeMap<Address, U256>,
     pub auction: Auction,
     pub solutions: Vec<Solution>,
@@ -26,7 +26,7 @@ pub struct Response {
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
     pub orders: Vec<OrderUid>,
-    #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<Address, U256>,
 }
 
@@ -38,7 +38,7 @@ pub struct Solution {
     #[serde_as(as = "HexOrDecimalU256")]
     pub score: U256,
     pub ranking: i64,
-    #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<Address, U256>,
     pub orders: Vec<Order>,
     pub is_winner: bool,

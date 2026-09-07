@@ -388,7 +388,7 @@ pub mod dto {
         },
         number::serialization::HexOrDecimalU256,
         serde::{Deserialize, Serialize},
-        serde_with::{MapPreventDuplicates, serde_as},
+        serde_with::serde_as,
         std::collections::HashMap,
     };
 
@@ -435,7 +435,7 @@ pub mod dto {
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Quote {
-        #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
+        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
         pub clearing_prices: HashMap<Address, U256>,
         #[serde(default)]
         pub pre_interactions: Vec<Interaction>,

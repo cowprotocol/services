@@ -3,7 +3,7 @@ use {
     alloy_primitives::{Address, B256, U256},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
-    serde_with::{MapPreventDuplicates, serde_as},
+    serde_with::serde_as,
     std::collections::BTreeMap,
 };
 
@@ -34,7 +34,7 @@ pub struct SolverCompetitionAPI {
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionAuction {
     pub orders: Vec<OrderUid>,
-    #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<Address, U256>,
 }
 
@@ -49,7 +49,7 @@ pub struct SolverSettlement {
     pub score: Option<Score>,
     #[serde(default)]
     pub ranking: usize,
-    #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<Address, U256>,
     pub orders: Vec<Order>,
     #[serde(default)]

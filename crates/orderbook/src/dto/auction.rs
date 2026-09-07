@@ -3,7 +3,7 @@ use {
     alloy::primitives::{Address, U256},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
-    serde_with::{MapPreventDuplicates, serde_as},
+    serde_with::serde_as,
     std::collections::BTreeMap,
 };
 
@@ -15,7 +15,7 @@ use {
 pub struct Auction {
     pub block: u64,
     pub orders: Vec<Order>,
-    #[serde_as(as = "MapPreventDuplicates<_, HexOrDecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<Address, U256>,
     #[serde(default)]
     pub surplus_capturing_jit_order_owners: Vec<Address>,

@@ -9,7 +9,7 @@ use {
         infra::solver::dto::auction::{Auction, Order},
     },
     serde::Deserialize,
-    serde_with::{DisplayFromStr, MapPreventDuplicates, serde_as},
+    serde_with::serde_as,
     solana_sdk::{
         instruction::{AccountMeta as SdkAccountMeta, Instruction as SdkInstruction},
         pubkey::Pubkey,
@@ -36,7 +36,7 @@ pub struct Solution {
     /// `executed_sell * price_sell == executed_buy * price_buy`. The engine
     /// currently only produces single-order solutions, so the pair is the
     /// executed swap's ratio.
-    #[serde_as(as = "MapPreventDuplicates<DisplayFromStr, DisplayFromStr>")]
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
     pub prices: HashMap<Pubkey, NonZero<u64>>,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Instruction>,
@@ -45,7 +45,7 @@ pub struct Solution {
     pub cu_estimate: Option<u32>,
     /// The address lookup tables the interactions assume.
     #[serde(default)]
-    #[serde_as(as = "Vec<DisplayFromStr>")]
+    #[serde_as(as = "Vec<serde_with::DisplayFromStr>")]
     pub address_lookup_tables: Vec<Pubkey>,
 }
 
@@ -55,10 +55,10 @@ pub struct Solution {
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     /// The order's 32-byte intent hash.
-    #[serde_as(as = "DisplayFromStr")]
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub order_uid: OrderUid,
     /// Sell-token units for sell orders, buy-token units for buy orders.
-    #[serde_as(as = "DisplayFromStr")]
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub executed_amount: u64,
 }
 
@@ -118,7 +118,7 @@ impl Trade {
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Instruction {
-    #[serde_as(as = "DisplayFromStr")]
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub program_id: Pubkey,
     pub accounts: Vec<AccountMeta>,
     #[serde_as(as = "serde_with::base64::Base64")]
@@ -130,7 +130,7 @@ pub struct Instruction {
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountMeta {
-    #[serde_as(as = "DisplayFromStr")]
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub pubkey: Pubkey,
     pub is_signer: bool,
     pub is_writable: bool,
