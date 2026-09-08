@@ -7,7 +7,6 @@ use {
         providers::{MulticallItem, Provider},
     },
     anyhow::Result,
-    cached::{Cached, TimedCache},
     contracts::{
         ERC20,
         IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
@@ -18,11 +17,13 @@ use {
         future::{self, BoxFuture},
     },
     model::TokenPair,
+    moka::sync::Cache,
     num::rational::Ratio,
     std::{
         collections::HashSet,
-        sync::{LazyLock, RwLock},
-        time::Duration,
+        hash::{DefaultHasher, Hash, Hasher},
+        sync::LazyLock,
+        time::{Duration, Instant},
     },
 };
 
@@ -197,10 +198,35 @@ impl BaselineSolvable for Pool {
     }
 }
 
+/// Largest multiple of the base delay we back off to. A miss can also mean a
+/// pool that exists but is briefly unreadable, so this bounds how long such a
+/// pool stays invisible.
+const MAX_BACKOFF_FACTOR: u32 = 6;
+
+/// Upper bound on remembered pairs. Only pairs believed to have no pool are
+/// held, so this is far above the few tens of thousands seen in practice.
+const MAX_REMEMBERED_PAIRS: u64 = 100_000;
+
+/// Pairs nobody asks about any more are forgotten; `max_capacity` bounds the
+/// rest.
+const FORGET_UNUSED_PAIRS_AFTER: Duration = Duration::from_secs(48 * 3600);
+
+/// A pair we found no pool for, and when to look again.
+#[derive(Clone, Copy)]
+struct Miss {
+    recheck_at: Instant,
+    /// How many times in a row we confirmed the pair has no pool.
+    confirmations: u32,
+}
+
 pub struct PoolFetcher<Reader> {
     pub pool_reader: Reader,
     pub web3: Web3,
-    pub non_existent_pools: RwLock<TimedCache<TokenPair, ()>>,
+    /// Pairs believed to have no pool. Entries outlive their `recheck_at` so
+    /// that `confirmations` survives a re-check.
+    non_existent_pools: Cache<TokenPair, Miss>,
+    /// Delay before the first re-check. Doubles per confirmation.
+    base_recheck_delay: Duration,
 }
 
 impl<Reader> PoolFetcher<Reader> {
@@ -208,9 +234,58 @@ impl<Reader> PoolFetcher<Reader> {
         Self {
             pool_reader: reader,
             web3,
-            non_existent_pools: RwLock::new(TimedCache::with_lifespan(cache_time.as_secs())),
+            non_existent_pools: Cache::builder()
+                .max_capacity(MAX_REMEMBERED_PAIRS)
+                .time_to_idle(FORGET_UNUSED_PAIRS_AFTER)
+                .build(),
+            base_recheck_delay: cache_time,
         }
     }
+
+    fn needs_check(&self, pair: &TokenPair, now: Instant) -> bool {
+        self.non_existent_pools
+            .get(pair)
+            .is_none_or(|miss| miss.recheck_at <= now)
+    }
+
+    /// Records that `pair` has no pool and schedules the next check. Upserts so
+    /// that concurrent fetches of the same pair cannot double-count a miss.
+    fn record_miss(&self, pair: TokenPair, now: Instant) {
+        self.non_existent_pools
+            .entry(pair)
+            .and_upsert_with(|previous| {
+                let confirmations = previous
+                    .map_or(0, |entry| entry.into_value().confirmations)
+                    .saturating_add(1);
+                let delay = self
+                    .base_recheck_delay
+                    .saturating_mul(backoff_factor(confirmations))
+                    .mul_f64(spread_factor(&pair));
+                Miss {
+                    recheck_at: now + delay,
+                    confirmations,
+                }
+            });
+    }
+}
+
+/// Doubles per confirmation up to [`MAX_BACKOFF_FACTOR`], so the delays run
+/// 1x, 2x, 4x, then 6x the base.
+fn backoff_factor(confirmations: u32) -> u32 {
+    1u32.checked_shl(confirmations.saturating_sub(1))
+        .unwrap_or(MAX_BACKOFF_FACTOR)
+        .min(MAX_BACKOFF_FACTOR)
+}
+
+/// A per-pair factor in `[1.0, 1.5)` applied to the delay.
+///
+/// Pairs missed together would otherwise come due together and re-check as one
+/// burst. Stable per pair, so the configured delay stays a floor rather than
+/// drifting between re-checks.
+fn spread_factor(pair: &TokenPair) -> f64 {
+    let mut hasher = DefaultHasher::new();
+    pair.hash(&mut hasher);
+    1.0 + 0.5 * (hasher.finish() as f64 / (u64::MAX as f64 + 1.0))
 }
 
 #[async_trait::async_trait]
@@ -219,11 +294,11 @@ where
     Reader: PoolReading,
 {
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
-        let mut token_pairs: Vec<_> = token_pairs.into_iter().collect();
-        {
-            let mut non_existent_pools = self.non_existent_pools.write().unwrap();
-            token_pairs.retain(|pair| non_existent_pools.cache_get(pair).is_none());
-        }
+        let now = Instant::now();
+        let token_pairs: Vec<_> = token_pairs
+            .into_iter()
+            .filter(|pair| self.needs_check(pair, now))
+            .collect();
         let futures = token_pairs
             .iter()
             .map(|pair| self.pool_reader.read_state(*pair, at_block.into()))
@@ -235,15 +310,18 @@ where
         let mut pools = vec![];
         for (result, key) in results.into_iter().zip(token_pairs) {
             match result {
-                Some(pool) => pools.push(pool),
+                Some(pool) => {
+                    // Keeps the cache holding only pairs believed poolless.
+                    self.non_existent_pools.invalidate(&key);
+                    pools.push(pool);
+                }
                 None => new_missing_pairs.push(key),
             }
         }
         if !new_missing_pairs.is_empty() {
             tracing::debug!(token_pairs = ?new_missing_pairs, "stop indexing liquidity");
-            let mut non_existent_pools = self.non_existent_pools.write().unwrap();
             for pair in new_missing_pairs {
-                non_existent_pools.cache_set(pair, ());
+                self.record_miss(pair, now);
             }
         }
         Ok(pools)
@@ -702,5 +780,132 @@ mod tests {
             .unwrap();
         assert_eq!(pool.reserves, (10, 20));
         assert_eq!(pool.tokens, token_pair());
+    }
+
+    fn fetcher(cache_time: Duration) -> PoolFetcher<DefaultPoolReader> {
+        PoolFetcher::new(
+            mocked_reader(Asserter::new()),
+            Web3::with_asserter(Asserter::new()),
+            cache_time,
+        )
+    }
+
+    #[test]
+    fn cached_miss_suppresses_checks_until_due() {
+        let base = Duration::from_secs(3600);
+        let fetcher = fetcher(base);
+        let pair = token_pair();
+        let now = Instant::now();
+
+        assert!(fetcher.needs_check(&pair, now), "unknown pair is checked");
+        fetcher.record_miss(pair, now);
+        assert!(!fetcher.needs_check(&pair, now));
+        // The spread factor tops out at 1.5x, so twice the base is always
+        // enough to make the pair due again.
+        assert!(fetcher.needs_check(&pair, now + base * 2));
+    }
+
+    #[test]
+    fn backoff_factor_doubles_per_confirmation_up_to_the_cap() {
+        for (confirmations, expected) in [(0, 1), (1, 1), (2, 2), (3, 4), (4, 6), (5, 6), (99, 6)] {
+            assert_eq!(backoff_factor(confirmations), expected, "{confirmations}");
+        }
+    }
+
+    #[test]
+    fn recheck_delay_grows_and_never_undercuts_the_configured_delay() {
+        let base = Duration::from_secs(3600);
+        let fetcher = fetcher(base);
+        let pair = token_pair();
+        let now = Instant::now();
+
+        let mut previous = Duration::ZERO;
+        for _ in 1..=8 {
+            fetcher.record_miss(pair, now);
+            let delay = fetcher.non_existent_pools.get(&pair).unwrap().recheck_at - now;
+            assert!(delay >= base, "{delay:?} undercuts the configured delay");
+            assert!(delay >= previous, "delay must never shrink");
+            previous = delay;
+        }
+        assert!(
+            previous < base * MAX_BACKOFF_FACTOR * 3 / 2,
+            "{previous:?} exceeds the cap"
+        );
+    }
+
+    #[test]
+    fn spread_factor_separates_pairs_missed_together() {
+        let factors: Vec<_> = (2..202u8)
+            .map(|byte| {
+                let pair =
+                    TokenPair::new(Address::with_last_byte(1), Address::with_last_byte(byte))
+                        .unwrap();
+                spread_factor(&pair)
+            })
+            .collect();
+
+        // Spread across a 30 min window at one-second resolution, so ~11 of
+        // the 200 collide by birthday paradox. A coarsely quantized factor
+        // would collide far more.
+        let distinct: HashSet<_> = factors
+            .iter()
+            .map(|f| (f * 3600.0).round() as u64)
+            .collect();
+        assert!(
+            distinct.len() > 180,
+            "only {} distinct delays over 200 pairs",
+            distinct.len()
+        );
+    }
+
+    /// A zero `cache_time` must disable the cache outright, which is the
+    /// contract `UniV2BaselineSourceParameters::into_source` builds on.
+    #[test]
+    fn zero_cache_time_never_suppresses_a_check() {
+        let fetcher = fetcher(Duration::ZERO);
+        let pair = token_pair();
+        let now = Instant::now();
+
+        fetcher.record_miss(pair, now);
+        assert!(fetcher.needs_check(&pair, now));
+    }
+
+    /// The point of the cache: a remembered miss costs no node call at all.
+    /// The asserter is empty, so any `eth_call` would fail the fetch.
+    #[tokio::test]
+    async fn remembered_miss_issues_no_node_call() {
+        let fetcher = fetcher(Duration::from_secs(3600));
+        let pair = token_pair();
+        fetcher.record_miss(pair, Instant::now());
+
+        let pools = fetcher
+            .fetch(HashSet::from([pair]), Block::Recent)
+            .await
+            .unwrap();
+        assert!(pools.is_empty());
+    }
+
+    #[tokio::test]
+    async fn finding_a_pool_forgets_the_remembered_miss() {
+        let asserter = Asserter::new();
+        asserter.push_success(&aggregate3_response(vec![
+            (true, encoded_reserves(10, 20)),
+            (true, encoded_balance(10)),
+            (true, encoded_balance(20)),
+        ]));
+        let fetcher = PoolFetcher::new(
+            mocked_reader(asserter),
+            Web3::with_asserter(Asserter::new()),
+            Duration::ZERO,
+        );
+        let pair = token_pair();
+        fetcher.record_miss(pair, Instant::now());
+
+        let pools = fetcher
+            .fetch(HashSet::from([pair]), Block::Recent)
+            .await
+            .unwrap();
+        assert_eq!(pools.len(), 1);
+        assert!(fetcher.non_existent_pools.get(&pair).is_none());
     }
 }
