@@ -182,6 +182,7 @@ relative-slippage = "0.1"
 account = "{account}"
 merge-solutions = {merge_solutions}
 quote-using-limit-orders = {quote_using_limit_orders}
+fast-path-enabled = true
 enable-simulation-bad-token-detection = true
 enable-metrics-bad-order-detection = true
 http-time-buffer = "100ms"
