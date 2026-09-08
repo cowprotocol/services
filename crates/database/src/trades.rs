@@ -26,9 +26,10 @@ pub struct TradesQueryRow {
     pub sell_token: Address,
     pub tx_hash: Option<TransactionHash>,
     pub auction_id: Option<AuctionId>,
-    /// Share of the settlement's gas cost in native token wei, as attributed
-    /// by [`attribute_gas_cost`]: `NULL` until then, forever for settlements
-    /// observed before the column existed. `0` for a liquidity-only JIT order.
+    /// Share of the settlement's gas cost in native token wei.
+    /// [`attribute_gas_cost`] sets this value. It is `None` for settlements
+    /// without attribution, and for all settlements from before this column.
+    /// A liquidity-only JIT order has `0`.
     pub gas_cost: Option<BigDecimal>,
 }
 
