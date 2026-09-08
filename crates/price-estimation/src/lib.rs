@@ -203,6 +203,9 @@ pub struct Estimate {
     /// Whether the quoting solver supports fast-path (out-of-competition)
     /// execution for this order.
     pub supports_fast_path: bool,
+    /// Solver-assigned solution id when the underlying quote response
+    /// carried one. Threaded end-to-end into `QuoteResponse.solution_id`.
+    pub solution_id: Option<u64>,
     /// Data associated with this estimation.
     #[debug(ignore)]
     pub execution: QuoteExecution,
