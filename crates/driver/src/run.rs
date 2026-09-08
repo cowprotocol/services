@@ -128,6 +128,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
                                     .chain(config.submission_accounts.iter().cloned())
                             })
                             .collect(),
+                        eth.chain().id(),
                     )
                 })
                 .collect(),

@@ -83,6 +83,51 @@ async fn private_rpc_with_high_risk_solution() {
     test.settle(id).await.err().kind("FailedToSubmit");
 }
 
+/// Checks that a settlement is signed locally and broadcast to the configured
+/// block builders, and that a single unreachable builder does not fail the
+/// submission.
+#[tokio::test]
+#[ignore]
+async fn submits_to_builders() {
+    let test = tests::setup()
+        .name("builder submission")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .mempools(vec![tests::setup::Mempool::Builders {
+            urls: vec![None, Some("http://non-existant:8545".to_string())],
+        }])
+        .done()
+        .await;
+
+    let id = test.solve().await.ok().id();
+    test.settle(id)
+        .await
+        .ok()
+        .await
+        .ab_order_executed(&test)
+        .await;
+}
+
+/// Checks that the submission fails when no builder accepts the transaction.
+#[tokio::test]
+#[ignore]
+async fn all_builders_unreachable() {
+    let test = tests::setup()
+        .name("all builders unreachable")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .mempools(vec![tests::setup::Mempool::Builders {
+            urls: vec![Some("http://non-existant:8545".to_string())],
+        }])
+        .done()
+        .await;
+
+    let id = test.solve().await.ok().id();
+    test.settle(id).await.err().kind("FailedToSubmit");
+}
+
 #[tokio::test]
 #[ignore]
 async fn too_much_gas() {

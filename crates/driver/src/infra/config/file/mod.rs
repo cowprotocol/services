@@ -153,7 +153,7 @@ impl From<BlockNumber> for BlockNumberOrTag {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Mempool {
     /// Name for better logging and metrics.
     name: Option<String>,
@@ -172,9 +172,34 @@ struct Mempool {
     /// Informs the submission logic whether a reverting transaction will
     /// actually be mined or just ignored. This is an advanced feature
     /// for private mempools so for most configured mempools you have to
-    /// assume reverting transactions will get mined eventually.
-    #[serde(default = "default_mines_reverting_txs")]
-    mines_reverting_txs: bool,
+    /// assume reverting transactions will get mined eventually. Defaults to
+    /// `false` when `builders` is set, since builders drop reverting txs.
+    #[serde(default)]
+    mines_reverting_txs: Option<bool>,
+    /// Block builders to send the settlement transaction to directly. When
+    /// this is non-empty `url` stops being a submission target and only
+    /// serves the nonce, txpool and cancellation RPCs.
+    #[serde(default)]
+    builders: Vec<Builder>,
+}
+
+/// A block builder that accepts settlement transactions over
+/// `eth_sendRawTransaction`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct Builder {
+    /// Name for better logging and metrics.
+    name: String,
+    /// The RPC URL to send the signed transaction to.
+    url: Url,
+}
+
+impl Mempool {
+    /// Block builders simulate what they receive and drop reverting txs, so a
+    /// builder mempool defaults to keeping revert protection on.
+    fn reverts_get_mined(&self) -> bool {
+        self.mines_reverting_txs.unwrap_or(self.builders.is_empty())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -224,10 +249,6 @@ fn default_retry_interval() -> Duration {
 /// 3 gwei
 fn default_max_additional_tip() -> eth::U256 {
     eth::U256::from(3) * eth::U256::from(10).pow(eth::U256::from(9))
-}
-
-fn default_mines_reverting_txs() -> bool {
-    true
 }
 
 pub fn default_http_time_buffer() -> Duration {
@@ -1185,5 +1206,170 @@ mod tests {
         let err = SubmissionAccounts::new(vec![Account::Address(address)]).unwrap_err();
 
         assert!(err.to_string().contains("must be signers"));
+    }
+
+    #[test]
+    fn mempool_builders_default_to_empty() {
+        let config: SubmissionConfig = toml::from_str(
+            r#"
+            [[mempool]]
+            url = "http://node:8545"
+            "#,
+        )
+        .unwrap();
+
+        assert!(config.mempools[0].builders.is_empty());
+        // A plain mempool keeps assuming reverting txs get mined.
+        assert!(config.mempools[0].reverts_get_mined());
+    }
+
+    #[test]
+    fn mempool_mines_reverting_txs_stays_explicit() {
+        let config: SubmissionConfig = toml::from_str(
+            r#"
+            [[mempool]]
+            url = "http://node:8545"
+            mines-reverting-txs = true
+
+            [[mempool.builders]]
+            name = "titan"
+            url = "https://rpc.titanbuilder.xyz/"
+            "#,
+        )
+        .unwrap();
+
+        assert!(config.mempools[0].reverts_get_mined());
+    }
+
+    /// The production builder list. `tracer` and `fee-recipient` are not
+    /// supported, so the config must not carry them.
+    #[test]
+    fn mempool_builders_parse_production_config() {
+        let config: SubmissionConfig = toml::from_str(
+            r#"
+            [[mempool]]
+            url = "http://node:8545"
+
+            [[mempool.builders]]
+            name = "titan"
+            url = "https://rpc.titanbuilder.xyz/"
+
+            [[mempool.builders]]
+            name = "beaver"
+            url = "https://rpc.beaverbuild.org/"
+
+            [[mempool.builders]]
+            name = "quasar"
+            url = "https://rpc.quasar.win"
+
+            [[mempool.builders]]
+            name = "buildernet"
+            url = "https://direct-eu.buildernet.org"
+
+            [[mempool.builders]]
+            name = "eureka"
+            url = "https://rpc.eurekabuilder.xyz"
+
+            [[mempool.builders]]
+            name = "bobthebuilder"
+            url = "https://rpc.bobthebuilder.xyz"
+
+            [[mempool.builders]]
+            name = "bombora"
+            url = "https://eu-rpc.bombora.build"
+
+            [[mempool.builders]]
+            name = "btcs"
+            url = "https://rpc.btcs.com"
+
+            [[mempool.builders]]
+            name = "banana"
+            url = "https://rpc.bananabuild.org"
+
+            [[mempool.builders]]
+            name = "ultrasound"
+            url = "https://builder-rpc-eu.ultrasound.money"
+            "#,
+        )
+        .unwrap();
+
+        // Builders drop reverting txs, so revert protection stays on unless
+        // the config says otherwise.
+        assert!(!config.mempools[0].reverts_get_mined());
+
+        let builders = &config.mempools[0].builders;
+        assert_eq!(builders.len(), 10);
+        assert_eq!(builders[0].name, "titan");
+        assert_eq!(builders[0].url.as_str(), "https://rpc.titanbuilder.xyz/");
+        assert_eq!(builders[9].name, "ultrasound");
+    }
+
+    /// `[[submission.mempool.builders]]` attaches to the LAST
+    /// `[[submission.mempool]]` declared before it, not to a new one. With
+    /// several mempools configured this is easy to get wrong.
+    #[test]
+    fn mempool_builders_attach_to_the_preceding_mempool() {
+        let config: SubmissionConfig = toml::from_str(
+            r#"
+            [[mempool]]
+            name = "mevblocker"
+            url = "https://rpc.mevblocker.io"
+            mines-reverting-txs = false
+
+            [[mempool]]
+            name = "alchemy"
+            url = "https://alchemy"
+
+            [[mempool.builders]]
+            name = "titan"
+            url = "https://rpc.titanbuilder.xyz/"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.mempools.len(), 2);
+        // Not mevblocker, which is the one that actually submits.
+        assert!(config.mempools[0].builders.is_empty());
+        assert_eq!(config.mempools[1].builders.len(), 1);
+    }
+
+    #[test]
+    fn mempool_rejects_unsupported_builder_keys() {
+        for key in [
+            r#"tracer = { kind = "titan-compat", url = "https://stats.titanbuilder.xyz" }"#,
+            r#"fee-recipient = "0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97""#,
+        ] {
+            let err = toml::from_str::<SubmissionConfig>(&format!(
+                r#"
+                [[mempool]]
+                url = "http://node:8545"
+
+                [[mempool.builders]]
+                name = "titan"
+                url = "https://rpc.titanbuilder.xyz/"
+                {key}
+                "#
+            ))
+            .unwrap_err();
+
+            assert!(err.to_string().contains("unknown field"), "{key}");
+        }
+    }
+
+    #[test]
+    fn mempool_rejects_misspelled_builders_key() {
+        let err = toml::from_str::<SubmissionConfig>(
+            r#"
+            [[mempool]]
+            url = "http://node:8545"
+
+            [[mempool.builder]]
+            name = "titan"
+            url = "https://rpc.titanbuilder.xyz/"
+            "#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("unknown field"));
     }
 }
