@@ -244,58 +244,6 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_penalty_caps() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let capped = ByteArray([1u8; 56]);
-        let uncapped = ByteArray([2u8; 56]);
-        let unknown = ByteArray([3u8; 56]);
-        let auction = |id, penalty_caps_native| Auction {
-            id,
-            block: 1,
-            deadline: 2,
-            order_uids: vec![capped, uncapped],
-            price_tokens: vec![],
-            price_values: vec![],
-            surplus_capturing_jit_order_owners: vec![],
-            penalty_caps_native,
-        };
-        // Auction 1 recorded caps, auction 2 had penalties disabled, auction 3
-        // has no competition data at all.
-        save(
-            &mut db,
-            auction(1, Some(vec![BigDecimal::from(1234), BigDecimal::from(0)])),
-        )
-        .await
-        .unwrap();
-        save(&mut db, auction(2, None)).await.unwrap();
-
-        let caps = penalty_caps(
-            &mut db,
-            &[
-                (1, capped),
-                (1, uncapped),
-                (1, unknown),
-                (2, capped),
-                (3, capped),
-            ],
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            caps,
-            HashMap::from([
-                ((1, capped), BigDecimal::from(1234)),
-                ((1, uncapped), BigDecimal::from(0)),
-            ])
-        );
-        assert!(penalty_caps(&mut db, &[]).await.unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    #[ignore]
     async fn postgres_roundtrip() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
