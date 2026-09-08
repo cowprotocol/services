@@ -4,7 +4,8 @@ use {
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, trades::TradesQueryRow},
     model::{fee_policy::ExecutedProtocolFee, order::OrderUid, trade::Trade},
-    number::conversions::big_decimal_to_big_uint,
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
+    sqlx::types::BigDecimal,
     std::convert::TryInto,
 };
 
@@ -72,20 +73,25 @@ impl TradeRetrieving for Postgres {
         let executed_protocol_fees = self
             .executed_protocol_fees(auction_order_uids.as_slice())
             .await?;
+        let penalty_caps = {
+            let _timer = super::Metrics::get()
+                .database_queries
+                .with_label_values(&["penalty_caps"])
+                .start_timer();
+            database::auction::penalty_caps(&mut ex, auction_order_uids.as_slice()).await?
+        };
 
         trades
             .into_iter()
             .map(|trade| {
-                let executed_protocol_fees = trade
+                let key = trade
                     .auction_id
-                    .map(|auction_id| {
-                        executed_protocol_fees
-                            .get(&(auction_id, trade.order_uid))
-                            .cloned()
-                            .unwrap_or_default()
-                    })
+                    .map(|auction_id| (auction_id, trade.order_uid));
+                let executed_protocol_fees = key
+                    .and_then(|key| executed_protocol_fees.get(&key).cloned())
                     .unwrap_or_default();
-                trade_from(trade, executed_protocol_fees)
+                let penalty_cap_native = key.and_then(|key| penalty_caps.get(&key).cloned());
+                trade_from(trade, executed_protocol_fees, penalty_cap_native)
             })
             .collect::<Result<Vec<_>>>()
     }
@@ -133,20 +139,25 @@ impl TradeRetrievingPaginated for Postgres {
         let executed_protocol_fees = self
             .executed_protocol_fees(auction_order_uids.as_slice())
             .await?;
+        let penalty_caps = {
+            let _timer = super::Metrics::get()
+                .database_queries
+                .with_label_values(&["penalty_caps"])
+                .start_timer();
+            database::auction::penalty_caps(&mut ex, auction_order_uids.as_slice()).await?
+        };
 
         trades
             .into_iter()
             .map(|trade| {
-                let executed_protocol_fees = trade
+                let key = trade
                     .auction_id
-                    .map(|auction_id| {
-                        executed_protocol_fees
-                            .get(&(auction_id, trade.order_uid))
-                            .cloned()
-                            .unwrap_or_default()
-                    })
+                    .map(|auction_id| (auction_id, trade.order_uid));
+                let executed_protocol_fees = key
+                    .and_then(|key| executed_protocol_fees.get(&key).cloned())
                     .unwrap_or_default();
-                trade_from(trade, executed_protocol_fees)
+                let penalty_cap_native = key.and_then(|key| penalty_caps.get(&key).cloned());
+                trade_from(trade, executed_protocol_fees, penalty_cap_native)
             })
             .collect::<Result<Vec<_>>>()
     }
@@ -155,6 +166,7 @@ impl TradeRetrievingPaginated for Postgres {
 fn trade_from(
     row: TradesQueryRow,
     executed_protocol_fees: Vec<ExecutedProtocolFee>,
+    penalty_cap_native: Option<BigDecimal>,
 ) -> Result<Trade> {
     let block_number = row
         .block_number
@@ -172,6 +184,10 @@ fn trade_from(
     let buy_token = Address::from_slice(&row.buy_token.0);
     let sell_token = Address::from_slice(&row.sell_token.0);
     let tx_hash = row.tx_hash.map(|hash| B256::from_slice(&hash.0));
+    let penalty_cap_native = penalty_cap_native
+        .as_ref()
+        .map(|cap| big_decimal_to_u256(cap).context("penalty_cap_native is not a U256"))
+        .transpose()?;
     Ok(Trade {
         block_number,
         log_index,
@@ -184,6 +200,7 @@ fn trade_from(
         sell_token,
         tx_hash,
         executed_protocol_fees,
+        penalty_cap_native,
     })
 }
 
@@ -193,6 +210,6 @@ mod tests {
 
     #[test]
     fn convert_trade() {
-        trade_from(TradesQueryRow::default(), vec![]).unwrap();
+        trade_from(TradesQueryRow::default(), vec![], None).unwrap();
     }
 }

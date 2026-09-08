@@ -1,8 +1,8 @@
 use {
     crate::{Address, OrderUid},
     bigdecimal::BigDecimal,
-    sqlx::{Connection, PgConnection, types::JsonValue},
-    std::ops::DerefMut,
+    sqlx::{Connection, PgConnection, QueryBuilder, types::JsonValue},
+    std::{collections::HashMap, ops::DerefMut},
     tracing::instrument,
 };
 
@@ -191,9 +191,108 @@ pub async fn fetch_latest_token_price(
     Ok(price)
 }
 
+/// Fetches the penalty caps recorded in `competition_auctions` for the given
+/// `(auction_id, order_uid)` keys, in native token wei. A key is absent from
+/// the result when its auction has no competition data, the order wasn't part
+/// of that auction, or penalties were disabled for it.
+#[instrument(skip_all)]
+pub async fn penalty_caps(
+    ex: &mut PgConnection,
+    keys: &[(AuctionId, OrderUid)],
+) -> Result<HashMap<(AuctionId, OrderUid), BigDecimal>, sqlx::Error> {
+    if keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut query_builder = QueryBuilder::new(
+        "SELECT ca.id AS auction_id, vals.order_uid, \
+         ca.penalty_caps_native[array_position(ca.order_uids, vals.order_uid)] AS penalty_cap \
+         FROM competition_auctions ca INNER JOIN (VALUES ",
+    );
+    for (i, (auction_id, order_uid)) in keys.iter().enumerate() {
+        if i > 0 {
+            query_builder.push(", ");
+        }
+        query_builder
+            .push("(")
+            .push_bind(auction_id)
+            .push(", ")
+            .push_bind(order_uid)
+            .push(")");
+    }
+    query_builder.push(") AS vals(auction_id, order_uid) ON ca.id = vals.auction_id");
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        auction_id: AuctionId,
+        order_uid: OrderUid,
+        penalty_cap: Option<BigDecimal>,
+    }
+    let rows: Vec<Row> = query_builder.build_query_as().fetch_all(ex).await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            row.penalty_cap
+                .map(|cap| ((row.auction_id, row.order_uid), cap))
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, crate::byte_array::ByteArray};
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_penalty_caps() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let capped = ByteArray([1u8; 56]);
+        let uncapped = ByteArray([2u8; 56]);
+        let unknown = ByteArray([3u8; 56]);
+        let auction = |id, penalty_caps_native| Auction {
+            id,
+            block: 1,
+            deadline: 2,
+            order_uids: vec![capped, uncapped],
+            price_tokens: vec![],
+            price_values: vec![],
+            surplus_capturing_jit_order_owners: vec![],
+            penalty_caps_native,
+        };
+        // Auction 1 recorded caps, auction 2 had penalties disabled, auction 3
+        // has no competition data at all.
+        save(
+            &mut db,
+            auction(1, Some(vec![BigDecimal::from(1234), BigDecimal::from(0)])),
+        )
+        .await
+        .unwrap();
+        save(&mut db, auction(2, None)).await.unwrap();
+
+        let caps = penalty_caps(
+            &mut db,
+            &[
+                (1, capped),
+                (1, uncapped),
+                (1, unknown),
+                (2, capped),
+                (3, capped),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            caps,
+            HashMap::from([
+                ((1, capped), BigDecimal::from(1234)),
+                ((1, uncapped), BigDecimal::from(0)),
+            ])
+        );
+        assert!(penalty_caps(&mut db, &[]).await.unwrap().is_empty());
+    }
 
     #[tokio::test]
     #[ignore]

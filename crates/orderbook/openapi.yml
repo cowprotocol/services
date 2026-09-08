@@ -1791,6 +1791,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ExecutedProtocolFee"
+        penaltyCapNative:
+          description: >-
+            Cap on the penalty the winning solver could incur for not executing
+            the order in the auction this trade settled, denominated in native
+            token wei. Absent when the auction had penalties disabled or the
+            trade can't be attributed to an auction.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+          nullable: true
       required:
         - blockNumber
         - logIndex
