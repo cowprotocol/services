@@ -3,6 +3,7 @@ pub mod auction;
 pub mod byte_array;
 pub mod ethflow_orders;
 pub mod events;
+pub mod fast_path;
 pub mod fee_policies;
 pub mod jit_orders;
 pub mod last_indexed_blocks;
