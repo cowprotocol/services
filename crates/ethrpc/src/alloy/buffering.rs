@@ -225,8 +225,12 @@ where
                     return;
                 }
 
-                let batch = queue.build_fair_batch(max_batch_size);
-                Metrics::get().batch_size.observe(batch.len() as f64);
+                let Some(dispatch) = queue.next_dispatch(max_batch_size) else {
+                    // every popped call was canceled; nothing to send.
+                    // the permit is released when it goes out of scope.
+                    continue;
+                };
+                Metrics::get().batch_size.observe(dispatch.len() as f64);
 
                 // Clone the inner service per batch as recommended in
                 // <https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services>.
@@ -242,10 +246,36 @@ where
                     // run, correctly decrementing the
                     // metric
                     let _guard = scopeguard::guard((), |()| Metrics::get().batches_inflight.dec());
-                    process_batch(this_inner, batch).await;
+                    match dispatch {
+                        Dispatch::Single(request, sender) => {
+                            process_single(this_inner, request, sender).await
+                        }
+                        Dispatch::Batch(batch) => process_batch(this_inner, batch).await,
+                    }
                 });
             }
         })
+    }
+}
+
+/// What the worker hands to the node in one go. A lone call is kept out of
+/// the batching path entirely: it allocates no `Vec`, needs no response id
+/// bookkeeping, and goes on the wire as a plain JSON-RPC request.
+enum Dispatch<Req, Resp> {
+    Single(Req, oneshot::Sender<Resp>),
+    Batch(Vec<(Req, oneshot::Sender<Resp>)>),
+}
+
+impl<Req, Resp> Dispatch<Req, Resp> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Single(..) => 1,
+            Self::Batch(batch) => batch.len(),
+        }
+    }
+
+    fn single(ctx: CallContext<Req, Resp>) -> Self {
+        Self::Single(ctx.request, ctx.response_sender)
     }
 }
 
@@ -368,16 +398,11 @@ impl<Req, Resp> FairQueue<Req, Resp> {
         true
     }
 
-    /// Batches at most `max_batch_size` items in a round-robin fashion to
-    /// prevent individual callers from starving all the others.
-    fn build_fair_batch(&mut self, max_batch_size: usize) -> Vec<(Req, oneshot::Sender<Resp>)> {
-        let mut batch = Vec::with_capacity(self.len().min(max_batch_size));
-        while batch.len() < max_batch_size {
-            let Some(call) = self.pop() else {
-                break;
-            };
-            // If the caller is no longer waiting for the response,
-            // we don't add it to the batch
+    /// Pops the next call in round-robin order whose caller is still waiting,
+    /// dropping the ones that gave up along the way.
+    fn pop_pending(&mut self) -> Option<CallContext<Req, Resp>> {
+        loop {
+            let call = self.pop()?;
             if call.response_sender.is_canceled() {
                 Metrics::get().requests_canceled.inc();
                 continue;
@@ -385,10 +410,83 @@ impl<Req, Resp> FairQueue<Req, Resp> {
             Metrics::get()
                 .request_queue_delay_seconds
                 .observe(call.queued_at.elapsed().as_secs_f64());
+            return Some(call);
+        }
+    }
+
+    /// Takes at most `max_batch_size` items in a round-robin fashion to
+    /// prevent individual callers from starving all the others.
+    ///
+    /// A lone call short-circuits to [`Dispatch::Single`] before any `Vec` is
+    /// allocated. `max_batch_size` of 0 or 1 disables batching outright.
+    fn next_dispatch(&mut self, max_batch_size: usize) -> Option<Dispatch<Req, Resp>> {
+        let first = self.pop_pending()?;
+        if max_batch_size <= 1 {
+            return Some(Dispatch::single(first));
+        }
+        let Some(second) = self.pop_pending() else {
+            return Some(Dispatch::single(first));
+        };
+
+        // `self.len()` no longer counts the two calls popped above.
+        let mut batch = Vec::with_capacity((self.len() + 2).min(max_batch_size));
+        batch.push((first.request, first.response_sender));
+        batch.push((second.request, second.response_sender));
+        while batch.len() < max_batch_size {
+            let Some(call) = self.pop_pending() else {
+                break;
+            };
             batch.push((call.request, call.response_sender));
         }
-        batch
+        Some(Dispatch::Batch(batch))
     }
+}
+
+/// Records the round-trip time of a dispatched request.
+fn observe_execution(started_at: Instant, ok: bool) {
+    Metrics::get()
+        .batch_execution_seconds
+        .with_label_values(&[if ok { "ok" } else { "error" }])
+        .observe(started_at.elapsed().as_secs_f64());
+}
+
+/// Handles a lone call. Skips the response id bookkeeping and sends the
+/// request as a plain (non-batch) JSON-RPC request, which is cheaper for us
+/// and for the node.
+async fn process_single<S>(mut inner: S, request: SerializedRequest, sender: ResponseSender)
+where
+    S: Service<RequestPacket, Response = ResponsePacket, Error = TransportError>,
+{
+    if sender.is_canceled() {
+        tracing::trace!(request_id = %request.id(), "canceled sender");
+        return;
+    }
+
+    let started_at = Instant::now();
+    let result = inner.call(RequestPacket::Single(request)).await;
+    observe_execution(started_at, result.is_ok());
+
+    let response = match result {
+        Ok(ResponsePacket::Single(response)) => Ok(response),
+        Ok(ResponsePacket::Batch(mut responses)) if responses.len() == 1 => {
+            tracing::warn!("received batch response for single request");
+            Ok(responses.pop().expect("len is 1"))
+        }
+        Ok(ResponsePacket::Batch(responses)) => {
+            tracing::warn!(
+                len = responses.len(),
+                "received malformed batch response for single request"
+            );
+            Err(TransportErrorKind::custom_str(
+                "received batch response with unexpected length for single request",
+            ))
+        }
+        // Only one recipient, so the original error can be forwarded instead
+        // of being flattened into a string like in the batch path.
+        Err(err) => Err(err),
+    };
+
+    let _ = sender.send(response);
 }
 
 async fn process_batch<S>(mut inner: S, batch: Vec<(SerializedRequest, ResponseSender)>)
@@ -424,21 +522,15 @@ where
     }
 
     let started_at = Instant::now();
-    let result = inner
-        .call(RequestPacket::Batch(requests))
-        .await
-        .map(|response| match response {
-            ResponsePacket::Batch(res) => res,
-            ResponsePacket::Single(res) => {
-                tracing::warn!("received single response for batch request");
-                vec![res]
-            }
-        });
-    let result_label = if result.is_ok() { "ok" } else { "error" };
-    Metrics::get()
-        .batch_execution_seconds
-        .with_label_values(&[result_label])
-        .observe(started_at.elapsed().as_secs_f64());
+    let result = inner.call(RequestPacket::Batch(requests)).await;
+    observe_execution(started_at, result.is_ok());
+    let result = result.map(|response| match response {
+        ResponsePacket::Batch(res) => res,
+        ResponsePacket::Single(res) => {
+            tracing::warn!("received single response for batch request");
+            vec![res]
+        }
+    });
 
     match result {
         Ok(responses) => {
@@ -545,8 +637,8 @@ struct Metrics {
     ))]
     concurrency_wait_seconds: prometheus::Histogram,
 
-    /// Round-trip time of a single dispatched batch, from sending the batch
-    /// request until the node's response arrives.
+    /// Round-trip time of one dispatched request, batched or not, from
+    /// sending it until the node's response arrives.
     #[metric(
         labels("result"),
         buckets(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
@@ -649,7 +741,9 @@ mod test {
             .expect("if we have enough requests already enqueued this is actually sync");
         assert!(should_continue);
 
-        let batch = queue.build_fair_batch(5);
+        let Some(Dispatch::Batch(batch)) = queue.next_dispatch(5) else {
+            panic!("expected a batch dispatch");
+        };
 
         // ASSERT THAT BATCH WAS FAIR (ROUND ROBIN)
         assert_eq!(batch.len(), 5);
@@ -689,5 +783,112 @@ mod test {
         assert_eq!(responses.next().unwrap().now_or_never().unwrap(), Ok(100));
         assert_eq!(responses.next().unwrap().now_or_never().unwrap(), Ok(101));
         assert_eq!(responses.next().unwrap().now_or_never().unwrap(), Ok(102));
+    }
+
+    fn call_context<Req>(request: Req) -> (CallContext<Req, u64>, oneshot::Receiver<u64>) {
+        let (response_sender, receiver) = oneshot::channel();
+        let context = CallContext {
+            caller: tokio::task::try_id(),
+            queued_at: Instant::now(),
+            request,
+            response_sender,
+        };
+        (context, receiver)
+    }
+
+    /// A lone queued call must leave the queue as a `Single`, not as a one
+    /// element batch.
+    #[test]
+    fn lone_call_dispatches_as_single() {
+        let mut queue = FairQueue::default();
+        let (context, _receiver) = call_context(42u64);
+        queue.enqueue(context);
+
+        let Some(Dispatch::Single(request, _)) = queue.next_dispatch(20) else {
+            panic!("expected a single dispatch");
+        };
+        assert_eq!(request, 42);
+        assert!(queue.is_empty());
+    }
+
+    /// `max_batch_size` of 0 or 1 disables batching; the queue must still
+    /// drain one call at a time instead of returning nothing forever.
+    #[test]
+    fn batching_disabled_still_dispatches() {
+        for max_batch_size in [0, 1] {
+            let mut queue = FairQueue::default();
+            // keep the receivers alive, otherwise the calls count as canceled
+            let _receivers: Vec<_> = (0..3u64)
+                .map(|id| {
+                    let (context, receiver) = call_context(id);
+                    queue.enqueue(context);
+                    receiver
+                })
+                .collect();
+
+            for id in 0..3u64 {
+                let Some(Dispatch::Single(request, _)) = queue.next_dispatch(max_batch_size) else {
+                    panic!("expected a single dispatch");
+                };
+                assert_eq!(request, id);
+            }
+            assert!(queue.next_dispatch(max_batch_size).is_none());
+        }
+    }
+
+    /// Calls whose caller stopped awaiting are skipped, and a dispatch of
+    /// only canceled calls yields nothing at all.
+    #[test]
+    fn canceled_calls_are_dropped() {
+        let mut queue = FairQueue::default();
+        for id in 0..2u64 {
+            let (context, receiver) = call_context(id);
+            drop(receiver);
+            queue.enqueue(context);
+        }
+
+        assert!(queue.next_dispatch(20).is_none());
+        assert!(queue.is_empty());
+    }
+
+    /// The fast path must send a `Single` packet rather than a one element
+    /// batch, and route the response to the caller.
+    #[tokio::test]
+    async fn single_request_fast_path_sends_single_packet() {
+        struct Echo;
+
+        impl Service<RequestPacket> for Echo {
+            type Error = TransportError;
+            type Future = futures::future::Ready<Result<ResponsePacket, TransportError>>;
+            type Response = ResponsePacket;
+
+            fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, packet: RequestPacket) -> Self::Future {
+                let RequestPacket::Single(request) = packet else {
+                    panic!("fast path must not send batch packets");
+                };
+                futures::future::ready(Ok(ResponsePacket::Single(Response {
+                    id: request.id().clone(),
+                    payload: alloy_json_rpc::ResponsePayload::Success(
+                        serde_json::value::to_raw_value(&"0x1").unwrap(),
+                    ),
+                })))
+            }
+        }
+
+        let request =
+            alloy_json_rpc::Request::new("eth_chainId", alloy_json_rpc::Id::Number(1), ())
+                .serialize()
+                .unwrap();
+        let (sender, receiver) = oneshot::channel();
+
+        process_single(Echo, request, sender).await;
+
+        let response = receiver.now_or_never().unwrap().unwrap().unwrap();
+        assert_eq!(response.id, alloy_json_rpc::Id::Number(1));
+        assert!(response.payload.is_success());
     }
 }
