@@ -308,6 +308,28 @@ async fn create_config_file(
                 url.clone().unwrap_or(blockchain.web3_url.clone()),
             )
             .unwrap(),
+            Mempool::Builders { urls } => {
+                write!(
+                    file,
+                    r#"[[submission.mempool]]
+                    url = "{}"
+                    additional-tip-percentage = 0.0
+                    "#,
+                    blockchain.web3_url,
+                )
+                .unwrap();
+                for (index, url) in urls.iter().enumerate() {
+                    write!(
+                        file,
+                        r#"[[submission.mempool.builders]]
+                        name = "builder_{index}"
+                        url = "{}"
+                        "#,
+                        url.clone().unwrap_or(blockchain.web3_url.clone()),
+                    )
+                    .unwrap();
+                }
+            }
         }
     }
 

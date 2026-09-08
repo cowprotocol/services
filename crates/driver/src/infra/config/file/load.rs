@@ -342,12 +342,20 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     .clone()
                     .unwrap_or_else(|| format!("mempool_{index}")),
                 url: mempool.url.clone(),
-                revert_protection: match mempool.mines_reverting_txs {
+                revert_protection: match mempool.reverts_get_mined() {
                     true => mempool::RevertProtection::Disabled,
                     false => mempool::RevertProtection::Enabled,
                 },
                 max_additional_tip: mempool.max_additional_tip,
                 additional_tip_percentage: mempool.additional_tip_percentage,
+                builders: mempool
+                    .builders
+                    .iter()
+                    .map(|builder| mempool::Builder {
+                        name: builder.name.clone(),
+                        url: builder.url.clone(),
+                    })
+                    .collect(),
             })
             .collect(),
         simulator: config.simulator,

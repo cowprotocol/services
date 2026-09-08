@@ -25,6 +25,9 @@ pub struct Metrics {
     /// atempted and the error detection.
     #[metric(labels("mempool", "result"))]
     pub mempool_submission_results_blocks_passed: prometheus::IntCounterVec,
+    /// The results of broadcasting a settlement tx to a single block builder.
+    #[metric(labels("mempool", "builder", "result"))]
+    pub builder_submission: prometheus::IntCounterVec,
     /// How many orders detected by specific solver and strategy.
     #[metric(labels("solver"))]
     pub bad_orders_detected: prometheus::IntCounterVec,

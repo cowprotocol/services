@@ -113,6 +113,21 @@ pub enum Account {
     Address(Address),
 }
 
+impl Account {
+    /// Signs an EIP-191 personal message. Block builders that authenticate
+    /// their callers expect the request body signed this way.
+    pub async fn sign_message(&self, message: &[u8]) -> alloy::signers::Result<Signature> {
+        use alloy::signers::Signer;
+        match self {
+            Account::PrivateKey(local_signer) => local_signer.sign_message(message).await,
+            Account::Kms(aws_signer) => aws_signer.sign_message(message).await,
+            Account::Address(_) => Err(alloy::signers::Error::UnsupportedOperation(
+                alloy::signers::UnsupportedSignerOperation::SignMessage,
+            )),
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl TxSigner<Signature> for Account {
     fn address(&self) -> Address {
