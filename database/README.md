@@ -24,18 +24,6 @@ Column                | Type        | Nullable | Details
 Indexes:
 - "app\_data\_pkey" PRIMARY KEY, btree (`contract_app_data`)
 
-### auction\_prices
-
-Stores the native price of a token in a given auction. Used for computations related to CIP-20.
-
- Column     | Type    | Nullable | Details
-------------|---------|----------|--------
-auction\_id | bigint  | not null | in which auction this price was provided
-token       | bytea   | not null | address of the token the price refers to
-price       | numeric | not null | the atoms of ETH that can be bought with 1 atom of the token
-
-Indexes:
-- PRIMARY KEY: btree(`auction_uid`, `token`)
 
 ### auctions (and auctions\_id\_seq counter)
 
