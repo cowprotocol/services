@@ -23,6 +23,7 @@ hex-literal = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 model = { workspace = true }
+moka = { workspace = true, features = ["sync"] }
 num = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }
