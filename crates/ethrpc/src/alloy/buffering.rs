@@ -227,6 +227,10 @@ where
 
                 let batch = queue.build_fair_batch(max_batch_size);
                 Metrics::get().batch_size.observe(batch.len() as f64);
+                if batch.len() == 1 {
+                    let method = &batch[0].0.meta().method;
+                    tracing::debug!(?method, "single-batch");
+                }
 
                 // Clone the inner service per batch as recommended in
                 // <https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services>.
