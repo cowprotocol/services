@@ -229,7 +229,8 @@ where
                 Metrics::get().batch_size.observe(batch.len() as f64);
                 if batch.len() == 1 {
                     let method = &batch[0].0.meta().method;
-                    tracing::debug!(?method, "single-batch");
+                    let value = batch[0].0.serialized();
+                    tracing::debug!(?method, ?value, "single-batch");
                 }
 
                 // Clone the inner service per batch as recommended in
