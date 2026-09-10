@@ -842,8 +842,8 @@ fn default_simulation_bad_token_max_age() -> Duration {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BadOrderDetectionConfig {
     /// Which tokens are explicitly supported or unsupported by the solver.
-    /// A key is either a token address or the name of an `[rwa]` group, which
-    /// applies to all tokens of that group.
+    /// A key is either a token address or the name of a `[token-groups]`
+    /// entry, which applies to all tokens of that group.
     #[serde(default)]
     pub token_supported: HashMap<String, bool>,
 
@@ -911,15 +911,15 @@ pub struct BadOrderDetectionConfig {
 
 impl BadOrderDetectionConfig {
     /// Resolves the configured token support into addresses, expanding every
-    /// key that names an `[rwa]` group. Errors on a key that is neither an
-    /// address nor a configured group.
+    /// key that names a `[token-groups]` entry. Errors on a key that is
+    /// neither an address nor a configured group.
     pub fn canonicalize_token_support(
         &self,
         token_groups: &HashMap<String, Vec<eth::Address>>,
     ) -> anyhow::Result<HashMap<eth::Address, bool>> {
-        let n_rwa_tokens: usize = token_groups.values().map(|addresses| addresses.len()).sum();
+        let n_group_tokens: usize = token_groups.values().map(|addresses| addresses.len()).sum();
         let mut canonical_token_supported =
-            HashMap::with_capacity(self.token_supported.len() + n_rwa_tokens);
+            HashMap::with_capacity(self.token_supported.len() + n_group_tokens);
         let mut addresses = Vec::with_capacity(self.token_supported.len());
 
         for (token, supported) in &self.token_supported {
@@ -927,7 +927,7 @@ impl BadOrderDetectionConfig {
                 Ok(address) => addresses.push((address, *supported)),
                 Err(_) => {
                     let group = token_groups.get(token).with_context(|| {
-                        format!("{token} is neither a token address nor an rwa group")
+                        format!("{token} is neither a token address nor a token group")
                     })?;
                     canonical_token_supported
                         .extend(group.iter().map(|address| (*address, *supported)));
@@ -1218,12 +1218,12 @@ mod tests {
         assert_eq!(accounts.into_inner().len(), 1);
     }
 
-    /// Two RWA groups shared by all solvers, of which each solver supports a
-    /// different subset.
-    const RWA_CONFIG: &str = r#"
+    /// Two token groups shared by all solvers, of which each solver supports
+    /// a different subset.
+    const TOKEN_GROUPS_CONFIG: &str = r#"
         tx-gas-limit = "45000000"
 
-        [rwa]
+        [token-groups]
         ondo = [
             "0x0000000000000000000000000000000000000001",
             "0x0000000000000000000000000000000000000002",
@@ -1264,8 +1264,8 @@ mod tests {
     }
 
     #[test]
-    fn rwa_groups_are_resolved_per_solver() {
-        let config: Config = toml::from_str(RWA_CONFIG).unwrap();
+    fn token_groups_are_resolved_per_solver() {
+        let config: Config = toml::from_str(TOKEN_GROUPS_CONFIG).unwrap();
 
         assert_eq!(
             token_support(&config, 0),
@@ -1279,7 +1279,7 @@ mod tests {
     }
 
     #[test]
-    fn address_overrides_the_rwa_group_containing_it() {
+    fn address_overrides_the_token_group_containing_it() {
         let config: BadOrderDetectionConfig = toml::from_str(
             r#"
             [token-supported]
@@ -1320,7 +1320,7 @@ mod tests {
     }
 
     #[test]
-    fn without_rwa_groups_addresses_are_kept() {
+    fn without_token_groups_addresses_are_kept() {
         let config: BadOrderDetectionConfig = toml::from_str(
             r#"
             [token-supported]
@@ -1336,6 +1336,25 @@ mod tests {
             support,
             HashMap::from([(address(1), true), (address(2), false)])
         );
+    }
+
+    #[test]
+    fn address_keys_are_parsed_regardless_of_casing() {
+        // Existing configs write checksummed addresses, so they must not be
+        // mistaken for a group name.
+        let config: BadOrderDetectionConfig = toml::from_str(
+            r#"
+            [token-supported]
+            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" = true
+            "0x6b175474e89094c44da98b954eedeac495271d0f" = false
+            "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc3" = true
+            "#,
+        )
+        .unwrap();
+
+        let support = config.canonicalize_token_support(&HashMap::new()).unwrap();
+
+        assert_eq!(support.len(), 3);
     }
 
     #[test]

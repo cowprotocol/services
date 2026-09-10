@@ -12,7 +12,7 @@ response-size-limit-max-bytes = 30000000
 [solver.request-headers]
 fake-header-one = "FAKE-HEADER-VALUE"  # For instance an authorization token which must be provided on each request
 
-[solver.token-supported]  # Keys are token addresses or [rwa] group names
+[solver.token-supported]  # Keys are token addresses or [token-groups] names
 ondo = false
 xstocks = false
 
@@ -24,7 +24,7 @@ xstocks = false
 
 # Groups of tokens that solvers refer to by name in `token-supported`. Listing
 # them once per driver keeps the solver sections small.
-[rwa]
+[token-groups]
 ondo = ["0x0000000000000000000000000000000000000001"]
 xstocks = ["0x0000000000000000000000000000000000000002"]
 
