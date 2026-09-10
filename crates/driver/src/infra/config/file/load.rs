@@ -31,7 +31,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
-    let mut config: file::Config = toml::de::from_str(&data).unwrap_or_else(|err| {
+    let config: file::Config = toml::de::from_str(&data).unwrap_or_else(|err| {
         if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
             panic!("failed to parse TOML config at {path:?}: {err:#?}")
         } else {
@@ -56,19 +56,21 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         .validate()
         .unwrap_or_else(|err| panic!("invalid balance cache config: {err:?}"));
 
-    // The `[rwa]` groups are expanded into each solver's token support up
-    // front, so the rest of the loader only deals with resolved addresses.
-    let rwa = std::mem::take(&mut config.rwa);
-    for solver in &mut config.solvers {
-        let support = solver
-            .bad_order_detection
-            .token_support(&rwa)
-            .unwrap_or_else(|err| panic!("invalid rwa config for solver {}: {err:?}", solver.name));
-        solver.bad_order_detection.token_supported = support;
-    }
+    // Shared by every solver, so it is borrowed instead of moved into the
+    // per-solver futures.
+    let rwa = &config.rwa;
 
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
+            let tokens_supported = solver_config
+                .bad_order_detection
+                .canonicalize_token_support(rwa)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "invalid token support for solver {}: {err:?}",
+                        solver_config.name
+                    )
+                });
             let account = load_account(solver_config.account, config.chain_id).await;
             solver::Config {
                 endpoint: solver_config.endpoint,
@@ -108,13 +110,11 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 quote_tx_origin: solver_config.quote_tx_origin,
                 response_size_limit_max_bytes: solver_config.response_size_limit_max_bytes,
                 bad_order_detection: BadOrderDetection {
-                    tokens_supported: solver_config
-                        .bad_order_detection
-                        .token_supported
-                        .iter()
+                    tokens_supported: tokens_supported
+                        .into_iter()
                         .map(|(token, supported)| {
                             (
-                                eth::TokenAddress::from(*token),
+                                eth::TokenAddress::from(token),
                                 match supported {
                                     true => risk_detector::Quality::Supported,
                                     false => risk_detector::Quality::Unsupported,
