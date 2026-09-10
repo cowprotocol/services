@@ -12,5 +12,5 @@ pub use {
     flashloan::Flashloan,
     interaction::Interaction,
     liquidity::Liquidity,
-    mempools::{Mempools, RevertProtection},
+    mempools::Mempools,
 };
