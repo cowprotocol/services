@@ -58,7 +58,7 @@ struct Config {
     /// name instead of by address. Shared by all solvers of this driver so
     /// the addresses only have to be listed once.
     #[serde(default)]
-    rwa: HashMap<String, Vec<eth::Address>>,
+    token_groups: HashMap<String, Vec<eth::Address>>,
 
     #[serde(default)]
     liquidity: LiquidityConfig,
@@ -915,9 +915,9 @@ impl BadOrderDetectionConfig {
     /// address nor a configured group.
     pub fn canonicalize_token_support(
         &self,
-        rwa: &HashMap<String, Vec<eth::Address>>,
+        token_groups: &HashMap<String, Vec<eth::Address>>,
     ) -> anyhow::Result<HashMap<eth::Address, bool>> {
-        let n_rwa_tokens: usize = rwa.values().map(|addresses| addresses.len()).sum();
+        let n_rwa_tokens: usize = token_groups.values().map(|addresses| addresses.len()).sum();
         let mut canonical_token_supported =
             HashMap::with_capacity(self.token_supported.len() + n_rwa_tokens);
         let mut addresses = Vec::with_capacity(self.token_supported.len());
@@ -926,7 +926,7 @@ impl BadOrderDetectionConfig {
             match eth::Address::from_str(token) {
                 Ok(address) => addresses.push((address, *supported)),
                 Err(_) => {
-                    let group = rwa.get(token).with_context(|| {
+                    let group = token_groups.get(token).with_context(|| {
                         format!("{token} is neither a token address nor an rwa group")
                     })?;
                     canonical_token_supported
@@ -1259,7 +1259,7 @@ mod tests {
     fn token_support(config: &Config, solver: usize) -> HashMap<eth::Address, bool> {
         config.solvers[solver]
             .bad_order_detection
-            .canonicalize_token_support(&config.rwa)
+            .canonicalize_token_support(&config.token_groups)
             .unwrap()
     }
 

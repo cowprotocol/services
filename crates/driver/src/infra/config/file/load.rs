@@ -58,13 +58,13 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
 
     // Shared by every solver, so it is borrowed instead of moved into the
     // per-solver futures.
-    let rwa = &config.rwa;
+    let token_groups = &config.token_groups;
 
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
             let tokens_supported = solver_config
                 .bad_order_detection
-                .canonicalize_token_support(rwa)
+                .canonicalize_token_support(token_groups)
                 .unwrap_or_else(|err| {
                     panic!(
                         "invalid token support for solver {}: {err:?}",
