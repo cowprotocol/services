@@ -6,7 +6,10 @@
 //! in sync.
 
 use {
-    crate::domain::{self, order_uid::OrderUid},
+    crate::{
+        domain::{self, order_uid::OrderUid},
+        infra::api::routes::Kind,
+    },
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
@@ -78,23 +81,6 @@ pub struct Order {
     app_data: AppData,
 }
 
-/// Whether the order sells or buys an exact amount.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-enum Kind {
-    Sell,
-    Buy,
-}
-
-impl From<Kind> for domain::Side {
-    fn from(kind: Kind) -> Self {
-        match kind {
-            Kind::Sell => domain::Side::Sell,
-            Kind::Buy => domain::Side::Buy,
-        }
-    }
-}
-
 impl From<Order> for domain::Order {
     fn from(order: Order) -> Self {
         Self {
@@ -133,7 +119,7 @@ impl SolveRequest {
     pub fn into_domain(self) -> Result<domain::Auction, Error> {
         let id = domain::auction::Id::try_from(self.id)?;
         Ok(domain::Auction {
-            id,
+            id: Some(id),
             orders: self.orders.into_iter().map(Into::into).collect(),
             // Placeholder; the domain does not consume it yet.
             deadline_slot: domain::Slot(0),

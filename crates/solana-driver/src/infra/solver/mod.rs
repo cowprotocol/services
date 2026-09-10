@@ -184,7 +184,7 @@ mod tests {
         })
         .expect("solver construction should succeed");
         let auction = domain::Auction {
-            id: domain::Id::new(1).unwrap(),
+            id: Some(domain::Id::new(1).unwrap()),
             orders: Vec::new(),
             deadline_slot: domain::Slot(1),
             // Well in the past: the request must be skipped entirely.

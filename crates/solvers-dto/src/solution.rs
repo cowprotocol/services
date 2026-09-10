@@ -1,9 +1,9 @@
 use {
     alloy_primitives::{Address, U256},
     number::serialization::HexOrDecimalU256,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Deserializer, Serialize, de},
     serde_with::serde_as,
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -27,11 +27,40 @@ pub enum SolverErrorCode {
     Other,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub enum SolverResponse {
     Solutions { solutions: Vec<Solution> },
     Error { error: SolverError },
+}
+
+/// Hand written because `#[serde(untagged)]` discards the error of every
+/// variant it tries and reports only that none matched, which hides why a
+/// solution was rejected from the solver we notify about it.
+impl<'de> Deserialize<'de> for SolverResponse {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Raw {
+            solutions: Option<Vec<Solution>>,
+            error: Option<SolverError>,
+        }
+
+        match Raw::deserialize(deserializer)? {
+            Raw {
+                solutions: Some(solutions),
+                ..
+            } => Ok(Self::Solutions { solutions }),
+            Raw {
+                error: Some(error), ..
+            } => Ok(Self::Error { error }),
+            Raw { .. } => Err(de::Error::custom(
+                "expected either a `solutions` or an `error` field",
+            )),
+        }
+    }
 }
 
 impl Default for SolverResponse {
@@ -49,6 +78,7 @@ pub struct Solution {
     pub id: u64,
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub prices: HashMap<Address, U256>,
+    #[serde(deserialize_with = "deserialize_trades")]
     pub trades: Vec<Trade>,
     #[serde(default)]
     pub pre_interactions: Vec<Call>,
@@ -63,6 +93,30 @@ pub struct Solution {
     pub flashloans: Option<HashMap<OrderUid, Flashloan>>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub wrappers: Vec<WrapperCall>,
+}
+
+/// A partially fillable order may be split across several solutions, but a
+/// single solution settles each order exactly once.
+fn deserialize_trades<'de, D>(deserializer: D) -> Result<Vec<Trade>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let trades = Vec::<Trade>::deserialize(deserializer)?;
+
+    let mut settled = HashSet::with_capacity(trades.len());
+    for trade in &trades {
+        let Trade::Fulfillment(fulfillment) = trade else {
+            continue;
+        };
+        if !settled.insert(&fulfillment.order) {
+            let uid = const_hex::encode_prefixed(fulfillment.order.0);
+            return Err(de::Error::custom(format!(
+                "order {uid} is settled by more than one trade"
+            )));
+        }
+    }
+
+    Ok(trades)
 }
 
 #[serde_as]
@@ -297,6 +351,58 @@ mod tests {
             json!({
                 "solutions": [],
             })
+        );
+    }
+
+    fn order_uid(byte: u8) -> String {
+        const_hex::encode_prefixed([byte; 56])
+    }
+
+    fn solution_with_fulfillments(orders: &[String]) -> serde_json::Value {
+        json!({
+            "id": 0,
+            "prices": {},
+            "trades": orders.iter().map(|order| json!({
+                "kind": "fulfillment",
+                "order": order,
+                "executedAmount": "1000",
+            })).collect::<Vec<_>>(),
+            "interactions": [],
+        })
+    }
+
+    #[test]
+    fn rejects_solutions_settling_the_same_order_twice() {
+        let order = order_uid(1);
+        let solution = solution_with_fulfillments(&[order.clone(), order.clone()]);
+
+        let err = serde_json::from_value::<Solution>(solution).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("order {order} is settled by more than one trade")
+        );
+    }
+
+    #[test]
+    fn accepts_one_trade_per_order() {
+        let solution = solution_with_fulfillments(&[order_uid(1), order_uid(2)]);
+
+        let solution = serde_json::from_value::<Solution>(solution).unwrap();
+        assert_eq!(solution.trades.len(), 2);
+    }
+
+    #[test]
+    fn duplicate_trade_error_survives_the_response_wrapper() {
+        let order = order_uid(1);
+        let response = json!({
+            "solutions": [solution_with_fulfillments(&[order.clone(), order.clone()])],
+        });
+
+        let err = serde_json::from_value::<SolverResponse>(response).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains(&format!("order {order} is settled by more than one trade")),
+            "unexpected error: {err}"
         );
     }
 

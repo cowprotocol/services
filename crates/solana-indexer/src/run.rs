@@ -12,7 +12,6 @@ use {
         yellowstone,
     },
     clap::Parser,
-    cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     observe::metrics::{DEFAULT_METRICS_PORT, LivenessChecking, serve_metrics},
     sqlx::{PgPool, postgres::PgPoolOptions},
     std::{
@@ -64,23 +63,11 @@ async fn run(config: Config, start_slot: Option<u64>) {
         .expect("database connection");
     let mut metrics = serve_probes(pool.clone());
     let persistence = Postgres::new(pool);
-    // Confirmed commitment, matching the stream subscription.
-    let rpc = SolanaRPC::new_with_timeout_and_commitment(
-        &config.rpc.endpoint,
-        config.rpc.request_timeout,
-        CommitmentConfig::confirmed(),
-    );
 
     let (tx, rx) = mpsc::channel(INGEST_TO_DECODER_CAPACITY);
     let settlement_program = config.chain.settlement_program_id;
     let solflow_program = config.chain.solflow_program_id;
-    let mut decoder = Decoder::new(
-        persistence.clone(),
-        rpc,
-        rx,
-        settlement_program,
-        solflow_program,
-    );
+    let mut decoder = Decoder::new(persistence.clone(), rx, settlement_program, solflow_program);
     let mut decoder_task = tokio::spawn(async move { decoder.run().await });
 
     let latest_chain_slot = Arc::new(AtomicU64::default());

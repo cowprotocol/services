@@ -106,7 +106,7 @@ async fn run(config: Config) {
         .collect();
 
     let auction_loop = AuctionLoop::new(
-        Box::new(SlotTrigger::new(rpc)),
+        Box::new(SlotTrigger::new(rpc, config.min_auction_interval)),
         Box::new(DbAuctionProvider::new(pool.clone())),
         Box::new(DriverCompetition::new(
             drivers.clone(),

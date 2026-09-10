@@ -89,6 +89,10 @@ struct Config {
     /// Http client factory config
     #[serde(default)]
     http: configs::http_client::HttpClient,
+
+    /// Settings for the on-chain balance cache.
+    #[serde(default)]
+    balance_cache: configs::balance_cache::BalanceCacheConfig,
 }
 
 #[serde_as]
