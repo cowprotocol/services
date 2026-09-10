@@ -843,7 +843,8 @@ fn default_simulation_bad_token_max_age() -> Duration {
 pub struct BadOrderDetectionConfig {
     /// Which tokens are explicitly supported or unsupported by the solver.
     /// A key is either a token address or the name of a `[token-groups]`
-    /// entry, which applies to all tokens of that group.
+    /// entry, which applies to all tokens of that group. An address overrides
+    /// the groups that contain it.
     #[serde(default)]
     pub token_supported: HashMap<String, bool>,
 
@@ -917,10 +918,8 @@ impl BadOrderDetectionConfig {
         &self,
         token_groups: &HashMap<String, Vec<eth::Address>>,
     ) -> anyhow::Result<HashMap<eth::Address, bool>> {
-        let n_group_tokens: usize = token_groups.values().map(|addresses| addresses.len()).sum();
-        let mut canonical_token_supported =
-            HashMap::with_capacity(self.token_supported.len() + n_group_tokens);
-        let mut addresses = Vec::with_capacity(self.token_supported.len());
+        let mut canonical_token_supported = HashMap::new();
+        let mut addresses = Vec::new();
 
         for (token, supported) in &self.token_supported {
             match eth::Address::from_str(token) {
