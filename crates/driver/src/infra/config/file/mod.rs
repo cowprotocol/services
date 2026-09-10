@@ -2,6 +2,7 @@ pub use load::load;
 use {
     crate::infra,
     alloy::{eips::BlockNumberOrTag, primitives::Address},
+    anyhow::Context,
     configs::gas_price_estimation::{default_past_blocks, default_reward_percentile},
     eth_domain_types as eth,
     number::serialization::HexOrDecimalU256,
@@ -52,6 +53,13 @@ struct Config {
 
     #[serde(rename = "solver")]
     solvers: Vec<SolverConfig>,
+
+    /// Named groups of tokens that solvers opt into as a whole with
+    /// `rwa-support`. Shared by all solvers of this driver so the addresses
+    /// only have to be listed once. Declaring a group is not additive: it
+    /// marks its tokens as unsupported for every solver that does not opt in.
+    #[serde(default)]
+    rwa: HashMap<String, Vec<eth::Address>>,
 
     #[serde(default)]
     liquidity: LiquidityConfig,
@@ -835,8 +843,14 @@ fn default_simulation_bad_token_max_age() -> Duration {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BadOrderDetectionConfig {
     /// Which tokens are explicitly supported or unsupported by the solver.
+    /// Takes precedence over `rwa-support`.
     #[serde(default)]
     pub token_supported: HashMap<eth::Address, bool>,
+
+    /// Names of the `[rwa]` groups this solver supports. Tokens of the
+    /// remaining groups are marked as unsupported.
+    #[serde(default)]
+    pub rwa_support: Vec<String>,
 
     /// Whether the solver opted into detecting unsupported
     /// tokens with `trace_callMany` based simulation.
@@ -898,6 +912,33 @@ pub struct BadOrderDetectionConfig {
         with = "humantime_serde"
     )]
     pub metrics_strategy_gc_max_age: Duration,
+}
+
+impl BadOrderDetectionConfig {
+    /// Resolves which tokens the solver explicitly supports, expanding the
+    /// `[rwa]` groups: tokens of a group the solver did not opt into are
+    /// unsupported, and `token-supported` overrides both. Errors if the
+    /// solver opted into a group that is not configured.
+    pub fn token_support(
+        &self,
+        rwa: &HashMap<String, Vec<eth::Address>>,
+    ) -> anyhow::Result<HashMap<eth::Address, bool>> {
+        let mut support: HashMap<_, _> = rwa
+            .values()
+            .flatten()
+            .map(|token| (*token, false))
+            .collect();
+
+        for group in &self.rwa_support {
+            let tokens = rwa
+                .get(group)
+                .with_context(|| format!("unknown rwa group {group:?}"))?;
+            support.extend(tokens.iter().map(|token| (*token, true)));
+        }
+
+        support.extend(&self.token_supported);
+        Ok(support)
+    }
 }
 
 impl Default for BadOrderDetectionConfig {
@@ -1174,6 +1215,124 @@ mod tests {
         let accounts = SubmissionAccounts::new(vec![signer]).unwrap();
 
         assert_eq!(accounts.into_inner().len(), 1);
+    }
+
+    /// Two RWA groups shared by all solvers, of which each solver opts into a
+    /// different subset.
+    const RWA_CONFIG: &str = r#"
+        tx-gas-limit = "45000000"
+
+        [rwa]
+        ondo = [
+            "0x0000000000000000000000000000000000000001",
+            "0x0000000000000000000000000000000000000002",
+        ]
+        xstocks = ["0x0000000000000000000000000000000000000003"]
+
+        [[solver]]
+        name = "ondo-solver"
+        endpoint = "http://localhost:1234"
+        relative-slippage = "0.1"
+        account = "0x0000000000000000000000000000000000000000000000000000000000000001"
+        rwa-support = ["ondo"]
+
+        [[solver]]
+        name = "xstocks-solver"
+        endpoint = "http://localhost:1235"
+        relative-slippage = "0.1"
+        account = "0x0000000000000000000000000000000000000000000000000000000000000002"
+        rwa-support = ["xstocks"]
+    "#;
+
+    fn address(last_byte: u8) -> eth::Address {
+        let mut bytes = [0u8; 20];
+        bytes[19] = last_byte;
+        eth::Address::from(bytes)
+    }
+
+    fn token_support(config: &Config, solver: usize) -> HashMap<eth::Address, bool> {
+        config.solvers[solver]
+            .bad_order_detection
+            .token_support(&config.rwa)
+            .unwrap()
+    }
+
+    #[test]
+    fn rwa_groups_are_resolved_per_solver() {
+        let config: Config = toml::from_str(RWA_CONFIG).unwrap();
+
+        assert_eq!(
+            token_support(&config, 0),
+            HashMap::from([(address(1), true), (address(2), true), (address(3), false),])
+        );
+        assert_eq!(
+            token_support(&config, 1),
+            HashMap::from([(address(1), false), (address(2), false), (address(3), true),])
+        );
+    }
+
+    #[test]
+    fn explicit_token_support_overrides_rwa_group() {
+        let config: Config = toml::from_str(&format!(
+            r#"
+            {RWA_CONFIG}
+            [solver.token-supported]
+            "0x0000000000000000000000000000000000000001" = true
+            "0x0000000000000000000000000000000000000003" = false
+            "#
+        ))
+        .unwrap();
+
+        // The overrides win in both directions for `xstocks-solver`: a token of
+        // a group it did not opt into becomes supported, one of its own group
+        // becomes unsupported.
+        assert_eq!(
+            token_support(&config, 1),
+            HashMap::from([(address(1), true), (address(2), false), (address(3), false),])
+        );
+    }
+
+    #[test]
+    fn unknown_rwa_group_is_rejected() {
+        let config = BadOrderDetectionConfig {
+            rwa_support: vec!["ondu".to_owned()],
+            ..Default::default()
+        };
+
+        let err = config
+            .token_support(&HashMap::from([("ondo".to_owned(), vec![address(1)])]))
+            .unwrap_err();
+
+        assert!(err.to_string().contains("unknown rwa group"));
+    }
+
+    #[test]
+    fn token_supported_by_any_opted_in_group() {
+        let config = BadOrderDetectionConfig {
+            rwa_support: vec!["ondo".to_owned()],
+            ..Default::default()
+        };
+
+        let support = config
+            .token_support(&HashMap::from([
+                ("ondo".to_owned(), vec![address(1)]),
+                ("xstocks".to_owned(), vec![address(1)]),
+            ]))
+            .unwrap();
+
+        assert_eq!(support, HashMap::from([(address(1), true)]));
+    }
+
+    #[test]
+    fn without_rwa_groups_token_support_is_unchanged() {
+        let config = BadOrderDetectionConfig {
+            token_supported: HashMap::from([(address(1), true), (address(2), false)]),
+            ..Default::default()
+        };
+
+        let support = config.token_support(&HashMap::new()).unwrap();
+
+        assert_eq!(support, config.token_supported);
     }
 
     #[test]

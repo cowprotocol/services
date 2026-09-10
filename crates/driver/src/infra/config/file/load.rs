@@ -31,7 +31,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
-    let config: file::Config = toml::de::from_str(&data).unwrap_or_else(|err| {
+    let mut config: file::Config = toml::de::from_str(&data).unwrap_or_else(|err| {
         if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
             panic!("failed to parse TOML config at {path:?}: {err:#?}")
         } else {
@@ -55,6 +55,17 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         .balance_cache
         .validate()
         .unwrap_or_else(|err| panic!("invalid balance cache config: {err:?}"));
+
+    // The `[rwa]` groups are expanded into each solver's token support up
+    // front, so the rest of the loader only deals with resolved addresses.
+    let rwa = std::mem::take(&mut config.rwa);
+    for solver in &mut config.solvers {
+        let support = solver
+            .bad_order_detection
+            .token_support(&rwa)
+            .unwrap_or_else(|err| panic!("invalid rwa config for solver {}: {err:?}", solver.name));
+        solver.bad_order_detection.token_supported = support;
+    }
 
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
