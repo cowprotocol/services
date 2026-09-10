@@ -184,6 +184,11 @@ fn trade_from(
     let buy_token = Address::from_slice(&row.buy_token.0);
     let sell_token = Address::from_slice(&row.sell_token.0);
     let tx_hash = row.tx_hash.map(|hash| B256::from_slice(&hash.0));
+    let gas_cost = row
+        .gas_cost
+        .as_ref()
+        .map(|cost| big_decimal_to_u256(cost).context("gas cost is not a valid u256"))
+        .transpose()?;
     let penalty_cap_native = penalty_cap_native
         .as_ref()
         .map(|cap| big_decimal_to_u256(cap).context("penalty_cap_native is not a U256"))
@@ -200,16 +205,37 @@ fn trade_from(
         sell_token,
         tx_hash,
         executed_protocol_fees,
+        gas_cost,
         penalty_cap_native,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, alloy::primitives::U256};
 
     #[test]
     fn convert_trade() {
         trade_from(TradesQueryRow::default(), vec![], None).unwrap();
+    }
+
+    #[test]
+    fn convert_trade_gas_cost() {
+        let convert = |gas_cost| {
+            trade_from(
+                TradesQueryRow {
+                    gas_cost,
+                    ..Default::default()
+                },
+                vec![],
+                None,
+            )
+        };
+        assert_eq!(
+            convert(Some(BigDecimal::from(1000))).unwrap().gas_cost,
+            Some(U256::from(1000))
+        );
+        // An unrepresentable cost errors instead of reading as unattributed.
+        assert!(convert(Some(BigDecimal::from(-1))).is_err());
     }
 }
