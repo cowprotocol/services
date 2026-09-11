@@ -465,6 +465,117 @@ async fn backfilled_transaction_decodes_like_the_streamed_one() {
     );
 }
 
+/// The converter maps the V0 shape too: an ALT-loaded settlement program
+/// reached only through a CPI decodes to the same event as the streamed
+/// form.
+#[tokio::test]
+async fn backfilled_v0_cpi_decodes_like_the_streamed_one() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (instruction, expected) = create_order_parts();
+    let (payer, router) = (pubkey(9), pubkey(8));
+
+    let mut static_keys = vec![payer, router];
+    static_keys.extend(instruction.accounts.iter().map(|meta| meta.pubkey));
+    let settlement_index = u8::try_from(static_keys.len()).unwrap();
+    let account_indices: Vec<u8> = (2..settlement_index).collect();
+
+    let streamed = tx_info(
+        static_keys.clone(),
+        vec![],
+        vec![settlement],
+        vec![CompiledInstruction {
+            program_id_index: 1,
+            accounts: vec![],
+            data: vec![0],
+        }],
+        vec![InnerInstructions {
+            index: 0,
+            instructions: vec![inner(
+                u32::from(settlement_index),
+                account_indices.clone(),
+                instruction.data.clone(),
+                Some(2),
+            )],
+        }],
+    );
+
+    let message = solana_sdk::message::VersionedMessage::V0(solana_sdk::message::v0::Message {
+        header: solana_sdk::message::MessageHeader {
+            num_required_signatures: 1,
+            num_readonly_signed_accounts: 0,
+            num_readonly_unsigned_accounts: 0,
+        },
+        account_keys: static_keys,
+        recent_blockhash: solana_sdk::hash::Hash::default(),
+        instructions: vec![
+            solana_sdk::message::compiled_instruction::CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![],
+                data: vec![0],
+            },
+        ],
+        address_table_lookups: vec![solana_sdk::message::v0::MessageAddressTableLookup {
+            account_key: pubkey(7),
+            writable_indexes: vec![],
+            readonly_indexes: vec![0],
+        }],
+    });
+    let tx = solana_sdk::transaction::VersionedTransaction {
+        signatures: vec![signature(6)],
+        message,
+    };
+    let bytes = bincode::serialize(&tx).unwrap();
+    let json = serde_json::json!({
+        "slot": 43u64,
+        "transaction": [base64::prelude::BASE64_STANDARD.encode(bytes), "base64"],
+        "meta": {
+            "err": null,
+            "status": { "Ok": null },
+            "fee": 0u64,
+            "preBalances": [],
+            "postBalances": [],
+            "innerInstructions": [{
+                "index": 0,
+                "instructions": [{
+                    "programIdIndex": settlement_index,
+                    "accounts": account_indices,
+                    "data": solana_sdk::bs58::encode(&instruction.data).into_string(),
+                    "stackHeight": 2
+                }]
+            }],
+            "logMessages": [],
+            "preTokenBalances": [],
+            "postTokenBalances": [],
+            "rewards": [],
+            "loadedAddresses": {
+                "writable": [],
+                "readonly": [settlement.to_string()]
+            }
+        },
+        "blockTime": null
+    });
+    let encoded: cow_solana_rpc::EncodedConfirmedTransactionWithStatusMeta =
+        serde_json::from_value(json).unwrap();
+    let backfilled = super::backfill::convert(encoded, signature(6)).expect("convertible");
+
+    let decoder = pure_decoder(settlement, solflow);
+    let expected = vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+        Box::new(expected),
+    ))];
+    assert_eq!(
+        decoder
+            .decode(streamed, Slot(43), signature(6))
+            .expect("streamed decode"),
+        expected
+    );
+    assert_eq!(
+        decoder
+            .decode(backfilled, Slot(43), signature(6))
+            .expect("backfilled decode"),
+        expected
+    );
+}
+
 /// A decoder over a lazy pool that never connects: `decode` is pure, tests
 /// of it stay database-free.
 fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
