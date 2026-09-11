@@ -162,15 +162,13 @@ impl Decoder {
                 tracing::error!(%program, "signature page with no parsable entry");
                 return Err(PersistenceError::Unavailable);
             }
-            let page_len = page.len();
+            let reached_watermark = page.iter().any(|(_, slot)| Slot(*slot) <= watermark);
             before = page.last().map(|(signature, _)| *signature);
-            let fresh = entries.len();
             entries.extend(
                 page.into_iter()
                     .take_while(|(_, slot)| Slot(*slot) > watermark)
                     .map(|(signature, slot)| (Slot(slot), signature)),
             );
-            let reached_watermark = entries.len() - fresh < page_len;
             if reached_watermark || !more {
                 return Ok(entries);
             }

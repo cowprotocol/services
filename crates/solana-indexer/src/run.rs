@@ -86,23 +86,7 @@ async fn run(config: Config, start_slot: Option<u64>) {
 
     let latest_chain_slot = Arc::new(AtomicU64::default());
 
-    // A decoder without a stream: the backfill drives its decode and flush
-    // paths from RPC history over a dedicated client.
-    let backfiller = {
-        let rpc = SolanaRPC::new_with_timeout_and_commitment(
-            &config.rpc.endpoint,
-            config.rpc.request_timeout,
-            CommitmentConfig::confirmed(),
-        );
-        let (_closed, rx) = mpsc::channel(1);
-        Decoder::new(
-            persistence.clone(),
-            rpc,
-            rx,
-            settlement_program,
-            solflow_program,
-        )
-    };
+    let backfiller = Decoder::stream_less(&config, persistence.clone());
 
     let stream_loop = async {
         let mut resume = start_slot.map_or(Resume::Watermark, Resume::From);

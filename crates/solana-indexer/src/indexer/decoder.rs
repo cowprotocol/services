@@ -6,6 +6,7 @@
 
 use {
     crate::{
+        config::Config,
         persistence::Postgres,
         types::{
             Signature,
@@ -38,10 +39,10 @@ use {
         },
         recover_discriminator,
     },
-    cow_solana_rpc::SolanaRPC,
+    cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     solana_sdk::{account::Account, pubkey::Pubkey},
     std::collections::{BTreeMap, HashMap},
-    tokio::sync::mpsc::Receiver,
+    tokio::sync::mpsc::{self, Receiver},
 };
 
 /// Decoder component.
@@ -79,6 +80,25 @@ impl Decoder {
             settlement_program,
             solflow_program,
         }
+    }
+
+    /// A decoder with no stream attached: the backfill and the replay drive
+    /// its decode and flush paths from RPC history over a dedicated client.
+    /// The channel sender is dropped, so `run` would return immediately.
+    pub(crate) fn stream_less(config: &Config, persistence: Postgres) -> Self {
+        let rpc = SolanaRPC::new_with_timeout_and_commitment(
+            &config.rpc.endpoint,
+            config.rpc.request_timeout,
+            CommitmentConfig::confirmed(),
+        );
+        let (_closed, rx) = mpsc::channel(1);
+        Self::new(
+            persistence,
+            rpc,
+            rx,
+            config.chain.settlement_program_id,
+            config.chain.solflow_program_id,
+        )
     }
 
     /// Main loop. Drains the channel, decodes each transaction's tracked
