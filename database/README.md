@@ -225,7 +225,7 @@ Quotes that an order was created with. These quotes get stored persistently and 
  verified            | boolean     | not null | information if quote was verified
  metadata            | json        | not null | additional data associated with the quote in json format
  creation\_timestamp | timestamptz | not null | when the entry was created (DEFAULT NOW() for new and 1970-01-01 for historical data)
- auction\_id         | bigint      | nullable | the auction competition that was the basis for this quote, the limit price of fast path executions will be derived from this competition
+ quote\_id           | bigint      | nullable | `quotes.id` this order was placed against — used by the autopilot's fast-path handler to look up the associated `quote_competitions` staging row
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
@@ -341,11 +341,22 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  solver                | bytea              | not null | public address of the solver that provided this quote
  verified              | boolean            | not null | information if quote was verified
  metadata              | json               | not null | additional data associated with the quote in json format
- auction\_id           | bigint             | nullable | the auction competition that was the basis for this quote, the limit price of fast path executions will be derived from this competition
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
 - quotes\_token\_expiration: btree (`sell_token`, `buy_token`, `expiration_timestamp` DESC)
+
+### quote\_competitions
+
+Stores the full competition data (all quotes, native prices, quote request, etc.) that produced the `quotes` row with the same id. Similar to the `quotes` table data in this table is temporary and only gets moved into permanent tables once the fast path execution of an order that requests it was initiated. The data is stored in a JSON blob for maximum flexibility and may change across deployments.
+
+ Column       | Type   | Nullable | Details
+--------------|--------|----------|--------
+ quote\_id    | bigint | not null | `quotes.id` this staging row belongs to
+ competition  | jsonb  | not null | serialized competition data — carries the `auction_id`, sell/buy tokens, order side, native prices, and one entry per participating solver (solver, `solution_id`, `is_winner`, quoted amounts)
+
+Indexes:
+- PRIMARY KEY: btree(`quote_id`)
 
 ### proposed\_solutions
 

@@ -501,7 +501,10 @@ where
                     solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.clone().try_into()?,
-                    auction_id: quote.data.auction_id,
+                    // `quote_id` linkage is populated by the fast-path flow
+                    // (added in a later PR); until that lands leave the column
+                    // untouched.
+                    quote_id: None,
                 }),
                 Err(err) => {
                     let err_label = err.to_metrics_label();
@@ -1317,7 +1320,7 @@ mod test {
             solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.clone().try_into().unwrap(),
-            auction_id: quote.data.auction_id,
+            quote_id: None,
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(
