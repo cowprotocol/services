@@ -77,6 +77,34 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
             filtered_out = ranking.inner.filtered_out.len(),
             "competition ranked"
         );
+        for solution in ranking.inner.winners() {
+            let orders: Vec<String> = solution
+                .orders()
+                .iter()
+                .map(|o| o.uid.to_string())
+                .collect();
+            tracing::debug!(solution_id = solution.id(), ?orders, "winning solution");
+        }
+        for solution in ranking.inner.non_winners() {
+            let orders: Vec<String> = solution
+                .orders()
+                .iter()
+                .map(|o| o.uid.to_string())
+                .collect();
+            tracing::debug!(solution_id = solution.id(), ?orders, "non-winning solution");
+        }
+        for solution in &ranking.inner.filtered_out {
+            let orders: Vec<String> = solution
+                .orders()
+                .iter()
+                .map(|o| o.uid.to_string())
+                .collect();
+            tracing::debug!(
+                solution_id = solution.id(),
+                ?orders,
+                "filtered-out solution"
+            );
+        }
         Ok(())
     }
 

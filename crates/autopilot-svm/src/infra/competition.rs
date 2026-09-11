@@ -88,9 +88,10 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
                     continue;
                 }
                 match convert(driver_index, dto_solution, &by_uid) {
-                    Some(solution) => solutions.push(solution),
-                    None => tracing::warn!(
+                    Ok(solution) => solutions.push(solution),
+                    Err(uid) => tracing::warn!(
                         driver = %driver.name,
+                        order = %uid,
                         "solution names an order outside the auction, dropped"
                     ),
                 }
@@ -108,13 +109,13 @@ fn convert(
     driver_index: usize,
     dto_solution: dto::Solution,
     by_uid: &HashMap<IntentHash, &Order>,
-) -> Option<Solution> {
+) -> Result<Solution, IntentHash> {
     let orders = dto_solution
         .orders
         .iter()
         .map(|(uid, amounts)| {
-            let order = by_uid.get(uid)?;
-            Some(solution::Order::<Solana> {
+            let order = by_uid.get(uid).ok_or(*uid)?;
+            Ok(solution::Order::<Solana> {
                 uid: *uid,
                 sell_token: order.sell_token,
                 buy_token: order.buy_token,
@@ -128,8 +129,8 @@ fn convert(
                 },
             })
         })
-        .collect::<Option<Vec<_>>>()?;
-    Some(Solution {
+        .collect::<Result<Vec<_>, IntentHash>>()?;
+    Ok(Solution {
         driver_index,
         inner: solution::Solution::new(dto_solution.solution_id, dto_solution.solver, orders),
     })
