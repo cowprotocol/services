@@ -1,6 +1,6 @@
 //! Consumer components of the Solana settlement indexer.
 //!
-//! The four components and their roles:
+//! The two components and their roles:
 //!
 //! - [`Ingester`]: subscribes to the Yellowstone gRPC stream and drains it as
 //!   fast as updates arrive, forwarding them to the decoder. It does no
@@ -12,12 +12,9 @@
 //!   belonging to the settlement and SolFlow programs, and persists the
 //!   resulting typed events to the store.
 //!
-//! - [`FinalizationWorker`]: rows are first written at the `confirmed`
-//!   commitment level. This worker re-checks them against the chain and
-//!   promotes them to `finalized`, or marks them rolled back if the transaction
-//!   disappeared. It uses a cheap batched RPC call for recent rows and falls
-//!   back to one-call-per-row lookups for rows old enough that the batched
-//!   method no longer reports them.
+//! Rows are written at the `confirmed` commitment level. The stream's
+//! finalized slot statuses advance `solana.indexer_state.finalized_slot`, and
+//! a row counts as final once its slot is at or below that watermark.
 
 pub mod decoder;
 pub mod ingester;
