@@ -3,6 +3,7 @@
 
 mod cached;
 mod hermod;
+mod metrics;
 mod onchain;
 
 pub use hermod::Config as HermodConfig;

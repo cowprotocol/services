@@ -3,6 +3,7 @@
 //! "banned by anyone?"; backends stay as pure fetchers.
 
 use {
+    super::metrics::Metrics,
     alloy_primitives::Address,
     async_trait::async_trait,
     futures::{StreamExt, future::join_all, stream},
@@ -95,6 +96,7 @@ impl Cached {
                 None => need_lookup.push(*address),
             }
         }
+        Metrics::cache_hits(addresses.len() - need_lookup.len(), need_lookup.len());
 
         let fetched: Vec<_> = stream::iter(need_lookup)
             .map(|address| async move { (address, self.fetch_all(address).await) })
@@ -111,10 +113,22 @@ impl Cached {
             if verdict == Verdict::Banned {
                 banned.insert(address);
             }
-            self.cache.insert(address, Entry::new(verdict));
+            self.store(address, verdict);
         }
 
         banned
+    }
+
+    /// Caches `verdict`, reporting a ban the cache did not already know about.
+    fn store(&self, address: Address, verdict: Verdict) {
+        let known_banned = self
+            .cache
+            .get(&address)
+            .is_some_and(|entry| entry.verdict == Verdict::Banned);
+        if verdict == Verdict::Banned && !known_banned {
+            Metrics::detected();
+        }
+        self.cache.insert(address, Entry::new(verdict));
     }
 
     /// `Some(true)` as soon as any backend confirms a ban, since a failure
@@ -148,16 +162,23 @@ impl Cached {
             .collect()
     }
 
+    fn banned_count(&self) -> usize {
+        self.cache
+            .iter()
+            .filter(|(_, entry)| entry.verdict == Verdict::Banned)
+            .count()
+    }
+
     /// `None` (existing entry preserved) when `fetch_all` is uncertain — no
     /// positive confirmation and at least one backend failed.
-    async fn refresh(&self, address: Address) -> Option<(Address, Entry)> {
+    async fn refresh(&self, address: Address) -> Option<(Address, Verdict)> {
         let is_banned = self.fetch_all(address).await?;
         let verdict = if is_banned {
             Verdict::Banned
         } else {
             Verdict::NotBanned
         };
-        Some((address, Entry::new(verdict)))
+        Some((address, verdict))
     }
 
     /// Spawns a background task that periodically refreshes near-expiry cache
@@ -173,6 +194,7 @@ impl Cached {
                 let Some(this) = weak.upgrade() else { return };
                 let now = Instant::now();
                 let expired = this.expired(now);
+                Metrics::currently_banned(this.banned_count());
 
                 let refreshed: Vec<_> = stream::iter(expired)
                     .map(|address| this.refresh(*address))
@@ -180,8 +202,8 @@ impl Cached {
                     .collect()
                     .await;
 
-                for (address, entry) in refreshed.into_iter().flatten() {
-                    this.cache.insert(address, entry);
+                for (address, verdict) in refreshed.into_iter().flatten() {
+                    this.store(address, verdict);
                 }
             }
         });
@@ -190,7 +212,14 @@ impl Cached {
 
 /// Logs and swallows backend errors so callers can OR successful results.
 async fn fetch_one(backend: &dyn Backend, address: Address) -> Option<bool> {
-    match backend.fetch(address).await {
+    let start = Instant::now();
+    let result = backend.fetch(address).await;
+    Metrics::lookup(
+        backend.name(),
+        result.as_ref().copied().map_err(|_| ()),
+        start.elapsed(),
+    );
+    match result {
         Ok(banned) => Some(banned),
         Err(err) => {
             tracing::warn!(
@@ -264,8 +293,8 @@ mod tests {
         // succeeds.
         assert_eq!(cached.expired(Instant::now()).len(), 1);
         failing.store(false, Ordering::SeqCst);
-        let (address, entry) = cached.refresh(address).await.unwrap();
-        cached.cache.insert(address, entry);
+        let (address, verdict) = cached.refresh(address).await.unwrap();
+        cached.store(address, verdict);
         assert!(cached.expired(Instant::now()).is_empty());
     }
 }
