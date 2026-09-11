@@ -8,6 +8,7 @@ use {
     futures::future::join_all,
     solana_sdk::pubkey::Pubkey,
     std::future::Future,
+    tracing::Instrument,
 };
 
 /// Quotes one order into a swap. A seam over [`Dex`] so the loop is testable
@@ -40,6 +41,7 @@ impl Quote for Dex {
 /// TODO: Enforce `auction.deadline` with a timeout, like the EVM dex solver
 /// does (`crates/solvers/src/domain/solver/dex/mod.rs`).
 pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
+    tracing::debug!(auction_id = ?auction.id, orders = auction.orders.len(), "solving auction");
     let candidates = auction.orders.iter().enumerate().map(|(index, order)| {
         let dex_order = order.to_dex_order();
         async move {
@@ -48,15 +50,20 @@ pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
                 .await
                 .inspect_err(|err| match err {
                     dex::jupiter::Error::NotFound | dex::jupiter::Error::OrderNotSupported => {
-                        tracing::debug!(order = %order.uid, %err, "no swap for order")
+                        tracing::debug!(%err, "no swap for order")
                     }
-                    _ => tracing::warn!(order = %order.uid, %err, "quote failed"),
+                    _ => tracing::warn!(%err, "quote failed"),
                 })
                 .ok()?;
-            Solution::new(index as u64, order.uid, &dex_order, swap).ok()
+            let solution = Solution::new(index as u64, order.uid, &dex_order, swap).ok()?;
+            tracing::debug!("solved order");
+            Some(solution)
         }
+        .instrument(tracing::info_span!("solve", order = %order.uid))
     });
-    join_all(candidates).await.into_iter().flatten().collect()
+    let solutions: Vec<Solution> = join_all(candidates).await.into_iter().flatten().collect();
+    tracing::debug!(auction_id = ?auction.id, solved = solutions.len(), "solved auction");
+    solutions
 }
 
 #[cfg(test)]
