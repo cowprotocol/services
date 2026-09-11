@@ -16,7 +16,6 @@ use {
     },
     price_estimation::{PriceEstimationError, Verification},
     shared::{
-        arguments::TokenBucketFeeOverride,
         fee::VolumeFeePolicy,
         order_quoting::{
             CalculateQuoteError,
@@ -73,30 +72,21 @@ pub struct QuoteHandler {
 }
 
 impl QuoteHandler {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         order_validator: Arc<dyn OrderValidating>,
         quoter: Arc<dyn OrderQuoting>,
         app_data: Arc<app_data::Registry>,
         volume_fee: Option<VolumeFeeConfig>,
-        volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
-        enable_sell_equals_buy_volume_fee: bool,
-        native_token: alloy::primitives::Address,
+        volume_fee_policy: Arc<VolumeFeePolicy>,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
     ) -> Self {
-        let volume_fee_policy = VolumeFeePolicy::new(
-            volume_fee_bucket_overrides,
-            volume_fee.as_ref().and_then(|config| config.factor),
-            enable_sell_equals_buy_volume_fee,
-            native_token,
-        );
         Self {
             order_validator,
             optimal_quoter: quoter.clone(),
             fast_quoter: quoter,
             app_data,
             volume_fee,
-            volume_fee_policy: Arc::new(volume_fee_policy),
+            volume_fee_policy,
             token_info_fetcher,
             streaming_quoter: None,
         }
@@ -274,12 +264,6 @@ impl QuoteHandler {
         // returned in the response (and, for streaming, shared by all events).
         let valid_to = order.valid_to;
         self.order_validator.partial_validate(order).await?;
-
-        if app_data.inner.protocol.enable_fast_path {
-            return Err(OrderQuoteError::AppData(AppDataValidationError::Invalid(
-                anyhow::anyhow!("'enableFastPath' is not yet supported"),
-            )));
-        }
 
         // Emit only after validation succeeds so we don't announce requests
         // that never reach the estimator (invalid app-data / order data return
