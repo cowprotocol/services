@@ -24,48 +24,69 @@ use {
             TransactionStatusMeta,
         },
     },
-    cow_solana_rpc::{EncodedConfirmedTransactionWithStatusMeta, SolanaRPC},
+    cow_solana_rpc::EncodedConfirmedTransactionWithStatusMeta,
     solana_sdk::{bs58, message::VersionedMessage, pubkey::Pubkey},
     solana_transaction_status_client_types::{UiInstruction, option_serializer::OptionSerializer},
-    std::collections::BTreeMap,
+    std::{collections::BTreeMap, time::Duration},
 };
+
+/// Attempts before the remaining gap is declared lost.
+const BACKFILL_ATTEMPTS: usize = 3;
+
+/// Pause between backfill attempts.
+const BACKFILL_RETRY: Duration = Duration::from_secs(5);
 
 impl Decoder {
     /// Index every tracked transaction between the persisted watermark and
     /// the live tip from RPC history, then advance the watermark to that
     /// tip. A missing watermark is a cold start with nothing to recover.
-    /// A failure leaves the watermark wherever the last complete slot flush
-    /// put it and records the remaining gap as a lost range.
+    /// A failure retries, then leaves the watermark wherever the last
+    /// complete slot flush put it and records the rest of the gap as a lost
+    /// range.
     pub(crate) async fn backfill(&self) -> Result<(), PersistenceError> {
-        let result = self.backfill_inner().await;
-        if let Err(err) = &result {
-            tracing::error!(?err, "backfill failed, recording the gap as lost");
-            match (
-                self.persistence.last_indexed_slot().await,
-                self.rpc.slot().await,
-            ) {
-                (Ok(Some(from)), Ok(tip)) => {
-                    if let Err(err) = self
-                        .persistence
-                        .record_lost_range(from, Slot(tip), "backfill failed")
-                        .await
-                    {
-                        tracing::error!(?err, "failed to record the lost range");
-                    }
-                }
-                (watermark, tip) => {
-                    tracing::error!(?watermark, ?tip, "failed to bound the lost range");
-                }
-            }
-        }
-        result
-    }
-
-    async fn backfill_inner(&self) -> Result<(), PersistenceError> {
         let Some(watermark) = self.persistence.last_indexed_slot().await? else {
             return Ok(());
         };
         let tip = Slot(self.rpc.slot().await.map_err(PersistenceError::Rpc)?);
+        if tip <= watermark {
+            return Ok(());
+        }
+        let mut result = Ok(());
+        for attempt in 1..=BACKFILL_ATTEMPTS {
+            result = self.backfill_inner(tip).await;
+            let Err(err) = &result else {
+                return Ok(());
+            };
+            tracing::warn!(?err, attempt, "backfill attempt failed");
+            if attempt < BACKFILL_ATTEMPTS {
+                tokio::time::sleep(BACKFILL_RETRY).await;
+            }
+        }
+        // Complete slots flushed before the failure moved the watermark, so
+        // only the rest of the gap is lost. The fallback bounds guarantee a
+        // recorded row even when the fresh reads fail too.
+        let from = self
+            .persistence
+            .last_indexed_slot()
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(watermark);
+        let through = self.rpc.slot().await.map_or(tip, Slot);
+        if let Err(err) = self
+            .persistence
+            .record_lost_range(from, through, "backfill failed")
+            .await
+        {
+            tracing::error!(?err, "failed to record the lost range");
+        }
+        result
+    }
+
+    async fn backfill_inner(&self, tip: Slot) -> Result<(), PersistenceError> {
+        let Some(watermark) = self.persistence.last_indexed_slot().await? else {
+            return Ok(());
+        };
         if tip <= watermark {
             return Ok(());
         }
@@ -130,11 +151,17 @@ impl Decoder {
         let mut entries: Vec<(Slot, Signature)> = Vec::new();
         let mut before = None;
         loop {
-            let page = self
+            let (page, more) = self
                 .rpc
                 .signatures_for_address(program, before)
                 .await
                 .map_err(PersistenceError::Rpc)?;
+            // A page with no parsable signature cannot advance the cursor,
+            // so fail the scan rather than loop on the same page.
+            if page.is_empty() && more {
+                tracing::error!(%program, "signature page with no parsable entry");
+                return Err(PersistenceError::Unavailable);
+            }
             let page_len = page.len();
             before = page.last().map(|(signature, _)| *signature);
             let fresh = entries.len();
@@ -144,7 +171,7 @@ impl Decoder {
                     .map(|(signature, slot)| (Slot(slot), signature)),
             );
             let reached_watermark = entries.len() - fresh < page_len;
-            if reached_watermark || page_len < SolanaRPC::SIGNATURES_PAGE {
+            if reached_watermark || !more {
                 return Ok(entries);
             }
         }

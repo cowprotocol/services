@@ -135,13 +135,14 @@ impl SolanaRPC {
     }
 
     /// One page of an address's transaction signatures, newest first,
-    /// starting below `before` when given. The node serves deep history, so
-    /// repeated calls walk arbitrarily far back.
+    /// starting below `before` when given, plus whether the history
+    /// continues past this page. The node serves deep history, so repeated
+    /// calls walk arbitrarily far back.
     pub async fn signatures_for_address(
         &self,
         address: &Pubkey,
         before: Option<Signature>,
-    ) -> Result<Vec<(Signature, u64)>, Error> {
+    ) -> Result<(Vec<(Signature, u64)>, bool), Error> {
         let config = solana_rpc_client::rpc_client::GetConfirmedSignaturesForAddress2Config {
             before,
             limit: Some(Self::SIGNATURES_PAGE),
@@ -151,7 +152,10 @@ impl SolanaRPC {
             .inner
             .get_signatures_for_address_with_config(address, config)
             .await?;
-        Ok(page
+        // Keyed on the raw length: parse failures below must not read as an
+        // exhausted history.
+        let more = page.len() == Self::SIGNATURES_PAGE;
+        let entries = page
             .into_iter()
             .filter_map(|status| match status.signature.parse() {
                 Ok(signature) => Some((signature, status.slot)),
@@ -166,7 +170,8 @@ impl SolanaRPC {
                     None
                 }
             })
-            .collect())
+            .collect();
+        Ok((entries, more))
     }
 
     /// One confirmed transaction with its metadata, base64-encoded.
