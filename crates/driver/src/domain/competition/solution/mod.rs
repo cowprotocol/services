@@ -20,7 +20,10 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
-    number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
+    number::{
+        conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
+        u256_ext::U256Ext,
+    },
     simulator::{self, Simulator, encoding::WrapperCall},
     solvers_dto::solution::Flashloan,
     std::{
@@ -583,9 +586,35 @@ impl Solution {
                 .clearing_price(order.buy.token)
                 .ok_or(error::Error::FastPathOrderMismatch)?,
         };
+        // The cached fulfillment was built for the *quote's* synthetic order
+        // (sell=quoted_sell, buy=1 for Sell; or symmetric for Buy) and its
+        // `executed` reflects that. Checking against the signed order's
+        // amounts directly is what we actually care about: given the cached
+        // clearing prices, do we still hit `limit_prices` when the trade
+        // executes the amounts the user signed?
         let within_limit = match order.side {
-            order::Side::Sell => user.buy_amount(&clearing)?.0 >= limit_prices.buy,
-            order::Side::Buy => user.sell_amount(&clearing)?.0 <= limit_prices.sell,
+            order::Side::Sell => {
+                let projected_buy = order
+                    .sell
+                    .amount
+                    .0
+                    .checked_mul(clearing.sell)
+                    .ok_or(error::Math::Overflow)?
+                    .checked_ceil_div(&clearing.buy)
+                    .ok_or(error::Math::DivisionByZero)?;
+                projected_buy >= limit_prices.buy
+            }
+            order::Side::Buy => {
+                let projected_sell = order
+                    .buy
+                    .amount
+                    .0
+                    .checked_mul(clearing.buy)
+                    .ok_or(error::Math::Overflow)?
+                    .checked_ceil_div(&clearing.sell)
+                    .ok_or(error::Math::DivisionByZero)?;
+                projected_sell <= limit_prices.sell
+            }
         };
         if !within_limit {
             return Err(error::Error::FastPathLimitNotMet);
