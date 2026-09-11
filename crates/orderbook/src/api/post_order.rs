@@ -134,6 +134,14 @@ impl IntoResponse for AppDataValidationErrorWrapper {
                 ),
             )
                 .into_response(),
+            AppDataValidationError::FastPathDisabled => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "FastPathDisabled",
+                    "the fast path is not enabled on this environment.",
+                ),
+            )
+                .into_response(),
         }
     }
 }
@@ -256,6 +264,24 @@ impl IntoResponse for ValidationErrorWrapper {
                 error(
                     "InvalidValidFrom",
                     "appData validFrom must be earlier than the order's validTo.",
+                ),
+            )
+                .into_response(),
+            ValidationError::FastPathDisabled => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "FastPathDisabled",
+                    "the fast path is not enabled on this environment.",
+                ),
+            )
+                .into_response(),
+            ValidationError::FastPathLimitTooTight => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "FastPathLimitTooTight",
+                    "signed limit price doesn't leave room for the configured protocol and \
+                     partner volume fees; sign a lower buy amount (or higher sell amount for buy \
+                     orders) or drop the fast-path opt-in.",
                 ),
             )
                 .into_response(),
