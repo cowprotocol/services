@@ -496,6 +496,7 @@ impl RunLoop {
                 solution_id,
                 submission_deadline_latest_block: block_deadline,
                 auction_id,
+                fast_path: None,
             };
 
             match self_
