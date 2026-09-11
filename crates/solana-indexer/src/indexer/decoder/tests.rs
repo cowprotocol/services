@@ -40,6 +40,7 @@ use {
         data::intent::{Flags, OrderIntent, OrderKind as IntentOrderKind},
         pda::order::find_order_pda,
     },
+    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     futures::StreamExt,
     solana_sdk::pubkey::Pubkey,
     std::sync::{Arc, atomic::AtomicU64},
@@ -396,7 +397,30 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
 fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
     let pool = sqlx::PgPool::connect_lazy("postgresql://").unwrap();
     let (_sender, rx) = tokio::sync::mpsc::channel(1);
-    Decoder::new(Postgres::new(pool), rx, settlement, Some(solflow))
+    Decoder::new(
+        Postgres::new(pool),
+        SolanaRPC::new_mock_with_mocks(Default::default()),
+        rx,
+        settlement,
+        Some(solflow),
+    )
+}
+
+/// The finalization audit asks for two signatures (the dead letter and the
+/// healthy create), both still known to the chain.
+fn mock_rpc_with_signature_statuses() -> SolanaRPC {
+    let status = serde_json::json!({
+        "slot": 43u64,
+        "confirmations": null,
+        "err": null,
+        "status": { "Ok": null },
+        "confirmationStatus": "finalized",
+    });
+    let statuses = serde_json::json!({
+        "context": { "slot": 43u64, "apiVersion": "2.0.0" },
+        "value": [status.clone(), status],
+    });
+    SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetSignatureStatuses, statuses)]))
 }
 
 /// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run`
@@ -655,6 +679,7 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
     let mut decoder = Decoder::new(
         Postgres::new(pool.clone()),
+        mock_rpc_with_signature_statuses(),
         receiver,
         settlement,
         Some(solflow),

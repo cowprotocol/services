@@ -82,10 +82,11 @@ impl Postgres {
     async fn apply(
         tx: &mut PgTransaction<'_>,
         event: DecodedEvent,
+        slot: Slot,
     ) -> Result<(), PersistenceError> {
         match event {
             DecodedEvent::Settlement(SettlementEvent::OrderCreated(order)) => {
-                Self::apply_order_created(tx, &order).await
+                Self::apply_order_created(tx, &order, slot).await
             }
             DecodedEvent::Settlement(SettlementEvent::SettlementFinalized(settlement)) => {
                 Self::apply_settlement_finalized(tx, settlement).await
@@ -104,16 +105,20 @@ impl Postgres {
     async fn apply_order_created(
         tx: &mut PgTransaction<'_>,
         order: &CreatedOrder,
+        slot: Slot,
     ) -> Result<(), PersistenceError> {
         sqlx::query(
             r#"
-INSERT INTO solana.order_pda (order_uid, created_by)
-VALUES ($1, $2)
-ON CONFLICT (order_uid) DO NOTHING
+INSERT INTO solana.order_pda (order_uid, created_by, created_by_tx, created_in_slot)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (order_uid) DO UPDATE SET is_reorged = false
+    WHERE order_pda.is_reorged
             "#,
         )
         .bind(order.order_uid.0)
         .bind(order.created_by.to_bytes())
+        .bind(order.signature.as_ref())
+        .bind(to_db_slot(slot))
         .execute(&mut **tx)
         .await?;
         // creation_timestamp is the indexing time, the stream carries no
@@ -305,9 +310,100 @@ WHERE indexer_state.slot < EXCLUDED.slot
     ) -> Result<(), PersistenceError> {
         let mut tx = self.pool.begin().await?;
         for event in events {
-            Self::apply(&mut tx, event).await?;
+            Self::apply(&mut tx, event, last_indexed_slot).await?;
         }
         Self::upsert_last_indexed_slot(&mut *tx, last_indexed_slot).await?;
+        Ok(tx.commit().await?)
+    }
+
+    /// The finalized watermark, `None` before the first flush writes the
+    /// state row.
+    pub(crate) async fn finalized_slot(&self) -> Result<Option<Slot>, PersistenceError> {
+        let slot: Option<i64> =
+            sqlx::query_scalar("SELECT finalized_slot FROM solana.indexer_state")
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(slot.map(from_db_slot))
+    }
+
+    /// The distinct transaction signatures of rows with slots in
+    /// `(after, through]`, the rows about to become final.
+    pub(crate) async fn unfinalized_signatures(
+        &self,
+        after: Slot,
+        through: Slot,
+    ) -> Result<Vec<Signature>, PersistenceError> {
+        let rows: Vec<Vec<u8>> = sqlx::query_scalar(
+            r#"
+SELECT tx_signature FROM solana.settlements WHERE slot > $1 AND slot <= $2
+UNION
+SELECT tx_signature FROM solana.dead_letter WHERE slot > $1 AND slot <= $2
+UNION
+SELECT created_by_tx FROM solana.order_pda
+    WHERE created_in_slot > $1 AND created_in_slot <= $2 AND created_by_tx IS NOT NULL
+            "#,
+        )
+        .bind(to_db_slot(after))
+        .bind(to_db_slot(through))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|bytes| Signature::try_from(bytes.as_slice()).ok())
+            .collect())
+    }
+
+    /// Advance the finalized watermark past slots whose transactions all
+    /// still exist, reverting the rows of the `vanished` ones in the same
+    /// SQL transaction: their trades (with the fill sums the trades added),
+    /// settlements, and dead letters are deleted, and the orders they
+    /// created are marked `is_reorged`.
+    pub(crate) async fn finalize_through(
+        &self,
+        finalized: Slot,
+        vanished: &[Signature],
+    ) -> Result<(), PersistenceError> {
+        let mut tx = self.pool.begin().await?;
+        for signature in vanished {
+            let signature = signature.as_ref();
+            // Aggregated per order: one transaction can carry several
+            // settlements, and Postgres applies only one FROM row per target.
+            sqlx::query(
+                r#"
+UPDATE solana.order_pda AS pda
+SET amount_withdrawn = pda.amount_withdrawn - deltas.sell,
+    amount_received  = pda.amount_received - deltas.buy
+FROM (
+    SELECT order_uid, SUM(sell_amount) AS sell, SUM(buy_amount) AS buy
+    FROM solana.trades WHERE tx_signature = $1 GROUP BY order_uid
+) AS deltas
+WHERE pda.order_uid = deltas.order_uid
+                "#,
+            )
+            .bind(signature)
+            .execute(&mut *tx)
+            .await?;
+            for statement in [
+                "DELETE FROM solana.trades WHERE tx_signature = $1",
+                "DELETE FROM solana.settlements WHERE tx_signature = $1",
+                "DELETE FROM solana.dead_letter WHERE tx_signature = $1",
+                // Orders are marked, not deleted: the rows are the audit
+                // trail, and the stream re-delivering a re-landed creation
+                // clears the flag.
+                "UPDATE solana.order_pda SET is_reorged = true WHERE created_by_tx = $1",
+            ] {
+                sqlx::query(statement)
+                    .bind(signature)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
+        sqlx::query(
+            "UPDATE solana.indexer_state SET finalized_slot = GREATEST(finalized_slot, $1)",
+        )
+        .bind(to_db_slot(finalized))
+        .execute(&mut *tx)
+        .await?;
         Ok(tx.commit().await?)
     }
 
@@ -380,6 +476,143 @@ mod tests {
         solana_sdk::pubkey::Pubkey,
         sqlx::{PgPool, Row},
     };
+
+    /// Reverting a vanished transaction deletes its settlement, trades, and
+    /// dead letter, subtracts the fills its trades added, and marks the
+    /// order it created. Rows of surviving transactions stay.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_finalize_through_reverts_vanished_transactions() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+        let survivor = Signature::from([1; 64]);
+        let vanished = Signature::from([2; 64]);
+
+        // Order O: created by the surviving transaction, traded by both.
+        SeedOrder::new([0x01; 32]).insert(&pool).await;
+        // Order P: created by the vanished transaction.
+        SeedOrder::new([0x02; 32]).insert(&pool).await;
+        for (uid, creation, slot, withdrawn, received) in [
+            ([0x01u8; 32], survivor, 40i64, 500i64, 700i64),
+            ([0x02u8; 32], vanished, 41, 0, 0),
+        ] {
+            sqlx::query(
+                "INSERT INTO solana.order_pda
+                     (order_uid, created_by, created_by_tx, created_in_slot,
+                      amount_withdrawn, amount_received)
+                 VALUES ($1, $1, $2, $3, $4, $5)",
+            )
+            .bind(uid)
+            .bind(creation.as_ref())
+            .bind(slot)
+            .bind(withdrawn)
+            .bind(received)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        // The vanished transaction carries two settlements trading order O,
+        // so the revert must aggregate their deltas. The survivor trades O
+        // too, its rows and sums must stay.
+        for (signature, instruction_index, slot, sell, buy) in [
+            (survivor, 0i32, 40i64, 100i64, 200i64),
+            (vanished, 0, 41, 300, 400),
+            (vanished, 5, 41, 100, 100),
+        ] {
+            sqlx::query(
+                "INSERT INTO solana.settlements
+                     (slot, tx_signature, instruction_index, solver, auction_id)
+                 VALUES ($1, $2, $3, $4, 7)",
+            )
+            .bind(slot)
+            .bind(signature.as_ref())
+            .bind(instruction_index)
+            .bind([0xCCu8; 32])
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO solana.trades
+                     (tx_signature, instruction_index, order_uid, sell_amount,
+                      buy_amount, fee_amount)
+                 VALUES ($1, $2, $3, $4, $5, 0)",
+            )
+            .bind(signature.as_ref())
+            .bind(instruction_index)
+            .bind([0x01u8; 32])
+            .bind(sell)
+            .bind(buy)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO solana.dead_letter (tx_signature, slot, reason)
+             VALUES ($1, 41, 'decoder_error')",
+        )
+        .bind(vanished.as_ref())
+        .execute(&pool)
+        .await
+        .unwrap();
+        postgres.write_last_indexed_slot(Slot(45)).await.unwrap();
+
+        // Both signatures sit in the audit window. The query promises no
+        // order, so sort before comparing.
+        let mut audited = postgres
+            .unfinalized_signatures(Slot(39), Slot(45))
+            .await
+            .unwrap();
+        audited.sort();
+        assert_eq!(audited, vec![survivor, vanished]);
+
+        postgres
+            .finalize_through(Slot(45), &[vanished])
+            .await
+            .unwrap();
+
+        let reorged: Vec<(Vec<u8>, bool)> =
+            sqlx::query_as("SELECT order_uid, is_reorged FROM solana.order_pda ORDER BY order_uid")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            reorged,
+            vec![(vec![0x01; 32], false), (vec![0x02; 32], true)]
+        );
+        let sums: Vec<(Vec<u8>, i64, i64)> = sqlx::query_as(
+            "SELECT order_uid, amount_withdrawn::bigint, amount_received::bigint
+             FROM solana.order_pda ORDER BY order_uid",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            sums,
+            vec![(vec![0x01; 32], 100, 200), (vec![0x02; 32], 0, 0)]
+        );
+        let trades: Vec<(Vec<u8>, i32)> =
+            sqlx::query_as("SELECT tx_signature, instruction_index FROM solana.trades")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(trades, vec![(survivor.as_ref().to_vec(), 0)]);
+        let settlements: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.settlements")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(settlements, 1);
+        let dead: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.dead_letter")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(dead, 0);
+        let finalized: i64 = sqlx::query_scalar("SELECT finalized_slot FROM solana.indexer_state")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(finalized, 45);
+    }
 
     /// The finalized watermark only moves forward and needs an existing
     /// state row: before the first flush the update is a no-op.
