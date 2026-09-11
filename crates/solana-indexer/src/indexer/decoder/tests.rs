@@ -351,8 +351,7 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     (tx_from_instructions(pubkey(9), &[instruction]), expected)
 }
 
-/// The `CreateOrder` instruction and the event its decode must produce,
-/// shared by the streamed and the backfilled wire-form fixtures.
+/// The `CreateOrder` instruction and the event its decode must produce.
 fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) {
     let settlement = pubkey(1);
     let created_by = pubkey(12);
@@ -437,9 +436,8 @@ fn versioned_tx(
     }
 }
 
-/// The converter maps everything the decoder reads: an RPC-fetched
-/// transaction decodes to the same event as its streamed form.
-
+/// An RPC-fetched transaction decodes to the same event as its streamed
+/// form.
 #[tokio::test]
 async fn backfilled_transaction_decodes_like_the_streamed_one() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
@@ -903,7 +901,7 @@ async fn solana_db_backfill_recovers_the_gap() {
     );
     mocks.insert(RpcRequest::GetTransaction, rpc_transaction_json(&tx, 43));
 
-    // A decoder without a stream, the run loop builds the same shape.
+    // A decoder without a stream.
     let (_closed, rx) = tokio::sync::mpsc::channel(1);
     let backfiller = Decoder::new(
         Postgres::new(pool.clone()),

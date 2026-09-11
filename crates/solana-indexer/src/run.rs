@@ -121,12 +121,11 @@ async fn run(config: Config, start_slot: Option<u64>) {
             {
                 // The decoder hung up, the select below reports why.
                 Ok(()) => break,
-                // A rejected resume usually means the last indexed slot fell
-                // out of the provider's replay window. Recover the gap from
-                // RPC history: a successful backfill moves the watermark to
-                // the scanned tip, back inside the window. Only when the
-                // backfill itself fails does the stream continue from the
-                // live tip, with the gap recorded as lost.
+                // The resume slot fell out of the provider's replay window.
+                // Recover the gap from RPC history: a successful backfill
+                // moves the watermark back inside the window. Only a failed
+                // backfill continues from the live tip, with the gap
+                // recorded as lost.
                 Err(Error::Subscribe(err)) if resume != Resume::LiveTip && slot_rejection(&err) => {
                     tracing::warn!(?err, "resume subscription rejected, backfilling");
                     match backfiller.backfill().await {
@@ -191,9 +190,8 @@ impl LivenessChecking for Liveness {
 /// Whether a rejected subscription can mean the resume slot fell out of the
 /// provider's replay window. The client carries no typed cause, only a gRPC
 /// status: the geyser plugin rejects an out-of-window `from_slot` with
-/// `InvalidArgument` (`OutOfRange` allowed for other implementations).
-/// Authentication and transport failures are never about the slot, so they
-/// retry instead of backfilling.
+/// `InvalidArgument` (`OutOfRange` kept for other implementations), while
+/// authentication and transport failures are never about the slot.
 fn slot_rejection(err: &GeyserGrpcClientError) -> bool {
     match err {
         GeyserGrpcClientError::TonicStatus(status) => {
