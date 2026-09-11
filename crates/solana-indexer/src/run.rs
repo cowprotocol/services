@@ -106,22 +106,13 @@ async fn run(config: Config, start_slot: Option<u64>) {
                 // The decoder hung up, the select below reports why.
                 Ok(()) => break,
                 // The resume slot fell out of the provider's replay window.
-                // Recover the gap from RPC history: a successful backfill
-                // moves the watermark back inside the window. Only a failed
-                // backfill continues from the live tip, with the gap
-                // recorded as lost.
-                Err(Error::Subscribe(err)) if resume != Resume::LiveTip && slot_rejection(&err) => {
+                // Recover the gap from RPC history: the backfill moves the
+                // watermark back inside the window, retrying internally and
+                // panicking rather than skipping the gap.
+                Err(Error::Subscribe(err)) if slot_rejection(&err) => {
                     tracing::warn!(?err, "resume subscription rejected, backfilling");
-                    match backfiller.backfill().await {
-                        Ok(()) => resume = Resume::Watermark,
-                        Err(err) => {
-                            tracing::error!(
-                                ?err,
-                                "backfill failed, resubscribing from the live tip"
-                            );
-                            resume = Resume::LiveTip;
-                        }
-                    }
+                    backfiller.backfill().await;
+                    resume = Resume::Watermark;
                     // The rejection can repeat (the watermark aged out again,
                     // or a filter error shares the status code), so pace the
                     // retry.

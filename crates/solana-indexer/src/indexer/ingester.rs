@@ -299,7 +299,6 @@ impl Ingester<GeyserStream> {
                 .last_indexed_slot()
                 .await?
                 .map(|last_indexed| u64::from(last_indexed) + 1),
-            Resume::LiveTip => None,
             Resume::From(slot) => Some(slot),
         };
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
@@ -327,9 +326,6 @@ const SLOT_FILTER: &str = "slot_statuses";
 pub(crate) enum Resume {
     /// One past the persisted last indexed slot.
     Watermark,
-    /// The provider's live tip, accepting a gap. The fallback when the
-    /// watermark is older than the provider's replay window.
-    LiveTip,
     /// A caller-chosen slot, still bounded by the provider's replay window.
     From(u64),
 }

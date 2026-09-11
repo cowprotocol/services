@@ -910,7 +910,7 @@ async fn solana_db_backfill_recovers_the_gap() {
         settlement,
         None,
     );
-    backfiller.backfill().await.unwrap();
+    backfiller.backfill().await;
 
     assert_eq!(
         persistence.last_indexed_slot().await.unwrap(),

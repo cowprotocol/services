@@ -30,7 +30,7 @@ use {
     std::{collections::BTreeMap, time::Duration},
 };
 
-/// Attempts before the remaining gap is declared lost.
+/// Attempts before the backfill gives up and panics.
 const BACKFILL_ATTEMPTS: usize = 3;
 
 /// Pause between backfill attempts.
@@ -40,53 +40,29 @@ impl Decoder {
     /// Index every tracked transaction between the persisted watermark and
     /// the live tip from RPC history, then advance the watermark to that
     /// tip. A missing watermark is a cold start with nothing to recover.
-    /// A failure retries, then leaves the watermark wherever the last
-    /// complete slot flush put it and records the rest of the gap as a lost
-    /// range.
-    pub(crate) async fn backfill(&self) -> Result<(), PersistenceError> {
+    /// Transient failures retry, a persistent one panics: the watermark
+    /// never passes an unscanned slot, so the restart reruns the recovery
+    /// until the dependencies serve it, and nothing is skipped silently.
+    pub(crate) async fn backfill(&self) {
+        let mut attempt = 1;
+        loop {
+            match self.backfill_inner().await {
+                Ok(()) => return,
+                Err(err) if attempt < BACKFILL_ATTEMPTS => {
+                    tracing::warn!(?err, attempt, "backfill attempt failed");
+                    attempt += 1;
+                    tokio::time::sleep(BACKFILL_RETRY).await;
+                }
+                Err(err) => panic!("backfill failed after {BACKFILL_ATTEMPTS} attempts: {err:?}"),
+            }
+        }
+    }
+
+    async fn backfill_inner(&self) -> Result<(), PersistenceError> {
         let Some(watermark) = self.persistence.last_indexed_slot().await? else {
             return Ok(());
         };
         let tip = Slot(self.rpc.slot().await.map_err(PersistenceError::Rpc)?);
-        if tip <= watermark {
-            return Ok(());
-        }
-        let mut result = Ok(());
-        for attempt in 1..=BACKFILL_ATTEMPTS {
-            result = self.backfill_inner(tip).await;
-            let Err(err) = &result else {
-                return Ok(());
-            };
-            tracing::warn!(?err, attempt, "backfill attempt failed");
-            if attempt < BACKFILL_ATTEMPTS {
-                tokio::time::sleep(BACKFILL_RETRY).await;
-            }
-        }
-        // Complete slots flushed before the failure moved the watermark, so
-        // only the rest of the gap is lost. The fallback bounds guarantee a
-        // recorded row even when the fresh reads fail too.
-        let from = self
-            .persistence
-            .last_indexed_slot()
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or(watermark);
-        let through = self.rpc.slot().await.map_or(tip, Slot);
-        // An unrecorded gap is silent data loss, so crash and page instead
-        // of continuing past it. The restart is safe: the watermark still
-        // sits behind the gap, so the resume and backfill rerun.
-        self.persistence
-            .record_lost_range(from, through, "backfill failed")
-            .await
-            .expect("failed to record a lost slot range");
-        result
-    }
-
-    async fn backfill_inner(&self, tip: Slot) -> Result<(), PersistenceError> {
-        let Some(watermark) = self.persistence.last_indexed_slot().await? else {
-            return Ok(());
-        };
         if tip <= watermark {
             return Ok(());
         }
