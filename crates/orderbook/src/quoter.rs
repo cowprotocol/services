@@ -538,7 +538,6 @@ mod tests {
                 verified: false,
                 supports_fast_path: false,
                 metadata: Default::default(),
-                auction_id: None,
             },
             sell_amount,
             buy_amount,
