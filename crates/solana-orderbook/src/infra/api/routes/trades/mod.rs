@@ -30,7 +30,7 @@ pub struct Params {
     pub limit: Option<u64>,
 }
 
-/// Handle `GET /api/v1/trades`.
+/// Handle `GET /api/v2/trades`.
 pub async fn trades(
     state: axum::extract::State<State>,
     Query(params): Query<Params>,

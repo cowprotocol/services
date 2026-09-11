@@ -293,7 +293,7 @@ async fn trades_rejects_an_invalid_limit() {
     for limit in ["0", "1001"] {
         let response = reqwest::Client::new()
             .get(format!(
-                "http://{addr}/api/v1/trades?orderUid={uid}&limit={limit}"
+                "http://{addr}/api/v2/trades?orderUid={uid}&limit={limit}"
             ))
             .send()
             .await

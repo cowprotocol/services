@@ -73,7 +73,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/trades:
+  /api/v2/trades:
     get:
       operationId: getTrades
       description: |
