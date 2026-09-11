@@ -22,7 +22,8 @@ use {
         time::Duration,
     },
     tokio::{sync::mpsc, task::JoinHandle},
-    yellowstone_grpc_client::GeyserGrpcClient,
+    yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError},
+    yellowstone_grpc_proto::tonic::Code,
 };
 
 /// Wait between attempts to bring the stream back up.
@@ -126,7 +127,7 @@ async fn run(config: Config, start_slot: Option<u64>) {
                 // the scanned tip, back inside the window. Only when the
                 // backfill itself fails does the stream continue from the
                 // live tip, with the gap recorded as lost.
-                Err(Error::Subscribe(err)) if resume != Resume::LiveTip => {
+                Err(Error::Subscribe(err)) if resume != Resume::LiveTip && slot_rejection(&err) => {
                     tracing::warn!(?err, "resume subscription rejected, backfilling");
                     match backfiller.backfill().await {
                         Ok(()) => resume = Resume::Watermark,
@@ -138,8 +139,9 @@ async fn run(config: Config, start_slot: Option<u64>) {
                             resume = Resume::LiveTip;
                         }
                     }
-                    // Throttles the loop when the rejection is not about the
-                    // resume slot and so repeats on every attempt.
+                    // The rejection can repeat (the watermark aged out again,
+                    // or a filter error shares the status code), so pace the
+                    // retry.
                     tokio::time::sleep(STREAM_RETRY).await;
                 }
                 Err(err) => {
@@ -183,6 +185,21 @@ struct Liveness {
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
         sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
+    }
+}
+
+/// Whether a rejected subscription can mean the resume slot fell out of the
+/// provider's replay window. The client carries no typed cause, only a gRPC
+/// status: the geyser plugin rejects an out-of-window `from_slot` with
+/// `InvalidArgument` (`OutOfRange` allowed for other implementations).
+/// Authentication and transport failures are never about the slot, so they
+/// retry instead of backfilling.
+fn slot_rejection(err: &GeyserGrpcClientError) -> bool {
+    match err {
+        GeyserGrpcClientError::TonicStatus(status) => {
+            matches!(status.code(), Code::InvalidArgument | Code::OutOfRange)
+        }
+        GeyserGrpcClientError::TransportError(_) => false,
     }
 }
 
