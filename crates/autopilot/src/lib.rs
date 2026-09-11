@@ -5,6 +5,7 @@ pub mod boundary;
 pub mod database;
 pub mod domain;
 pub mod event_updater;
+mod fast_path;
 pub mod infra;
 mod leader_lock_tracker;
 mod maintenance;
