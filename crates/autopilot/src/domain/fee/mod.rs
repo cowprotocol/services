@@ -128,41 +128,6 @@ impl ProtocolFees {
         /// Number of basis points that make up 100%.
         const MAX_BPS: u32 = 10_000;
 
-        /// Convert a fee into a `FeeFactor` capping its value
-        fn fee_factor_from_capped(
-            value: Decimal,
-            cap: Decimal,
-            accumulated: &mut Decimal,
-        ) -> FeeFactor {
-            // Calculate how much more we can compound before hitting the cap.
-            //
-            // When dealing with fee factors or percentages in compounding
-            // operations:
-            // - We use (1 + x) where x is the percentage as a decimal (e.g., 5%
-            //   = 0.05 → 1.05)
-            // - This is because applying a fee means multiplying by (1 +
-            //   fee_rate)
-            //
-            // The total accumulated factor can't exceed (1 + cap), and we've
-            // already accumulated to (1 + accumulated), then:
-            //
-            // 1. Current value with accumulated fees: (1 + accumulated)
-            // 2. Maximum allowed value: (1 + cap)
-            // 3. To find the remaining factor we can apply: (1 + cap) / (1 +
-            //    accumulated) - 1
-            //
-            // The subtraction of 1 at the end converts back from the multiplier
-            // form (1.xx) to the percentage form (0.xx) that our
-            // FeeFactor expects.
-            let remaining_factor =
-                (Decimal::ONE + cap) / (Decimal::ONE + *accumulated) - Decimal::ONE;
-
-            // update the `accumulated` value
-            *accumulated += value.min(cap - *accumulated);
-
-            FeeFactor::new(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
-        }
-
         fn fee_factor_from_bps(bps: u64) -> FeeFactor {
             let bps = u32::try_from(bps.min(u64::from(MAX_BPS) - 1))
                 .expect("value was clamped to range expected by FeeFactor: [0, 1)");
@@ -191,8 +156,11 @@ impl ProtocolFees {
                         // Convert bps to decimal percentage
                         let fee_decimal = Decimal::from(bps) / Decimal::from(MAX_BPS);
                         // Create policy and update accumulator
-                        let factor =
-                            fee_factor_from_capped(fee_decimal, max_partner_fee, &mut accumulated);
+                        let factor = shared::fee::capped_fee_factor(
+                            fee_decimal,
+                            max_partner_fee,
+                            &mut accumulated,
+                        );
                         Policy::Volume { factor }
                     }
                     app_data::FeePolicy::Surplus {
@@ -204,8 +172,11 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global
                         // volume cap.
-                        let max_volume_factor =
-                            fee_factor_from_capped(fee_decimal, max_partner_fee, &mut accumulated);
+                        let max_volume_factor = shared::fee::capped_fee_factor(
+                            fee_decimal,
+                            max_partner_fee,
+                            &mut accumulated,
+                        );
 
                         let factor = fee_factor_from_bps(bps);
 
@@ -223,8 +194,11 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global
                         // volume cap.
-                        let max_volume_factor =
-                            fee_factor_from_capped(fee_decimal, max_partner_fee, &mut accumulated);
+                        let max_volume_factor = shared::fee::capped_fee_factor(
+                            fee_decimal,
+                            max_partner_fee,
+                            &mut accumulated,
+                        );
 
                         let factor = fee_factor_from_bps(bps);
 
