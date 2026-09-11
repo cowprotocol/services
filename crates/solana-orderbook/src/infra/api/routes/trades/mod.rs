@@ -75,7 +75,7 @@ pub async fn trades(
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
             "InvalidLimit",
-            "limit must be between 1 and 1000",
+            format!("limit must be between {MIN_LIMIT} and {MAX_LIMIT}"),
         ));
     }
     // The limit is bounded above, and an offset past i64::MAX addresses no

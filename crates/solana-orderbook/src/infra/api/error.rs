@@ -10,19 +10,23 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct Error {
     pub error_type: &'static str,
-    pub description: &'static str,
+    pub description: String,
 }
 
 /// An error response: the status code and the error body.
 pub type Reply = (StatusCode, Json<Error>);
 
 /// Build an error response.
-pub fn reply(status: StatusCode, error_type: &'static str, description: &'static str) -> Reply {
+pub fn reply(
+    status: StatusCode,
+    error_type: &'static str,
+    description: impl Into<String>,
+) -> Reply {
     (
         status,
         Json(Error {
             error_type,
-            description,
+            description: description.into(),
         }),
     )
 }

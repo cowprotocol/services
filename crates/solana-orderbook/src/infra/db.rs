@@ -54,6 +54,36 @@ WHERE o.uid = $1
         .context("read solana.orders by uid")
 }
 
+/// A page of one owner's orders with their fill state, newest first.
+pub async fn orders_by_owner(
+    ex: impl PgExecutor<'_>,
+    owner: [u8; 32],
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<OrderRow>> {
+    const QUERY: &str = r#"
+SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
+       o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
+       o.kind, o.partially_fillable, o.app_data,
+       o.creation_timestamp, o.order_pda,
+       COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
+       COALESCE(p.amount_received, 0) AS amount_received,
+       p.cancellation_timestamp
+FROM solana.orders o
+LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+WHERE o.owner = $1
+ORDER BY o.creation_timestamp DESC
+LIMIT $2 OFFSET $3
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(ByteArray(owner))
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(ex)
+        .await
+        .context("read solana.orders by owner")
+}
+
 /// One trade joined with its order's identity and the settlement's slot.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct TradeRow {
@@ -175,6 +205,47 @@ VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
         .execute(pool)
         .await
         .unwrap();
+    }
+
+    /// Pagination walks one owner's orders newest first, other owners are
+    /// excluded, and the fill state joins in.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_reads_orders_by_owner_paginated() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        seed(&pool, [0x11; 32], false).await;
+        // A second, older order of the same owner, and one of another owner.
+        for (uid, owner, age) in [
+            ([0x12u8; 32], [0xAAu8; 32], "1 hour"),
+            ([0x13; 32], [0xCC; 32], "2 hours"),
+        ] {
+            sqlx::query(
+                r#"
+INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
+    buy_token_account, sell_amount, buy_amount, valid_to, kind,
+    partially_fillable, app_data, creation_timestamp, order_pda)
+VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
+        false, $2, now() - $4::interval, $1)
+                "#,
+            )
+            .bind(ByteArray(uid))
+            .bind(ByteArray(owner))
+            .bind(i64::from(u32::MAX))
+            .bind(age)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let page = orders_by_owner(&pool, [0xAA; 32], 0, 10).await.unwrap();
+        let uids: Vec<_> = page.iter().map(|row| row.uid).collect();
+        assert_eq!(uids, vec![ByteArray([0x11; 32]), ByteArray([0x12; 32])]);
+        assert_eq!(page[0].amount_withdrawn, BigDecimal::from(400));
+        assert_eq!(page[1].amount_withdrawn, BigDecimal::from(0));
+
+        let second = orders_by_owner(&pool, [0xAA; 32], 1, 1).await.unwrap();
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].uid, ByteArray([0x12; 32]));
     }
 
     #[tokio::test]
