@@ -138,6 +138,9 @@ async fn run(config: Config, start_slot: Option<u64>) {
                             resume = Resume::LiveTip;
                         }
                     }
+                    // Throttles the loop when the rejection is not about the
+                    // resume slot and so repeats on every attempt.
+                    tokio::time::sleep(STREAM_RETRY).await;
                 }
                 Err(err) => {
                     tracing::error!(?err, "stream ended, reconnecting");
