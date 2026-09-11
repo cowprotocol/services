@@ -46,11 +46,12 @@ impl CompetitionObserver {
 #[async_trait]
 impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserver {
     fn on_orders_ready(&self, auction: &Auction) {
-        tracing::debug!(orders = auction.orders.len(), "auction entered competition");
-        self.store_events(
-            auction.orders.iter().map(|order| order.uid).collect(),
-            OrderEventLabel::Ready,
+        let uids: Vec<_> = auction.orders.iter().map(|order| order.uid).collect();
+        tracing::debug!(
+            orders = ?uids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "auction entered competition"
         );
+        self.store_events(uids, OrderEventLabel::Ready);
     }
 
     async fn persist_competition_ranking(
@@ -78,8 +79,8 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
 
     fn on_orders_matched(&self, executing: HashSet<IntentHash>, considered: HashSet<IntentHash>) {
         tracing::debug!(
-            executing = executing.len(),
-            considered = considered.len(),
+            executing = ?executing.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            considered = ?considered.iter().map(ToString::to_string).collect::<Vec<_>>(),
             "orders matched"
         );
         self.store_events(executing.into_iter().collect(), OrderEventLabel::Executing);
