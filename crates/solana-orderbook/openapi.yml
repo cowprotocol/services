@@ -77,10 +77,10 @@ paths:
     get:
       operationId: getTrades
       description: |
-        Trades of one order or one owner. Exactly one of `orderUid` and
-        `owner` must be set. To enumerate all trades start with `offset` 0
-        and keep increasing it by the number of returned results. A response
-        shorter than `limit` is the last page.
+        Trades of one order or one owner, newest first. Exactly one of
+        `orderUid` and `owner` must be set. To enumerate all trades start
+        with `offset` 0 and keep increasing it by the number of returned
+        results. A response shorter than `limit` is the last page.
       parameters:
         - name: orderUid
           in: query
@@ -103,10 +103,12 @@ paths:
           description: The pagination limit. Defaults to 10. Maximum 1000. Minimum 1.
           schema:
             type: integer
+            minimum: 1
+            maximum: 1000
           required: false
       responses:
         "200":
-          description: The trades, ordered by slot.
+          description: The trades, newest first.
           content:
             application/json:
               schema:
