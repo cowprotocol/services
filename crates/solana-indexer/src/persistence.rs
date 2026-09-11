@@ -436,6 +436,50 @@ WHERE pda.order_uid = deltas.order_uid
         Ok(tx.commit().await?)
     }
 
+    /// The oldest parked dead letters, up to `limit` rows.
+    pub(crate) async fn dead_letters(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<(Signature, Slot)>, PersistenceError> {
+        let rows: Vec<(Vec<u8>, i64)> = sqlx::query_as(
+            "SELECT tx_signature, slot FROM solana.dead_letter ORDER BY slot LIMIT $1",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(bytes, slot)| {
+                Some((
+                    Signature::try_from(bytes.as_slice()).ok()?,
+                    from_db_slot(slot),
+                ))
+            })
+            .collect())
+    }
+
+    /// Apply a replayed transaction's events and unpark it in one SQL
+    /// transaction: the dead letter row is deleted first, so an apply that
+    /// parks the transaction again (still-unresolved mints) wins, and a
+    /// failed apply rolls the deletion back.
+    pub(crate) async fn replay_events(
+        &self,
+        signature: Signature,
+        events: Vec<DecodedEvent>,
+        mints: &HashMap<Pubkey, Pubkey>,
+        slot: Slot,
+    ) -> Result<(), PersistenceError> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM solana.dead_letter WHERE tx_signature = $1")
+            .bind(signature.as_ref())
+            .execute(&mut *tx)
+            .await?;
+        for event in events {
+            Self::apply(&mut tx, event, mints, slot).await?;
+        }
+        Ok(tx.commit().await?)
+    }
+
     /// Advance the finalized watermark. Update-only: before the first flush
     /// there is no state row and nothing indexed to finalize. A backward
     /// write is a no-op.
