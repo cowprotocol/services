@@ -42,6 +42,7 @@ use {
         time,
     },
     price_estimation::{PriceEstimationError, Verification},
+    prometheus::IntCounter,
     signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
     std::{
         sync::Arc,
@@ -70,6 +71,20 @@ struct Metrics {
 }
 
 impl Metrics {
+    fn get() -> &'static Self {
+        Self::instance(observe::metrics::get_storage_registry()).unwrap()
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "order_validation")]
+struct ValidationMetrics {
+    /// Order placements rejected because the owner or the receiver is banned.
+    /// Quote requests are deliberately not counted here.
+    banned_user_rejections: IntCounter,
+}
+
+impl ValidationMetrics {
     fn get() -> &'static Self {
         Self::instance(observe::metrics::get_storage_registry()).unwrap()
     }
@@ -821,6 +836,11 @@ impl OrderValidating for OrderValidator {
         let class = pre_order.class;
         self.partial_validate(pre_order)
             .await
+            .inspect_err(|err| {
+                if matches!(err, PartialValidationError::Forbidden) {
+                    ValidationMetrics::get().banned_user_rejections.inc();
+                }
+            })
             .map_err(ValidationError::Partial)?;
 
         let preview_order = Order {
