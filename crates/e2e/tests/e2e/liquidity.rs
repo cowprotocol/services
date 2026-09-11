@@ -193,7 +193,6 @@ async fn zero_ex_liquidity(web3: Web3) {
         colocation::LiquidityProvider::ZeroEx {
             api_port: zeroex_api_port,
         },
-        false,
     );
 
     services

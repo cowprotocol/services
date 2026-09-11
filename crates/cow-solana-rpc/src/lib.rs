@@ -17,7 +17,10 @@ use {
 };
 pub use {
     solana_commitment_config::CommitmentConfig,
-    solana_rpc_client_api::client_error::Error,
+    solana_rpc_client_api::{
+        client_error::Error,
+        response::{RpcSimulateTransactionResult, UiTransactionError},
+    },
     solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
 };
 #[cfg(feature = "test-util")]
@@ -190,6 +193,18 @@ impl SolanaRPC {
                 },
             )
             .await
+    }
+
+    /// Simulate a versioned transaction without sending it. Returns the
+    /// simulation result including logs and any error.
+    pub async fn simulate_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<RpcSimulateTransactionResult, Error> {
+        self.inner
+            .simulate_transaction(transaction)
+            .await
+            .map(|response| response.value)
     }
 
     /// Send a versioned transaction and wait until it reaches the client's

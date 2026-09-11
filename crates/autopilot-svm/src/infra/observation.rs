@@ -14,7 +14,7 @@ use {
     crate::infra::{db, listen::NotifyHandler},
     anyhow::Result,
     async_trait::async_trait,
-    chain_types::solana::Pubkey,
+    chain_types::solana::{Pubkey, Signature},
     sqlx::PgPool,
 };
 
@@ -79,7 +79,7 @@ impl SettlementWindows {
                 auction_id,
                 slot = landed.end_slot,
                 solver = %Pubkey(landed.solver.0),
-                tx_signature = %const_hex::encode(landed.submitted_signature.0),
+                tx_signature = %Signature(landed.submitted_signature.0),
                 "settlement observed on chain"
             );
         }

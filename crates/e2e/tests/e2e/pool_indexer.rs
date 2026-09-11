@@ -463,7 +463,6 @@ max-pools-to-initialize = 10
             onchain.contracts(),
             vec![baseline_solver],
             colocation::LiquidityProvider::UniswapV2,
-            false,
             Some(&config_override),
         );
 

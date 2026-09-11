@@ -99,12 +99,12 @@ mod tests {
         super::*,
         crate::{
             byte_array::ByteArray,
-            events::EventIndex,
+            events::{Event, EventIndex, Settlement, Trade},
             onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
         },
         chrono::{DateTime, Duration, Utc},
         futures::StreamExt,
-        sqlx::Connection,
+        sqlx::{Connection, types::BigDecimal},
     };
 
     type Data = ([u8; 56], Address, DateTime<Utc>);
@@ -360,5 +360,60 @@ mod tests {
         // Unrelated address returns nothing.
         let none = user_orders(&mut db, &ByteArray([0xabu8; 20]), 0, Some(100)).await;
         assert!(none.is_empty());
+
+        // One fill per arm of the union. uid_a and uid_b are in `orders` so
+        // they split the 1000; uid_c only provides liquidity.
+        let event = |log_index| EventIndex {
+            block_number: 0,
+            log_index,
+        };
+        let fill = |log_index, order_uid| {
+            (
+                event(log_index),
+                Event::Trade(Trade {
+                    order_uid,
+                    ..Default::default()
+                }),
+            )
+        };
+        crate::events::append(
+            &mut db,
+            &[
+                fill(0, uid_a),
+                fill(1, uid_b),
+                fill(2, uid_c),
+                (event(3), Event::Settlement(Settlement::default())),
+            ],
+        )
+        .await
+        .unwrap();
+        crate::trades::attribute_gas_cost(
+            &mut db,
+            event(3),
+            BigDecimal::from(100),
+            BigDecimal::from(10),
+            &[],
+        )
+        .await
+        .unwrap();
+        let gas_costs = super::user_orders(&mut db, &owner, 0, Some(100))
+            .map(|order| {
+                let order = order.unwrap();
+                (order.uid, order.gas_cost)
+            })
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(
+            gas_costs,
+            vec![
+                (uid_a, Some(BigDecimal::from(500))),
+                // In both tables; the union keeps the `orders` row.
+                (uid_b, Some(BigDecimal::from(500))),
+                // Read through the `jit_orders` arm.
+                (uid_c, Some(BigDecimal::from(0))),
+                (uid_d, None),
+                (uid_e, None),
+            ]
+        );
     }
 }

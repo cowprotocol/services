@@ -26,6 +26,7 @@ pub struct SwapInstructionsRequest<'a> {
     destination_token_account: Pubkey,
     wrap_and_unwrap_sol: bool,
     skip_user_accounts_rpc_calls: bool,
+    use_shared_accounts: bool,
 }
 
 impl<'a> SwapInstructionsRequest<'a> {
@@ -42,6 +43,10 @@ impl<'a> SwapInstructionsRequest<'a> {
             destination_token_account: *destination,
             wrap_and_unwrap_sol: false,
             skip_user_accounts_rpc_calls: true,
+            // Use direct Route mode while we investigate errors with SharedAccountsRoute. Its
+            // instructions ignored the buy-token destination, leaving the buy-buffer PDAs empty and
+            // causing settlement transactions to revert.
+            use_shared_accounts: false,
         }
     }
 }
@@ -49,10 +54,12 @@ impl<'a> SwapInstructionsRequest<'a> {
 /// The parts of the `/swap-instructions` response we need to build a [`Swap`].
 /// Amounts come from the `/quote` response.
 ///
-/// The response's `computeBudgetInstructions` are deliberately not read: the
-/// driver emits its own ComputeBudget instructions sized by simulating the
-/// full settlement transaction, and a transaction with two of them is
-/// rejected by the runtime.
+/// Jupiter's `/swap-instructions` response can contain
+/// `computeBudgetInstructions`, but we don't pass them along for two reasons:
+/// 1. The driver may add its own `ComputeBudget` instructions after simulating
+///    the full settlement transaction.
+/// 2. The runtime rejects transactions that contain two `ComputeBudget`
+///    instructions, so we keep these out of the interaction instructions.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SwapInstructionsResponse {

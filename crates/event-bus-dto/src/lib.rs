@@ -10,18 +10,22 @@
 //! `event-bus-schemas` CLI emit JSON schemas for the full set of events.
 
 pub mod envelope;
+pub mod native_price_estimate;
 pub mod price_estimate;
 pub mod query;
 pub mod quote_computed;
 pub mod quote_requested;
+pub mod winning_native_price_estimate;
 pub mod winning_price_estimate;
 
 pub use {
     envelope::{ENVELOPE_VERSION, Envelope},
+    native_price_estimate::NativePriceEstimateEvent,
     price_estimate::PriceEstimateEvent,
     query::{OrderKind, QueryFields},
     quote_computed::QuoteComputedEvent,
     quote_requested::QuoteRequestedEvent,
+    winning_native_price_estimate::WinningNativePriceEstimateEvent,
     winning_price_estimate::WinningPriceEstimateEvent,
 };
 use {schemars::JsonSchema, serde::Serialize};
@@ -54,6 +58,8 @@ pub fn schemas() -> Vec<(&'static str, schemars::Schema)> {
         PriceEstimateEvent,
         QuoteRequestedEvent,
         QuoteComputedEvent,
-        WinningPriceEstimateEvent
+        WinningPriceEstimateEvent,
+        NativePriceEstimateEvent,
+        WinningNativePriceEstimateEvent
     ]
 }
