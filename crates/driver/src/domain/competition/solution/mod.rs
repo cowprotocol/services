@@ -586,34 +586,30 @@ impl Solution {
                 .clearing_price(order.buy.token)
                 .ok_or(error::Error::FastPathOrderMismatch)?,
         };
-        // The cached fulfillment was built for the *quote's* synthetic order
-        // (sell=quoted_sell, buy=1 for Sell; or symmetric for Buy) and its
-        // `executed` reflects that. Checking against the signed order's
-        // amounts directly is what we actually care about: given the cached
-        // clearing prices, do we still hit `limit_prices` when the trade
-        // executes the amounts the user signed?
+        // This solution was cached from a quote request. If there is a bug
+        // that causes the autopilot to tell us to settle an order with at a
+        // price our original solution cannot support we want to detect that
+        // and throw an error instead of submitting a transaction that will
+        // ultimately revert.
+        // This should not happen but let's check just to be sure.
         let within_limit = match order.side {
             order::Side::Sell => {
-                let projected_buy = order
-                    .sell
-                    .amount
-                    .0
+                let sell_amount = order.sell.amount.0;
+                let projected_buy_amount = sell_amount
                     .checked_mul(clearing.sell)
                     .ok_or(error::Math::Overflow)?
                     .checked_ceil_div(&clearing.buy)
                     .ok_or(error::Math::DivisionByZero)?;
-                projected_buy >= limit_prices.buy
+                projected_buy_amount >= limit_prices.buy
             }
             order::Side::Buy => {
-                let projected_sell = order
-                    .buy
-                    .amount
-                    .0
+                let buy_amount = order.buy.amount.0;
+                let projected_sell_amount = buy_amount
                     .checked_mul(clearing.buy)
                     .ok_or(error::Math::Overflow)?
                     .checked_ceil_div(&clearing.sell)
                     .ok_or(error::Math::DivisionByZero)?;
-                projected_sell <= limit_prices.sell
+                projected_sell_amount <= limit_prices.sell
             }
         };
         if !within_limit {

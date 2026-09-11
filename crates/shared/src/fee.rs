@@ -143,7 +143,7 @@ pub fn compute_volume_fee(base_volume: U256, factor: FeeFactor) -> U256 {
             .checked_div(scale)
             .unwrap_or_default(),
     )
-    .unwrap_or(U256::MAX)
+    .expect("FeeFactor is guaranteed to be [0, 1] so result must fit U256")
 }
 
 /// Applies a single volume fee to `(sell, buy)` for the given order kind
@@ -190,9 +190,8 @@ pub fn capped_partner_volume_factors(
     parsed_app_data: &app_data::ProtocolAppData,
     max_partner_fee: FeeFactor,
 ) -> Vec<FeeFactor> {
-    let Ok(cap) = Decimal::try_from(max_partner_fee.get()) else {
-        return vec![];
-    };
+    let cap = Decimal::try_from(max_partner_fee.get())
+        .expect("FeeFactor is always [0, 1] which means this conversion can't fail");
 
     let mut accumulated = Decimal::ZERO;
     let mut factors = Vec::new();

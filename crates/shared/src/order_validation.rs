@@ -523,22 +523,12 @@ impl OrderValidator {
     /// Validates that a fast-path order's signed sell/buy amounts leave
     /// enough room for the compounded protocol + partner volume fees the
     /// autopilot would charge at settlement time.
-    ///
-    /// Fast-path orders MUST have a quote (`quote.is_some()`) because the
-    /// whole fast-path flow re-encodes a cached quote solution — no quote
-    /// means the order is fundamentally unfillable via the fast path, so
-    /// we reject it as `FastPathLimitTooTight` (the effective post-fee
-    /// price is by definition worse than any signed limit).
     fn check_fast_path_limit_price_fits(
         &self,
         data: &OrderData,
-        quote: Option<&Quote>,
+        quote: &Quote,
         app_data: &ValidatedAppData,
     ) -> Result<(), ValidationError> {
-        let Some(quote) = quote else {
-            return Err(ValidationError::FastPathLimitTooTight);
-        };
-
         let protocol_factor = self.protocol_volume_fee_policy.as_ref().and_then(|policy| {
             policy.get_applicable_volume_fee_factor(data.buy_token, data.sell_token, None)
         });
@@ -747,6 +737,45 @@ impl OrderValidator {
                 other => other,
             }
         }
+    }
+
+    fn compute_and_validate_valid_from(
+        &self,
+        app_data: &OrderAppData,
+        quote: Option<&Quote>,
+        order: &OrderData,
+    ) -> Result<Option<u32>, ValidationError> {
+        let valid_from = if app_data.inner.protocol.enable_fast_path {
+            let Some(exclusivity) = self.default_fast_path_exclusivity else {
+                return Err(ValidationError::FastPathDisabled);
+            };
+            let Some(quote) = quote else {
+                return Err(ValidationError::FastPathLimitTooTight);
+            };
+            // Fast-path settlement has no surplus by design — the solver's
+            // on-chain output is what the quote said. Any volume fees the
+            // autopilot would charge at settlement time eat into that
+            // output. If the user signed a limit that doesn't leave room
+            // for those fees, the trade would revert on chain and the
+            // solver would be blamed for a failure they had no way to
+            // avoid. Reject at placement instead.
+            self.check_fast_path_limit_price_fits(order, quote, &app_data.inner)?;
+            app_data
+                .inner
+                .protocol
+                .valid_from
+                .or_else(|| Some(time::now_in_epoch_seconds() + exclusivity.as_secs() as u32))
+        } else {
+            app_data.inner.protocol.valid_from
+        };
+
+        if let Some(valid_from) = valid_from {
+            let min = self.validity_configuration.min.as_secs();
+            if u64::from(order.valid_to) < u64::from(valid_from) + min {
+                return Err(ValidationError::InvalidValidFrom);
+            }
+        }
+        Ok(valid_from)
     }
 }
 
@@ -1121,33 +1150,7 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
-        let valid_from = if app_data.inner.protocol.enable_fast_path {
-            let Some(exclusivity) = self.default_fast_path_exclusivity else {
-                return Err(ValidationError::FastPathDisabled);
-            };
-            // Fast-path settlement has no surplus by design — the solver's
-            // on-chain output is what the quote said. Any volume fees the
-            // autopilot would charge at settlement time eat into that
-            // output. If the user signed a limit that doesn't leave room
-            // for those fees, the trade would revert on chain and the
-            // solver would be blamed for a failure they had no way to
-            // avoid. Reject at placement instead.
-            self.check_fast_path_limit_price_fits(&data, quote.as_ref(), &app_data.inner)?;
-            app_data
-                .inner
-                .protocol
-                .valid_from
-                .or_else(|| Some(time::now_in_epoch_seconds() + exclusivity.as_secs() as u32))
-        } else {
-            app_data.inner.protocol.valid_from
-        };
-
-        if let Some(valid_from) = valid_from {
-            let min = self.validity_configuration.min.as_secs();
-            if u64::from(data.valid_to) < u64::from(valid_from) + min {
-                return Err(ValidationError::InvalidValidFrom);
-            }
-        }
+        let valid_from = self.compute_and_validate_valid_from(&app_data, quote.as_ref(), &data)?;
 
         let order = Order {
             metadata: OrderMetadata {
