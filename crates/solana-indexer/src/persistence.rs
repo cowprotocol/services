@@ -370,7 +370,6 @@ SELECT tx_signature FROM solana.dead_letter WHERE slot > $1 AND slot <= $2
 UNION
 SELECT created_by_tx FROM solana.order_pda
     WHERE created_in_slot > $1 AND created_in_slot <= $2 AND created_by_tx IS NOT NULL
-ORDER BY 1
             "#,
         )
         .bind(to_db_slot(after))
@@ -588,14 +587,14 @@ mod tests {
         .unwrap();
         postgres.write_last_indexed_slot(Slot(45)).await.unwrap();
 
-        // Both signatures sit in the audit window, bytewise sorted.
-        assert_eq!(
-            postgres
-                .unfinalized_signatures(Slot(39), Slot(45))
-                .await
-                .unwrap(),
-            vec![survivor, vanished]
-        );
+        // Both signatures sit in the audit window. The query promises no
+        // order, so sort before comparing.
+        let mut audited = postgres
+            .unfinalized_signatures(Slot(39), Slot(45))
+            .await
+            .unwrap();
+        audited.sort();
+        assert_eq!(audited, vec![survivor, vanished]);
 
         postgres
             .finalize_through(Slot(45), &[vanished])
