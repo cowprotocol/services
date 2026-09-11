@@ -86,7 +86,7 @@ async fn run(config: Config, start_slot: Option<u64>) {
 
     let latest_chain_slot = Arc::new(AtomicU64::default());
 
-    let backfiller = Decoder::stream_less(&config, persistence.clone());
+    let backfiller = Decoder::rpc_driven(&config, persistence.clone());
 
     let stream_loop = async {
         let mut resume = start_slot.map_or(Resume::Watermark, Resume::From);

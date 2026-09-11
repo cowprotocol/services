@@ -82,10 +82,10 @@ impl Decoder {
         }
     }
 
-    /// A decoder with no stream attached: the backfill and the replay drive
-    /// its decode and flush paths from RPC history over a dedicated client.
+    /// A decoder driven by RPC fetches instead of a stream: recovery pushes
+    /// history through its decode and flush paths over a dedicated client.
     /// The channel sender is dropped, so `run` would return immediately.
-    pub(crate) fn stream_less(config: &Config, persistence: Postgres) -> Self {
+    pub(crate) fn rpc_driven(config: &Config, persistence: Postgres) -> Self {
         let rpc = SolanaRPC::new_with_timeout_and_commitment(
             &config.rpc.endpoint,
             config.rpc.request_timeout,
