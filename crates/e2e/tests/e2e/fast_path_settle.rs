@@ -13,7 +13,7 @@ use {
             },
             solver::Solver,
         },
-        order_quoting::OrderQuoting,
+        order_quoting::{ExternalSolver, OrderQuoting},
         test_util::TestDefault,
     },
     e2e::{assert_approximately_eq, setup::*},
@@ -213,37 +213,36 @@ async fn fast_path_settle(web3: Web3) {
     );
 }
 
-/// Tests that a fast path order first results in a /settle call to the
-/// winning solver and only if that does not fill the order in time the
-/// system puts it into the regular auction where any solver can settle
-/// it normally.
+/// Tests fast-path → regular-auction fallback with two solvers competing
+/// for the same order.
 ///
-/// Mechanism: the solver account is created with **zero ETH**, so any tx
-/// the driver tries to submit on its behalf gets rejected by the node for
-/// insufficient funds.
-/// So:
-/// * the autopilot fires `/settle` on the driver during the exclusivity window,
-///   but the driver cannot land a tx (no gas money),
-/// * once we fund the solver after the window elapses, the regular auction
-///   settles the order.
+/// * `solver_a` is unfunded and runs with `haircut_bps = 0`, so it wins the
+///   quote (best price) but cannot pay for a settlement tx.
+/// * `solver_b` is funded and runs with `haircut_bps = 100`, so it loses the
+///   quote but can actually submit.
+///
+/// The fast-path handler routes to `solver_a` (the quote winner) and its tx
+/// submission fails. When the regular auction runs after `valid_from`, the
+/// driver's `Settlement::new` balance check (`crates/driver/src/domain/
+/// competition/solution/settlement.rs`) filters `solver_a`'s bid out, so
+/// `solver_b` wins the fallback auction without any mid-test funding.
 ///
 /// Asserted:
-/// 1. The autopilot actually ran the fast-path handler: a solver competition
-///    with a solution that includes our order surfaces via the public
-///    `solver_competition/latest` endpoint while the order is still `Open`.
-///    During the exclusivity window the regular auction is barred from picking
-///    the order up, so this competition can only be the fast-path one.
-/// 2. The order eventually becomes `Fulfilled` (orderbook API).
-/// 3. A settlement trade exists for the order (orderbook API), i.e. it settled
-///    on-chain.
-/// 4. Fulfillment happens at or after `valid_from`, which is only possible via
-///    the regular auction — the fast path fires strictly before that.
+/// 1. The autopilot ran the fast-path handler: a solver competition with a
+///    solution that includes our order surfaces on the public
+///    `solver_competition/latest` endpoint while the order is still `Open`
+///    (regular auctions are barred from picking the order up until
+///    `valid_from`, so this competition can only be the fast-path one).
+/// 2. The order eventually becomes `Fulfilled` after `valid_from`.
+/// 3. The settled competition's winning solver is `solver_b`, proving the
+///    fallback actually routed around the broken solver.
 async fn fast_path_regular_auction_fallback(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    // Solver starts with zero ETH so any /settle attempt during the
-    // exclusivity window cannot land on chain.
-    let [solver] = onchain.make_solvers(0u64.eth()).await;
+    // Two solvers behind a single driver process. `solver_a` is left at 0
+    // ETH; `solver_b` gets funded so it can actually submit settlements.
+    let [solver_a, solver_b] = onchain.make_solvers(0u64.eth()).await;
+    onchain.send_wei(solver_b.address(), 10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
@@ -273,14 +272,59 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
     // Short exclusivity so the regular auction picks the order up soon
     // after it elapses, within the test timeout.
     let exclusivity = Duration::from_secs(5);
-    let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
-        AutopilotConfiguration::test("test_solver", solver.address()),
-        configs::orderbook::Configuration::test_default(),
-        exclusivity,
+
+    // Both baseline solvers share the same UniV2 pool; `haircut_bps` is
+    // what makes `solver_a` strictly beat `solver_b` during quoting.
+    // `solver_a` is named `test_solver` so the default native-price
+    // estimator wiring (`http://localhost:11088/test_solver`) works
+    // without an override.
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver_with_haircut(
+                "test_solver".into(),
+                solver_a.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                0,
+            )
+            .await,
+            colocation::start_baseline_solver_with_haircut(
+                "solver_b".into(),
+                solver_b.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                100,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
     );
-    services
-        .start_protocol_with_args(autopilot_config, orderbook_config, solver.clone())
-        .await;
+
+    let quoter_a = ExternalSolver::new("test_solver", "http://localhost:11088/test_solver");
+    let quoter_b = ExternalSolver::new("solver_b", "http://localhost:11088/solver_b");
+
+    let autopilot_config = AutopilotConfiguration {
+        drivers: vec![
+            Solver::test("test_solver", solver_a.address()),
+            Solver::test("solver_b", solver_b.address()),
+        ],
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter_a.clone(), quoter_b.clone()]),
+        ..AutopilotConfiguration::test_no_drivers()
+    };
+    let orderbook_config = configs::orderbook::Configuration {
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter_a, quoter_b]),
+        ..configs::orderbook::Configuration::test_default()
+    };
+    let (autopilot_config, orderbook_config) =
+        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+
+    services.start_autopilot(None, autopilot_config).await;
+    services.start_api(orderbook_config).await;
 
     let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
 
@@ -302,13 +346,22 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
     let quote = services.submit_quote(&quote_request).await.unwrap();
     let quote_id = quote.id.expect("fast-path quote should carry an id");
 
+    // Sign at ~90% of the market quote so that `solver_b`'s
+    // haircut-tightened solve request (buy × ~1.01) still fits under the
+    // pool's actual output. Otherwise the tightened requirement would sit
+    // above market and `solver_b`'s baseline would return no solutions.
+    // `solver_a` still wins the quote (haircut = 0), and the fast-path
+    // limit check compares the cached solver_a clearing prices — which are
+    // at market rate — against `limit_prices.buy` (also market rate), so
+    // that check still passes.
+    let signed_buy_amount = quote.quote.buy_amount * U256::from(90u8) / U256::from(100u8);
     tracing::info!("Placing the fast-path order.");
     let order = OrderCreation {
         quote_id: Some(quote_id),
         sell_token: *onchain.contracts().weth.address(),
         sell_amount,
         buy_token: *token.address(),
-        buy_amount: quote.quote.buy_amount,
+        buy_amount: signed_buy_amount,
         valid_to: model::time::now_in_epoch_seconds() + 3600,
         kind: OrderKind::Sell,
         app_data: OrderCreationAppData::Full { full: app_data },
@@ -347,10 +400,7 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
         "order settled during the exclusivity window; fast path was expected to fail to submit"
     );
 
-    tracing::info!("Funding solver so the regular auction can submit.");
-    onchain.send_wei(solver.address(), 10u64.eth()).await;
-
-    // (2) The order ends up `Fulfilled` AFTER valid_from.
+    // (2) The order ends up `Fulfilled` after `valid_from`.
     tracing::info!("Waiting for the regular-auction settlement.");
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
@@ -362,6 +412,29 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
     })
     .await
     .unwrap();
+
+    // (3) The fallback settlement was submitted by `solver_b`. `solver_a`'s
+    // bid gets dropped by the driver's balance check in `Settlement::new`,
+    // so the regular auction has no other winner to pick.
+    let trade = services
+        .get_trades(&uid)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("settled order should have a trade");
+    let tx_hash = trade.tx_hash.expect("settled trade should have a tx hash");
+    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+    let winner = competition
+        .solutions
+        .iter()
+        .find(|solution| solution.is_winner)
+        .expect("settled competition should have a winner");
+    assert_eq!(
+        winner.solver_address,
+        solver_b.address(),
+        "fallback settlement should be submitted by solver_b (funded)"
+    );
 }
 
 /// Configures a protocol volume fee via the autopilot config and a partner
