@@ -278,7 +278,10 @@ impl<'a> Services<'a> {
         let test_quoter = ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver");
 
         let autopilot_config = Configuration {
-            order_quoting: OrderQuoting::test_with_drivers(vec![test_quoter.clone()]),
+            order_quoting: OrderQuoting {
+                price_estimation_drivers: vec![test_quoter.clone()],
+                ..autopilot_config.order_quoting
+            },
             shared: SharedConfig {
                 gas_estimators: vec![GasEstimatorType::Driver {
                     url: Url::from_str("http://localhost:11088/gasprice").unwrap(),
@@ -288,7 +291,10 @@ impl<'a> Services<'a> {
             ..autopilot_config
         };
         let orderbook_config = configs::orderbook::Configuration {
-            order_quoting: OrderQuoting::test_with_drivers(vec![test_quoter]),
+            order_quoting: OrderQuoting {
+                price_estimation_drivers: vec![test_quoter],
+                ..orderbook_config.order_quoting
+            },
             shared: SharedConfig {
                 gas_estimators: vec![GasEstimatorType::Driver {
                     url: Url::from_str("http://localhost:11088/gasprice").unwrap(),
