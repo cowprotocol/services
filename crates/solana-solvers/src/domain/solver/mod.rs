@@ -58,7 +58,7 @@ pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
             tracing::debug!("solved");
             Some(solution)
         }
-        .instrument(tracing::info_span!("solve", order = %order.uid))
+        .instrument(tracing::info_span!("solve", auction_id = ?auction.id, order = %order.uid))
     });
     join_all(candidates).await.into_iter().flatten().collect()
 }

@@ -135,7 +135,12 @@ impl Competition {
                 }
                 result
             }
-            .instrument(tracing::Span::current()),
+            .instrument(tracing::info_span!(
+                "settle",
+                ?auction_id,
+                solution_id,
+                orders = tracing::field::Empty
+            )),
         );
         task.await.unwrap_or_else(|error| {
             tracing::error!(?error, "settle task panicked");
@@ -183,9 +188,14 @@ impl Competition {
         let program_id = self.blockchain.program_id();
 
         let orders = orders_with_trades(auction.orders.clone(), &solution);
-        tracing::debug!(
-            orders = ?orders.iter().map(|order| order.uid.to_string()).collect::<Vec<_>>(),
-            "settling orders"
+        tracing::Span::current().record(
+            "orders",
+            tracing::field::debug(
+                orders
+                    .iter()
+                    .map(|order| order.uid.to_string())
+                    .collect::<Vec<_>>(),
+            ),
         );
 
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
