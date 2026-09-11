@@ -283,3 +283,23 @@ async fn quote_without_a_route_is_no_liquidity() {
         (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
     );
 }
+
+/// Parameter validation of the trades endpoint short-circuits before any
+/// database access.
+#[tokio::test]
+async fn trades_rejects_a_limit_out_of_bounds() {
+    let addr = spawn_server().await;
+    let uid = "11".repeat(32);
+    for limit in ["0", "1001"] {
+        let response = reqwest::Client::new()
+            .get(format!(
+                "http://{addr}/api/v1/trades?orderUid={uid}&limit={limit}"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+        let json: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(json["errorType"], "LIMIT_OUT_OF_BOUNDS");
+    }
+}
