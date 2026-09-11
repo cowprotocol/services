@@ -940,9 +940,8 @@ fn replayer(pool: &sqlx::PgPool, mocks: Mocks) -> Decoder {
     )
 }
 
-/// A replay pass heals a parked dead letter: the transaction re-fetches,
-/// decodes, and lands as an order, the row unparks, and the watermark stays
-/// where it was.
+/// A healed dead letter: the transaction re-fetches into an order, the row
+/// unparks, and the watermark stays put.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
 async fn solana_db_replay_heals_a_dead_letter() {

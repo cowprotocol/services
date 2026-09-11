@@ -459,9 +459,8 @@ WHERE pda.order_uid = deltas.order_uid
     }
 
     /// Apply a replayed transaction's events and unpark it in one SQL
-    /// transaction: the dead letter row is deleted first, so an apply that
-    /// parks the transaction again (still-unresolved mints) wins, and a
-    /// failed apply rolls the deletion back.
+    /// transaction: the deletion goes first, so an apply that parks the
+    /// transaction again wins, and a failed apply rolls the deletion back.
     pub(crate) async fn replay_events(
         &self,
         signature: Signature,

@@ -29,7 +29,7 @@ use {
 /// Wait between attempts to bring the stream back up.
 const STREAM_RETRY: Duration = Duration::from_secs(5);
 
-/// Wait between replay passes over the parked dead letters and lost ranges.
+/// Wait between replay passes.
 const REPLAY_INTERVAL: Duration = Duration::from_secs(60);
 
 /// The Solana indexer command line arguments.
