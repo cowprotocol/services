@@ -3778,6 +3778,8 @@ dependencies = [
  "solana-rpc-client",
  "solana-rpc-client-api",
  "solana-sdk",
+ "solana-transaction-status-client-types",
+ "tracing",
  "url",
 ]
 
@@ -9392,7 +9394,9 @@ name = "solana-indexer"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "bigdecimal",
+ "bincode",
  "bytes",
  "clap",
  "configs",
@@ -9409,6 +9413,7 @@ dependencies = [
  "serde-ext",
  "serde_json",
  "solana-sdk",
+ "solana-transaction-status-client-types",
  "spl-token-2022-interface",
  "spl-token-interface 2.0.0",
  "sqlx",
