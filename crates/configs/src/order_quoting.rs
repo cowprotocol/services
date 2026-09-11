@@ -1,4 +1,4 @@
-use {serde::Deserialize, std::time::Duration, url::Url};
+use {crate::fee_factor::FeeFactor, serde::Deserialize, std::time::Duration, url::Url};
 
 const fn default_eip1271_onchain_quote_validity() -> Duration {
     Duration::from_mins(10)
@@ -48,6 +48,23 @@ pub struct OrderQuoting {
         default = "default_standard_offchain_quote_validity"
     )]
     pub standard_offchain_quote_validity: Duration,
+
+    /// Default exclusivity applied to fast-path orders whose app-data does
+    /// not specify `validFrom` (`valid_from = now + this`). An explicit
+    /// user-provided `validFrom` is always respected — including values
+    /// shorter than the default. Shared between the orderbook (which
+    /// applies it during API order validation and rejects `enableFastPath`
+    /// orders when the value is unset) and the autopilot (which applies it
+    /// when indexing on-chain / ethflow fast-path orders). The two services
+    /// must be configured with the same value or fast-path behaviour
+    /// diverges between placement channels.
+    #[serde(with = "humantime_serde", default)]
+    pub default_fast_path_exclusivity: Option<Duration>,
+
+    /// Upper bound on the sum of partner volume-fee factors declared in an
+    /// order's app-data. Must mirror the autopilot's
+    #[serde(default)]
+    pub max_partner_fee: Option<FeeFactor>,
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -78,6 +95,8 @@ impl crate::test_util::TestDefault for OrderQuoting {
             eip1271_onchain_quote_validity: default_eip1271_onchain_quote_validity(),
             presign_onchain_quote_validity: default_presign_onchain_quote_validity(),
             standard_offchain_quote_validity: default_standard_offchain_quote_validity(),
+            default_fast_path_exclusivity: None,
+            max_partner_fee: None,
         }
     }
 }
@@ -105,6 +124,8 @@ mod tests {
             config.standard_offchain_quote_validity,
             Duration::from_mins(1)
         );
+        assert!(config.default_fast_path_exclusivity.is_none());
+        assert!(config.max_partner_fee.is_none());
     }
 
     #[test]
@@ -113,6 +134,8 @@ mod tests {
         eip1271-onchain-quote-validity = "5m"
         presign-onchain-quote-validity = "20m"
         standard-offchain-quote-validity = "30s"
+        default-fast-path-exclusivity = "45s"
+        max-partner-fee = 0.01
 
         [[price-estimation-drivers]]
         name = "test-solver"
@@ -137,6 +160,11 @@ mod tests {
             config.standard_offchain_quote_validity,
             Duration::from_secs(30)
         );
+        assert_eq!(
+            config.default_fast_path_exclusivity,
+            Some(Duration::from_secs(45))
+        );
+        assert_eq!(config.max_partner_fee.map(|f| f.get()), Some(0.01));
     }
 
     #[test]
@@ -173,6 +201,8 @@ mod tests {
             eip1271_onchain_quote_validity: Duration::from_secs(300),
             presign_onchain_quote_validity: Duration::from_secs(600),
             standard_offchain_quote_validity: Duration::from_secs(60),
+            default_fast_path_exclusivity: Some(Duration::from_secs(45)),
+            max_partner_fee: Some(FeeFactor::try_from(0.01).unwrap()),
         };
         let serialized = toml::to_string(&config).unwrap();
         let deserialized: OrderQuoting = toml::from_str(&serialized).unwrap();
