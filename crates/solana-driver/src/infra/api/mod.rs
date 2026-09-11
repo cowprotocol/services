@@ -7,7 +7,7 @@ use {
     },
     axum::{Router, extract::DefaultBodyLimit, routing::get},
     observe::tracing::distributed::axum::{make_span, record_trace_id},
-    std::{net::SocketAddr, sync::Arc},
+    std::{net::SocketAddr, num::NonZero, sync::Arc},
     tokio_util::sync::CancellationToken,
     tower::ServiceBuilder,
     tower_http::{decompression::RequestDecompressionLayer, trace::TraceLayer},
@@ -60,8 +60,9 @@ impl Api {
         // Mount one router per solver engine under `/{solver_name}`.
         for solver in self.solvers {
             let solver_name = solver.name().to_owned();
+            let solve_every_nth_auction = solver.solve_every_nth_auction();
             let competition = domain::Competition::new(solver, self.blockchain.clone());
-            let state = State::new(competition);
+            let state = State::new(competition, solve_every_nth_auction);
 
             let router = Router::new()
                 .route("/quote", axum::routing::post(routes::quote))
@@ -93,9 +94,13 @@ pub(crate) struct State(Arc<Inner>);
 
 impl State {
     /// Build the shared state the handlers operate on.
-    fn new(competition: domain::Competition) -> Self {
+    fn new(
+        competition: domain::Competition,
+        solve_every_nth_auction: Option<NonZero<u64>>,
+    ) -> Self {
         Self(Arc::new(Inner {
             competition: Arc::new(competition),
+            solve_every_nth_auction,
         }))
     }
 
@@ -103,9 +108,16 @@ impl State {
     fn competition(&self) -> &Arc<domain::Competition> {
         &self.0.competition
     }
+
+    /// The auction-id stride this solver participates at, when throttled.
+    pub(crate) fn solve_every_nth_auction(&self) -> Option<NonZero<u64>> {
+        self.0.solve_every_nth_auction
+    }
 }
 
 struct Inner {
     /// The competition that runs auctions for this solver engine.
     competition: Arc<domain::Competition>,
+    /// The auction-id stride this solver participates at, when throttled.
+    solve_every_nth_auction: Option<NonZero<u64>>,
 }
