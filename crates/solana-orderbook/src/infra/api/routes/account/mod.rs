@@ -49,7 +49,7 @@ pub async fn account_orders(
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
             "LIMIT_OUT_OF_BOUNDS",
-            "The pagination limit is [1,1000].",
+            format!("The pagination limit is [{MIN_LIMIT},{MAX_LIMIT}]."),
         ));
     }
     // The limit is bounded above, and an offset past i64::MAX addresses no
