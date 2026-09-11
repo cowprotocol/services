@@ -1,14 +1,19 @@
 use {
-    super::{CompetitionEstimator, compare_error},
+    super::{CompetitionEstimator, EstimatorIndex, compare_error},
     crate::{
         PriceEstimationError,
         native::{NativePriceEstimateResult, NativePriceEstimating, is_price_malformed},
     },
     alloy::primitives::Address,
     anyhow::Context,
+    event_bus_dto::{NativePriceEstimateEvent, WinningNativePriceEstimateEvent},
     futures::{FutureExt, future::BoxFuture},
     model::order::OrderKind,
-    std::{cmp::Ordering, sync::Arc, time::Duration},
+    std::{
+        cmp::Ordering,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     tracing::instrument,
 };
 
@@ -19,11 +24,12 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
         token: Address,
         total_timeout: Duration,
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
-        let started_at = std::time::Instant::now();
+        let started_at = Instant::now();
 
         async move {
             let results = self
                 .produce_results(token, Result::is_ok, move |context| {
+                    let estimator_name = context.name;
                     async move {
                         // Computes timeout for current stage dynamically based
                         // on the total time
@@ -39,14 +45,24 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
                                 .unwrap_or_default()
                         };
 
+                        let estimate_requested = Instant::now();
                         let res = context
                             .estimator
                             .estimate_native_price(context.query, stage_timeout)
                             .await;
-                        if res.as_ref().is_ok_and(|price| is_price_malformed(*price)) {
-                            let err = anyhow::anyhow!("estimator returned malformed price");
-                            return Err(PriceEstimationError::EstimatorInternal(err));
-                        }
+                        let res = match res {
+                            Ok(price) if is_price_malformed(price) => {
+                                let err = anyhow::anyhow!("estimator returned malformed price");
+                                Err(PriceEstimationError::EstimatorInternal(err))
+                            }
+                            res => res,
+                        };
+                        emit_native_price_estimate_event(
+                            estimator_name,
+                            context.query,
+                            estimate_requested.elapsed(),
+                            &res,
+                        );
                         res
                     }
                     .boxed()
@@ -57,10 +73,39 @@ impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimatin
                 .max_by(|a, b| compare_native_result(&a.1, &b.1))
                 .context("could not get any native price")?;
             self.report_winner(&token, OrderKind::Buy, &winner);
+            if winner.1.is_ok() {
+                let EstimatorIndex(stage_index, estimator_index) = winner.0;
+                let (name, _) = &self.stages[stage_index][estimator_index];
+                emit_winning_native_price_estimate_event(name, token);
+            }
             winner.1
         }
         .boxed()
     }
+}
+
+fn emit_native_price_estimate_event(
+    estimator_name: &str,
+    token: Address,
+    elapsed: Duration,
+    result: &NativePriceEstimateResult,
+) {
+    observe::event_bus::publish_event(NativePriceEstimateEvent {
+        token,
+        elapsed: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+        estimator: estimator_name.to_owned(),
+        result: result
+            .as_ref()
+            .map(|price| *price)
+            .map_err(|err| err.to_string()),
+    });
+}
+
+fn emit_winning_native_price_estimate_event(estimator_name: &str, token: Address) {
+    observe::event_bus::publish_event(WinningNativePriceEstimateEvent {
+        token,
+        estimator: estimator_name.to_owned(),
+    });
 }
 
 fn compare_native_result(

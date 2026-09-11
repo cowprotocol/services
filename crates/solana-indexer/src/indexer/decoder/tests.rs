@@ -37,7 +37,7 @@ use {
     cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{OrderIntent, OrderKind as IntentOrderKind},
+        data::intent::{Flags, OrderIntent, OrderKind as IntentOrderKind},
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
@@ -352,11 +352,16 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
         buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
         sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
+        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
-        kind: IntentOrderKind::Sell,
-        partially_fillable: false,
+        flags: Flags {
+            created_on_chain: true,
+            kind: IntentOrderKind::Sell,
+            partially_fillable: false,
+        },
         app_data: [0x44; 32],
     };
     let instruction = cow_settlement_client::instructions::CreateOrder {
@@ -374,7 +379,9 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         created_by,
         order_pda: find_order_pda(&settlement, &intent.uid()).0,
         sell_token_account: Pubkey::new_from_array([0x33; 32]),
+        sell_mint: Pubkey::new_from_array([0x66; 32]),
         buy_token_account: Pubkey::new_from_array([0x22; 32]),
+        buy_mint: Pubkey::new_from_array([0x55; 32]),
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
@@ -383,72 +390,6 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         app_data: [0x44; 32],
     };
     (tx, expected)
-}
-
-#[test]
-fn token_account_mint_trusts_only_token_program_accounts() {
-    let account = |owner: Pubkey, data: Vec<u8>| solana_sdk::account::Account {
-        lamports: 1,
-        data,
-        owner,
-        executable: false,
-        rent_epoch: 0,
-    };
-    let token_program = super::TOKEN_PROGRAMS[0];
-    assert_eq!(
-        super::token_account_mint(&account(token_program, vec![0xAA; 165])),
-        Some(Pubkey::new_from_array([0xAA; 32]))
-    );
-    // A mint account: right owner, too short to be a token account.
-    assert_eq!(
-        super::token_account_mint(&account(token_program, vec![0xAA; 82])),
-        None
-    );
-    // Right size, arbitrary owner.
-    assert_eq!(
-        super::token_account_mint(&account(pubkey(1), vec![0xAA; 165])),
-        None
-    );
-}
-
-/// A canned `getMultipleAccounts` response, in request order: the sell token
-/// account holds mint `[0xA1; 32]`, the buy token account mint `[0xA2; 32]`
-/// (the first 32 bytes of the base64 data).
-fn mock_rpc_with_token_accounts() -> SolanaRPC {
-    let account = |data: &str| {
-        serde_json::json!({
-            "lamports": 1u64,
-            "data": [data, "base64"],
-            "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-            "executable": false,
-            "rentEpoch": 0u64,
-            "space": 165u64
-        })
-    };
-    let sell = account("oaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    let buy = account("oqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    let response = serde_json::json!({
-        "context": { "slot": 1u64, "apiVersion": "2.0.0" },
-        "value": [sell, buy],
-    });
-    // The finalization audit asks for two signatures (the dead letter and
-    // the healthy create), both still known to the chain.
-    let status = serde_json::json!({
-        "slot": 43u64,
-        "confirmations": null,
-        "err": null,
-        "status": { "Ok": null },
-        "confirmationStatus": "finalized",
-    });
-    let statuses = serde_json::json!({
-        "context": { "slot": 43u64, "apiVersion": "2.0.0" },
-        "value": [status.clone(), status],
-    });
-    let mocks = Mocks::from([
-        (RpcRequest::GetMultipleAccounts, response),
-        (RpcRequest::GetSignatureStatuses, statuses),
-    ]);
-    SolanaRPC::new_mock_with_mocks(mocks)
 }
 
 /// A decoder over a lazy pool that never connects: `decode` is pure, tests
@@ -463,6 +404,23 @@ fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
         settlement,
         Some(solflow),
     )
+}
+
+/// The finalization audit asks for two signatures (the dead letter and the
+/// healthy create), both still known to the chain.
+fn mock_rpc_with_signature_statuses() -> SolanaRPC {
+    let status = serde_json::json!({
+        "slot": 43u64,
+        "confirmations": null,
+        "err": null,
+        "status": { "Ok": null },
+        "confirmationStatus": "finalized",
+    });
+    let statuses = serde_json::json!({
+        "context": { "slot": 43u64, "apiVersion": "2.0.0" },
+        "value": [status.clone(), status],
+    });
+    SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetSignatureStatuses, statuses)]))
 }
 
 /// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run`
@@ -578,26 +536,33 @@ fn unpaired_begin_settle_sets_failure_flag() {
 /// - the buy-side amount comes from the `FinalizeSettle` entry paired to its
 ///   order by position (order `i` is paid by entry `i`),
 /// - the trade names the canonical order PDA the builder derives,
-/// - the solver is the fee payer.
+/// - the solver is the signer `BeginSettle` names, not the fee payer.
 #[test]
 fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     let solver = pubkey(10);
+    let fee_payer = pubkey(9);
     let intent = OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
         buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
         sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
+        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
         sell_amount: 1_000,
         buy_amount: 1_234,
         valid_to: 42,
-        kind: IntentOrderKind::Sell,
-        partially_fillable: false,
+        flags: Flags {
+            created_on_chain: true,
+            kind: IntentOrderKind::Sell,
+            partially_fillable: false,
+        },
         app_data: [0x44; 32],
     };
     let order_pda = find_order_pda(&settlement, &intent.uid()).0;
 
     let begin = cow_settlement_client::instructions::BeginSettle {
         program_id: settlement,
+        solver,
         finalize_ix_index: 1,
         auction_id: 4242,
         orders: &[cow_settlement_client::instructions::InitializedIntent {
@@ -620,12 +585,11 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         begin_ix_index: 0,
         orders: &[cow_settlement_client::instructions::FinalizedIntent {
             intent: &intent,
-            mint: pubkey(30),
             amount: 1_234,
         }],
     }
     .into();
-    let tx = tx_from_instructions(solver, &[begin, finalize]);
+    let tx = tx_from_instructions(fee_payer, &[begin, finalize]);
 
     let ctx = TxContext {
         slot: Slot(5),
@@ -715,7 +679,7 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
     let mut decoder = Decoder::new(
         Postgres::new(pool.clone()),
-        mock_rpc_with_token_accounts(),
+        mock_rpc_with_signature_statuses(),
         receiver,
         settlement,
         Some(solflow),
@@ -792,6 +756,6 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(sell_token, vec![0xA1; 32]);
-    assert_eq!(buy_token, vec![0xA2; 32]);
+    assert_eq!(sell_token, expected.sell_mint.to_bytes().to_vec());
+    assert_eq!(buy_token, expected.buy_mint.to_bytes().to_vec());
 }

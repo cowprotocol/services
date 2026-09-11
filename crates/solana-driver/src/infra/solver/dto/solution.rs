@@ -248,7 +248,7 @@ mod tests {
 
     fn sample_auction_dto() -> Auction {
         Auction {
-            id: 1,
+            id: Some(1),
             taker: pubkey(3),
             orders: vec![super::super::auction::Order {
                 uid: OrderUid([8; 32]),
@@ -369,7 +369,7 @@ mod tests {
     #[test]
     fn derives_counterpart_that_overflows_u64_product() {
         let auction = Auction {
-            id: 1,
+            id: Some(1),
             taker: pubkey(3),
             orders: vec![Order {
                 uid: OrderUid([8; 32]),

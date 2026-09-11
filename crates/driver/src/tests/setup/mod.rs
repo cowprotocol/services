@@ -318,7 +318,7 @@ impl Default for Order {
             partial: Default::default(),
             created: u32::MIN,
             valid_to: u32::MAX,
-            kind: order::Kind::Market,
+            kind: order::Kind::Limit,
             solver_fee: Default::default(),
             name: Default::default(),
             surplus_factor: DEFAULT_SURPLUS_FACTOR.ether().into_wei(),

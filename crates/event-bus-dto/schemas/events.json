@@ -1,4 +1,93 @@
 {
+  "nativePriceEstimate": {
+    "$defs": {
+      "NativePriceEstimateEvent": {
+        "description": "Emitted for every estimator that returns before the competition\nshort-circuits, so slower estimators are cancelled and go unreported. Cache\nhits emit nothing: these events cover price refreshes only.",
+        "properties": {
+          "elapsed": {
+            "description": "Wall-clock time the estimator actually spent, in milliseconds.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "estimator": {
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/$defs/Result_of_double_or_string",
+            "description": "Amount of native token needed to buy 1 unit of the token, or the error\nthe estimator failed with. Prices are always normal, positive floats:\nmalformed prices are reported as errors."
+          },
+          "token": {
+            "description": "Token the price was estimated for. For approximated tokens this is the\napproximation token, i.e. the one actually priced.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "elapsed",
+          "estimator",
+          "result"
+        ],
+        "type": "object"
+      },
+      "Result_of_double_or_string": {
+        "oneOf": [
+          {
+            "properties": {
+              "Ok": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "Ok"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "Err": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "Err"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "JSON envelope wrapping every event published to the bus. Consumers can\nrely on `version` to evolve their parsers, on `timestamp` for ordering,\nand on `requestId` to correlate events emitted while serving a single\ninbound request (e.g. all the price estimates and the resulting quote of\none quote request share the same `requestId`).",
+    "properties": {
+      "body": {
+        "$ref": "#/$defs/NativePriceEstimateEvent"
+      },
+      "requestId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timestamp": {
+        "description": "RFC3339 timestamp (millisecond precision, UTC) of when the event was\npublished.",
+        "format": "date-time",
+        "type": "string"
+      },
+      "version": {
+        "const": "v1",
+        "type": "string"
+      }
+    },
+    "required": [
+      "version",
+      "timestamp",
+      "body"
+    ],
+    "title": "Envelope",
+    "type": "object"
+  },
   "priceEstimate": {
     "$defs": {
       "EstimateResult": {
@@ -291,6 +380,57 @@
     "properties": {
       "body": {
         "$ref": "#/$defs/QuoteRequestedEvent"
+      },
+      "requestId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timestamp": {
+        "description": "RFC3339 timestamp (millisecond precision, UTC) of when the event was\npublished.",
+        "format": "date-time",
+        "type": "string"
+      },
+      "version": {
+        "const": "v1",
+        "type": "string"
+      }
+    },
+    "required": [
+      "version",
+      "timestamp",
+      "body"
+    ],
+    "title": "Envelope",
+    "type": "object"
+  },
+  "winningNativePriceEstimate": {
+    "$defs": {
+      "WinningNativePriceEstimateEvent": {
+        "description": "Emitted once a native price competition picks the estimate that gets cached,\nand not at all when every estimator errored. Correlate on `estimator` with\nthe [`crate::NativePriceEstimateEvent`]s for the same token.",
+        "properties": {
+          "estimator": {
+            "description": "Name of the estimator whose price estimate won the competition.",
+            "type": "string"
+          },
+          "token": {
+            "description": "Token the price was estimated for.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "estimator"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "JSON envelope wrapping every event published to the bus. Consumers can\nrely on `version` to evolve their parsers, on `timestamp` for ordering,\nand on `requestId` to correlate events emitted while serving a single\ninbound request (e.g. all the price estimates and the resulting quote of\none quote request share the same `requestId`).",
+    "properties": {
+      "body": {
+        "$ref": "#/$defs/WinningNativePriceEstimateEvent"
       },
       "requestId": {
         "type": [

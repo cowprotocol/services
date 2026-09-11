@@ -15,7 +15,13 @@ use {
     std::{collections::HashMap, time::Duration},
     url::Url,
 };
-pub use {solana_commitment_config::CommitmentConfig, solana_rpc_client_api::client_error::Error};
+pub use {
+    solana_commitment_config::CommitmentConfig,
+    solana_rpc_client_api::{
+        client_error::Error,
+        response::{RpcSimulateTransactionResult, UiTransactionError},
+    },
+};
 #[cfg(feature = "test-util")]
 pub use {solana_rpc_client::mock_sender::Mocks, solana_rpc_client_api::request::RpcRequest};
 
@@ -124,6 +130,18 @@ impl SolanaRPC {
             known.extend(response.value.into_iter().map(|status| status.is_some()));
         }
         Ok(known)
+    }
+
+    /// Simulate a versioned transaction without sending it. Returns the
+    /// simulation result including logs and any error.
+    pub async fn simulate_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<RpcSimulateTransactionResult, Error> {
+        self.inner
+            .simulate_transaction(transaction)
+            .await
+            .map(|response| response.value)
     }
 
     /// Send a versioned transaction and wait until it reaches the client's

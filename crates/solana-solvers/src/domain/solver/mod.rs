@@ -43,7 +43,16 @@ pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
     let candidates = auction.orders.iter().enumerate().map(|(index, order)| {
         let dex_order = order.to_dex_order();
         async move {
-            let swap = quoter.quote(&dex_order, &auction.taker).await.ok()?;
+            let swap = quoter
+                .quote(&dex_order, &auction.taker)
+                .await
+                .inspect_err(|err| match err {
+                    dex::jupiter::Error::NotFound | dex::jupiter::Error::OrderNotSupported => {
+                        tracing::debug!(order = %order.uid, %err, "no swap for order")
+                    }
+                    _ => tracing::warn!(order = %order.uid, %err, "quote failed"),
+                })
+                .ok()?;
             Solution::new(index as u64, order.uid, &dex_order, swap).ok()
         }
     });
@@ -104,7 +113,7 @@ mod tests {
     #[tokio::test]
     async fn emits_one_solution_per_routable_order() {
         let auction = Auction {
-            id: 1,
+            id: Some(1),
             taker: pubkey(1),
             orders: vec![
                 order(0x01, dex::Side::Sell, pubkey(0x10)), // routable
@@ -123,7 +132,7 @@ mod tests {
     #[tokio::test]
     async fn empty_auction_yields_no_solutions() {
         let auction = Auction {
-            id: 1,
+            id: Some(1),
             taker: pubkey(1),
             orders: vec![],
             deadline: deadline(),

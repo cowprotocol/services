@@ -1009,7 +1009,10 @@ components:
             $ref: "#/components/schemas/U256"
         trades:
           description: |
-            CoW Protocol order trades included in the solution.
+            CoW Protocol order trades included in the solution. Each order may
+            appear at most once: a partially fillable order can be split across
+            multiple solutions, but not across multiple trades of the same
+            solution. Solutions that violate this are rejected.
           type: array
           items:
             $ref: "#/components/schemas/Trade"

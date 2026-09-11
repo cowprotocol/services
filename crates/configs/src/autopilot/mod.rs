@@ -11,6 +11,7 @@ use {
             solver::Solver,
             trusted_tokens::TrustedTokensConfig,
         },
+        balance_cache::BalanceCacheConfig,
         banned_users::BannedUsersConfig,
         database::DatabasePoolConfig,
         http_client::HttpClient,
@@ -170,6 +171,10 @@ pub struct Configuration {
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
     pub price_estimation: PriceEstimation,
+
+    /// Settings for the on-chain balance cache.
+    #[serde(default)]
+    pub balance_cache: BalanceCacheConfig,
 }
 
 impl Configuration {
@@ -197,6 +202,7 @@ impl Configuration {
             "colocation is enabled but no drivers are configured"
         );
         self.shared.validate()?;
+        self.balance_cache.validate()?;
         Ok(self)
     }
 }
@@ -235,6 +241,7 @@ impl Configuration {
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
             price_estimation: TestDefault::test_default(),
+            balance_cache: TestDefault::test_default(),
         }
     }
 
@@ -267,6 +274,7 @@ impl Configuration {
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
             price_estimation: TestDefault::test_default(),
+            balance_cache: TestDefault::test_default(),
         }
     }
 
@@ -370,6 +378,10 @@ mod tests {
 
         [order-quoting]
         price-estimation-drivers = []
+
+        [balance-cache]
+        eviction-time = "10s"
+        refresh-cooldown = "1.2s"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -463,6 +475,12 @@ mod tests {
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
         assert_eq!(config.max_auction_age, Duration::from_secs(600));
         assert_eq!(config.native_price_timeout, Duration::from_secs(3));
+
+        assert_eq!(config.balance_cache.eviction_time, Duration::from_secs(10));
+        assert_eq!(
+            config.balance_cache.refresh_cooldown,
+            Duration::from_millis(1200)
+        );
     }
 
     #[test]

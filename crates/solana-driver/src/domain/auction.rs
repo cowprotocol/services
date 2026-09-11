@@ -51,7 +51,8 @@ pub struct InvalidAuctionId(pub i64);
 /// A collection of orders the driver wants solvers to fill.
 #[derive(Clone, Debug)]
 pub struct Auction {
-    pub id: Id,
+    /// `None` when the auction prices a quote instead of a competition.
+    pub id: Option<Id>,
     pub orders: Vec<Order>,
     /// Slot after which a settlement for this auction is late.
     pub deadline_slot: Slot,

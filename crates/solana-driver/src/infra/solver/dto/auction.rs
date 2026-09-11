@@ -15,7 +15,8 @@ use {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    pub id: i64,
+    /// `None` when the auction prices a quote instead of a competition.
+    pub id: Option<i64>,
     /// Settlement signer the swap instructions are built for.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub taker: Pubkey,
@@ -83,7 +84,7 @@ impl Auction {
     /// user's buy token account.
     pub fn new(auction: &domain::Auction, taker: Pubkey, program_id: Pubkey) -> Self {
         Self {
-            id: auction.id.get(),
+            id: auction.id.map(|id| id.get()),
             taker,
             orders: auction
                 .orders
@@ -125,7 +126,7 @@ mod tests {
         });
 
         let expected = Auction {
-            id: 1,
+            id: Some(1),
             taker,
             orders: vec![Order {
                 uid: OrderUid([8; 32]),

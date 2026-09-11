@@ -52,6 +52,9 @@ pub struct Config {
     /// check.
     #[serde(with = "humantime_serde", default = "default_max_auction_age")]
     pub max_auction_age: Duration,
+    /// Minimum time between auction cycles. Zero runs a cycle every new slot.
+    #[serde(with = "humantime_serde", default = "default_min_auction_interval")]
+    pub min_auction_interval: Duration,
     /// The driver endpoints participating in every auction.
     #[serde(deserialize_with = "deserialize_nonempty_vec")]
     pub drivers: Vec<Driver>,
@@ -79,6 +82,10 @@ const fn default_metrics_port() -> u16 {
 
 const fn default_max_auction_age() -> Duration {
     Duration::from_mins(5)
+}
+
+const fn default_min_auction_interval() -> Duration {
+    Duration::ZERO
 }
 
 /// JSON-RPC client configuration.
@@ -154,6 +161,7 @@ mod tests {
         assert_eq!(config.competition.solve_deadline, Duration::from_secs(6));
         assert_eq!(config.competition.submission_deadline_slots.get(), 25);
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
+        assert_eq!(config.min_auction_interval, Duration::from_secs(2));
         assert_eq!(config.drivers.len(), 1);
         assert_eq!(config.drivers[0].name, "baseline");
         assert_eq!(config.logging.filter, "info,autopilot_svm=debug");
