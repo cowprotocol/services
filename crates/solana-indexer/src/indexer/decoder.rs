@@ -354,8 +354,8 @@ impl Decoder {
     }
 }
 
-/// One slot's accumulated output, flushed once the stream moves past the
-/// hold-back window.
+/// One slot's accumulated output, flushed when its confirmed status
+/// arrives.
 #[derive(Default)]
 struct SlotBuffer {
     events: Vec<DecodedEvent>,
@@ -837,7 +837,8 @@ fn relevant_instructions(
     resolved
 }
 
+mod backfill;
+mod replay;
+
 #[cfg(test)]
 mod tests;
-
-mod backfill;

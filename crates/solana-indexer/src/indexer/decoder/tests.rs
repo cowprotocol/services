@@ -999,3 +999,89 @@ async fn solana_db_backfill_recovers_the_gap() {
     assert_eq!(created_by_tx, signature(6).as_ref().to_vec());
     assert_eq!(created_in_slot, 43);
 }
+
+/// A decoder without a stream over the given mocks.
+fn replayer(pool: &sqlx::PgPool, mocks: Mocks) -> Decoder {
+    let (_closed, rx) = tokio::sync::mpsc::channel(1);
+    Decoder::new(
+        Postgres::new(pool.clone()),
+        SolanaRPC::new_mock_with_mocks(mocks),
+        rx,
+        pubkey(1),
+        None,
+    )
+}
+
+/// A healed dead letter: the transaction re-fetches into an order, the row
+/// unparks, and the watermark stays put.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_replay_heals_a_dead_letter() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+    let persistence = Postgres::new(pool.clone());
+    persistence
+        .write_last_indexed_slot(Slot(100))
+        .await
+        .unwrap();
+    persistence
+        .record_decode_failure(signature(6), Slot(43))
+        .await
+        .unwrap();
+
+    let (instruction, expected) = create_order_parts();
+    let mocks = Mocks::from([(
+        RpcRequest::GetTransaction,
+        rpc_transaction_json(&versioned_tx(instruction), 43),
+    )]);
+    replayer(&pool, mocks).replay().await.unwrap();
+
+    let uid: Vec<u8> = sqlx::query_scalar("SELECT uid FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(uid, expected.order_uid.0.to_vec());
+    let parked: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.dead_letter")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(parked, 0);
+    assert_eq!(
+        persistence.last_indexed_slot().await.unwrap(),
+        Some(Slot(100))
+    );
+}
+
+/// A dead letter that fails again stays parked: an undecodable payload
+/// leaves the row untouched.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_replay_keeps_failing_dead_letters_parked() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+    let persistence = Postgres::new(pool.clone());
+    persistence
+        .record_decode_failure(signature(6), Slot(43))
+        .await
+        .unwrap();
+
+    // An envelope whose payload is not a transaction.
+    let garbage = Mocks::from([(
+        RpcRequest::GetTransaction,
+        serde_json::json!({
+            "slot": 43u64,
+            "transaction": ["aGVsbG8=", "base64"],
+            "meta": { "err": null, "status": { "Ok": null }, "fee": 0u64,
+                      "preBalances": [], "postBalances": [], "innerInstructions": [],
+                      "logMessages": [], "preTokenBalances": [], "postTokenBalances": [],
+                      "rewards": [] },
+            "blockTime": null
+        }),
+    )]);
+    replayer(&pool, garbage).replay().await.unwrap();
+    let reason: String = sqlx::query_scalar("SELECT reason FROM solana.dead_letter")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(reason, "decoder_error");
+}
