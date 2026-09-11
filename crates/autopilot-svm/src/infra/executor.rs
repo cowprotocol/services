@@ -42,6 +42,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                 continue;
             };
             let driver = Arc::clone(driver);
+            tracing::info!(driver = %driver.name, solution = winner.id(), "winner");
             let request = dto::SettleRequest {
                 auction_id,
                 solution_id: winner.id(),

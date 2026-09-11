@@ -8,6 +8,7 @@ use {
     futures::future::join_all,
     solana_sdk::pubkey::Pubkey,
     std::future::Future,
+    tracing::Instrument,
 };
 
 /// Quotes one order into a swap. A seam over [`Dex`] so the loop is testable
@@ -48,13 +49,16 @@ pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
                 .await
                 .inspect_err(|err| match err {
                     dex::jupiter::Error::NotFound | dex::jupiter::Error::OrderNotSupported => {
-                        tracing::debug!(order = %order.uid, %err, "no swap for order")
+                        tracing::debug!("no solution for swap")
                     }
-                    _ => tracing::warn!(order = %order.uid, %err, "quote failed"),
+                    _ => tracing::warn!(%err, "quote failed"),
                 })
                 .ok()?;
-            Solution::new(index as u64, order.uid, &dex_order, swap).ok()
+            let solution = Solution::new(index as u64, order.uid, &dex_order, swap).ok()?;
+            tracing::debug!("solved");
+            Some(solution)
         }
+        .instrument(tracing::info_span!("solve", auction_id = ?auction.id, order = %order.uid))
     });
     join_all(candidates).await.into_iter().flatten().collect()
 }

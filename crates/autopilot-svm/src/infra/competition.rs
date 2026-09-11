@@ -88,10 +88,24 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
                     continue;
                 }
                 match convert(driver_index, dto_solution, &by_uid) {
-                    Some(solution) => solutions.push(solution),
-                    None => tracing::warn!(
+                    Ok(solution) => {
+                        tracing::debug!(
+                            driver = %driver.name,
+                            solution = solution.inner.id(),
+                            orders = ?solution
+                                .inner
+                                .orders()
+                                .iter()
+                                .map(|order| order.uid.to_string())
+                                .collect::<Vec<_>>(),
+                            "proposed solution"
+                        );
+                        solutions.push(solution);
+                    }
+                    Err(uids) => tracing::warn!(
                         driver = %driver.name,
-                        "solution names an order outside the auction, dropped"
+                        orders = ?uids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                        "solution names orders outside the auction, dropped"
                     ),
                 }
             }
@@ -108,12 +122,16 @@ fn convert(
     driver_index: usize,
     dto_solution: dto::Solution,
     by_uid: &HashMap<IntentHash, &Order>,
-) -> Option<Solution> {
-    let orders = dto_solution
+) -> Result<Solution, Vec<IntentHash>> {
+    let mut missing = Vec::new();
+    let orders: Vec<_> = dto_solution
         .orders
         .iter()
-        .map(|(uid, amounts)| {
-            let order = by_uid.get(uid)?;
+        .filter_map(|(uid, amounts)| {
+            let Some(order) = by_uid.get(uid) else {
+                missing.push(*uid);
+                return None;
+            };
             Some(solution::Order::<Solana> {
                 uid: *uid,
                 sell_token: order.sell_token,
@@ -128,8 +146,11 @@ fn convert(
                 },
             })
         })
-        .collect::<Option<Vec<_>>>()?;
-    Some(Solution {
+        .collect();
+    if !missing.is_empty() {
+        return Err(missing);
+    }
+    Ok(Solution {
         driver_index,
         inner: solution::Solution::new(dto_solution.solution_id, dto_solution.solver, orders),
     })

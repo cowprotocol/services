@@ -46,7 +46,14 @@ impl CompetitionObserver {
 #[async_trait]
 impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserver {
     fn on_orders_ready(&self, auction: &Auction) {
-        tracing::debug!(orders = auction.orders.len(), "auction entered competition");
+        tracing::info!(
+            auction_id = auction.id,
+            orders = auction.orders.len(),
+            "solving"
+        );
+        for order in &auction.orders {
+            tracing::debug!(auction_id = auction.id, order = %order.uid, "order in auction");
+        }
         self.store_events(
             auction.orders.iter().map(|order| order.uid).collect(),
             OrderEventLabel::Ready,
