@@ -11,6 +11,7 @@ mod maintenance;
 pub mod periodic_db_cleanup;
 pub mod run;
 pub mod run_loop;
+mod settle_call_coordinator;
 pub mod shadow;
 pub mod shutdown_controller;
 pub mod solvable_orders;

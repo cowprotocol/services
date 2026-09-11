@@ -20,6 +20,7 @@ use {
         infra,
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
+        settle_call_coordinator::SettleCallCoordinator,
         shadow,
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
@@ -473,7 +474,10 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
         ));
 
-    // Wakes the run loop on new orders (via the notifier) and new blocks.
+    // New-order notifications from the DB fan out to two subscribers: the run
+    // loop wakes on any new order to consider it for the next auction cycle,
+    // and the fast-path handler receives the uid so it can look up the
+    // staged competition and settle out-of-band.
     let wake_runloop = Arc::new(tokio::sync::Notify::new());
     infra::order_notify::Notifier::new(banned_users.clone(), wake_runloop.clone())
         .spawn(db_write.pool.clone());
@@ -491,6 +495,19 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         None => None,
     };
 
+    let protocol_fees = domain::ProtocolFees::new(
+        &config.fee_policies,
+        config
+            .shared
+            .volume_fee_bucket_overrides
+            .iter()
+            .map(Into::into)
+            .collect(),
+        config.shared.enable_sell_equals_buy_volume_fee,
+        *eth.contracts().weth().address(),
+    );
+    let surplus_capturing_jit_order_owners = config.surplus_capturing_jit_order_owners.clone();
+
     let solvable_orders_cache = SolvableOrdersCache::new(
         config.min_order_validity_period,
         persistence.clone(),
@@ -499,19 +516,9 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         deny_listed_tokens.clone(),
         competition_native_price_updater.clone(),
         *eth.contracts().weth().address(),
-        domain::ProtocolFees::new(
-            &config.fee_policies,
-            config
-                .shared
-                .volume_fee_bucket_overrides
-                .iter()
-                .map(Into::into)
-                .collect(),
-            config.shared.enable_sell_equals_buy_volume_fee,
-            *eth.contracts().weth().address(),
-        ),
+        protocol_fees,
         penalty_cap_calculator,
-        config.surplus_capturing_jit_order_owners,
+        surplus_capturing_jit_order_owners,
         config.native_price_timeout,
         *eth.contracts().settlement().address(),
         config.disable_order_balance_filter,
@@ -649,6 +656,13 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let awaiter = maintenance
         .spawn_maintenance_task(eth.current_block().clone(), config.max_maintenance_timeout);
 
+    let settle_coordinator = Arc::new(SettleCallCoordinator::new(
+        eth.clone(),
+        persistence.clone(),
+        awaiter.clone(),
+        run_loop_config.max_settlement_transaction_wait,
+    ));
+
     let run = RunLoop::new(
         run_loop_config,
         eth,
@@ -662,6 +676,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         },
         awaiter,
         wake_runloop,
+        settle_coordinator,
     );
     run.run_forever(shutdown_controller).await;
 
