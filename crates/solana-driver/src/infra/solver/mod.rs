@@ -13,7 +13,7 @@ use {
         pubkey::Pubkey,
         signer::{Signer, keypair::Keypair},
     },
-    std::sync::Arc,
+    std::{num::NonZero, sync::Arc},
     thiserror::Error,
     tokio::sync::Semaphore,
 };
@@ -28,6 +28,7 @@ pub struct Solver {
     client: reqwest::Client,
     base_url: reqwest::Url,
     in_flight: Arc<Semaphore>,
+    solve_every_nth_auction: Option<NonZero<u64>>,
 }
 
 impl Solver {
@@ -44,6 +45,11 @@ impl Solver {
     /// The solver's settlement signer keypair.
     pub(crate) fn keypair(&self) -> &Keypair {
         &self.keypair
+    }
+
+    /// The auction-id stride this solver participates at, when throttled.
+    pub fn solve_every_nth_auction(&self) -> Option<NonZero<u64>> {
+        self.solve_every_nth_auction
     }
 
     /// Build a solver client from its configuration.
@@ -68,6 +74,7 @@ impl Solver {
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             in_flight: Arc::new(Semaphore::new(config.max_in_flight.get())),
+            solve_every_nth_auction: config.solve_every_nth_auction,
         })
     }
 
@@ -181,6 +188,7 @@ mod tests {
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
             signer_keypair: keypair_path,
             max_in_flight: NonZero::new(1).unwrap(),
+            solve_every_nth_auction: None,
         })
         .expect("solver construction should succeed");
         let auction = domain::Auction {

@@ -124,6 +124,7 @@ async fn driver_solves_against_live_jupiter_engine() {
         endpoint: format!("http://{addr}").parse().unwrap(),
         signer_keypair: keypair_path,
         max_in_flight: std::num::NonZero::new(1).unwrap(),
+        solve_every_nth_auction: None,
     })
     .expect("solver construction should succeed");
 
