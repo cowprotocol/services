@@ -79,6 +79,12 @@ pub struct Metrics {
 
     /// Auction filtered market orders due to missing native token price.
     auction_market_order_missing_price: IntGauge,
+
+    /// Orders kept out of an auction because their owner or receiver is
+    /// banned, accumulated over auctions. The companion
+    /// `auction_filtered_orders{reason="BannedUser"}` gauge holds the count of
+    /// the latest auction alone.
+    auction_blocked_banned_orders: IntCounter,
 }
 
 impl Metrics {
@@ -463,6 +469,9 @@ impl SolvableOrdersCache {
             .await;
         tracing::trace!("filtered invalid orders");
 
+        Metrics::get()
+            .auction_blocked_banned_orders
+            .inc_by(banned_user_orders.len() as u64);
         Metrics::track_filtered_orders(BannedUser, &banned_user_orders);
         Metrics::track_filtered_orders(InvalidSignature, &presignature_pending_orders);
         Metrics::track_filtered_orders(UnsupportedToken, &unsupported_token_orders);
