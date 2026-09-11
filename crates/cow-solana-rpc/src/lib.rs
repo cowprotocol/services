@@ -145,9 +145,13 @@ impl SolanaRPC {
         address: &Pubkey,
         before: Option<Signature>,
     ) -> Result<SignaturesPage, Error> {
+        // Pinned to confirmed like `slot` and `transaction`: the node's
+        // default is finalized, which would hide the confirmed tip's last
+        // ~32 slots from the scan.
         let config = solana_rpc_client::rpc_client::GetConfirmedSignaturesForAddress2Config {
             before,
             limit: Some(Self::SIGNATURES_PAGE),
+            commitment: Some(CommitmentConfig::confirmed()),
             ..Default::default()
         };
         let page = self
