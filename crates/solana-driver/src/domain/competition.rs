@@ -183,9 +183,10 @@ impl Competition {
         let program_id = self.blockchain.program_id();
 
         let orders = orders_with_trades(auction.orders.clone(), &solution);
-        for order in &orders {
-            tracing::debug!(order = %order.uid, "settling order");
-        }
+        tracing::debug!(
+            orders = ?orders.iter().map(|order| order.uid.to_string()).collect::<Vec<_>>(),
+            "settling orders"
+        );
 
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
 
