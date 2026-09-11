@@ -33,13 +33,7 @@ async fn route(
             };
             state
                 .competition()
-                .reencode_quote_solution(
-                    auction_id,
-                    req.solution_id,
-                    order,
-                    limit_prices,
-                    fast_path.native_prices,
-                )
+                .reencode_quote_solution(auction_id, req.solution_id, order, limit_prices)
                 .await?;
         }
         let result = state
