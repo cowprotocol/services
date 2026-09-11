@@ -71,10 +71,11 @@ pub async fn trades(
     let offset = params.offset.unwrap_or(DEFAULT_OFFSET);
     let limit = params.limit.unwrap_or(DEFAULT_LIMIT);
     if !(MIN_LIMIT..=MAX_LIMIT).contains(&limit) {
+        // The EVM v2 trades error, verbatim.
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
-            "LIMIT_OUT_OF_BOUNDS",
-            "The pagination limit is [1,1000].",
+            "InvalidLimit",
+            "limit must be between 1 and 1000",
         ));
     }
     // The limit is bounded above, and an offset past i64::MAX addresses no

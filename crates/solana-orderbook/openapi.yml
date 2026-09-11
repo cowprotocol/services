@@ -117,7 +117,7 @@ paths:
           description: |
             Both or neither filter set (`InvalidTradeFilter`), a malformed
             filter value (`InvalidOrderUid`, `InvalidOwner`), or the limit
-            out of bounds (`LIMIT_OUT_OF_BOUNDS`).
+            out of bounds (`InvalidLimit`).
           content:
             application/json:
               schema:
