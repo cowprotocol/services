@@ -139,7 +139,7 @@ async fn confirmed_slot_advances_latest_chain_slot_and_is_forwarded() {
     assert_eq!(slot.load(Ordering::Relaxed), 9_001);
     assert!(matches!(
         rx.try_recv(),
-        Ok(StreamUpdate::Slot { slot: Slot(9_001) })
+        Ok(StreamUpdate::Confirmed { slot: Slot(9_001) })
     ));
 }
 

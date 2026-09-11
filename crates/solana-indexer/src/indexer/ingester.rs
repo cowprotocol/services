@@ -200,8 +200,8 @@ where
 
     /// Route a slot message by status: confirmed advances the tip counter
     /// and flushes the decoder, finalized advances the finalized watermark,
-    /// and any other status is dropped since its transactions may still be
-    /// in flight.
+    /// and processed is dropped since those slots can still be skipped or
+    /// orphaned.
     async fn handle_slot(
         tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
@@ -212,7 +212,7 @@ where
                 latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
                 Self::forward(
                     tx,
-                    StreamUpdate::Slot {
+                    StreamUpdate::Confirmed {
                         slot: Slot(slot.slot),
                     },
                 )
