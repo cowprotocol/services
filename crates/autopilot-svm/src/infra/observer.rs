@@ -51,6 +51,9 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
             orders = auction.orders.len(),
             "solving"
         );
+        for order in &auction.orders {
+            tracing::debug!(auction_id = auction.id, order = %order.uid, "order in auction");
+        }
         self.store_events(
             auction.orders.iter().map(|order| order.uid).collect(),
             OrderEventLabel::Ready,

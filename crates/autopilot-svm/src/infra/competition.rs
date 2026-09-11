@@ -89,24 +89,25 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
                 }
                 match convert(driver_index, dto_solution, &by_uid) {
                     Ok(solution) => {
-                        tracing::debug!(
-                            driver = %driver.name,
-                            solution = solution.inner.id(),
-                            orders = ?solution
-                                .inner
-                                .orders()
-                                .iter()
-                                .map(|order| order.uid.to_string())
-                                .collect::<Vec<_>>(),
-                            "proposed solution"
-                        );
+                        for order in solution.inner.orders() {
+                            tracing::debug!(
+                                driver = %driver.name,
+                                solution = solution.inner.id(),
+                                order = %order.uid,
+                                "proposed solution"
+                            );
+                        }
                         solutions.push(solution);
                     }
-                    Err(uids) => tracing::warn!(
-                        driver = %driver.name,
-                        orders = ?uids.iter().map(ToString::to_string).collect::<Vec<_>>(),
-                        "solution names orders outside the auction, dropped"
-                    ),
+                    Err(uids) => {
+                        for uid in uids {
+                            tracing::warn!(
+                                driver = %driver.name,
+                                order = %uid,
+                                "solution names an order outside the auction, dropped"
+                            );
+                        }
+                    }
                 }
             }
         }
