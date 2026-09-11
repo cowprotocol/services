@@ -400,6 +400,22 @@ pub async fn run(config: Configuration) {
         }
     });
 
+    let volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride> = config
+        .shared
+        .volume_fee_bucket_overrides
+        .iter()
+        .map(Into::into)
+        .collect();
+    // Shared between the fast-path limit-price check in `OrderValidator` and
+    // the quote-time volume fee adjustment in `QuoteHandler` so a single
+    // configuration change propagates everywhere.
+    let volume_fee_policy = Arc::new(shared::fee::VolumeFeePolicy::new(
+        volume_fee_bucket_overrides,
+        config.volume_fee.as_ref().and_then(|c| c.factor),
+        config.shared.enable_sell_equals_buy_volume_fee,
+        *native_token.address(),
+    ));
+
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
@@ -427,6 +443,9 @@ pub async fn run(config: Configuration) {
         app_data_validator.clone(),
         config.order_validation.max_gas_per_order,
         config.order_validation.same_tokens_policy,
+        config.order_quoting.default_fast_path_exclusivity,
+        Some(volume_fee_policy.clone()),
+        config.order_quoting.max_partner_fee,
     ));
     let ipfs = config
         .ipfs
@@ -455,20 +474,12 @@ pub async fn run(config: Configuration) {
     ));
 
     check_database_connection(orderbook.as_ref()).await;
-    let volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride> = config
-        .shared
-        .volume_fee_bucket_overrides
-        .iter()
-        .map(Into::into)
-        .collect();
     let quotes = QuoteHandler::new(
         order_validator,
         optimal_quoter.clone(),
         app_data.clone(),
         config.volume_fee,
-        volume_fee_bucket_overrides,
-        config.shared.enable_sell_equals_buy_volume_fee,
-        *native_token.address(),
+        volume_fee_policy,
         token_info_fetcher.clone(),
     )
     .with_fast_quoter(fast_quoter)
