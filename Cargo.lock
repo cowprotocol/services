@@ -3779,6 +3779,7 @@ dependencies = [
  "solana-rpc-client-api",
  "solana-sdk",
  "solana-transaction-status-client-types",
+ "tracing",
  "url",
 ]
 
