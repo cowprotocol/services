@@ -37,7 +37,7 @@ use {
     eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
-    shared::db_order_conversions::full_order_into_model_order,
+    shared::db_order_conversions::{fast_path_order_into_model, full_order_into_model_order},
     std::{
         collections::{HashMap, HashSet},
         ops::DerefMut,
@@ -1036,6 +1036,140 @@ impl Persistence {
             .map(|o| crate::domain::OrderUid(o.0))
             .collect())
     }
+
+    /// Recovers what's needed to settle a fast-path order via the driver's
+    /// `/settle`, or `None` when `uid` is not a fast-path order (either no
+    /// linked `order_quotes.quote_id`, or the staged competition data has
+    /// already been moved into the permanent tables).
+    pub async fn fast_path_order(
+        &self,
+        uid: domain::OrderUid,
+    ) -> anyhow::Result<Option<FastPathOrder>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["fast_path_order"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+
+        let Some(row) =
+            database::fast_path::unfinalized_fast_path_order(&mut ex, &ByteArray(uid.0)).await?
+        else {
+            return Ok(None);
+        };
+
+        let model_order = fast_path_order_into_model(&row)?;
+        let staged = serde_json::from_value(row.competition)
+            .context("deserialize staged quote competition")?;
+        Ok(Some(FastPathOrder {
+            model_order,
+            quote_id: row.quote_id,
+            staged,
+        }))
+    }
+
+    /// Moves a fast-path order's staged competition into the permanent
+    /// tables. In a single transaction, writes `competition_auctions`,
+    /// the pre-built `proposed_solutions` / `proposed_trade_executions`
+    /// rows carried on the [`FastPathPromotion`], its fee-policy rows, and
+    /// deletes the `quote_competitions` staging row.
+    ///
+    /// All fee math and per-solution encoding decisions are done by the
+    /// caller (`fast_path.rs`) — this function only stitches the caller's
+    /// domain values into the surrounding DB rows and inserts everything
+    /// atomically.
+    pub async fn finalize_fast_path(&self, promotion: FastPathPromotion) -> anyhow::Result<()> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["finalize_fast_path"])
+            .start_timer();
+
+        let (price_tokens, price_values): (Vec<_>, Vec<_>) = promotion
+            .native_prices
+            .iter()
+            .map(|(token, value)| (ByteArray(token.0.0), u256_to_big_decimal(value)))
+            .unzip();
+
+        let auction_row = database::auction::Auction {
+            id: promotion.auction_id,
+            block: i64::try_from(promotion.block).context("block does not fit in i64")?,
+            deadline: i64::try_from(promotion.deadline).context("deadline does not fit in i64")?,
+            order_uids: vec![ByteArray(promotion.order_uid.0)],
+            price_tokens,
+            price_values,
+            surplus_capturing_jit_order_owners: Vec::new(),
+            penalty_caps_native: Some(Vec::new()),
+        };
+
+        let policy_rows: Vec<_> = promotion
+            .fee_policies
+            .iter()
+            .map(|p| dto::fee_policy::from_domain(promotion.auction_id, promotion.order_uid, *p))
+            .collect();
+
+        let mut tx = self.postgres.pool.begin().await.context("begin")?;
+        database::auction::save(tx.deref_mut(), auction_row)
+            .await
+            .context("save competition_auctions row")?;
+        database::solver_competition_v2::save(&mut tx, promotion.auction_id, &promotion.solutions)
+            .await
+            .context("save proposed_solutions / proposed_trade_executions")?;
+        database::fee_policies::insert_batch(tx.deref_mut(), policy_rows)
+            .await
+            .context("insert fast-path fee policies")?;
+        database::fast_path::delete_competition(tx.deref_mut(), promotion.quote_id)
+            .await
+            .context("delete quote_competitions staging row")?;
+        tx.commit().await.context("commit")?;
+        Ok(())
+    }
+}
+
+/// The data the autopilot needs to settle a fast-path order out of competition.
+pub struct FastPathOrder {
+    /// The order in the raw API model form. Callers pass this to
+    /// `ProtocolFees::apply` and can then convert it to `domain::Order` via
+    /// `boundary::order::to_domain` once the resulting policies are known.
+    pub model_order: model::order::Order,
+    /// `quote_competitions.quote_id` — passed back to `finalize_fast_path`
+    /// so it can drop the staging row atomically with the promotion.
+    pub quote_id: database::quotes::QuoteId,
+    /// Full staged competition data.
+    pub staged: shared::quote_storage::StagedQuoteCompetition,
+}
+
+impl FastPathOrder {
+    /// The winning solution. Non-empty by construction of
+    /// `save_quote_competition`, which bails out when no quotes were
+    /// produced.
+    pub fn winner(&self) -> &shared::quote_storage::StagedSolution {
+        self.staged
+            .solutions
+            .first()
+            .expect("staged competition is guaranteed to have at least one solution")
+    }
+}
+
+/// Fully-computed input to [`Persistence::finalize_fast_path`]. The fast-path
+/// handler assembles this from `FastPathOrder` + the applicable fee policies,
+/// including the pre-built `solver_competition_v2` rows — persistence only
+/// wraps them in a DB transaction and inserts.
+pub struct FastPathPromotion {
+    pub quote_id: database::quotes::QuoteId,
+    pub auction_id: database::auction::AuctionId,
+    pub order_uid: domain::OrderUid,
+    /// Block and deadline recorded on the promoted competition row — the
+    /// window the fast-path handler committed to when asking the driver to
+    /// settle.
+    pub block: u64,
+    pub deadline: u64,
+    pub native_prices: HashMap<eth::Address, eth::U256>,
+    /// Fully-built solver-competition rows (one per staged solution).
+    /// Constructed by the caller so per-bid encoding decisions —
+    /// `filtered_out`, score, executed amounts — live in the domain
+    /// handler rather than here.
+    pub solutions: Vec<database::solver_competition_v2::Solution>,
+    pub fee_policies: Vec<domain::fee::Policy>,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
