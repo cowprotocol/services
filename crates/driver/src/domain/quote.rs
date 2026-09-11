@@ -151,9 +151,7 @@ impl Order {
             solver::Liquidity::Skip => Default::default(),
         };
 
-        let auction = self
-            .single_order_auction(eth, tokens, solver.quote_using_limit_orders())
-            .await?;
+        let auction = self.single_order_auction(eth, tokens).await?;
         let auction = competition
             .risk_detector
             .filter_unsupported_orders_in_auction(auction)
@@ -193,7 +191,6 @@ impl Order {
         &self,
         eth: &Ethereum,
         tokens: &infra::tokens::Fetcher,
-        quote_using_limit_orders: bool,
     ) -> Result<competition::Auction, Error> {
         let tokens = tokens.get(&[self.buy().token, self.sell().token]).await;
 
@@ -213,11 +210,9 @@ impl Order {
                     buy: self.buy(),
                     sell: self.sell(),
                     side: self.side,
-                    kind: if quote_using_limit_orders {
-                        competition::order::Kind::Limit
-                    } else {
-                        competition::order::Kind::Market
-                    },
+                    // Quotes always use limit orders so that the engine
+                    // determines the fee (see `Order::solver_determines_fee`).
+                    kind: competition::order::Kind::Limit,
                     pre_interactions: Default::default(),
                     post_interactions: Default::default(),
                     sell_token_balance: competition::order::SellTokenBalance::Erc20,

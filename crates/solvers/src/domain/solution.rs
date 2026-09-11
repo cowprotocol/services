@@ -230,18 +230,18 @@ impl Single {
         }
 
         let fee = if order.solver_determines_fee() {
-            // TODO: If the order has signed `fee` amount already, we should
-            // discount it from the surplus fee. ATM, users would pay both a
-            // full order fee as well as a solver computed fee. Note that this
-            // is fine for now, since there is no way to create limit orders
-            // with non-zero fees.
-            eth::SellTokenAmount(
-                sell_token?.ether_value(eth::Ether(
-                    swap.0
-                        .checked_add(gas_offset.0)?
-                        .checked_mul(gas_price.0.0)?,
-                ))?,
-            )
+            match sell_token {
+                Some(price) => eth::SellTokenAmount(
+                    price.ether_value(eth::Ether(
+                        swap.0
+                            .checked_add(gas_offset.0)?
+                            .checked_mul(gas_price.0.0)?,
+                    ))?,
+                ),
+                // For quote auctions (which don't contain native prices) we fall back to a zero
+                // fee. The orderbook API will estimate a proper fee itself.
+                None => Default::default(),
+            }
         } else {
             // Orders whose fee the solver doesn't determine (market orders,
             // whose fee was pre-determined by the protocol) are not charged

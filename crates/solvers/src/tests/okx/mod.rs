@@ -1,6 +1,7 @@
 use {crate::tests, std::net::SocketAddr};
 
 mod api_calls;
+mod limit_order_quoting;
 mod market_order;
 mod not_found;
 mod out_of_price;

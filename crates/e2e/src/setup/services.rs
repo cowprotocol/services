@@ -273,7 +273,6 @@ impl<'a> Services<'a> {
                 .await,
             ],
             colocation::LiquidityProvider::UniswapV2,
-            false,
         );
 
         let test_quoter = ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver");
@@ -406,7 +405,6 @@ impl<'a> Services<'a> {
             self.contracts,
             solvers,
             colocation::LiquidityProvider::UniswapV2,
-            false,
         );
 
         self.start_autopilot(Some(Duration::from_secs(11)), autopilot_config)
