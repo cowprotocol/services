@@ -17,6 +17,7 @@ solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-sdk = { workspace = true }
 solana-transaction-status-client-types = { workspace = true }
+tracing = { workspace = true }
 url = { workspace = true }
 
 [features]

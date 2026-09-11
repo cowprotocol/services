@@ -33,6 +33,7 @@ use {
             },
         },
     },
+    base64::Engine,
     bytes::Bytes,
     cow_settlement_interface::{
         Pubkey as InterfacePubkey,
@@ -397,7 +398,6 @@ fn rpc_transaction_json(
     tx: &solana_sdk::transaction::VersionedTransaction,
     slot: u64,
 ) -> serde_json::Value {
-    use base64::Engine;
     let bytes = bincode::serialize(tx).unwrap();
     serde_json::json!({
         "slot": slot,
@@ -418,7 +418,8 @@ fn rpc_transaction_json(
     })
 }
 
-/// A signed legacy transaction carrying the given instruction.
+/// A signed transaction in the `VersionedTransaction` envelope `decode()`
+/// returns, carrying a legacy message with the given instruction.
 fn versioned_tx(
     instruction: solana_sdk::instruction::Instruction,
 ) -> solana_sdk::transaction::VersionedTransaction {

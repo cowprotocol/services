@@ -1,12 +1,9 @@
 //! RPC backfill: recover the gap between the persisted watermark and the
-//! live tip when it exceeds the stream provider's replay window.
-//!
-//! The node's transaction history is deep where the stream's replay is
-//! shallow, so recovery scans the tracked programs' signatures back to the
-//! watermark, re-fetches each transaction, and pushes it through the same
-//! decode and flush path the stream uses. The watermark advances with every
-//! flushed slot and ends at the scanned tip, which puts the next stream
-//! subscription back inside the replay window.
+//! live tip when it exceeds the stream's replay window. The node's deep
+//! transaction history is scanned back to the watermark and every tracked
+//! transaction runs through the same decode and flush path the stream uses.
+//! The watermark ends at the scanned tip, back inside the replay window, so
+//! the next subscription resumes without a hole.
 
 use {
     super::{Decoder, SlotBuffer},
@@ -27,8 +24,8 @@ use {
             TransactionStatusMeta,
         },
     },
-    cow_solana_rpc::EncodedConfirmedTransactionWithStatusMeta,
-    solana_sdk::{bs58, message::VersionedMessage},
+    cow_solana_rpc::{EncodedConfirmedTransactionWithStatusMeta, SolanaRPC},
+    solana_sdk::{bs58, message::VersionedMessage, pubkey::Pubkey},
     solana_transaction_status_client_types::{UiInstruction, option_serializer::OptionSerializer},
     std::collections::BTreeMap,
 };
@@ -37,24 +34,29 @@ impl Decoder {
     /// Index every tracked transaction between the persisted watermark and
     /// the live tip from RPC history, then advance the watermark to that
     /// tip. A missing watermark is a cold start with nothing to recover.
-    ///
     /// A failure leaves the watermark wherever the last complete slot flush
-    /// put it and records the remaining gap as a lost range, so the caller
-    /// can fall back to a live-tip subscription without losing track of the
-    /// hole.
+    /// put it and records the remaining gap as a lost range.
     pub(crate) async fn backfill(&self) -> Result<(), PersistenceError> {
         let result = self.backfill_inner().await;
-        if result.is_err()
-            && let (Ok(Some(from)), Ok(tip)) = (
+        if let Err(err) = &result {
+            tracing::error!(?err, "backfill failed, recording the gap as lost");
+            match (
                 self.persistence.last_indexed_slot().await,
                 self.rpc.slot().await,
-            )
-            && let Err(err) = self
-                .persistence
-                .record_lost_range(from, Slot(tip), "backfill failed")
-                .await
-        {
-            tracing::error!(?err, "failed to record the lost range");
+            ) {
+                (Ok(Some(from)), Ok(tip)) => {
+                    if let Err(err) = self
+                        .persistence
+                        .record_lost_range(from, Slot(tip), "backfill failed")
+                        .await
+                    {
+                        tracing::error!(?err, "failed to record the lost range");
+                    }
+                }
+                (watermark, tip) => {
+                    tracing::error!(?watermark, ?tip, "failed to bound the lost range");
+                }
+            }
         }
         result
     }
@@ -68,58 +70,47 @@ impl Decoder {
             return Ok(());
         }
 
-        // Newest-first pages per program, walked back to the watermark, then
-        // reversed into execution order. Within one slot the node lists
-        // signatures newest first, so the reversal restores intra-slot order
-        // per program. A transaction touching both programs appears in both
-        // scans, the slot buffer's idempotent writes absorb the duplicate.
+        // Signatures grouped by slot, ascending. Within one slot the node
+        // lists signatures newest first, so the reversed walk restores
+        // execution order per program. A transaction touching both programs
+        // shows up in both scans, the per-slot list keeps one copy.
         let mut programs = vec![self.settlement_program];
         programs.extend(self.solflow_program);
-        let mut entries: Vec<(Slot, Signature)> = Vec::new();
+        let mut slots: BTreeMap<Slot, Vec<Signature>> = BTreeMap::new();
         for program in programs {
-            let mut before = None;
-            'pages: loop {
-                let page = self
-                    .rpc
-                    .signatures_for_address(&program, before)
-                    .await
-                    .map_err(PersistenceError::Rpc)?;
-                let last_page = page.len() < cow_solana_rpc::SolanaRPC::SIGNATURES_PAGE;
-                before = page.last().map(|(signature, _)| *signature);
-                for (signature, slot) in page {
-                    if Slot(slot) <= watermark {
-                        break 'pages;
-                    }
-                    entries.push((Slot(slot), signature));
-                }
-                if last_page {
-                    break;
+            for (slot, signature) in self
+                .signatures_since(&program, watermark)
+                .await?
+                .into_iter()
+                .rev()
+            {
+                let signatures = slots.entry(slot).or_default();
+                if !signatures.contains(&signature) {
+                    signatures.push(signature);
                 }
             }
         }
-        entries.reverse();
-        entries.sort_by_key(|(slot, _)| *slot);
-        entries.dedup_by_key(|(_, signature)| *signature);
 
-        let mut pending: BTreeMap<Slot, SlotBuffer> = BTreeMap::new();
-        for (slot, signature) in entries {
-            let encoded = self
-                .rpc
-                .transaction(&signature)
-                .await
-                .map_err(PersistenceError::Rpc)?;
-            let buffer = pending.entry(slot).or_default();
-            match convert(encoded, signature) {
+        for (slot, signatures) in slots {
+            let mut buffer = SlotBuffer::default();
+            for signature in signatures {
+                let encoded = self.rpc.transaction(&signature).await.map_err(|err| {
+                    tracing::error!(%signature, "failed to fetch a transaction");
+                    PersistenceError::Rpc(err)
+                })?;
                 // The same decode the stream path runs: events buffer, a
                 // failed decode dead-letters the whole transaction.
-                Some(info) => match self.decode(info, slot, signature) {
-                    Ok(events) => buffer.events.extend(events),
-                    Err(super::DecodeFailed) => buffer.dead_letters.push(signature),
-                },
-                None => buffer.dead_letters.push(signature),
+                match convert(encoded, signature) {
+                    Some(info) => match self.decode(info, slot, signature) {
+                        Ok(events) => buffer.events.extend(events),
+                        Err(super::DecodeFailed) => buffer.dead_letters.push(signature),
+                    },
+                    None => {
+                        tracing::warn!(%signature, "undecodable payload, dead-lettered");
+                        buffer.dead_letters.push(signature);
+                    }
+                }
             }
-        }
-        for (slot, buffer) in pending {
             self.flush_slot(slot, buffer, true).await?;
         }
         // Slots past the last tracked transaction are quiet, the scan proved
@@ -127,13 +118,43 @@ impl Decoder {
         self.persistence.write_last_indexed_slot(tip).await?;
         Ok(())
     }
+
+    /// The program's (slot, signature) history above the watermark, newest
+    /// first, paged from the node until a page dips to the watermark or the
+    /// history runs out.
+    async fn signatures_since(
+        &self,
+        program: &Pubkey,
+        watermark: Slot,
+    ) -> Result<Vec<(Slot, Signature)>, PersistenceError> {
+        let mut entries: Vec<(Slot, Signature)> = Vec::new();
+        let mut before = None;
+        loop {
+            let page = self
+                .rpc
+                .signatures_for_address(program, before)
+                .await
+                .map_err(PersistenceError::Rpc)?;
+            let page_len = page.len();
+            before = page.last().map(|(signature, _)| *signature);
+            let fresh = entries.len();
+            entries.extend(
+                page.into_iter()
+                    .take_while(|(_, slot)| Slot(*slot) > watermark)
+                    .map(|(signature, slot)| (Slot(slot), signature)),
+            );
+            let reached_watermark = entries.len() - fresh < page_len;
+            if reached_watermark || page_len < SolanaRPC::SIGNATURES_PAGE {
+                return Ok(entries);
+            }
+        }
+    }
 }
 
 /// Rebuild the stream's wire shape from an RPC-fetched transaction, mapping
 /// exactly what the decoder reads: account keys with the ALT-loaded
 /// addresses, top-level and inner instructions, and the error marker.
-/// `None` when the payload cannot be decoded, which dead-letters the
-/// transaction for another replay attempt.
+/// `None` when the payload cannot be decoded.
 pub(super) fn convert(
     encoded: EncodedConfirmedTransactionWithStatusMeta,
     signature: Signature,
@@ -232,7 +253,9 @@ pub(super) fn convert(
             }),
         }),
         meta: Some(TransactionStatusMeta {
-            // Only presence is read: a reverted transaction emits no events.
+            // The decoder only checks whether an error is present (a
+            // reverted transaction emits no events), so the RPC error maps
+            // to an empty marker rather than re-encoded bytes.
             err: meta
                 .err
                 .as_ref()

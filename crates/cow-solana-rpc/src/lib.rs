@@ -153,9 +153,18 @@ impl SolanaRPC {
             .await?;
         Ok(page
             .into_iter()
-            .filter_map(|status| {
-                let signature = status.signature.parse().ok()?;
-                Some((signature, status.slot))
+            .filter_map(|status| match status.signature.parse() {
+                Ok(signature) => Some((signature, status.slot)),
+                // The node returned a malformed signature. There is nothing
+                // to fetch or dead-letter without one, so skip it loudly.
+                Err(err) => {
+                    tracing::warn!(
+                        ?err,
+                        signature = %status.signature,
+                        "skipping an unparsable signature"
+                    );
+                    None
+                }
             })
             .collect())
     }
