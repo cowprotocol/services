@@ -1,10 +1,9 @@
 use {
-    super::{AmmOrderExecution, ConstantProductOrder, SettlementHandling},
+    super::{ConstantProductOrder, SettlementHandling},
     crate::{
         interactions::UniswapInteraction,
         liquidity::Liquidity,
         liquidity_collector::LiquidityCollecting,
-        settlement::SettlementEncoder,
     },
     alloy::primitives::Address,
     anyhow::Result,
@@ -100,13 +99,5 @@ impl Inner {
 impl SettlementHandling<ConstantProductOrder> for Inner {
     fn as_any(&self) -> &dyn std::any::Any {
         self
-    }
-
-    // Creates the required interaction to convert the given input into output.
-    // Assumes slippage is already applied to `input_max`.
-    fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
-        let swap = Arc::new(self.settle(execution.input_max, execution.output));
-        encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
-        Ok(())
     }
 }
