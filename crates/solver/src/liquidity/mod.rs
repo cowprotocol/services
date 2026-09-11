@@ -1,13 +1,10 @@
 pub mod balancer_v2;
-pub mod slippage;
 pub mod uniswap_v2;
 pub mod uniswap_v3;
 pub mod zeroex;
 
 use {
-    crate::settlement::SettlementEncoder,
     alloy::primitives::{Address, U256},
-    anyhow::Result,
     liquidity_sources::{
         balancer_v2::{
             pool_fetching::{
@@ -26,7 +23,6 @@ use {
         order::{Order, OrderKind, OrderUid},
     },
     num::rational::Ratio,
-    shared::http_solver::model::TokenAmount,
     std::{collections::BTreeMap, sync::Arc},
     strum::IntoStaticStr,
 };
@@ -42,16 +38,14 @@ pub enum Liquidity {
     Concentrated(ConcentratedLiquidity),
 }
 
-/// A trait associating some liquidity model to how it is executed and encoded
-/// in a settlement (through a `SettlementHandling` reference). This allows
+/// A trait associating some liquidity model with its settlement handler,
+/// which the driver downcasts to build the actual interactions. This allows
 /// different liquidity types to be modeled the same way.
 pub trait Settleable {
-    type Execution;
-
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self>;
 }
 
-/// Specifies how a liquidity execution gets encoded into a settlement.
+/// Gives access to the concrete settlement handler of a liquidity source.
 pub trait SettlementHandling<L>: Send + Sync
 where
     L: Settleable,
@@ -67,8 +61,6 @@ where
     ///
     /// This should eventually be purged with fire.
     fn as_any(&self) -> &dyn std::any::Any;
-
-    fn encode(&self, execution: L::Execution, encoder: &mut SettlementEncoder) -> Result<()>;
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -171,27 +163,7 @@ impl std::fmt::Debug for LimitOrder {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LimitOrderExecution {
-    /// The amount that the order `side` (`buy`, `sell`) should be filled by
-    /// this trade.
-    pub filled: U256,
-    /// For limit orders this value gets computed by the
-    /// solver already refers to the `filled` amount. In this case no
-    /// further scaling is necessary for partial fills. For market orders
-    /// this is signed user fee amount.
-    pub fee: U256,
-}
-
-impl LimitOrderExecution {
-    pub fn new(filled: U256, fee: U256) -> Self {
-        Self { filled, fee }
-    }
-}
-
 impl Settleable for LimitOrder {
-    type Execution = LimitOrderExecution;
-
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
         &*self.settlement_handling
     }
@@ -342,32 +314,19 @@ impl std::fmt::Debug for StablePoolOrder {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AmmOrderExecution {
-    pub input_max: TokenAmount,
-    pub output: TokenAmount,
-    pub internalizable: bool,
-}
-
 impl Settleable for ConstantProductOrder {
-    type Execution = AmmOrderExecution;
-
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
         &*self.settlement_handling
     }
 }
 
 impl Settleable for WeightedProductOrder {
-    type Execution = AmmOrderExecution;
-
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
         &*self.settlement_handling
     }
 }
 
 impl Settleable for StablePoolOrder {
-    type Execution = AmmOrderExecution;
-
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
         &*self.settlement_handling
     }
@@ -395,8 +354,6 @@ impl std::fmt::Debug for ConcentratedLiquidity {
 }
 
 impl Settleable for ConcentratedLiquidity {
-    type Execution = AmmOrderExecution;
-
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
         &*self.settlement_handling
     }
@@ -404,54 +361,26 @@ impl Settleable for ConcentratedLiquidity {
 
 #[cfg(test)]
 pub mod tests {
-    use {super::*, std::sync::Mutex};
+    use super::*;
 
-    pub struct CapturingSettlementHandler<L>
-    where
-        L: Settleable,
-    {
-        pub calls: Mutex<Vec<L::Execution>>,
-    }
-
-    // Manual implementation seems to be needed as `derive(Default)` adds an
-    // unneeded `L::Execution: Default` type bound.
-    impl<L> Default for CapturingSettlementHandler<L>
-    where
-        L: Settleable,
-    {
-        fn default() -> Self {
-            Self {
-                calls: Default::default(),
-            }
-        }
-    }
+    /// Settlement handler for tests that don't care about settlement handling.
+    pub struct CapturingSettlementHandler<L>(std::marker::PhantomData<fn() -> L>);
 
     impl<L> CapturingSettlementHandler<L>
     where
         L: Settleable,
-        L::Execution: Clone,
     {
         pub fn arc() -> Arc<Self> {
-            Arc::new(Default::default())
-        }
-
-        pub fn calls(&self) -> Vec<L::Execution> {
-            self.calls.lock().unwrap().clone()
+            Arc::new(Self(Default::default()))
         }
     }
 
     impl<L> SettlementHandling<L> for CapturingSettlementHandler<L>
     where
         L: Settleable + 'static,
-        L::Execution: Send + Sync,
     {
         fn as_any(&self) -> &dyn std::any::Any {
             self
-        }
-
-        fn encode(&self, execution: L::Execution, _: &mut SettlementEncoder) -> Result<()> {
-            self.calls.lock().unwrap().push(execution);
-            Ok(())
         }
     }
 

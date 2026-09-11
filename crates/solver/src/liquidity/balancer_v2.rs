@@ -3,15 +3,8 @@
 use {
     crate::{
         interactions::BalancerSwapGivenOutInteraction,
-        liquidity::{
-            AmmOrderExecution,
-            Liquidity,
-            SettlementHandling,
-            StablePoolOrder,
-            WeightedProductOrder,
-        },
+        liquidity::{Liquidity, SettlementHandling, StablePoolOrder, WeightedProductOrder},
         liquidity_collector::LiquidityCollecting,
-        settlement::SettlementEncoder,
     },
     alloy::primitives::{Address, B256},
     anyhow::Result,
@@ -159,34 +152,11 @@ impl SettlementHandling<WeightedProductOrder> for SettlementHandler {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-
-    fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
-        self.inner_encode(execution, encoder)
-    }
 }
 
 impl SettlementHandling<StablePoolOrder> for SettlementHandler {
     fn as_any(&self) -> &dyn std::any::Any {
         self
-    }
-
-    fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
-        self.inner_encode(execution, encoder)
-    }
-}
-
-impl SettlementHandler {
-    fn inner_encode(
-        &self,
-        execution: AmmOrderExecution,
-        encoder: &mut SettlementEncoder,
-    ) -> Result<()> {
-        encoder.append_to_execution_plan_internalizable(
-            Arc::new(self.swap(execution.input_max, execution.output)),
-            execution.internalizable,
-        );
-
-        Ok(())
     }
 }
 
@@ -216,10 +186,6 @@ mod tests {
         maplit::{btreemap, hashset},
         mockall::predicate::*,
         model::TokenPair,
-        shared::{
-            http_solver::model::{InternalizationStrategy, TokenAmount},
-            interaction::Interaction,
-        },
     };
 
     fn dummy_contracts() -> (Address, BalancerV2Vault::Instance) {
@@ -408,69 +374,6 @@ mod tests {
         assert_eq!(
             (&stable_orders[0].reserves, &stable_orders[0].fee),
             (&stable_pools[0].reserves, &"0.002".parse().unwrap()),
-        );
-    }
-
-    #[test]
-    fn encodes_swaps_in_settlement() {
-        let (settlement, vault) = dummy_contracts();
-        let inner = Arc::new(Inner {
-            settlement,
-            vault: *vault.address(),
-        });
-        let handler = SettlementHandler {
-            pool_id: B256::repeat_byte(0x90),
-            inner,
-        };
-
-        let mut encoder = SettlementEncoder::new(Default::default());
-        SettlementHandling::<WeightedProductOrder>::encode(
-            &handler,
-            AmmOrderExecution {
-                input_max: TokenAmount::new(Address::repeat_byte(0x70), U256::from(10)),
-                output: TokenAmount::new(Address::repeat_byte(0x71), U256::from(11)),
-                internalizable: false,
-            },
-            &mut encoder,
-        )
-        .unwrap();
-        SettlementHandling::<WeightedProductOrder>::encode(
-            &handler,
-            AmmOrderExecution {
-                input_max: TokenAmount::new(Address::repeat_byte(0x71), U256::from(12)),
-                output: TokenAmount::new(Address::repeat_byte(0x72), U256::from(13)),
-                internalizable: false,
-            },
-            &mut encoder,
-        )
-        .unwrap();
-
-        let [_, interactions, _] = encoder
-            .finish(InternalizationStrategy::SkipInternalizableInteraction)
-            .interactions
-            .into_array();
-        assert_eq!(
-            interactions,
-            [
-                BalancerSwapGivenOutInteraction {
-                    settlement,
-                    vault: *vault.address(),
-                    pool_id: B256::repeat_byte(0x90),
-                    asset_in_max: TokenAmount::new(Address::repeat_byte(0x70), U256::from(10)),
-                    asset_out: TokenAmount::new(Address::repeat_byte(0x71), U256::from(11)),
-                    user_data: Default::default(),
-                }
-                .encode(),
-                BalancerSwapGivenOutInteraction {
-                    settlement,
-                    vault: *vault.address(),
-                    pool_id: B256::repeat_byte(0x90),
-                    asset_in_max: TokenAmount::new(Address::repeat_byte(0x71), U256::from(12)),
-                    asset_out: TokenAmount::new(Address::repeat_byte(0x72), U256::from(13)),
-                    user_data: Default::default(),
-                }
-                .encode(),
-            ],
         );
     }
 }
