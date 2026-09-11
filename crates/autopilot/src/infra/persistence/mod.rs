@@ -1050,20 +1050,21 @@ impl Persistence {
             .with_label_values(&["fast_path_order"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-
-        let Some(row) =
+        let row = {
+            let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
             database::fast_path::unfinalized_fast_path_order(&mut ex, &ByteArray(uid.0)).await?
-        else {
+        };
+
+        let Some(fast_path_order) = row else {
             return Ok(None);
         };
 
-        let model_order = fast_path_order_into_model(&row)?;
-        let staged = serde_json::from_value(row.competition)
+        let model_order = fast_path_order_into_model(&fast_path_order)?;
+        let staged = serde_json::from_value(fast_path_order.competition)
             .context("deserialize staged quote competition")?;
         Ok(Some(FastPathOrder {
             model_order,
-            quote_id: row.quote_id,
+            quote_id: fast_path_order.quote_id,
             staged,
         }))
     }
@@ -1150,10 +1151,10 @@ impl FastPathOrder {
     }
 }
 
-/// Fully-computed input to [`Persistence::finalize_fast_path`]. The fast-path
-/// handler assembles this from `FastPathOrder` + the applicable fee policies,
-/// including the pre-built `solver_competition_v2` rows — persistence only
-/// wraps them in a DB transaction and inserts.
+/// All the data needed to finalize a fast path order. The finalization happens
+/// by promoting the data that was so far only in the temporary
+/// `quote_competitions` table into the persistent tables that describe the
+/// usual auctions (e.g. `competition_auctions`, `proposed_solutions`, etc.).
 pub struct FastPathPromotion {
     pub quote_id: database::quotes::QuoteId,
     pub auction_id: database::auction::AuctionId,

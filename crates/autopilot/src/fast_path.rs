@@ -62,9 +62,9 @@ impl FastPathHandler {
     }
 
     /// Spawns the fast-path listener: pulls order uids off `receiver`, looks
-    /// each one up in `quote_competitions`, and — if a staging row exists —
-    /// dispatches to [`Self::handle`] on a fresh task so a slow handler run
-    /// never blocks subsequent orders.
+    /// each one up in `quote_competitions`, and — if a row exists for a yet
+    /// to be finalized fast-path order — dispatches to [`Self::handle`] on a
+    /// fresh task so a slow handler run never blocks subsequent orders.
     pub fn spawn(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<domain::OrderUid>) {
         tokio::spawn(async move {
             while let Some(order_uid) = receiver.next().await {
