@@ -93,9 +93,9 @@ jobs:
         with:
           cache-all-crates: true
           cache-workspace-crates: true
-          # Always use whatever cache was last build for main
+          # Always use whatever cache was last written for main
           shared-key: main
-          # Only update the cache if on main
+          # Only write to the cache if running on main
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build release binaries
