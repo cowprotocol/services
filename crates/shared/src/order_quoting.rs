@@ -1172,6 +1172,7 @@ mod tests {
                             solver: Address::repeat_byte(1),
                             verified: false,
                             supports_fast_path: false,
+                            solution_id: None,
                             execution: Default::default(),
                         },
                         [],
@@ -1332,6 +1333,7 @@ mod tests {
                             solver: Address::repeat_byte(1),
                             verified: false,
                             supports_fast_path: false,
+                            solution_id: None,
                             execution: Default::default(),
                         },
                         [],
@@ -1487,6 +1489,7 @@ mod tests {
                             solver: Address::repeat_byte(1),
                             verified: false,
                             supports_fast_path: false,
+                            solution_id: None,
                             execution: Default::default(),
                         },
                         [],
@@ -1625,6 +1628,7 @@ mod tests {
                         solver: Address::repeat_byte(1),
                         verified: false,
                         supports_fast_path: false,
+                        solution_id: None,
                         execution: Default::default(),
                     },
                     [],
@@ -1703,6 +1707,7 @@ mod tests {
                         solver: Address::repeat_byte(1),
                         verified: false,
                         supports_fast_path: false,
+                        solution_id: None,
                         execution: Default::default(),
                     },
                     [],
@@ -2191,6 +2196,7 @@ mod tests {
             solver: Address::repeat_byte(7),
             verified: true,
             supports_fast_path: false,
+            solution_id: None,
             execution: Default::default(),
         };
 
@@ -2249,6 +2255,7 @@ mod tests {
             solver: Address::repeat_byte(7),
             verified: false,
             supports_fast_path: false,
+            solution_id: None,
             execution: Default::default(),
         };
 
@@ -2354,6 +2361,7 @@ mod tests {
                     solver: Address::repeat_byte(1),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
                 Ok(price_estimation::Estimate {
@@ -2362,6 +2370,7 @@ mod tests {
                     solver: Address::repeat_byte(2),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ])
@@ -2410,6 +2419,7 @@ mod tests {
                     solver: Address::repeat_byte(1),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
                 // zero gas - must be dropped silently
@@ -2419,6 +2429,7 @@ mod tests {
                     solver: Address::repeat_byte(2),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
                 // zero out_amount - must be dropped silently
@@ -2428,6 +2439,7 @@ mod tests {
                     solver: Address::repeat_byte(3),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ])
@@ -2515,6 +2527,7 @@ mod tests {
                 solver: Address::repeat_byte(1),
                 verified: false,
                 supports_fast_path: false,
+                solution_id: None,
                 execution: Default::default(),
             })])
             .boxed()
@@ -2564,6 +2577,7 @@ mod tests {
                 solver: Address::repeat_byte(1),
                 verified: false,
                 supports_fast_path: false,
+                solution_id: None,
                 execution: Default::default(),
             }
         }
