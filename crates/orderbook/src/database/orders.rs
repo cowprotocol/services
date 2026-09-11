@@ -25,6 +25,7 @@ use {
             OrderStatus,
             OrderUid,
         },
+        quote::QuoteId,
         signature::Signature,
         time::now_in_epoch_seconds,
     },
@@ -56,13 +57,18 @@ use {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait OrderStoring: Send + Sync {
-    async fn insert_order(&self, order: &Order) -> Result<(), InsertionError>;
+    async fn insert_order(
+        &self,
+        order: &Order,
+        quote_id: Option<QuoteId>,
+    ) -> Result<(), InsertionError>;
     async fn cancel_orders(&self, order_uids: Vec<OrderUid>, now: DateTime<Utc>) -> Result<()>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
     async fn replace_order(
         &self,
         old_order: &OrderUid,
         new_order: &Order,
+        quote_id: Option<QuoteId>,
     ) -> Result<(), InsertionError>;
     async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>>;
     /// All orders of a single user ordered by creation date descending (newest
@@ -114,7 +120,11 @@ async fn cancel_order(
     Ok(())
 }
 
-async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), InsertionError> {
+async fn insert_order(
+    order: &Order,
+    quote_id: Option<QuoteId>,
+    ex: &mut PgConnection,
+) -> Result<(), InsertionError> {
     let order_uid = ByteArray(order.metadata.uid.0);
     insert_order_event(
         ex,
@@ -204,7 +214,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             solver: ByteArray(quote.solver.0.0),
             verified: quote.verified,
             metadata: quote.metadata.clone(),
-            auction_id: None,
+            quote_id,
         };
         database::orders::insert_quote(ex, &db_quote)
             .await
@@ -216,7 +226,11 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
 
 #[async_trait::async_trait]
 impl OrderStoring for Postgres {
-    async fn insert_order(&self, order: &Order) -> Result<(), InsertionError> {
+    async fn insert_order(
+        &self,
+        order: &Order,
+        quote_id: Option<QuoteId>,
+    ) -> Result<(), InsertionError> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["insert_order"])
@@ -225,7 +239,7 @@ impl OrderStoring for Postgres {
         let mut connection = self.pool.acquire().await?;
         let mut ex = connection.begin().await?;
 
-        insert_order(order, &mut ex).await?;
+        insert_order(order, quote_id, &mut ex).await?;
         Self::insert_order_app_data(order, &mut ex).await?;
 
         ex.commit().await?;
@@ -263,6 +277,7 @@ impl OrderStoring for Postgres {
         &self,
         old_order: &model::order::OrderUid,
         new_order: &model::order::Order,
+        quote_id: Option<QuoteId>,
     ) -> anyhow::Result<(), super::orders::InsertionError> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -281,7 +296,7 @@ impl OrderStoring for Postgres {
                         new_order.metadata.creation_date,
                     )
                     .await?;
-                    insert_order(&new_order, ex).await?;
+                    insert_order(&new_order, quote_id, ex).await?;
                     Self::insert_order_app_data(&new_order, ex).await?;
 
                     Ok(())
@@ -941,7 +956,7 @@ mod tests {
             },
             ..Default::default()
         };
-        db.insert_order(&old_order).await.unwrap();
+        db.insert_order(&old_order, None).await.unwrap();
 
         let new_order = Order {
             data: OrderData {
@@ -956,7 +971,7 @@ mod tests {
             },
             ..Default::default()
         };
-        db.replace_order(&old_order.metadata.uid, &new_order)
+        db.replace_order(&old_order.metadata.uid, &new_order, None)
             .await
             .unwrap();
 
@@ -1003,7 +1018,7 @@ mod tests {
             },
             ..Default::default()
         };
-        db.insert_order(&old_order).await.unwrap();
+        db.insert_order(&old_order, None).await.unwrap();
 
         let new_order = Order {
             metadata: OrderMetadata {
@@ -1014,12 +1029,12 @@ mod tests {
             },
             ..Default::default()
         };
-        db.insert_order(&new_order).await.unwrap();
+        db.insert_order(&new_order, None).await.unwrap();
 
         // Attempt to replace an old order with one that already exists should
         // fail.
         let err = db
-            .replace_order(&old_order.metadata.uid, &new_order)
+            .replace_order(&old_order.metadata.uid, &new_order, None)
             .await
             .unwrap_err();
         assert!(matches!(err, InsertionError::DuplicatedRecord));
@@ -1052,7 +1067,7 @@ mod tests {
             signature: Signature::default_with(SigningScheme::PreSign),
             ..Default::default()
         };
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, None).await.unwrap();
 
         let order_status = || async {
             db.single_order(&order.metadata.uid)
@@ -1139,9 +1154,9 @@ mod tests {
             }
         };
 
-        db.insert_order(&order(1)).await.unwrap();
-        db.insert_order(&order(2)).await.unwrap();
-        db.insert_order(&order(3)).await.unwrap();
+        db.insert_order(&order(1), None).await.unwrap();
+        db.insert_order(&order(2), None).await.unwrap();
+        db.insert_order(&order(3), None).await.unwrap();
 
         assert_eq!(order_status(1).await, OrderStatus::Open);
         assert_eq!(order_status(2).await, OrderStatus::Open);
@@ -1203,7 +1218,7 @@ mod tests {
             ..Default::default()
         };
 
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, None).await.unwrap();
 
         let single_order = db.single_order(&uid).await.unwrap().unwrap();
         assert_eq!(
@@ -1266,7 +1281,7 @@ mod tests {
             ..Default::default()
         };
 
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, None).await.unwrap();
 
         let single_order = db.single_order(&uid).await.unwrap().unwrap();
 

@@ -59,7 +59,7 @@ use {
         },
     },
     sqlx::PgConnection,
-    std::{collections::HashMap, sync::Arc},
+    std::{collections::HashMap, sync::Arc, time::Duration},
 };
 
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
@@ -71,6 +71,13 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     settlement_contract: Address,
     metrics: &'static Metrics,
     trampoline: HooksTrampoline::Instance,
+    /// Default exclusivity applied to on-chain fast-path orders whose
+    /// app-data opts in but doesn't set an explicit `validFrom`. An explicit
+    /// `validFrom` — even a shorter one — is respected as-is. Mirrors the
+    /// orderbook's `order_quoting.default_fast_path_exclusivity`. When
+    /// `None`, the fast path is disabled for on-chain orders (they fall
+    /// through to the regular auction immediately).
+    default_fast_path_exclusivity: Option<Duration>,
 }
 
 impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
@@ -78,6 +85,7 @@ where
     EventData: Send + Sync,
     EventRow: Send + Sync,
 {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         db: Postgres,
         web3: Web3,
@@ -86,6 +94,7 @@ where
         domain_separator: DomainSeparator,
         settlement_contract: Address,
         trampoline: HooksTrampoline::Instance,
+        default_fast_path_exclusivity: Option<Duration>,
     ) -> Self {
         OnchainOrderParser {
             db,
@@ -96,6 +105,7 @@ where
             settlement_contract,
             metrics: Metrics::get(),
             trampoline,
+            default_fast_path_exclusivity,
         }
     }
 }
@@ -356,9 +366,14 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         .await
         .context("appending quotes for onchain orders failed")?;
 
-        handle_app_data(transaction, &mut orders, &self.trampoline)
-            .await
-            .context("failed to handle app data")?;
+        handle_app_data(
+            transaction,
+            &mut orders,
+            &self.trampoline,
+            self.default_fast_path_exclusivity,
+        )
+        .await
+        .context("failed to handle app data")?;
 
         database::orders::insert_orders_and_ignore_conflicts(transaction, orders.as_slice())
             .await
@@ -501,7 +516,7 @@ where
                     solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.clone().try_into()?,
-                    auction_id: quote.data.auction_id,
+                    quote_id: Some(quote_id),
                 }),
                 Err(err) => {
                     let err_label = err.to_metrics_label();
@@ -688,10 +703,19 @@ fn extract_order_data_from_onchain_order_placement_event(
 /// backfills each order's `valid_from` and indexes its pre/post hook
 /// interactions. Must run before the orders are inserted (it mutates them).
 /// Orders whose app-data is unknown or unparseable are left unchanged.
+///
+/// An explicit `validFrom` in the app-data always wins — including values
+/// shorter than the default exclusivity. Only fast-path orders
+/// (`enableFastPath = true`) that don't set one fall back to
+/// `now + default_fast_path_exclusivity`, mirroring what the orderbook does
+/// for API-placed orders in `order_validation.rs`. When the exclusivity is
+/// unset the fast path is disabled for on-chain orders and they get no
+/// `valid_from`.
 async fn handle_app_data(
     db: &mut PgConnection,
     orders: &mut [Order],
     trampoline: &HooksTrampoline::Instance,
+    default_fast_path_exclusivity: Option<Duration>,
 ) -> Result<()> {
     for order in orders.iter_mut() {
         let appdata_json = database::app_data::fetch(db, &order.app_data)
@@ -707,7 +731,14 @@ async fn handle_app_data(
         };
 
         store_hooks(db, order, &parsed, trampoline).await?;
-        order.valid_from = parsed.valid_from.map(i64::from);
+        order.valid_from = parsed.valid_from.map(i64::from).or_else(|| {
+            let exclusivity = parsed
+                .enable_fast_path
+                .then_some(default_fast_path_exclusivity)
+                .flatten()?;
+            let now = i64::from(model::time::now_in_epoch_seconds());
+            Some(now + i64::try_from(exclusivity.as_secs()).ok()?)
+        });
     }
     Ok(())
 }
@@ -1280,6 +1311,7 @@ mod test {
             domain_separator,
             settlement_contract: Address::ZERO,
             metrics: Metrics::get(),
+            default_fast_path_exclusivity: None,
         };
         let result = onchain_order_parser
             .extract_custom_and_general_order_data(vec![
@@ -1317,7 +1349,7 @@ mod test {
             solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.clone().try_into().unwrap(),
-            auction_id: quote.data.auction_id,
+            quote_id: Some(0i64),
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(
