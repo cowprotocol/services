@@ -30,16 +30,6 @@ pub enum OrderKind {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "OrderClass")]
-#[sqlx(rename_all = "lowercase")]
-pub enum OrderClass {
-    #[default]
-    Market,
-    Liquidity,
-    Limit,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "SigningScheme")]
 #[sqlx(rename_all = "lowercase")]
 pub enum SigningScheme {
@@ -99,7 +89,6 @@ pub struct Order {
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
-    pub class: OrderClass,
     pub valid_from: Option<i64>,
 }
 
@@ -148,22 +137,21 @@ INSERT INTO orders (
     sell_token_balance,
     buy_token_balance,
     cancellation_timestamp,
-    class,
     true_valid_to,
     valid_from
 )
 VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
     -- Ethflow orders are inserted with valid_to set to u32::MAX. Their true validity is stored in
     -- the ethflow_orders table.
     -- If there already exists an Ethflow order with the same uid, take smaller of the two valid_to values
     CASE
-        WHEN $21 = 4294967295 THEN  -- u32::MAX
-            COALESCE((SELECT valid_to FROM ethflow_orders WHERE uid = $1), $21)
+        WHEN $20 = 4294967295 THEN  -- u32::MAX
+            COALESCE((SELECT valid_to FROM ethflow_orders WHERE uid = $1), $20)
         ELSE
-            $21
+            $20
     END,
-    $22
+    $21
 )
     "#;
 
@@ -205,7 +193,6 @@ async fn insert_order_execute_sqlx(
         .bind(order.sell_token_balance)
         .bind(order.buy_token_balance)
         .bind(order.cancellation_timestamp)
-        .bind(order.class)
         // true_valid_to takes the same value as valid_to when inserting an order
         .bind(order.valid_to)
         .bind(order.valid_from)
@@ -517,7 +504,9 @@ pub struct FullOrder {
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
-    pub class: OrderClass,
+    /// Whether this is a JIT order provided by a solver rather than a user
+    /// order. JIT orders trade at their limit price and never receive surplus.
+    pub is_liquidity_order: bool,
     pub partially_fillable: bool,
     pub signature: Vec<u8>,
     pub sum_sell: BigDecimal,
@@ -634,7 +623,7 @@ pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.valid_from, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.class,
+FALSE AS is_liquidity_order,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -807,7 +796,7 @@ pub fn solvable_orders(
         lo.settlement_contract,
         lo.sell_token_balance,
         lo.buy_token_balance,
-        lo.class,
+        FALSE AS is_liquidity_order,
         lo.true_valid_to,
 
         COALESCE(ta.sum_buy, 0) AS sum_buy,
@@ -935,7 +924,7 @@ SELECT
     so.settlement_contract,
     so.sell_token_balance,
     so.buy_token_balance,
-    so.class,
+    FALSE AS is_liquidity_order,
     so.true_valid_to,
 
     COALESCE(ta.sum_buy, 0) AS sum_buy,
@@ -1044,7 +1033,6 @@ pub async fn user_orders_with_quote(
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
             AND NOT EXISTS (SELECT 1 FROM ethflow_refunds r WHERE r.order_uid = o.uid)
             AND  o.owner = $2
-            AND  o.class = 'limit'
     )
     SELECT
         o_quotes.sell_amount  AS quote_sell_amount,
@@ -1194,7 +1182,6 @@ mod tests {
         assert_eq!(order.app_data, full_order.app_data);
         assert_eq!(order.fee_amount, full_order.fee_amount);
         assert_eq!(order.kind, full_order.kind);
-        assert_eq!(order.class, full_order.class);
         assert_eq!(order.partially_fillable, full_order.partially_fillable);
         assert_eq!(order.signature, full_order.signature);
         assert_eq!(order.receiver, full_order.receiver);
@@ -1733,7 +1720,6 @@ mod tests {
             full_order.fee_amount
         );
         assert_eq!(order_with_quote.full_order.kind, full_order.kind);
-        assert_eq!(order_with_quote.full_order.class, full_order.class);
         assert_eq!(
             order_with_quote.full_order.partially_fillable,
             full_order.partially_fillable
@@ -2529,7 +2515,6 @@ mod tests {
             &mut db,
             &Order {
                 uid: order_uid,
-                class: OrderClass::Limit,
                 ..Default::default()
             },
         )

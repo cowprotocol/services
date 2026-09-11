@@ -22,10 +22,6 @@ const fn default_min_order_validity_period() -> Duration {
 }
 
 const fn default_max_order_validity_period() -> Duration {
-    Duration::from_secs(10800) // 3h
-}
-
-const fn default_max_limit_order_validity_period() -> Duration {
     Duration::from_secs(31_536_000) // 1y
 }
 
@@ -48,21 +44,13 @@ pub struct OrderValidationConfig {
     )]
     pub min_order_validity_period: Duration,
 
-    /// The maximum amount of time a market order can be valid for.
-    /// This restriction does not apply to liquidity owner orders or presign
-    /// orders.
+    /// The maximum amount of time an order can be valid for. Does not apply
+    /// to presign orders.
     #[serde(
         with = "humantime_serde",
         default = "default_max_order_validity_period"
     )]
     pub max_order_validity_period: Duration,
-
-    /// The maximum amount of time a limit order can be valid for.
-    #[serde(
-        with = "humantime_serde",
-        default = "default_max_limit_order_validity_period"
-    )]
-    pub max_limit_order_validity_period: Duration,
 
     /// The maximum number of limit orders a user can have open.
     #[serde(default = "default_max_limit_orders_per_user")]
@@ -82,7 +70,6 @@ impl Default for OrderValidationConfig {
         Self {
             min_order_validity_period: default_min_order_validity_period(),
             max_order_validity_period: default_max_order_validity_period(),
-            max_limit_order_validity_period: default_max_limit_order_validity_period(),
             max_limit_orders_per_user: default_max_limit_orders_per_user(),
             max_gas_per_order: default_max_gas_per_order(),
             same_tokens_policy: Default::default(),
@@ -98,9 +85,8 @@ mod tests {
     fn deserialize_defaults() {
         let config: OrderValidationConfig = toml::from_str("").unwrap();
         assert_eq!(config.min_order_validity_period, Duration::from_secs(60));
-        assert_eq!(config.max_order_validity_period, Duration::from_secs(10800));
         assert_eq!(
-            config.max_limit_order_validity_period,
+            config.max_order_validity_period,
             Duration::from_secs(31_536_000)
         );
     }
@@ -109,17 +95,15 @@ mod tests {
     fn deserialize_full() {
         let toml = r#"
         min-order-validity-period = "2m"
-        max-order-validity-period = "6h"
-        max-limit-order-validity-period = "30d"
+        max-order-validity-period = "30d"
         max-limit-orders-per-user = 10
         max-gas-per-order = 5000000
         same-tokens-policy = "allow-sell"
         "#;
         let config: OrderValidationConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
-        assert_eq!(config.max_order_validity_period, Duration::from_secs(21600));
         assert_eq!(
-            config.max_limit_order_validity_period,
+            config.max_order_validity_period,
             Duration::from_secs(2_592_000)
         );
         assert_eq!(config.max_limit_orders_per_user, 10);
@@ -131,8 +115,7 @@ mod tests {
     fn roundtrip_serialization() {
         let config = OrderValidationConfig {
             min_order_validity_period: Duration::from_secs(120),
-            max_order_validity_period: Duration::from_secs(7200),
-            max_limit_order_validity_period: Duration::from_secs(86400),
+            max_order_validity_period: Duration::from_secs(86400),
             max_limit_orders_per_user: 5,
             max_gas_per_order: 5_000_000,
             same_tokens_policy: SameTokensPolicy::AllowSell,
@@ -148,10 +131,6 @@ mod tests {
         assert_eq!(
             config.max_order_validity_period,
             deserialized.max_order_validity_period
-        );
-        assert_eq!(
-            config.max_limit_order_validity_period,
-            deserialized.max_limit_order_validity_period
         );
         assert_eq!(
             config.max_limit_orders_per_user,

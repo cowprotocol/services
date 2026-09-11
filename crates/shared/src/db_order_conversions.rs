@@ -9,7 +9,6 @@ use {
             BuyTokenDestination as DbBuyTokenDestination,
             ExecutionTime,
             FullOrder as FullOrderDb,
-            OrderClass as DbOrderClass,
             OrderKind as DbOrderKind,
             SellTokenSource as DbSellTokenSource,
             SigningScheme as DbSigningScheme,
@@ -24,7 +23,6 @@ use {
             OnchainOrderData,
             OnchainOrderPlacementError,
             Order,
-            OrderClass,
             OrderData,
             OrderKind,
             OrderMetadata,
@@ -58,7 +56,6 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     let onchain_user = order
         .onchain_user
         .map(|onchain_user| Address::new(onchain_user.0));
-    let class = order_class_from(&order);
     let onchain_placement_error = onchain_order_placement_error_from(&order);
     let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
         sender: onchain_user,
@@ -93,8 +90,8 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .transpose()?,
         invalidated: order.invalidated,
         status,
-        is_liquidity_order: class == OrderClass::Liquidity,
-        class,
+        is_liquidity_order: order.is_liquidity_order,
+        class: (),
         settlement_contract: Address::new(order.settlement_contract.0),
         ethflow_data,
         onchain_user,
@@ -206,14 +203,6 @@ pub fn order_kind_from(kind: DbOrderKind) -> OrderKind {
     }
 }
 
-pub fn order_class_into(class: &OrderClass) -> DbOrderClass {
-    match class {
-        OrderClass::Market => DbOrderClass::Market,
-        OrderClass::Liquidity => DbOrderClass::Liquidity,
-        OrderClass::Limit => DbOrderClass::Limit,
-    }
-}
-
 pub fn onchain_order_placement_error_from(
     order: &FullOrderDb,
 ) -> Option<OnchainOrderPlacementError> {
@@ -240,14 +229,6 @@ pub fn onchain_order_placement_error_from(
             | database::onchain_broadcasted_orders::OnchainOrderPlacementError::InsufficientFee,
         )
         | None => None,
-    }
-}
-
-pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
-    match order.class {
-        DbOrderClass::Market => OrderClass::Market,
-        DbOrderClass::Liquidity => OrderClass::Liquidity,
-        DbOrderClass::Limit => OrderClass::Limit,
     }
 }
 

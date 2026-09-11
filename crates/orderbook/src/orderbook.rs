@@ -60,11 +60,14 @@ enum OrderOperation {
     Cancelled,
 }
 
+/// Whether an order's limit price was within the quote when it was submitted.
+/// The metric label values keep the historic `market`/`limit` naming.
 #[derive(Display)]
-#[strum(serialize_all = "snake_case")]
-enum OrderClass {
-    Market,
-    Limit,
+enum MarketPosition {
+    #[strum(serialize = "market")]
+    InMarket,
+    #[strum(serialize = "limit")]
+    OutOfMarket,
 }
 
 impl Metrics {
@@ -74,7 +77,7 @@ impl Metrics {
     }
 
     fn on_order_operation(order: &Order, operation: OrderOperation) {
-        let class = if order.metadata.quote.as_ref().is_some_and(|quote| {
+        let position = if order.metadata.quote.as_ref().is_some_and(|quote| {
             // Check if the order at the submission time was "in market"
             !is_order_outside_market_price(
                 &Amounts {
@@ -96,13 +99,13 @@ impl Metrics {
                 order.data.kind,
             )
         }) {
-            OrderClass::Market
+            MarketPosition::InMarket
         } else {
-            OrderClass::Limit
+            MarketPosition::OutOfMarket
         };
         Self::get()
             .orders
-            .with_label_values(&[&class.to_string(), &operation.to_string()])
+            .with_label_values(&[&position.to_string(), &operation.to_string()])
             .inc();
     }
 
@@ -111,10 +114,10 @@ impl Metrics {
     fn initialize() {
         let metrics = Self::get();
         for op in &[OrderOperation::Created, OrderOperation::Cancelled] {
-            for class in &[OrderClass::Market, OrderClass::Limit] {
+            for position in &[MarketPosition::InMarket, MarketPosition::OutOfMarket] {
                 metrics
                     .orders
-                    .with_label_values(&[&class.to_string(), &op.to_string()])
+                    .with_label_values(&[&position.to_string(), &op.to_string()])
                     .reset();
             }
         }
