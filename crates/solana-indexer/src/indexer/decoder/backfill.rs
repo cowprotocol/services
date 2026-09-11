@@ -73,13 +73,13 @@ impl Decoder {
             .flatten()
             .unwrap_or(watermark);
         let through = self.rpc.slot().await.map_or(tip, Slot);
-        if let Err(err) = self
-            .persistence
+        // An unrecorded gap is silent data loss, so crash and page instead
+        // of continuing past it. The restart is safe: the watermark still
+        // sits behind the gap, so the resume and backfill rerun.
+        self.persistence
             .record_lost_range(from, through, "backfill failed")
             .await
-        {
-            tracing::error!(?err, "failed to record the lost range");
-        }
+            .expect("failed to record a lost slot range");
         result
     }
 
