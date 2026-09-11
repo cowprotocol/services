@@ -103,7 +103,6 @@ async fn test(web3: Web3) {
     let order_uid = services.create_order(&order_a).await.unwrap();
     onchain.mint_block().await;
     let order = services.get_order(&order_uid).await.unwrap();
-    assert!(order.is_limit_order());
     assert!(order.data.partially_fillable);
 
     tracing::info!("Waiting for trade.");

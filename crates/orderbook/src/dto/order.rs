@@ -3,7 +3,13 @@ use {
     app_data::AppDataHash,
     model::{
         interaction::InteractionData,
-        order::{BuyTokenDestination, OrderClass, OrderKind, OrderUid, SellTokenSource},
+        order::{
+            BuyTokenDestination,
+            OrderKind,
+            OrderUid,
+            SellTokenSource,
+            serialize_legacy_order_class,
+        },
         signature::Signature,
     },
     number::serialization::HexOrDecimalU256,
@@ -35,8 +41,9 @@ pub struct Order {
     pub post_interactions: Vec<InteractionData>,
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
-    #[serde(flatten)]
-    pub class: OrderClass,
+    /// Deprecated: always `"limit"`, kept so the JSON shape stays stable.
+    #[serde(skip_deserializing, serialize_with = "serialize_legacy_order_class")]
+    pub class: (),
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: Signature,

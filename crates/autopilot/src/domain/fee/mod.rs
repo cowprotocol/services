@@ -28,34 +28,17 @@ use {
     std::collections::HashSet,
 };
 
-#[derive(Debug)]
-enum OrderClass {
-    Market,
-    Limit,
-    Any,
-}
-
-impl From<FeePolicyOrderClass> for OrderClass {
-    fn from(value: FeePolicyOrderClass) -> Self {
-        match value {
-            FeePolicyOrderClass::Market => Self::Market,
-            FeePolicyOrderClass::Limit => Self::Limit,
-            FeePolicyOrderClass::Any => Self::Any,
-        }
-    }
-}
-
 /// Constructs fee policies based on the current configuration.
 pub struct ProtocolFee {
     policy: policy::Policy,
-    order_class: OrderClass,
+    order_class: FeePolicyOrderClass,
 }
 
 impl From<FeePolicy> for ProtocolFee {
     fn from(value: FeePolicy) -> Self {
         Self {
             policy: value.kind.into(),
-            order_class: value.order_class.into(),
+            order_class: value.order_class,
         }
     }
 }
@@ -300,8 +283,8 @@ impl ProtocolFees {
         policy: &policy::Policy,
     ) -> Option<Policy> {
         match policy {
-            policy::Policy::Surplus(variant) => variant.apply(order),
-            policy::Policy::PriceImprovement(variant) => variant.apply(order, quote),
+            policy::Policy::Surplus(variant) => Some(variant.apply()),
+            policy::Policy::PriceImprovement(variant) => Some(variant.apply(quote)),
             policy::Policy::Volume(variant) => variant.apply(order, &self.volume_fee_policy),
         }
     }
@@ -314,9 +297,9 @@ impl ProtocolFees {
         let outside_market_price =
             boundary::is_order_outside_market_price(&order.into(), &quote.into(), order.data.kind);
         match (outside_market_price, &protocol_fee.order_class) {
-            (_, OrderClass::Any) => Some(&protocol_fee.policy),
-            (true, OrderClass::Limit) => Some(&protocol_fee.policy),
-            (false, OrderClass::Market) => Some(&protocol_fee.policy),
+            (_, FeePolicyOrderClass::Any) => Some(&protocol_fee.policy),
+            (true, FeePolicyOrderClass::Limit) => Some(&protocol_fee.policy),
+            (false, FeePolicyOrderClass::Market) => Some(&protocol_fee.policy),
             _ => None,
         }
     }

@@ -968,12 +968,15 @@ components:
         - buy
         - sell
     OrderClass:
-      description: Order class.
+      deprecated: true
+      description: |-
+        Deprecated. Order classes were removed: every order is a limit order whose
+        fee is taken from the surplus, and JIT orders are flagged by
+        `isLiquidityOrder`. The field is still returned for backwards
+        compatibility and always reads `limit`.
       type: string
       enum:
-        - market
         - limit
-        - liquidity
     SellTokenSource:
       description: |-
         Where should the `sellToken` be drawn from?
@@ -1298,9 +1301,9 @@ components:
           type: string
           example: "2020-12-03T18:35:18.814523Z"
         class:
+          deprecated: true
           description: >
-            The class of the order (market, limit, or liquidity). Determines
-            how fees are handled.
+            Deprecated, always `limit`. See `OrderClass`.
           allOf:
             - $ref: "#/components/schemas/OrderClass"
         owner:
@@ -1564,7 +1567,10 @@ components:
             - $ref: "#/components/schemas/BuyTokenDestination"
           default: erc20
         class:
-          $ref: "#/components/schemas/OrderClass"
+          deprecated: true
+          description: Deprecated, always `limit`. See `OrderClass`.
+          allOf:
+            - $ref: "#/components/schemas/OrderClass"
         appData:
           $ref: "#/components/schemas/AppDataHash"
         signature:

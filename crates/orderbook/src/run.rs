@@ -344,8 +344,7 @@ pub async fn run(config: Configuration) {
 
     let validity_configuration = OrderValidPeriodConfiguration {
         min: config.order_validation.min_order_validity_period,
-        max_market: config.order_validation.max_order_validity_period,
-        max_limit: config.order_validation.max_limit_order_validity_period,
+        max: config.order_validation.max_order_validity_period,
     };
 
     let create_quoter = |price_estimator: Arc<dyn CompetitionPriceEstimating>| {

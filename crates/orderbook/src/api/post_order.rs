@@ -56,14 +56,6 @@ impl IntoResponse for PartialValidationErrorWrapper {
                 error("UnsupportedSellTokenSource", format!("Type {src:?}")),
             )
                 .into_response(),
-            PartialValidationError::UnsupportedOrderType => (
-                StatusCode::BAD_REQUEST,
-                error(
-                    "UnsupportedOrderType",
-                    "This order type is currently not supported",
-                ),
-            )
-                .into_response(),
             PartialValidationError::Forbidden => (
                 StatusCode::FORBIDDEN,
                 error("Forbidden", "Forbidden, your account is deny-listed"),

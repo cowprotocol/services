@@ -19,7 +19,6 @@ use {
             Interactions,
             OnchainOrderData,
             Order,
-            OrderClass,
             OrderData,
             OrderMetadata,
             OrderStatus,
@@ -36,8 +35,6 @@ use {
             buy_token_destination_into,
             extract_interactions,
             onchain_order_placement_error_from,
-            order_class_from,
-            order_class_into,
             order_kind_from,
             order_kind_into,
             order_quote_into_model,
@@ -168,7 +165,6 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         app_data: ByteArray(order.data.app_data.0),
         fee_amount: u256_to_big_decimal(&order.data.fee_amount),
         kind: order_kind_into(order.data.kind),
-        class: order_class_into(&order.metadata.class),
         partially_fillable: order.data.partially_fillable,
         signature: order.signature.to_bytes(),
         signing_scheme: signing_scheme_into(order.signature.scheme()),
@@ -582,7 +578,6 @@ fn full_order_with_quote_into_model_order(
     let onchain_user = order
         .onchain_user
         .map(|onchain_user| Address::new(onchain_user.0));
-    let class = order_class_from(&order);
     let onchain_placement_error = onchain_order_placement_error_from(&order);
     let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
         sender: onchain_user,
@@ -617,8 +612,8 @@ fn full_order_with_quote_into_model_order(
             .transpose()?,
         invalidated: order.invalidated,
         status,
-        is_liquidity_order: class == OrderClass::Liquidity,
-        class,
+        is_liquidity_order: order.is_liquidity_order,
+        class: (),
         settlement_contract: Address::new(order.settlement_contract.0),
         ethflow_data,
         onchain_user,
@@ -691,7 +686,6 @@ mod tests {
             orders::{
                 BuyTokenDestination as DbBuyTokenDestination,
                 FullOrder,
-                OrderClass as DbOrderClass,
                 OrderKind as DbOrderKind,
                 SellTokenSource as DbSellTokenSource,
                 SigningScheme as DbSigningScheme,
@@ -723,7 +717,7 @@ mod tests {
             app_data: ByteArray([0; 32]),
             fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,
-            class: DbOrderClass::Liquidity,
+            is_liquidity_order: true,
             partially_fillable: true,
             signature: vec![0; 65],
             receiver: None,

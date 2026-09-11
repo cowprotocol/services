@@ -28,7 +28,6 @@ use {
             BuyTokenDestination,
             Interactions,
             Order,
-            OrderClass,
             OrderCreation,
             OrderCreationAppData,
             OrderData,
@@ -231,7 +230,6 @@ pub enum PartialValidationError {
     SameBuyAndSellToken,
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
-    UnsupportedOrderType,
     UnsupportedToken { token: Address, reason: String },
     Other(anyhow::Error),
 }
@@ -403,7 +401,6 @@ pub struct PreOrderData {
     pub buy_token_balance: BuyTokenDestination,
     pub sell_token_balance: SellTokenSource,
     pub signing_scheme: SigningScheme,
-    pub class: OrderClass,
     pub kind: OrderKind,
 }
 
@@ -428,10 +425,6 @@ impl PreOrderData {
             buy_token_balance: order.buy_token_balance,
             sell_token_balance: order.sell_token_balance,
             signing_scheme,
-            class: match order.fee_amount.is_zero() {
-                true => OrderClass::Limit,
-                false => OrderClass::Market,
-            },
             kind: order.kind,
         }
     }
@@ -675,10 +668,6 @@ impl OrderValidating for OrderValidator {
             return Err(PartialValidationError::Forbidden);
         }
 
-        if order.class == OrderClass::Market && order.partially_fillable {
-            return Err(PartialValidationError::UnsupportedOrderType);
-        }
-
         if order.buy_token_balance != BuyTokenDestination::Erc20 {
             return Err(PartialValidationError::UnsupportedBuyTokenDestination(
                 order.buy_token_balance,
@@ -816,9 +805,13 @@ impl OrderValidating for OrderValidator {
         if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
+        // Fees can't be signed upfront anymore (the former market orders); the
+        // protocol fee is taken from the surplus instead.
+        if !data.fee_amount.is_zero() {
+            return Err(ValidationError::NonZeroFee);
+        }
 
         let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
-        let class = pre_order.class;
         self.partial_validate(pre_order)
             .await
             .map_err(ValidationError::Partial)?;
@@ -923,25 +916,12 @@ impl OrderValidating for OrderValidator {
             verification,
         };
 
-        // Check if we need to re-classify the market order if it is outside the
-        // market price. We consider out-of-price orders as liquidity
-        // orders. See <https://github.com/cowprotocol/services/pull/301>.
-        let (class, quote) = match class {
-            // This has to be here in order to keep the previous behaviour
-            OrderClass::Market => {
-                let quote = get_quote_and_check_fee(
-                    &*self.quoter,
-                    &quote_parameters,
-                    order.quote_id,
-                    Some(data.fee_amount),
-                )
-                .await?;
-                tracing::debug!(
-                    ?uid,
-                    ?order,
-                    ?quote,
-                    "checking if order is outside market price"
-                );
+        let quote = match get_or_create_quote(&*self.quoter, &quote_parameters, order.quote_id)
+            .await
+        {
+            Ok(quote) => {
+                // Out of market orders are the ones a user can accumulate, so
+                // cap how many of them a single owner may have open.
                 if is_order_outside_market_price(
                     &Amounts {
                         sell: data.sell_amount,
@@ -955,74 +935,18 @@ impl OrderValidating for OrderValidator {
                     },
                     data.kind,
                 ) {
-                    tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
-                    (OrderClass::Limit, Some(quote))
-                } else {
-                    (class, Some(quote))
-                }
-            }
-            OrderClass::Limit => {
-                match get_quote_and_check_fee(
-                    &*self.quoter,
-                    &quote_parameters,
-                    order.quote_id,
-                    None,
-                )
-                .await
-                {
-                    Ok(quote) => {
-                        // If the order is not "In-Market", check for the limit
-                        // orders
-                        if is_order_outside_market_price(
-                            &Amounts {
-                                sell: data.sell_amount,
-                                buy: data.buy_amount,
-                                fee: data.fee_amount,
-                            },
-                            &Amounts {
-                                sell: quote.sell_amount,
-                                buy: quote.buy_amount,
-                                fee: quote.fee_amount,
-                            },
-                            data.kind,
-                        ) {
-                            tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
-                            self.check_max_limit_orders(owner).await?;
-                        }
-                        (class, Some(quote))
-                    }
-                    // If there is not enough liquidity, it's still possible to place this order (as
-                    // an implicit out of market order)
-                    Err(ValidationError::PriceForQuote(PriceEstimationError::NoLiquidity)) => {
-                        tracing::debug!("placing order without quote");
-                        (class, None)
-                    }
-                    Err(other) => return Err(other),
-                }
-            }
-            OrderClass::Liquidity => {
-                let quote =
-                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
-                        .await?;
-                // If the order is not "In-Market", check for the limit orders
-                if is_order_outside_market_price(
-                    &Amounts {
-                        sell: data.sell_amount,
-                        buy: data.buy_amount,
-                        fee: data.fee_amount,
-                    },
-                    &Amounts {
-                        sell: quote.sell_amount,
-                        buy: quote.buy_amount,
-                        fee: quote.fee_amount,
-                    },
-                    data.kind,
-                ) {
-                    tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
+                    tracing::debug!(%uid, ?owner, "order being flagged as outside market price");
                     self.check_max_limit_orders(owner).await?;
                 }
-                (OrderClass::Limit, None)
+                Some(quote)
             }
+            // If there is not enough liquidity, it's still possible to place this order (as
+            // an implicit out of market order)
+            Err(ValidationError::PriceForQuote(PriceEstimationError::NoLiquidity)) => {
+                tracing::debug!("placing order without quote");
+                None
+            }
+            Err(other) => return Err(other),
         };
 
         if quote.as_ref().is_some_and(|quote| {
@@ -1047,7 +971,6 @@ impl OrderValidating for OrderValidator {
                 creation_date: chrono::offset::Utc::now(),
                 uid,
                 settlement_contract,
-                class,
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
                     | OrderCreationAppData::Full { full } => Some(full),
@@ -1074,8 +997,7 @@ impl OrderValidating for OrderValidator {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OrderValidPeriodConfiguration {
     pub min: Duration,
-    pub max_market: Duration,
-    pub max_limit: Duration,
+    pub max: Duration,
 }
 
 impl OrderValidPeriodConfiguration {
@@ -1083,8 +1005,7 @@ impl OrderValidPeriodConfiguration {
     pub fn any() -> Self {
         Self {
             min: Duration::ZERO,
-            max_market: Duration::MAX,
-            max_limit: Duration::MAX,
+            max: Duration::MAX,
         }
     }
 
@@ -1109,12 +1030,7 @@ impl OrderValidPeriodConfiguration {
         if order.signing_scheme == SigningScheme::PreSign {
             return Duration::MAX;
         }
-
-        match order.class {
-            OrderClass::Market => self.max_market,
-            OrderClass::Limit => self.max_limit,
-            OrderClass::Liquidity => Duration::MAX,
-        }
+        self.max
     }
 }
 
@@ -1124,31 +1040,12 @@ pub enum OrderValidToError {
     Excessive,
 }
 
-/// Retrieves the quote for an order that is being created and verify that its
-/// fee is sufficient.
-///
-/// The fee is checked only if `fee_amount` is specified.
-pub async fn get_quote_and_check_fee(
-    quoter: &dyn OrderQuoting,
-    quote_search_parameters: &QuoteSearchParameters,
-    quote_id: Option<i64>,
-    fee_amount: Option<U256>,
-) -> Result<Quote, ValidationError> {
-    let quote = get_or_create_quote(quoter, quote_search_parameters, quote_id).await?;
-
-    if fee_amount.is_some_and(|fee| !fee.is_zero()) {
-        return Err(ValidationError::NonZeroFee);
-    }
-
-    Ok(quote)
-}
-
 /// Retrieves the quote for an order that is being created
 ///
 /// This works by first trying to find an existing quote, and then falling back
 /// to calculating a brand new one if none can be found.
 #[instrument(skip_all)]
-async fn get_or_create_quote(
+pub async fn get_or_create_quote(
     quoter: &dyn OrderQuoting,
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
@@ -1316,8 +1213,7 @@ mod tests {
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
+            max: Duration::from_secs(200),
         };
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
@@ -1382,8 +1278,7 @@ mod tests {
         let native_token_address = *native_token.address();
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
+            max: Duration::from_secs(200),
         };
         let banned_users = hashset![Address::from(U160::from(1))];
         let legit_valid_to =
@@ -1412,13 +1307,6 @@ mod tests {
             u64::MAX,
             SameTokensPolicy::Disallow,
         );
-        let result = validator
-            .partial_validate(PreOrderData {
-                partially_fillable: true,
-                ..Default::default()
-            })
-            .await;
-        std::assert_matches!(result, Err(PartialValidationError::UnsupportedOrderType));
         std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
@@ -1473,23 +1361,7 @@ mod tests {
         std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to
-                        + validity_configuration.max_market.as_secs() as u32
-                        + 1,
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::ValidTo(
-                OrderValidToError::Excessive,
-            ))
-        );
-        std::assert_matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to
-                        + validity_configuration.max_limit.as_secs() as u32
-                        + 1,
-                    class: OrderClass::Limit,
+                    valid_to: legit_valid_to + validity_configuration.max.as_secs() as u32 + 1,
                     ..Default::default()
                 })
                 .await,
@@ -1537,8 +1409,7 @@ mod tests {
             WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
+            max: Duration::from_secs(200),
         };
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
@@ -1588,23 +1459,8 @@ mod tests {
         assert!(
             validator
                 .partial_validate(PreOrderData {
-                    class: OrderClass::Limit,
-                    owner: Address::with_last_byte(0x42),
-                    valid_to: time::now_in_epoch_seconds()
-                        + validity_configuration.max_market.as_secs() as u32
-                        + 2,
-                    ..order()
-                })
-                .await
-                .is_ok()
-        );
-        assert!(
-            validator
-                .partial_validate(PreOrderData {
                     partially_fillable: true,
-                    class: OrderClass::Liquidity,
                     owner: Address::with_last_byte(0x42),
-                    valid_to: u32::MAX,
                     ..order()
                 })
                 .await
@@ -1618,8 +1474,7 @@ mod tests {
             WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
+            max: Duration::from_secs(200),
         };
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
@@ -1716,8 +1571,7 @@ mod tests {
             WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
+            max: Duration::from_secs(200),
         };
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
@@ -1803,8 +1657,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(60),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
+                max: Duration::from_secs(200),
             },
             false,
             Default::default(),
@@ -1903,8 +1756,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
+                max: Duration::from_secs(200),
             },
             false,
             Default::default(),
@@ -2057,7 +1909,6 @@ mod tests {
             .await
             .unwrap();
         assert!(order.metadata.quote.is_some());
-        assert!(order.metadata.class.is_limit());
 
         let creation_ = OrderCreation {
             fee_amount: alloy::primitives::U256::ZERO,
@@ -2072,7 +1923,6 @@ mod tests {
             .await
             .unwrap();
         assert!(order.metadata.quote.is_some());
-        assert!(order.metadata.class.is_limit());
     }
 
     #[tokio::test]
@@ -2111,8 +1961,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
+                max: Duration::from_secs(200),
             },
             false,
             Default::default(),
@@ -2385,7 +2234,7 @@ mod tests {
             buy_token: Address::with_last_byte(2),
             buy_amount: alloy::primitives::U256::from(1),
             sell_amount: alloy::primitives::U256::from(1),
-            fee_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::ZERO,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -2449,7 +2298,7 @@ mod tests {
             buy_token: Address::with_last_byte(2),
             buy_amount: alloy::primitives::U256::from(1),
             sell_amount: alloy::primitives::U256::from(1),
-            fee_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::ZERO,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -2573,7 +2422,7 @@ mod tests {
             buy_token: Address::with_last_byte(2),
             buy_amount: alloy::primitives::U256::from(1),
             sell_amount: alloy::primitives::U256::from(1),
-            fee_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::ZERO,
             from: Some(Address::repeat_byte(1)),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
@@ -2871,21 +2720,15 @@ mod tests {
             fee_amount: alloy::primitives::U256::from(6),
             ..Default::default()
         };
-        let fee_amount = U256::ZERO;
         let quote_id = Some(42);
         order_quoter
             .expect_find_quote()
             .with(eq(quote_id), eq(quote_search_parameters.clone()))
             .returning(move |_, _| Ok(quote_data.clone()));
 
-        let quote = get_quote_and_check_fee(
-            &order_quoter,
-            &quote_search_parameters,
-            quote_id,
-            Some(fee_amount),
-        )
-        .await
-        .unwrap();
+        let quote = get_or_create_quote(&order_quoter, &quote_search_parameters, quote_id)
+            .await
+            .unwrap();
 
         assert_eq!(
             quote,
@@ -2935,7 +2778,6 @@ mod tests {
                 ..Default::default()
             },
         );
-        let fee_amount = U256::ZERO;
         order_quoter
             .expect_calculate_quote()
             .with(eq(QuoteParameters {
@@ -2961,14 +2803,9 @@ mod tests {
             .with(eq(competition.clone()))
             .returning(|_| Ok(42));
 
-        let quote = get_quote_and_check_fee(
-            &order_quoter,
-            &quote_search_parameters,
-            None,
-            Some(fee_amount),
-        )
-        .await
-        .unwrap();
+        let quote = get_or_create_quote(&order_quoter, &quote_search_parameters, None)
+            .await
+            .unwrap();
 
         assert_eq!(
             quote,
@@ -3136,8 +2973,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
+                max: Duration::from_secs(200),
             },
             false,
             Default::default(),

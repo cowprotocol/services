@@ -26,7 +26,7 @@ use {
         fmt::{self, Debug, Display},
         str::FromStr,
     },
-    strum::{AsRefStr, EnumString, VariantNames},
+    strum::EnumString,
 };
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -70,17 +70,6 @@ pub enum OrderStatus {
 impl Order {
     pub fn contains_token_from(&self, token_list: &HashSet<Address>) -> bool {
         token_list.contains(&self.data.buy_token) || token_list.contains(&self.data.sell_token)
-    }
-
-    pub fn is_user_order(&self) -> bool {
-        match self.metadata.class {
-            OrderClass::Market | OrderClass::Limit => true,
-            OrderClass::Liquidity => false,
-        }
-    }
-
-    pub fn is_limit_order(&self) -> bool {
-        matches!(self.metadata.class, OrderClass::Limit)
     }
 }
 
@@ -178,11 +167,6 @@ impl OrderBuilder {
     pub fn with_presign(mut self, owner: Address) -> Self {
         self.0.metadata.owner = owner;
         self.0.signature = Signature::PreSign;
-        self
-    }
-
-    pub fn with_class(mut self, class: OrderClass) -> Self {
-        self.0.metadata.class = class;
         self
     }
 
@@ -720,8 +704,12 @@ pub struct OrderMetadata {
     pub gas_cost: Option<U256>,
     pub invalidated: bool,
     pub status: OrderStatus,
-    #[serde(flatten)]
-    pub class: OrderClass,
+    /// Deprecated: order classes were removed. Every order is a limit order
+    /// and JIT orders are flagged by `is_liquidity_order`. The field is still
+    /// serialized as `"class": "limit"` so the JSON shape stays stable for
+    /// existing API consumers.
+    #[serde(skip_deserializing, serialize_with = "serialize_legacy_order_class")]
+    pub class: (),
     pub settlement_contract: Address,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
@@ -741,6 +729,15 @@ pub struct OrderMetadata {
     /// quote data for reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote: Option<OrderQuote>,
+}
+
+/// Serializes the constant `"limit"` for the deprecated `class` field, see
+/// [`OrderMetadata::class`].
+pub fn serialize_legacy_order_class<S: Serializer>(
+    _: &(),
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str("limit")
 }
 
 /// OrderUid is 56 bytes. When hex encoded as 0x prefixes Json string it is 116.
@@ -876,48 +873,6 @@ pub enum OrderKind {
     /// exchange for some amount of token B (the exact amount is dependent on
     /// token pairs, solvers, etc).
     Sell,
-}
-
-#[derive(
-    Eq,
-    PartialEq,
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    Deserialize,
-    Serialize,
-    Hash,
-    EnumString,
-    AsRefStr,
-    VariantNames,
-)]
-#[strum(ascii_case_insensitive)]
-#[serde(tag = "class", rename_all = "lowercase")]
-pub enum OrderClass {
-    /// The most common type of order which can be placed by any user. Expected
-    /// to be fulfilled immediately (in the next block).
-    #[default]
-    Market,
-    /// Liquidity orders can only be placed by whitelisted users. These are
-    /// used for matching "coincidence of wants" trades. These are zero-fee
-    /// orders which are not expected to be fulfilled immediately and can
-    /// potentially live for a long time.
-    Liquidity,
-    /// Orders which are not expected to be fulfilled immediately, but
-    /// potentially somewhere far in the future. These are orders where
-    /// users essentially want to say: "once the price is at least X in
-    /// the future, then fulfill my order". These orders have their fee set to
-    /// zero, because it's impossible to predict fees that far in the
-    /// future. Instead, the fee is taken from the order surplus once the
-    /// order becomes fulfillable and the surplus is high enough.
-    Limit,
-}
-
-impl OrderClass {
-    pub fn is_limit(&self) -> bool {
-        matches!(self, Self::Limit)
-    }
 }
 
 impl OrderKind {
@@ -1129,7 +1084,6 @@ mod tests {
         let expected = Order {
             metadata: OrderMetadata {
                 creation_date: Utc.timestamp_millis_opt(3_000).unwrap(),
-                class: OrderClass::Limit,
                 owner: Address::with_last_byte(1),
                 uid: OrderUid([17u8; 56]),
                 available_balance: None,
