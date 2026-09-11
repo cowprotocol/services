@@ -28,8 +28,8 @@ pub struct SolanaRPC {
 }
 
 impl SolanaRPC {
-    /// Signatures per page of [`SolanaRPC::signatures_for_address`]. A page
-    /// shorter than this is the last one.
+    /// Signatures requested per page of
+    /// [`SolanaRPC::signatures_for_address`].
     pub const SIGNATURES_PAGE: usize = 1000;
 
     /// Creates a client for the given HTTP URL, request timeout and
@@ -134,15 +134,14 @@ impl SolanaRPC {
         Ok(known)
     }
 
-    /// One page of an address's transaction signatures, newest first,
-    /// starting below `before` when given, plus whether the history
-    /// continues past this page. The node serves deep history, so repeated
-    /// calls walk arbitrarily far back.
+    /// One page of an address's transaction signatures, starting below
+    /// `before` when given. The node serves deep history, so repeated calls
+    /// walk arbitrarily far back.
     pub async fn signatures_for_address(
         &self,
         address: &Pubkey,
         before: Option<Signature>,
-    ) -> Result<(Vec<(Signature, u64)>, bool), Error> {
+    ) -> Result<SignaturesPage, Error> {
         let config = solana_rpc_client::rpc_client::GetConfirmedSignaturesForAddress2Config {
             before,
             limit: Some(Self::SIGNATURES_PAGE),
@@ -154,7 +153,7 @@ impl SolanaRPC {
             .await?;
         // Keyed on the raw length: parse failures below must not read as an
         // exhausted history.
-        let more = page.len() == Self::SIGNATURES_PAGE;
+        let full = page.len() == Self::SIGNATURES_PAGE;
         let entries = page
             .into_iter()
             .filter_map(|status| match status.signature.parse() {
@@ -171,7 +170,7 @@ impl SolanaRPC {
                 }
             })
             .collect();
-        Ok((entries, more))
+        Ok(SignaturesPage { entries, full })
     }
 
     /// One confirmed transaction with its metadata, base64-encoded.
@@ -205,6 +204,16 @@ impl SolanaRPC {
     ) -> Result<Signature, Error> {
         self.inner.send_and_confirm_transaction(transaction).await
     }
+}
+
+/// One page of an address's transaction history.
+pub struct SignaturesPage {
+    /// Parsed (signature, slot) entries, newest first. Signatures the node
+    /// returned malformed are dropped.
+    pub entries: Vec<(Signature, u64)>,
+    /// The raw page hit the request limit, so older history may remain
+    /// below it.
+    pub full: bool,
 }
 
 /// A Solana block height.

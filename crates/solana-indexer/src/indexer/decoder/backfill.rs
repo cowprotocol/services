@@ -151,25 +151,29 @@ impl Decoder {
         let mut entries: Vec<(Slot, Signature)> = Vec::new();
         let mut before = None;
         loop {
-            let (page, more) = self
+            let page = self
                 .rpc
                 .signatures_for_address(program, before)
                 .await
                 .map_err(PersistenceError::Rpc)?;
             // A page with no parsable signature cannot advance the cursor,
             // so fail the scan rather than loop on the same page.
-            if page.is_empty() && more {
+            if page.entries.is_empty() && page.full {
                 tracing::error!(%program, "signature page with no parsable entry");
                 return Err(PersistenceError::Unavailable);
             }
-            let reached_watermark = page.iter().any(|(_, slot)| Slot(*slot) <= watermark);
-            before = page.last().map(|(signature, _)| *signature);
+            let reached_watermark = page
+                .entries
+                .iter()
+                .any(|(_, slot)| Slot(*slot) <= watermark);
+            before = page.entries.last().map(|(signature, _)| *signature);
             entries.extend(
-                page.into_iter()
+                page.entries
+                    .into_iter()
                     .take_while(|(_, slot)| Slot(*slot) > watermark)
                     .map(|(signature, slot)| (Slot(slot), signature)),
             );
-            if reached_watermark || !more {
+            if reached_watermark || !page.full {
                 return Ok(entries);
             }
         }
