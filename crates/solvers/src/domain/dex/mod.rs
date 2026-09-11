@@ -116,7 +116,11 @@ impl Swap {
         simulator: &infra::dex::Simulator,
         gas_offset: eth::Gas,
     ) -> Option<solution::Solution> {
-        let gas = if order.class == order::Class::Limit {
+        // Only simulate gas for limit orders (whose fee depends on it) in
+        // proper auctions, i.e. when the auction has a sell token price. For
+        // quotes and market orders we use the gas indicated by the DEX to save
+        // time.
+        let gas = if order.class == order::Class::Limit && sell_token.is_some() {
             match simulator.gas(order.owner(), &self).await {
                 Ok(value) => value,
                 Err(infra::dex::simulator::Error::SettlementContractIsOwner) => self.gas,
@@ -126,8 +130,6 @@ impl Swap {
                 }
             }
         } else {
-            // We are fine with just using heuristic gas for market orders,
-            // since it doesn't really play a role in the final solution.
             self.gas
         };
 

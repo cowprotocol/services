@@ -76,7 +76,6 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     let services = Services::new(&onchain).await;

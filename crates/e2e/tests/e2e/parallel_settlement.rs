@@ -87,7 +87,6 @@ async fn test_parallel_settlement_submission(web3: Web3) {
         onchain.contracts(),
         vec![solver_engine],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     // Wait for the driver to become available.

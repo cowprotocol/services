@@ -2,6 +2,7 @@ pub use load::load;
 use {
     crate::infra,
     alloy::{eips::BlockNumberOrTag, primitives::Address},
+    anyhow::Context,
     configs::gas_price_estimation::{default_past_blocks, default_reward_percentile},
     eth_domain_types as eth,
     number::serialization::HexOrDecimalU256,
@@ -9,7 +10,7 @@ use {
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
-    std::{collections::HashMap, num::NonZeroUsize, time::Duration},
+    std::{collections::HashMap, num::NonZeroUsize, str::FromStr, time::Duration},
 };
 
 mod load;
@@ -53,6 +54,12 @@ struct Config {
     #[serde(rename = "solver")]
     solvers: Vec<SolverConfig>,
 
+    /// Named groups of tokens that a solver's `token-supported` refers to by
+    /// name instead of by address. Shared by all solvers of this driver so
+    /// the addresses only have to be listed once.
+    #[serde(default)]
+    token_groups: HashMap<String, Vec<eth::Address>>,
+
     #[serde(default)]
     liquidity: LiquidityConfig,
 
@@ -89,6 +96,10 @@ struct Config {
     /// Http client factory config
     #[serde(default)]
     http: configs::http_client::HttpClient,
+
+    /// Settings for the on-chain balance cache.
+    #[serde(default)]
+    balance_cache: configs::balance_cache::BalanceCacheConfig,
 }
 
 #[serde_as]
@@ -274,10 +285,6 @@ struct SolverConfig {
     /// Determines whether the `solver` or the `driver` handles the fees
     #[serde(default)]
     fee_handler: FeeHandler,
-
-    /// Use limit orders for quoting
-    #[serde(default)]
-    quote_using_limit_orders: bool,
 
     /// Whether this solver supports fast-path (out-of-competition) execution.
     #[serde(default)]
@@ -831,8 +838,11 @@ fn default_simulation_bad_token_max_age() -> Duration {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BadOrderDetectionConfig {
     /// Which tokens are explicitly supported or unsupported by the solver.
+    /// A key is either a token address or the name of a `[token-groups]`
+    /// entry, which applies to all tokens of that group. An address overrides
+    /// the groups that contain it.
     #[serde(default)]
-    pub token_supported: HashMap<eth::Address, bool>,
+    pub token_supported: HashMap<String, bool>,
 
     /// Whether the solver opted into detecting unsupported
     /// tokens with `trace_callMany` based simulation.
@@ -894,6 +904,37 @@ pub struct BadOrderDetectionConfig {
         with = "humantime_serde"
     )]
     pub metrics_strategy_gc_max_age: Duration,
+}
+
+impl BadOrderDetectionConfig {
+    /// Resolves the configured token support into addresses, expanding every
+    /// key that names a `[token-groups]` entry. Errors on a key that is
+    /// neither an address nor a configured group.
+    pub fn canonicalize_token_support(
+        &self,
+        token_groups: &HashMap<String, Vec<eth::Address>>,
+    ) -> anyhow::Result<HashMap<eth::Address, bool>> {
+        let mut canonical_token_supported = HashMap::new();
+        let mut addresses = Vec::new();
+
+        for (token, supported) in &self.token_supported {
+            match eth::Address::from_str(token) {
+                Ok(address) => addresses.push((address, *supported)),
+                Err(_) => {
+                    let group = token_groups.get(token).with_context(|| {
+                        format!("{token} is neither a token address nor a token group")
+                    })?;
+                    canonical_token_supported
+                        .extend(group.iter().map(|address| (*address, *supported)));
+                }
+            }
+        }
+
+        // Applied last so that an address wins over the group containing it,
+        // independent of the iteration order.
+        canonical_token_supported.extend(addresses);
+        Ok(canonical_token_supported)
+    }
 }
 
 impl Default for BadOrderDetectionConfig {
@@ -1170,6 +1211,145 @@ mod tests {
         let accounts = SubmissionAccounts::new(vec![signer]).unwrap();
 
         assert_eq!(accounts.into_inner().len(), 1);
+    }
+
+    /// Two token groups shared by all solvers, of which each solver supports
+    /// a different subset.
+    const TOKEN_GROUPS_CONFIG: &str = r#"
+        tx-gas-limit = "45000000"
+
+        [token-groups]
+        ondo = [
+            "0x0000000000000000000000000000000000000001",
+            "0x0000000000000000000000000000000000000002",
+        ]
+        xstocks = ["0x0000000000000000000000000000000000000003"]
+
+        [[solver]]
+        name = "ondo-solver"
+        endpoint = "http://localhost:1234"
+        relative-slippage = "0.1"
+        account = "0x0000000000000000000000000000000000000000000000000000000000000001"
+
+        [solver.token-supported]
+        ondo = true
+        xstocks = false
+
+        [[solver]]
+        name = "xstocks-solver"
+        endpoint = "http://localhost:1235"
+        relative-slippage = "0.1"
+        account = "0x0000000000000000000000000000000000000000000000000000000000000002"
+
+        [solver.token-supported]
+        xstocks = true
+    "#;
+
+    fn address(last_byte: u8) -> eth::Address {
+        let mut bytes = [0u8; 20];
+        bytes[19] = last_byte;
+        eth::Address::from(bytes)
+    }
+
+    fn token_support(config: &Config, solver: usize) -> HashMap<eth::Address, bool> {
+        config.solvers[solver]
+            .bad_order_detection
+            .canonicalize_token_support(&config.token_groups)
+            .unwrap()
+    }
+
+    #[test]
+    fn token_groups_are_resolved_per_solver() {
+        let config: Config = toml::from_str(TOKEN_GROUPS_CONFIG).unwrap();
+
+        assert_eq!(
+            token_support(&config, 0),
+            HashMap::from([(address(1), true), (address(2), true), (address(3), false),])
+        );
+        // Groups the solver does not name stay unknown rather than unsupported.
+        assert_eq!(
+            token_support(&config, 1),
+            HashMap::from([(address(3), true)])
+        );
+    }
+
+    #[test]
+    fn address_overrides_the_token_group_containing_it() {
+        let config: BadOrderDetectionConfig = toml::from_str(
+            r#"
+            [token-supported]
+            ondo = false
+            "0x0000000000000000000000000000000000000002" = true
+            "#,
+        )
+        .unwrap();
+
+        let support = config
+            .canonicalize_token_support(&HashMap::from([(
+                "ondo".to_owned(),
+                vec![address(1), address(2)],
+            )]))
+            .unwrap();
+
+        assert_eq!(
+            support,
+            HashMap::from([(address(1), false), (address(2), true)])
+        );
+    }
+
+    #[test]
+    fn unknown_token_support_key_is_rejected() {
+        let config: BadOrderDetectionConfig = toml::from_str(
+            r#"
+            [token-supported]
+            ondu = true
+            "#,
+        )
+        .unwrap();
+
+        let err = config
+            .canonicalize_token_support(&HashMap::from([("ondo".to_owned(), vec![address(1)])]))
+            .unwrap_err();
+
+        assert!(err.to_string().contains("neither a token address"));
+    }
+
+    #[test]
+    fn without_token_groups_addresses_are_kept() {
+        let config: BadOrderDetectionConfig = toml::from_str(
+            r#"
+            [token-supported]
+            "0x0000000000000000000000000000000000000001" = true
+            "0x0000000000000000000000000000000000000002" = false
+            "#,
+        )
+        .unwrap();
+
+        let support = config.canonicalize_token_support(&HashMap::new()).unwrap();
+
+        assert_eq!(
+            support,
+            HashMap::from([(address(1), true), (address(2), false)])
+        );
+    }
+
+    #[test]
+    fn address_keys_are_parsed_regardless_of_casing() {
+        // Existing configs write checksummed addresses, so they must not be
+        // mistaken for a group name.
+        let config: BadOrderDetectionConfig = toml::from_str(
+            r#"
+            [token-supported]
+            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" = true
+            "0x6b175474e89094c44da98b954eedeac495271d0f" = false
+            "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc3" = true
+            "#,
+        )
+        .unwrap();
+
+        let support = config.canonicalize_token_support(&HashMap::new()).unwrap();
+
+        assert_eq!(support.len(), 3);
     }
 
     #[test]

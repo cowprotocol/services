@@ -193,7 +193,6 @@ async fn liquidity_source_notification(web3: Web3) {
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
         Some(&format!(
             r#"
 [liquidity-sources-notifier]

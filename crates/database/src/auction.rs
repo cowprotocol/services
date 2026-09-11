@@ -1,8 +1,8 @@
 use {
     crate::{Address, OrderUid},
     bigdecimal::BigDecimal,
-    sqlx::{Connection, PgConnection, types::JsonValue},
-    std::ops::DerefMut,
+    sqlx::{Connection, PgConnection, QueryBuilder, types::JsonValue},
+    std::{collections::HashMap, ops::DerefMut},
     tracing::instrument,
 };
 
@@ -129,14 +129,14 @@ pub async fn fetch_auction_ids_by_order_uid(
 
 /// External token price for a given auction.
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
-pub struct AuctionPrice {
+pub struct NativePrice {
     pub auction_id: AuctionId,
     pub token: Address,
     pub price: BigDecimal,
 }
 
 #[instrument(skip_all)]
-pub async fn fetch_latest_prices(ex: &mut PgConnection) -> Result<Vec<AuctionPrice>, sqlx::Error> {
+pub async fn fetch_latest_prices(ex: &mut PgConnection) -> Result<Vec<NativePrice>, sqlx::Error> {
     const QUERY: &str = r#"
     SELECT
         c.id AS auction_id,
@@ -174,6 +174,7 @@ pub async fn fetch_latest_token_price(
     )
     "#;
 
+    // Transaction is necessary for the SET LOCAL
     let mut ex = ex.begin().await?;
     // The GIN scan returns a bitmap of matching tuples. Past `work_mem` it does
     // not spill to disk, it degrades pages to "something here matched", and
@@ -186,9 +187,55 @@ pub async fn fetch_latest_token_price(
         .bind(token)
         .fetch_optional(ex.deref_mut())
         .await?;
-    ex.commit().await?;
 
     Ok(price)
+}
+
+/// Fetches the penalty caps recorded in `competition_auctions` for the given
+/// `(auction_id, order_uid)` keys, in native token wei. A key is absent from
+/// the result when its auction has no competition data, the order wasn't part
+/// of that auction, or penalties were disabled for it.
+#[instrument(skip_all)]
+pub async fn penalty_caps(
+    ex: &mut PgConnection,
+    keys: &[(AuctionId, OrderUid)],
+) -> Result<HashMap<(AuctionId, OrderUid), BigDecimal>, sqlx::Error> {
+    if keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut query_builder = QueryBuilder::new(
+        "SELECT ca.id AS auction_id, vals.order_uid, \
+         ca.penalty_caps_native[array_position(ca.order_uids, vals.order_uid)] AS penalty_cap \
+         FROM competition_auctions ca INNER JOIN (VALUES ",
+    );
+    for (i, (auction_id, order_uid)) in keys.iter().enumerate() {
+        if i > 0 {
+            query_builder.push(", ");
+        }
+        query_builder
+            .push("(")
+            .push_bind(auction_id)
+            .push(", ")
+            .push_bind(order_uid)
+            .push(")");
+    }
+    query_builder.push(") AS vals(auction_id, order_uid) ON ca.id = vals.auction_id");
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        auction_id: AuctionId,
+        order_uid: OrderUid,
+        penalty_cap: Option<BigDecimal>,
+    }
+    let rows: Vec<Row> = query_builder.build_query_as().fetch_all(ex).await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            row.penalty_cap
+                .map(|cap| ((row.auction_id, row.order_uid), cap))
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -254,30 +301,30 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let auction_1 = vec![
-            AuctionPrice {
+        let native_price_1 = vec![
+            NativePrice {
                 auction_id: 1,
                 token: ByteArray([2; 20]),
                 price: 1.into(),
             },
-            AuctionPrice {
+            NativePrice {
                 auction_id: 1,
                 token: ByteArray([3; 20]),
                 price: 2.into(),
             },
         ];
-        let auction_2 = vec![AuctionPrice {
+        let native_price_2 = vec![NativePrice {
             auction_id: 2,
             token: ByteArray([2; 20]),
             price: 3.into(),
         }];
-        let auction_3 = vec![
-            AuctionPrice {
+        let native_price_3 = vec![
+            NativePrice {
                 auction_id: 3,
                 token: ByteArray([3; 20]),
                 price: 4.into(),
             },
-            AuctionPrice {
+            NativePrice {
                 auction_id: 3,
                 token: ByteArray([4; 20]),
                 price: 5.into(),
@@ -285,7 +332,7 @@ mod tests {
         ];
 
         // Prices are stored as the parallel arrays of `competition_auctions`.
-        for prices in [&auction_1, &auction_2, &auction_3] {
+        for prices in [&native_price_1, &native_price_2, &native_price_3] {
             save(
                 &mut db,
                 Auction {
@@ -304,7 +351,7 @@ mod tests {
         }
 
         // check that all auctions are there
-        for prices in [&auction_1, &auction_2, &auction_3] {
+        for prices in [&native_price_1, &native_price_2, &native_price_3] {
             let stored = fetch(&mut db, prices[0].auction_id).await.unwrap().unwrap();
             let tokens: Vec<_> = prices.iter().map(|price| price.token).collect();
             let values: Vec<_> = prices.iter().map(|price| price.price.clone()).collect();
@@ -315,7 +362,7 @@ mod tests {
         assert!(fetch(&mut db, 4).await.unwrap().is_none());
         // latest prices
         let output = fetch_latest_prices(&mut db).await.unwrap();
-        assert_eq!(output, auction_3);
+        assert_eq!(output, native_price_3);
         // latest token price
         let output = fetch_latest_token_price(&mut db, ByteArray([2; 20]))
             .await

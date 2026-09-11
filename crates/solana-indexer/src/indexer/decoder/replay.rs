@@ -29,9 +29,8 @@ impl Decoder {
             else {
                 continue;
             };
-            let mints = self.resolve_mints(&events).await?;
             self.persistence
-                .replay_events(signature, events, &mints, slot)
+                .replay_events(signature, events, slot)
                 .await?;
             tracing::info!(%signature, "dead letter replayed");
         }

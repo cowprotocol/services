@@ -348,7 +348,6 @@ async fn quote_timeout(web3: Web3) {
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     /// The default quote timeout used when the user does not override it.
@@ -530,7 +529,6 @@ async fn quote_custom_solver_errors(web3: Web3) {
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     services
@@ -656,7 +654,6 @@ async fn native_price_custom_solver_errors(web3: Web3) {
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     services
@@ -770,7 +767,6 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     services
