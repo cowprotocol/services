@@ -1,8 +1,8 @@
 use {
     crate::{Address, OrderUid},
     bigdecimal::BigDecimal,
-    sqlx::{Connection, PgConnection, types::JsonValue},
-    std::ops::DerefMut,
+    sqlx::{Connection, PgConnection, QueryBuilder, types::JsonValue},
+    std::{collections::HashMap, ops::DerefMut},
     tracing::instrument,
 };
 
@@ -189,6 +189,53 @@ pub async fn fetch_latest_token_price(
         .await?;
 
     Ok(price)
+}
+
+/// Fetches the penalty caps recorded in `competition_auctions` for the given
+/// `(auction_id, order_uid)` keys, in native token wei. A key is absent from
+/// the result when its auction has no competition data, the order wasn't part
+/// of that auction, or penalties were disabled for it.
+#[instrument(skip_all)]
+pub async fn penalty_caps(
+    ex: &mut PgConnection,
+    keys: &[(AuctionId, OrderUid)],
+) -> Result<HashMap<(AuctionId, OrderUid), BigDecimal>, sqlx::Error> {
+    if keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut query_builder = QueryBuilder::new(
+        "SELECT ca.id AS auction_id, vals.order_uid, \
+         ca.penalty_caps_native[array_position(ca.order_uids, vals.order_uid)] AS penalty_cap \
+         FROM competition_auctions ca INNER JOIN (VALUES ",
+    );
+    for (i, (auction_id, order_uid)) in keys.iter().enumerate() {
+        if i > 0 {
+            query_builder.push(", ");
+        }
+        query_builder
+            .push("(")
+            .push_bind(auction_id)
+            .push(", ")
+            .push_bind(order_uid)
+            .push(")");
+    }
+    query_builder.push(") AS vals(auction_id, order_uid) ON ca.id = vals.auction_id");
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        auction_id: AuctionId,
+        order_uid: OrderUid,
+        penalty_cap: Option<BigDecimal>,
+    }
+    let rows: Vec<Row> = query_builder.build_query_as().fetch_all(ex).await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            row.penalty_cap
+                .map(|cap| ((row.auction_id, row.order_uid), cap))
+        })
+        .collect())
 }
 
 #[cfg(test)]

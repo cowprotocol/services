@@ -37,6 +37,11 @@ pub struct Trade {
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gas_cost: Option<U256>,
+    /// Cap on the penalty the winning solver could have incurred. Absent when
+    /// the auction had penalties disabled or the trade can't be attributed
+    /// to an auction.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    pub penalty_cap_native: Option<U256>,
 }
 
 #[cfg(test)]
@@ -64,6 +69,7 @@ mod tests {
             "buyToken": "0x0000000000000000000000000000000000000009",
             "txHash": "0x0000000000000000000000000000000000000000000000000000000000000040",
             "gasCost": "3000000",
+            "penaltyCapNative": "1000000000000000",
             "executedProtocolFees": [
                 {
                     "amount": "5",
@@ -113,6 +119,7 @@ mod tests {
             sell_token: Address::with_last_byte(10),
             tx_hash: Some(B256::with_last_byte(64)),
             gas_cost: Some(U256::from(3_000_000u64)),
+            penalty_cap_native: Some(U256::from(1_000_000_000_000_000u64)),
             executed_protocol_fees: vec![
                 ExecutedProtocolFee {
                     amount: U256::from(5u64),
