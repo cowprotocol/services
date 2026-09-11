@@ -512,6 +512,12 @@ pub enum Mempool {
         url: Option<String>,
         mines_reverting_txs: bool,
     },
+    /// Signs the tx locally and broadcasts it to the given block builders
+    /// instead of the node.
+    Builders {
+        /// Uses the ethrpc node for the entries that are None
+        urls: Vec<Option<String>>,
+    },
 }
 
 /// Create a builder for the setup process.

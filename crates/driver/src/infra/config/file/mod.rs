@@ -160,7 +160,7 @@ impl From<BlockNumber> for BlockNumberOrTag {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Mempool {
     /// Name for better logging and metrics.
     name: Option<String>,
@@ -182,6 +182,22 @@ struct Mempool {
     /// assume reverting transactions will get mined eventually.
     #[serde(default = "default_mines_reverting_txs")]
     mines_reverting_txs: bool,
+    /// Block builders to send the settlement transaction to directly. When
+    /// this is non-empty settlements and cancellations both go to the builders
+    /// and `url` only serves nonce and txpool queries.
+    #[serde(default)]
+    builders: Vec<Builder>,
+}
+
+/// A block builder that accepts settlement transactions over
+/// `eth_sendRawTransaction`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct Builder {
+    /// Name for better logging and metrics.
+    name: String,
+    /// The RPC URL to send the signed transaction to.
+    url: Url,
 }
 
 #[derive(Debug, Deserialize)]

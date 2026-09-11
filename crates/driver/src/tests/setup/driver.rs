@@ -305,9 +305,31 @@ async fn create_config_file(
                     additional-tip-percentage = 0.0
                     mines-reverting-txs = {mines_reverting_txs}
                     "#,
-                url.clone().unwrap_or(blockchain.web3_url.clone()),
+                url.as_deref().unwrap_or(&blockchain.web3_url),
             )
             .unwrap(),
+            Mempool::Builders { urls } => {
+                write!(
+                    file,
+                    r#"[[submission.mempool]]
+                    url = "{}"
+                    additional-tip-percentage = 0.0
+                    "#,
+                    blockchain.web3_url,
+                )
+                .unwrap();
+                for (index, url) in urls.iter().enumerate() {
+                    write!(
+                        file,
+                        r#"[[submission.mempool.builders]]
+                        name = "builder_{index}"
+                        url = "{}"
+                        "#,
+                        url.as_deref().unwrap_or(&blockchain.web3_url),
+                    )
+                    .unwrap();
+                }
+            }
         }
     }
 

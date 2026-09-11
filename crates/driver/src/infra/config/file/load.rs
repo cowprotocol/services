@@ -358,6 +358,14 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 max_additional_tip: mempool.max_additional_tip,
                 additional_tip_percentage: mempool.additional_tip_percentage,
+                builders: mempool
+                    .builders
+                    .iter()
+                    .map(|builder| mempool::Builder {
+                        name: builder.name.clone(),
+                        url: builder.url.clone(),
+                    })
+                    .collect(),
             })
             .collect(),
         simulator: config.simulator,
