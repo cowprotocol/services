@@ -68,14 +68,16 @@ pub struct TradeRow {
     pub slot: Option<i64>,
 }
 
-/// Trades filtered by order uid or owner. The slot comes from any settlement
-/// row of the transaction because the slot is constant per transaction. A
-/// trade whose order row is not indexed yet is omitted until the order
-/// lands.
+/// Trades filtered by order uid or owner, newest first, paged by `offset`
+/// and `limit`. The slot comes from any settlement row of the transaction
+/// because the slot is constant per transaction. A trade whose order row is
+/// not indexed yet is omitted until the order lands.
 pub async fn trades(
     ex: impl PgExecutor<'_>,
     order_uid: Option<[u8; 32]>,
     owner: Option<[u8; 32]>,
+    offset: i64,
+    limit: i64,
 ) -> Result<Vec<TradeRow>> {
     const QUERY: &str = r#"
 SELECT t.order_uid, o.owner, o.sell_token, o.buy_token,
@@ -90,11 +92,15 @@ LEFT JOIN LATERAL (
 ) s ON true
 WHERE ($1::bytea IS NULL OR t.order_uid = $1)
   AND ($2::bytea IS NULL OR o.owner = $2)
-ORDER BY s.slot, t.tx_signature, t.instruction_index, t.order_uid
+ORDER BY s.slot DESC NULLS LAST, t.tx_signature DESC, t.instruction_index DESC,
+         t.order_uid DESC
+OFFSET $3 LIMIT $4
     "#;
     sqlx::query_as(QUERY)
         .bind(order_uid.map(ByteArray))
         .bind(owner.map(ByteArray))
+        .bind(offset)
+        .bind(limit)
         .fetch_all(ex)
         .await
         .context("read solana.trades")
@@ -259,17 +265,49 @@ VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
         .await
         .unwrap();
 
-        let by_uid = trades(&pool, Some(uid), None).await.unwrap();
+        let by_uid = trades(&pool, Some(uid), None, 0, 10).await.unwrap();
         assert_eq!(by_uid.len(), 1);
         assert_eq!(by_uid[0].slot, Some(42));
         assert_eq!(by_uid[0].instruction_index, 1);
         assert_eq!(by_uid[0].sell_amount, BigDecimal::from(400));
 
-        let by_owner = trades(&pool, None, Some([0xAA; 32])).await.unwrap();
+        let by_owner = trades(&pool, None, Some([0xAA; 32]), 0, 10).await.unwrap();
         assert_eq!(by_owner.len(), 1);
 
         assert!(
-            trades(&pool, Some([0x99; 32]), None)
+            trades(&pool, Some([0x99; 32]), None, 0, 10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        // A second fill of the same order pages: one row per page, newest
+        // first, and an offset past the result set is empty.
+        sqlx::query(
+            "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid,              \
+             sell_amount, buy_amount, fee_amount) VALUES ($1, 2, $2, 100, 50, 0)",
+        )
+        .bind(ByteArray([8u8; 64]))
+        .bind(ByteArray(uid))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver,              auction_id) VALUES (43, $1, 2, $2, 8)",
+        )
+        .bind(ByteArray([8u8; 64]))
+        .bind(ByteArray([0xCC; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let first = trades(&pool, Some(uid), None, 0, 1).await.unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].slot, Some(43));
+        let second = trades(&pool, Some(uid), None, 1, 1).await.unwrap();
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].slot, Some(42));
+        assert!(
+            trades(&pool, Some(uid), None, 2, 1)
                 .await
                 .unwrap()
                 .is_empty()

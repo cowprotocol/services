@@ -73,12 +73,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/trades:
+  /api/v2/trades:
     get:
       operationId: getTrades
       description: |
-        Trades of one order or one owner. Exactly one of `orderUid` and
-        `owner` must be set.
+        Trades of one order or one owner, newest first. Exactly one of
+        `orderUid` and `owner` must be set. To enumerate all trades start
+        with `offset` 0 and keep increasing it by the number of returned
+        results. A response shorter than `limit` is the last page.
       parameters:
         - name: orderUid
           in: query
@@ -90,9 +92,23 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/Pubkey"
+        - name: offset
+          in: query
+          description: The pagination offset. Defaults to 0.
+          schema:
+            type: integer
+          required: false
+        - name: limit
+          in: query
+          description: The pagination limit. Defaults to 10. Maximum 1000. Minimum 1.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+          required: false
       responses:
         "200":
-          description: The trades, ordered by slot.
+          description: The trades, newest first.
           content:
             application/json:
               schema:
@@ -101,8 +117,9 @@ paths:
                   $ref: "#/components/schemas/Trade"
         "400":
           description: |
-            Both or neither filter set (`InvalidTradeFilter`), or a malformed
-            filter value (`InvalidOrderUid`, `InvalidOwner`).
+            Both or neither filter set (`InvalidTradeFilter`), a malformed
+            filter value (`InvalidOrderUid`, `InvalidOwner`), or the limit
+            out of bounds (`InvalidLimit`).
           content:
             application/json:
               schema:
