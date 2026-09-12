@@ -355,6 +355,46 @@ async fn save_jit_orders(
     Ok(())
 }
 
+/// Deletes all competition rows associated with `auction_id` across
+/// `proposed_trade_executions`, `proposed_jit_orders`, `proposed_solutions`,
+/// and `competition_auctions`.
+#[instrument(skip_all)]
+pub async fn delete_by_auction_id(
+    ex: &mut PgTransaction<'_>,
+    auction_id: AuctionId,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+WITH
+    del_te AS (DELETE FROM proposed_trade_executions WHERE auction_id = $1),
+    del_jo AS (DELETE FROM proposed_jit_orders       WHERE auction_id = $1),
+    del_ps AS (DELETE FROM proposed_solutions        WHERE auction_id = $1)
+DELETE FROM competition_auctions WHERE id = $1
+"#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .execute(ex.deref_mut())
+        .await?;
+    Ok(())
+}
+
+/// Persists competition data derived from a fast-path quote response.
+/// `solutions[i].orders` carries the user's placeholder trade — written to
+/// `proposed_trade_executions`. JIT orders proposed by solvers are not
+/// persisted; they live in the `quotes.metadata` JSON blob if needed.
+#[instrument(skip_all)]
+pub async fn save_from_quote(
+    ex: &mut PgTransaction<'_>,
+    auction_id: AuctionId,
+    solutions: &[Solution],
+) -> Result<(), sqlx::Error> {
+    if solutions.is_empty() {
+        return Ok(());
+    }
+    save_solutions(ex, auction_id, solutions).await?;
+    save_trade_executions(ex, auction_id, solutions).await?;
+    Ok(())
+}
+
 #[derive(sqlx::FromRow)]
 struct SolutionRow {
     uid: i64,
