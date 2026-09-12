@@ -5,6 +5,7 @@ use {
     crate::{
         domain::{
             self,
+            OrderUid,
             auction::Id,
             competition::{
                 self,
@@ -31,7 +32,7 @@ use {
     database::order_events::OrderEventLabel,
     eth_domain_types::Address,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
-    futures::{StreamExt, TryFutureExt},
+    futures::{StreamExt, TryFutureExt, channel::mpsc},
     itertools::Itertools,
     num::ToPrimitive,
     rand::seq::SliceRandom,
@@ -184,11 +185,12 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
         maintenance: MaintenanceSync,
-        wake_runloop: Arc<tokio::sync::Notify>,
-    ) -> Self {
+        new_orders_listener: mpsc::UnboundedReceiver<OrderUid>,
+    ) -> Arc<Self> {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
 
+        let wake_runloop = Arc::new(tokio::sync::Notify::new());
         Self::spawn_block_listener(eth.current_block().clone(), wake_runloop.clone());
 
         let settle_coordinator = Arc::new(SettleCallCoordinator::new(
@@ -198,7 +200,7 @@ impl RunLoop {
             config.max_settlement_transaction_wait,
         ));
 
-        Self {
+        let self_ = Arc::new(Self {
             delta_state: std::sync::Mutex::new(DeltaState::new(
                 config.auction_delta_checkpoint_interval,
             )),
@@ -213,14 +215,26 @@ impl RunLoop {
             wake_notify: wake_runloop,
             drivers,
             settle_coordinator,
-        }
+        });
+        Self::spawn_order_listener(self_.clone(), new_orders_listener);
+        self_
     }
 
-    pub async fn run_forever(self, mut control: ShutdownController) {
+    /// Spawns a background task that listens to the creation of new orders
+    /// and wakes the run loop for each incoming order.
+    fn spawn_order_listener(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<OrderUid>) {
+        tokio::spawn(async move {
+            while let Some(_order_uid) = receiver.next().await {
+                self.wake_notify.notify_one();
+            }
+        });
+    }
+
+    pub async fn run_forever(self: Arc<Self>, mut control: ShutdownController) {
         let mut last_auction = None;
         let mut last_block = None;
 
-        let self_arc = Arc::new(self);
+        let self_arc = self;
         let leader = if self_arc.config.enable_leader_lock {
             Some(
                 self_arc
