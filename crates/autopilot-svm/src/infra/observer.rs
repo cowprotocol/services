@@ -65,7 +65,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
                 .difference(&previous)
                 .map(ToString::to_string)
                 .collect();
-            tracing::debug!(auction_id = auction.id, ?added, "New orders in auction");
+            tracing::debug!(auction_id = auction.id, ?added, "new orders in auction");
             let removed: Vec<String> = previous
                 .difference(&current)
                 .map(ToString::to_string)
@@ -73,7 +73,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
             tracing::debug!(
                 auction_id = auction.id,
                 ?removed,
-                "Orders no longer in auction"
+                "orders no longer in auction"
             );
             *previous = current.clone();
         }
