@@ -134,14 +134,6 @@ impl IntoResponse for AppDataValidationErrorWrapper {
                 ),
             )
                 .into_response(),
-            AppDataValidationError::FastPathDisabled => (
-                StatusCode::BAD_REQUEST,
-                error(
-                    "FastPathDisabled",
-                    "the fast path is not enabled on this environment.",
-                ),
-            )
-                .into_response(),
         }
     }
 }
@@ -264,14 +256,6 @@ impl IntoResponse for ValidationErrorWrapper {
                 error(
                     "InvalidValidFrom",
                     "appData validFrom must be earlier than the order's validTo.",
-                ),
-            )
-                .into_response(),
-            ValidationError::FastPathDisabled => (
-                StatusCode::BAD_REQUEST,
-                error(
-                    "FastPathDisabled",
-                    "the fast path is not enabled on this environment.",
                 ),
             )
                 .into_response(),

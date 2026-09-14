@@ -441,7 +441,6 @@ pub async fn run(config: Configuration) {
         app_data_validator.clone(),
         config.order_validation.max_gas_per_order,
         config.order_validation.same_tokens_policy,
-        config.order_quoting.default_fast_path_exclusivity,
         Some(volume_fee_policy.clone()),
         config.order_quoting.max_partner_fee,
     ));
