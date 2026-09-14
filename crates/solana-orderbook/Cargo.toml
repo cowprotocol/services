@@ -19,11 +19,15 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
+base64 = { workspace = true }
 bigdecimal = { workspace = true }
+bincode = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
 configs = { workspace = true }
 const-hex = { workspace = true }
+cow-settlement-interface = { workspace = true }
+cow-solana-rpc = { workspace = true }
 database = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
@@ -33,10 +37,6 @@ serde = { workspace = true }
 serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
-base64 = { workspace = true }
-bincode = { workspace = true }
-cow-settlement-interface = { workspace = true }
-cow-solana-rpc = { workspace = true }
 solana-sdk = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
