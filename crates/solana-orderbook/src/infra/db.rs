@@ -151,7 +151,7 @@ pub async fn order_has_trade(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<b
 /// fields plus the user's partially signed `CreateOrder` transaction and
 /// the block height at which that transaction dies with its blockhash.
 #[derive(Clone, Debug)]
-pub struct NewSponsoredOrder {
+pub struct SponsoredOrder {
     pub uid: [u8; 32],
     pub owner: [u8; 32],
     pub sell_token: [u8; 32],
@@ -171,7 +171,7 @@ pub struct NewSponsoredOrder {
 
 /// Insert a sponsored order and its `created` event in one transaction.
 /// A duplicate uid or order PDA surfaces as a unique violation.
-pub async fn insert_sponsored_order(pool: &PgPool, order: &NewSponsoredOrder) -> Result<()> {
+pub async fn insert_sponsored_order(pool: &PgPool, order: &SponsoredOrder) -> Result<()> {
     const QUERY: &str = r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
@@ -345,7 +345,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             .execute(&pool)
             .await
             .unwrap();
-        let order = NewSponsoredOrder {
+        let order = SponsoredOrder {
             uid: [0x11; 32],
             owner: [0xAA; 32],
             sell_token: [0x66; 32],
