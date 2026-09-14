@@ -273,7 +273,9 @@ pub async fn is_pending_fast_path(
 /// UIDs of every fast-path order whose `valid_from` has not been set.
 /// Used by the autopilot on startup to re-drive the handler for orders
 /// whose Postgres notification was missed while the process was down.
-/// Backed by the partial index `orders_pending_fast_path`.
+/// The `WHERE fast_path` half of the predicate is served by the partial
+/// index `orders_fast_path`; the `valid_from IS NULL` filter runs on
+/// the (small) indexed subset.
 #[instrument(skip_all)]
 pub async fn pending_fast_path_uids(ex: &mut PgConnection) -> Result<Vec<OrderUid>, sqlx::Error> {
     const QUERY: &str = "SELECT uid FROM orders WHERE fast_path AND valid_from IS NULL";
@@ -827,8 +829,10 @@ pub fn solvable_orders(
             -- Fast-path orders wait for the autopilot's fast-path handler
             -- to populate `valid_from` (either `now()` for fallthrough or
             -- `now + exclusivity` for a real fast-path settle attempt).
-            -- Until then they must not enter a regular auction. Backed by
-            -- the partial index `orders_pending_fast_path`.
+            -- Until then they must not enter a regular auction. This runs
+            -- as a post-filter — the surrounding predicates already
+            -- narrow the row set enough that the `orders_fast_path`
+            -- index isn't the planner's pick here.
             AND NOT (o.fast_path AND o.valid_from IS NULL)
             AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
