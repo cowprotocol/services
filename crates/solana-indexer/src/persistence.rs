@@ -420,7 +420,7 @@ WHERE pda.order_uid = deltas.order_uid
 UPDATE solana.dead_letter SET last_attempt_at = now()
 WHERE tx_signature IN (
     SELECT tx_signature FROM solana.dead_letter
-    ORDER BY last_attempt_at ASC NULLS FIRST, slot
+    ORDER BY last_attempt_at, slot
     LIMIT $1
 )
 RETURNING tx_signature, slot
