@@ -140,7 +140,9 @@ impl Cached {
         self.cache.insert(address, Entry::new(verdict));
     }
 
-    /// Publishes how many cached addresses each backend currently bans.
+    /// Publishes how many cached addresses each backend currently bans. One
+    /// full walk per backend, once a minute: recounting from scratch keeps
+    /// the gauge right after moka evicts entries on its own.
     fn report_currently_banned(&self) {
         for backend in &self.backends {
             let name = backend.name();
