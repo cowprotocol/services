@@ -77,6 +77,9 @@ impl WinnerSelection<SolanaCycle> for SolanaArbitrator {
                 .collect(),
             &context,
         );
+        for winner in inner.winners() {
+            tracing::info!(solver = %winner.solver(), solution = winner.id(), "winner");
+        }
         Ranking { inner, drivers }
     }
 }
