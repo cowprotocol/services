@@ -12,7 +12,7 @@ const DEAD_LETTER_BATCH: i64 = 100;
 
 /// Consecutive fetch failures that abort a pass: a dead RPC endpoint should
 /// cost a few timeouts, not one per parked row.
-const MAX_CONSECUTIVE_FETCH_FAILURES: usize = 3;
+const MAX_CONSECUTIVE_FETCH_FAILURES: usize = 10;
 
 impl Decoder {
     /// One replay pass: retry the parked dead letters. Work that fails
