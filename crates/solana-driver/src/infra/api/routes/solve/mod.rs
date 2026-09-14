@@ -21,7 +21,7 @@ pub(crate) async fn solve(
     // stride.
     if let Some(stride) = state.solve_every_nth_auction() {
         let seq = state.next_solve_seq();
-        if seq % stride.get() != 0 {
+        if !seq.is_multiple_of(stride.get()) {
             tracing::debug!(%auction_id, %stride, seq, "sitting out the auction");
             return Ok(Json(dto::SolveResponse::new(Vec::new())));
         }
