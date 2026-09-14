@@ -21,7 +21,7 @@ use {
 
 /// Where a ban came from. Doubles as the label of the per-backend metrics, so
 /// a backend cannot report a source the gauges never publish.
-#[derive(Debug, enumset::EnumSetType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Source {
     /// The hardcoded deny-list, which is not backed by a registry.
     List,

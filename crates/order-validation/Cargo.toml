@@ -11,7 +11,6 @@ alloy-primitives = { workspace = true }
 async-trait = { workspace = true }
 const-hex = { workspace = true }
 contracts = { workspace = true }
-enumset = { workspace = true }
 futures = { workspace = true }
 hmac = { workspace = true }
 moka = { workspace = true, features = ["sync"] }
