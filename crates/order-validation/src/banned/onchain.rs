@@ -26,7 +26,7 @@ impl Backend for Onchain {
         Ok(self.contract.isSanctioned(address).call().await?)
     }
 
-    fn name(&self) -> &'static str {
-        "chainalysis"
+    fn source(&self) -> super::Source {
+        super::Source::Chainalysis
     }
 }

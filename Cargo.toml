@@ -63,6 +63,7 @@ dashmap = "6.1.0"
 database = { path = "crates/database" }
 derive_more = { version = "1.0.0", features = ["full"] }
 driver = { path = "crates/driver" }
+enumset = "1.1.14"
 eth-domain-types = { path = "crates/eth-domain-types" }
 ethrpc = { path = "crates/ethrpc" }
 event-bus-dto = { path = "crates/event-bus-dto" }
