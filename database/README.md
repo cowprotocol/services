@@ -256,6 +256,7 @@ Column                    | Type                         | Nullable | Details
  settlement\_contract     | bytea                        | not null | address of the contract that should be used to settle this order
  sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
+ class                    | [enum](#orderclass)          | not null | deprecated and no longer read by the services; new rows always get the default `limit`. Kept for one release so the previous orderbook version can still write it, dropped in a follow-up migration
  true_valid_to | bigint                       | not null | UNIX timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
  valid\_from               | bigint                       | nullable | earliest UNIX timestamp (in seconds) at which the order may enter a batch auction. Taken from the order's app-data (`validFrom`). NULL means no lower bound, i.e. the order is eligible immediately (the default for all existing orders).
 
@@ -272,6 +273,7 @@ Indexes:
 - orders\_valid\_from: btree(`valid_from`) WHERE valid_from IS NOT NULL
 - orders_owner_covering: btree(`owner`) INCLUDE (`uid`, `kind`, `buy_amount`, `sell_amount`, `fee_amount`, `buy_token`, `sell_token`)
 - orders_owner_valid_composite: btree(`owner`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL
+- orders_owner_class_valid_composite: btree(`owner`, `class`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL (superseded by `orders_owner_valid_composite`, dropped together with the `class` column in a follow-up migration)
 
 ### fee_policies
 
@@ -595,6 +597,16 @@ We support different expiration times for orders with different signing schemes.
 ----------|--------
  erc20    | Bought tokens will be added to the ERC20 token balance of that user
  internal | Bought tokens will be added to the balancer vault internal balance of the user ([docs](https://docs.cow.fi/smart-contracts/vault-relayer/balancer-internal-balances))
+
+#### orderclass
+
+Deprecated: order classes no longer exist in the services (every order is a limit order and JIT orders live in `jit_orders`). The type and the `orders.class` column only remain until the follow-up migration drops them.
+
+ Value     | Meaning
+-----------|--------
+ market    | Historic: short lived order that paid a static fee signed upfront. No longer accepted.
+ liquidity | Historic: order traded at its limit price without surplus. JIT orders replaced these.
+ limit     | Order that may receive surplus; the protocol fee is taken from the surplus. The only value written today (column default).
 
 ## Notes on Migrations
 

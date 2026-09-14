@@ -805,8 +805,11 @@ impl OrderValidating for OrderValidator {
         if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
-        // Fees can't be signed upfront anymore (the former market orders); the
-        // protocol fee is taken from the surplus instead.
+        // Historically an order paid for its execution by signing a fixed
+        // `fee_amount` upfront which the API quoted and enforced at placement
+        // time. Fees have since moved into the limit price & slippage
+        // tolerance. A non-zero signed fee is rejected instead
+        // of being silently kept as an extra payment to the protocol.
         if !data.fee_amount.is_zero() {
             return Err(ValidationError::NonZeroFee);
         }

@@ -40,7 +40,6 @@ use {
     },
     simulator::simulation_builder::{self, SettlementSimulator},
     std::{borrow::Cow, sync::Arc},
-    strum::Display,
     thiserror::Error,
     tracing::instrument,
 };
@@ -53,21 +52,34 @@ struct Metrics {
     orders: prometheus::IntCounterVec,
 }
 
-#[derive(Display)]
-#[strum(serialize_all = "snake_case")]
 enum OrderOperation {
     Created,
     Cancelled,
 }
 
+impl OrderOperation {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
 /// Whether an order's limit price was within the quote when it was submitted.
-/// The metric label values keep the historic `market`/`limit` naming.
-#[derive(Display)]
 enum MarketPosition {
-    #[strum(serialize = "market")]
     InMarket,
-    #[strum(serialize = "limit")]
     OutOfMarket,
+}
+
+impl MarketPosition {
+    /// The metric label values keep the historic `market`/`limit` naming.
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::InMarket => "market",
+            Self::OutOfMarket => "limit",
+        }
+    }
 }
 
 impl Metrics {
@@ -105,7 +117,7 @@ impl Metrics {
         };
         Self::get()
             .orders
-            .with_label_values(&[&position.to_string(), &operation.to_string()])
+            .with_label_values(&[position.as_str(), operation.as_str()])
             .inc();
     }
 
@@ -117,7 +129,7 @@ impl Metrics {
             for position in &[MarketPosition::InMarket, MarketPosition::OutOfMarket] {
                 metrics
                     .orders
-                    .with_label_values(&[&position.to_string(), &op.to_string()])
+                    .with_label_values(&[position.as_str(), op.as_str()])
                     .reset();
             }
         }
