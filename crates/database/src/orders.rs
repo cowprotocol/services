@@ -100,6 +100,10 @@ pub struct Order {
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     pub class: OrderClass,
     pub valid_from: Option<i64>,
+    /// Set from the order's `enableFastPath` app-data flag at placement.
+    /// The autopilot's fast-path handler owns `valid_from` once this is
+    /// `true`; `false` orders never go through that pipeline.
+    pub fast_path: bool,
 }
 
 #[instrument(skip_all)]
@@ -149,7 +153,8 @@ INSERT INTO orders (
     cancellation_timestamp,
     class,
     true_valid_to,
-    valid_from
+    valid_from,
+    fast_path
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
@@ -162,7 +167,8 @@ VALUES (
         ELSE
             $21
     END,
-    $22
+    $22,
+    $23
 )
     "#;
 
@@ -208,6 +214,7 @@ async fn insert_order_execute_sqlx(
         // true_valid_to takes the same value as valid_to when inserting an order
         .bind(order.valid_to)
         .bind(order.valid_from)
+        .bind(order.fast_path)
         .execute(ex)
         .await
         .map(|result| result.rows_affected() > 0)

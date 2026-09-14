@@ -187,6 +187,7 @@ async fn insert_order(
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         cancellation_timestamp: None,
         valid_from: order.metadata.valid_from.map(i64::from),
+        fast_path: false,
     };
 
     database::orders::insert_order(ex, &db_order)

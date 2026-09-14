@@ -647,6 +647,9 @@ fn convert_onchain_order_placement(
         // Backfilled from the order's app-data in `handle_app_data` before the
         // order is persisted; the full app-data isn't available at this point.
         valid_from: None,
+        // Same as `valid_from`: filled in from the app-data after it has been
+        // fetched.
+        fast_path: false,
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -1079,6 +1082,7 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
             valid_from: None,
+            fast_path: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1193,6 +1197,7 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
             valid_from: None,
+            fast_path: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
