@@ -4,6 +4,8 @@ use {
     crate::infra::api::ValidationParameters,
     configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
+    serde_ext::deserialize_solana_pubkey_b58,
+    solana_sdk::pubkey::Pubkey,
     std::{net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
     url::Url,
@@ -43,6 +45,8 @@ pub struct Config {
     pub http: Http,
     /// Quote endpoint configuration.
     pub quoting: Quoting,
+    /// Sponsored order placement. Absent disables `POST /api/v1/orders`.
+    pub sponsoring: Option<Sponsoring>,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -92,6 +96,36 @@ impl Quoting {
             max_validity: self.max_validity,
         }
     }
+}
+
+/// Sponsored order placement configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Sponsoring {
+    /// The funding account a sponsored creation transaction must name as its
+    /// fee payer and rent payer. The autopilot countersigns with its key.
+    #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
+    pub funder: Pubkey,
+    /// The settlement program a creation transaction must target. Defaults
+    /// to the official deployment the interface crate exports.
+    #[serde(
+        default = "default_settlement_program_id",
+        deserialize_with = "deserialize_solana_pubkey_b58"
+    )]
+    pub settlement_program: Pubkey,
+    /// RPC endpoint for blockhash freshness checks.
+    pub rpc_endpoint: Url,
+    /// Ceiling on one RPC request.
+    #[serde(with = "humantime_serde", default = "default_rpc_timeout")]
+    pub rpc_request_timeout: Duration,
+}
+
+fn default_settlement_program_id() -> Pubkey {
+    cow_settlement_interface::ID
+}
+
+fn default_rpc_timeout() -> Duration {
+    Duration::from_secs(5)
 }
 
 /// Appends the trailing slash `Url::join` needs to every URL in the list.

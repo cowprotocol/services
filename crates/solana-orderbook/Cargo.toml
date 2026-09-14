@@ -33,6 +33,10 @@ serde = { workspace = true }
 serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+base64 = { workspace = true }
+bincode = { workspace = true }
+cow-settlement-interface = { workspace = true }
+cow-solana-rpc = { workspace = true }
 solana-sdk = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
@@ -44,6 +48,10 @@ tower = { workspace = true }
 tower-http = { workspace = true, features = ["cors", "decompression-br", "trace"] }
 tracing = { workspace = true }
 url = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+cow-settlement-client = { workspace = true }
+cow-solana-rpc = { workspace = true, features = ["test-util"] }
 
 [features]
 default = []
