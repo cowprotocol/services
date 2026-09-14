@@ -306,36 +306,25 @@ pub async fn run(config: Configuration) {
             .await,
     );
 
+    let price_estimation_solvers: Vec<_> = config
+        .order_quoting
+        .price_estimation_drivers
+        .iter()
+        .map(|driver| configs::native_price_estimators::ExternalSolver {
+            name: driver.name.clone(),
+            url: driver.url.clone(),
+        })
+        .collect();
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &config
-                .order_quoting
-                .price_estimation_drivers
-                .iter()
-                .map(
-                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
-                        name: price_estimator_driver.name.clone(),
-                        url: price_estimator_driver.url.clone(),
-                    },
-                )
-                .collect::<Vec<_>>(),
+            &price_estimation_solvers,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
         .unwrap();
     let fast_price_estimator = price_estimator_factory
         .fast_price_estimator(
-            &config
-                .order_quoting
-                .price_estimation_drivers
-                .iter()
-                .map(
-                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
-                        name: price_estimator_driver.name.clone(),
-                        url: price_estimator_driver.url.clone(),
-                    },
-                )
-                .collect::<Vec<_>>(),
+            &price_estimation_solvers,
             config.native_price_estimation.shared.results_required,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
@@ -379,17 +368,7 @@ pub async fn run(config: Configuration) {
 
     let unverified_price_estimator = price_estimator_factory
         .unverified_price_estimator(
-            &config
-                .order_quoting
-                .price_estimation_drivers
-                .iter()
-                .map(
-                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
-                        name: price_estimator_driver.name.clone(),
-                        url: price_estimator_driver.url.clone(),
-                    },
-                )
-                .collect::<Vec<_>>(),
+            &price_estimation_solvers,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
