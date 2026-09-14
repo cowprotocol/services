@@ -425,7 +425,8 @@ mod tests {
             ),
         ];
 
-        // SanitizedPriceEstimator will simply forward the Query in the common case
+        // SanitizedPriceEstimator will simply forward the Query in the common
+        // case
         let first_forwarded_query = queries[0].0.clone();
         // SanitizedPriceEstimator replaces ETH buy token with native token
         let second_forwarded_query = Query {
@@ -524,7 +525,8 @@ mod tests {
             match result {
                 Ok(estimate) => assert_eq!(estimate, expectation.unwrap()),
                 Err(err) => {
-                    // we only compare the error variant; everything else would be a PITA
+                    // we only compare the error variant; everything else would
+                    // be a PITA
                     let reported_error = std::mem::discriminant(&err);
                     let expected_error = std::mem::discriminant(&expectation.unwrap_err());
                     assert_eq!(reported_error, expected_error);
@@ -579,12 +581,12 @@ mod tests {
             ),
         ];
 
-        // SanitizedPriceEstimator will simply forward the Query in the sell=buy case
-        // if it is not calculating native price
+        // SanitizedPriceEstimator will simply forward the Query in the sell=buy
+        // case if it is not calculating native price
         let first_forwarded_query = queries[0].0.clone();
 
-        // SanitizedPriceEstimator will simply forward the Query if sell=buy of native
-        // token case if it is not calculating the native price
+        // SanitizedPriceEstimator will simply forward the Query if sell=buy of
+        // native token case if it is not calculating the native price
         let second_forwarded_query = queries[1].0.clone();
 
         let mut wrapped_estimator = MockPriceEstimating::new();
@@ -637,7 +639,8 @@ mod tests {
             match result {
                 Ok(estimate) => assert_eq!(estimate, expectation.unwrap()),
                 Err(err) => {
-                    // we only compare the error variant; everything else would be a PITA
+                    // we only compare the error variant; everything else would
+                    // be a PITA
                     let reported_error = std::mem::discriminant(&err);
                     let expected_error = std::mem::discriminant(&expectation.unwrap_err());
                     assert_eq!(reported_error, expected_error);

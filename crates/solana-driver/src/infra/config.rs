@@ -71,12 +71,20 @@ impl Config {
     }
 }
 
+fn default_settlement_program_id() -> Pubkey {
+    cow_settlement_interface::ID
+}
+
 /// Solana chain configuration.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Chain {
-    /// On-chain program id of the settlement contract.
-    #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
+    /// On-chain program id of the settlement contract. Defaults to the
+    /// official deployment the interface crate exports.
+    #[serde(
+        default = "default_settlement_program_id",
+        deserialize_with = "deserialize_solana_pubkey_b58"
+    )]
     pub settlement_program_id: Pubkey,
 }
 
@@ -118,6 +126,11 @@ pub struct Solver {
     pub signer_keypair: PathBuf,
     /// Maximum number of concurrent solve requests kept in flight per solver.
     pub max_in_flight: NonZero<usize>,
+    /// Temporary staging knob: solve only auctions whose id is a multiple of
+    /// this value and sit the rest out, so other solvers win settlements to
+    /// test against. Absent means every auction.
+    #[serde(default)]
+    pub solve_every_nth_auction: Option<NonZero<u64>>,
 }
 
 #[cfg(test)]
@@ -173,5 +186,11 @@ mod tests {
             err.to_string().contains("expected a nonzero usize"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn chain_defaults_to_interface_program_id() {
+        let chain: Chain = toml::de::from_str("").unwrap();
+        assert_eq!(chain.settlement_program_id, cow_settlement_interface::ID);
     }
 }

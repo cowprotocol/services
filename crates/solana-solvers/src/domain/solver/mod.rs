@@ -8,6 +8,7 @@ use {
     futures::future::join_all,
     solana_sdk::pubkey::Pubkey,
     std::future::Future,
+    tracing::Instrument,
 };
 
 /// Quotes one order into a swap. A seam over [`Dex`] so the loop is testable
@@ -43,9 +44,21 @@ pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
     let candidates = auction.orders.iter().enumerate().map(|(index, order)| {
         let dex_order = order.to_dex_order();
         async move {
-            let swap = quoter.quote(&dex_order, &auction.taker).await.ok()?;
-            Solution::new(index as u64, order.uid, &dex_order, swap).ok()
+            let swap = quoter
+                .quote(&dex_order, &auction.taker)
+                .await
+                .inspect_err(|err| match err {
+                    dex::jupiter::Error::NotFound | dex::jupiter::Error::OrderNotSupported => {
+                        tracing::debug!("no solution for swap")
+                    }
+                    _ => tracing::warn!(%err, "quote failed"),
+                })
+                .ok()?;
+            let solution = Solution::new(index as u64, order.uid, &dex_order, swap).ok()?;
+            tracing::debug!("solved");
+            Some(solution)
         }
+        .instrument(tracing::info_span!("solve", auction_id = ?auction.id, order = %order.uid))
     });
     join_all(candidates).await.into_iter().flatten().collect()
 }
@@ -104,7 +117,7 @@ mod tests {
     #[tokio::test]
     async fn emits_one_solution_per_routable_order() {
         let auction = Auction {
-            id: 1,
+            id: Some(1),
             taker: pubkey(1),
             orders: vec![
                 order(0x01, dex::Side::Sell, pubkey(0x10)), // routable
@@ -123,7 +136,7 @@ mod tests {
     #[tokio::test]
     async fn empty_auction_yields_no_solutions() {
         let auction = Auction {
-            id: 1,
+            id: Some(1),
             taker: pubkey(1),
             orders: vec![],
             deadline: deadline(),

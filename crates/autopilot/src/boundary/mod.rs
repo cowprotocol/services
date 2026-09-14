@@ -1,8 +1,5 @@
 pub use {
-    crate::database::{
-        competition::Competition,
-        order_events::{OrderEventLabel, store_order_events},
-    },
+    crate::database::order_events::{OrderEventLabel, store_order_events},
     database,
     model::{
         DomainSeparator,
@@ -18,7 +15,6 @@ pub use {
             SellTokenSource,
         },
         signature::{EcdsaSignature, Signature, SigningScheme},
-        solver_competition::SolverCompetitionDB,
     },
     shared::order_validation::{Amounts, is_order_outside_market_price},
 };

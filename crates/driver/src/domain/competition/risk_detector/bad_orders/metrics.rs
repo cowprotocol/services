@@ -70,9 +70,10 @@ impl Detector {
             .flagged_unsupported_at
             .is_some_and(|t| now.duration_since(t) > self.order_freeze_time)
         {
-            // Sometimes tokens only cause issues temporarily. If the token's freeze
-            // period expired we pretend we don't have enough information to give it
-            // another chance. If it still behaves badly it will get frozen immediately.
+            // Sometimes tokens only cause issues temporarily. If the token's
+            // freeze period expired we pretend we don't have enough
+            // information to give it another chance. If it still
+            // behaves badly it will get frozen immediately.
             return Quality::Unknown;
         }
 
@@ -192,11 +193,13 @@ mod tests {
         // after we got enough measurements the order gets marked as bad
         assert_eq!(order_quality(), Quality::Unsupported);
 
-        // after the freeze period is over the token gets reported as unknown again
+        // after the freeze period is over the token gets reported as unknown
+        // again
         tokio::time::sleep(FREEZE_DURATION).await;
         assert_eq!(order_quality(), Quality::Unknown);
 
-        // after an unfreeze another bad measurement is enough to freeze it again
+        // after an unfreeze another bad measurement is enough to freeze it
+        // again
         detector.update_orders(&[order], true);
         assert_eq!(order_quality(), Quality::Unsupported);
     }
@@ -247,7 +250,8 @@ mod tests {
             interval.tick().await;
         }
 
-        // order was still not evicted because the max age has not been reached yet
+        // order was still not evicted because the max age has not been reached
+        // yet
         assert_eq!(detector.counter.len(), 1);
         assert!(detector.counter.get(&long_order).is_some());
 

@@ -21,6 +21,7 @@ use {
                 InnerInstruction,
                 InnerInstructions,
                 Message,
+                SlotStatus,
                 SubscribeUpdate,
                 SubscribeUpdateSlot,
                 SubscribeUpdateTransaction,
@@ -32,11 +33,12 @@ use {
             },
         },
     },
+    base64::Engine,
     bytes::Bytes,
     cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{OrderIntent, OrderKind as IntentOrderKind},
+        data::intent::{Flags, OrderIntent, OrderKind as IntentOrderKind},
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
@@ -269,7 +271,8 @@ fn inner_ix_path_tracks_cpi_nesting_depth() {
     assert_eq!(relevant[0].inner_ix_path, vec![0]);
     assert_eq!(relevant[0].data, Bytes::from(vec![10]));
 
-    // the dropped depth-2 CPI still advanced the counter, so this sibling is [0, 1]
+    // the dropped depth-2 CPI still advanced the counter, so this sibling is
+    // [0, 1]
     assert_eq!(relevant[1].program_id, settlement);
     assert_eq!(relevant[1].inner_ix_path, vec![0, 1]);
     assert_eq!(relevant[1].data, Bytes::from(vec![12]));
@@ -312,10 +315,11 @@ fn signature(n: u8) -> Signature {
 }
 
 /// A slot-status message in the proto envelope the ingester reads.
-fn slot_status_update(slot: u64) -> SubscribeUpdate {
+fn slot_status_update(slot: u64, status: SlotStatus) -> SubscribeUpdate {
     SubscribeUpdate {
         update_oneof: Some(UpdateOneof::Slot(SubscribeUpdateSlot {
             slot,
+            status: status as i32,
             ..Default::default()
         })),
         ..Default::default()
@@ -343,17 +347,28 @@ fn tx_update(slot: u64, info: SubscribeUpdateTransactionInfo) -> SubscribeUpdate
 /// (`pubkey(11)`) differs from the intent owner (`[0x11; 32]`) so callers can
 /// pin that the event owner comes from the intent data, not the accounts.
 fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
+    let (instruction, expected) = create_order_parts();
+    (tx_from_instructions(pubkey(9), &[instruction]), expected)
+}
+
+/// The `CreateOrder` instruction and the event its decode must produce.
+fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) {
     let settlement = pubkey(1);
     let created_by = pubkey(12);
     let intent = OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
         buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
         sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
+        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
-        kind: IntentOrderKind::Sell,
-        partially_fillable: false,
+        flags: Flags {
+            created_on_chain: true,
+            kind: IntentOrderKind::Sell,
+            partially_fillable: false,
+        },
         app_data: [0x44; 32],
     };
     let instruction = cow_settlement_client::instructions::CreateOrder {
@@ -363,7 +378,6 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         intent: &intent,
     }
     .into();
-    let tx = tx_from_instructions(pubkey(9), &[instruction]);
     let expected = CreatedOrder {
         signature: signature(6),
         order_uid: OrderUid(intent.uid().to_bytes()),
@@ -371,7 +385,9 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         created_by,
         order_pda: find_order_pda(&settlement, &intent.uid()).0,
         sell_token_account: Pubkey::new_from_array([0x33; 32]),
+        sell_mint: Pubkey::new_from_array([0x66; 32]),
         buy_token_account: Pubkey::new_from_array([0x22; 32]),
+        buy_mint: Pubkey::new_from_array([0x55; 32]),
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
@@ -379,57 +395,185 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         partially_fillable: false,
         app_data: [0x44; 32],
     };
-    (tx, expected)
+    (instruction, expected)
 }
 
-#[test]
-fn token_account_mint_trusts_only_token_program_accounts() {
-    let account = |owner: Pubkey, data: Vec<u8>| solana_sdk::account::Account {
-        lamports: 1,
-        data,
-        owner,
-        executable: false,
-        rent_epoch: 0,
-    };
-    let token_program = super::TOKEN_PROGRAMS[0];
-    assert_eq!(
-        super::token_account_mint(&account(token_program, vec![0xAA; 165])),
-        Some(Pubkey::new_from_array([0xAA; 32]))
+/// The RPC wire form of a signed transaction, as `getTransaction` returns it
+/// with base64 encoding.
+fn rpc_transaction_json(
+    tx: &solana_sdk::transaction::VersionedTransaction,
+    slot: u64,
+) -> serde_json::Value {
+    let bytes = bincode::serialize(tx).unwrap();
+    serde_json::json!({
+        "slot": slot,
+        "transaction": [base64::prelude::BASE64_STANDARD.encode(bytes), "base64"],
+        "meta": {
+            "err": null,
+            "status": { "Ok": null },
+            "fee": 0u64,
+            "preBalances": [],
+            "postBalances": [],
+            "innerInstructions": [],
+            "logMessages": [],
+            "preTokenBalances": [],
+            "postTokenBalances": [],
+            "rewards": []
+        },
+        "blockTime": null
+    })
+}
+
+/// A signed transaction in the `VersionedTransaction` envelope `decode()`
+/// returns, carrying a legacy message with the given instruction.
+fn versioned_tx(
+    instruction: solana_sdk::instruction::Instruction,
+) -> solana_sdk::transaction::VersionedTransaction {
+    let message = solana_sdk::message::Message::new_with_blockhash(
+        &[instruction],
+        Some(&pubkey(9)),
+        &solana_sdk::hash::Hash::default(),
     );
-    // A mint account: right owner, too short to be a token account.
+    // As many signatures as the header demands, or `sanitize` rejects the
+    // payload. The first doubles as the transaction signature.
+    let signatures = vec![signature(6); usize::from(message.header.num_required_signatures)];
+    solana_sdk::transaction::VersionedTransaction {
+        signatures,
+        message: solana_sdk::message::VersionedMessage::Legacy(message),
+    }
+}
+
+/// An RPC-fetched transaction decodes to the same event as its streamed
+/// form.
+#[tokio::test]
+async fn backfilled_transaction_decodes_like_the_streamed_one() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (instruction, expected) = create_order_parts();
+    let tx = versioned_tx(instruction);
+    let encoded: cow_solana_rpc::EncodedConfirmedTransactionWithStatusMeta =
+        serde_json::from_value(rpc_transaction_json(&tx, 43)).unwrap();
+    let info = super::backfill::convert(encoded, signature(6)).expect("convertible");
+    let decoder = pure_decoder(settlement, solflow);
+    let events = decoder
+        .decode(info, Slot(43), signature(6))
+        .expect("clean decode");
     assert_eq!(
-        super::token_account_mint(&account(token_program, vec![0xAA; 82])),
-        None
-    );
-    // Right size, arbitrary owner.
-    assert_eq!(
-        super::token_account_mint(&account(pubkey(1), vec![0xAA; 165])),
-        None
+        events,
+        vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+            Box::new(expected)
+        ))]
     );
 }
 
-/// A canned `getMultipleAccounts` response, in request order: the sell token
-/// account holds mint `[0xA1; 32]`, the buy token account mint `[0xA2; 32]`
-/// (the first 32 bytes of the base64 data).
-fn mock_rpc_with_token_accounts() -> SolanaRPC {
-    let account = |data: &str| {
-        serde_json::json!({
-            "lamports": 1u64,
-            "data": [data, "base64"],
-            "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-            "executable": false,
-            "rentEpoch": 0u64,
-            "space": 165u64
-        })
-    };
-    let sell = account("oaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    let buy = account("oqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    let response = serde_json::json!({
-        "context": { "slot": 1u64, "apiVersion": "2.0.0" },
-        "value": [sell, buy],
+/// The converter maps the V0 shape too: an ALT-loaded settlement program
+/// reached only through a CPI decodes to the same event as the streamed
+/// form.
+#[tokio::test]
+async fn backfilled_v0_cpi_decodes_like_the_streamed_one() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (instruction, expected) = create_order_parts();
+    let (payer, router) = (pubkey(9), pubkey(8));
+
+    let mut static_keys = vec![payer, router];
+    static_keys.extend(instruction.accounts.iter().map(|meta| meta.pubkey));
+    let settlement_index = u8::try_from(static_keys.len()).unwrap();
+    let account_indices: Vec<u8> = (2..settlement_index).collect();
+
+    let streamed = tx_info(
+        static_keys.clone(),
+        vec![],
+        vec![settlement],
+        vec![CompiledInstruction {
+            program_id_index: 1,
+            accounts: vec![],
+            data: vec![0],
+        }],
+        vec![InnerInstructions {
+            index: 0,
+            instructions: vec![inner(
+                u32::from(settlement_index),
+                account_indices.clone(),
+                instruction.data.clone(),
+                Some(2),
+            )],
+        }],
+    );
+
+    let message = solana_sdk::message::VersionedMessage::V0(solana_sdk::message::v0::Message {
+        header: solana_sdk::message::MessageHeader {
+            num_required_signatures: 1,
+            num_readonly_signed_accounts: 0,
+            num_readonly_unsigned_accounts: 0,
+        },
+        account_keys: static_keys,
+        recent_blockhash: solana_sdk::hash::Hash::default(),
+        instructions: vec![
+            solana_sdk::message::compiled_instruction::CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![],
+                data: vec![0],
+            },
+        ],
+        address_table_lookups: vec![solana_sdk::message::v0::MessageAddressTableLookup {
+            account_key: pubkey(7),
+            writable_indexes: vec![],
+            readonly_indexes: vec![0],
+        }],
     });
-    let mocks = Mocks::from([(RpcRequest::GetMultipleAccounts, response)]);
-    SolanaRPC::new_mock_with_mocks(mocks)
+    let tx = solana_sdk::transaction::VersionedTransaction {
+        signatures: vec![signature(6)],
+        message,
+    };
+    let bytes = bincode::serialize(&tx).unwrap();
+    let json = serde_json::json!({
+        "slot": 43u64,
+        "transaction": [base64::prelude::BASE64_STANDARD.encode(bytes), "base64"],
+        "meta": {
+            "err": null,
+            "status": { "Ok": null },
+            "fee": 0u64,
+            "preBalances": [],
+            "postBalances": [],
+            "innerInstructions": [{
+                "index": 0,
+                "instructions": [{
+                    "programIdIndex": settlement_index,
+                    "accounts": account_indices,
+                    "data": solana_sdk::bs58::encode(&instruction.data).into_string(),
+                    "stackHeight": 2
+                }]
+            }],
+            "logMessages": [],
+            "preTokenBalances": [],
+            "postTokenBalances": [],
+            "rewards": [],
+            "loadedAddresses": {
+                "writable": [],
+                "readonly": [settlement.to_string()]
+            }
+        },
+        "blockTime": null
+    });
+    let encoded: cow_solana_rpc::EncodedConfirmedTransactionWithStatusMeta =
+        serde_json::from_value(json).unwrap();
+    let backfilled = super::backfill::convert(encoded, signature(6)).expect("convertible");
+
+    let decoder = pure_decoder(settlement, solflow);
+    let expected = vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+        Box::new(expected),
+    ))];
+    assert_eq!(
+        decoder
+            .decode(streamed, Slot(43), signature(6))
+            .expect("streamed decode"),
+        expected
+    );
+    assert_eq!(
+        decoder
+            .decode(backfilled, Slot(43), signature(6))
+            .expect("backfilled decode"),
+        expected
+    );
 }
 
 /// A decoder over a lazy pool that never connects: `decode` is pure, tests
@@ -444,6 +588,23 @@ fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
         settlement,
         Some(solflow),
     )
+}
+
+/// The finalization audit asks for two signatures (the dead letter and the
+/// healthy create), both still known to the chain.
+fn mock_rpc_with_signature_statuses() -> SolanaRPC {
+    let status = serde_json::json!({
+        "slot": 43u64,
+        "confirmations": null,
+        "err": null,
+        "status": { "Ok": null },
+        "confirmationStatus": "finalized",
+    });
+    let statuses = serde_json::json!({
+        "context": { "slot": 43u64, "apiVersion": "2.0.0" },
+        "value": [status.clone(), status],
+    });
+    SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetSignatureStatuses, statuses)]))
 }
 
 /// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run`
@@ -559,26 +720,33 @@ fn unpaired_begin_settle_sets_failure_flag() {
 /// - the buy-side amount comes from the `FinalizeSettle` entry paired to its
 ///   order by position (order `i` is paid by entry `i`),
 /// - the trade names the canonical order PDA the builder derives,
-/// - the solver is the fee payer.
+/// - the solver is the signer `BeginSettle` names, not the fee payer.
 #[test]
 fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     let solver = pubkey(10);
+    let fee_payer = pubkey(9);
     let intent = OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
         buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
         sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
+        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
         sell_amount: 1_000,
         buy_amount: 1_234,
         valid_to: 42,
-        kind: IntentOrderKind::Sell,
-        partially_fillable: false,
+        flags: Flags {
+            created_on_chain: true,
+            kind: IntentOrderKind::Sell,
+            partially_fillable: false,
+        },
         app_data: [0x44; 32],
     };
     let order_pda = find_order_pda(&settlement, &intent.uid()).0;
 
     let begin = cow_settlement_client::instructions::BeginSettle {
         program_id: settlement,
+        solver,
         finalize_ix_index: 1,
         auction_id: 4242,
         orders: &[cow_settlement_client::instructions::InitializedIntent {
@@ -601,12 +769,11 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         begin_ix_index: 0,
         orders: &[cow_settlement_client::instructions::FinalizedIntent {
             intent: &intent,
-            mint: pubkey(30),
             amount: 1_234,
         }],
     }
     .into();
-    let tx = tx_from_instructions(solver, &[begin, finalize]);
+    let tx = tx_from_instructions(fee_payer, &[begin, finalize]);
 
     let ctx = TxContext {
         slot: Slot(5),
@@ -696,7 +863,7 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
     let mut decoder = Decoder::new(
         Postgres::new(pool.clone()),
-        mock_rpc_with_token_accounts(),
+        mock_rpc_with_signature_statuses(),
         receiver,
         settlement,
         Some(solflow),
@@ -711,22 +878,40 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     ] {
         geyser_tx.send(update).await.unwrap();
     }
-    // The hold-back keeps both slots buffered: the newest observed slot (43)
-    // is not two past either of them, so nothing may be persisted yet.
+    // No confirmed status arrived yet, so nothing may flush: the buffers
+    // wait and the watermark stays unset.
     let reader = Postgres::new(pool.clone());
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(reader.last_indexed_slot().await.unwrap(), None);
+    let events: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_pda")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(events, 0);
 
-    // The slot-45 status moves the stream two past 43 and flushes both slots.
-    // Closing the channel ends the ingester (a terminal stream end) and the
-    // decoder drains cleanly behind it, so joining both tasks is the
-    // guarantee that every write below has landed.
-    geyser_tx.send(Ok(slot_status_update(45))).await.unwrap();
+    // The confirmed 45 status flushes both buffered slots and advances the
+    // watermark to 45. The finalized status advances the finalized
+    // watermark, and the quiet confirmed 50 moves the last indexed slot to
+    // 50 with nothing to flush. Closing the channel ends the ingester (a
+    // terminal stream end) and the decoder drains cleanly behind it, so
+    // joining both tasks is the guarantee that every write below has landed.
+    for update in [
+        slot_status_update(45, SlotStatus::SlotConfirmed),
+        slot_status_update(43, SlotStatus::SlotFinalized),
+        slot_status_update(50, SlotStatus::SlotConfirmed),
+    ] {
+        geyser_tx.send(Ok(update)).await.unwrap();
+    }
     drop(geyser_tx);
     assert!(ingester_task.await.unwrap().is_err());
     assert!(decoder_task.await.unwrap().is_ok());
 
-    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(43)));
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(50)));
+    let finalized: i64 = sqlx::query_scalar("SELECT finalized_slot FROM solana.indexer_state")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(finalized, 43);
 
     // Slot 42 held only the reverted transaction: no dead letter, no rows.
     // The slot-43 transaction with the unknown discriminator is dead-lettered
@@ -755,6 +940,62 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(sell_token, vec![0xA1; 32]);
-    assert_eq!(buy_token, vec![0xA2; 32]);
+    assert_eq!(sell_token, expected.sell_mint.to_bytes().to_vec());
+    assert_eq!(buy_token, expected.buy_mint.to_bytes().to_vec());
+}
+
+/// Backfill end to end: the watermark trails the tip past the replay window,
+/// RPC history supplies the missing transaction, and the watermark lands on
+/// the scanned tip with the recovered order persisted.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_backfill_recovers_the_gap() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+    let persistence = Postgres::new(pool.clone());
+    persistence.write_last_indexed_slot(Slot(40)).await.unwrap();
+
+    let settlement = pubkey(1);
+    let (instruction, expected) = create_order_parts();
+    let tx = versioned_tx(instruction);
+    let mut mocks = Mocks::default();
+    mocks.insert(RpcRequest::GetSlot, serde_json::json!(50u64));
+    mocks.insert(
+        RpcRequest::GetSignaturesForAddress,
+        serde_json::json!([{
+            "signature": signature(6).to_string(),
+            "slot": 43u64,
+            "err": null,
+            "memo": null,
+            "blockTime": null,
+            "confirmationStatus": "finalized"
+        }]),
+    );
+    mocks.insert(RpcRequest::GetTransaction, rpc_transaction_json(&tx, 43));
+
+    // A decoder without a stream.
+    let (_closed, rx) = tokio::sync::mpsc::channel(1);
+    let backfiller = Decoder::new(
+        Postgres::new(pool.clone()),
+        SolanaRPC::new_mock_with_mocks(mocks),
+        rx,
+        settlement,
+        None,
+    );
+    backfiller.backfill().await;
+
+    assert_eq!(
+        persistence.last_indexed_slot().await.unwrap(),
+        Some(Slot(50))
+    );
+    let (uid, created_by_tx, created_in_slot): (Vec<u8>, Vec<u8>, i64) = sqlx::query_as(
+        "SELECT o.uid, p.created_by_tx, p.created_in_slot
+         FROM solana.orders o JOIN solana.order_pda p ON p.order_uid = o.uid",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(uid, expected.order_uid.0.to_vec());
+    assert_eq!(created_by_tx, signature(6).as_ref().to_vec());
+    assert_eq!(created_in_slot, 43);
 }

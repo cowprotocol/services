@@ -1,6 +1,5 @@
 use {
     crate::{
-        database::competition::Competition,
         domain::{
             self,
             auction::Id,
@@ -32,13 +31,6 @@ use {
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     futures::{FutureExt, StreamExt, TryFutureExt},
     itertools::Itertools,
-    model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
-    },
     num::ToPrimitive,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
@@ -302,7 +294,8 @@ impl RunLoop {
         let time_since_last_block = current_block.observed_at.elapsed();
         if time_since_last_block > self.config.max_run_loop_delay {
             if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
-                // don't emit warning if we finished prev run loop within the same block
+                // don't emit warning if we finished prev run loop within the
+                // same block
                 tracing::warn!(
                     missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
                     "missed optimal auction start, wait for new block"
@@ -378,11 +371,13 @@ impl RunLoop {
             .ok()?;
         Metrics::auction(id);
 
-        // always update the auction because the tests use this as a readiness probe
+        // always update the auction because the tests use this as a readiness
+        // probe
         self.persistence.archive_auction(id, &auction);
 
         if auction.orders.is_empty() {
-            // Updating liveness probe to not report unhealthy due to this optimization
+            // Updating liveness probe to not report unhealthy due to this
+            // optimization
             self.probes.liveness.auction();
             tracing::debug!("skipping empty auction");
             return None;
@@ -423,15 +418,11 @@ impl RunLoop {
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
 
-        // Post-processing should not be executed asynchronously since it includes steps
-        // of storing all the competition/auction-related data to the DB.
+        // Post-processing should not be executed asynchronously since it
+        // includes steps of storing all the competition/auction-related
+        // data to the DB.
         if let Err(err) = self
-            .post_processing(
-                auction,
-                competition_simulation_block,
-                &ranking,
-                block_deadline,
-            )
+            .post_processing(auction, &ranking, block_deadline)
             .await
         {
             tracing::error!(?err, "failed to post-process competition");
@@ -531,17 +522,12 @@ impl RunLoop {
     async fn post_processing(
         &self,
         auction: &domain::Auction,
-        competition_simulation_block: u64,
         ranking: &Ranking,
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
         let reference_scores = ranking.reference_scores().clone();
 
-        let participants = ranking
-            .all()
-            .map(|bid| bid.solution().solver())
-            .collect::<HashSet<_>>();
         let order_lookup: std::collections::HashMap<_, _> = auction
             .orders
             .iter()
@@ -563,80 +549,13 @@ impl RunLoop {
             })
             .collect();
 
-        let mut solutions: Vec<_> = ranking
-            .enumerated()
-            .map(|(index, bid)| SolverSettlement {
-                solver: bid.driver().name.clone(),
-                solver_address: bid.solution().solver(),
-                score: Some(Score::Solver(bid.score().get().0)),
-                ranking: index + 1,
-                orders: bid
-                    .solution()
-                    .orders()
-                    .iter()
-                    .map(|(id, order)| Order::Colocated {
-                        id: (*id).into(),
-                        sell_amount: order.executed_sell.0,
-                        buy_amount: order.executed_buy.0,
-                    })
-                    .collect(),
-                // Always empty — kept to avoid breaking the solver competition
-                // API (`/api/v1/solver_competition`).
-                // NOTE: since the v1 has been removed,
-                // we'll probably be able to remove this soon too
-                clearing_prices: Default::default(),
-                is_winner: bid.is_winner(),
-                filtered_out: bid.is_filtered_out(),
-            })
-            .collect();
-        // reverse as solver competition table is sorted from worst to best,
-        // so we need to keep the ordering for backwards compatibility
-        solutions.reverse();
-
-        let competition_table = SolverCompetitionDB {
-            auction_start_block: auction.block,
-            competition_simulation_block,
-            auction: CompetitionAuction {
-                orders: auction
-                    .orders
-                    .iter()
-                    .map(|order| order.uid.into())
-                    .collect(),
-                prices: auction
-                    .prices
-                    .iter()
-                    .map(|(key, value)| (Address::from(*key), value.get().0))
-                    .collect(),
-            },
-            solutions,
-        };
-        let competition = Competition {
-            auction_id: auction.id,
-            reference_scores,
-            participants,
-            prices: auction
-                .prices
-                .clone()
-                .into_iter()
-                .map(|(key, value)| (*key, value.get().0))
-                .collect(),
-            block_deadline,
-            competition_simulation_block,
-            competition_table,
-        };
-
-        tracing::trace!(?competition, "saving competition");
-
         futures::try_join!(
             self.persistence
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
             self.persistence
-                .save_solutions(auction.id, ranking.all())
+                .save_solutions(auction.id, ranking.all(), reference_scores)
                 .map_err(|e| e.0.context("failed to save solutions")),
-            self.persistence
-                .save_competition(competition)
-                .map_err(|e| e.0.context("failed to save competition")),
             self.persistence
                 .store_fee_policies(auction.id, fee_policies)
                 .map_err(|e| e.context("failed to fee_policies")),
@@ -707,8 +626,8 @@ impl RunLoop {
             let submission_address = bid.driver().submission_address;
             let is_solution_from_driver = bid.solution().solver() == submission_address;
 
-            // Filter out solutions that don't come from their corresponding submission
-            // address
+            // Filter out solutions that don't come from their corresponding
+            // submission address
             if !is_solution_from_driver {
                 tracing::warn!(
                     driver = bid.driver().name,
@@ -894,8 +813,8 @@ impl RunLoop {
             )
             .boxed();
 
-        // Wait for either the settlement transaction to be mined or the driver returned
-        // a result.
+        // Wait for either the settlement transaction to be mined or the driver
+        // returned a result.
         let result = match futures::future::select(wait_for_settlement_transaction, settle).await {
             futures::future::Either::Left((res, _)) => res,
             futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
@@ -994,8 +913,9 @@ impl RunLoop {
         tracing::debug!(%current, deadline=%submission_deadline_latest_block, %auction_id, "waiting for tag");
         loop {
             let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
-            // Run maintenance to ensure the system processed the last available block so
-            // it's possible to find the tx in the DB in the next line.
+            // Run maintenance to ensure the system processed the last available
+            // block so it's possible to find the tx in the DB in
+            // the next line.
             self.maintenance
                 .wait_until_block_processed(SyncTarget::FullyProcessed(block.number))
                 .await;
@@ -1179,11 +1099,17 @@ struct Metrics {
     #[metric(buckets(0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64))]
     settle_blocks_elapsed: prometheus::Histogram,
 
-    /// Seconds of runway the `/settle` call had: how long until the block after
-    /// the current head arrives. With `settle_blocks_elapsed` it predicts the
-    /// landing block, `start + blocks_elapsed + 1` when the runway suffices.
-    #[metric(buckets(0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.5, 4, 6, 8, 12))]
-    settle_headroom: prometheus::Histogram,
+    /// Seconds from the `/settle` call to the block the auction aimed at,
+    /// negative once that block was already due. The `reference` label picks
+    /// the clock: `block_timestamp` (nominal start) or `observed_at`.
+    #[metric(
+        labels("reference"),
+        buckets(
+            -4, -3, -2, -1.5, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2,
+            2.5, 3, 4, 6, 8, 12
+        )
+    )]
+    settle_time_to_next_block: prometheus::HistogramVec,
 
     /// Tracks the size of the `/solve` request body in bytes. The `kind` label
     /// tells the two bodies apart: `full` is sent to regular drivers, `delta`
@@ -1292,45 +1218,48 @@ impl Metrics {
     }
 
     /// Records where the `/settle` request lands relative to block production:
-    /// how many block windows the run burned, plus the runway left when the
-    /// targeted block is still ahead. Call immediately before the request goes
-    /// out.
+    /// block windows burned, plus the runway to the block the auction aimed at.
+    /// Call immediately before the request goes out.
     fn record_settle_block_metrics(
         start_block: BlockInfo,
         current_block: &ethrpc::block_stream::CurrentBlockWatcher,
     ) {
         let head = current_block.borrow().number;
-        let blocks_elapsed = head.saturating_sub(start_block.number);
         Self::get()
             .settle_blocks_elapsed
-            .observe(blocks_elapsed as f64);
+            .observe(head.saturating_sub(start_block.number) as f64);
 
-        // Anchored on the head rather than on the auction's start block: once a
-        // run overran, the question is whether the request still makes the next
-        // block or loses one more. Both anchors agree when nothing overran.
-        Self::record_time_to_next_block(head + 1, Instant::now(), current_block.clone());
+        Self::record_settle_time_to_next_block(start_block.number + 1, current_block.clone());
     }
 
-    /// Waits in the background for `target` to arrive and records how much
-    /// runway the `/settle` request had. Waiting on an explicit block number
-    /// rather than "the next block" matters: a block landing before this task
-    /// is first polled would otherwise be skipped, overstating the runway by a
-    /// whole block.
-    fn record_time_to_next_block(
+    /// Runway to `target`, the block the auction aimed at; negative once it was
+    /// already due. Recorded against both the block's self-reported timestamp
+    /// and `observed_at`, which trails it by the block observation lag.
+    fn record_settle_time_to_next_block(
         target: u64,
-        sent_at: Instant,
         watcher: ethrpc::block_stream::CurrentBlockWatcher,
     ) {
+        if watcher.borrow().number > target {
+            // The watcher holds only the head, so `target`'s clocks are gone.
+            // These calls are `settle_blocks_elapsed` past its `le=1` bucket.
+            return;
+        }
+
+        // Two clocks: `block.timestamp` is wall clock, `block.observed_at` is
+        // monotonic, and neither is comparable to the other.
+        let sent_at_monotonic = Instant::now();
+        let sent_at = Utc::now().timestamp_millis() as f64 / 1e3;
         tokio::spawn(async move {
             let mut stream = ethrpc::block_stream::into_stream(watcher);
             while let Some(block) = stream.next().await {
                 if block.number >= target {
-                    Self::get().settle_headroom.observe(
-                        block
-                            .observed_at
-                            .saturating_duration_since(sent_at)
-                            .as_secs_f64(),
-                    );
+                    let metric = &Self::get().settle_time_to_next_block;
+                    metric
+                        .with_label_values(&["block_timestamp"])
+                        .observe(block.timestamp as f64 - sent_at);
+                    metric
+                        .with_label_values(&["observed_at"])
+                        .observe(signed_secs_between(sent_at_monotonic, block.observed_at));
                     return;
                 }
             }
@@ -1342,6 +1271,14 @@ impl Metrics {
             .solve_request_body_size
             .with_label_values(&[kind])
             .observe(size as f64)
+    }
+}
+
+/// Seconds from `from` to `to`, negative when `to` is the earlier instant.
+fn signed_secs_between(from: Instant, to: Instant) -> f64 {
+    match to.checked_duration_since(from) {
+        Some(forward) => forward.as_secs_f64(),
+        None => -from.duration_since(to).as_secs_f64(),
     }
 }
 
@@ -1441,6 +1378,16 @@ mod tests {
     }
 
     #[test]
+    fn signed_secs_between_handles_both_directions() {
+        let earlier = Instant::now();
+        let later = earlier + Duration::from_millis(1500);
+
+        assert_eq!(signed_secs_between(earlier, later), 1.5);
+        assert_eq!(signed_secs_between(later, earlier), -1.5);
+        assert_eq!(signed_secs_between(earlier, earlier), 0.0);
+    }
+
+    #[test]
     fn solve_deadline_aligned_with_blockchain() {
         let min_solve_time = Duration::from_secs(9);
 
@@ -1452,27 +1399,29 @@ mod tests {
         // default deadline is `now + min_solve_time` (now + 9s)
         let standard_deadline = "2026-06-01T12:00:10Z".parse::<Ts>().unwrap();
 
-        // syncing to blockchain is not configured -> deadline = now + min_solve_time
+        // syncing to blockchain is not configured -> deadline = now +
+        // min_solve_time
         let deadline = pick_solve_deadline_impl(now, min_solve_time, None, last_block);
         assert_eq!(deadline, standard_deadline);
 
-        // both sync parameters provided -> deadline gets synced to expected block
-        // production
+        // both sync parameters provided -> deadline gets synced to expected
+        // block production
         let slot_config = Some(SlotConfig {
             slot_length: Duration::from_secs(12),
             tx_propagation_latency: Duration::from_secs(2),
         });
         let deadline =
             pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
-        // now is 1s after the last block (n), 11s left before the slot ends, 9s before
-        // we are supposed to submit a solution, 9s minimum solve time => synced
-        // deadline is equal to standard deadline (2s before block n+1)
+        // now is 1s after the last block (n), 11s left before the slot ends, 9s
+        // before we are supposed to submit a solution, 9s minimum solve
+        // time => synced deadline is equal to standard deadline (2s
+        // before block n+1)
         assert_eq!(deadline, standard_deadline);
 
-        // now is 2s after the last block (n), 10s left before the slot ends, 8s before
-        // we are supposed to submit a solution for this slot, 9s minimum solve
-        // time => we barely missed the deadline of the current slot so now
-        // solvers get until 2s before the block n+2
+        // now is 2s after the last block (n), 10s left before the slot ends, 8s
+        // before we are supposed to submit a solution for this slot, 9s
+        // minimum solve time => we barely missed the deadline of the
+        // current slot so now solvers get until 2s before the block n+2
         let deadline = pick_solve_deadline_impl(
             now + Duration::from_secs(1),
             min_solve_time,
@@ -1481,8 +1430,8 @@ mod tests {
         );
         assert_eq!(deadline, "2026-06-01T12:00:22Z".parse::<Ts>().unwrap());
 
-        // let's move to gnosis chain where 1 block is 5s (1 block is not enough for
-        // the solve deadline)
+        // let's move to gnosis chain where 1 block is 5s (1 block is not enough
+        // for the solve deadline)
         let slot_config = Some(SlotConfig {
             slot_length: Duration::from_secs(5),
             tx_propagation_latency: Duration::from_secs(2),
@@ -1490,8 +1439,9 @@ mod tests {
         let last_block_time = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
         let last_block = block_with_timestamp(last_block_time);
         let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
-        // now is 1s after the last block n, 4s left in the block, we need to submit 2s
-        // before a block, min_solve_time 9s => deadline is 2s before block n+3
+        // now is 1s after the last block n, 4s left in the block, we need to
+        // submit 2s before a block, min_solve_time 9s => deadline is 2s
+        // before block n+3
         let deadline =
             pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
         assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());

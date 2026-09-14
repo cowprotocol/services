@@ -700,8 +700,9 @@ async fn test_execute_same_sell_and_buy_native_token_buy_order(web3: Web3) {
     assert!(quote_response.id.is_some());
     assert!(quote_response.verified);
     // For a Buy order the trader pays (sell_amount + fee) more than the
-    // `buy_amount` they receive. At a 1:1 WETH<->ETH price the bare `sell_amount`
-    // equals `buy_amount`; the cost difference is carried in `fee_amount`.
+    // `buy_amount` they receive. At a 1:1 WETH<->ETH price the bare
+    // `sell_amount` equals `buy_amount`; the cost difference is carried in
+    // `fee_amount`.
     assert!(quote_response.quote.sell_amount + quote_response.quote.fee_amount > quote_buy_amount);
 
     // check that a different receiver does not affect the quoted amount
@@ -847,8 +848,8 @@ async fn test_solver_pays_for_pre_hook_on_same_token_order(web3: Web3) {
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
 
-    // Same token on both sides of the order: WETH -> WETH. We fund the trader by
-    // wrapping ETH into WETH and approving the allowance manager.
+    // Same token on both sides of the order: WETH -> WETH. We fund the trader
+    // by wrapping ETH into WETH and approving the allowance manager.
     let weth = onchain.contracts().weth.clone();
     weth.deposit()
         .from(trader.address())
@@ -976,8 +977,8 @@ async fn test_solver_pays_for_pre_hook_on_same_token_order(web3: Web3) {
     // the whole settlement — including the pre-hook.
     assert_eq!(tx.to, Some(*onchain.contracts().gp_settlement.address()));
 
-    // The pre-hook ran exactly once as part of that settlement, which is already
-    // mined at this point.
+    // The pre-hook ran exactly once as part of that settlement, which is
+    // already mined at this point.
     assert_eq!(
         counter.counters("pre".to_string()).call().await.unwrap(),
         U256::from(1),

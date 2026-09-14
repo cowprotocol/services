@@ -83,10 +83,10 @@ impl Quote {
             .map(|(token, amount)| (token.into(), amount))
             .collect();
 
-        // Quote competitions contain only a single order (see `fake_auction()`),
-        // so there's at most one fulfillment in the solution.
-        // Apply haircut adjustment to prices if there's a fulfillment with non-zero
-        // haircut.
+        // Quote competitions contain only a single order (see
+        // `fake_auction()`), so there's at most one fulfillment in the
+        // solution. Apply haircut adjustment to prices if there's a
+        // fulfillment with non-zero haircut.
         if let Some(trade) = solution.trades().iter().find(|trade| match trade {
             solution::Trade::Fulfillment(f) => f.haircut_fee() > eth::U256::ZERO,
             _ => false,
@@ -151,9 +151,7 @@ impl Order {
             solver::Liquidity::Skip => Default::default(),
         };
 
-        let auction = self
-            .single_order_auction(eth, tokens, solver.quote_using_limit_orders())
-            .await?;
+        let auction = self.single_order_auction(eth, tokens).await?;
         let auction = competition
             .risk_detector
             .filter_unsupported_orders_in_auction(auction)
@@ -162,17 +160,18 @@ impl Order {
             return Err(QuotingFailed::UnsupportedToken.into());
         }
         let solutions = solver.solve(&auction, &liquidity).await?;
-        // TODO(#1468): choose the best solution in the future, but for now just pick
-        // the first solution.
+        // TODO(#1468): choose the best solution in the future, but for now just
+        // pick the first solution.
         let solution = solutions
             .into_iter()
             .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
             .ok_or(QuotingFailed::NoSolutions)?;
         let mut quote = Quote::try_new(eth, &solution)?;
 
-        // Cache the fast-path solution so the autopilot can settle it during the
-        // exclusivity window. The quote's order is synthetic (unsigned), so the
-        // settlement is re-encoded against the real order at settle time.
+        // Cache the fast-path solution so the autopilot can settle it during
+        // the exclusivity window. The quote's order is synthetic
+        // (unsigned), so the settlement is re-encoded against the real
+        // order at settle time.
         quote.solution_id = match (self.enable_fast_path, self.auction_id) {
             (true, Some(auction_id)) => {
                 let solution_id = solution.id().get();
@@ -192,7 +191,6 @@ impl Order {
         &self,
         eth: &Ethereum,
         tokens: &infra::tokens::Fetcher,
-        quote_using_limit_orders: bool,
     ) -> Result<competition::Auction, Error> {
         let tokens = tokens.get(&[self.buy().token, self.sell().token]).await;
 
@@ -212,11 +210,9 @@ impl Order {
                     buy: self.buy(),
                     sell: self.sell(),
                     side: self.side,
-                    kind: if quote_using_limit_orders {
-                        competition::order::Kind::Limit
-                    } else {
-                        competition::order::Kind::Market
-                    },
+                    // Quotes always use limit orders so that the engine
+                    // determines the fee (see `Order::solver_determines_fee`).
+                    kind: competition::order::Kind::Limit,
                     pre_interactions: Default::default(),
                     post_interactions: Default::default(),
                     sell_token_balance: competition::order::SellTokenBalance::Erc20,
@@ -228,6 +224,7 @@ impl Order {
                     },
                     protocol_fees: Default::default(),
                     quote: Default::default(),
+                    penalty_cap_native: Default::default(),
                 }),
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
@@ -368,14 +365,16 @@ mod encode {
             .iter()
             .flat_map(|Required(allowance)| {
                 let approval = Approval(*allowance);
-                // When encoding approvals for quotes, reset the allowance instead
-                // of just setting it. This is required as some tokens only allow
-                // you to approve a non-0 value if the allowance was 0 to begin
+                // When encoding approvals for quotes, reset the allowance
+                // instead of just setting it. This is required
+                // as some tokens only allow you to approve a
+                // non-0 value if the allowance was 0 to begin
                 // with, such as Tether USD.
                 //
-                // Alternatively, we could check existing allowances and only encode
-                // the approvals if needed, but this would only result in small gas
-                // optimizations which is mostly inconsequential for quotes and not
+                // Alternatively, we could check existing allowances and only
+                // encode the approvals if needed, but this
+                // would only result in small gas optimizations
+                // which is mostly inconsequential for quotes and not
                 // worth the performance hit.
                 vec![
                     solution::encoding::approve(&approval.revoke().0),

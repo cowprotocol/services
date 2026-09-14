@@ -30,13 +30,13 @@ impl MutWallet {
     where
         S: TxSigner<Signature> + Send + Sync + 'static,
     {
-        // If the wallet is created using MutWallet::default(), there will not be
-        // default signer; this stops us from *not* using `.from` (since it
-        // is filled with the default signer). At the same time, we can't
-        // constantly register new default signers, because it breaks the caller's
-        // expectations. As such, if the current default signer address is
-        // the default address (0x000...000) we register the signer as the
-        // default one.
+        // If the wallet is created using MutWallet::default(), there will not
+        // be default signer; this stops us from *not* using `.from`
+        // (since it is filled with the default signer). At the same
+        // time, we can't constantly register new default signers,
+        // because it breaks the caller's expectations. As such, if the
+        // current default signer address is the default address
+        // (0x000...000) we register the signer as the default one.
         let mut w_lock = self.0.write().unwrap();
         let default_address =
             <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(&w_lock);

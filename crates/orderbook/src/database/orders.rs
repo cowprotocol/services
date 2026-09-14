@@ -457,13 +457,12 @@ impl Postgres {
             }),
             self.execute_instrumented("fetch_latest_token_price", async {
                 let mut ex = self.pool.acquire().await?;
-                Ok(database::auction_prices::fetch_latest_token_price(
-                    &mut ex,
-                    ByteArray(token.0.0),
+                Ok(
+                    database::auction::fetch_latest_token_price(&mut ex, ByteArray(token.0.0))
+                        .await
+                        .map_err(anyhow::Error::from)?
+                        .and_then(|price| big_decimal_to_u256(&price)),
                 )
-                .await
-                .map_err(anyhow::Error::from)?
-                .and_then(|price| big_decimal_to_u256(&price)))
             })
         )?;
 
@@ -611,6 +610,11 @@ fn full_order_with_quote_into_model_order(
         executed_fee: big_decimal_to_u256(&order.executed_fee)
             .context("executed fee is not a valid u256")?,
         executed_fee_token: Address::new(order.executed_fee_token.0),
+        gas_cost: order
+            .gas_cost
+            .as_ref()
+            .map(|cost| big_decimal_to_u256(cost).context("gas cost is not a valid u256"))
+            .transpose()?,
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
@@ -740,6 +744,7 @@ mod tests {
             executed_fee: Default::default(),
             executed_fee_token: ByteArray([1; 20]), // TODO surplus token
             full_app_data: Default::default(),
+            gas_cost: None,
         };
 
         // Open - sell (filled - 0%)
@@ -1011,7 +1016,8 @@ mod tests {
         };
         db.insert_order(&new_order).await.unwrap();
 
-        // Attempt to replace an old order with one that already exists should fail.
+        // Attempt to replace an old order with one that already exists should
+        // fail.
         let err = db
             .replace_order(&old_order.metadata.uid, &new_order)
             .await

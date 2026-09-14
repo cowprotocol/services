@@ -45,8 +45,9 @@ mod tests {
         assert!(handle.join().is_err());
 
         install();
-        // Should print panic trace log because we call the previous panic handler
-        // installed by tracing::initialize, and kill the process.
+        // Should print panic trace log because we call the previous panic
+        // handler installed by tracing::initialize, and kill the
+        // process.
         let handle = std::thread::spawn(|| panic!("you should see this message"));
         let _ = handle.join();
         unreachable!("you should NOT see this message");

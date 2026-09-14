@@ -232,8 +232,9 @@ impl SimulationBuilder {
                 let mut wrapper_calls = Vec::with_capacity(protocol.wrappers.len());
                 for w in protocol.wrappers {
                     // TODO: REMOVE THIS HACK!
-                    // Unconditionally add state override for euler compatibility.
-                    // If this state override gets added to calls that don't need it
+                    // Unconditionally add state override for euler
+                    // compatibility. If this state override
+                    // gets added to calls that don't need it
                     // it will not interfere with the simulation.
                     self.account_override_requests
                         .extend(compute_euler_override(&w));

@@ -87,11 +87,12 @@ impl OrderSimulating for OrderCreationSimulator {
             .prepare_simulation(order, full_app_data, full_balance_check)
             .await?;
 
-        // Generating a failure report is more costly than a standard simulation.
-        // To avoid unnecessary overhead in the happy path we assume orders are
-        // well behaved and do a regular simulation by default. Except when it's
-        // an EIP 1271 order in which case we always have to run the more complex
-        // code to figure out how much gas the signature check needs.
+        // Generating a failure report is more costly than a standard
+        // simulation. To avoid unnecessary overhead in the happy path
+        // we assume orders are well behaved and do a regular simulation
+        // by default. Except when it's an EIP 1271 order in which case
+        // we always have to run the more complex code to figure out how
+        // much gas the signature check needs.
         if !matches!(order.signature, Signature::Eip1271(_)) && inputs.simulate().await.is_ok() {
             return Ok(SimulationSuccess {
                 eip1271_signature_verification_gas: 0,
@@ -426,7 +427,8 @@ mod tests {
 
     #[test]
     fn rejects_sell_transfer_revert_for_all_other_orders() {
-        // EIP-712 order (default) — same failure must surface as a critical revert.
+        // EIP-712 order (default) — same failure must surface as a critical
+        // revert.
         let order = OrderBuilder::default()
             .with_sell_token(SELL_TOKEN)
             .with_buy_token(BUY_TOKEN)
@@ -438,8 +440,9 @@ mod tests {
 
     #[test]
     fn buy_token_transfer_revert_is_critical_without_state_override_error() {
-        // The transfer reverted but we *did* manage to set the balance override,
-        // so this is a genuine problem and should not be silenced.
+        // The transfer reverted but we *did* manage to set the balance
+        // override, so this is a genuine problem and should not be
+        // silenced.
         let mut order = OrderBuilder::default()
             .with_sell_token(SELL_TOKEN)
             .with_buy_token(BUY_TOKEN)

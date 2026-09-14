@@ -30,24 +30,28 @@ impl ContractErrorExt for ContractError {
     }
 
     fn is_node_error(&self) -> bool {
-        // This mapping is "ported" from ethcontract's error hierarchy, although in it
-        // contract errors are better defined. Essentially, everything that isn't web3
-        // related in ethcontract gets classified as a contract error, however, in alloy
-        // some contract errors are "hidden" inside transport errors, as such we need to
-        // check if transport errors have revert data to rule out contract errors.
+        // This mapping is "ported" from ethcontract's error hierarchy, although
+        // in it contract errors are better defined. Essentially,
+        // everything that isn't web3 related in ethcontract gets
+        // classified as a contract error, however, in alloy
+        // some contract errors are "hidden" inside transport errors, as such we
+        // need to check if transport errors have revert data to rule
+        // out contract errors.
         //
-        // NOTE: using alloy's decoding functions doesn't work here because it requires
-        // the revert data to *not* be empty, otherwise it will return `None` as if a
-        // revert wasn't present or wasn't able to be decoded, though the usage of
-        // `Option` erases the existing nuances of the failure
+        // NOTE: using alloy's decoding functions doesn't work here because it
+        // requires the revert data to *not* be empty, otherwise it will
+        // return `None` as if a revert wasn't present or wasn't able to
+        // be decoded, though the usage of `Option` erases the existing
+        // nuances of the failure
         match self {
             // When the revert data is empty (e.g. you perform a call to a missing function)
             // alloy's decode breaks, because even though there is revert data, it is empty
             // so alloy's decode method fails leading your (the caller) to think there wasn't one
             // Thus, to properly check for any kind of revert, just look at the revert data
             ContractError::TransportError(RpcError::ErrorResp(err)) => {
-                // Due to the mismatch between error APIs and best-effort approximation this log
-                // line is left here as a debugging tool in case we start having RPC issues
+                // Due to the mismatch between error APIs and best-effort
+                // approximation this log line is left here as a
+                // debugging tool in case we start having RPC issues
                 let no_revert_data = err.as_revert_data().is_none();
                 tracing::debug!(?err, %no_revert_data, "transport rpc error");
                 no_revert_data
@@ -150,8 +154,9 @@ mod tests {
 
     #[test]
     fn contract_revert_accepts_invalid_fe_opcode_halt() {
-        // anvil surfaces the INVALID (0xFE) opcode as `EVM error InvalidFEOpcode`
-        // — older Solidity (e.g. Bancor BNT) emits it on a missing selector.
+        // anvil surfaces the INVALID (0xFE) opcode as `EVM error
+        // InvalidFEOpcode` — older Solidity (e.g. Bancor BNT) emits it
+        // on a missing selector.
         assert!(error_resp(-32603, "EVM error InvalidFEOpcode").is_contract_revert());
         // Case-insensitive match.
         assert!(error_resp(-32603, "evm error invalidfeopcode").is_contract_revert());

@@ -99,7 +99,8 @@ mod utils {
         settlement: &Settlement,
         liquorice_settlement_contract_address: Address,
     ) -> HashSet<String> {
-        // Aggregate all interactions from the settlement and extract RFQ ID from each
+        // Aggregate all interactions from the settlement and extract RFQ ID
+        // from each
         settlement
             .pre_interactions()
             .iter()

@@ -5,11 +5,13 @@ use {
             fee_policy::FeePoliciesConfig,
             native_price::NativePriceConfig,
             order_events_cleanup::OrderEventsCleanupConfig,
+            penalty_cap::PenaltyCapConfig,
             run_loop::RunLoopConfig,
             s3::S3Config,
             solver::Solver,
             trusted_tokens::TrustedTokensConfig,
         },
+        balance_cache::BalanceCacheConfig,
         banned_users::BannedUsersConfig,
         database::DatabasePoolConfig,
         http_client::HttpClient,
@@ -28,6 +30,7 @@ pub mod ethflow;
 pub mod fee_policy;
 pub mod native_price;
 pub mod order_events_cleanup;
+pub mod penalty_cap;
 pub mod run_loop;
 pub mod s3;
 pub mod solver;
@@ -70,6 +73,11 @@ pub struct Configuration {
 
     /// Describes how the protocol fees should be calculated.
     pub fee_policies: FeePoliciesConfig,
+
+    /// Describes how per-order penalty caps should be calculated (CIP-87).
+    /// If absent, orders don't get a penalty cap assigned.
+    #[serde(default)]
+    pub penalty_cap: Option<PenaltyCapConfig>,
 
     /// Configuration for trusted tokens that the settlement contract is willing
     /// to internalize.
@@ -163,6 +171,10 @@ pub struct Configuration {
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
     pub price_estimation: PriceEstimation,
+
+    /// Settings for the on-chain balance cache.
+    #[serde(default)]
+    pub balance_cache: BalanceCacheConfig,
 }
 
 impl Configuration {
@@ -190,6 +202,7 @@ impl Configuration {
             "colocation is enabled but no drivers are configured"
         );
         self.shared.validate()?;
+        self.balance_cache.validate()?;
         Ok(self)
     }
 }
@@ -206,6 +219,7 @@ impl Configuration {
             shared: Default::default(),
             drivers: vec![],
             fee_policies: Default::default(),
+            penalty_cap: Default::default(),
             trusted_tokens: Default::default(),
             order_events_cleanup: Default::default(),
             banned_users: Default::default(),
@@ -227,6 +241,7 @@ impl Configuration {
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
             price_estimation: TestDefault::test_default(),
+            balance_cache: TestDefault::test_default(),
         }
     }
 
@@ -237,6 +252,7 @@ impl Configuration {
             shared: Default::default(),
             drivers: vec![Solver::test(name, solver_address)],
             fee_policies: Default::default(),
+            penalty_cap: Default::default(),
             trusted_tokens: Default::default(),
             order_events_cleanup: Default::default(),
             banned_users: Default::default(),
@@ -258,6 +274,7 @@ impl Configuration {
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
             price_estimation: TestDefault::test_default(),
+            balance_cache: TestDefault::test_default(),
         }
     }
 
@@ -361,6 +378,10 @@ mod tests {
 
         [order-quoting]
         price-estimation-drivers = []
+
+        [balance-cache]
+        eviction-time = "10s"
+        refresh-cooldown = "1.2s"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -454,6 +475,12 @@ mod tests {
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
         assert_eq!(config.max_auction_age, Duration::from_secs(600));
         assert_eq!(config.native_price_timeout, Duration::from_secs(3));
+
+        assert_eq!(config.balance_cache.eviction_time, Duration::from_secs(10));
+        assert_eq!(
+            config.balance_cache.refresh_cooldown,
+            Duration::from_millis(1200)
+        );
     }
 
     #[test]

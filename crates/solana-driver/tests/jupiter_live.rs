@@ -56,7 +56,7 @@ fn deadline() -> chrono::DateTime<chrono::Utc> {
 /// USDT buffer PDA.
 fn sell_auction() -> Auction {
     Auction {
-        id: Id::new(1).unwrap(),
+        id: Some(Id::new(1).unwrap()),
         orders: vec![Order {
             uid: OrderUid([8; 32]),
             owner: Pubkey::default(),
@@ -124,6 +124,7 @@ async fn driver_solves_against_live_jupiter_engine() {
         endpoint: format!("http://{addr}").parse().unwrap(),
         signer_keypair: keypair_path,
         max_in_flight: std::num::NonZero::new(1).unwrap(),
+        solve_every_nth_auction: None,
     })
     .expect("solver construction should succeed");
 
@@ -172,8 +173,8 @@ async fn driver_solves_against_live_jupiter_engine() {
     // The swap instructions must be built for our settlement signer and land
     // the buy output in the buy-mint buffer PDA the driver derived from the
     // settlement program id. This is the end-to-end check that the
-    // `buy_destination` derivation flows through the whole driver <-> solver <->
-    // Jupiter path.
+    // `buy_destination` derivation flows through the whole driver <-> solver
+    // <-> Jupiter path.
     let buy_destination = find_buffer_pda(
         &cow_settlement_interface::id(),
         &Pubkey::from_str(USDT).unwrap(),

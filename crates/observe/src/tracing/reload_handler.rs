@@ -106,8 +106,8 @@ async fn read_line(socket: &mut UnixStream) -> Option<String> {
 /// Logs the message in this process' logs and reports it back to the
 /// connected socket.
 async fn log(socket: &mut UnixStream, message: String) {
-    // Use a fairly high log level to improve chances that this actually gets logged
-    // when somebody messed with the log filter.
+    // Use a fairly high log level to improve chances that this actually gets
+    // logged when somebody messed with the log filter.
     tracing::warn!(message);
     let _ = socket.write_all(message.as_bytes()).await;
     let _ = socket.write_all(b"\n").await;

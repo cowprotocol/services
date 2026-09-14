@@ -75,7 +75,8 @@ impl StrategyExt for Strategy {
             .with_label_values(&[name])
             .inc();
         if self.times_rate_limited != previous_rate_limits {
-            // Don't increase back off if somebody else already updated it in the meantime.
+            // Don't increase back off if somebody else already updated it in
+            // the meantime.
             return None;
         }
 

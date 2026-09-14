@@ -21,7 +21,7 @@ bigdecimal = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
 configs = { workspace = true }
-cow-settlement-interface = "0.2.0"
+cow-settlement-interface = { workspace = true }
 cow-solana-rpc = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
@@ -32,6 +32,7 @@ rustls = { workspace = true }
 serde = { workspace = true }
 serde-ext = { workspace = true }
 solana-sdk = { workspace = true }
+solana-transaction-status-client-types = { workspace = true }
 spl-token-2022-interface = { workspace = true }
 spl-token-interface = { workspace = true }
 sqlx = { workspace = true }
@@ -45,7 +46,9 @@ yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 
 [dev-dependencies]
-cow-settlement-client = "0.2.0"
+base64 = { workspace = true }
+bincode = { workspace = true }
+cow-settlement-client = { workspace = true }
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
 serde_json = { workspace = true }
 

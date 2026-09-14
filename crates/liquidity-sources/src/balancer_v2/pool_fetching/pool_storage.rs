@@ -245,7 +245,8 @@ mod tests {
         Vec<(PoolCreated, u64)>,
     );
     // This can be made cleaner by making the start and end be u8's but the B256
-    // doesn't support for a from(u8) so this needs to be reviewed upon migration
+    // doesn't support for a from(u8) so this needs to be reviewed upon
+    // migration
     fn pool_init_data(start: usize, end: usize) -> PoolInitData {
         let pool_ids: Vec<B256> = (start..=end)
             .map(|i| B256::left_padding_from(&i.to_be_bytes()))
@@ -372,7 +373,8 @@ mod tests {
         }
 
         // Note that it is never expected that blocks for events will differ,
-        // but in this test block_created for the pool is the first block it receives.
+        // but in this test block_created for the pool is the first block it
+        // receives.
         assert_eq!(pool_store.last_event_block(), 2);
         assert_eq!(
             pool_store.pools_by_token.get(&tokens[0]).unwrap(),

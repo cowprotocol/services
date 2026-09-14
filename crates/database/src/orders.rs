@@ -172,10 +172,10 @@ pub async fn insert_order_and_ignore_conflicts(
     ex: &mut PgConnection,
     order: &Order,
 ) -> Result<bool, sqlx::Error> {
-    // To be used only for the ethflow contract order placement, where reorgs force
-    // us to update orders
-    // Since each order has a unique UID even after a reorg onchain placed orders
-    // have the same data. Hence, we can disregard any conflicts.
+    // To be used only for the ethflow contract order placement, where reorgs
+    // force us to update orders
+    // Since each order has a unique UID even after a reorg onchain placed
+    // orders have the same data. Hence, we can disregard any conflicts.
     const QUERY: &str = const_format::concatcp!(INSERT_ORDER_QUERY, "ON CONFLICT (uid) DO NOTHING");
     insert_order_execute_sqlx(QUERY, ex, order).await
 }
@@ -538,6 +538,9 @@ pub struct FullOrder {
     pub executed_fee: BigDecimal,
     pub executed_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
+    /// Share of its settlements' gas costs in native token wei, summed across
+    /// fills. `None` unless it has fills and every fill's cost is known.
+    pub gas_cost: Option<BigDecimal>,
 }
 
 impl FullOrder {
@@ -655,7 +658,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
 COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
-(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
+(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data,
+(SELECT CASE WHEN COUNT(*) = COUNT(t.gas_cost) THEN SUM(t.gas_cost) END FROM trades t WHERE t.order_uid = o.uid) as gas_cost
 "#;
 
 pub const FROM: &str = "orders o";
@@ -828,7 +832,8 @@ pub fn solvable_orders(
         NULL AS onchain_placement_error,
         COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
         COALESCE(fee_agg.executed_fee_token, lo.sell_token) AS executed_fee_token,
-        ad.full_app_data
+        ad.full_app_data,
+        NULL::numeric AS gas_cost
     FROM live_orders lo
     LEFT JOIN LATERAL (
         SELECT NOT signed AS unsigned
@@ -875,16 +880,18 @@ pub fn open_orders_by_time_or_uids<'a>(
     after_timestamp: DateTime<Utc>,
     now: i64,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
-    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL joins.
+    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL
+    // joins.
     //
     // `selected_orders` has two branches:
     // - Branch 1: the usual "changed since $1" set (created/cancelled since the
-    //   checkpoint, or explicitly requested by uid), gated by `valid_from <= now`.
-    // - Branch 2: re-selects orders whose `valid_from` crossed since $1. Becoming
-    //   valid is not a DB write, so branch 1 never sees them. It also skips orders
-    //   that already expired (`true_valid_to < now`), so an order with an empty
-    //   window (`valid_from >= valid_to`) or one that already closed is not picked
-    //   up again.
+    //   checkpoint, or explicitly requested by uid), gated by `valid_from <=
+    //   now`.
+    // - Branch 2: re-selects orders whose `valid_from` crossed since $1.
+    //   Becoming valid is not a DB write, so branch 1 never sees them. It also
+    //   skips orders that already expired (`true_valid_to < now`), so an order
+    //   with an empty window (`valid_from >= valid_to`) or one that already
+    //   closed is not picked up again.
     #[rustfmt::skip]
     const QUERY: &str = r#"
 WITH selected_orders AS (
@@ -956,7 +963,8 @@ SELECT
     opo.onchain_placement_error,
     COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
     COALESCE(fee_agg.executed_fee_token, so.sell_token) AS executed_fee_token,
-    ad.full_app_data
+    ad.full_app_data,
+    NULL::numeric AS gas_cost
 FROM selected_orders so
 LEFT JOIN LATERAL (
     SELECT NOT signed AS unsigned
@@ -1194,6 +1202,8 @@ mod tests {
         assert_eq!(order.settlement_contract, full_order.settlement_contract);
         assert_eq!(order.sell_token_balance, full_order.sell_token_balance);
         assert_eq!(order.buy_token_balance, full_order.buy_token_balance);
+        // Never filled, so it has no gas cost rather than one of zero.
+        assert_eq!(full_order.gas_cost, None);
     }
 
     #[tokio::test]
@@ -1537,8 +1547,8 @@ mod tests {
             "First insert should create exactly one event"
         );
 
-        // Second insert should be skipped (conflict) and should NOT create another
-        // event
+        // Second insert should be skipped (conflict) and should NOT create
+        // another event
         insert_orders_and_ignore_conflicts(&mut db, vec![order.clone()].as_slice())
             .await
             .unwrap();
@@ -1773,16 +1783,17 @@ mod tests {
         assert_eq!(time, order.cancellation_timestamp.unwrap());
     }
 
-    // In the schema we set the type of executed amounts in individual events to a
-    // 78 decimal digit number. Summing over multiple events could overflow this
-    // because the smart contract only guarantees that the filled amount (which
-    // amount that is depends on order type) does not overflow a U256. This test
-    // shows that postgres does not error if this happens because inside the SUM
-    // the number can have more digits. In particular:
-    // - `executed_buy_amount` may overflow after repeated buys (since there is no
-    //   upper bound)
-    // - `executed_sell_amount` (with fees) may overflow since the total fits into a
-    //   `U512`.
+    // In the schema we set the type of executed amounts in individual events to
+    // a 78 decimal digit number. Summing over multiple events could
+    // overflow this because the smart contract only guarantees that the
+    // filled amount (which amount that is depends on order type) does not
+    // overflow a U256. This test shows that postgres does not error if this
+    // happens because inside the SUM the number can have more digits. In
+    // particular:
+    // - `executed_buy_amount` may overflow after repeated buys (since there is
+    //   no upper bound)
+    // - `executed_sell_amount` (with fees) may overflow since the total fits
+    //   into a `U512`.
     #[tokio::test]
     #[ignore]
     async fn postgres_summed_executed_amount_does_not_overflow() {
@@ -2144,8 +2155,9 @@ mod tests {
             .await,
             hashset![ByteArray([3u8; 56]),]
         );
-        // Even though no orders should be returned after the provided timestamp,
-        // specified order UIDs list helps to return all the requested orders.
+        // Even though no orders should be returned after the provided
+        // timestamp, specified order UIDs list helps to return all the
+        // requested orders.
         assert_eq!(
             get_open_orders_by_time_or_uids(
                 &mut db,
@@ -2173,7 +2185,8 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         async fn solvable_uids(ex: &mut PgConnection, now: i64) -> HashSet<OrderUid> {
-            // `min_valid_to = now` mirrors production so `valid_to` expiry is enforced.
+            // `min_valid_to = now` mirrors production so `valid_to` expiry is
+            // enforced.
             solvable_orders(ex, now, now)
                 .map_ok(|o| o.uid)
                 .try_collect()
@@ -2235,13 +2248,14 @@ mod tests {
                 .unwrap()
         }
 
-        // Anchor all times to one base so the margins survive second boundaries.
+        // Anchor all times to one base so the margins survive second
+        // boundaries.
         let base = Utc::now();
         let checkpoint = base;
         let valid_from = base.timestamp() + 50; // future relative to the checkpoint
 
-        // Created before the checkpoint, so only a `valid_from` crossing can pick them
-        // up.
+        // Created before the checkpoint, so only a `valid_from` crossing can
+        // pick them up.
         let created_before = base - Duration::seconds(100);
 
         let valid = Order {
@@ -2357,6 +2371,122 @@ mod tests {
                 .unwrap();
             assert_eq!(actual, expected_uids);
         }
+    }
+
+    async fn two_orders(db: &mut PgTransaction<'_>) -> (OrderUid, OrderUid) {
+        let (order_a, order_b) = (ByteArray([1; 56]), ByteArray([2; 56]));
+        for uid in [order_a, order_b] {
+            insert_order(
+                db,
+                &Order {
+                    uid,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        (order_a, order_b)
+    }
+
+    async fn fill(db: &mut PgTransaction<'_>, order_uid: OrderUid, log_index: i64) {
+        crate::events::append(
+            db,
+            &[(
+                EventIndex {
+                    block_number: 0,
+                    log_index,
+                },
+                Event::Trade(Trade {
+                    order_uid,
+                    ..Default::default()
+                }),
+            )],
+        )
+        .await
+        .unwrap();
+    }
+
+    /// Attributes `gas_used` to the settled trades at a gas price of 10;
+    /// `None` leaves the settlement unattributed.
+    async fn settle(db: &mut PgTransaction<'_>, log_index: i64, tx: u8, gas_used: Option<u64>) {
+        crate::events::append(
+            db,
+            &[(
+                EventIndex {
+                    block_number: 0,
+                    log_index,
+                },
+                Event::Settlement(Settlement {
+                    transaction_hash: ByteArray([tx; 32]),
+                    ..Default::default()
+                }),
+            )],
+        )
+        .await
+        .unwrap();
+        if let Some(gas_used) = gas_used {
+            crate::trades::attribute_gas_cost(
+                db,
+                EventIndex {
+                    block_number: 0,
+                    log_index,
+                },
+                BigDecimal::from(gas_used),
+                BigDecimal::from(10),
+                &[],
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    async fn order_gas(db: &mut PgConnection, uid: OrderUid) -> Option<BigDecimal> {
+        single_full_order_with_quote(db, &uid)
+            .await
+            .unwrap()
+            .unwrap()
+            .full_order
+            .gas_cost
+    }
+
+    /// An order's gas cost sums its share of each settlement that filled it,
+    /// and becomes unknown as soon as any fill is unattributed.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_order_gas_cost_across_fills() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+        let (order_a, order_b) = two_orders(&mut db).await;
+
+        // 100 gas at price 10, split over this settlement's two trades.
+        fill(&mut db, order_a, 0).await;
+        fill(&mut db, order_b, 1).await;
+        settle(&mut db, 2, 0, Some(100)).await;
+        assert_eq!(order_gas(&mut db, order_a).await, Some(500.into()));
+        assert_eq!(order_gas(&mut db, order_b).await, Some(500.into()));
+
+        // order_a fills again, alone, so it adds that settlement's whole 3000.
+        fill(&mut db, order_a, 3).await;
+        settle(&mut db, 4, 1, Some(300)).await;
+        let mut batch = many_full_orders_with_quotes(&mut db, &[order_a, order_b])
+            .await
+            .unwrap();
+        batch.sort_by_key(|order| order.full_order.uid.0);
+        assert_eq!(
+            batch
+                .iter()
+                .map(|order| (order.full_order.uid, order.full_order.gas_cost.clone()))
+                .collect::<Vec<_>>(),
+            vec![(order_a, Some(3500.into())), (order_b, Some(500.into()))]
+        );
+
+        // A fill that was never attributed makes order_a's total unknown.
+        fill(&mut db, order_a, 5).await;
+        settle(&mut db, 6, 2, None).await;
+        assert!(order_gas(&mut db, order_a).await.is_none());
+        assert_eq!(order_gas(&mut db, order_b).await, Some(500.into()));
     }
 
     #[tokio::test]

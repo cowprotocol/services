@@ -1004,8 +1004,8 @@ async fn sell_twice_parallel() {
     // Making two auction solve calls in parallel
     // - 1st solve call will invoke okx /swap and /approve-transaction requests
     // - 2nd solve call will also invoke okx /swap but should not invoke
-    //   /approve-transaction instead it should wait for the 1st execution to finish
-    //   (due to use of moka concurrent calls on the same key feature)
+    //   /approve-transaction instead it should wait for the 1st execution to
+    //   finish (due to use of moka concurrent calls on the same key feature)
     let (solution1, solution2) = tokio::join!(engine.solve(auction.clone()), engine.solve(auction));
 
     assert_eq!(

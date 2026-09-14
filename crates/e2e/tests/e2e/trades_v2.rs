@@ -16,8 +16,8 @@ async fn local_node_trades_v2_endpoints() {
     run_test(trades_v2_endpoints).await;
 }
 
-/// Test all v2 trades endpoint features (by order UID, by owner, and
-/// pagination)
+/// Test all v2 trades endpoint features (by order UID, by owner, gas cost
+/// and pagination)
 async fn trades_v2_endpoints(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [solver] = onchain.make_solvers(1u64.eth()).await;
@@ -111,7 +111,24 @@ async fn trades_v2_endpoints(web3: Web3) {
         "Trade should match order UID"
     );
 
-    // Test 2: Get trades by owner
+    // Test 2: Gas cost is attributed once the autopilot observes the settlement
+    let gas_cost_attributed = || async {
+        let trade = services
+            .get_trades_v2(Some(&trader1_uids[0]), None, 0, 10)
+            .await
+            .unwrap();
+        let order = services.get_order(&trader1_uids[0]).await.unwrap();
+        // The order filled in a single trade, so the two must agree.
+        matches!(
+            (trade.first().and_then(|trade| trade.gas_cost), order.metadata.gas_cost),
+            (Some(trade), Some(order)) if !trade.is_zero() && trade == order
+        )
+    };
+    wait_for_condition(TIMEOUT, gas_cost_attributed)
+        .await
+        .unwrap();
+
+    // Test 3: Get trades by owner
     let trader1_trades = services
         .get_trades_v2(None, Some(&trader1.address()), 0, 100)
         .await
@@ -138,7 +155,7 @@ async fn trades_v2_endpoints(web3: Web3) {
         "Trade should match trader2's order"
     );
 
-    // Test 3: Pagination
+    // Test 4: Pagination
     // Test with limit
     let limited_trades = services
         .get_trades_v2(None, Some(&trader1.address()), 0, 2)

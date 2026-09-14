@@ -26,8 +26,8 @@ async fn route(
     let handle_request = async {
         let competition = state.competition();
         let result = competition.solve(request).await;
-        // Solving takes some time, so there is a chance for the settlement queue to
-        // have capacity again.
+        // Solving takes some time, so there is a chance for the settlement
+        // queue to have capacity again.
         competition.ensure_settle_queue_capacity()?;
         observe::solved(solver, &result);
         Ok(axum::Json(dto::SolveResponse::new(

@@ -5,11 +5,24 @@ use {
     itertools::Itertools,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
     solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
-    solana_sdk::{account::Account, pubkey::Pubkey},
+    solana_sdk::{
+        account::Account,
+        hash::Hash,
+        pubkey::Pubkey,
+        signature::Signature,
+        transaction::VersionedTransaction,
+    },
     std::{collections::HashMap, time::Duration},
     url::Url,
 };
-pub use {solana_commitment_config::CommitmentConfig, solana_rpc_client_api::client_error::Error};
+pub use {
+    solana_commitment_config::CommitmentConfig,
+    solana_rpc_client_api::{
+        client_error::Error,
+        response::{RpcSimulateTransactionResult, UiTransactionError},
+    },
+    solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
+};
 #[cfg(feature = "test-util")]
 pub use {solana_rpc_client::mock_sender::Mocks, solana_rpc_client_api::request::RpcRequest};
 
@@ -18,6 +31,10 @@ pub struct SolanaRPC {
 }
 
 impl SolanaRPC {
+    /// Signatures requested per page of
+    /// [`SolanaRPC::signatures_for_address`].
+    pub const SIGNATURES_PAGE: usize = 1000;
+
     /// Creates a client for the given HTTP URL, request timeout and
     /// commitment level.
     pub fn new_with_timeout_and_commitment(
@@ -79,4 +96,175 @@ impl SolanaRPC {
     pub async fn slot(&self) -> Result<u64, Error> {
         self.inner.get_slot().await
     }
+
+    /// The current block height at the client's commitment level.
+    pub async fn block_height(&self) -> Result<BlockHeight, Error> {
+        Ok(BlockHeight(self.inner.get_block_height().await?))
+    }
+
+    /// The latest confirmed blockhash and the last block height at
+    /// which it stays usable.
+    ///
+    /// The method always fetches the blockhash at `confirmed`,
+    /// regardless of the client's configured commitment level.
+    pub async fn latest_confirmed_blockhash(&self) -> Result<LatestBlockhash, Error> {
+        let (blockhash, last_valid_block_height) = self
+            .inner
+            .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+            .await?;
+        Ok(LatestBlockhash {
+            blockhash,
+            last_valid_block_height: BlockHeight(last_valid_block_height),
+        })
+    }
+
+    /// Whether each signature exists on the node's chain. The lookup falls
+    /// back to the ledger history when a signature is past the recent-status
+    /// cache, so `false` means the transaction never landed or was rolled
+    /// back, not merely that it aged out. A status of any commitment level
+    /// counts as existing: the question here is presence, not finality.
+    pub async fn known_signatures(&self, signatures: &[Signature]) -> Result<Vec<bool>, Error> {
+        // getSignatureStatuses rejects calls with more than 256 signatures.
+        const CHUNK: usize = 256;
+        let mut known = Vec::with_capacity(signatures.len());
+        for chunk in signatures.chunks(CHUNK) {
+            let response = self
+                .inner
+                .get_signature_statuses_with_history(chunk)
+                .await?;
+            known.extend(response.value.into_iter().map(|status| status.is_some()));
+        }
+        Ok(known)
+    }
+
+    /// One page of an address's transaction signatures, starting below
+    /// `before` when given. The node serves deep history, so repeated calls
+    /// walk arbitrarily far back.
+    pub async fn signatures_for_address(
+        &self,
+        address: &Pubkey,
+        before: Option<Signature>,
+    ) -> Result<SignaturesPage, Error> {
+        // Pinned to confirmed like `slot` and `transaction`: the node's
+        // default is finalized, which would hide the confirmed tip's last
+        // ~32 slots from the scan.
+        let config = solana_rpc_client::rpc_client::GetConfirmedSignaturesForAddress2Config {
+            before,
+            limit: Some(Self::SIGNATURES_PAGE),
+            commitment: Some(CommitmentConfig::confirmed()),
+            ..Default::default()
+        };
+        let page = self
+            .inner
+            .get_signatures_for_address_with_config(address, config)
+            .await?;
+        // Keyed on the raw length: parse failures below must not read as an
+        // exhausted history.
+        let full = page.len() == Self::SIGNATURES_PAGE;
+        let entries = page
+            .into_iter()
+            .filter_map(|status| match status.signature.parse() {
+                Ok(signature) => Some((signature, status.slot)),
+                // The node returned a malformed signature. There is nothing
+                // to fetch or dead-letter without one, so skip it loudly.
+                Err(err) => {
+                    tracing::warn!(
+                        ?err,
+                        signature = %status.signature,
+                        "skipping an unparsable signature"
+                    );
+                    None
+                }
+            })
+            .collect();
+        Ok(SignaturesPage { entries, full })
+    }
+
+    /// One confirmed transaction with its metadata, base64-encoded.
+    pub async fn transaction(
+        &self,
+        signature: &Signature,
+    ) -> Result<EncodedConfirmedTransactionWithStatusMeta, Error> {
+        self.inner
+            .get_transaction_with_config(
+                signature,
+                solana_rpc_client_api::config::RpcTransactionConfig {
+                    encoding: Some(
+                        solana_transaction_status_client_types::UiTransactionEncoding::Base64,
+                    ),
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    max_supported_transaction_version: Some(0),
+                },
+            )
+            .await
+    }
+
+    /// Simulate a versioned transaction without sending it. Returns the
+    /// simulation result including logs and any error.
+    pub async fn simulate_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<RpcSimulateTransactionResult, Error> {
+        self.inner
+            .simulate_transaction(transaction)
+            .await
+            .map(|response| response.value)
+    }
+
+    /// Send a versioned transaction and wait until it reaches the client's
+    /// configured commitment level.
+    ///
+    /// Each individual RPC request is capped at the client's request timeout,
+    /// but the confirm loop has no overall timeout: it polls until the
+    /// transaction confirms or its blockhash expires.
+    pub async fn send_and_confirm_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Signature, Error> {
+        self.inner.send_and_confirm_transaction(transaction).await
+    }
+}
+
+/// One page of an address's transaction history.
+pub struct SignaturesPage {
+    /// Parsed (signature, slot) entries, newest first. Signatures the node
+    /// returned malformed are dropped.
+    pub entries: Vec<(Signature, u64)>,
+    /// The raw page hit the request limit, so older history may remain
+    /// below it.
+    pub full: bool,
+}
+
+/// A Solana block height.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BlockHeight(u64);
+
+impl BlockHeight {
+    /// The height as a plain number.
+    pub const fn into_inner(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for BlockHeight {
+    fn from(height: u64) -> Self {
+        Self(height)
+    }
+}
+
+impl From<BlockHeight> for u64 {
+    fn from(height: BlockHeight) -> Self {
+        height.0
+    }
+}
+
+/// The latest confirmed blockhash and the last block height at which
+/// it stays usable.
+#[derive(Debug)]
+pub struct LatestBlockhash {
+    /// The blockhash to sign transactions with.
+    pub blockhash: Hash,
+    /// The last block height at which transactions signed with this
+    /// blockhash as `recent_blockhash` remain valid.
+    pub last_valid_block_height: BlockHeight,
 }

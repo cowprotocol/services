@@ -231,7 +231,8 @@ fn to_boundary_liquidity(
                 }
                 liquidity::State::Concentrated(pool) => {
                     let Some(ref uni_v3_quoter_v2_arc) = uni_v3_quoter_v2 else {
-                        // liquidity sources that rely on concentrated pools are disabled
+                        // liquidity sources that rely on concentrated pools are
+                        // disabled
                         return onchain_liquidity;
                     };
                     let fee = pool.fee.0.try_into().expect("fee < (2^24)");

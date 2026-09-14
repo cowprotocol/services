@@ -3,8 +3,9 @@
 
 use {
     crate::{fee_policy::ExecutedProtocolFee, order::OrderUid},
-    alloy_primitives::{Address, B256},
+    alloy_primitives::{Address, B256, U256},
     num::BigUint,
+    number::serialization::HexOrDecimalU256,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
 };
@@ -30,6 +31,17 @@ pub struct Trade {
     // Settlement Data
     pub tx_hash: Option<B256>,
     pub executed_protocol_fees: Vec<ExecutedProtocolFee>,
+    /// Share of the settlement's gas cost in native token wei. It is `None`
+    /// for settlements without attribution, and for all settlements from
+    /// before this value was recorded. A liquidity-only JIT order has `0`.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_cost: Option<U256>,
+    /// Cap on the penalty the winning solver could have incurred. Absent when
+    /// the auction had penalties disabled or the trade can't be attributed
+    /// to an auction.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    pub penalty_cap_native: Option<U256>,
 }
 
 #[cfg(test)]
@@ -56,6 +68,8 @@ mod tests {
             "sellToken": "0x000000000000000000000000000000000000000a",
             "buyToken": "0x0000000000000000000000000000000000000009",
             "txHash": "0x0000000000000000000000000000000000000000000000000000000000000040",
+            "gasCost": "3000000",
+            "penaltyCapNative": "1000000000000000",
             "executedProtocolFees": [
                 {
                     "amount": "5",
@@ -104,6 +118,8 @@ mod tests {
             buy_token: Address::with_last_byte(9),
             sell_token: Address::with_last_byte(10),
             tx_hash: Some(B256::with_last_byte(64)),
+            gas_cost: Some(U256::from(3_000_000u64)),
+            penalty_cap_native: Some(U256::from(1_000_000_000_000_000u64)),
             executed_protocol_fees: vec![
                 ExecutedProtocolFee {
                     amount: U256::from(5u64),

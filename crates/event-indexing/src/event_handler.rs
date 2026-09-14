@@ -121,8 +121,8 @@ where
         Ok(events)
     }
 
-    // Unfortunately, alloy's `watch_logs` does not support pagination yet, so it
-    // is implemented manually here
+    // Unfortunately, alloy's `watch_logs` does not support pagination yet, so
+    // it is implemented manually here
     async fn get_events_by_block_range(
         &self,
         block_range: &RangeInclusive<u64>,
@@ -290,8 +290,8 @@ where
             handled_blocks.last().map(|b| b.0),
         );
 
-        // handle special case which happens most of the time (no reorg, just one new
-        // block is added)
+        // handle special case which happens most of the time (no reorg, just
+        // one new block is added)
         if current_block.parent_hash == last_handled_block_hash {
             return Ok(EventRange {
                 history_range: None,
@@ -313,16 +313,18 @@ where
             });
         }
 
-        // Special case where multiple new blocks were added and no reorg happened.
-        // Because we need to fetch the full block range we only do this if the number
-        // of new blocks is sufficiently small.
+        // Special case where multiple new blocks were added and no reorg
+        // happened. Because we need to fetch the full block range we
+        // only do this if the number of new blocks is sufficiently
+        // small.
         if let Ok(block_range) =
             RangeInclusive::try_new(last_handled_block_number, current_block_number)
             && block_range.end() - block_range.start() <= MAX_REORG_BLOCK_COUNT
         {
             let mut new_blocks = self.block_retriever.blocks(block_range).await?;
             if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
-                // first block is not actually new and was only fetched to detect a reorg
+                // first block is not actually new and was only fetched to
+                // detect a reorg
                 new_blocks.remove(0);
                 tracing::debug!(
                     first_new=?new_blocks.first(),
@@ -358,9 +360,9 @@ where
         );
 
         // do not try to shorten the latest_blocks list if history range exists
-        // if history range exists then we want to update for the full range of blocks,
-        // otherwise history_blocks update would erase all subsequent blocks and we
-        // might have a gap in storage
+        // if history range exists then we want to update for the full range of
+        // blocks, otherwise history_blocks update would erase all
+        // subsequent blocks and we might have a gap in storage
         let (latest_blocks, is_reorg) = match history_range {
             Some(_) => (latest_blocks, true),
             None => {
@@ -403,9 +405,9 @@ where
 
     #[instrument(skip_all)]
     async fn update_events_from_old_blocks(&mut self, range: RangeInclusive<u64>) -> Result<()> {
-        // first get the blocks needed to update `last_handled_blocks` because if it
-        // fails, it's safer to fail at the beginning of the function before we
-        // update Storage
+        // first get the blocks needed to update `last_handled_blocks` because
+        // if it fails, it's safer to fail at the beginning of the
+        // function before we update Storage
         let blocks = self
             .block_retriever
             .blocks(RangeInclusive::try_new(
@@ -421,36 +423,40 @@ where
             .chunks(INSERT_EVENT_BATCH_SIZE)
             .map(|chunk| chunk.into_iter().collect::<Result<Vec<_>, _>>());
         futures::pin_mut!(events);
-        // We intentionally do not go with the obvious approach of deleting old events
-        // first and then inserting new ones. Instead, we make sure that the
-        // deletion and the insertion of the first batch of events happen in one
-        // transaction. This is important for two reasons:
-        // 1. It ensures that we only delete if we really have new events. Otherwise if
+        // We intentionally do not go with the obvious approach of deleting old
+        // events first and then inserting new ones. Instead, we make
+        // sure that the deletion and the insertion of the first batch
+        // of events happen in one transaction. This is important for
+        // two reasons:
+        // 1. It ensures that we only delete if we really have new events.
+        //    Otherwise if
         // fetching new    events from the node fails for whatever reason we
         // might keep deleting events over and    over without inserting new
         // ones resulting in the database table getting cleared.    Note that we
-        // do want to delete events if the new events are empty while fetching was
-        //    successful.
+        // do want to delete events if the new events are empty while fetching
+        // was    successful.
         // 2. It ensures that other users of the database are unlikely to see an
         // inconsistent state    some events have been deleted but new ones not
         // yet inserted. This is important in case    for example another part
         // of the code calculates the total executed amount of an order.
-        //    If this happened right after deletion but before insertion, then the
-        // result would be    wrong. In theory this could still happen if the
-        // last MAX_REORG_BLOCK_COUNT blocks had    more than
-        // INSERT_TRADE_BATCH_SIZE trade events but this is unlikely.
-        // There alternative solutions for 2. but this one is the most practical. For
-        // example, we could keep all reorg-able events in this struct and only
-        // store ones that are older than MAX_REORG_BLOCK_COUNT in the database
-        // but then any code using trade events would have to go through this
-        // class instead of being able to work with the database directly. Or we
-        // could make the batch size unlimited but this runs into problems when we have
-        // not updated it in a long time resulting in many missing events which
-        // we would all have to in one transaction.
+        //    If this happened right after deletion but before insertion, then
+        // the result would be    wrong. In theory this could still
+        // happen if the last MAX_REORG_BLOCK_COUNT blocks had    more
+        // than INSERT_TRADE_BATCH_SIZE trade events but this is
+        // unlikely. There alternative solutions for 2. but this one is
+        // the most practical. For example, we could keep all reorg-able
+        // events in this struct and only store ones that are older than
+        // MAX_REORG_BLOCK_COUNT in the database but then any code using
+        // trade events would have to go through this class instead of
+        // being able to work with the database directly. Or we
+        // could make the batch size unlimited but this runs into problems when
+        // we have not updated it in a long time resulting in many
+        // missing events which we would all have to in one transaction.
         let mut have_deleted_old_events = false;
         while let Some(events_chunk) = events.next().await {
-            // Early return on error (through `?`) is important here so that the second
-            // !have_deleted_old_events check (after the loop) is correct.
+            // Early return on error (through `?`) is important here so that the
+            // second !have_deleted_old_events check (after the
+            // loop) is correct.
             let unwrapped_events = events_chunk.context("failed to get next chunk of events")?;
             if !have_deleted_old_events {
                 self.store
@@ -503,9 +509,9 @@ where
         }
         self.update_last_handled_blocks(&blocks);
 
-        // in case of partial update return error as an indicator that update did not
-        // finish as expected either way we update partially to have the most
-        // latest state in the storage in every moment
+        // in case of partial update return error as an indicator that update
+        // did not finish as expected either way we update partially to
+        // have the most latest state in the storage in every moment
         if blocks != latest_blocks {
             tracing::debug!("partial update: {:?} - {:?}", blocks.first(), blocks.last());
             return Err(anyhow::anyhow!("update done partially"));
@@ -600,16 +606,16 @@ fn detect_reorg_path<'a>(
     for handled_block in handled_blocks.iter().rev() {
         for (i, latest_block) in latest_blocks.iter().enumerate().rev() {
             if latest_block == handled_block {
-                // found the same block in both lists, now we know the common ancestor, don't
-                // include the ancestor
+                // found the same block in both lists, now we know the common
+                // ancestor, don't include the ancestor
                 let is_reorg = handled_block != handled_blocks.last().unwrap();
                 return (&latest_blocks[i + 1..], is_reorg);
             }
         }
     }
 
-    // reorg deeper than the EventHandler history (`handled_blocks`), return full
-    // list
+    // reorg deeper than the EventHandler history (`handled_blocks`), return
+    // full list
     let is_reorg = !handled_blocks.is_empty();
     (latest_blocks, is_reorg)
 }
@@ -739,7 +745,8 @@ mod tests {
         }
 
         async fn persist_last_indexed_block(&mut self, _last_block: u64) -> Result<()> {
-            // Nothing to do here since `last_event_block` looks up last stored event.
+            // Nothing to do here since `last_event_block` looks up last stored
+            // event.
             Ok(())
         }
     }
@@ -955,23 +962,25 @@ mod tests {
             .unwrap();
 
         let current_block = web3.provider.get_block_number().await.unwrap();
-        // In this test we query for events multiple times. Newer events might be
-        // included each time we query again for the same events, but we want to
-        // disregard them.
+        // In this test we query for events multiple times. Newer events might
+        // be included each time we query again for the same events, but
+        // we want to disregard them.
         let remove_events_after_test_start = |v: Vec<(
             GPv2Settlement::GPv2Settlement::GPv2SettlementEvents,
             alloy_rpc_types::Log,
         )>| {
             v.into_iter()
                 .filter(|(_, log)| {
-                    // We make the test robust against reorgs by removing events that are too new
+                    // We make the test robust against reorgs by removing events
+                    // that are too new
                     log.block_number.unwrap() <= (current_block - MAX_REORG_BLOCK_COUNT)
                 })
                 .collect::<Vec<_>>()
         };
 
-        // We expect that in the past ~24h intervals there have been two events in the
-        // settlement contract that are at least MAX_REORG_BLOCK_COUNT apart.
+        // We expect that in the past ~24h intervals there have been two events
+        // in the settlement contract that are at least
+        // MAX_REORG_BLOCK_COUNT apart.
         const RANGE_SIZE: u64 = 24 * 3600 / 12;
 
         let storage_empty = EventStorage { events: vec![] };
@@ -994,8 +1003,9 @@ mod tests {
         let base_all_events =
             remove_events_after_test_start(base_event_handler.store().events.clone());
 
-        // We collect events again with an event handler generated from the same start
-        // date but using `new_skip_blocks_before` if there are no events
+        // We collect events again with an event handler generated from the same
+        // start date but using `new_skip_blocks_before` if there are no
+        // events
         let storage_empty = EventStorage { events: vec![] };
         let event_start = block_number_to_block_number_hash(
             &web3.provider,
@@ -1018,8 +1028,8 @@ mod tests {
         let base_block_skip_all_events =
             remove_events_after_test_start(base_event_handler.store().events.clone());
 
-        // No events already in storage means that we expect to have the same events
-        // available
+        // No events already in storage means that we expect to have the same
+        // events available
         assert_eq!(base_all_events, base_block_skip_all_events);
 
         // Events are ordered by date: first is oldest, last is most recent
@@ -1037,7 +1047,8 @@ mod tests {
             "Test assumption broken"
         );
 
-        // Recreate the same event handler with the last event already in storage.
+        // Recreate the same event handler with the last event already in
+        // storage.
         let storage_nonempty = EventStorage {
             events: vec![last_event.clone()],
         };
@@ -1058,9 +1069,9 @@ mod tests {
         let nonempty_all_events =
             remove_events_after_test_start(nonempty_event_handler.store().events.clone());
 
-        // Nonempty-storage event handler should not index all events, but all of them
-        // should have been captured in (any of the) the event handlers that
-        // started indexing earlier
+        // Nonempty-storage event handler should not index all events, but all
+        // of them should have been captured in (any of the) the event
+        // handlers that started indexing earlier
         for event in nonempty_all_events.iter() {
             assert!(base_block_skip_all_events.contains(event));
         }

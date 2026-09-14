@@ -292,11 +292,11 @@ pub async fn batch_update_ticks(
 
     // Invariant: never persist a row with `liquidity_net = 0`.
     //
-    // - INSERT: skip rows whose aggregated delta is zero. The trailing DELETE can't
-    //   see freshly-inserted rows in the same statement (Postgres modifying-CTE
-    //   snapshot rules), so we gate at the INSERT side instead.
-    // - UPDATE: when an existing row sums to zero, it's in the snapshot the DELETE
-    //   sees, so the DELETE removes it.
+    // - INSERT: skip rows whose aggregated delta is zero. The trailing DELETE
+    //   can't see freshly-inserted rows in the same statement (Postgres
+    //   modifying-CTE snapshot rules), so we gate at the INSERT side instead.
+    // - UPDATE: when an existing row sums to zero, it's in the snapshot the
+    //   DELETE sees, so the DELETE removes it.
     //
     // `into_chunk_changes` filters single zero entries upstream, but two
     // in-batch entries summing to zero for the same `(pool, tick)` would

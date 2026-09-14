@@ -48,10 +48,11 @@ impl Detector {
             return quality;
         }
 
-        // The simulation detector gets used by multiple solvers at the same time
-        // and therefore will have to handle a lot of duplicate requests. To avoid
-        // doing unnecessary work we use the `RequestSharing` component which checks
-        // if an equivalent request is already in-flight and awaits that instead of
+        // The simulation detector gets used by multiple solvers at the same
+        // time and therefore will have to handle a lot of duplicate
+        // requests. To avoid doing unnecessary work we use the
+        // `RequestSharing` component which checks if an equivalent
+        // request is already in-flight and awaits that instead of
         // creating a new one.
         let uid = order.uid;
         self.0

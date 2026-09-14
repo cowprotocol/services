@@ -225,13 +225,14 @@ impl OrderRecord {
             anyhow::bail!("remaining taker amount bigger than total taker amount");
         }
 
-        // all numbers are at most u128::MAX so none of these operations can overflow
+        // all numbers are at most u128::MAX so none of these operations can
+        // overflow
         let scaled_maker_amount = U256::from(self.order().maker_amount)
             * U256::from(self.metadata().remaining_fillable_taker_amount)
             / U256::from(self.order().taker_amount);
 
-        // `scaled_maker_amount` is at most as big as `maker_amount` which already fits
-        // in an u128
+        // `scaled_maker_amount` is at most as big as `maker_amount` which
+        // already fits in an u128
         Ok(u128::try_from(scaled_maker_amount)?)
     }
 }
@@ -506,10 +507,10 @@ mod tests {
     #[ignore]
     async fn test_get_orders_paginated_with_empty_result() {
         let api = DefaultZeroExApi::test();
-        // `get_orders()` relies on `get_orders_with_pagination()` not producing and
-        // error instead of an response with 0 records. To test that we request
-        // a page which should never have a any records and check that it
-        // doesn't throw an error.
+        // `get_orders()` relies on `get_orders_with_pagination()` not producing
+        // and error instead of an response with 0 records. To test that
+        // we request a page which should never have a any records and
+        // check that it doesn't throw an error.
         let result = api
             .get_orders_with_pagination(&OrdersQuery::default(), 100, 1000000)
             .await;

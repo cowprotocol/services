@@ -66,8 +66,8 @@ async fn valid_from_test(web3: Web3) {
     let uid = services.create_order(&order).await.unwrap();
     settles_only_after_valid_from(&onchain, &services, uid, valid_from).await;
 
-    // On-chain ethflow order: the app-data only exists behind its hash on-chain,
-    // so validFrom is backfilled while indexing the order.
+    // On-chain ethflow order: the app-data only exists behind its hash
+    // on-chain, so validFrom is backfilled while indexing the order.
     let ethflow_valid_from = model::time::now_in_epoch_seconds() + GATE_SECS;
     let ethflow_app_data = format!(r#"{{"metadata":{{"validFrom":{ethflow_valid_from}}}}}"#);
     let app_data_hash = services

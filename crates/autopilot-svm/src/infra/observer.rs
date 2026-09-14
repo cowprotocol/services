@@ -16,7 +16,7 @@ use {
     chain_types::solana::IntentHash,
     database::solana::OrderEventLabel,
     sqlx::PgPool,
-    std::collections::HashSet,
+    std::{collections::HashSet, sync::Mutex},
 };
 
 /// Writes order events, logs the competition phases, and drives the
@@ -24,11 +24,18 @@ use {
 pub struct CompetitionObserver {
     pool: PgPool,
     windows: SettlementWindows,
+    /// The previous auction's order uids, diffed against the current ones so
+    /// the logs carry the change instead of repeating the full list.
+    previous_orders: Mutex<HashSet<IntentHash>>,
 }
 
 impl CompetitionObserver {
     pub fn new(pool: PgPool, windows: SettlementWindows) -> Self {
-        Self { pool, windows }
+        Self {
+            pool,
+            windows,
+            previous_orders: Mutex::default(),
+        }
     }
 
     /// Store the events without blocking the cycle: a lost event degrades the
@@ -46,11 +53,31 @@ impl CompetitionObserver {
 #[async_trait]
 impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserver {
     fn on_orders_ready(&self, auction: &Auction) {
-        tracing::debug!(orders = auction.orders.len(), "auction entered competition");
-        self.store_events(
-            auction.orders.iter().map(|order| order.uid).collect(),
-            OrderEventLabel::Ready,
+        tracing::info!(
+            auction_id = auction.id,
+            orders = auction.orders.len(),
+            "solving"
         );
+        let current: HashSet<IntentHash> = auction.orders.iter().map(|order| order.uid).collect();
+        {
+            let mut previous = self.previous_orders.lock().unwrap();
+            let added: Vec<String> = current
+                .difference(&previous)
+                .map(ToString::to_string)
+                .collect();
+            tracing::debug!(auction_id = auction.id, ?added, "new orders in auction");
+            let removed: Vec<String> = previous
+                .difference(&current)
+                .map(ToString::to_string)
+                .collect();
+            tracing::debug!(
+                auction_id = auction.id,
+                ?removed,
+                "orders no longer in auction"
+            );
+            *previous = current.clone();
+        }
+        self.store_events(current.into_iter().collect(), OrderEventLabel::Ready);
     }
 
     async fn persist_competition_ranking(
@@ -78,8 +105,8 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
 
     fn on_orders_matched(&self, executing: HashSet<IntentHash>, considered: HashSet<IntentHash>) {
         tracing::debug!(
-            executing = executing.len(),
-            considered = considered.len(),
+            executing = ?executing.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            considered = ?considered.iter().map(ToString::to_string).collect::<Vec<_>>(),
             "orders matched"
         );
         self.store_events(executing.into_iter().collect(), OrderEventLabel::Executing);

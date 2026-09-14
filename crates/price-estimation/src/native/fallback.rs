@@ -287,8 +287,8 @@ mod tests {
     #[tokio::test]
     async fn stays_in_fallback_without_probing_before_interval() {
         let mut primary = MockNativePriceEstimating::new();
-        // Called 3 times (threshold) for the initial failures, NOT called again before
-        // probe interval
+        // Called 3 times (threshold) for the initial failures, NOT called again
+        // before probe interval
         primary
             .expect_estimate_native_price()
             .times(3)
@@ -302,7 +302,8 @@ mod tests {
             });
 
         let mut fallback = MockNativePriceEstimating::new();
-        // Called once when threshold is reached, once for the subsequent request
+        // Called once when threshold is reached, once for the subsequent
+        // request
         fallback
             .expect_estimate_native_price()
             .times(2)
@@ -347,7 +348,8 @@ mod tests {
             });
 
         let mut fallback = MockNativePriceEstimating::new();
-        // Called once when threshold is reached + once during probe (concurrent)
+        // Called once when threshold is reached + once during probe
+        // (concurrent)
         fallback
             .expect_estimate_native_price()
             .times(2)
@@ -372,7 +374,8 @@ mod tests {
             };
         }
 
-        // This call should probe primary (which recovers) and return primary result
+        // This call should probe primary (which recovers) and return primary
+        // result
         let result = estimator.estimate_native_price(TOKEN, TIMEOUT).await;
         assert_eq!(result.unwrap(), 1.0);
     }

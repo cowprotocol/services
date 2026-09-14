@@ -52,10 +52,11 @@ impl Trade {
             order::Side::Sell => {
                 // scale limit buy to support partially fillable orders
 
-                // `checked_ceil_div`` to be consistent with how settlement contract calculates
-                // traded buy amounts
-                // smallest allowed executed_buy_amount per settlement contract is
-                // executed_sell_amount * ceil(price_limits.buy / price_limits.sell)
+                // `checked_ceil_div`` to be consistent with how settlement
+                // contract calculates traded buy amounts
+                // smallest allowed executed_buy_amount per settlement contract
+                // is executed_sell_amount *
+                // ceil(price_limits.buy / price_limits.sell)
                 let limit_buy = self
                     .executed
                     .0
@@ -155,8 +156,9 @@ impl Trade {
                     .checked_add(fee.0)
                     .ok_or(Error::Math(Math::Overflow))?,
             );
-            // Do not need to calculate the last custom prices because in the last iteration
-            // the prices are not used anymore to calculate the protocol fee and an error
+            // Do not need to calculate the last custom prices because in the
+            // last iteration the prices are not used anymore to
+            // calculate the protocol fee and an error
             // in this calculation fails the whole function unnecessarily.
             if i != 0 {
                 current_trade.prices.custom = self.calculate_custom_prices(total)?;
@@ -259,8 +261,8 @@ impl Trade {
         quote: &domain::fee::Quote,
     ) -> Result<eth::SurplusTokenAmount, Error> {
         let surplus = self.surplus_over_quote(quote);
-        // negative surplus is not error in this case, as solutions often have no
-        // improvement over quote which results in negative surplus
+        // negative surplus is not error in this case, as solutions often have
+        // no improvement over quote which results in negative surplus
         if let Err(error::Math::Negative) = surplus {
             return Ok(eth::SurplusTokenAmount(eth::U256::ZERO));
         }
@@ -312,10 +314,11 @@ impl Trade {
         surplus: eth::SurplusTokenAmount,
         factor: f64,
     ) -> Result<eth::SurplusTokenAmount, Error> {
-        // Surplus fee is specified as a `factor` from raw surplus (before fee). Since
-        // this module works with trades that already have the protocol fee applied, we
-        // need to calculate the protocol fee as an observation of the eventually traded
-        // amounts using a different factor `factor'`.
+        // Surplus fee is specified as a `factor` from raw surplus (before fee).
+        // Since this module works with trades that already have the
+        // protocol fee applied, we need to calculate the protocol fee
+        // as an observation of the eventually traded amounts using a
+        // different factor `factor'`.
         //
         // The protocol fee before being applied is:
         //    fee = surplus_before_fee * factor
@@ -339,16 +342,17 @@ impl Trade {
 
     /// Protocol fee as a cut of the trade volume.
     fn volume_fee(&self, factor: f64) -> Result<eth::SurplusTokenAmount, Error> {
-        // Volume fee is specified as a `factor` from raw volume (before fee). Since
-        // this module works with trades that already have the protocol fee applied, we
-        // need to calculate the protocol fee as an observation of a the eventually
-        // traded amount using a different factor `factor'` .
+        // Volume fee is specified as a `factor` from raw volume (before fee).
+        // Since this module works with trades that already have the
+        // protocol fee applied, we need to calculate the protocol fee
+        // as an observation of a the eventually traded amount using a
+        // different factor `factor'` .
         //
         // The protocol fee before being applied is:
         // case Sell: fee = traded_buy_amount * factor, resulting in the REDUCED
         // buy amount
-        // case Buy: fee = traded_sell_amount * factor, resulting in the INCREASED
-        // sell amount
+        // case Buy: fee = traded_sell_amount * factor, resulting in the
+        // INCREASED sell amount
         //
         // The protocol fee after being applied is:
         // case Sell: fee = traded_buy_amount' * factor',

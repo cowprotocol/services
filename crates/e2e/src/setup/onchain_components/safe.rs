@@ -100,10 +100,10 @@ impl Safe {
 
     /// Deploy a Safe with a single owner.
     pub async fn deploy(owner: TestAccount, alloy: AlloyProvider) -> Self {
-        // Infrastructure contracts can in principle be reused for any new deployments,
-        // but it leads to boilerplate code that we don't need. Redeploying the
-        // infrastructure contracts every time should have no appreciable impact in the
-        // tests.
+        // Infrastructure contracts can in principle be reused for any new
+        // deployments, but it leads to boilerplate code that we don't
+        // need. Redeploying the infrastructure contracts every time
+        // should have no appreciable impact in the tests.
         let chain_id = U256::from(alloy.get_chain_id().await.unwrap());
         let infra = Infrastructure::new(alloy).await;
         let contract = infra.deploy_safe(vec![owner.clone()], 1).await;
@@ -162,8 +162,8 @@ impl Safe {
         PhantomData<execTransactionCall>,
     > {
         let signature = self.sign({
-            // `SafeTx` struct hash computation ported from the Safe Solidity code:
-            // <https://etherscan.io/address/0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552#code#F1#L377>
+            // `SafeTx` struct hash computation ported from the Safe Solidity
+            // code: <https://etherscan.io/address/0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552#code#F1#L377>
 
             let mut buffer = [0_u8; 352];
             buffer[0..32].copy_from_slice(&hex!(
@@ -200,8 +200,8 @@ impl Safe {
     /// Returns the ERC-1271 signature bytes for the specified message.
     pub fn sign_message(&self, message: &[u8; 32]) -> Vec<u8> {
         self.sign({
-            // `SafeMessage` struct hash computation ported from the Safe Solidity code:
-            // <https://etherscan.io/address/0xf48f2b2d2a534e402487b3ee7c18c33aec0fe5e4#code#F1#L52>
+            // `SafeMessage` struct hash computation ported from the Safe
+            // Solidity code: <https://etherscan.io/address/0xf48f2b2d2a534e402487b3ee7c18c33aec0fe5e4#code#F1#L52>
 
             let mut buffer = [0_u8; 64];
             buffer[0..32].copy_from_slice(&hex!(

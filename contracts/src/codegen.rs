@@ -286,7 +286,8 @@ impl Contract {
                 .iter()
                 .map(|(&chain_id, info)| NetworkArm(chain_id, (info.0.clone(), info.1)))
                 .collect();
-            // Sorting is required to keep generation stable and changes to a minimum
+            // Sorting is required to keep generation stable and changes to a
+            // minimum
             networks.sort_by_key(|arm| arm.0);
             let deployment_info = quote::quote! {
                 use {

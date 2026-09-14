@@ -145,11 +145,12 @@ impl<'de> Deserialize<'de> for FeePolicy {
     where
         D: Deserializer<'de>,
     {
-        // The untagged enum does not provide enough information when deserialization
-        // fails since it thinks that any unknown or mismatched fields are just
-        // an issue with the enum variant which the error will reflect —
-        // something among the lines of "did not match any variant of the untagged enum"
-        // This is an hacky way of ensuring we get proper behavior when failing to
+        // The untagged enum does not provide enough information when
+        // deserialization fails since it thinks that any unknown or
+        // mismatched fields are just an issue with the enum variant
+        // which the error will reflect — something among the lines of
+        // "did not match any variant of the untagged enum" This is an
+        // hacky way of ensuring we get proper behavior when failing to
         // deserialize numbers, for example, when users send bps as floats
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]

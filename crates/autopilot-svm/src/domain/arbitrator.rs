@@ -47,7 +47,8 @@ impl WinnerSelection<SolanaCycle> for SolanaArbitrator {
         // An empty fee-policy list marks an order as part of the auction, the
         // arbitrator only scores such orders. The auction carries no protocol
         // fees.
-        // TODO: real fee policies arrive with the protocol-fee support (post-MVP).
+        // TODO: real fee policies arrive with the protocol-fee support
+        // (post-MVP).
         let fee_policies = auction
             .orders
             .iter()
@@ -76,6 +77,9 @@ impl WinnerSelection<SolanaCycle> for SolanaArbitrator {
                 .collect(),
             &context,
         );
+        for winner in inner.winners() {
+            tracing::info!(solver = %winner.solver(), solution = winner.id(), "winner");
+        }
         Ranking { inner, drivers }
     }
 }

@@ -1,7 +1,9 @@
 use {
     super::Postgres,
     crate::{boundary, domain, infra::persistence::dto},
+    alloy::primitives::Address,
     anyhow::{Context, Result},
+    bigdecimal::BigDecimal,
     bytes::Bytes,
     chrono::{DateTime, Utc},
     futures::{StreamExt, TryStreamExt},
@@ -77,8 +79,9 @@ impl Postgres {
         let start = chrono::offset::Utc::now();
         let mut ex = self.pool.begin().await?;
         // Set the transaction isolation level to REPEATABLE READ
-        // so the both SELECT queries below are executed in the same database snapshot
-        // taken at the moment before the first query is executed.
+        // so the both SELECT queries below are executed in the same database
+        // snapshot taken at the moment before the first query is
+        // executed.
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(ex.deref_mut())
             .await?;
@@ -135,5 +138,19 @@ impl Postgres {
         let mut ex = self.pool.acquire().await?;
         database::auction::insert_auction_with_id(&mut ex, new_auction_id, data).await?;
         Ok(())
+    }
+
+    pub async fn fetch_latest_prices(&self) -> Result<HashMap<Address, BigDecimal>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["fetch_latest_prices"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        Ok(database::auction::fetch_latest_prices(&mut ex)
+            .await?
+            .into_iter()
+            .map(|auction_price| (Address::new(auction_price.token.0), auction_price.price))
+            .collect::<HashMap<_, _>>())
     }
 }

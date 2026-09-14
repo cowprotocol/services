@@ -329,8 +329,8 @@ async fn save_jit_orders(
 ) -> Result<(), sqlx::Error> {
     for solution in solutions {
         for order in &solution.orders {
-            // Order data is saved to `proposed_jit_orders` table only if the order is not
-            // already in the `orders` table.
+            // Order data is saved to `proposed_jit_orders` table only if the
+            // order is not already in the `orders` table.
             const QUERY_JIT: &str = r#"
                 INSERT INTO proposed_jit_orders
                 (auction_id, solution_uid, order_uid, sell_token, buy_token, limit_sell, limit_buy, side)
@@ -454,7 +454,8 @@ fn map_rows_to_solutions(rows: Vec<SolutionRow>) -> Result<Vec<Solution>, sqlx::
             .push(order);
     }
 
-    // Order by uid to return the solutions in the same order as they were inserted.
+    // Order by uid to return the solutions in the same order as they were
+    // inserted.
     let mut solutions = solutions_map.into_values().collect::<Vec<_>>();
     solutions.sort_by_key(|solution| solution.uid);
     Ok(solutions)
@@ -576,8 +577,8 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        // insert an order to "orders" table to prevent one of the orders from being
-        // inserted into the proposed_jit_orders table
+        // insert an order to "orders" table to prevent one of the orders from
+        // being inserted into the proposed_jit_orders table
         let user_order_uid = ByteArray([5u8; 56]);
         let order = crate::orders::Order {
             uid: user_order_uid,
@@ -647,8 +648,8 @@ mod tests {
                 .into_iter()
                 .map(|row| row.get::<OrderUid, _>(0))
                 .collect::<Vec<_>>();
-        // proposed_jit_orders should contain only the orders that were not already in
-        // the "orders"
+        // proposed_jit_orders should contain only the orders that were not
+        // already in the "orders"
         assert_eq!(
             proposed_jit_orders,
             vec![
@@ -659,8 +660,9 @@ mod tests {
             ]
         );
 
-        // but when solution 3 is fetched, it should have the same orders that were
-        // inserted (2 fetched from "proposed_jit_orders" and 1 from "orders" table)
+        // but when solution 3 is fetched, it should have the same orders that
+        // were inserted (2 fetched from "proposed_jit_orders" and 1
+        // from "orders" table)
         assert!(fetched_solutions[2].orders.len() == 3);
     }
 
@@ -715,6 +717,7 @@ mod tests {
             price_tokens: vec![ByteArray([1u8; 20])],
             price_values: vec![BigDecimal::from(100)],
             surplus_capturing_jit_order_owners: vec![],
+            penalty_caps_native: None,
         };
         auction::save(&mut db, auction).await.unwrap();
 
@@ -761,6 +764,7 @@ mod tests {
             price_tokens: vec![order_sell_token],
             price_values: vec![order_limit_sell.clone()],
             surplus_capturing_jit_order_owners: vec![],
+            penalty_caps_native: None,
         };
         auction::save(&mut db, auction).await.unwrap();
 
@@ -937,6 +941,7 @@ mod tests {
                 price_tokens: Default::default(),
                 price_values: Default::default(),
                 surplus_capturing_jit_order_owners: Default::default(),
+                penalty_caps_native: None,
             },
         )
         .await
@@ -969,6 +974,7 @@ mod tests {
                 price_tokens: Default::default(),
                 price_values: Default::default(),
                 surplus_capturing_jit_order_owners: Default::default(),
+                penalty_caps_native: None,
             },
         )
         .await
@@ -1021,14 +1027,15 @@ mod tests {
         .await
         .unwrap();
 
-        // when an order gets marked as settled we dont consider it inflight anymore
+        // when an order gets marked as settled we dont consider it inflight
+        // anymore
         let later_block_with_settlement = fetch_in_flight_orders(&mut db, 5).await.unwrap();
         assert_eq!(later_block_with_settlement, vec![order_uid(2)]);
 
-        // A solver can abort its submission before the deadline block is reached.
-        // Record a started-then-failed attempt for order 2's winning solution and
-        // assert the order is no longer in-flight, even though its deadline is still
-        // ahead of the queried block.
+        // A solver can abort its submission before the deadline block is
+        // reached. Record a started-then-failed attempt for order 2's
+        // winning solution and assert the order is no longer in-flight,
+        // even though its deadline is still ahead of the queried block.
         let auction_id = 1; // the auction order 2 won (see solutions above)
         let solution_uid = 2; // winning solution holding order 2
         let deadline_block = 10; // still ahead of the queried block (5) below

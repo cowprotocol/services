@@ -129,8 +129,8 @@ async fn test(web3: Web3) {
         .unwrap();
 
     // Make sure that the next update is happened and no new Invalid event is
-    // received for the `order_b`. `order_a` is required to track if the next update
-    // is happened.
+    // received for the `order_b`. `order_a` is required to track if the next
+    // update is happened.
     onchain
         .contracts()
         .weth

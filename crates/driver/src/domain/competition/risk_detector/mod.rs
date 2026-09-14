@@ -111,7 +111,8 @@ impl Detector {
                     // sell token quality is unknown => keep order if token is supported
                     (Quality::Unknown, _) => {
                         let Some(detector) = &self.simulation_detector else {
-                            // we can't determine quality => assume order is good
+                            // we can't determine quality => assume order is
+                            // good
                             return Some(order);
                         };
                         let check_tokens_fut = async move {

@@ -318,7 +318,7 @@ impl Default for Order {
             partial: Default::default(),
             created: u32::MIN,
             valid_to: u32::MAX,
-            kind: order::Kind::Market,
+            kind: order::Kind::Limit,
             solver_fee: Default::default(),
             name: Default::default(),
             surplus_factor: DEFAULT_SURPLUS_FACTOR.ether().into_wei(),
@@ -1418,8 +1418,8 @@ impl SolveOk<'_> {
         )
         .unwrap();
 
-        // Since JIT orders don't have UID at creation time, we need to search for
-        // matching token pair
+        // Since JIT orders don't have UID at creation time, we need to search
+        // for matching token pair
         for expected in jit_orders.iter() {
             let exist = trades
                 .values()

@@ -1,5 +1,5 @@
 use {
-    self::trade::{ClearingPrices, Fee, Fulfillment},
+    self::trade::{ClearingPrices, Fulfillment},
     super::auction,
     crate::{
         boundary,
@@ -140,10 +140,10 @@ impl Solution {
         flashloans: HashMap<order::Uid, Flashloan>,
         wrappers: Vec<WrapperCall>,
     ) -> Result<Self, error::Solution> {
-        // Surplus capturing JIT orders behave like Fulfillment orders. They capture
-        // surplus, pay network fees and contribute to score of a solution.
-        // To make sure that all the same logic and checks get applied we convert them
-        // right away.
+        // Surplus capturing JIT orders behave like Fulfillment orders. They
+        // capture surplus, pay network fees and contribute to score of
+        // a solution. To make sure that all the same logic and checks
+        // get applied we convert them right away.
         for trade in &mut trades {
             let Trade::Jit(jit) = trade else { continue };
             if !surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer) {
@@ -171,12 +171,13 @@ impl Solution {
                             buy_token_balance: jit.order().buy_token_balance,
                             protocol_fees: vec![],
                             quote: None,
+                            penalty_cap_native: None,
                         }),
                         app_data: jit.order().app_data.into(),
                         partial: jit.order().partially_fillable(),
                     },
                     jit.executed(),
-                    Fee::Dynamic(jit.fee()),
+                    jit.fee(),
                     // JIT orders don't get haircut because they supply private
                     // liquidity which should not prone to negative slippage.
                     eth::U256::ZERO,
@@ -312,8 +313,8 @@ impl Solution {
         for trade in self.trades().iter().filter(|trade| {
             self.trade_count_for_scorable(trade, surplus_capturing_jit_order_owners)
         }) {
-            // Solver generated fulfillment does not include the fee in the executed amount
-            // for sell orders.
+            // Solver generated fulfillment does not include the fee in the
+            // executed amount for sell orders.
             let executed = match trade.side() {
                 order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
                 order::Side::Buy => trade.executed(),
@@ -364,7 +365,8 @@ impl Solution {
                     .call()
                     .await?;
 
-                // if the current allowance is sufficient we can skip that interaction
+                // if the current allowance is sufficient we can skip that
+                // interaction
                 if current_allowance >= required.0.amount {
                     return Ok::<_, blockchain::Error>(vec![]);
                 }
@@ -409,8 +411,8 @@ impl Solution {
             return Err(error::Merge::Incompatible("Solvers"));
         }
 
-        // Skip merging the solutions if the expected merged solution has more orders
-        // than allowed
+        // Skip merging the solutions if the expected merged solution has more
+        // orders than allowed
         if self.trades.len() + other.trades().len() > max_orders_per_merged_solution {
             return Err(error::Merge::MoreOrdersThanAllowed);
         }
@@ -422,8 +424,9 @@ impl Solution {
             return Err(error::Merge::DuplicateTrade);
         }
 
-        // Solution prices need to be congruent, i.e. there needs to be a unique factor
-        // to scale all common tokens from one solution into the other.
+        // Solution prices need to be congruent, i.e. there needs to be a unique
+        // factor to scale all common tokens from one solution into the
+        // other.
         let factor =
             scaling_factor(&self.prices, &other.prices).ok_or(error::Merge::IncongruentPrices)?;
 
@@ -439,7 +442,8 @@ impl Solution {
                 .map_err(error::Merge::Math)?;
             match prices.entry(*token) {
                 Entry::Occupied(entry) => {
-                    // This shouldn't fail unless there are rounding errors given that the scaling
+                    // This shouldn't fail unless there are rounding errors
+                    // given that the scaling
                     // factor is unique
                     if *entry.get() != scaled {
                         return Err(error::Merge::IncongruentPrices);
@@ -611,16 +615,18 @@ impl Solution {
         let prices = self.prices.clone();
 
         if self.user_trades().any(|trade| trade.order().buys_eth()) {
-            // The solution contains an order which buys ETH. Solvers only produce solutions
-            // for ERC20 tokens, while the driver adds special [`Interaction`]s to
-            // wrap/unwrap the ETH tokens into WETH, and sends orders to the solver with
-            // WETH instead of ETH. Once the driver receives the solution which fulfills an
-            // ETH order, a clearing price for ETH needs to be added, equal to the
-            // WETH clearing price.
+            // The solution contains an order which buys ETH. Solvers only
+            // produce solutions for ERC20 tokens, while the driver
+            // adds special [`Interaction`]s to wrap/unwrap the ETH
+            // tokens into WETH, and sends orders to the solver with
+            // WETH instead of ETH. Once the driver receives the solution which
+            // fulfills an ETH order, a clearing price for ETH needs
+            // to be added, equal to the WETH clearing price.
 
-            // If no order trades WETH, the WETH price is not necessary, only the ETH
-            // price is needed. Remove the unneeded WETH price, which slightly reduces
-            // gas used by the settlement.
+            // If no order trades WETH, the WETH price is not necessary, only
+            // the ETH price is needed. Remove the unneeded WETH
+            // price, which slightly reduces gas used by the
+            // settlement.
             let mut prices: Prices = if self.user_trades().all(|trade| {
                 trade.order().sell.token != *self.weth && trade.order().buy.token != *self.weth
             }) {
@@ -866,8 +872,6 @@ pub mod error {
 
     #[derive(Debug, thiserror::Error)]
     pub enum Trade {
-        #[error("orders with non solver determined gas cost fees are not supported")]
-        ProtocolFeeOnStaticOrder,
         #[error("invalid executed amount")]
         InvalidExecutedAmount,
         #[error(transparent)]

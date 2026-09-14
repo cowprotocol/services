@@ -47,11 +47,14 @@ pub(crate) struct CreatedOrder {
     pub created_by: Pubkey,
     /// Canonical order PDA address.
     pub order_pda: Pubkey,
-    /// Account the sell amount is pulled from. The intent names token
-    /// accounts, not mints: mints require an account lookup.
+    /// Account the sell amount is pulled from.
     pub sell_token_account: Pubkey,
+    /// Mint of the sell token, carried by the intent.
+    pub sell_mint: Pubkey,
     /// Account the buy amount is pushed to.
     pub buy_token_account: Pubkey,
+    /// Mint of the buy token, carried by the intent.
+    pub buy_mint: Pubkey,
     /// Amount sold, in the sell token's native units.
     pub sell_amount: u64,
     /// Amount bought, in the buy token's native units.

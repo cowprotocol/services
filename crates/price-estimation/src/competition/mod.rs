@@ -101,8 +101,8 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         'outer: while stage_index < self.stages.len() {
             let mut requests = FuturesUnordered::new();
 
-            // Collect requests until it's at least theoretically possible to produce enough
-            // results to return early.
+            // Collect requests until it's at least theoretically possible to
+            // produce enough results to return early.
             let requests_for_batch = missing_results(&results);
             let remaining_stages = Arc::new(OnceLock::new());
 
@@ -121,8 +121,8 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
                 requests.extend(futures);
                 stage_index += 1;
             }
-            // Init remaining stages once we know how many stages we had to kick-off and
-            // BEFORE we start polling the futures.
+            // Init remaining stages once we know how many stages we had to
+            // kick-off and BEFORE we start polling the futures.
             remaining_stages
                 .set(self.stages.len() - stage_index)
                 .expect("this is the only place where we init the value");
@@ -386,7 +386,8 @@ mod tests {
             .estimates(queries[1].clone())
             .await
             .map(|r| r.into_vec());
-        // sell order: higher out_amount wins; both quotes appear in ranked order
+        // sell order: higher out_amount wins; both quotes appear in ranked
+        // order
         assert_eq!(result.as_ref().unwrap()[0], estimates[1]);
         assert_eq!(result.as_ref().unwrap()[1], estimates[0]);
 
@@ -435,7 +436,8 @@ mod tests {
 
         let mut first = MockPriceEstimating::new();
         first.expect_estimate().times(1).returning(move |_| {
-            // immediately return an error (not enough to terminate price competition early)
+            // immediately return an error (not enough to terminate price
+            // competition early)
             async { Err(PriceEstimationError::NoLiquidity) }.boxed()
         });
 
@@ -443,7 +445,8 @@ mod tests {
         second.expect_estimate().times(1).returning(|_| {
             async {
                 sleep(Duration::from_millis(10)).await;
-                // return good result after some time; now we can terminate early
+                // return good result after some time; now we can terminate
+                // early
                 Ok(estimate(1))
             }
             .boxed()
@@ -500,8 +503,8 @@ mod tests {
         let mut first = MockPriceEstimating::new();
         first.expect_estimate().times(1).returning(move |_| {
             async {
-                // First stage takes longer than second to test they are not executed in
-                // parallel
+                // First stage takes longer than second to test they are not
+                // executed in parallel
                 sleep(Duration::from_millis(20)).await;
                 Ok(estimate(1))
             }
@@ -550,8 +553,8 @@ mod tests {
         );
         let racing = racing.with_early_return(2.try_into().unwrap());
 
-        // sell order: estimate(3) beats estimate(1); second returned Err so only 2 Ok
-        // quotes
+        // sell order: estimate(3) beats estimate(1); second returned Err so
+        // only 2 Ok quotes
         let result = racing.estimates(query).await.unwrap().into_vec();
         assert_eq!(result[0], estimate(3));
         assert_eq!(result[1], estimate(1));
@@ -602,8 +605,8 @@ mod tests {
             .boxed()
         });
 
-        // After the first combined stage is done, we are only missing one positive
-        // result, thus we query third but not fourth
+        // After the first combined stage is done, we are only missing one
+        // positive result, thus we query third but not fourth
         let mut third = MockPriceEstimating::new();
         third
             .expect_estimate()

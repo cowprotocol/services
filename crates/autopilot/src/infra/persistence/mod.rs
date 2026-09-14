@@ -8,7 +8,7 @@ use {
         },
     },
     ::winner_selection::state::RankedItem,
-    alloy::primitives::B256,
+    alloy::primitives::{Address, B256},
     anyhow::Context,
     bigdecimal::{BigDecimal, ToPrimitive},
     boundary::database::byte_array::ByteArray,
@@ -26,10 +26,13 @@ use {
         },
         solver_competition_v2::{self, Order, Solution},
     },
-    domain::auction::order::{
-        BuyTokenDestination as DomainBuyTokenDestination,
-        SellTokenSource as DomainSellTokenSource,
-        SigningScheme as DomainSigningScheme,
+    domain::{
+        auction::order::{
+            BuyTokenDestination as DomainBuyTokenDestination,
+            SellTokenSource as DomainSellTokenSource,
+            SigningScheme as DomainSigningScheme,
+        },
+        competition::Score,
     },
     eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
@@ -177,28 +180,27 @@ impl Persistence {
             .context("failed to fetch all solvable orders")
     }
 
-    /// Saves the competition data to the DB
-    pub async fn save_competition(
-        &self,
-        competition: boundary::Competition,
-    ) -> Result<(), DatabaseError> {
-        self.postgres
-            .save_competition(competition)
-            .await
-            .map_err(DatabaseError)
-    }
-
     /// Save all valid solutions that participated in the competition for an
-    /// auction.
+    /// auction, together with the reference score of each participating solver.
     pub async fn save_solutions(
         &self,
         auction_id: domain::auction::Id,
         solutions: impl Iterator<Item = &domain::competition::Bid>,
+        reference_scores: HashMap<Address, Score>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["save_solutions"])
             .start_timer();
+
+        let reference_scores: Vec<_> = reference_scores
+            .into_iter()
+            .map(|(solver, score)| database::reference_scores::Score {
+                auction_id,
+                solver: ByteArray(solver.0.0),
+                reference_score: u256_to_big_decimal(&score.get().0),
+            })
+            .collect();
 
         let mut ex = self.postgres.pool.begin().await?;
 
@@ -238,6 +240,8 @@ impl Persistence {
                 .collect::<Result<Vec<_>, DatabaseError>>()?,
         )
         .await?;
+
+        database::reference_scores::insert(&mut ex, &reference_scores).await?;
 
         Ok(ex.commit().await?)
     }
@@ -378,13 +382,26 @@ impl Persistence {
                     .iter()
                     .map(|owner| ByteArray(owner.0.0))
                     .collect(),
+                // Mapped one-to-one with `order_uids` above; all-or-nothing
+                // because caps are computed for every order iff penalties are
+                // enabled.
+                penalty_caps_native: auction
+                    .orders
+                    .iter()
+                    .map(|order| {
+                        order
+                            .penalty_cap_native
+                            .map(|cap| u256_to_big_decimal(&cap.0))
+                    })
+                    .collect(),
             },
         )
         .await?;
 
-        // Inserting into `competition_auctions` grows the pending list of its GIN
-        // index, which periodically causes DB latency spikes. Clean it right
-        // where the need originates, without blocking auction post-processing.
+        // Inserting into `competition_auctions` grows the pending list of its
+        // GIN index, which periodically causes DB latency spikes. Clean
+        // it right where the need originates, without blocking auction
+        // post-processing.
         let postgres = self.postgres.clone();
         tokio::spawn(async move {
             if let Err(err) = postgres.gin_clean_pending_list().await {
@@ -443,11 +460,13 @@ impl Persistence {
             .into();
 
         let orders = {
-            // Code that uses the data assembled by this function determines JIT orders
-            // by their presence in the `orders => fee_policies` mapping. If an order has
-            // a mapping it is assumed that this was a regular order and not a JIT order.
-            // So in order to not misclassify JIT orders as regular orders we only fetch
-            // fee policies for orders that were part of the original auction.
+            // Code that uses the data assembled by this function determines JIT
+            // orders by their presence in the `orders =>
+            // fee_policies` mapping. If an order has a mapping it
+            // is assumed that this was a regular order and not a JIT order.
+            // So in order to not misclassify JIT orders as regular orders we
+            // only fetch fee policies for orders that were part of
+            // the original auction.
             let auction_orders: HashSet<domain::OrderUid> = auction_row
                 .order_uids
                 .into_iter()
@@ -459,7 +478,8 @@ impl Persistence {
                 .map(|t| t.uid)
                 .collect();
 
-            // get fee policies for all orders that were part of the competition auction
+            // get fee policies for all orders that were part of the competition
+            // auction
             let fee_policies = database::fee_policies::fetch_all(
                 &mut ex,
                 relevant_orders
@@ -534,8 +554,9 @@ impl Persistence {
         let started_at = chrono::offset::Utc::now();
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
         // Set the transaction isolation level to REPEATABLE READ
-        // so all the SELECT queries below are executed in the same database snapshot
-        // taken at the moment before the first query is executed.
+        // so all the SELECT queries below are executed in the same database
+        // snapshot taken at the moment before the first query is
+        // executed.
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(tx.deref_mut())
             .await?;
@@ -550,8 +571,8 @@ impl Persistence {
             database::orders::updated_order_uids_after(&mut tx, after_block).await?
         };
 
-        // Fetch the orders that were updated after the given block and were created or
-        // cancelled after the given timestamp.
+        // Fetch the orders that were updated after the given block and were
+        // created or cancelled after the given timestamp.
         let next_orders: HashMap<domain::OrderUid, Arc<model::order::Order>> = {
             let _timer = Metrics::get()
                 .database_queries
@@ -631,9 +652,10 @@ impl Persistence {
                 .with_label_values(&["read_quotes"])
                 .start_timer();
 
-            // Fetch quotes only for newly created and also on-chain placed orders due to
-            // the following case: if a block containing an on-chain order
-            // (e.g., ethflow) gets reorganized, the same order with the same
+            // Fetch quotes only for newly created and also on-chain placed
+            // orders due to the following case: if a block
+            // containing an on-chain order (e.g., ethflow) gets
+            // reorganized, the same order with the same
             // UID might be created in the new block, and the temporary quote
             // associated with it may have changed in the meantime.
             let order_uids = current_orders
@@ -835,7 +857,8 @@ impl Persistence {
             }
 
             if !jit_orders.is_empty() {
-                // each jit order should have a corresponding trade event, try to find them
+                // each jit order should have a corresponding trade event, try
+                // to find them
                 let trade_events = self
                     .get_trades_for_settlement(&event)
                     .await?

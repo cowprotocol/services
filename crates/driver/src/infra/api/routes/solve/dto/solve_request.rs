@@ -174,6 +174,9 @@ pub(crate) struct Order {
     #[serde_as(as = "serde_ext::Hex")]
     signature: Vec<u8>,
     quote: Option<Quote>,
+    #[serde_as(as = "Option<serde_ext::U256>")]
+    #[serde(default)]
+    penalty_cap_native: Option<eth::U256>,
 }
 
 impl Order {
@@ -277,6 +280,7 @@ impl Order {
                 quote: self
                     .quote
                     .map(|q| q.into_domain(self.sell_token, self.buy_token)),
+                penalty_cap_native: self.penalty_cap_native.map(Into::into),
             }),
             app_data,
             partial,

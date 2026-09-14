@@ -233,7 +233,7 @@ impl Solutions {
 mod tests {
     use {
         super::*,
-        crate::{domain::Side, util},
+        crate::{domain::Side, infra::blockchain::associated_token_address},
         serde_json::json,
         solana_sdk::pubkey::Pubkey,
     };
@@ -248,13 +248,13 @@ mod tests {
 
     fn sample_auction_dto() -> Auction {
         Auction {
-            id: 1,
+            id: Some(1),
             taker: pubkey(3),
             orders: vec![super::super::auction::Order {
                 uid: OrderUid([8; 32]),
                 sell_mint: pubkey(1),
                 buy_mint: pubkey(2),
-                buy_destination: util::associated_token_address(&pubkey(3), &pubkey(2)),
+                buy_destination: associated_token_address(&pubkey(3), &pubkey(2)),
                 amount: 1_000,
                 side: Side::Sell,
             }],
@@ -369,13 +369,13 @@ mod tests {
     #[test]
     fn derives_counterpart_that_overflows_u64_product() {
         let auction = Auction {
-            id: 1,
+            id: Some(1),
             taker: pubkey(3),
             orders: vec![Order {
                 uid: OrderUid([8; 32]),
                 sell_mint: pubkey(1),
                 buy_mint: pubkey(2),
-                buy_destination: util::associated_token_address(&pubkey(3), &pubkey(2)),
+                buy_destination: associated_token_address(&pubkey(3), &pubkey(2)),
                 amount: u64::MAX,
                 side: Side::Sell,
             }],

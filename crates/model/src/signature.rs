@@ -315,9 +315,10 @@ impl EcdsaSignature {
 
     pub fn from_bytes(bytes: &[u8; 65]) -> Result<Self> {
         let v = bytes[64];
-        // Normalize v to legacy format (27/28) for Solidity ecrecover compatibility.
-        // Modern EIP-2 signatures use v = 0 or 1, but Solidity's ecrecover expects
-        // v = 27 or 28. Alloy normalizes internally for off-chain recovery, but
+        // Normalize v to legacy format (27/28) for Solidity ecrecover
+        // compatibility. Modern EIP-2 signatures use v = 0 or 1, but
+        // Solidity's ecrecover expects v = 27 or 28. Alloy normalizes
+        // internally for off-chain recovery, but
         // on-chain ecrecover(hash, v=0, r, s) returns address(0) and fails.
         // Only valid v values are 0, 1, 27, 28.
         let normalized_v = match v {
@@ -352,7 +353,8 @@ impl EcdsaSignature {
         key: &PrivateKeySigner,
     ) -> Self {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
-        // Unwrap because the only error is for invalid messages which we don't create.
+        // Unwrap because the only error is for invalid messages which we don't
+        // create.
         let signature = key.sign_hash_sync(&message).unwrap();
         Self::from_bytes(&signature.as_bytes()).expect("signing produces valid v values")
     }
@@ -448,7 +450,8 @@ mod tests {
         assert!(Signature::from_bytes(SigningScheme::EthSign, &[0u8; 20]).is_err());
         assert!(Signature::from_bytes(SigningScheme::PreSign, &[0u8; 32]).is_err());
 
-        // Note: v=0 in input bytes gets normalized to v=27 for ecrecover compatibility
+        // Note: v=0 in input bytes gets normalized to v=27 for ecrecover
+        // compatibility
         assert_eq!(
             Signature::from_bytes(SigningScheme::Eip712, &[0u8; 65]).unwrap(),
             Signature::default_with(SigningScheme::Eip712)
@@ -675,8 +678,9 @@ mod tests {
 
     #[test]
     fn ecdsa_signature_v_normalization() {
-        // Modern EIP-2 signatures use v = 0 or 1, but Solidity's ecrecover expects
-        // v = 27 or 28. This test verifies that v values are normalized correctly.
+        // Modern EIP-2 signatures use v = 0 or 1, but Solidity's ecrecover
+        // expects v = 27 or 28. This test verifies that v values are
+        // normalized correctly.
 
         // v = 0 should be normalized to 27
         let mut bytes_v0 = [0u8; 65];

@@ -106,16 +106,20 @@ where
                             entry.insert(serde_json::Value::Object(current_span_fields));
                         }
                         Entry::Occupied(mut entry) => {
-                            // the desired format does not preserve the hierarchy of spans
-                            // so theoretically there could be nested spans with the same
-                            // name so we merge the fields of all spans with the same name
+                            // the desired format does not preserve the
+                            // hierarchy of spans so
+                            // theoretically there could be nested spans with
+                            // the same name so we
+                            // merge the fields of all spans with the same name
                             //
-                            // if there are duplicated fields the value of the span closest
+                            // if there are duplicated fields the value of the
+                            // span closest
                             // to the processed event wins
                             //
-                            // also theoretically we could detect fields getting overwritten
-                            // but we couldn't log that without causing a stack overflow so we
-                            // don't
+                            // also theoretically we could detect fields getting
+                            // overwritten
+                            // but we couldn't log that without causing a stack
+                            // overflow so we don't
                             entry
                                 .get_mut()
                                 .as_object_mut()
@@ -180,7 +184,8 @@ where
         let trace_id = Span::current().context().span().span_context().trace_id();
         let mut line = String::new();
 
-        // now let the normal formatter do all the fancy stuff and dump it into a String
+        // now let the normal formatter do all the fancy stuff and dump it into
+        // a String
         let format_res = self.inner.format_event(ctx, Writer::new(&mut line), event);
         if trace_id != TraceId::INVALID {
             // remove the new line the default formatter added

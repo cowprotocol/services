@@ -56,7 +56,7 @@ async fn local_node_quote_verification() {
 }
 
 async fn gas_limit(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3).await;
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
@@ -75,6 +75,11 @@ async fn gas_limit(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
+    let gas_hog = contracts::test::GasHog::Instance::deploy(web3.provider.clone())
+        .await
+        .unwrap();
+    let burn_gas = U256::from(8_000_000);
+
     let order = OrderCreation {
         sell_token: *cow.address(),
         sell_amount: 4u64.eth(),
@@ -87,9 +92,13 @@ async fn gas_limit(web3: Web3) {
                 "metadata": {
                     "hooks": {
                         "pre": [Hook {
-                            target: trader.address(),
-                            call_data: Default::default(),
-                            gas_limit: 8_000_000,
+                            target: *gas_hog.address(),
+                            call_data: gas_hog
+                                .isValidSignature(Default::default(), burn_gas.to_be_bytes::<32>().into())
+                                .calldata()
+                                .to_vec(),
+                            // some headroom for the hook's own overhead
+                            gas_limit: 8_100_000,
                         }],
                         "post": [],
                     },

@@ -46,8 +46,8 @@ impl BaseTokens {
                 );
             }
         }
-        // Could be empty if the input pairs are empty. Just like path_candidates we
-        // return empty set in this case.
+        // Could be empty if the input pairs are empty. Just like
+        // path_candidates we return empty set in this case.
         if !result.is_empty() {
             result.extend(self.pairs.iter().copied());
         }
@@ -90,8 +90,8 @@ fn path_candidates(
 
     let mut candidates = HashSet::new();
 
-    // Start with just the sell token (yields the direct pair candidate in the 0th
-    // iteration)
+    // Start with just the sell token (yields the direct pair candidate in the
+    // 0th iteration)
     let mut path_prefixes = vec![vec![sell_token]];
     for _ in 0..(max_hops + 1) {
         let mut next_round_path_prefixes = vec![];
@@ -101,8 +101,8 @@ fn path_candidates(
             full_path.push(buy_token);
             candidates.insert(full_path);
 
-            // For the next round, amend current prefix with all base tokens that are not
-            // yet on the path
+            // For the next round, amend current prefix with all base tokens
+            // that are not yet on the path
             for base_token in base_tokens {
                 if base_token != &buy_token && !path_prefix.contains(base_token) {
                     let mut next_round_path_prefix = path_prefix.clone();
@@ -184,7 +184,8 @@ mod tests {
             16
         );
 
-        // 4 hops should not yield any more permutations since we used all base tokens
+        // 4 hops should not yield any more permutations since we used all base
+        // tokens
         assert_eq!(
             path_candidates(sell_token, buy_token, &base_token_set, 4).len(),
             16

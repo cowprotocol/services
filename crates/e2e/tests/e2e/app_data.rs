@@ -103,8 +103,8 @@ async fn app_data(web3: Web3) {
     let err = services.create_order(&order2).await.unwrap_err();
     dbg!(err);
 
-    // no full app data specified but hash matches existing hash in database from
-    // order1
+    // no full app data specified but hash matches existing hash in database
+    // from order1
     let order3 = create_order(OrderCreationAppData::Hash {
         hash: app_data_hash,
     });

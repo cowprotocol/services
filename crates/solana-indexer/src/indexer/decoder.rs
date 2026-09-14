@@ -6,6 +6,7 @@
 
 use {
     crate::{
+        config::Config,
         persistence::Postgres,
         types::{
             Signature,
@@ -38,10 +39,10 @@ use {
         },
         recover_discriminator,
     },
-    cow_solana_rpc::SolanaRPC,
-    solana_sdk::{account::Account, pubkey::Pubkey},
-    std::collections::{BTreeMap, HashMap},
-    tokio::sync::mpsc::Receiver,
+    cow_solana_rpc::{CommitmentConfig, SolanaRPC},
+    solana_sdk::pubkey::Pubkey,
+    std::collections::BTreeMap,
+    tokio::sync::mpsc::{self, Receiver},
 };
 
 /// Decoder component.
@@ -49,7 +50,7 @@ pub(crate) struct Decoder {
     /// Persistence layer.
     pub persistence: Postgres,
 
-    /// Account lookups for data the stream does not carry.
+    /// RPC client the finalization audit checks signatures against.
     pub rpc: SolanaRPC,
 
     /// Incoming `StreamUpdate` from the ingester.
@@ -81,19 +82,43 @@ impl Decoder {
         }
     }
 
+    /// A decoder driven by RPC fetches instead of a stream: recovery pushes
+    /// history through its decode and flush paths over a dedicated client.
+    /// The channel sender is dropped, so `run` would return immediately.
+    pub(crate) fn rpc_driven(config: &Config, persistence: Postgres) -> Self {
+        let rpc = SolanaRPC::new_with_timeout_and_commitment(
+            &config.rpc.endpoint,
+            config.rpc.request_timeout,
+            CommitmentConfig::confirmed(),
+        );
+        let (_closed, rx) = mpsc::channel(1);
+        Self::new(
+            persistence,
+            rpc,
+            rx,
+            config.chain.settlement_program_id,
+            config.chain.solflow_program_id,
+        )
+    }
+
     /// Main loop. Drains the channel, decodes each transaction's tracked
     /// instructions, and persists the results. Returns when the ingester
     /// drops the sender.
     ///
-    /// Events and dead letters are buffered per slot and flushed once a
-    /// transaction of a later slot arrives: stream resume is slot-granular
-    /// (`from_slot = last_indexed_slot + 1`), so the last indexed slot may
-    /// only name slots whose transactions have all been delivered. Buffering
-    /// also makes it one persistence batch per slot instead of one per
-    /// transaction.
+    /// Events and dead letters are buffered per slot and flushed when the
+    /// slot's confirmed status arrives: the stream delivers a slot's
+    /// transactions before that status, so the status is the completeness
+    /// signal. The watermark (`solana.indexer_state.slot`) advances to every
+    /// confirmed slot, quiet ones included, and only after its buffers
+    /// flushed. A persistence error aborts the decoder and the process: the
+    /// watermark did not advance past anything unflushed, so the restart
+    /// replays it.
     pub async fn run(&mut self) -> Result<(), PersistenceError> {
         let mut pending: BTreeMap<Slot, SlotBuffer> = BTreeMap::new();
-        let mut flushed_through: Option<Slot> = None;
+        // In-memory mirror of the persisted watermark, spares redundant
+        // writes and flags late transactions.
+        let mut watermark: Option<Slot> = None;
+        let mut finalized_through: Option<Slot> = None;
         while let Some(update) = self.rx.recv().await {
             let (slot, signature, inner) = match update {
                 StreamUpdate::Tx {
@@ -101,26 +126,27 @@ impl Decoder {
                     signature,
                     inner,
                 } => (slot, signature, inner),
-                // Slot statuses bound the flush latency: the next settlement
-                // transaction can be minutes away.
-                StreamUpdate::Slot { slot } => {
-                    self.flush_up_to(&mut pending, slot, &mut flushed_through)
+                StreamUpdate::Confirmed { slot } => {
+                    self.flush_confirmed(&mut pending, slot, &mut watermark)
                         .await?;
                     continue;
                 }
+                StreamUpdate::Finalized { slot } => {
+                    self.finalize(slot, &mut finalized_through).await?;
+                    continue;
+                }
             };
-            self.flush_up_to(&mut pending, slot, &mut flushed_through)
-                .await?;
 
-            if let Some(flushed) = flushed_through
-                && slot <= flushed
+            if let Some(watermark) = watermark
+                && slot <= watermark
             {
-                // The events below still persist, and the backward slot write
-                // write is a no-op, but a crash before this batch flushes
-                // would lose the transaction: resume starts past its slot.
+                // The provider broke the transactions-before-status ordering.
+                // The events below still persist (idempotent writes), but a
+                // crash before they flush would lose them: resume starts past
+                // their slot.
                 tracing::warn!(
                     %slot,
-                    flushed_through = %flushed,
+                    %watermark,
                     "transaction arrived for an already flushed slot"
                 );
             }
@@ -137,32 +163,83 @@ impl Decoder {
                 Err(DecodeFailed) => buffer.dead_letters.push(signature),
             }
         }
-        // The stream ended. Only the newest buffer may be missing
-        // transactions, everything below it was already proven complete by
-        // later stream activity.
-        let mut leftover = pending.into_iter().peekable();
-        while let Some((slot, buffer)) = leftover.next() {
-            let complete = leftover.peek().is_some();
-            self.flush_slot(slot, buffer, complete).await?;
+        // The stream ended before these buffers' confirmed statuses arrived,
+        // so they may be missing transactions: flush without advancing the
+        // watermark, the reconnect replays their slots.
+        for (slot, buffer) in pending {
+            self.flush_slot(slot, buffer, false).await?;
         }
         Ok(())
     }
 
-    /// Flushes every buffer at least [`FLUSH_HOLDBACK_SLOTS`] behind the
-    /// observed slot. The hold-back gives late-delivered transactions a
-    /// window to join their slot's still unflushed buffer, keeping them
-    /// crash-safe: resume replays everything past the last indexed slot.
-    async fn flush_up_to(
+    /// Advance the finalized watermark to `slot`, first auditing the rows
+    /// that finalization would freeze: every transaction indexed in the
+    /// newly final range must still exist on chain, and one that vanished
+    /// was rolled back, so its rows are reverted in the same SQL transaction
+    /// that advances the watermark. An audit RPC failure leaves the
+    /// watermark untouched, the next finalized status retries the range.
+    async fn finalize(
+        &self,
+        slot: Slot,
+        finalized_through: &mut Option<Slot>,
+    ) -> Result<(), PersistenceError> {
+        let after = match *finalized_through {
+            Some(after) => after,
+            // First finalized status since boot: resume the audit from the
+            // persisted watermark, or from this very slot on a fresh
+            // database, where nothing older was indexed.
+            None => self.persistence.finalized_slot().await?.unwrap_or(slot),
+        };
+        if slot <= after {
+            *finalized_through = Some(after);
+            return Ok(());
+        }
+        let signatures = self.persistence.unfinalized_signatures(after, slot).await?;
+        let vanished = if signatures.is_empty() {
+            Vec::new()
+        } else {
+            match self.rpc.known_signatures(&signatures).await {
+                Ok(known) => signatures
+                    .into_iter()
+                    .zip(known)
+                    .filter_map(|(signature, known)| (!known).then_some(signature))
+                    .collect(),
+                Err(err) => {
+                    tracing::warn!(?err, "signature audit failed, finalization delayed");
+                    *finalized_through = Some(after);
+                    return Ok(());
+                }
+            }
+        };
+        if vanished.is_empty() {
+            self.persistence.write_finalized_slot(slot).await?;
+        } else {
+            tracing::warn!(?vanished, "rolled-back transactions reverted");
+            self.persistence.finalize_through(slot, &vanished).await?;
+        }
+        *finalized_through = Some(slot);
+        Ok(())
+    }
+
+    /// Flush every buffer at or below the confirmed slot, then advance the
+    /// watermark to it: the slot's transactions all arrived before its
+    /// status, and quiet slots below it have nothing to wait for.
+    async fn flush_confirmed(
         &self,
         pending: &mut BTreeMap<Slot, SlotBuffer>,
-        observed: Slot,
-        flushed_through: &mut Option<Slot>,
+        confirmed: Slot,
+        watermark: &mut Option<Slot>,
     ) -> Result<(), PersistenceError> {
-        let cutoff = u64::from(observed).saturating_sub(FLUSH_HOLDBACK_SLOTS);
-        let keep = pending.split_off(&Slot(cutoff.saturating_add(1)));
-        for (slot, buffer) in std::mem::replace(pending, keep) {
+        while let Some(entry) = pending.first_entry() {
+            if *entry.key() > confirmed {
+                break;
+            }
+            let (slot, buffer) = entry.remove_entry();
             self.flush_slot(slot, buffer, true).await?;
-            *flushed_through = (*flushed_through).max(Some(slot));
+        }
+        if watermark.is_none_or(|watermark| watermark < confirmed) {
+            self.persistence.write_last_indexed_slot(confirmed).await?;
+            *watermark = Some(confirmed);
         }
         Ok(())
     }
@@ -196,41 +273,11 @@ impl Decoder {
                     .await?;
             }
         } else {
-            let mints = self.resolve_mints(&buffer.events).await?;
             self.persistence
-                .persist_events(buffer.events, &mints, last_indexed)
+                .persist_events(buffer.events, last_indexed)
                 .await?;
         }
         Ok(())
-    }
-
-    /// Resolve the token accounts named by the batch's created orders to
-    /// their mints. The intent carries token accounts, the orders table
-    /// stores mints.
-    async fn resolve_mints(
-        &self,
-        events: &[DecodedEvent],
-    ) -> Result<HashMap<Pubkey, Pubkey>, PersistenceError> {
-        let accounts: Vec<Pubkey> = events
-            .iter()
-            .filter_map(|event| match event {
-                DecodedEvent::Settlement(SettlementEvent::OrderCreated(order)) => {
-                    Some([order.sell_token_account, order.buy_token_account])
-                }
-                _ => None,
-            })
-            .flatten()
-            .collect();
-        if accounts.is_empty() {
-            return Ok(HashMap::new());
-        }
-        Ok(self
-            .rpc
-            .multiple_accounts(accounts)
-            .await?
-            .iter()
-            .filter_map(|(key, account)| Some((*key, token_account_mint(account)?)))
-            .collect())
     }
 
     /// Decode one transaction's tracked instructions into domain events.
@@ -244,11 +291,12 @@ impl Decoder {
         slot: Slot,
         signature: Signature,
     ) -> Result<Vec<DecodedEvent>, DecodeFailed> {
-        // `meta` carries whether the transaction succeeded, so without it there is
-        // no way to tell, and emitting events for a transaction that may have
-        // reverted is the failure this guard exists to prevent. Dead-letter it
-        // instead of skipping: replay re-fetches by signature, and
-        // `getTransaction` returns the meta.
+        // `meta` carries whether the transaction succeeded, so without it there
+        // is no way to tell, and emitting events for a transaction that
+        // may have reverted is the failure this guard exists to
+        // prevent. Dead-letter it instead of skipping: replay
+        // re-fetches by signature, and `getTransaction` returns the
+        // meta.
         let Some(meta) = tx.meta.as_ref() else {
             tracing::warn!("transaction update without meta");
             return Err(DecodeFailed);
@@ -306,11 +354,6 @@ impl Decoder {
     }
 }
 
-/// Slots stay buffered until the stream reports a slot this far past them.
-/// A transaction delivered up to this many slots late still joins its own
-/// unflushed buffer instead of racing the last-indexed-slot advance.
-const FLUSH_HOLDBACK_SLOTS: u64 = 2;
-
 /// One slot's accumulated output, flushed once the stream moves past the
 /// hold-back window.
 #[derive(Default)]
@@ -345,8 +388,8 @@ fn decode_settlement(
     for instruction in instructions {
         let Ok((discriminator, _)) = recover_discriminator(&instruction.data) else {
             decode_failed = true;
-            // Warn, not debug: this dead-letters the transaction, so it needs to
-            // be findable in the logs alongside the row.
+            // Warn, not debug: this dead-letters the transaction, so it needs
+            // to be findable in the logs alongside the row.
             tracing::warn!(
                 instruction_index = instruction.instruction_index,
                 err = %DecodeError::UnknownDiscriminator,
@@ -354,10 +397,11 @@ fn decode_settlement(
             );
             continue;
         };
-        // A landed (non-reverted) transaction carries valid instruction data, so
-        // a decode failure here means a decoder bug or an unannounced program
-        // layout change, not a normal case. Surface it as a warning and set the
-        // failure flag so the transaction is dead-lettered.
+        // A landed (non-reverted) transaction carries valid instruction data,
+        // so a decode failure here means a decoder bug or an
+        // unannounced program layout change, not a normal case. Surface
+        // it as a warning and set the failure flag so the transaction
+        // is dead-lettered.
         let decoded = match discriminator {
             SettlementInstruction::CreateOrder => {
                 decode_order_created(instruction, ctx).map(|event| vec![event])
@@ -369,12 +413,15 @@ fn decode_settlement(
             SettlementInstruction::BeginSettle | SettlementInstruction::FinalizeSettle => {
                 Ok(Vec::new())
             }
-            // No domain event: `Initialize` bootstraps the program state and
-            // `ReclaimBuffer` recovers rent without touching order state.
+            // No domain event: `Initialize` bootstraps program state,
+            // `ReclaimBuffer` recovers rent, and `TransferAuthority`/`AddSolver`
+            // manage program governance, none touching order state.
             // TODO: map `ReclaimOrder` to `OrderClosed`.
             SettlementInstruction::Initialize
             | SettlementInstruction::ReclaimOrder
-            | SettlementInstruction::ReclaimBuffer => Ok(Vec::new()),
+            | SettlementInstruction::ReclaimBuffer
+            | SettlementInstruction::TransferAuthority
+            | SettlementInstruction::AddSolver => Ok(Vec::new()),
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
@@ -422,15 +469,17 @@ fn decode_order_created(
         created_by: *input.created_by,
         order_pda: *input.order_pda,
         sell_token_account: to_sdk_pubkey(intent.sell_token_account),
+        sell_mint: to_sdk_pubkey(intent.sell_mint),
         buy_token_account: to_sdk_pubkey(intent.buy_token_account),
+        buy_mint: to_sdk_pubkey(intent.buy_mint),
         sell_amount: intent.sell_amount,
         buy_amount: intent.buy_amount,
         valid_to: intent.valid_to,
-        kind: match intent.kind {
+        kind: match intent.flags.kind {
             InterfaceOrderKind::Sell => OrderKind::Sell,
             InterfaceOrderKind::Buy => OrderKind::Buy,
         },
-        partially_fillable: intent.partially_fillable,
+        partially_fillable: intent.flags.partially_fillable,
         app_data: intent.app_data,
     })))
 }
@@ -467,12 +516,6 @@ fn decode_settlements_finalized(
     ctx: &TxContext,
     decode_failed: &mut bool,
 ) -> Vec<SettlementEvent> {
-    // The solver is the transaction fee payer: the first account key, which
-    // Solana guarantees is the signer that submitted the transaction.
-    let Some(&solver) = ctx.account_keys.first() else {
-        return Vec::new();
-    };
-
     let mut events = Vec::new();
     'process_instructions: for begin in instructions {
         let Ok((SettlementInstruction::BeginSettle, _)) = recover_discriminator(&begin.data) else {
@@ -588,7 +631,9 @@ fn decode_settlements_finalized(
 
         events.push(SettlementEvent::SettlementFinalized(FinalizedSettlement {
             auction_id: begin_input.auction_id,
-            solver,
+            // The signer `BeginSettle` names, which the program requires to
+            // be registered. The transaction fee payer may be someone else.
+            solver: *begin_input.solver_account,
             tx_signature: ctx.signature,
             slot: ctx.slot,
             instruction_index: begin.instruction_index,
@@ -596,26 +641,6 @@ fn decode_settlements_finalized(
         }));
     }
     events
-}
-
-/// The classic and 2022 SPL token programs, the only owners whose account
-/// layout `token_account_mint` trusts.
-const TOKEN_PROGRAMS: [Pubkey; 2] = [spl_token_interface::ID, spl_token_2022_interface::ID];
-
-/// Size of a classic SPL token account, the lower bound for Token-2022,
-/// whose extensions append past it.
-const TOKEN_ACCOUNT_MIN_LEN: usize = 165;
-
-/// The mint an SPL token account holds, the first 32 bytes of its data.
-/// `None` for accounts that are not token accounts, so a garbage account
-/// named by an intent cannot smuggle a fake mint into the orders table.
-fn token_account_mint(account: &Account) -> Option<Pubkey> {
-    if !TOKEN_PROGRAMS.contains(&account.owner) || account.data.len() < TOKEN_ACCOUNT_MIN_LEN {
-        return None;
-    }
-    Some(Pubkey::new_from_array(
-        account.data.get(..32)?.try_into().ok()?,
-    ))
 }
 
 /// Resolve an instruction's account-list indices to their pubkeys, in order, so
@@ -773,12 +798,13 @@ fn relevant_instructions(
         };
 
         // `group.instructions` is a depth-first, execution-ordered flat list of
-        // every CPI under this top-level instruction, across all nesting levels.
-        // `stack_height` is the only per-CPI depth signal (2 = a direct CPI, 3 =
-        // a CPI that one made, ...), so rebuild the sibling position at each
-        // level from it. A dropped (untracked) inner still advances the counter,
-        // so kept siblings keep their true position. A missing stack_height
-        // (pre-Solana-1.14.6 data) falls back to depth 1.
+        // every CPI under this top-level instruction, across all nesting
+        // levels. `stack_height` is the only per-CPI depth signal (2 =
+        // a direct CPI, 3 = a CPI that one made, ...), so rebuild the
+        // sibling position at each level from it. A dropped (untracked)
+        // inner still advances the counter, so kept siblings keep their
+        // true position. A missing stack_height (pre-Solana-1.14.6
+        // data) falls back to depth 1.
         let mut path: Vec<u8> = Vec::new();
         for inner in &group.instructions {
             let depth = inner
@@ -813,3 +839,5 @@ fn relevant_instructions(
 
 #[cfg(test)]
 mod tests;
+
+mod backfill;

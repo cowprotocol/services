@@ -277,7 +277,8 @@ async fn combined_protocol_fees(web3: Web3) {
 
     tracing::info!("Waiting for liquidity state to update");
     wait_for_condition(TIMEOUT, || async {
-        // Mint blocks until we evict the cached liquidity and fetch the new state.
+        // Mint blocks until we evict the cached liquidity and fetch the new
+        // state.
         onchain.mint_block().await;
         let new_market_order_quote = get_quote(
             &services,
@@ -289,9 +290,9 @@ async fn combined_protocol_fees(web3: Web3) {
         )
         .await
         .unwrap();
-        // Only proceed with test once the quote changes significantly (2x) to avoid
-        // progressing due to tiny fluctuations in gas price which would lead to
-        // errors down the line.
+        // Only proceed with test once the quote changes significantly (2x) to
+        // avoid progressing due to tiny fluctuations in gas price which
+        // would lead to errors down the line.
         new_market_order_quote.quote.buy_amount
             > market_quote_before.quote.buy_amount * U256::from(2)
     })
@@ -1375,7 +1376,8 @@ async fn volume_fee_dropped_on_same_token(web3: Web3) {
         "different-token quote must carry the configured 1% (100 bps) volume fee"
     );
 
-    // Trade surface. Same-token buy order; the 10% spread covers the solver's gas.
+    // Trade surface. Same-token buy order; the 10% spread covers the solver's
+    // gas.
     let buy_amount = 1u64.eth();
     let same_token_order = OrderCreation {
         kind: OrderKind::Buy,
@@ -1406,9 +1408,9 @@ async fn volume_fee_dropped_on_same_token(web3: Web3) {
     );
     let different_token_uid = services.create_order(&different_token_order).await.unwrap();
 
-    // `executed_fee` is the network fee (non-zero), not the volume fee; waiting on
-    // it ensures the order_execution row with the protocol fees we assert on is
-    // written.
+    // `executed_fee` is the network fee (non-zero), not the volume fee; waiting
+    // on it ensures the order_execution row with the protocol fees we
+    // assert on is written.
     tracing::info!("Waiting for both orders to settle.");
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
@@ -1457,7 +1459,8 @@ async fn volume_fee_charged_on_same_token_when_enabled(web3: Web3) {
         "with the flag enabled, the same-token quote must carry the 1% (100 bps) volume fee"
     );
 
-    // Trade: settled same-token order is charged the fee (10% spread covers gas).
+    // Trade: settled same-token order is charged the fee (10% spread covers
+    // gas).
     let buy_amount = 1u64.eth();
     let order = OrderCreation {
         kind: OrderKind::Buy,
@@ -1588,8 +1591,8 @@ async fn volume_fee_dropped_on_wrapped_to_native_token(web3: Web3) {
         trade.executed_protocol_fees
     );
 
-    // Trader sold exactly the WETH and received native ETH. It pays no settlement
-    // gas (signs off-chain), so its native balance only grows.
+    // Trader sold exactly the WETH and received native ETH. It pays no
+    // settlement gas (signs off-chain), so its native balance only grows.
     let weth_after = onchain
         .contracts()
         .weth

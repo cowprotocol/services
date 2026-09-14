@@ -134,11 +134,11 @@ pub async fn refundable_orders(
     min_price_deviation: f64,
     max_lookback_time: Option<Duration>,
 ) -> Result<Vec<EthOrderPlacement>, sqlx::Error> {
-    // condition (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3 is added to
-    // skip refunding orders that have unrealistic slippage set. Those orders are
-    // unlikely to be filled so we don't want to be responsible for refunding them.
-    // Note that orders created with our UI should have realistic slippage in most
-    // cases.
+    // condition (1.0 - o.buy_amount / GREATEST(oq.buy_amount,1)) >= $3 is added
+    // to skip refunding orders that have unrealistic slippage set. Those
+    // orders are unlikely to be filled so we don't want to be responsible
+    // for refunding them. Note that orders created with our UI should have
+    // realistic slippage in most cases.
     //
     // GREATEST(oq.buy_amount,1) added to avoid division by zero since
     // table order_quotes contains entries with buy_amount = 0 (see

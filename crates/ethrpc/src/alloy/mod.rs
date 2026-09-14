@@ -96,10 +96,11 @@ pub trait RpcClientRandomIdExt {
 impl RpcClientRandomIdExt for RpcClient {
     /// Creates a new [`RpcClient`] with a random request ID.
     fn with_random_id(t: impl IntoBoxTransport, is_local: bool) -> Self {
-        // The random ID mitigates the possibility of duplicate request IDs between
-        // providers when batching; furthemore, since we're using a uniform distribution
-        // we need to be aware that we might get a value close enough to u64::MAX to
-        // overflow after a couple requests, to solve that we generate a u32 first and
+        // The random ID mitigates the possibility of duplicate request IDs
+        // between providers when batching; furthemore, since we're
+        // using a uniform distribution we need to be aware that we
+        // might get a value close enough to u64::MAX to overflow after
+        // a couple requests, to solve that we generate a u32 first and
         // convert it to u64 to ensure we have plenty space.
         let id = rand::random::<u32>().into();
         let inner = RpcClientInner::new(t, is_local).with_id(id);
@@ -174,9 +175,10 @@ mod test_util {
         }
 
         async fn deploy_multicall3(&self) -> anyhow::Result<()> {
-            // The canonical address is the one the original deployer got from its very
-            // first transaction, so replaying that transaction is the only way to land
-            // there. It works because a fresh node still has that account at nonce 0.
+            // The canonical address is the one the original deployer got from
+            // its very first transaction, so replaying that
+            // transaction is the only way to land there. It works
+            // because a fresh node still has that account at nonce 0.
             const DEPLOYER: Address = address!("0x05f32B3cC3888453ff71B01135B34FF8e41263F2");
 
             if !self
@@ -188,8 +190,9 @@ mod test_util {
                 return Ok(());
             }
 
-            // A wallet-less provider makes alloy hand the transaction to the node for
-            // signing instead of looking for a key we do not have.
+            // A wallet-less provider makes alloy hand the transaction to the
+            // node for signing instead of looking for a key we do
+            // not have.
             let deployment = Multicall3::Instance::deploy_builder(self.without_wallet())
                 .from(DEPLOYER)
                 .into_transaction_request();

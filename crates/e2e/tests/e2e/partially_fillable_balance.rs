@@ -114,8 +114,8 @@ async fn test(web3: Web3) {
     .await
     .unwrap();
 
-    // Expecting a partial fill because order sells 100 but user only has balance of
-    // 50.
+    // Expecting a partial fill because order sells 100 but user only has
+    // balance of 50.
     let sell_balance = token_a.balanceOf(trader_a.address()).call().await.unwrap();
     // Depending on how the solver works might not have sold all balance.
     assert!(U256::ZERO <= sell_balance && sell_balance < U256::from(10u64.pow(18)));

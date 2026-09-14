@@ -1,12 +1,12 @@
 //! The ingester drains the yellowstone gRPC stream as fast as it delivers,
 //! pushes tagged updates into the channel, and advances the latest-chain-slot
-//! counter on every slot-filter message. It performs no decoding.
+//! counter on every confirmed slot message. It performs no decoding.
 //!
 //! The stream it drains is an `AutoReconnect`-backed
 //! [`GeyserStream`](yellowstone_grpc_client::GeyserStream) from
-//! `yellowstone-grpc-client`: reconnects, backoff, and resume-from-checkpoint
-//! are handled inside that stream and never surface
-//! here. The ingester's [`Ingester::run`] loop therefore has no backoff of its
+//! `yellowstone-grpc-client`: reconnects and backoff are handled inside that
+//! stream and never surface here, and a reconnect continues from the live
+//! head. The ingester's [`Ingester::run`] loop therefore has no backoff of its
 //! own; it returns when the stream ends (the wrapper gave up on an
 //! unrecoverable error) or when the decoder hangs up.
 //!
@@ -30,6 +30,7 @@ use {
             slot::Slot,
             wire::{
                 CommitmentLevel,
+                SlotStatus,
                 SubscribeRequest,
                 SubscribeRequestFilterSlots,
                 SubscribeRequestFilterTransactions,
@@ -137,9 +138,10 @@ where
     /// Dispatch one wire message. Breaks when the decoder is gone.
     //
     // Associated function taking the channel and chain-tip counter by reference
-    // rather than `&self`, so the future borrows only those (both `Sync`) fields
-    // across awaits. That keeps `run`'s future `Send` without requiring
-    // `Ingester: Sync`. The `GeyserStream` field is `Send` but not `Sync`.
+    // rather than `&self`, so the future borrows only those (both `Sync`)
+    // fields across awaits. That keeps `run`'s future `Send` without
+    // requiring `Ingester: Sync`. The `GeyserStream` field is `Send` but
+    // not `Sync`.
     async fn handle_update(
         tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
@@ -196,21 +198,37 @@ where
         .await
     }
 
-    /// Consume a slot message: advance the in-memory chain-tip counter and
-    /// forward the slot to the decoder so it can flush a finished buffer.
+    /// Route a slot message by status: confirmed advances the tip counter
+    /// and flushes the decoder, finalized advances the finalized watermark,
+    /// and processed is dropped since those slots can still be skipped or
+    /// orphaned.
     async fn handle_slot(
         tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
         slot: SubscribeUpdateSlot,
     ) -> ControlFlow<()> {
-        latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
-        Self::forward(
-            tx,
-            StreamUpdate::Slot {
-                slot: Slot(slot.slot),
-            },
-        )
-        .await
+        match slot.status() {
+            SlotStatus::SlotConfirmed => {
+                latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
+                Self::forward(
+                    tx,
+                    StreamUpdate::Confirmed {
+                        slot: Slot(slot.slot),
+                    },
+                )
+                .await
+            }
+            SlotStatus::SlotFinalized => {
+                Self::forward(
+                    tx,
+                    StreamUpdate::Finalized {
+                        slot: Slot(slot.slot),
+                    },
+                )
+                .await
+            }
+            _ => ControlFlow::Continue(()),
+        }
     }
 
     /// Push one update into the decoder channel. A full channel is the intended
@@ -256,9 +274,8 @@ impl Ingester<GeyserStream> {
     /// `GeyserStream`, and run the drain loop.
     ///
     /// The initial `from_slot` is `last_indexed_slot + 1`, or `None` on a cold
-    /// start (the provider subscribes from the live tip). Reconnect
-    /// `from_slot` is driven by the `AutoReconnect` wrapper's `BlockMeta`
-    /// checkpoint, not this method.
+    /// start (the provider subscribes from the live tip). Reconnects inside
+    /// the stream start from the live head, not from this slot.
     ///
     /// Returns `Ok(())` on a clean shutdown (the decoder dropped its receiver),
     /// or `Err(Error)` if setup failed or the stream ended terminally. The
@@ -275,22 +292,22 @@ impl Ingester<GeyserStream> {
         solflow_program: Option<Pubkey>,
         resume: Resume,
     ) -> Result<(), Error> {
-        // The proto field is a bare slot number, and `from_slot` is inclusive, so
-        // resume one past the last fully persisted slot.
+        // The proto field is a bare slot number, and `from_slot` is inclusive,
+        // so resume one past the last fully persisted slot.
         let from_slot = match resume {
             Resume::Watermark => persistence
                 .last_indexed_slot()
                 .await?
                 .map(|last_indexed| u64::from(last_indexed) + 1),
-            Resume::LiveTip => None,
             Resume::From(slot) => Some(slot),
         };
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
-        // subscription at runtime (add/remove a tracked program, change commitment,
-        // narrow filters). Not used for this puprose at this time, but worth
-        // considering in case our indexing requirements get more dynamic.
+        // subscription at runtime (add/remove a tracked program, change
+        // commitment, narrow filters). Not used for this puprose at
+        // this time, but worth considering in case our indexing
+        // requirements get more dynamic.
         let (_sink, stream) = client.subscribe_with_request(Some(request)).await?;
 
         let mut ingester = Ingester::new(stream, tx, latest_chain_slot);
@@ -302,28 +319,24 @@ impl Ingester<GeyserStream> {
 /// matching updates, nothing routes on them today.
 const SETTLEMENT_FILTER: &str = "settlement_txs";
 const SOLFLOW_FILTER: &str = "sol_flow_txs";
-const CHAIN_TIP_FILTER: &str = "chain_tip";
+const SLOT_FILTER: &str = "slot_statuses";
 
 /// Where a fresh subscription starts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Resume {
     /// One past the persisted last indexed slot.
     Watermark,
-    /// The provider's live tip, accepting a gap. The fallback when the
-    /// watermark is older than the provider's replay window.
-    LiveTip,
     /// A caller-chosen slot, still bounded by the provider's replay window.
     From(u64),
 }
 
 /// The wire-level filter shape: the two named transaction filters and the
-/// `chain_tip` slot filter, multiplexed into a single subscription at
+/// slot-status filter, multiplexed into a single subscription at
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
 /// [`Ingester::serve`] (`last_indexed_slot + 1`, or `None` for the live tip).
 ///
-/// The library auto-adds a `BlockMeta` + `slot` filter (under its
-/// `__autoreconnect` key) so the `AutoReconnect` wrapper can checkpoint and
-/// resume on reconnect; those messages are consumed inside the wrapper and
+/// The library auto-adds a `BlockMeta` + `slot` filter under its
+/// `__autoreconnect` key. Those messages are consumed inside the wrapper and
 /// never reach the ingester.
 fn subscribe_request(
     settlement_program: Pubkey,
@@ -348,10 +361,12 @@ fn subscribe_request(
     SubscribeRequest {
         transactions: filters,
         slots: [(
-            CHAIN_TIP_FILTER.to_owned(),
+            SLOT_FILTER.to_owned(),
             SubscribeRequestFilterSlots {
-                // one message per slot at the subscription's commitment level
-                filter_by_commitment: Some(true),
+                // Every status transition, so finalized slots arrive next to
+                // confirmed ones. The ingester routes the two it needs and
+                // drops the rest.
+                filter_by_commitment: Some(false),
                 ..Default::default()
             },
         )]

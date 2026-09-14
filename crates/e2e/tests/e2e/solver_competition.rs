@@ -93,7 +93,6 @@ async fn solver_competition(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     let services = Services::new(&onchain).await;
@@ -226,8 +225,8 @@ async fn wrong_solution_submission_address(web3: Web3) {
     token_b.mint(trader_b.address(), 10u64.eth()).await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
-    // (base_b). base_a has more liquidity then base_b, leading to the solver that
-    // knows about base_a to win
+    // (base_b). base_a has more liquidity then base_b, leading to the solver
+    // that knows about base_a to win
     let [base_a, base_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(10_000u64.eth(), 10_000u64.eth())
         .await;
@@ -279,7 +278,6 @@ async fn wrong_solution_submission_address(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     let services = Services::new(&onchain).await;
@@ -387,8 +385,9 @@ async fn store_filtered_solutions(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(300_000u64.eth(), 1_000u64.eth())
         .await;
 
-    // give the settlement contract a ton of the traded tokens so that the mocked
-    // solver solutions can simply give money away to make the trade execute
+    // give the settlement contract a ton of the traded tokens so that the
+    // mocked solver solutions can simply give money away to make the trade
+    // execute
     token_b
         .mint(*onchain.contracts().gp_settlement.address(), 50u64.eth())
         .await;
@@ -445,11 +444,10 @@ async fn store_filtered_solutions(web3: Web3) {
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
-    // We start the quoter as the baseline solver, and the mock solver as the one
-    // returning the solution
+    // We start the quoter as the baseline solver, and the mock solver as the
+    // one returning the solution
     let config = Configuration::test_no_drivers();
     services
         .start_autopilot(
@@ -675,8 +673,9 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(300_000u64.eth(), 1_000u64.eth())
         .await;
 
-    // Give the settlement contract a ton of the traded tokens so that the mocked
-    // solver solutions can simply give money away to make the trade execute.
+    // Give the settlement contract a ton of the traded tokens so that the
+    // mocked solver solutions can simply give money away to make the trade
+    // execute.
     token_b
         .mint(*onchain.contracts().gp_settlement.address(), 50u64.eth())
         .await;
@@ -732,7 +731,6 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     let config = Configuration::test_no_drivers();
@@ -859,9 +857,10 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
     // and `order_loser` remains bid on (in the filtered solution) indefinitely.
     web3.provider.evm_set_automine(false).await.unwrap();
 
-    // Drive auctions by hand until a competition is stored in which `order_loser`
-    // appears in a non-winning solution. We use the internal (unfiltered)
-    // endpoint because the public one hides competitions before their deadline.
+    // Drive auctions by hand until a competition is stored in which
+    // `order_loser` appears in a non-winning solution. We use the internal
+    // (unfiltered) endpoint because the public one hides competitions
+    // before their deadline.
     tracing::info!("waiting for order_loser to be bid on by a non-winning solution");
     let latest_auction_id = || async {
         let mut db = services.db().acquire().await.unwrap();

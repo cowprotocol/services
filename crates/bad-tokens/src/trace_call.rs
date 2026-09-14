@@ -47,11 +47,12 @@ impl TraceCallDetectorRaw {
                     .input(i.call_data.clone().into())
             })
             .collect();
-        // We transfer the full available amount of the token from the amm pool into the
-        // settlement contract and then to an arbitrary address.
-        // Note that gas use can depend on the recipient because for the standard
-        // implementation sending to an address that does not have any balance
-        // yet (implicitly 0) causes an allocation.
+        // We transfer the full available amount of the token from the amm pool
+        // into the settlement contract and then to an arbitrary
+        // address. Note that gas use can depend on the recipient
+        // because for the standard implementation sending to an address
+        // that does not have any balance yet (implicitly 0) causes an
+        // allocation.
         request.append(&mut self.create_trace_request(token, amount, take_from));
         let traces = match trace_many(&self.web3, request).await {
             Ok(result) => result,
@@ -82,9 +83,9 @@ impl TraceCallDetectorRaw {
         Self::handle_response(relevant_traces, amount, take_from)
     }
 
-    // For the out transfer we use an arbitrary address without balance to detect
-    // tokens that usually apply fees but not if the the sender or receiver is
-    // specifically exempt like their own uniswap pools.
+    // For the out transfer we use an arbitrary address without balance to
+    // detect tokens that usually apply fees but not if the the sender or
+    // receiver is specifically exempt like their own uniswap pools.
     fn arbitrary_recipient() -> Address {
         Address::random()
     }
@@ -248,9 +249,9 @@ impl TraceCallDetectorRaw {
                 )));
             }
         };
-        // Allow for a small discrepancy (1 wei) in the balance after the transfer which
-        // may come from rounding discrepancies in tokens that track balances
-        // with "shares" (e.g. eUSD).
+        // Allow for a small discrepancy (1 wei) in the balance after the
+        // transfer which may come from rounding discrepancies in tokens
+        // that track balances with "shares" (e.g. eUSD).
         if balance_after_in < computed_balance_after_in.saturating_sub(U256::ONE) {
             return Ok(TokenQuality::bad(format!(
                 "Transferring {amount} into settlement contract was expected to result in a \
@@ -275,9 +276,9 @@ impl TraceCallDetectorRaw {
                 )));
             }
         };
-        // Allow for a small discrepancy (1 wei) in the balance after the transfer
-        // which may come from rounding discrepancies in tokens that track
-        // balances with "shares" (e.g. eUSD).
+        // Allow for a small discrepancy (1 wei) in the balance after the
+        // transfer which may come from rounding discrepancies in tokens
+        // that track balances with "shares" (e.g. eUSD).
         if balance_recipient_after < computed_balance_recipient_after.saturating_sub(U256::ONE) {
             return Ok(TokenQuality::bad(format!(
                 "Transferring {amount} into arbitrary recipient {arbitrary:?} was expected to \

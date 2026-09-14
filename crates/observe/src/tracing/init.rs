@@ -41,8 +41,8 @@ pub fn initialize(config: &Config) {
 ///
 /// Useful for tests.
 pub fn initialize_reentrant(config: &Config) {
-    // The tracing subscriber below is global object so initializing it again in the
-    // same process by a different thread would fail.
+    // The tracing subscriber below is global object so initializing it again in
+    // the same process by a different thread would fail.
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         set_tracing_subscriber(config);
@@ -60,8 +60,9 @@ fn set_tracing_subscriber(config: &Config) {
             let stderr_threshold = $stderr_threshold.clone();
             let writer = std::io::stderr
                 .with_filter(move |meta| {
-                    // if the log is at most as verbose as our stderr threshold we log it to
-                    // stderr. For example if the threshold is WARN all WARN and ERROR logs
+                    // if the log is at most as verbose as our stderr threshold we
+                    // log it to stderr. For example if the
+                    // threshold is WARN all WARN and ERROR logs
                     // will get written to stderr.
                     stderr_threshold.is_some_and(|min_verbosity| meta.level() <= &min_verbosity)
                 })

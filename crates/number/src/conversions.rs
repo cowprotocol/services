@@ -9,8 +9,8 @@ use {
 };
 
 pub fn big_decimal_to_big_uint(big_decimal: &BigDecimal) -> Option<BigUint> {
-    // TODO(vkgnosis): It would be nice to avoid copying the underlying BigInt when
-    // converting BigDecimal to anything else but the simple
+    // TODO(vkgnosis): It would be nice to avoid copying the underlying BigInt
+    // when converting BigDecimal to anything else but the simple
     // big_decimal.to_bigint makes a copy internally.
     big_decimal.to_bigint()?.try_into().ok()
 }

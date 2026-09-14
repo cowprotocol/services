@@ -104,7 +104,8 @@ async fn debug_order(web3: Web3) {
     };
     wait_for_condition(TIMEOUT, report_populated).await.unwrap();
 
-    // Deserializing into DebugOrderResponse validates all field names and types.
+    // Deserializing into DebugOrderResponse validates all field names and
+    // types.
     let report = fetch_debug_report().await;
 
     assert_eq!(report.order_uid, uid);

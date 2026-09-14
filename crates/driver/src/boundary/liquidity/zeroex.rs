@@ -22,11 +22,11 @@ pub fn to_domain(
     id: liquidity::Id,
     limit_order: LimitOrder,
 ) -> anyhow::Result<liquidity::Liquidity> {
-    // `order` and `contract` should be provided somehow through the `LimitOrder`
-    // struct. Currently, it's not possible to add 0x-specific fields right to
-    // the `solver::LimitOrder` since it's used with different settlement
-    // handlers. One of the options to address it: to use a separate
-    // `solver::Liquidity` enum value for 0x liquidity.
+    // `order` and `contract` should be provided somehow through the
+    // `LimitOrder` struct. Currently, it's not possible to add 0x-specific
+    // fields right to the `solver::LimitOrder` since it's used with
+    // different settlement handlers. One of the options to address it: to
+    // use a separate `solver::Liquidity` enum value for 0x liquidity.
     let handler = limit_order
         .settlement_handling
         .as_any()

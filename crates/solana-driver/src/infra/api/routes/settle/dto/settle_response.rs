@@ -1,10 +1,9 @@
-//! Outbound `/settle` response: the transaction signature of the submitted
+//! Outbound `/settle` response: the transaction signature of the confirmed
 //! settlement.
 //!
 //! This is the driver's own mirror of `autopilot-svm`'s
-//! `infra/driver/dto.rs::SettleResponse`. The driver pins the wire shape here
-//! even though on-chain submission is not implemented yet. The autopilot
-//! already deserializes this shape.
+//! `infra/driver/dto.rs::SettleResponse`. The autopilot already deserializes
+//! this shape.
 
 use {
     serde::{Deserialize, Serialize},
@@ -17,9 +16,18 @@ use {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettleResponse {
-    /// Transaction signature of the submitted settlement.
+    /// Transaction signature of the confirmed settlement. The driver only
+    /// returns this after the transaction has reached the RPC client's
+    /// configured commitment level.
     #[serde_as(as = "DisplayFromStr")]
     tx_signature: Signature,
+}
+
+impl SettleResponse {
+    /// Build a settle response from the submitted transaction signature.
+    pub fn new(tx_signature: Signature) -> Self {
+        Self { tx_signature }
+    }
 }
 
 #[cfg(test)]

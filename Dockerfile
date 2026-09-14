@@ -21,6 +21,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     CARGO_PROFILE_RELEASE_DEBUG=1 RUSTFLAGS="${RUSTFLAGS}" cargo build --release \
     -p autopilot -p driver -p orderbook -p refunder -p solvers -p pool-indexer \
     -p solana-indexer -p solana-orderbook -p solana-driver -p solana-solvers \
+    -p autopilot-svm \
     ${CARGO_BUILD_FEATURES} && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
@@ -31,7 +32,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     cp target/release/solana-indexer / && \
     cp target/release/solana-orderbook / && \
     cp target/release/solana-driver / && \
-    cp target/release/solana-solvers /
+    cp target/release/solana-solvers / && \
+    cp target/release/autopilot-svm /
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim AS intermediate
@@ -81,6 +83,10 @@ FROM intermediate AS solana-solvers
 COPY --from=cargo-build /solana-solvers /usr/local/bin/solana-solvers
 ENTRYPOINT [ "solana-solvers" ]
 
+FROM intermediate AS solana-autopilot
+COPY --from=cargo-build /autopilot-svm /usr/local/bin/autopilot-svm
+ENTRYPOINT [ "autopilot-svm" ]
+
 # Extract Binary
 FROM intermediate
 
@@ -95,5 +101,6 @@ COPY --from=cargo-build /solana-indexer /usr/local/bin/solana-indexer
 COPY --from=cargo-build /solana-orderbook /usr/local/bin/solana-orderbook
 COPY --from=cargo-build /solana-driver /usr/local/bin/solana-driver
 COPY --from=cargo-build /solana-solvers /usr/local/bin/solana-solvers
+COPY --from=cargo-build /autopilot-svm /usr/local/bin/autopilot-svm
 
 ENTRYPOINT ["/usr/bin/tini", "-s", "--"]

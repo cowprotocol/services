@@ -73,9 +73,10 @@ async fn order_haircut_reduces_score() {
     let solve_with_haircut = test_with_haircut.solve().await.ok();
     let score_with_haircut = solve_with_haircut.score();
 
-    // With 500 bps (5%) haircut, the score should be reduced by approximately 5%.
-    // Compute the actual percentage: (score_with_haircut * 100) / score_no_haircut
-    // Should be approximately 95 (allowing 94-96 range for tolerance).
+    // With 500 bps (5%) haircut, the score should be reduced by approximately
+    // 5%. Compute the actual percentage: (score_with_haircut * 100) /
+    // score_no_haircut Should be approximately 95 (allowing 94-96 range for
+    // tolerance).
     let percentage: u64 = ((score_with_haircut * eth::U256::from(100)) / score_no_haircut)
         .try_into()
         .unwrap();
@@ -213,13 +214,13 @@ async fn buy_order_haircut() {
     let solve_with_haircut = test_with_haircut.solve().await.ok();
     let score_with_haircut = solve_with_haircut.score();
 
-    // For buy orders, the haircut is applied to the executed buy amount and then
-    // converted to sell token. The impact on score depends on the price ratio.
-    // With 500 bps (5%) haircut on a 2 ETH buy amount, the haircut is 0.1 ETH in
-    // buy token. When converted to sell token at the pool's price ratio, this
-    // results in a smaller percentage impact on the score compared to sell
-    // orders. Expected: score reduction of ~1% (percentage ~99%) rather than
-    // 5%.
+    // For buy orders, the haircut is applied to the executed buy amount and
+    // then converted to sell token. The impact on score depends on the
+    // price ratio. With 500 bps (5%) haircut on a 2 ETH buy amount, the
+    // haircut is 0.1 ETH in buy token. When converted to sell token at the
+    // pool's price ratio, this results in a smaller percentage impact on
+    // the score compared to sell orders. Expected: score reduction of ~1%
+    // (percentage ~99%) rather than 5%.
     let percentage: u64 = ((score_with_haircut * eth::U256::from(100)) / score_no_haircut)
         .try_into()
         .unwrap();

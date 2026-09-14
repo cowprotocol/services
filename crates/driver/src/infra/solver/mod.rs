@@ -186,9 +186,6 @@ pub struct Config {
     pub request_headers: HashMap<String, String>,
     /// Determines whether the `solver` or the `driver` handles the fees
     pub fee_handler: FeeHandler,
-    /// Use limit orders for quoting
-    /// TODO: Remove once all solvers are moved to use limit orders for quoting
-    pub quote_using_limit_orders: bool,
     /// Whether this solver supports fast-path (out-of-competition) execution.
     pub fast_path_enabled: bool,
     pub merge_solutions: SolutionMerging,
@@ -320,11 +317,6 @@ impl Solver {
         self.config.timeouts
     }
 
-    /// Use limit orders for quoting instead of market orders
-    pub fn quote_using_limit_orders(&self) -> bool {
-        self.config.quote_using_limit_orders
-    }
-
     /// Whether this solver supports fast-path (out-of-competition) execution.
     pub fn fast_path_enabled(&self) -> bool {
         self.config.fast_path_enabled
@@ -392,8 +384,9 @@ impl Solver {
 
         let url = shared::url::join(&self.config.endpoint, "solve");
 
-        // Real auctions (those with an ID) are archived to S3; quotes aren't, so
-        // they skip the gzip capture entirely and just stream the body.
+        // Real auctions (those with an ID) are archived to S3; quotes aren't,
+        // so they skip the gzip capture entirely and just stream the
+        // body.
         let archive_id = self
             .persistence
             .archives_enabled()
@@ -600,7 +593,6 @@ mod tests {
             },
             request_headers: Default::default(),
             fee_handler: FeeHandler::Driver,
-            quote_using_limit_orders: false,
             fast_path_enabled: false,
             merge_solutions: SolutionMerging::Forbidden,
             s3: None,

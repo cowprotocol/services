@@ -344,8 +344,8 @@ mod tests {
 impl TradeFinding for ExternalTradeFinder {
     #[instrument(skip_all)]
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
-        // The driver only has a single endpoint to compute trades so we can simply
-        // reuse the same logic here.
+        // The driver only has a single endpoint to compute trades so we can
+        // simply reuse the same logic here.
         let trade = self.get_trade(query).await?;
         let gas_estimate = trade
             .gas_estimate()

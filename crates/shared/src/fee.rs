@@ -43,8 +43,8 @@ impl FeeParameters {
         let fee_in_eth = (self.gas_amount + additional_cost as f64) * self.gas_price;
 
         // We want the conversion from f64 to U256 to use ceil because:
-        // 1. For final amounts that end up close to 0 atoms we always take a fee so we
-        //    are not attackable through low decimal tokens.
+        // 1. For final amounts that end up close to 0 atoms we always take a
+        //    fee so we are not attackable through low decimal tokens.
         // 2. When validating fees this consistently picks the same amount.
         U256::from((fee_in_eth / self.sell_token_price).ceil())
     }
@@ -94,8 +94,9 @@ impl VolumeFeePolicy {
         sell_token: Address,
         fee_factor: Option<FeeFactor>,
     ) -> Option<FeeFactor> {
-        // Skip the volume fee for same-token trades (treating a native-ETH buy as
-        // the wrapped token, so e.g. WETH->ETH is a no-op) unless the flag is set.
+        // Skip the volume fee for same-token trades (treating a native-ETH buy
+        // as the wrapped token, so e.g. WETH->ETH is a no-op) unless
+        // the flag is set.
         if !self.enable_sell_equals_buy_volume_fee
             && is_same_buy_and_sell_token(sell_token, buy_token, self.native_token)
         {
@@ -110,8 +111,8 @@ impl VolumeFeePolicy {
             buy_token
         };
 
-        // Check for token bucket overrides first (both tokens must be in the same
-        // bucket)
+        // Check for token bucket overrides first (both tokens must be in the
+        // same bucket)
         for fee_override in &self.bucket_overrides {
             if fee_override.tokens.contains(&buy_token) && fee_override.tokens.contains(&sell_token)
             {
@@ -119,7 +120,8 @@ impl VolumeFeePolicy {
             }
         }
 
-        // Fall back to default factor either from argument or configured default
+        // Fall back to default factor either from argument or configured
+        // default
         fee_factor.or(self.default_factor)
     }
 }

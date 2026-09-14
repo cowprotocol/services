@@ -108,7 +108,8 @@ pub fn generate_settlement_report(context: Context, trace: CallFrame) -> Simulat
 /// [`process_settle_frame`].
 fn process_frame(root: &CallFrame, ctx: &Context, events: &mut Vec<Event>) {
     // Each stack entry is (frame, emit_exit): when emit_exit is true the frame
-    // has already been entered and we only need to push the WrapperExited event.
+    // has already been entered and we only need to push the WrapperExited
+    // event.
     let mut stack: Vec<(&CallFrame, bool)> = vec![(root, false)];
 
     while let Some((frame, emit_wrapper_exit)) = stack.pop() {
@@ -166,10 +167,11 @@ fn process_settle_frame(frame: &CallFrame, ctx: &Context, events: &mut Vec<Event
             });
         }
     } else if to == *ctx.vault_relayer {
-        // Inside `settle()` we only call the vault relayer to transfer funds into
-        // the settlement contract. Since this happens AFTER the signature check
-        // and signature checks don't always require `CALL`s we use this checkpoint
-        // to also signal that the `SignatureCheck` was successful.
+        // Inside `settle()` we only call the vault relayer to transfer funds
+        // into the settlement contract. Since this happens AFTER the
+        // signature check and signature checks don't always require
+        // `CALL`s we use this checkpoint to also signal that the
+        // `SignatureCheck` was successful.
         events.push(Event::AllSignatureChecksSuccessful);
 
         for child_call in &frame.calls {

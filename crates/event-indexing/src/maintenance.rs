@@ -192,7 +192,8 @@ mod tests {
         let block_count = 5;
 
         // Mock interface is responsible for assertions here.
-        // Will panic if run_maintenance is not called exactly `block_count` times.
+        // Will panic if run_maintenance is not called exactly `block_count`
+        // times.
         let mut mock_maintenance = MockMaintaining::new();
         mock_maintenance
             .expect_name()

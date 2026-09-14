@@ -21,6 +21,8 @@ pub enum ChainName {
     Polygon,
     #[serde(rename = "arbitrum")]
     ArbitrumOne,
+    #[serde(rename = "ink")]
+    Ink,
 }
 
 impl ChainName {
@@ -31,6 +33,7 @@ impl ChainName {
             eth::ChainId::Base => Self::Base,
             eth::ChainId::Polygon => Self::Polygon,
             eth::ChainId::ArbitrumOne => Self::ArbitrumOne,
+            eth::ChainId::Ink => Self::Ink,
             _ => panic!("unsupported Bitget chain: {chain_id:?}"),
         }
     }

@@ -138,6 +138,7 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<NativePriceUpdater>,
     weth: Address,
     protocol_fees: domain::ProtocolFees,
+    penalty_cap_calculator: Option<domain::penalty_cap::PenaltyCapCalculator>,
     surplus_capturing_jit_order_owners: Vec<Address>,
     native_price_timeout: Duration,
     settlement_contract: Address,
@@ -163,6 +164,7 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<NativePriceUpdater>,
         weth: Address,
         protocol_fees: domain::ProtocolFees,
+        penalty_cap_calculator: Option<domain::penalty_cap::PenaltyCapCalculator>,
         surplus_capturing_jit_order_owners: Vec<Address>,
         native_price_timeout: Duration,
         settlement_contract: Address,
@@ -178,6 +180,7 @@ impl SolvableOrdersCache {
             native_price_estimator,
             weth,
             protocol_fees,
+            penalty_cap_calculator,
             surplus_capturing_jit_order_owners,
             native_price_timeout,
             settlement_contract,
@@ -242,13 +245,14 @@ impl SolvableOrdersCache {
             )
         };
 
-        // Remove in-flight orders - already won a previous auction, being settled
-        // on-chain.
+        // Remove in-flight orders - already won a previous auction, being
+        // settled on-chain.
         let (orders, removed) = filter_out_in_flight_orders(orders, &in_flight);
         Metrics::track_filtered_orders(InFlight, &removed);
         filtered_order_events.extend(removed.into_iter().map(|uid| (uid, InFlight)));
-        // It's possible that some orders got marked as invalid due to missing balance
-        // or so, but the order is perfectly fine if it's in-flight
+        // It's possible that some orders got marked as invalid due to missing
+        // balance or so, but the order is perfectly fine if it's
+        // in-flight
         invalid_order_uids.retain(|uid, _| !in_flight.contains(uid));
 
         let orders = if self.disable_order_balance_filter {
@@ -278,6 +282,9 @@ impl SolvableOrdersCache {
                     orders,
                     &self.native_price_estimator,
                     self.native_price_timeout,
+                    self.penalty_cap_calculator
+                        .as_ref()
+                        .map(|calculator| calculator.usd_reference_token()),
                 ),
             )
             .await;
@@ -287,6 +294,11 @@ impl SolvableOrdersCache {
         prices
             .entry(self.weth)
             .or_insert_with(|| to_normalized_price(1.0).unwrap());
+        if let Some(calculator) = &self.penalty_cap_calculator
+            && let Some(price) = prices.get(&calculator.usd_reference_token())
+        {
+            calculator.set_usd_price(*price);
+        }
         Metrics::track_filtered_orders(MissingNativePrice, &removed);
         filtered_order_events.extend(removed.into_iter().map(|uid| (uid, MissingNativePrice)));
 
@@ -297,9 +309,10 @@ impl SolvableOrdersCache {
             self.store_events_by_reason(filtered_order_events, OrderEventLabel::Filtered);
         }
 
-        // Exclude any owner that already has an order in-flight (i.e. won a previous
-        // auction and is being settled on-chain). A surplus-capturing JIT order created
-        // on its behalf could conflict with the settling order, so we drop the owner
+        // Exclude any owner that already has an order in-flight (i.e. won a
+        // previous auction and is being settled on-chain). A
+        // surplus-capturing JIT order created on its behalf could
+        // conflict with the settling order, so we drop the owner
         // from this auction until the in-flight order clears.
         let in_flight_owners: HashSet<Address> = in_flight
             .iter()
@@ -321,8 +334,16 @@ impl SolvableOrdersCache {
                             .quotes
                             .get(&order.metadata.uid.into())
                             .map(|quote| quote.as_ref().clone());
-                        self.protocol_fees
-                            .apply(order, quote, &surplus_capturing_jit_order_owners)
+                        let penalty_cap_native = self
+                            .penalty_cap_calculator
+                            .as_ref()
+                            .map(|calculator| calculator.calculate(order, &prices));
+                        let protocol_fees = self.protocol_fees.apply(
+                            order,
+                            quote.as_ref(),
+                            &surplus_capturing_jit_order_owners,
+                        );
+                        boundary::order::to_domain(order, protocol_fees, quote, penalty_cap_native)
                     })
                     .collect()
             }),
@@ -416,10 +437,10 @@ impl SolvableOrdersCache {
         let mut orders = fetch_orders.await?;
 
         // Move the checkpoint slightly back in time to mitigate race conditions
-        // caused by inconsistencies of stored timestamps. See #2959 for more details.
-        // This will cause us to fetch orders created or cancelled in the buffer
-        // period multiple times but that is a small price to pay for not missing
-        // orders.
+        // caused by inconsistencies of stored timestamps. See #2959 for more
+        // details. This will cause us to fetch orders created or
+        // cancelled in the buffer period multiple times but that is a
+        // small price to pay for not missing orders.
         orders.fetched_from_db -= chrono::TimeDelta::seconds(60);
         Ok(orders)
     }
@@ -565,9 +586,9 @@ fn orders_with_balance<'a>(
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     let mut filtered_orders = vec![];
     let keep = |order: &Order| {
-        // Skip balance check for all EIP-1271 orders (they can rely on pre-interactions
-        // to unlock funds) or orders with wrappers (wrappers produce the required
-        // balance at settlement time).
+        // Skip balance check for all EIP-1271 orders (they can rely on
+        // pre-interactions to unlock funds) or orders with wrappers
+        // (wrappers produce the required balance at settlement time).
         if matches!(order.signature, Signature::Eip1271(_))
             || filter_bypass_orders.contains(&order.metadata.uid)
         {
@@ -660,15 +681,17 @@ async fn get_orders_with_native_prices<'a>(
     orders: Vec<&'a Order>,
     native_price_estimator: &NativePriceUpdater,
     timeout: Duration,
+    extra_token: Option<Address>,
 ) -> (
     Vec<&'a Order>,
     Vec<OrderUid>,
     BTreeMap<Address, alloy::primitives::U256>,
 ) {
-    let traded_tokens = orders
+    let mut traded_tokens = orders
         .iter()
         .flat_map(|order| [order.data.sell_token, order.data.buy_token])
         .collect::<HashSet<_>>();
+    traded_tokens.extend(extra_token);
 
     let prices = get_native_prices(traded_tokens, native_price_estimator, timeout).await;
 
@@ -805,6 +828,7 @@ mod tests {
             orders_ref,
             &native_price_estimator,
             Duration::from_millis(100),
+            None,
         )
         .await;
         assert_eq!(filtered_orders, [orders[1].as_ref()]);
@@ -897,9 +921,13 @@ mod tests {
         // We'll have no native prices in this call. But set_tokens_to_update
         // will cause the background task to fetch them in the next cycle.
         let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
-        let (alive_orders, _removed_orders, prices) =
-            get_orders_with_native_prices(orders_ref, &native_price_estimator, Duration::ZERO)
-                .await;
+        let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
+            orders_ref,
+            &native_price_estimator,
+            Duration::ZERO,
+            None,
+        )
+        .await;
         assert!(alive_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -908,9 +936,13 @@ mod tests {
 
         // Now we have all the native prices we want.
         let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
-        let (alive_orders, _removed_orders, prices) =
-            get_orders_with_native_prices(orders_ref, &native_price_estimator, Duration::ZERO)
-                .await;
+        let (alive_orders, _removed_orders, prices) = get_orders_with_native_prices(
+            orders_ref,
+            &native_price_estimator,
+            Duration::ZERO,
+            None,
+        )
+        .await;
 
         assert_eq!(alive_orders, [orders[2].as_ref()]);
         assert_eq!(
@@ -995,6 +1027,7 @@ mod tests {
             orders_ref,
             &native_price_estimator,
             Duration::from_secs(10),
+            None,
         )
         .await;
         assert!(
@@ -1272,7 +1305,8 @@ mod tests {
         ];
         let balances: Balances = Default::default(); // No balances
 
-        // EIP-1271 order and wrapper order should be retained, regular order filtered
+        // EIP-1271 order and wrapper order should be retained, regular order
+        // filtered
         let wrapper_set = HashSet::from([wrapper_order_uid]);
         let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let (alive_orders, _removed_orders) =

@@ -132,8 +132,8 @@ pub fn prices_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde
 pub fn solve_req(test: &Test) -> serde_json::Value {
     let mut tokens_json = Vec::new();
     let mut orders_json = Vec::new();
-    // The orders are shuffled before being sent to the driver, to ensure that the
-    // driver sorts them correctly before forwarding them to the solver.
+    // The orders are shuffled before being sent to the driver, to ensure that
+    // the driver sorts them correctly before forwarding them to the solver.
     let mut quotes = test.quoted_orders.clone();
     quotes.shuffle(&mut rand::rng());
     for quote in quotes.iter() {
@@ -231,8 +231,9 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
         "deadline": test.deadline,
     });
     if test.quote_fast_path {
-        // Mirrors what the orderbook does for fast-path quotes: request fast-path
-        // and hand over the real auction id it allocated from the shared sequence.
+        // Mirrors what the orderbook does for fast-path quotes: request
+        // fast-path and hand over the real auction id it allocated from
+        // the shared sequence.
         req["enableFastPath"] = json!(true);
         req["auctionId"] = json!(test.auction_id);
     }

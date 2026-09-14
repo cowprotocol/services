@@ -563,10 +563,11 @@ impl std::fmt::Debug for Detector {
 /// the shift, and a readback that is not a slice means the slot is not the
 /// balance. Returns the left-shift in bits (0 for an unpacked balance).
 fn detect_shift(observed: U256) -> Option<usize> {
-    // Strip leading zero bytes to get the field's bytes. The field is a slice of
-    // the all-non-zero sentinel, so its top byte is non-zero and trimming never
-    // eats into it. An all-zero readback has no non-zero byte (the write never
-    // reached `balanceOf`), so `position` returns None and we bail.
+    // Strip leading zero bytes to get the field's bytes. The field is a slice
+    // of the all-non-zero sentinel, so its top byte is non-zero and
+    // trimming never eats into it. An all-zero readback has no non-zero
+    // byte (the write never reached `balanceOf`), so `position` returns
+    // None and we bail.
     let bytes = observed.to_be_bytes::<32>();
     let needle = &bytes[bytes.iter().position(|&b| b != 0)?..];
     let start = SENTINEL.windows(needle.len()).position(|w| w == needle)?;
@@ -587,8 +588,8 @@ mod tests {
         let sentinel = U256::from_be_bytes(SENTINEL);
         // Unpacked: the full sentinel reads back as-is.
         assert_eq!(detect_shift(sentinel), Some(0));
-        // AUSD-style: isFrozen in the low byte, balance in the high 248 bits, so
-        // `balanceOf == slot >> 8`.
+        // AUSD-style: isFrozen in the low byte, balance in the high 248 bits,
+        // so `balanceOf == slot >> 8`.
         assert_eq!(detect_shift(sentinel >> 8usize), Some(8));
         assert_eq!(detect_shift(sentinel >> 24usize), Some(24));
         // Narrow uint96 field (UNI/COMP): the low 12 bytes, the sentinel's
@@ -853,8 +854,9 @@ mod tests {
     // AUSD packs `{ bool isFrozen; uint248 balance }` into one slot, so the
     // balance is the high 248 bits and `balanceOf == slot >> 8`. Its balance
     // lives at an ERC-7201-namespaced base slot, so the detector resolves it to
-    // a `DirectSlot` and verification recovers the 8-bit packing shift. Requires
-    // an avalanche node (set the node URL `Web3::new_from_env` reads).
+    // a `DirectSlot` and verification recovers the 8-bit packing shift.
+    // Requires an avalanche node (set the node URL `Web3::new_from_env`
+    // reads).
     #[ignore]
     #[tokio::test]
     async fn detects_packed_balance_slot_avalanche() {
@@ -893,10 +895,10 @@ mod tests {
 
         std::assert_matches!(strategy, Strategy::NativeEth);
 
-        // ETH is not an ERC20 token so we can't do an `eth_call` on `balanceOf()`.
-        // Additionally `eth_getBalance` does not support state overrides.
-        // So to infer that our override works we assert that we can wrap the
-        // desired amount of ETH to WETH.
+        // ETH is not an ERC20 token so we can't do an `eth_call` on
+        // `balanceOf()`. Additionally `eth_getBalance` does not support
+        // state overrides. So to infer that our override works we
+        // assert that we can wrap the desired amount of ETH to WETH.
         let state = strategy.state_override(&user, &amount).await;
         assert!(
             weth.deposit()
