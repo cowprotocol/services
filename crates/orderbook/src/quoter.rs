@@ -64,6 +64,7 @@ impl AdjustedQuoteData {
 pub struct QuoteHandler {
     order_validator: Arc<dyn OrderValidating>,
     optimal_quoter: Arc<dyn OrderQuoting>,
+    verified_quoter: Arc<dyn OrderQuoting>,
     fast_quoter: Arc<dyn OrderQuoting>,
     app_data: Arc<app_data::Registry>,
     volume_fee: Option<VolumeFeeConfig>,
@@ -93,6 +94,7 @@ impl QuoteHandler {
         Self {
             order_validator,
             optimal_quoter: quoter.clone(),
+            verified_quoter: quoter.clone(),
             fast_quoter: quoter,
             app_data,
             volume_fee,
@@ -104,6 +106,11 @@ impl QuoteHandler {
 
     pub fn with_fast_quoter(mut self, fast_quoter: Arc<dyn OrderQuoting>) -> Self {
         self.fast_quoter = fast_quoter;
+        self
+    }
+
+    pub fn with_verified_quoter(mut self, verified_quoter: Arc<dyn OrderQuoting>) -> Self {
+        self.verified_quoter = verified_quoter;
         self
     }
 
@@ -126,9 +133,12 @@ impl QuoteHandler {
 
         let quote = match request.price_quality {
             PriceQuality::Optimal | PriceQuality::Verified => {
-                let competition = self.optimal_quoter.calculate_quote(params.clone()).await?;
-                let id = self
-                    .optimal_quoter
+                let quoter = match request.price_quality {
+                    PriceQuality::Verified => &self.verified_quoter,
+                    _ => &self.optimal_quoter,
+                };
+                let competition = quoter.calculate_quote(params.clone()).await?;
+                let id = quoter
                     .store_quote(competition.clone())
                     .await
                     .map_err(CalculateQuoteError::Other)?;
