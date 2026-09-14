@@ -520,6 +520,9 @@ pub struct FullOrder {
     pub valid_to: i64,
     /// Earliest time (unix seconds) the order may enter a batch auction.
     pub valid_from: Option<i64>,
+    /// Whether the caller asked for fast-path treatment. See
+    /// `Order::fast_path` for the write path.
+    pub fast_path: bool,
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
@@ -638,7 +641,7 @@ impl FullOrderWithQuote {
 // that with the current amount of data this wouldn't be better.
 pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
-o.valid_to, o.valid_from, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
+o.valid_to, o.valid_from, o.fast_path, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 o.class,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
@@ -803,6 +806,7 @@ pub fn solvable_orders(
         lo.buy_amount,
         lo.valid_to,
         lo.valid_from,
+        lo.fast_path,
         lo.app_data,
         lo.fee_amount,
         lo.kind,
@@ -931,6 +935,7 @@ SELECT
     so.buy_amount,
     so.valid_to,
     so.valid_from,
+    so.fast_path,
     so.app_data,
     so.fee_amount,
     so.kind,

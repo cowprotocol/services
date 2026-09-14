@@ -1151,6 +1151,7 @@ impl OrderValidating for OrderValidator {
         }
 
         let valid_from = self.compute_and_validate_valid_from(&app_data, quote.as_ref(), &data)?;
+        let fast_path = app_data.inner.protocol.enable_fast_path;
 
         let order = Order {
             metadata: OrderMetadata {
@@ -1170,6 +1171,7 @@ impl OrderValidating for OrderValidator {
                     .transpose()
                     .map_err(ValidationError::Other)?,
                 valid_from,
+                fast_path,
                 ..Default::default()
             },
             signature: order.signature.clone(),

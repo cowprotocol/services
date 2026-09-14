@@ -111,6 +111,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .map(u32::try_from)
             .transpose()
             .context("valid_from is not u32")?,
+        fast_path: order.fast_path,
         quote: None,
     };
     let data = OrderData {

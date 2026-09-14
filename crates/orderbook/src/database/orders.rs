@@ -187,7 +187,7 @@ async fn insert_order(
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         cancellation_timestamp: None,
         valid_from: order.metadata.valid_from.map(i64::from),
-        fast_path: false,
+        fast_path: order.metadata.fast_path,
     };
 
     database::orders::insert_order(ex, &db_order)
@@ -649,6 +649,7 @@ fn full_order_with_quote_into_model_order(
             .map(u32::try_from)
             .transpose()
             .context("valid_from is not u32")?,
+        fast_path: order.fast_path,
         quote: quote
             .map(|q| order_quote_into_model(q, status))
             .transpose()?,
@@ -736,6 +737,7 @@ mod tests {
             buy_amount: BigDecimal::from(1),
             valid_to: valid_to_timestamp.timestamp(),
             valid_from: None,
+            fast_path: false,
             app_data: ByteArray([0; 32]),
             fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,
