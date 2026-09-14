@@ -826,6 +826,12 @@ pub fn solvable_orders(
         WHERE  o.cancellation_timestamp IS NULL
             AND o.true_valid_to >= $1
             AND (o.valid_from IS NULL OR o.valid_from <= $2)
+            -- Fast-path orders wait for the autopilot's fast-path handler
+            -- to populate `valid_from` (either `now()` for fallthrough or
+            -- `now + exclusivity` for a real fast-path settle attempt).
+            -- Until then they must not enter a regular auction. Backed by
+            -- the partial index `orders_pending_fast_path`.
+            AND NOT (o.fast_path AND o.valid_from IS NULL)
             AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
@@ -954,6 +960,11 @@ WITH selected_orders AS (
     WHERE (
             (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))
             AND (o.valid_from IS NULL OR o.valid_from <= $3)
+            -- Pending fast-path orders (autopilot handler hasn't written
+            -- `valid_from` yet) must not enter a regular auction; the
+            -- crossing branch below already excludes them because it
+            -- requires `valid_from IS NOT NULL`.
+            AND NOT (o.fast_path AND o.valid_from IS NULL)
           )
        OR (o.valid_from IS NOT NULL
             AND o.valid_from >  EXTRACT(EPOCH FROM $1)::bigint
