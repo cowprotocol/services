@@ -212,7 +212,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
 
 /// A stored sponsored creation: the presigned transaction and its expiry.
 #[derive(Clone, Debug, sqlx::FromRow)]
-pub struct SponsoredCreation {
+pub struct SponsoredCreationRow {
     pub presigned_transaction: Vec<u8>,
     pub last_valid_block_height: i64,
 }
@@ -222,7 +222,7 @@ pub struct SponsoredCreation {
 pub async fn sponsored_creation(
     ex: impl PgExecutor<'_>,
     uid: [u8; 32],
-) -> Result<Option<SponsoredCreation>> {
+) -> Result<Option<SponsoredCreationRow>> {
     sqlx::query_as(
         "SELECT presigned_transaction, last_valid_block_height
          FROM solana.orders
