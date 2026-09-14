@@ -167,27 +167,27 @@ impl FastPathHandler {
             }
         };
 
-        let settle_attempt = self.try_build_settle_attempt(pending, order_uid);
+        let settle_attempt = self
+            .fast_path_enabled
+            .then(|| self.try_build_settle_attempt(pending, order_uid))
+            .flatten();
 
         let now = model::time::now_in_epoch_seconds() as i64;
-        let valid_from = if settle_attempt.is_some() {
-            now + self.exclusivity_secs().cast_signed()
+        if let Some(settle_attempt) = settle_attempt {
+            let valid_from = now + self.exclusivity_secs().cast_signed();
+            let current_block = self.eth.current_block().borrow().number;
+            let submission_deadline = current_block + self.submission_deadline;
+            let _ = self
+                .execute_fast_path_settle(settle_attempt, valid_from, submission_deadline)
+                .await
+                .inspect_err(|err| tracing::error!(?err, "failed to execute fast-path settle"));
         } else {
-            now
+            let _ = self
+                .persistence
+                .set_order_valid_from(order_uid, now)
+                .await
+                .inspect_err(|err| tracing::error!(?err, "failed to fall through to regular auction"));
         };
-
-        if let Err(err) = self
-            .persistence
-            .set_order_valid_from(order_uid, valid_from)
-            .await
-        {
-            tracing::error!(?err, "failed to set valid_from on fast-path order");
-            return;
-        }
-
-        if let Some(attempt) = settle_attempt {
-            self.execute_fast_path_settle(attempt).await;
-        }
     }
 
     /// Decides whether an out-of-competition settle can be attempted:
@@ -201,9 +201,6 @@ impl FastPathHandler {
         pending: FastPathOrder,
         order_uid: domain::OrderUid,
     ) -> Option<FastPathSettleAttempt> {
-        if !self.fast_path_enabled {
-            return None;
-        }
         let staged = pending.staged?;
 
         // Volume-only: fast-path settles at the quoted price, so any
@@ -252,23 +249,17 @@ impl FastPathHandler {
         })
     }
 
-    /// Promotes the staged competition, hands the `/settle` request to
-    /// the driver, and records the outcome. Runs after `valid_from`
-    /// has already been extended past the exclusivity window.
-    async fn execute_fast_path_settle(&self, attempt: FastPathSettleAttempt) {
-        let winning_solver = attempt.staged.winner().solver;
-        let Some(winner) = self
-            .drivers
-            .iter()
-            .find(|driver| driver.submission_address == winning_solver)
-        else {
-            tracing::error!(
-                solver = ?winning_solver,
-                "winning driver is currently not configured"
-            );
-            return;
-        };
-
+    /// Persists `valid_from` (so the order is barred from the regular
+    /// auction for the length of the exclusivity window), promotes the
+    /// staged competition, and hands the `/settle` request to the
+    /// driver. Errors bubble up to the caller so the handler can log
+    /// them uniformly.
+    async fn execute_fast_path_settle(
+        &self,
+        attempt: FastPathSettleAttempt,
+        valid_from: i64,
+        submission_deadline: u64,
+    ) -> anyhow::Result<()> {
         // TODO: for the initial version we just use the same submission
         // deadline as the main auction uses which likely extends beyond
         // the valid_from period. It's still not possible for the same
@@ -278,28 +269,40 @@ impl FastPathHandler {
         //
         // The final implementation should take the order's valid_from
         // and the expected end of the current auction into account.
-        let current_block = self.eth.current_block().borrow().number;
-        let deadline = current_block + self.submission_deadline;
+        let order_uid: domain::OrderUid = attempt.model_order.metadata.uid.into();
+        let winning_solver = attempt.staged.winner().solver;
+        let winner = self
+            .drivers
+            .iter()
+            .find(|driver| driver.submission_address == winning_solver)
+            .with_context(|| {
+                format!("winning driver {winning_solver:?} is currently not configured")
+            })?;
 
+        let current_block = self.eth.current_block().borrow().number;
         let auction_id = attempt.staged.data.auction_id;
         let solution_id = attempt.staged.winner().solution_id;
         let solution_uid = attempt.staged.winner().solution_uid;
 
-        let final_execution = match self
-            .compute_and_persist_final_execution(&attempt, current_block, deadline)
+        let final_execution = self
+            .compute_and_persist_final_execution(&attempt, current_block, submission_deadline)
             .await
-        {
-            Ok(execution) => execution,
-            Err(err) => {
-                tracing::error!(?err, "failed to record fast-path fee policies");
-                return;
-            }
-        };
+            .context("failed to record fast-path fee policies")?;
+
+        // Only claim the exclusivity window once the staging promotion
+        // and driver bookkeeping have succeeded — a failure before this
+        // point would leave the order pending fast-path with `valid_from`
+        // set, which the next auction cycle would then pick up in an
+        // inconsistent state.
+        self.persistence
+            .set_order_valid_from(order_uid, valid_from)
+            .await
+            .context("failed to set valid_from")?;
 
         let request = settle::Request {
             auction_id,
             solution_id,
-            submission_deadline_latest_block: deadline,
+            submission_deadline_latest_block: submission_deadline,
             fast_path: Some(settle::FastPath {
                 order: dto::order::from_domain(&final_execution.order),
                 limit_prices: settle::LimitPrices {
@@ -318,6 +321,7 @@ impl FastPathHandler {
             Ok(tx) => tracing::info!(?tx, "settled order"),
             Err(err) => tracing::debug!(?err, "failed to settle order"),
         };
+        Ok(())
     }
 
     /// Adjusts every staged solution's bid by the volume-fee policies,
