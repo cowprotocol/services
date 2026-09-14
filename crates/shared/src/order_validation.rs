@@ -522,7 +522,9 @@ impl OrderValidator {
 
     /// Validates that a fast-path order's signed sell/buy amounts leave
     /// enough room for the compounded protocol + partner volume fees the
-    /// autopilot would charge at settlement time.
+    /// autopilot would charge at settlement time. The pure math lives in
+    /// [`crate::fee::check_fast_path_limit_fits`]; the autopilot's
+    /// fast-path handler calls the same helper.
     fn check_fast_path_limit_price_fits(
         &self,
         data: &OrderData,
@@ -537,25 +539,16 @@ impl OrderValidator {
             .map(|cap| crate::fee::capped_partner_volume_factors(&app_data.protocol, cap))
             .unwrap_or_default();
 
-        let factors = protocol_factor.into_iter().chain(partner_factors);
-        let (adjusted_sell, adjusted_buy) = factors.fold(
-            (quote.sell_amount, quote.buy_amount),
-            |(sell, buy), factor| crate::fee::apply_volume_fee(sell, buy, data.kind, factor),
-        );
-
-        let fits = match data.kind {
-            // Sell: the fees reduce what the trader receives. Their signed
-            // minimum `buy_amount` must be at most the fee-adjusted buy.
-            OrderKind::Sell => data.buy_amount <= adjusted_buy,
-            // Buy: the fees increase what the trader has to pay. Their
-            // signed maximum `sell_amount` must be at least the
-            // fee-adjusted sell.
-            OrderKind::Buy => data.sell_amount >= adjusted_sell,
-        };
-        if !fits {
-            return Err(ValidationError::FastPathLimitTooTight);
-        }
-        Ok(())
+        crate::fee::check_fast_path_limit_fits(
+            data.kind,
+            data.sell_amount,
+            data.buy_amount,
+            quote.sell_amount,
+            quote.buy_amount,
+            protocol_factor,
+            &partner_factors,
+        )
+        .map_err(|_| ValidationError::FastPathLimitTooTight)
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
