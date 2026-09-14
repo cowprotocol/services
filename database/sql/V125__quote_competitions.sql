@@ -20,3 +20,10 @@ ALTER TABLE order_quotes ADD COLUMN quote_id bigint;
 -- are now unused.
 ALTER TABLE quotes       DROP COLUMN auction_id;
 ALTER TABLE order_quotes DROP COLUMN auction_id;
+
+-- Records whether the caller asked for fast-path treatment (`enableFastPath:
+-- true` in app-data). The autopilot's fast-path handler is the sole owner
+-- of `valid_from` once this flag is set: it either sets `valid_from = now()`
+-- (feature disabled or limit-price check failed) or `now + exclusivity` and
+-- initiates the fast-path settle. Legacy orders default to `false`.
+ALTER TABLE orders ADD COLUMN fast_path boolean NOT NULL DEFAULT false;
