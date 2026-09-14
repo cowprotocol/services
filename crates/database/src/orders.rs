@@ -257,19 +257,6 @@ pub async fn set_valid_from(
     Ok(())
 }
 
-/// Returns `true` iff `uid` is a fast-path order whose `valid_from` has
-/// not been set yet — i.e. it is still waiting for the autopilot's
-/// fast-path handler to classify it.
-#[instrument(skip_all)]
-pub async fn is_pending_fast_path(
-    ex: &mut PgConnection,
-    uid: &OrderUid,
-) -> Result<bool, sqlx::Error> {
-    const QUERY: &str =
-        "SELECT EXISTS (SELECT 1 FROM orders WHERE uid = $1 AND fast_path AND valid_from IS NULL)";
-    sqlx::query_scalar(QUERY).bind(uid).fetch_one(ex).await
-}
-
 /// UIDs of every fast-path order whose `valid_from` has not been set.
 /// Used by the autopilot on startup to re-drive the handler for orders
 /// whose Postgres notification was missed while the process was down.

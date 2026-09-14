@@ -67,10 +67,12 @@ pub async fn delete_competition(
     Ok(())
 }
 
-/// All data need to finalize the fast path processing and initiate the
-/// settlement.
+/// A fast-path order the autopilot handler still owes a `valid_from`
+/// write to. `quote_id` / `competition` are populated when the order
+/// went through the API quoter (staged competition available); ethflow
+/// fast-path orders arrive without a staged competition and get `None`.
 #[derive(Debug, sqlx::FromRow)]
-pub struct FastPathOrder {
+pub struct PendingFastPathOrder {
     pub uid: OrderUid,
     pub owner: Address,
     pub creation_timestamp: DateTime<Utc>,
@@ -97,25 +99,27 @@ pub struct FastPathOrder {
     /// table). `None` when the full document was never uploaded.
     pub full_app_data: Option<Vec<u8>>,
     /// `quote_competitions.quote_id` — the staging row the handler must
-    /// promote and then delete.
-    pub quote_id: QuoteId,
+    /// promote and then delete. `None` for orders without a staged
+    /// competition (ethflow, missing quote).
+    pub quote_id: Option<QuoteId>,
     /// `quote_competitions.competition` — the serialized
     /// `StagedQuoteCompetition` produced at quote time. The caller is
-    /// responsible for `serde_json::from_value`-decoding it.
-    pub competition: serde_json::Value,
+    /// responsible for `serde_json::from_value`-decoding it. `None` for
+    /// orders without a staged competition.
+    pub competition: Option<serde_json::Value>,
 }
 
-/// Recovers what's needed for the autopilot to finalize the fast path
-/// data and intiate the settlement. Returns `None` when the order is
-/// not a pending fast-path order (either not marked `fast_path`, or
-/// `valid_from` has already been populated by the handler) or when it
-/// lacks the staged quote competition needed to actually settle out of
-/// band (e.g. ethflow orders that don't go through the quoter).
+/// Returns the order iff it is a fast-path order whose `valid_from`
+/// has not been populated yet — i.e. one the autopilot's fast-path
+/// handler still needs to classify. Callers use `Some` as the "we own
+/// this order" signal and branch further on
+/// [`PendingFastPathOrder::competition`] to decide whether an
+/// out-of-competition settle attempt is even possible.
 #[instrument(skip_all)]
-pub async fn unfinalized_fast_path_order(
+pub async fn pending_fast_path_order(
     ex: &mut PgConnection,
     uid: &OrderUid,
-) -> Result<Option<FastPathOrder>, sqlx::Error> {
+) -> Result<Option<PendingFastPathOrder>, sqlx::Error> {
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
         "SELECT ",
@@ -130,8 +134,8 @@ pub async fn unfinalized_fast_path_order(
         "ad.full_app_data AS full_app_data, ",
         "qc.quote_id AS quote_id, qc.competition AS competition",
         " FROM orders o",
-        " JOIN order_quotes oq ON oq.order_uid = o.uid",
-        " JOIN quote_competitions qc ON qc.quote_id = oq.quote_id",
+        " LEFT JOIN order_quotes oq ON oq.order_uid = o.uid",
+        " LEFT JOIN quote_competitions qc ON qc.quote_id = oq.quote_id",
         " LEFT JOIN app_data ad ON ad.contract_app_data = o.app_data",
         " WHERE o.uid = $1 AND o.fast_path AND o.valid_from IS NULL",
         " LIMIT 1",

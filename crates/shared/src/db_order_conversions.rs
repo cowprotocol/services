@@ -4,7 +4,7 @@ use {
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
     database::{
-        fast_path::FastPathOrder as FastPathOrderDb,
+        fast_path::PendingFastPathOrder as PendingFastPathOrderDb,
         onchain_broadcasted_orders::OnchainOrderPlacementError as DbOnchainOrderPlacementError,
         orders::{
             BuyTokenDestination as DbBuyTokenDestination,
@@ -141,7 +141,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     })
 }
 
-pub fn fast_path_order_into_model(order: &FastPathOrderDb) -> Result<Order> {
+pub fn fast_path_order_into_model(order: &PendingFastPathOrderDb) -> Result<Order> {
     let full_app_data = order
         .full_app_data
         .as_ref()

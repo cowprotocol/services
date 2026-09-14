@@ -1056,19 +1056,6 @@ impl Persistence {
         Ok(())
     }
 
-    /// `true` iff `uid` names a fast-path order the handler still owes
-    /// a `valid_from` write to. Used as the always-run first gate in
-    /// the notification-driven handler so non-fast-path orders don't
-    /// get their `valid_from` accidentally overwritten.
-    pub async fn is_pending_fast_path(&self, uid: domain::OrderUid) -> anyhow::Result<bool> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["is_pending_fast_path"])
-            .start_timer();
-        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-        Ok(database::orders::is_pending_fast_path(&mut ex, &ByteArray(uid.0)).await?)
-    }
-
     /// UIDs of every fast-path order whose `valid_from` has not been
     /// set yet. Called on autopilot startup to re-drive the handler for
     /// orders whose `new_order` notification landed while the process
@@ -1086,36 +1073,47 @@ impl Persistence {
             .collect())
     }
 
-    /// Recovers what's needed to settle a fast-path order via the driver's
-    /// `/settle`, or `None` when `uid` is either no longer a pending
-    /// fast-path order (handler already classified it) or lacks the
-    /// staged quote competition needed to settle out of band (e.g. an
-    /// ethflow order — the handler still needs to mark it eligible for
-    /// the regular auction by writing `valid_from`).
-    pub async fn fast_path_order(
+    /// Returns the order iff it is a fast-path order the handler still
+    /// owes a `valid_from` write to. Callers use `Some` as the "we own
+    /// this order" signal — non-fast-path orders (or ones the handler
+    /// already classified) return `None` and must be left alone.
+    ///
+    /// [`FastPathOrder::staged`] carries the staged quote competition
+    /// when one exists; ethflow fast-path orders that never went
+    /// through the quoter return `None` there, meaning no
+    /// out-of-competition settle is possible and the caller should just
+    /// mark the order eligible for the regular auction.
+    pub async fn pending_fast_path_order(
         &self,
         uid: domain::OrderUid,
     ) -> anyhow::Result<Option<FastPathOrder>> {
         let _timer = Metrics::get()
             .database_queries
-            .with_label_values(&["fast_path_order"])
+            .with_label_values(&["pending_fast_path_order"])
             .start_timer();
 
         let row = {
             let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-            database::fast_path::unfinalized_fast_path_order(&mut ex, &ByteArray(uid.0)).await?
+            database::fast_path::pending_fast_path_order(&mut ex, &ByteArray(uid.0)).await?
         };
 
-        let Some(fast_path_order) = row else {
+        let Some(pending) = row else {
             return Ok(None);
         };
 
-        let model_order = fast_path_order_into_model(&fast_path_order)?;
-        let staged = serde_json::from_value(fast_path_order.competition)
-            .context("deserialize staged quote competition")?;
+        let model_order = fast_path_order_into_model(&pending)?;
+        let staged = match (pending.quote_id, pending.competition) {
+            (Some(quote_id), Some(competition)) => Some(StagedFastPathCompetition {
+                quote_id,
+                data: serde_json::from_value(competition)
+                    .context("deserialize staged quote competition")?,
+            }),
+            // The LEFT JOIN returns both columns as NULL together — no
+            // staged data means no fast-path settle is possible.
+            _ => None,
+        };
         Ok(Some(FastPathOrder {
             model_order,
-            quote_id: fast_path_order.quote_id,
             staged,
         }))
     }
@@ -1177,25 +1175,34 @@ impl Persistence {
     }
 }
 
-/// The data the autopilot needs to settle a fast-path order out of competition.
+/// A pending fast-path order the handler has fetched. `staged` is
+/// present when the order went through the API quoter (and can
+/// therefore be settled out of competition); ethflow fast-path orders
+/// arrive with `staged = None` and fall straight through to the regular
+/// auction.
 pub struct FastPathOrder {
     /// The order in the raw API model form. Callers pass this to
     /// `ProtocolFees::apply` and can then convert it to `domain::Order` via
     /// `boundary::order::to_domain` once the resulting policies are known.
     pub model_order: model::order::Order,
-    /// `quote_competitions.quote_id` — passed back to `finalize_fast_path`
-    /// so it can drop the staging row atomically with the promotion.
-    pub quote_id: database::quotes::QuoteId,
-    /// Full staged competition data.
-    pub staged: shared::quote_storage::StagedQuoteCompetition,
+    /// Staged quote competition, when one is available.
+    pub staged: Option<StagedFastPathCompetition>,
 }
 
-impl FastPathOrder {
+/// The staged quote competition produced when the fast-path order was
+/// quoted. Carries the `quote_id` back to `finalize_fast_path` so the
+/// staging row can be dropped atomically with the promotion.
+pub struct StagedFastPathCompetition {
+    pub quote_id: database::quotes::QuoteId,
+    pub data: shared::quote_storage::StagedQuoteCompetition,
+}
+
+impl StagedFastPathCompetition {
     /// The winning solution. Non-empty by construction of
     /// `save_quote_competition`, which bails out when no quotes were
     /// produced.
     pub fn winner(&self) -> &shared::quote_storage::StagedSolution {
-        self.staged
+        self.data
             .solutions
             .first()
             .expect("staged competition is guaranteed to have at least one solution")
