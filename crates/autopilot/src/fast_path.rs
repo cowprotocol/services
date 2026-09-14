@@ -382,6 +382,8 @@ impl FastPathHandler {
         let (limit_sell, limit_buy) =
             winning_adjusted.expect("winner is present in staged competition");
 
+        let valid_from =
+            model::time::now_in_epoch_seconds() as i64 + self.exclusivity_secs().cast_signed();
         self.persistence
             .finalize_fast_path(FastPathPromotion {
                 quote_id: attempt.staged.quote_id,
@@ -389,19 +391,13 @@ impl FastPathHandler {
                 order_uid,
                 block,
                 deadline,
+                valid_from,
                 native_prices: attempt.staged.data.native_prices.clone(),
                 solutions: solution_rows,
                 fee_policies: volume_fee_policies.to_vec(),
             })
             .await
             .context("failed to promote staged fast-path competition")?;
-
-        let valid_from =
-            model::time::now_in_epoch_seconds() as i64 + self.exclusivity_secs().cast_signed();
-        self.persistence
-            .set_order_valid_from(order_uid, valid_from)
-            .await
-            .context("failed to set valid_from")?;
 
         let order = boundary::order::to_domain(
             &attempt.model_order,

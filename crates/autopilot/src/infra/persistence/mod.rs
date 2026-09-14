@@ -1170,6 +1170,13 @@ impl Persistence {
         database::fast_path::delete_competition(tx.deref_mut(), promotion.quote_id)
             .await
             .context("delete quote_competitions staging row")?;
+        database::orders::set_valid_from(
+            tx.deref_mut(),
+            &ByteArray(promotion.order_uid.0),
+            promotion.valid_from,
+        )
+        .await
+        .context("set valid_from")?;
         tx.commit().await.context("commit")?;
         Ok(())
     }
@@ -1222,6 +1229,12 @@ pub struct FastPathPromotion {
     /// settle.
     pub block: u64,
     pub deadline: u64,
+    /// Unix timestamp (seconds) the order becomes eligible for the
+    /// regular auction if the fast-path settle attempt doesn't land in
+    /// time. Written atomically with the rest of the promotion so the
+    /// order can never be observed "settle-committed, exclusivity not
+    /// claimed" from another connection.
+    pub valid_from: i64,
     pub native_prices: HashMap<eth::Address, eth::U256>,
     /// Fully-built solver-competition rows (one per staged solution).
     /// Constructed by the caller so per-bid encoding decisions —
