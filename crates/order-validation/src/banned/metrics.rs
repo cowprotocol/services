@@ -2,7 +2,6 @@
 //! front of them.
 
 use {
-    super::Source,
     prometheus::{HistogramVec, IntCounterVec, IntGaugeVec},
     std::time::Duration,
 };
@@ -29,17 +28,15 @@ pub(super) struct Metrics {
     #[metric(labels("result"))]
     cache: IntCounterVec,
 
-    /// Newly banned addresses, by the source that reported them. Counted once
-    /// per address and source for as long as the address stays cached, so
-    /// repeated checks and background refreshes of an already known address do
-    /// not inflate it.
-    #[metric(labels("source"))]
+    /// Newly banned addresses, by the backend that reported them. Counted
+    /// once per address and backend for as long as the address stays cached,
+    /// so repeated checks and refreshes of a known address do not inflate it.
+    #[metric(labels("backend"))]
     detected: IntCounterVec,
 
-    /// Banned addresses currently held in the cache, by the source that
-    /// reported them. An address several sources report counts once under
-    /// each, so the series do not sum to the number of banned addresses.
-    #[metric(labels("source"))]
+    /// Banned addresses currently held in the cache, by the backend that
+    /// reported them. An address several backends report counts under each.
+    #[metric(labels("backend"))]
     currently_banned: IntGaugeVec,
 }
 
@@ -48,20 +45,17 @@ impl Metrics {
         Self::instance(observe::metrics::get_storage_registry()).unwrap()
     }
 
-    pub(super) fn lookup(backend: Source, result: Result<bool, ()>, elapsed: Duration) {
+    pub(super) fn lookup(backend: &str, result: Result<bool, ()>, elapsed: Duration) {
         let result = match result {
             Ok(true) => "banned",
             Ok(false) => "not_banned",
             Err(()) => "error",
         };
         let metrics = Self::get();
-        metrics
-            .lookups
-            .with_label_values(&[backend.as_str(), result])
-            .inc();
+        metrics.lookups.with_label_values(&[backend, result]).inc();
         metrics
             .lookup_seconds
-            .with_label_values(&[backend.as_str()])
+            .with_label_values(&[backend])
             .observe(elapsed.as_secs_f64());
     }
 
@@ -77,17 +71,14 @@ impl Metrics {
             .inc_by(misses as u64);
     }
 
-    pub(super) fn detected(source: Source) {
-        Self::get()
-            .detected
-            .with_label_values(&[source.as_str()])
-            .inc();
+    pub(super) fn detected(backend: &str) {
+        Self::get().detected.with_label_values(&[backend]).inc();
     }
 
-    pub(super) fn currently_banned(source: Source, count: i64) {
+    pub(super) fn currently_banned(backend: &str, count: usize) {
         Self::get()
             .currently_banned
-            .with_label_values(&[source.as_str()])
-            .set(count);
+            .with_label_values(&[backend])
+            .set(i64::try_from(count).unwrap_or(i64::MAX));
     }
 }

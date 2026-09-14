@@ -95,8 +95,8 @@ impl Backend for Client {
         Ok(self.fetch_status(address).await?)
     }
 
-    fn source(&self) -> super::Source {
-        super::Source::Hermod
+    fn name(&self) -> &'static str {
+        "hermod"
     }
 }
 
