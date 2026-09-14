@@ -6,6 +6,7 @@
 
 use {
     crate::{
+        config::Config,
         persistence::Postgres,
         types::{
             Signature,
@@ -38,15 +39,19 @@ use {
         },
         recover_discriminator,
     },
+    cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     solana_sdk::pubkey::Pubkey,
     std::collections::BTreeMap,
-    tokio::sync::mpsc::Receiver,
+    tokio::sync::mpsc::{self, Receiver},
 };
 
 /// Decoder component.
 pub(crate) struct Decoder {
     /// Persistence layer.
     pub persistence: Postgres,
+
+    /// RPC client the finalization audit checks signatures against.
+    pub rpc: SolanaRPC,
 
     /// Incoming `StreamUpdate` from the ingester.
     pub rx: Receiver<StreamUpdate>,
@@ -63,31 +68,57 @@ impl Decoder {
     /// Construct a new decoder. The caller owns the channel capacity decision.
     pub fn new(
         persistence: Postgres,
+        rpc: SolanaRPC,
         rx: Receiver<StreamUpdate>,
         settlement_program: Pubkey,
         solflow_program: Option<Pubkey>,
     ) -> Self {
         Self {
             persistence,
+            rpc,
             rx,
             settlement_program,
             solflow_program,
         }
     }
 
+    /// A decoder driven by RPC fetches instead of a stream: recovery pushes
+    /// history through its decode and flush paths over a dedicated client.
+    /// The channel sender is dropped, so `run` would return immediately.
+    pub(crate) fn rpc_driven(config: &Config, persistence: Postgres) -> Self {
+        let rpc = SolanaRPC::new_with_timeout_and_commitment(
+            &config.rpc.endpoint,
+            config.rpc.request_timeout,
+            CommitmentConfig::confirmed(),
+        );
+        let (_closed, rx) = mpsc::channel(1);
+        Self::new(
+            persistence,
+            rpc,
+            rx,
+            config.chain.settlement_program_id,
+            config.chain.solflow_program_id,
+        )
+    }
+
     /// Main loop. Drains the channel, decodes each transaction's tracked
     /// instructions, and persists the results. Returns when the ingester
     /// drops the sender.
     ///
-    /// Events and dead letters are buffered per slot and flushed once a
-    /// transaction of a later slot arrives: stream resume is slot-granular
-    /// (`from_slot = last_indexed_slot + 1`), so the last indexed slot may
-    /// only name slots whose transactions have all been delivered. Buffering
-    /// also makes it one persistence batch per slot instead of one per
-    /// transaction.
+    /// Events and dead letters are buffered per slot and flushed when the
+    /// slot's confirmed status arrives: the stream delivers a slot's
+    /// transactions before that status, so the status is the completeness
+    /// signal. The watermark (`solana.indexer_state.slot`) advances to every
+    /// confirmed slot, quiet ones included, and only after its buffers
+    /// flushed. A persistence error aborts the decoder and the process: the
+    /// watermark did not advance past anything unflushed, so the restart
+    /// replays it.
     pub async fn run(&mut self) -> Result<(), PersistenceError> {
         let mut pending: BTreeMap<Slot, SlotBuffer> = BTreeMap::new();
-        let mut flushed_through: Option<Slot> = None;
+        // In-memory mirror of the persisted watermark, spares redundant
+        // writes and flags late transactions.
+        let mut watermark: Option<Slot> = None;
+        let mut finalized_through: Option<Slot> = None;
         while let Some(update) = self.rx.recv().await {
             let (slot, signature, inner) = match update {
                 StreamUpdate::Tx {
@@ -95,26 +126,27 @@ impl Decoder {
                     signature,
                     inner,
                 } => (slot, signature, inner),
-                // Slot statuses bound the flush latency: the next settlement
-                // transaction can be minutes away.
-                StreamUpdate::Slot { slot } => {
-                    self.flush_up_to(&mut pending, slot, &mut flushed_through)
+                StreamUpdate::Confirmed { slot } => {
+                    self.flush_confirmed(&mut pending, slot, &mut watermark)
                         .await?;
                     continue;
                 }
+                StreamUpdate::Finalized { slot } => {
+                    self.finalize(slot, &mut finalized_through).await?;
+                    continue;
+                }
             };
-            self.flush_up_to(&mut pending, slot, &mut flushed_through)
-                .await?;
 
-            if let Some(flushed) = flushed_through
-                && slot <= flushed
+            if let Some(watermark) = watermark
+                && slot <= watermark
             {
-                // The events below still persist, and the backward slot write
-                // write is a no-op, but a crash before this batch flushes
-                // would lose the transaction: resume starts past its slot.
+                // The provider broke the transactions-before-status ordering.
+                // The events below still persist (idempotent writes), but a
+                // crash before they flush would lose them: resume starts past
+                // their slot.
                 tracing::warn!(
                     %slot,
-                    flushed_through = %flushed,
+                    %watermark,
                     "transaction arrived for an already flushed slot"
                 );
             }
@@ -131,32 +163,83 @@ impl Decoder {
                 Err(DecodeFailed) => buffer.dead_letters.push(signature),
             }
         }
-        // The stream ended. Only the newest buffer may be missing
-        // transactions, everything below it was already proven complete by
-        // later stream activity.
-        let mut leftover = pending.into_iter().peekable();
-        while let Some((slot, buffer)) = leftover.next() {
-            let complete = leftover.peek().is_some();
-            self.flush_slot(slot, buffer, complete).await?;
+        // The stream ended before these buffers' confirmed statuses arrived,
+        // so they may be missing transactions: flush without advancing the
+        // watermark, the reconnect replays their slots.
+        for (slot, buffer) in pending {
+            self.flush_slot(slot, buffer, false).await?;
         }
         Ok(())
     }
 
-    /// Flushes every buffer at least [`FLUSH_HOLDBACK_SLOTS`] behind the
-    /// observed slot. The hold-back gives late-delivered transactions a
-    /// window to join their slot's still unflushed buffer, keeping them
-    /// crash-safe: resume replays everything past the last indexed slot.
-    async fn flush_up_to(
+    /// Advance the finalized watermark to `slot`, first auditing the rows
+    /// that finalization would freeze: every transaction indexed in the
+    /// newly final range must still exist on chain, and one that vanished
+    /// was rolled back, so its rows are reverted in the same SQL transaction
+    /// that advances the watermark. An audit RPC failure leaves the
+    /// watermark untouched, the next finalized status retries the range.
+    async fn finalize(
+        &self,
+        slot: Slot,
+        finalized_through: &mut Option<Slot>,
+    ) -> Result<(), PersistenceError> {
+        let after = match *finalized_through {
+            Some(after) => after,
+            // First finalized status since boot: resume the audit from the
+            // persisted watermark, or from this very slot on a fresh
+            // database, where nothing older was indexed.
+            None => self.persistence.finalized_slot().await?.unwrap_or(slot),
+        };
+        if slot <= after {
+            *finalized_through = Some(after);
+            return Ok(());
+        }
+        let signatures = self.persistence.unfinalized_signatures(after, slot).await?;
+        let vanished = if signatures.is_empty() {
+            Vec::new()
+        } else {
+            match self.rpc.known_signatures(&signatures).await {
+                Ok(known) => signatures
+                    .into_iter()
+                    .zip(known)
+                    .filter_map(|(signature, known)| (!known).then_some(signature))
+                    .collect(),
+                Err(err) => {
+                    tracing::warn!(?err, "signature audit failed, finalization delayed");
+                    *finalized_through = Some(after);
+                    return Ok(());
+                }
+            }
+        };
+        if vanished.is_empty() {
+            self.persistence.write_finalized_slot(slot).await?;
+        } else {
+            tracing::warn!(?vanished, "rolled-back transactions reverted");
+            self.persistence.finalize_through(slot, &vanished).await?;
+        }
+        *finalized_through = Some(slot);
+        Ok(())
+    }
+
+    /// Flush every buffer at or below the confirmed slot, then advance the
+    /// watermark to it: the slot's transactions all arrived before its
+    /// status, and quiet slots below it have nothing to wait for.
+    async fn flush_confirmed(
         &self,
         pending: &mut BTreeMap<Slot, SlotBuffer>,
-        observed: Slot,
-        flushed_through: &mut Option<Slot>,
+        confirmed: Slot,
+        watermark: &mut Option<Slot>,
     ) -> Result<(), PersistenceError> {
-        let cutoff = u64::from(observed).saturating_sub(FLUSH_HOLDBACK_SLOTS);
-        let keep = pending.split_off(&Slot(cutoff.saturating_add(1)));
-        for (slot, buffer) in std::mem::replace(pending, keep) {
+        while let Some(entry) = pending.first_entry() {
+            if *entry.key() > confirmed {
+                break;
+            }
+            let (slot, buffer) = entry.remove_entry();
             self.flush_slot(slot, buffer, true).await?;
-            *flushed_through = (*flushed_through).max(Some(slot));
+        }
+        if watermark.is_none_or(|watermark| watermark < confirmed) {
+            self.persistence.write_last_indexed_slot(confirmed).await?;
+            *watermark = Some(confirmed);
         }
         Ok(())
     }
@@ -270,11 +353,6 @@ impl Decoder {
         );
     }
 }
-
-/// Slots stay buffered until the stream reports a slot this far past them.
-/// A transaction delivered up to this many slots late still joins its own
-/// unflushed buffer instead of racing the last-indexed-slot advance.
-const FLUSH_HOLDBACK_SLOTS: u64 = 2;
 
 /// One slot's accumulated output, flushed once the stream moves past the
 /// hold-back window.
@@ -761,3 +839,5 @@ fn relevant_instructions(
 
 #[cfg(test)]
 mod tests;
+
+mod backfill;

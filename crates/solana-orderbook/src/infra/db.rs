@@ -45,7 +45,7 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        p.cancellation_timestamp
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
-WHERE o.uid = $1
+WHERE o.uid = $1 AND NOT COALESCE(p.is_reorged, false)
     "#;
     sqlx::query_as(QUERY)
         .bind(ByteArray(uid))
