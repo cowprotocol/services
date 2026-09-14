@@ -33,6 +33,7 @@ use {
             },
         },
     },
+    base64::Engine,
     bytes::Bytes,
     cow_settlement_interface::{
         Pubkey as InterfacePubkey,
@@ -346,6 +347,12 @@ fn tx_update(slot: u64, info: SubscribeUpdateTransactionInfo) -> SubscribeUpdate
 /// (`pubkey(11)`) differs from the intent owner (`[0x11; 32]`) so callers can
 /// pin that the event owner comes from the intent data, not the accounts.
 fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
+    let (instruction, expected) = create_order_parts();
+    (tx_from_instructions(pubkey(9), &[instruction]), expected)
+}
+
+/// The `CreateOrder` instruction and the event its decode must produce.
+fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) {
     let settlement = pubkey(1);
     let created_by = pubkey(12);
     let intent = OrderIntent {
@@ -371,7 +378,6 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         intent: &intent,
     }
     .into();
-    let tx = tx_from_instructions(pubkey(9), &[instruction]);
     let expected = CreatedOrder {
         signature: signature(6),
         order_uid: OrderUid(intent.uid().to_bytes()),
@@ -389,7 +395,185 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
         partially_fillable: false,
         app_data: [0x44; 32],
     };
-    (tx, expected)
+    (instruction, expected)
+}
+
+/// The RPC wire form of a signed transaction, as `getTransaction` returns it
+/// with base64 encoding.
+fn rpc_transaction_json(
+    tx: &solana_sdk::transaction::VersionedTransaction,
+    slot: u64,
+) -> serde_json::Value {
+    let bytes = bincode::serialize(tx).unwrap();
+    serde_json::json!({
+        "slot": slot,
+        "transaction": [base64::prelude::BASE64_STANDARD.encode(bytes), "base64"],
+        "meta": {
+            "err": null,
+            "status": { "Ok": null },
+            "fee": 0u64,
+            "preBalances": [],
+            "postBalances": [],
+            "innerInstructions": [],
+            "logMessages": [],
+            "preTokenBalances": [],
+            "postTokenBalances": [],
+            "rewards": []
+        },
+        "blockTime": null
+    })
+}
+
+/// A signed transaction in the `VersionedTransaction` envelope `decode()`
+/// returns, carrying a legacy message with the given instruction.
+fn versioned_tx(
+    instruction: solana_sdk::instruction::Instruction,
+) -> solana_sdk::transaction::VersionedTransaction {
+    let message = solana_sdk::message::Message::new_with_blockhash(
+        &[instruction],
+        Some(&pubkey(9)),
+        &solana_sdk::hash::Hash::default(),
+    );
+    // As many signatures as the header demands, or `sanitize` rejects the
+    // payload. The first doubles as the transaction signature.
+    let signatures = vec![signature(6); usize::from(message.header.num_required_signatures)];
+    solana_sdk::transaction::VersionedTransaction {
+        signatures,
+        message: solana_sdk::message::VersionedMessage::Legacy(message),
+    }
+}
+
+/// An RPC-fetched transaction decodes to the same event as its streamed
+/// form.
+#[tokio::test]
+async fn backfilled_transaction_decodes_like_the_streamed_one() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (instruction, expected) = create_order_parts();
+    let tx = versioned_tx(instruction);
+    let encoded: cow_solana_rpc::EncodedConfirmedTransactionWithStatusMeta =
+        serde_json::from_value(rpc_transaction_json(&tx, 43)).unwrap();
+    let info = super::backfill::convert(encoded, signature(6)).expect("convertible");
+    let decoder = pure_decoder(settlement, solflow);
+    let events = decoder
+        .decode(info, Slot(43), signature(6))
+        .expect("clean decode");
+    assert_eq!(
+        events,
+        vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+            Box::new(expected)
+        ))]
+    );
+}
+
+/// The converter maps the V0 shape too: an ALT-loaded settlement program
+/// reached only through a CPI decodes to the same event as the streamed
+/// form.
+#[tokio::test]
+async fn backfilled_v0_cpi_decodes_like_the_streamed_one() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (instruction, expected) = create_order_parts();
+    let (payer, router) = (pubkey(9), pubkey(8));
+
+    let mut static_keys = vec![payer, router];
+    static_keys.extend(instruction.accounts.iter().map(|meta| meta.pubkey));
+    let settlement_index = u8::try_from(static_keys.len()).unwrap();
+    let account_indices: Vec<u8> = (2..settlement_index).collect();
+
+    let streamed = tx_info(
+        static_keys.clone(),
+        vec![],
+        vec![settlement],
+        vec![CompiledInstruction {
+            program_id_index: 1,
+            accounts: vec![],
+            data: vec![0],
+        }],
+        vec![InnerInstructions {
+            index: 0,
+            instructions: vec![inner(
+                u32::from(settlement_index),
+                account_indices.clone(),
+                instruction.data.clone(),
+                Some(2),
+            )],
+        }],
+    );
+
+    let message = solana_sdk::message::VersionedMessage::V0(solana_sdk::message::v0::Message {
+        header: solana_sdk::message::MessageHeader {
+            num_required_signatures: 1,
+            num_readonly_signed_accounts: 0,
+            num_readonly_unsigned_accounts: 0,
+        },
+        account_keys: static_keys,
+        recent_blockhash: solana_sdk::hash::Hash::default(),
+        instructions: vec![
+            solana_sdk::message::compiled_instruction::CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![],
+                data: vec![0],
+            },
+        ],
+        address_table_lookups: vec![solana_sdk::message::v0::MessageAddressTableLookup {
+            account_key: pubkey(7),
+            writable_indexes: vec![],
+            readonly_indexes: vec![0],
+        }],
+    });
+    let tx = solana_sdk::transaction::VersionedTransaction {
+        signatures: vec![signature(6)],
+        message,
+    };
+    let bytes = bincode::serialize(&tx).unwrap();
+    let json = serde_json::json!({
+        "slot": 43u64,
+        "transaction": [base64::prelude::BASE64_STANDARD.encode(bytes), "base64"],
+        "meta": {
+            "err": null,
+            "status": { "Ok": null },
+            "fee": 0u64,
+            "preBalances": [],
+            "postBalances": [],
+            "innerInstructions": [{
+                "index": 0,
+                "instructions": [{
+                    "programIdIndex": settlement_index,
+                    "accounts": account_indices,
+                    "data": solana_sdk::bs58::encode(&instruction.data).into_string(),
+                    "stackHeight": 2
+                }]
+            }],
+            "logMessages": [],
+            "preTokenBalances": [],
+            "postTokenBalances": [],
+            "rewards": [],
+            "loadedAddresses": {
+                "writable": [],
+                "readonly": [settlement.to_string()]
+            }
+        },
+        "blockTime": null
+    });
+    let encoded: cow_solana_rpc::EncodedConfirmedTransactionWithStatusMeta =
+        serde_json::from_value(json).unwrap();
+    let backfilled = super::backfill::convert(encoded, signature(6)).expect("convertible");
+
+    let decoder = pure_decoder(settlement, solflow);
+    let expected = vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+        Box::new(expected),
+    ))];
+    assert_eq!(
+        decoder
+            .decode(streamed, Slot(43), signature(6))
+            .expect("streamed decode"),
+        expected
+    );
+    assert_eq!(
+        decoder
+            .decode(backfilled, Slot(43), signature(6))
+            .expect("backfilled decode"),
+        expected
+    );
 }
 
 /// A decoder over a lazy pool that never connects: `decode` is pure, tests
@@ -758,4 +942,60 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
             .unwrap();
     assert_eq!(sell_token, expected.sell_mint.to_bytes().to_vec());
     assert_eq!(buy_token, expected.buy_mint.to_bytes().to_vec());
+}
+
+/// Backfill end to end: the watermark trails the tip past the replay window,
+/// RPC history supplies the missing transaction, and the watermark lands on
+/// the scanned tip with the recovered order persisted.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_backfill_recovers_the_gap() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+    let persistence = Postgres::new(pool.clone());
+    persistence.write_last_indexed_slot(Slot(40)).await.unwrap();
+
+    let settlement = pubkey(1);
+    let (instruction, expected) = create_order_parts();
+    let tx = versioned_tx(instruction);
+    let mut mocks = Mocks::default();
+    mocks.insert(RpcRequest::GetSlot, serde_json::json!(50u64));
+    mocks.insert(
+        RpcRequest::GetSignaturesForAddress,
+        serde_json::json!([{
+            "signature": signature(6).to_string(),
+            "slot": 43u64,
+            "err": null,
+            "memo": null,
+            "blockTime": null,
+            "confirmationStatus": "finalized"
+        }]),
+    );
+    mocks.insert(RpcRequest::GetTransaction, rpc_transaction_json(&tx, 43));
+
+    // A decoder without a stream.
+    let (_closed, rx) = tokio::sync::mpsc::channel(1);
+    let backfiller = Decoder::new(
+        Postgres::new(pool.clone()),
+        SolanaRPC::new_mock_with_mocks(mocks),
+        rx,
+        settlement,
+        None,
+    );
+    backfiller.backfill().await;
+
+    assert_eq!(
+        persistence.last_indexed_slot().await.unwrap(),
+        Some(Slot(50))
+    );
+    let (uid, created_by_tx, created_in_slot): (Vec<u8>, Vec<u8>, i64) = sqlx::query_as(
+        "SELECT o.uid, p.created_by_tx, p.created_in_slot
+         FROM solana.orders o JOIN solana.order_pda p ON p.order_uid = o.uid",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(uid, expected.order_uid.0.to_vec());
+    assert_eq!(created_by_tx, signature(6).as_ref().to_vec());
+    assert_eq!(created_in_slot, 43);
 }

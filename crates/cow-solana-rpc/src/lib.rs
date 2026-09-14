@@ -21,6 +21,7 @@ pub use {
         client_error::Error,
         response::{RpcSimulateTransactionResult, UiTransactionError},
     },
+    solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
 };
 #[cfg(feature = "test-util")]
 pub use {solana_rpc_client::mock_sender::Mocks, solana_rpc_client_api::request::RpcRequest};
@@ -30,6 +31,10 @@ pub struct SolanaRPC {
 }
 
 impl SolanaRPC {
+    /// Signatures requested per page of
+    /// [`SolanaRPC::signatures_for_address`].
+    pub const SIGNATURES_PAGE: usize = 1000;
+
     /// Creates a client for the given HTTP URL, request timeout and
     /// commitment level.
     pub fn new_with_timeout_and_commitment(
@@ -132,6 +137,68 @@ impl SolanaRPC {
         Ok(known)
     }
 
+    /// One page of an address's transaction signatures, starting below
+    /// `before` when given. The node serves deep history, so repeated calls
+    /// walk arbitrarily far back.
+    pub async fn signatures_for_address(
+        &self,
+        address: &Pubkey,
+        before: Option<Signature>,
+    ) -> Result<SignaturesPage, Error> {
+        // Pinned to confirmed like `slot` and `transaction`: the node's
+        // default is finalized, which would hide the confirmed tip's last
+        // ~32 slots from the scan.
+        let config = solana_rpc_client::rpc_client::GetConfirmedSignaturesForAddress2Config {
+            before,
+            limit: Some(Self::SIGNATURES_PAGE),
+            commitment: Some(CommitmentConfig::confirmed()),
+            ..Default::default()
+        };
+        let page = self
+            .inner
+            .get_signatures_for_address_with_config(address, config)
+            .await?;
+        // Keyed on the raw length: parse failures below must not read as an
+        // exhausted history.
+        let full = page.len() == Self::SIGNATURES_PAGE;
+        let entries = page
+            .into_iter()
+            .filter_map(|status| match status.signature.parse() {
+                Ok(signature) => Some((signature, status.slot)),
+                // The node returned a malformed signature. There is nothing
+                // to fetch or dead-letter without one, so skip it loudly.
+                Err(err) => {
+                    tracing::warn!(
+                        ?err,
+                        signature = %status.signature,
+                        "skipping an unparsable signature"
+                    );
+                    None
+                }
+            })
+            .collect();
+        Ok(SignaturesPage { entries, full })
+    }
+
+    /// One confirmed transaction with its metadata, base64-encoded.
+    pub async fn transaction(
+        &self,
+        signature: &Signature,
+    ) -> Result<EncodedConfirmedTransactionWithStatusMeta, Error> {
+        self.inner
+            .get_transaction_with_config(
+                signature,
+                solana_rpc_client_api::config::RpcTransactionConfig {
+                    encoding: Some(
+                        solana_transaction_status_client_types::UiTransactionEncoding::Base64,
+                    ),
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    max_supported_transaction_version: Some(0),
+                },
+            )
+            .await
+    }
+
     /// Simulate a versioned transaction without sending it. Returns the
     /// simulation result including logs and any error.
     pub async fn simulate_transaction(
@@ -156,6 +223,16 @@ impl SolanaRPC {
     ) -> Result<Signature, Error> {
         self.inner.send_and_confirm_transaction(transaction).await
     }
+}
+
+/// One page of an address's transaction history.
+pub struct SignaturesPage {
+    /// Parsed (signature, slot) entries, newest first. Signatures the node
+    /// returned malformed are dropped.
+    pub entries: Vec<(Signature, u64)>,
+    /// The raw page hit the request limit, so older history may remain
+    /// below it.
+    pub full: bool,
 }
 
 /// A Solana block height.
