@@ -38,18 +38,9 @@ pub enum Liquidity {
     Concentrated(ConcentratedLiquidity),
 }
 
-/// A trait associating some liquidity model with its settlement handler,
-/// which the driver downcasts to build the actual interactions. This allows
-/// different liquidity types to be modeled the same way.
-pub trait Settleable {
-    fn settlement_handling(&self) -> &dyn SettlementHandling<Self>;
-}
-
-/// Gives access to the concrete settlement handler of a liquidity source.
-pub trait SettlementHandling<L>: Send + Sync
-where
-    L: Settleable,
-{
+/// Gives access to the concrete settlement handler of a liquidity source,
+/// which the driver downcasts to build the actual interactions.
+pub trait SettlementHandling<L>: Send + Sync {
     /// What is this craziness?!
     ///
     /// While developing the `driver`, we want to access information that is
@@ -160,12 +151,6 @@ impl LimitOrder {
 impl std::fmt::Debug for LimitOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Limit Order {:?}", self.id)
-    }
-}
-
-impl Settleable for LimitOrder {
-    fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
-        &*self.settlement_handling
     }
 }
 
@@ -314,24 +299,6 @@ impl std::fmt::Debug for StablePoolOrder {
     }
 }
 
-impl Settleable for ConstantProductOrder {
-    fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
-        &*self.settlement_handling
-    }
-}
-
-impl Settleable for WeightedProductOrder {
-    fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
-        &*self.settlement_handling
-    }
-}
-
-impl Settleable for StablePoolOrder {
-    fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
-        &*self.settlement_handling
-    }
-}
-
 /// Concentrated type of liquidity with ticks (e.g. UniswapV3)
 #[derive(Clone)]
 pub struct ConcentratedLiquidity {
@@ -353,12 +320,6 @@ impl std::fmt::Debug for ConcentratedLiquidity {
     }
 }
 
-impl Settleable for ConcentratedLiquidity {
-    fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
-        &*self.settlement_handling
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -366,10 +327,7 @@ pub mod tests {
     /// Settlement handler for tests that don't care about settlement handling.
     pub struct CapturingSettlementHandler<L>(std::marker::PhantomData<fn() -> L>);
 
-    impl<L> CapturingSettlementHandler<L>
-    where
-        L: Settleable,
-    {
+    impl<L> CapturingSettlementHandler<L> {
         pub fn arc() -> Arc<Self> {
             Arc::new(Self(Default::default()))
         }
@@ -377,7 +335,7 @@ pub mod tests {
 
     impl<L> SettlementHandling<L> for CapturingSettlementHandler<L>
     where
-        L: Settleable + 'static,
+        L: 'static,
     {
         fn as_any(&self) -> &dyn std::any::Any {
             self
