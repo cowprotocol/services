@@ -9,10 +9,10 @@ use {
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "banned_users")]
 pub(super) struct Metrics {
-    /// Backend lookups by outcome. `banned` and `not_banned` are the answers
-    /// a backend gave; `error` means the lookup failed and was ignored.
-    /// Background refreshes are included, so a long-lived banned address is
-    /// counted repeatedly here — see `detected` for the deduplicated count.
+    /// Backend lookups by outcome: banned, not_banned or error (lookup failed
+    /// and was ignored). Includes background refreshes, so a long-lived banned
+    /// address is counted repeatedly - see `detected` for the deduplicated
+    /// count.
     #[metric(labels("backend", "result"))]
     lookups: IntCounterVec,
 
@@ -23,17 +23,17 @@ pub(super) struct Metrics {
     )]
     lookup_seconds: HistogramVec,
 
-    /// Address checks served from the cache (`hit`) versus forwarded to the
-    /// backends (`miss`).
+    /// Address checks by cache result: hit, or miss (forwarded to the
+    /// backends).
     #[metric(labels("result"))]
     cache: IntCounterVec,
 
-    /// Addresses whose verdict turned banned. Counted once per address for as
-    /// long as it stays cached, so repeated checks and background refreshes of
-    /// an already known address do not inflate it.
+    /// Newly banned addresses. Counted once per address for as long as it
+    /// stays cached, so repeated checks and background refreshes of an already
+    /// known address do not inflate it.
     detected: IntCounter,
 
-    /// Addresses currently held in the cache with a banned verdict.
+    /// Banned addresses currently held in the cache.
     currently_banned: IntGauge,
 }
 
@@ -72,9 +72,7 @@ impl Metrics {
         Self::get().detected.inc();
     }
 
-    pub(super) fn currently_banned(count: usize) {
-        Self::get()
-            .currently_banned
-            .set(i64::try_from(count).unwrap_or(i64::MAX));
+    pub(super) fn currently_banned(count: i64) {
+        Self::get().currently_banned.set(count);
     }
 }
