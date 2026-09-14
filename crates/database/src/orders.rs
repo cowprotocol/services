@@ -238,6 +238,50 @@ WHERE uid = $1
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+/// Sets `valid_from` on the given order. The autopilot's fast-path
+/// handler is the sole writer once `orders.fast_path = true`: either
+/// `now()` (feature disabled or limit-price check failed) or
+/// `now + exclusivity` (fast-path settle about to be attempted).
+#[instrument(skip_all)]
+pub async fn set_valid_from(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+    valid_from: i64,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = "UPDATE orders SET valid_from = $2 WHERE uid = $1";
+    sqlx::query(QUERY)
+        .bind(uid)
+        .bind(valid_from)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+/// Returns `true` iff `uid` is a fast-path order whose `valid_from` has
+/// not been set yet — i.e. it is still waiting for the autopilot's
+/// fast-path handler to classify it.
+#[instrument(skip_all)]
+pub async fn is_pending_fast_path(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+) -> Result<bool, sqlx::Error> {
+    const QUERY: &str = "SELECT EXISTS (SELECT 1 FROM orders WHERE uid = $1 AND fast_path AND \
+                         valid_from IS NULL)";
+    sqlx::query_scalar(QUERY).bind(uid).fetch_one(ex).await
+}
+
+/// UIDs of every fast-path order whose `valid_from` has not been set.
+/// Used by the autopilot on startup to re-drive the handler for orders
+/// whose Postgres notification was missed while the process was down.
+/// Backed by the partial index `orders_pending_fast_path`.
+#[instrument(skip_all)]
+pub async fn pending_fast_path_uids(
+    ex: &mut PgConnection,
+) -> Result<Vec<OrderUid>, sqlx::Error> {
+    const QUERY: &str = "SELECT uid FROM orders WHERE fast_path AND valid_from IS NULL";
+    sqlx::query_scalar(QUERY).fetch_all(ex).await
+}
+
 pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
     if let sqlx::Error::Database(db_err) = &err
         && let Some(code) = db_err.code()

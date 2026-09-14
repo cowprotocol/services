@@ -185,15 +185,22 @@ async fn fast_path_settle(web3: Web3) {
     );
     let uid = services.create_order(&order).await.unwrap();
 
-    // `valid_from` is echoed back on the order metadata — the orderbook set it
-    // to `now + exclusivity` when it accepted the fast-path order.
-    let valid_from = services
-        .get_order(&uid)
-        .await
-        .unwrap()
-        .metadata
-        .valid_from
-        .expect("fast-path order has a valid_from");
+    // The autopilot's fast-path handler populates `valid_from` shortly
+    // after the order lands. Poll until it shows up — that's the signal
+    // that the handler classified the order.
+    let valid_from_cell = std::cell::Cell::new(None);
+    wait_for_condition(TIMEOUT, || async {
+        let valid_from = services
+            .get_order(&uid)
+            .await
+            .ok()
+            .and_then(|order| order.metadata.valid_from);
+        valid_from_cell.set(valid_from);
+        valid_from.is_some()
+    })
+    .await
+    .expect("fast-path order should get a valid_from from the autopilot handler");
+    let valid_from = valid_from_cell.get().unwrap();
 
     tracing::info!("Waiting for the fast-path settlement.");
     wait_for_condition(TIMEOUT, || async {

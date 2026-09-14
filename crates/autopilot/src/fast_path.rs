@@ -1,12 +1,31 @@
-//! Handles a fast-path order the moment it lands: computes the applicable
-//! fee policies, promotes the staged quote competition into the permanent
-//! competition tables, and hands the resulting `/settle` request to a
-//! [`SettleCallCoordinator`].
+//! Handles a fast-path order the moment it lands: decides whether to
+//! attempt an out-of-competition settlement via the driver's `/settle`
+//! or to fall through to the next regular auction, and populates the
+//! order's `valid_from` accordingly.
+//!
+//! The autopilot owns `valid_from` on every fast-path order. The
+//! orderbook / on-chain indexer just record `orders.fast_path = true`
+//! at placement; the row stays `NOT (fast_path AND valid_from IS NULL)`
+//! excluded from the solvable-orders cache until this handler writes
+//! the timestamp.
+//!
+//! Three cases:
+//! - No exclusivity configured (feature disabled at runtime): write
+//!   `valid_from = now()` so the order flows straight into the next
+//!   regular auction.
+//! - No staged quote competition (e.g. an ethflow fast-path order that
+//!   never went through the quoter) or the fee-adjusted limit check
+//!   fails: same, `valid_from = now()`. The caller still opted into
+//!   fast-path treatment, but the autopilot can't honour it.
+//! - Otherwise: write `valid_from = now + exclusivity` and initiate
+//!   the fast-path settlement.
 //!
 //! [`FastPathHandler::spawn`] wires the handler up to an
 //! `mpsc::UnboundedReceiver<OrderUid>` fed by the DB order notifier
 //! (`infra::order_notify::fast_path::FastPathNotifier`), so the handler
-//! runs independently of the regular auction run loop.
+//! runs independently of the regular auction run loop. On start
+//! [`FastPathHandler::scan_pending_orders`] re-drives the handler for
+//! orders whose notification landed while the process was down.
 
 use {
     crate::{
@@ -22,11 +41,12 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::Context,
     bigdecimal::BigDecimal,
+    configs::fee_factor::FeeFactor,
     database::byte_array::ByteArray,
     futures::{StreamExt, channel::mpsc},
     model::order::OrderKind,
     number::conversions::u256_to_big_decimal,
-    std::sync::Arc,
+    std::{sync::Arc, time::Duration},
     tracing::{Instrument, instrument},
 };
 
@@ -38,9 +58,15 @@ pub struct FastPathHandler {
     surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
     settle_coordinator: Arc<SettleCallCoordinator>,
     submission_deadline: u64,
+    /// How long the fast-path settle attempt gets exclusive rights to
+    /// the order. `None` disables fast-path settlement — orders are
+    /// still classified (so `valid_from` gets written) but never sent
+    /// to the driver's `/settle`.
+    default_fast_path_exclusivity: Option<Duration>,
 }
 
 impl FastPathHandler {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         eth: infra::Ethereum,
         persistence: infra::Persistence,
@@ -49,6 +75,7 @@ impl FastPathHandler {
         surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
         settle_coordinator: Arc<SettleCallCoordinator>,
         submission_deadline: u64,
+        default_fast_path_exclusivity: Option<Duration>,
     ) -> Arc<Self> {
         Arc::new(Self {
             eth,
@@ -58,39 +85,164 @@ impl FastPathHandler {
             surplus_capturing_jit_order_owners,
             settle_coordinator,
             submission_deadline,
+            default_fast_path_exclusivity,
         })
     }
 
-    /// Spawns the fast-path listener: pulls order uids off `receiver`, looks
-    /// each one up in `quote_competitions`, and — if a row exists for a yet
-    /// to be finalized fast-path order — dispatches to [`Self::handle`] on a
-    /// fresh task so a slow handler run never blocks subsequent orders.
+    /// Spawns the fast-path listener: pulls order uids off `receiver`
+    /// and dispatches each one on a fresh task so a slow handler run
+    /// never blocks subsequent orders.
     pub fn spawn(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<domain::OrderUid>) {
         tokio::spawn(async move {
             while let Some(order_uid) = receiver.next().await {
-                let this = self.clone();
-                tokio::spawn(
-                    async move {
-                        match this.persistence.fast_path_order(order_uid).await {
-                            // Not a fast-path order — nothing to do.
-                            Ok(None) => {}
-                            Err(err) => {
-                                tracing::error!(?err, "failed to look up fast path order")
-                            }
-                            Ok(Some(order)) => this.handle(order).await,
-                        };
-                    }
-                    .instrument(tracing::info_span!("fast_path", ?order_uid)),
-                );
+                self.clone().dispatch(order_uid);
             }
         });
     }
 
-    /// Handles a fast-path order. Picks a final submission deadline in the
-    /// exclusivity period and instructs the winning solver to settle
-    /// directly and outside the regular auction.
+    /// Re-drives the handler for every pending fast-path order the DB
+    /// knows about. Meant to run once on startup so orders whose
+    /// `new_order` notification was missed (autopilot was down when the
+    /// insert committed) still get classified.
+    pub async fn scan_pending_orders(self: &Arc<Self>) {
+        let uids = match self.persistence.pending_fast_path_order_uids().await {
+            Ok(uids) => uids,
+            Err(err) => {
+                tracing::error!(?err, "failed to fetch pending fast-path orders on startup");
+                return;
+            }
+        };
+        if !uids.is_empty() {
+            tracing::info!(count = uids.len(), "re-driving pending fast-path orders");
+        }
+        for uid in uids {
+            self.clone().dispatch(uid);
+        }
+    }
+
+    fn dispatch(self: Arc<Self>, order_uid: domain::OrderUid) {
+        tokio::spawn(
+            async move {
+                self.handle(order_uid).await;
+            }
+            .instrument(tracing::info_span!("fast_path", ?order_uid)),
+        );
+    }
+
+    /// Classifies a single fast-path order. See the module docs for the
+    /// three cases.
     #[instrument(skip_all)]
-    pub async fn handle(&self, fast_path_data: FastPathOrder) {
+    async fn handle(&self, order_uid: domain::OrderUid) {
+        let now = model::time::now_in_epoch_seconds() as i64;
+
+        // Try to line up a fast-path settle. If any prerequisite is
+        // missing we still need to write `valid_from` so the order
+        // can enter the next regular auction.
+        let settle_attempt = self.prepare_fast_path_settle(order_uid).await;
+
+        let valid_from = match (self.default_fast_path_exclusivity, &settle_attempt) {
+            (Some(exclusivity), Some(_)) => now + exclusivity.as_secs().cast_signed(),
+            _ => now,
+        };
+
+        if let Err(err) = self
+            .persistence
+            .set_order_valid_from(order_uid, valid_from)
+            .await
+        {
+            tracing::error!(?err, "failed to set valid_from on fast-path order");
+            return;
+        }
+
+        if let Some(attempt) = settle_attempt {
+            self.execute_fast_path_settle(attempt).await;
+        }
+    }
+
+    /// Loads the staged quote competition and runs the same fee-adjusted
+    /// limit-price check the orderbook enforces at placement. Returns
+    /// `None` when the order isn't eligible for a fast-path settle —
+    /// feature disabled, no staged competition (ethflow), or the check
+    /// fails. Callers use `Some` as the signal to actually attempt the
+    /// settle and to extend `valid_from`.
+    async fn prepare_fast_path_settle(
+        &self,
+        order_uid: domain::OrderUid,
+    ) -> Option<FastPathSettleAttempt> {
+        // Feature disabled: skip the DB lookup entirely.
+        self.default_fast_path_exclusivity?;
+
+        let fast_path_data = match self.persistence.fast_path_order(order_uid).await {
+            Ok(Some(data)) => data,
+            Ok(None) => {
+                // Either not a pending fast-path order at all or no
+                // staged competition (ethflow). Nothing to settle out
+                // of band.
+                return None;
+            }
+            Err(err) => {
+                tracing::error!(?err, "failed to look up staged fast-path competition");
+                return None;
+            }
+        };
+
+        // Volume-only: fast-path settles at the quoted price, so any
+        // policy that requires a surplus baseline doesn't apply.
+        let volume_fee_policies: Vec<_> = self
+            .protocol_fees
+            .apply(
+                &fast_path_data.model_order,
+                None,
+                &self.surplus_capturing_jit_order_owners,
+            )
+            .into_iter()
+            .filter(|p| matches!(p, domain::fee::Policy::Volume { .. }))
+            .collect();
+
+        let factors = volume_fee_policies
+            .iter()
+            .filter_map(|policy| match policy {
+                domain::fee::Policy::Volume { factor } => Some(*factor),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let winner = fast_path_data.winner();
+        if shared::fee::check_fast_path_limit_fits(
+            fast_path_data.model_order.data.kind,
+            fast_path_data.model_order.data.sell_amount,
+            fast_path_data.model_order.data.buy_amount,
+            winner.quoted_sell,
+            winner.quoted_buy,
+            factors.iter().copied(),
+        )
+        .is_err()
+        {
+            tracing::info!(
+                ?order_uid,
+                "fast-path limit check failed; falling through to regular auction"
+            );
+            Metrics::fast_path_limit_too_tight();
+            return None;
+        }
+
+        Some(FastPathSettleAttempt {
+            fast_path_data,
+            volume_fee_policies,
+            _factors: factors,
+        })
+    }
+
+    /// Promotes the staged competition, hands the `/settle` request to
+    /// the driver, and records the outcome. Runs after `valid_from`
+    /// has already been extended past the exclusivity window.
+    async fn execute_fast_path_settle(&self, attempt: FastPathSettleAttempt) {
+        let FastPathSettleAttempt {
+            fast_path_data,
+            volume_fee_policies,
+            _factors: _,
+        } = attempt;
+
         let winning_solver = fast_path_data.winner().solver;
         let Some(winner) = self
             .drivers
@@ -117,7 +269,12 @@ impl FastPathHandler {
         let deadline = current_block + self.submission_deadline;
 
         let final_execution = match self
-            .compute_and_persist_final_execution(&fast_path_data, current_block, deadline)
+            .compute_and_persist_final_execution(
+                &fast_path_data,
+                &volume_fee_policies,
+                current_block,
+                deadline,
+            )
             .await
         {
             Ok(execution) => execution,
@@ -156,39 +313,20 @@ impl FastPathHandler {
         };
     }
 
-    /// Computes the fee policies the order would receive in a regular
-    /// auction, adjusts every staged solution's bid to reflect them,
+    /// Adjusts every staged solution's bid by the volume-fee policies,
     /// promotes the staged quote competition into the permanent
     /// `competition_auctions` / `proposed_solutions` /
-    /// `proposed_trade_executions` tables, and returns the fully-built
-    /// [`FinalOrderExecution`] the caller hands to the driver.
-    ///
-    /// In the fast path only volume-based fees make sense: no surplus over
-    /// the quote is expected. All bid adjustment and the assembly of the
-    /// resulting `domain::Order` happens here so the infra side is a
-    /// straight-line transaction of DB inserts and the caller has a single
-    /// value to forward.
+    /// `proposed_trade_executions` tables, and returns the
+    /// fully-built [`FinalOrderExecution`] the caller hands to the
+    /// driver.
     async fn compute_and_persist_final_execution(
         &self,
         fast_path_data: &FastPathOrder,
+        volume_fee_policies: &[domain::fee::Policy],
         block: u64,
         deadline: u64,
     ) -> anyhow::Result<FinalOrderExecution> {
         let order_uid: domain::OrderUid = fast_path_data.model_order.metadata.uid.into();
-        let volume_fee_policies: Vec<_> = self
-            .protocol_fees
-            .apply(
-                &fast_path_data.model_order,
-                None,
-                &self.surplus_capturing_jit_order_owners,
-            )
-            .into_iter()
-            // the fast path execution is strictly tied to promised amounts
-            // during quoting, only volume fees make sense under those
-            // conditions
-            .filter(|p| matches!(p, domain::fee::Policy::Volume { .. }))
-            .collect();
-
         let order_kind = fast_path_data.model_order.data.kind;
         let uid = ByteArray(order_uid.0);
         let sell_token = ByteArray(fast_path_data.staged.sell_token.0.0);
@@ -205,7 +343,7 @@ impl FastPathHandler {
                     solution.quoted_sell,
                     solution.quoted_buy,
                     order_kind,
-                    &volume_fee_policies,
+                    volume_fee_policies,
                 );
                 if solution.is_winner {
                     // keep the adjusted prices of the winner as those are the
@@ -258,13 +396,13 @@ impl FastPathHandler {
                 deadline,
                 native_prices: fast_path_data.staged.native_prices.clone(),
                 solutions: solution_rows,
-                fee_policies: volume_fee_policies.clone(),
+                fee_policies: volume_fee_policies.to_vec(),
             })
             .await?;
 
         let order = boundary::order::to_domain(
             &fast_path_data.model_order,
-            volume_fee_policies,
+            volume_fee_policies.to_vec(),
             None,
             None,
         );
@@ -274,6 +412,18 @@ impl FastPathHandler {
             limit_buy,
         })
     }
+}
+
+/// Bundle of everything the settle path needs; computed by
+/// [`FastPathHandler::prepare_fast_path_settle`] once we know the order
+/// clears the limit-price check.
+struct FastPathSettleAttempt {
+    fast_path_data: FastPathOrder,
+    volume_fee_policies: Vec<domain::fee::Policy>,
+    /// Kept for symmetry — the factors are already baked into
+    /// `volume_fee_policies`; the field is here so the limit-check math
+    /// happens exactly once per handler run.
+    _factors: Vec<FeeFactor>,
 }
 
 /// Output of the fee-policy computation and bid-adjustment step of the
@@ -294,6 +444,10 @@ struct Metrics {
     /// Tracks the outcome of fast-path settlements.
     #[metric(labels("driver", "result"))]
     fast_path_executions: prometheus::IntCounterVec,
+    /// Incremented when the fast-path limit-price check would have
+    /// rejected the order at settle time, so we fell through to the
+    /// regular auction instead of attempting the fast-path.
+    fast_path_limit_too_tight: prometheus::IntCounter,
 }
 
 impl Metrics {
@@ -307,6 +461,10 @@ impl Metrics {
             .fast_path_executions
             .with_label_values(&[solver, result])
             .inc();
+    }
+
+    fn fast_path_limit_too_tight() {
+        Self::get().fast_path_limit_too_tight.inc();
     }
 }
 

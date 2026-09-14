@@ -611,7 +611,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
             *eth.contracts().settlement().address(),
             eth.contracts().trampoline().clone(),
-            config.order_quoting.default_fast_path_exclusivity,
         );
 
         let ethflow_start_block = determine_ethflow_indexing_start(
@@ -671,7 +670,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         awaiter.clone(),
         run_loop_config.max_settlement_transaction_wait,
     ));
-    FastPathHandler::new(
+    let fast_path_handler = FastPathHandler::new(
         eth.clone(),
         persistence.clone(),
         drivers.clone(),
@@ -679,8 +678,13 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         surplus_capturing_jit_order_owners,
         settle_coordinator.clone(),
         run_loop_config.submission_deadline,
-    )
-    .spawn(fast_path_receiver);
+        config.order_quoting.default_fast_path_exclusivity,
+    );
+    // Re-drive orders that were persisted while the autopilot was down
+    // (their `new_order` notification will never fire) before we start
+    // listening for live notifications.
+    fast_path_handler.scan_pending_orders().await;
+    fast_path_handler.spawn(fast_path_receiver);
 
     let run = RunLoop::new(
         run_loop_config,

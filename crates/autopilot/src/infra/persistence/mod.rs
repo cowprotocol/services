@@ -1037,10 +1037,45 @@ impl Persistence {
             .collect())
     }
 
+    /// Sets `orders.valid_from` for a fast-path order the handler has
+    /// classified. Writing this column is what makes the order eligible
+    /// for the solvable-orders cache — either immediately (`now`, when
+    /// fast-path settle isn't going to fire) or delayed by the
+    /// exclusivity window.
+    pub async fn set_order_valid_from(
+        &self,
+        uid: domain::OrderUid,
+        valid_from: i64,
+    ) -> anyhow::Result<()> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["set_order_valid_from"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        database::orders::set_valid_from(&mut ex, &ByteArray(uid.0), valid_from).await?;
+        Ok(())
+    }
+
+    /// UIDs of every fast-path order whose `valid_from` has not been
+    /// set yet. Called on autopilot startup to re-drive the handler for
+    /// orders whose `new_order` notification landed while the process
+    /// was down.
+    pub async fn pending_fast_path_order_uids(&self) -> anyhow::Result<Vec<domain::OrderUid>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["pending_fast_path_order_uids"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let uids = database::orders::pending_fast_path_uids(&mut ex).await?;
+        Ok(uids.into_iter().map(|uid| domain::OrderUid(uid.0)).collect())
+    }
+
     /// Recovers what's needed to settle a fast-path order via the driver's
-    /// `/settle`, or `None` when `uid` is not a fast-path order (either no
-    /// linked `order_quotes.quote_id`, or the staged competition data has
-    /// already been moved into the permanent tables).
+    /// `/settle`, or `None` when `uid` is either no longer a pending
+    /// fast-path order (handler already classified it) or lacks the
+    /// staged quote competition needed to settle out of band (e.g. an
+    /// ethflow order — the handler still needs to mark it eligible for
+    /// the regular auction by writing `valid_from`).
     pub async fn fast_path_order(
         &self,
         uid: domain::OrderUid,

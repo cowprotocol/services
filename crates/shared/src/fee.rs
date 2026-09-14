@@ -173,12 +173,13 @@ pub fn apply_volume_fee(sell: U256, buy: U256, kind: OrderKind, factor: FeeFacto
 pub struct FastPathLimitTooTight;
 
 /// Verifies that the signed sell/buy amounts leave enough room for the
-/// compounded protocol + partner volume fees that would be applied at
-/// fast-path settlement time.
+/// compounded volume fees that would be applied at fast-path settlement
+/// time.
 ///
-/// The check applies each `factor` to the quoted amounts in order, then
-/// compares the resulting `(adjusted_sell, adjusted_buy)` against the
-/// signed limit price:
+/// `factors` are compounded in order — callers assemble the sequence
+/// they expect the autopilot to actually charge (protocol volume fee
+/// first, then capped partner fees). The check compares the resulting
+/// `(adjusted_sell, adjusted_buy)` against the signed limit price:
 /// - Sell orders: the signed minimum `buy_amount` must not exceed the
 ///   fee-adjusted buy (fees reduce what the trader receives).
 /// - Buy orders: the signed maximum `sell_amount` must not be smaller
@@ -193,15 +194,14 @@ pub fn check_fast_path_limit_fits(
     signed_buy: U256,
     quoted_sell: U256,
     quoted_buy: U256,
-    protocol_factor: Option<FeeFactor>,
-    partner_factors: &[FeeFactor],
+    factors: impl IntoIterator<Item = FeeFactor>,
 ) -> Result<(), FastPathLimitTooTight> {
-    let (adjusted_sell, adjusted_buy) = protocol_factor
-        .into_iter()
-        .chain(partner_factors.iter().copied())
-        .fold((quoted_sell, quoted_buy), |(sell, buy), factor| {
-            apply_volume_fee(sell, buy, kind, factor)
-        });
+    let (adjusted_sell, adjusted_buy) =
+        factors
+            .into_iter()
+            .fold((quoted_sell, quoted_buy), |(sell, buy), factor| {
+                apply_volume_fee(sell, buy, kind, factor)
+            });
 
     let fits = match kind {
         OrderKind::Sell => signed_buy <= adjusted_buy,

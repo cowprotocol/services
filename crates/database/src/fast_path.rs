@@ -106,8 +106,11 @@ pub struct FastPathOrder {
 }
 
 /// Recovers what's needed for the autopilot to finalize the fast path
-/// data and intiate the settlement. Returns `None` if order is not a
-/// fast path order or if it has already been handled.
+/// data and intiate the settlement. Returns `None` when the order is
+/// not a pending fast-path order (either not marked `fast_path`, or
+/// `valid_from` has already been populated by the handler) or when it
+/// lacks the staged quote competition needed to actually settle out of
+/// band (e.g. ethflow orders that don't go through the quoter).
 #[instrument(skip_all)]
 pub async fn unfinalized_fast_path_order(
     ex: &mut PgConnection,
@@ -130,7 +133,7 @@ pub async fn unfinalized_fast_path_order(
         " JOIN order_quotes oq ON oq.order_uid = o.uid",
         " JOIN quote_competitions qc ON qc.quote_id = oq.quote_id",
         " LEFT JOIN app_data ad ON ad.contract_app_data = o.app_data",
-        " WHERE o.uid = $1",
+        " WHERE o.uid = $1 AND o.fast_path AND o.valid_from IS NULL",
         " LIMIT 1",
     );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await

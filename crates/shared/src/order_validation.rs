@@ -545,8 +545,7 @@ impl OrderValidator {
             data.buy_amount,
             quote.sell_amount,
             quote.buy_amount,
-            protocol_factor,
-            &partner_factors,
+            protocol_factor.into_iter().chain(partner_factors),
         )
         .map_err(|_| ValidationError::FastPathLimitTooTight)
     }
@@ -738,8 +737,8 @@ impl OrderValidator {
         quote: Option<&Quote>,
         order: &OrderData,
     ) -> Result<Option<u32>, ValidationError> {
-        let valid_from = if app_data.inner.protocol.enable_fast_path {
-            let Some(exclusivity) = self.default_fast_path_exclusivity else {
+        if app_data.inner.protocol.enable_fast_path {
+            let Some(_exclusivity) = self.default_fast_path_exclusivity else {
                 return Err(ValidationError::FastPathDisabled);
             };
             let Some(quote) = quote else {
@@ -753,15 +752,16 @@ impl OrderValidator {
             // solver would be blamed for a failure they had no way to
             // avoid. Reject at placement instead.
             self.check_fast_path_limit_price_fits(order, quote, &app_data.inner)?;
-            app_data
-                .inner
-                .protocol
-                .valid_from
-                .or_else(|| Some(time::now_in_epoch_seconds() + exclusivity.as_secs() as u32))
-        } else {
-            app_data.inner.protocol.valid_from
-        };
+            // The autopilot's fast-path handler owns `valid_from` for
+            // these orders (see `crates/autopilot/src/fast_path.rs`); the
+            // orderbook writes `NULL` so the handler can classify the
+            // order after placement.
+            return Ok(None);
+        }
 
+        // Non-fast-path orders may still declare `valid_from` explicitly
+        // in app-data.
+        let valid_from = app_data.inner.protocol.valid_from;
         if let Some(valid_from) = valid_from {
             let min = self.validity_configuration.min.as_secs();
             if u64::from(order.valid_to) < u64::from(valid_from) + min {
