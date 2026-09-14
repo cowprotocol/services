@@ -113,6 +113,25 @@ impl SolanaRPC {
         })
     }
 
+    /// Whether each signature exists on the node's chain. The lookup falls
+    /// back to the ledger history when a signature is past the recent-status
+    /// cache, so `false` means the transaction never landed or was rolled
+    /// back, not merely that it aged out. A status of any commitment level
+    /// counts as existing: the question here is presence, not finality.
+    pub async fn known_signatures(&self, signatures: &[Signature]) -> Result<Vec<bool>, Error> {
+        // getSignatureStatuses rejects calls with more than 256 signatures.
+        const CHUNK: usize = 256;
+        let mut known = Vec::with_capacity(signatures.len());
+        for chunk in signatures.chunks(CHUNK) {
+            let response = self
+                .inner
+                .get_signature_statuses_with_history(chunk)
+                .await?;
+            known.extend(response.value.into_iter().map(|status| status.is_some()));
+        }
+        Ok(known)
+    }
+
     /// Simulate a versioned transaction without sending it. Returns the
     /// simulation result including logs and any error.
     pub async fn simulate_transaction(
