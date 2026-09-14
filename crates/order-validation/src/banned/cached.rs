@@ -127,17 +127,21 @@ impl Cached {
 
     /// Caches `verdict`, reporting bans the cache did not already know about.
     fn store(&self, address: Address, verdict: Verdict) {
-        let known = self
-            .cache
-            .get(&address)
-            .map(|entry| entry.verdict)
-            .unwrap_or(Verdict::NotBanned);
+        let known = self.known(&address);
         for backend in verdict.banned_by() {
             if !known.banned_by().contains(backend) {
                 Metrics::detected(backend);
             }
         }
         self.cache.insert(address, Entry::new(verdict));
+    }
+
+    /// The cached verdict for `address`, [`Verdict::NotBanned`] when absent.
+    fn known(&self, address: &Address) -> Verdict {
+        self.cache
+            .get(address)
+            .map(|entry| entry.verdict)
+            .unwrap_or(Verdict::NotBanned)
     }
 
     /// Publishes how many cached addresses each backend currently bans. One
@@ -155,25 +159,30 @@ impl Cached {
         }
     }
 
-    /// [`Verdict::Banned`] as soon as any backend confirms a ban, since a
-    /// failure elsewhere must not mask a positive hit. [`Verdict::Unknown`]
-    /// means no confirmation and at least one failure.
+    /// [`Verdict::Banned`] once any backend confirms a ban: a failure elsewhere
+    /// neither masks the hit nor revokes that backend's cached credit, only an
+    /// explicit "not banned" does. [`Verdict::Unknown`]: no hit, some failure.
     async fn fetch_all(&self, address: Address) -> Verdict {
         let results = join_all(self.backends.iter().map(|b| fetch_one(b.as_ref(), address))).await;
-        let banned_by: Vec<_> = self
+        if !results.contains(&Some(true)) {
+            return if results.contains(&None) {
+                Verdict::Unknown
+            } else {
+                Verdict::NotBanned
+            };
+        }
+        let known = self.known(&address);
+        let banned_by = self
             .backends
             .iter()
             .zip(&results)
-            .filter(|(_, result)| matches!(result, Some(true)))
+            .filter(|(backend, result)| match result {
+                Some(banned) => *banned,
+                None => known.banned_by().contains(&backend.name()),
+            })
             .map(|(backend, _)| backend.name())
             .collect();
-        if !banned_by.is_empty() {
-            Verdict::Banned(banned_by)
-        } else if results.iter().any(Option::is_none) {
-            Verdict::Unknown
-        } else {
-            Verdict::NotBanned
-        }
+        Verdict::Banned(banned_by)
     }
 
     /// Walks the cache once, returning the entries due for a refresh: those
@@ -263,9 +272,20 @@ mod tests {
 
     struct FlakyBackend {
         name: &'static str,
-        banned: bool,
+        banned: Arc<AtomicBool>,
         calls: Arc<AtomicUsize>,
         fail: Arc<AtomicBool>,
+    }
+
+    impl FlakyBackend {
+        fn new(name: &'static str, banned: bool) -> Self {
+            Self {
+                name,
+                banned: Arc::new(AtomicBool::new(banned)),
+                calls: Default::default(),
+                fail: Default::default(),
+            }
+        }
     }
 
     #[async_trait]
@@ -279,7 +299,7 @@ mod tests {
                     ),
                 ))
             } else {
-                Ok(self.banned)
+                Ok(self.banned.load(Ordering::SeqCst))
             }
         }
 
@@ -289,28 +309,17 @@ mod tests {
     }
 
     fn setup(fail: bool) -> (Arc<Cached>, Arc<AtomicUsize>, Arc<AtomicBool>) {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let failing = Arc::new(AtomicBool::new(fail));
-        let backend = FlakyBackend {
-            name: "flaky",
-            banned: false,
-            calls: calls.clone(),
-            fail: failing.clone(),
-        };
+        let backend = FlakyBackend::new("flaky", false);
+        backend.fail.store(fail, Ordering::SeqCst);
+        let (calls, failing) = (backend.calls.clone(), backend.fail.clone());
         let cached = Cached::new(vec![Box::new(backend)], 100).unwrap();
         (cached, calls, failing)
     }
 
     #[tokio::test]
     async fn every_reporting_backend_is_credited() {
-        let backend = |name, banned| -> Box<dyn Backend> {
-            Box::new(FlakyBackend {
-                name,
-                banned,
-                calls: Default::default(),
-                fail: Default::default(),
-            })
-        };
+        let backend =
+            |name, banned| -> Box<dyn Backend> { Box::new(FlakyBackend::new(name, banned)) };
         let cached = Cached::new(
             vec![backend("a", true), backend("b", false), backend("c", true)],
             100,
@@ -319,6 +328,44 @@ mod tests {
 
         let verdict = cached.fetch_all(Address::repeat_byte(1)).await;
         assert_eq!(verdict.banned_by(), ["a", "c"]);
+    }
+
+    /// A backend whose refresh fails while another still confirms the ban
+    /// keeps its credit, so a transient error neither drops it from the entry
+    /// nor detects it a second time once it recovers.
+    #[tokio::test]
+    async fn failed_refresh_keeps_attribution() {
+        let chainalysis = FlakyBackend::new("chainalysis", true);
+        let (fail, banned) = (chainalysis.fail.clone(), chainalysis.banned.clone());
+        let hermod = FlakyBackend::new("hermod", true);
+        let cached = Cached::new(vec![Box::new(chainalysis), Box::new(hermod)], 100).unwrap();
+        let address = Address::repeat_byte(1);
+        let banned_by = || cached.known(&address).banned_by().to_vec();
+        let refresh = || async {
+            let (address, verdict) = cached.refresh(address).await.unwrap();
+            cached.store(address, verdict);
+        };
+        let detected = Metrics::detected_count("chainalysis");
+
+        cached.check(&HashSet::from([address])).await;
+        assert_eq!(banned_by(), ["chainalysis", "hermod"]);
+        assert_eq!(Metrics::detected_count("chainalysis"), detected + 1);
+
+        // Chainalysis errors while hermod still confirms the ban.
+        fail.store(true, Ordering::SeqCst);
+        refresh().await;
+        assert_eq!(banned_by(), ["chainalysis", "hermod"]);
+
+        // Chainalysis recovers with the same answer: nothing new to detect.
+        fail.store(false, Ordering::SeqCst);
+        refresh().await;
+        assert_eq!(banned_by(), ["chainalysis", "hermod"]);
+        assert_eq!(Metrics::detected_count("chainalysis"), detected + 1);
+
+        // Only an explicit "not banned" revokes the credit.
+        banned.store(false, Ordering::SeqCst);
+        refresh().await;
+        assert_eq!(banned_by(), ["hermod"]);
     }
 
     #[tokio::test]

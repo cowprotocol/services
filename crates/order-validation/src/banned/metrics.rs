@@ -75,6 +75,11 @@ impl Metrics {
         Self::get().detected.with_label_values(&[backend]).inc();
     }
 
+    #[cfg(test)]
+    pub(super) fn detected_count(backend: &str) -> u64 {
+        Self::get().detected.with_label_values(&[backend]).get()
+    }
+
     pub(super) fn currently_banned(backend: &str, count: usize) {
         Self::get()
             .currently_banned
