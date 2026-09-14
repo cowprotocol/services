@@ -15,12 +15,14 @@ pub(crate) async fn solve(
 ) -> Result<Json<dto::SolveResponse>, (StatusCode, Json<ApiError>)> {
     let auction = request.into_domain()?;
     let auction_id = auction.id.ok_or(dto::AuctionError::InvalidAuctionId)?;
-    // Temporary staging knob: sit out auctions off the configured stride so
-    // other solvers win settlements to test against.
+    // Temporary staging knob: take part in one solve out of every N so other
+    // solvers win settlements to test against. Counts the solves this driver
+    // receives, since the auction id is a timestamp that would alias the
+    // stride.
     if let Some(stride) = state.solve_every_nth_auction() {
-        let id = u64::try_from(auction_id.get()).expect("auction ids are positive");
-        if id % stride.get() != 0 {
-            tracing::debug!(%auction_id, %stride, "sitting out the auction");
+        let seq = state.next_solve_seq();
+        if seq % stride.get() != 0 {
+            tracing::debug!(%auction_id, %stride, seq, "sitting out the auction");
             return Ok(Json(dto::SolveResponse::new(Vec::new())));
         }
     }
