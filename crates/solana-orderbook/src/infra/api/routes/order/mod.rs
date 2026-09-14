@@ -16,7 +16,7 @@ pub async fn order(
     state: axum::extract::State<State>,
     extract::PathUid(uid): extract::PathUid,
 ) -> Result<Json<dto::Order>, error::Reply> {
-    let row = db::order_by_uid(state.pool(), uid)
+    let row = db::find_order_by_uid(state.pool(), uid)
         .await
         .map_err(|err| {
             tracing::error!(?err, "order lookup failed");

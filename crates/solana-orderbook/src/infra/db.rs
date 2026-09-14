@@ -34,7 +34,7 @@ pub struct OrderRow {
 }
 
 /// Read one order with its fill state. `None` when the uid is unknown.
-pub async fn order_by_uid(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<Option<OrderRow>> {
+pub async fn find_order_by_uid(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<Option<OrderRow>> {
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
@@ -55,7 +55,7 @@ WHERE o.uid = $1 AND NOT COALESCE(p.is_reorged, false)
 }
 
 /// A page of one owner's orders with their fill state, newest first.
-pub async fn orders_by_owner(
+pub async fn get_orders_by_owner(
     ex: impl PgExecutor<'_>,
     owner: [u8; 32],
     offset: i64,
@@ -102,7 +102,7 @@ pub struct TradeRow {
 /// and `limit`. The slot comes from any settlement row of the transaction
 /// because the slot is constant per transaction. A trade whose order row is
 /// not indexed yet is omitted until the order lands.
-pub async fn trades(
+pub async fn get_trades(
     ex: impl PgExecutor<'_>,
     order_uid: Option<[u8; 32]>,
     owner: Option<[u8; 32]>,
@@ -219,7 +219,7 @@ pub struct SponsoredCreation {
 
 /// The sponsored creation of an order. `None` when the uid is unknown or
 /// the order was not placed through the sponsored path.
-pub async fn sponsored_creation(
+pub async fn find_sponsored_creation(
     ex: impl PgExecutor<'_>,
     uid: [u8; 32],
 ) -> Result<Option<SponsoredCreation>> {
@@ -235,7 +235,7 @@ pub async fn sponsored_creation(
 }
 
 /// The label of the order's most recent auction-progress event.
-pub async fn latest_order_event(
+pub async fn find_latest_order_event(
     ex: impl PgExecutor<'_>,
     uid: [u8; 32],
 ) -> Result<Option<OrderEventLabel>> {
@@ -324,13 +324,13 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             .unwrap();
         }
 
-        let page = orders_by_owner(&pool, [0xAA; 32], 0, 10).await.unwrap();
+        let page = get_orders_by_owner(&pool, [0xAA; 32], 0, 10).await.unwrap();
         let uids: Vec<_> = page.iter().map(|row| row.uid).collect();
         assert_eq!(uids, vec![ByteArray([0x11; 32]), ByteArray([0x12; 32])]);
         assert_eq!(page[0].amount_withdrawn, BigDecimal::from(400));
         assert_eq!(page[1].amount_withdrawn, BigDecimal::from(0));
 
-        let second = orders_by_owner(&pool, [0xAA; 32], 1, 1).await.unwrap();
+        let second = get_orders_by_owner(&pool, [0xAA; 32], 1, 1).await.unwrap();
         assert_eq!(second.len(), 1);
         assert_eq!(second[0].uid, ByteArray([0x12; 32]));
     }
@@ -364,7 +364,10 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         };
         insert_sponsored_order(&pool, &order).await.unwrap();
 
-        let creation = sponsored_creation(&pool, order.uid).await.unwrap().unwrap();
+        let creation = find_sponsored_creation(&pool, order.uid)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(creation.presigned_transaction, vec![0xC0; 128]);
         assert_eq!(creation.last_valid_block_height, 12_345);
         let events: Vec<(Vec<u8>, OrderEventLabel)> =
@@ -385,7 +388,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
 
         // An order indexed from chain has no sponsored creation.
         assert!(
-            sponsored_creation(&pool, [0x99; 32])
+            find_sponsored_creation(&pool, [0x99; 32])
                 .await
                 .unwrap()
                 .is_none()
@@ -399,17 +402,22 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         let uid = [0x11; 32];
         seed(&pool, uid, false).await;
 
-        let row = order_by_uid(&pool, uid).await.unwrap().unwrap();
+        let row = find_order_by_uid(&pool, uid).await.unwrap().unwrap();
         assert_eq!(row.uid, ByteArray(uid));
         assert_eq!(row.kind, OrderKind::Sell);
         assert_eq!(row.amount_withdrawn, BigDecimal::from(400));
         assert_eq!(row.amount_received, BigDecimal::from(0));
         assert!(row.cancellation_timestamp.is_none());
 
-        assert!(order_by_uid(&pool, [0x99; 32]).await.unwrap().is_none());
+        assert!(
+            find_order_by_uid(&pool, [0x99; 32])
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         seed(&pool, uid, true).await;
-        let row = order_by_uid(&pool, uid).await.unwrap().unwrap();
+        let row = find_order_by_uid(&pool, uid).await.unwrap().unwrap();
         assert!(row.cancellation_timestamp.is_some());
     }
 
@@ -425,7 +433,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             .unwrap();
 
         assert!(!order_has_trade(&pool, uid).await.unwrap());
-        assert!(latest_order_event(&pool, uid).await.unwrap().is_none());
+        assert!(find_latest_order_event(&pool, uid).await.unwrap().is_none());
 
         for (at, label) in [(1, OrderEventLabel::Ready), (2, OrderEventLabel::Executing)] {
             sqlx::query(
@@ -440,7 +448,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             .unwrap();
         }
         assert_eq!(
-            latest_order_event(&pool, uid).await.unwrap(),
+            find_latest_order_event(&pool, uid).await.unwrap(),
             Some(OrderEventLabel::Executing)
         );
 
@@ -480,17 +488,19 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         .await
         .unwrap();
 
-        let by_uid = trades(&pool, Some(uid), None, 0, 10).await.unwrap();
+        let by_uid = get_trades(&pool, Some(uid), None, 0, 10).await.unwrap();
         assert_eq!(by_uid.len(), 1);
         assert_eq!(by_uid[0].slot, Some(42));
         assert_eq!(by_uid[0].instruction_index, 1);
         assert_eq!(by_uid[0].sell_amount, BigDecimal::from(400));
 
-        let by_owner = trades(&pool, None, Some([0xAA; 32]), 0, 10).await.unwrap();
+        let by_owner = get_trades(&pool, None, Some([0xAA; 32]), 0, 10)
+            .await
+            .unwrap();
         assert_eq!(by_owner.len(), 1);
 
         assert!(
-            trades(&pool, Some([0x99; 32]), None, 0, 10)
+            get_trades(&pool, Some([0x99; 32]), None, 0, 10)
                 .await
                 .unwrap()
                 .is_empty()
@@ -515,14 +525,14 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         .execute(&pool)
         .await
         .unwrap();
-        let first = trades(&pool, Some(uid), None, 0, 1).await.unwrap();
+        let first = get_trades(&pool, Some(uid), None, 0, 1).await.unwrap();
         assert_eq!(first.len(), 1);
         assert_eq!(first[0].slot, Some(43));
-        let second = trades(&pool, Some(uid), None, 1, 1).await.unwrap();
+        let second = get_trades(&pool, Some(uid), None, 1, 1).await.unwrap();
         assert_eq!(second.len(), 1);
         assert_eq!(second[0].slot, Some(42));
         assert!(
-            trades(&pool, Some(uid), None, 2, 1)
+            get_trades(&pool, Some(uid), None, 2, 1)
                 .await
                 .unwrap()
                 .is_empty()
