@@ -182,8 +182,8 @@ pub struct FastPathLimitTooTight;
 /// `(adjusted_sell, adjusted_buy)` against the signed limit price:
 /// - Sell orders: the signed minimum `buy_amount` must not exceed the
 ///   fee-adjusted buy (fees reduce what the trader receives).
-/// - Buy orders: the signed maximum `sell_amount` must not be smaller
-///   than the fee-adjusted sell (fees inflate what the trader pays).
+/// - Buy orders: the signed maximum `sell_amount` must not be smaller than the
+///   fee-adjusted sell (fees inflate what the trader pays).
 ///
 /// Kept in this crate so both the orderbook (placement-time rejection)
 /// and the autopilot (fast-path handler classification) go through
@@ -196,12 +196,11 @@ pub fn check_fast_path_limit_fits(
     quoted_buy: U256,
     factors: impl IntoIterator<Item = FeeFactor>,
 ) -> Result<(), FastPathLimitTooTight> {
-    let (adjusted_sell, adjusted_buy) =
-        factors
-            .into_iter()
-            .fold((quoted_sell, quoted_buy), |(sell, buy), factor| {
-                apply_volume_fee(sell, buy, kind, factor)
-            });
+    let (adjusted_sell, adjusted_buy) = factors
+        .into_iter()
+        .fold((quoted_sell, quoted_buy), |(sell, buy), factor| {
+            apply_volume_fee(sell, buy, kind, factor)
+        });
 
     let fits = match kind {
         OrderKind::Sell => signed_buy <= adjusted_buy,

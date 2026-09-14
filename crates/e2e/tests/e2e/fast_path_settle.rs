@@ -37,14 +37,12 @@ use {
     std::time::Duration,
 };
 
-/// Sets `default_fast_path_exclusivity` on both configs' shared `OrderQuoting`
-/// so the orderbook (API path) and autopilot (on-chain path) apply the same
-/// exclusivity when populating `valid_from` on fast-path orders.
-///
-/// Also mirrors `max_partner_fee` from the autopilot config onto the
-/// orderbook side (or vice-versa if only orderbook was preset) so the
-/// orderbook's fast-path limit-price check sizes partner fees the same way
-/// the autopilot would charge them.
+/// Sets `default_fast_path_exclusivity` on the autopilot side (the only
+/// consumer of that field: the orderbook stopped reading it once the
+/// autopilot's fast-path handler took over ownership of `valid_from`).
+/// `max_partner_fee` is still mirrored onto the orderbook because its
+/// placement-time limit-price check needs to size partner fees the same
+/// way the autopilot would charge them at settle time.
 fn with_fast_path_exclusivity(
     autopilot: AutopilotConfiguration,
     orderbook: configs::orderbook::Configuration,
@@ -65,7 +63,6 @@ fn with_fast_path_exclusivity(
     };
     let orderbook = configs::orderbook::Configuration {
         order_quoting: OrderQuoting {
-            default_fast_path_exclusivity: Some(exclusivity),
             max_partner_fee,
             ..orderbook.order_quoting
         },

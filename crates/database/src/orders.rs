@@ -265,8 +265,8 @@ pub async fn is_pending_fast_path(
     ex: &mut PgConnection,
     uid: &OrderUid,
 ) -> Result<bool, sqlx::Error> {
-    const QUERY: &str = "SELECT EXISTS (SELECT 1 FROM orders WHERE uid = $1 AND fast_path AND \
-                         valid_from IS NULL)";
+    const QUERY: &str =
+        "SELECT EXISTS (SELECT 1 FROM orders WHERE uid = $1 AND fast_path AND valid_from IS NULL)";
     sqlx::query_scalar(QUERY).bind(uid).fetch_one(ex).await
 }
 
@@ -275,9 +275,7 @@ pub async fn is_pending_fast_path(
 /// whose Postgres notification was missed while the process was down.
 /// Backed by the partial index `orders_pending_fast_path`.
 #[instrument(skip_all)]
-pub async fn pending_fast_path_uids(
-    ex: &mut PgConnection,
-) -> Result<Vec<OrderUid>, sqlx::Error> {
+pub async fn pending_fast_path_uids(ex: &mut PgConnection) -> Result<Vec<OrderUid>, sqlx::Error> {
     const QUERY: &str = "SELECT uid FROM orders WHERE fast_path AND valid_from IS NULL";
     sqlx::query_scalar(QUERY).fetch_all(ex).await
 }

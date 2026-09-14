@@ -10,15 +10,14 @@
 //! the timestamp.
 //!
 //! Three cases:
-//! - No exclusivity configured (feature disabled at runtime): write
-//!   `valid_from = now()` so the order flows straight into the next
-//!   regular auction.
-//! - No staged quote competition (e.g. an ethflow fast-path order that
-//!   never went through the quoter) or the fee-adjusted limit check
-//!   fails: same, `valid_from = now()`. The caller still opted into
-//!   fast-path treatment, but the autopilot can't honour it.
-//! - Otherwise: write `valid_from = now + exclusivity` and initiate
-//!   the fast-path settlement.
+//! - No exclusivity configured (feature disabled at runtime): write `valid_from
+//!   = now()` so the order flows straight into the next regular auction.
+//! - No staged quote competition (e.g. an ethflow fast-path order that never
+//!   went through the quoter) or the fee-adjusted limit check fails: same,
+//!   `valid_from = now()`. The caller still opted into fast-path treatment, but
+//!   the autopilot can't honour it.
+//! - Otherwise: write `valid_from = now + exclusivity` and initiate the
+//!   fast-path settlement.
 //!
 //! [`FastPathHandler::spawn`] wires the handler up to an
 //! `mpsc::UnboundedReceiver<OrderUid>` fed by the DB order notifier

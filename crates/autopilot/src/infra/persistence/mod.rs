@@ -1067,7 +1067,10 @@ impl Persistence {
             .start_timer();
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
         let uids = database::orders::pending_fast_path_uids(&mut ex).await?;
-        Ok(uids.into_iter().map(|uid| domain::OrderUid(uid.0)).collect())
+        Ok(uids
+            .into_iter()
+            .map(|uid| domain::OrderUid(uid.0))
+            .collect())
     }
 
     /// Recovers what's needed to settle a fast-path order via the driver's
