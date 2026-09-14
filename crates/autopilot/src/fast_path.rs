@@ -23,7 +23,7 @@
 //! `mpsc::UnboundedReceiver<OrderUid>` fed by the DB order notifier
 //! (`infra::order_notify::fast_path::FastPathNotifier`), so the handler
 //! runs independently of the regular auction run loop. On start
-//! [`FastPathHandler::scan_pending_orders`] re-drives the handler for
+//! [`FastPathHandler::process_order_backlog`] re-drives the handler for
 //! orders whose notification landed while the process was down.
 
 use {
@@ -92,6 +92,7 @@ impl FastPathHandler {
     /// and dispatches each one on a fresh task so a slow handler run
     /// never blocks subsequent orders.
     pub fn spawn(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<domain::OrderUid>) {
+        tokio::spawn(self.clone().process_order_backlog());
         tokio::spawn(async move {
             while let Some(order_uid) = receiver.next().await {
                 self.clone().dispatch(order_uid);
@@ -99,11 +100,14 @@ impl FastPathHandler {
         });
     }
 
-    /// Re-drives the handler for every pending fast-path order the DB
-    /// knows about. Meant to run once on startup so orders whose
-    /// `new_order` notification was missed (autopilot was down when the
-    /// insert committed) still get classified.
-    pub async fn scan_pending_orders(self: &Arc<Self>) {
+    /// The autopilot is responsible for populating the `valid_from`
+    /// column in the orders table. Additionally fast path orders that
+    /// don't have a `valid_from` yet are not allowed to be part of
+    /// the auction. That means whenever there was a downtime or also
+    /// just during a regular restart the autopilot needs to process
+    /// the backlog of unfinalized orders which is what this function
+    /// is doing.
+    async fn process_order_backlog(self: Arc<Self>) {
         let uids = match self.persistence.pending_fast_path_order_uids().await {
             Ok(uids) => uids,
             Err(err) => {

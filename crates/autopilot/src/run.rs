@@ -680,10 +680,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         run_loop_config.submission_deadline,
         config.order_quoting.default_fast_path_exclusivity,
     );
-    // Re-drive orders that were persisted while the autopilot was down
-    // (their `new_order` notification will never fire) before we start
-    // listening for live notifications.
-    fast_path_handler.scan_pending_orders().await;
     fast_path_handler.spawn(fast_path_receiver);
 
     let run = RunLoop::new(
