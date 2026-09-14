@@ -10462,11 +10462,8 @@ dependencies = [
  "observe",
  "prometheus",
  "prometheus-metric-storage",
- "serde_json",
  "shared",
- "simulator",
  "strum",
- "testlib",
  "tokio",
  "tracing",
 ]

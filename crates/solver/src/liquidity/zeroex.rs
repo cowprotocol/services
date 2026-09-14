@@ -1,10 +1,8 @@
 use {
-    super::{LimitOrderExecution, LimitOrderId, LiquidityOrderId, SettlementHandling},
+    super::{LimitOrderId, LiquidityOrderId, SettlementHandling},
     crate::{
-        interactions::ZeroExInteraction,
         liquidity::{Exchange, LimitOrder, Liquidity},
         liquidity_collector::LiquidityCollecting,
-        settlement::SettlementEncoder,
     },
     alloy::primitives::{Address, U256},
     anyhow::Result,
@@ -195,22 +193,6 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-
-    fn encode(
-        &self,
-        execution: LimitOrderExecution,
-        encoder: &mut SettlementEncoder,
-    ) -> Result<()> {
-        let Ok(execution_filled) = u128::try_from(execution.filled) else {
-            anyhow::bail!("0x only supports executed amounts of size u128");
-        };
-        encoder.append_to_execution_plan(Arc::new(ZeroExInteraction {
-            taker_token_fill_amount: execution_filled,
-            order: self.order_record.order().clone(),
-            zeroex: self.zeroex.clone(),
-        }));
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -221,7 +203,6 @@ pub mod tests {
             base_tokens::BaseTokens,
             zeroex::{self, OrderMetadata},
         },
-        shared::{http_solver::model::InternalizationStrategy, interaction::Interaction},
     };
 
     fn get_relevant_pairs(token_a: Address, token_b: Address) -> HashSet<TokenPair> {
@@ -341,42 +322,5 @@ pub mod tests {
         // Second item in the list will be on the basis of
         // remaining_fillable_taker_amount
         assert_eq!(filtered_zeroex_orders[1].order().taker_amount, 10_000_000);
-    }
-
-    #[tokio::test]
-    async fn interaction_encoding() {
-        let sell_token = Address::with_last_byte(1);
-        let zeroex = Arc::new(IZeroex::Instance::new(
-            Default::default(),
-            ethrpc::mock::web3().provider,
-        ));
-        let order_record = OrderRecord::new(
-            zeroex::Order {
-                taker_amount: 100,
-                taker_token: sell_token,
-                ..Default::default()
-            },
-            OrderMetadata::default(),
-        );
-        let handler = OrderSettlementHandler {
-            order_record: order_record.clone(),
-            zeroex: zeroex.clone(),
-        };
-        let mut encoder = SettlementEncoder::default();
-        let execution = LimitOrderExecution::new(U256::from(100), U256::ZERO);
-        handler.encode(execution, &mut encoder).unwrap();
-        let [_, interactions, _] = encoder
-            .finish(InternalizationStrategy::SkipInternalizableInteraction)
-            .interactions
-            .into_array();
-        assert_eq!(
-            interactions,
-            [ZeroExInteraction {
-                order: order_record.order().clone(),
-                taker_token_fill_amount: 100,
-                zeroex: zeroex.clone(),
-            }
-            .encode()],
-        );
     }
 }
