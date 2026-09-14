@@ -95,7 +95,7 @@ impl FastPathHandler {
         tokio::spawn(self.clone().process_order_backlog());
         tokio::spawn(async move {
             while let Some(order_uid) = receiver.next().await {
-                self.clone().dispatch(order_uid);
+                self.clone().spawn_order_handler(order_uid);
             }
         });
     }
@@ -119,11 +119,11 @@ impl FastPathHandler {
             tracing::info!(count = uids.len(), "processing fast path order backlog");
         }
         for uid in uids {
-            self.clone().dispatch(uid);
+            self.clone().spawn_order_handler(uid);
         }
     }
 
-    fn dispatch(self: Arc<Self>, order_uid: domain::OrderUid) {
+    fn spawn_order_handler(self: Arc<Self>, order_uid: domain::OrderUid) {
         tokio::spawn(
             async move {
                 self.handle(order_uid).await;
