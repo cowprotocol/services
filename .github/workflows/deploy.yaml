@@ -93,10 +93,10 @@ jobs:
         with:
           cache-all-crates: true
           cache-workspace-crates: true
-          # shared-key is included in restore-key prefix matching, so it produces a
-          # branch-scoped fallback before falling back to any-branch caches.
-          # Restore order: same branch (most recent) → any branch (same Cargo.lock) → any branch.
-          shared-key: ${{ github.ref_name }}
+          # Always use whatever cache was last written for main
+          shared-key: main
+          # Only write to the cache if running on main
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build release binaries
         run: |

@@ -126,6 +126,11 @@ pub struct Solver {
     pub signer_keypair: PathBuf,
     /// Maximum number of concurrent solve requests kept in flight per solver.
     pub max_in_flight: NonZero<usize>,
+    /// Temporary staging knob: solve only auctions whose id is a multiple of
+    /// this value and sit the rest out, so other solvers win settlements to
+    /// test against. Absent means every auction.
+    #[serde(default)]
+    pub solve_every_nth_auction: Option<NonZero<u64>>,
 }
 
 #[cfg(test)]

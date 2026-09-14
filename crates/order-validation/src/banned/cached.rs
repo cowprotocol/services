@@ -79,6 +79,7 @@ impl Cached {
             backends,
             cache: Cache::builder().max_capacity(max_capacity).build(),
         });
+        Metrics::currently_banned(0);
         cached.spawn_maintenance_task();
         Some(cached)
     }
@@ -120,15 +121,18 @@ impl Cached {
     }
 
     /// Caches `verdict`, reporting a ban the cache did not already know about.
-    fn store(&self, address: Address, verdict: Verdict) {
+    /// Returns how the number of banned entries changed.
+    fn store(&self, address: Address, verdict: Verdict) -> i64 {
         let known_banned = self
             .cache
             .get(&address)
             .is_some_and(|entry| entry.verdict == Verdict::Banned);
-        if verdict == Verdict::Banned && !known_banned {
+        let banned = verdict == Verdict::Banned;
+        if banned && !known_banned {
             Metrics::detected();
         }
         self.cache.insert(address, Entry::new(verdict));
+        i64::from(banned) - i64::from(known_banned)
     }
 
     /// `Some(true)` as soon as any backend confirms a ban, since a failure
@@ -145,28 +149,27 @@ impl Cached {
         }
     }
 
-    /// Collects cache entries close enough to expiry that the next maintenance
-    /// tick may miss the window, plus [`Verdict::Unknown`] entries awaiting
-    /// a retry.
-    fn expired(&self, now: Instant) -> Vec<Arc<Address>> {
-        self.cache
-            .iter()
-            .filter_map(|(address, entry)| {
-                let due = entry.verdict == Verdict::Unknown
-                    || now
-                        .checked_duration_since(entry.last_updated)
-                        .unwrap_or_default()
-                        >= CACHE_EXPIRY - MAINTENANCE_TIMEOUT;
-                due.then_some(address)
-            })
-            .collect()
-    }
-
-    fn banned_count(&self) -> usize {
-        self.cache
-            .iter()
-            .filter(|(_, entry)| entry.verdict == Verdict::Banned)
-            .count()
+    /// Walks the cache once, returning the entries due for a refresh and how
+    /// many entries are currently banned. Due are the entries close enough to
+    /// expiry that the next maintenance tick may miss the window, plus
+    /// [`Verdict::Unknown`] entries awaiting a retry.
+    fn scan(&self, now: Instant) -> (Vec<Arc<Address>>, i64) {
+        let mut due = Vec::new();
+        let mut banned = 0;
+        for (address, entry) in self.cache.iter() {
+            if entry.verdict == Verdict::Banned {
+                banned += 1;
+            }
+            let refresh = entry.verdict == Verdict::Unknown
+                || now
+                    .checked_duration_since(entry.last_updated)
+                    .unwrap_or_default()
+                    >= CACHE_EXPIRY - MAINTENANCE_TIMEOUT;
+            if refresh {
+                due.push(address);
+            }
+        }
+        (due, banned)
     }
 
     /// `None` (existing entry preserved) when `fetch_all` is uncertain — no
@@ -193,18 +196,18 @@ impl Cached {
                 interval.tick().await;
                 let Some(this) = weak.upgrade() else { return };
                 let now = Instant::now();
-                let expired = this.expired(now);
-                Metrics::currently_banned(this.banned_count());
+                let (due, mut banned) = this.scan(now);
 
-                let refreshed: Vec<_> = stream::iter(expired)
+                let refreshed: Vec<_> = stream::iter(due)
                     .map(|address| this.refresh(*address))
                     .buffer_unordered(MAX_CONCURRENT_LOOKUPS)
                     .collect()
                     .await;
 
                 for (address, verdict) in refreshed.into_iter().flatten() {
-                    this.store(address, verdict);
+                    banned += this.store(address, verdict);
                 }
+                Metrics::currently_banned(banned);
             }
         });
     }
@@ -291,10 +294,10 @@ mod tests {
 
         // The unknown entry stays due for a background retry until a lookup
         // succeeds.
-        assert_eq!(cached.expired(Instant::now()).len(), 1);
+        assert_eq!(cached.scan(Instant::now()).0.len(), 1);
         failing.store(false, Ordering::SeqCst);
         let (address, verdict) = cached.refresh(address).await.unwrap();
         cached.store(address, verdict);
-        assert!(cached.expired(Instant::now()).is_empty());
+        assert!(cached.scan(Instant::now()).0.is_empty());
     }
 }

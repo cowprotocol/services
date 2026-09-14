@@ -1810,6 +1810,14 @@ components:
             order that only provided liquidity.
           allOf:
             - $ref: "#/components/schemas/BigUint"
+        penaltyCapNative:
+          description: >-
+            Cap on the penalty the winning solver could incur for not executing
+            the order in the auction this trade settled, denominated in native
+            token wei. Absent when the auction had a pre CIP-87 global penalty cap.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+          nullable: true
       required:
         - blockNumber
         - logIndex

@@ -283,3 +283,51 @@ async fn quote_without_a_route_is_no_liquidity() {
         (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
     );
 }
+
+/// Parameter validation of the trades endpoint short-circuits before any
+/// database access.
+#[tokio::test]
+async fn trades_rejects_an_invalid_limit() {
+    let addr = spawn_server().await;
+    let uid = "11".repeat(32);
+    for limit in ["0", "1001"] {
+        let response = reqwest::Client::new()
+            .get(format!(
+                "http://{addr}/api/v2/trades?orderUid={uid}&limit={limit}"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+        let json: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(json["errorType"], "InvalidLimit");
+    }
+}
+
+/// Parameter validation of the account orders endpoint short-circuits before
+/// any database access.
+#[tokio::test]
+async fn account_orders_rejects_bad_parameters() {
+    let addr = spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .get(format!("http://{addr}/api/v1/account/not-a-pubkey/orders"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["errorType"], "InvalidOwner");
+
+    let response = client
+        .get(format!(
+            "http://{addr}/api/v1/account/9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB/orders?limit=0"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["errorType"], "LIMIT_OUT_OF_BOUNDS");
+}

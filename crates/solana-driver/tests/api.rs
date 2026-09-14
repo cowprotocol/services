@@ -98,6 +98,7 @@ fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
         endpoint: format!("http://{addr}").parse().unwrap(),
         signer_keypair: keypair_path,
         max_in_flight: NonZero::new(1).unwrap(),
+        solve_every_nth_auction: None,
     })
     .expect("solver construction should succeed");
     let account = solver.pubkey();
@@ -107,6 +108,19 @@ fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
 /// A solver client pointing at a dead endpoint (no listener).
 fn dead_solver() -> (Solver, Pubkey) {
     solver_with_keypair("127.0.0.1:1".parse().unwrap())
+}
+
+/// A dead-endpoint solver throttled to the given auction-id stride.
+fn throttled_dead_solver(stride: u64) -> Solver {
+    let keypair_file = temp_keypair();
+    Solver::new(&config::Solver {
+        name: "mock".to_owned(),
+        endpoint: "http://127.0.0.1:1".parse().unwrap(),
+        signer_keypair: keypair_file.path().to_path_buf(),
+        max_in_flight: NonZero::new(1).unwrap(),
+        solve_every_nth_auction: NonZero::new(stride),
+    })
+    .expect("solver construction should succeed")
 }
 
 fn order_pda() -> Pubkey {
@@ -564,4 +578,28 @@ async fn quoting_does_not_populate_the_settle_cache() {
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "SolutionNotAvailable");
+}
+
+/// A throttled solver only participates in auctions on its id stride: off
+/// the stride the driver answers an empty solution set without asking the
+/// engine, on the stride the request reaches the (dead) engine.
+#[tokio::test]
+async fn solve_sits_out_auctions_off_the_participation_stride() {
+    // Auction id 7 with stride 2: sat out, the dead engine is never asked.
+    let addr = spawn_server(vec![throttled_dead_solver(2)]).await;
+    let body = call_solve(addr).await;
+    assert_eq!(body["solutions"].as_array().unwrap().len(), 0);
+
+    // Stride 7 matches auction id 7: the request reaches the dead engine
+    // and fails, proving participation.
+    let addr = spawn_server(vec![throttled_dead_solver(7)]).await;
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/solve"))
+        .json(&solve_request())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["kind"], "SolverFailed");
 }

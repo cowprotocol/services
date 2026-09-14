@@ -99,9 +99,13 @@ impl Api {
 
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
+            .route(
+                "/api/v1/account/{owner}/orders",
+                get(routes::account_orders),
+            )
             .route("/api/v1/orders/{uid}", get(routes::order))
             .route("/api/v1/orders/{uid}/status", get(routes::order_status))
-            .route("/api/v1/trades", get(routes::trades))
+            .route("/api/v2/trades", get(routes::trades))
             .route("/api/v1/quote", post(routes::quote))
             .layer(cors)
             .layer(RequestDecompressionLayer::new())

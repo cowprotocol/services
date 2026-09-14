@@ -94,4 +94,24 @@ async fn penalty_cap(web3: Web3) {
     })
     .await
     .unwrap();
+
+    // Once the order gets settled, the trade exposes the cap of the auction
+    // that settled it.
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        !services.get_trades(&uid).await.unwrap().is_empty()
+    })
+    .await
+    .unwrap();
+    let trade = services.get_trades(&uid).await.unwrap().remove(0);
+    let cap = trade
+        .penalty_cap_native
+        .expect("settled trade carries the auction's penalty cap");
+    assert!(!cap.is_zero());
+    let caps = crate::database::penalty_caps_of_order(services.db(), &uid).await;
+    assert!(
+        caps.iter()
+            .any(|db_cap| number::conversions::big_decimal_to_u256(db_cap) == Some(cap)),
+        "trade cap {cap} not among the caps persisted for the order"
+    );
 }

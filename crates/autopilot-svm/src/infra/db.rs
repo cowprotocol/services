@@ -43,6 +43,7 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.valid_to >= $1
+  AND NOT COALESCE(p.is_reorged, false)
   AND (o.valid_from IS NULL OR o.valid_from <= $1)
   AND (o.intent_signature IS NOT NULL
        OR o.presigned_transaction IS NOT NULL
