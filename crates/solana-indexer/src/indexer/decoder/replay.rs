@@ -14,7 +14,11 @@ impl Decoder {
     /// One replay pass: retry the parked dead letters. Work that fails
     /// again stays parked for the next pass.
     pub(crate) async fn replay(&self) -> Result<(), PersistenceError> {
-        for (signature, slot) in self.persistence.dead_letters(DEAD_LETTER_BATCH).await? {
+        for (signature, slot) in self
+            .persistence
+            .claim_dead_letters(DEAD_LETTER_BATCH)
+            .await?
+        {
             let encoded = match self.rpc.transaction(&signature).await {
                 Ok(encoded) => encoded,
                 // The row stays parked, the next pass retries it.
