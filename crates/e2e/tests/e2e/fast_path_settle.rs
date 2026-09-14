@@ -62,10 +62,7 @@ fn with_fast_path_exclusivity(
     // Local anvil advertises the Hardhat chain-id, so the handler
     // computes with `Chain::Hardhat::block_time_in_ms()` (12s).
     const HARDHAT_BLOCK_SECS: u64 = 12;
-    let submission_deadline = exclusivity
-        .as_secs()
-        .div_ceil(HARDHAT_BLOCK_SECS)
-        .max(1);
+    let submission_deadline = exclusivity.as_secs().div_ceil(HARDHAT_BLOCK_SECS).max(1);
     let autopilot = AutopilotConfiguration {
         order_quoting: OrderQuoting {
             fast_path_enabled: true,

@@ -1056,6 +1056,19 @@ impl Persistence {
         Ok(())
     }
 
+    /// `true` iff `uid` names a fast-path order the handler still owes
+    /// a `valid_from` write to. Used as the always-run first gate in
+    /// the notification-driven handler so non-fast-path orders don't
+    /// get their `valid_from` accidentally overwritten.
+    pub async fn is_pending_fast_path(&self, uid: domain::OrderUid) -> anyhow::Result<bool> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["is_pending_fast_path"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        Ok(database::orders::is_pending_fast_path(&mut ex, &ByteArray(uid.0)).await?)
+    }
+
     /// UIDs of every fast-path order whose `valid_from` has not been
     /// set yet. Called on autopilot startup to re-drive the handler for
     /// orders whose `new_order` notification landed while the process

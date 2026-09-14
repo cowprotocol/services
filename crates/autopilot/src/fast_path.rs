@@ -42,7 +42,6 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::Context,
     bigdecimal::BigDecimal,
-    configs::fee_factor::FeeFactor,
     database::byte_array::ByteArray,
     futures::{StreamExt, channel::mpsc},
     model::order::OrderKind,
@@ -151,15 +150,36 @@ impl FastPathHandler {
     }
 
     /// Classifies a single fast-path order. See the module docs for the
-    /// three cases.
+    /// three cases. Non-fast-path orders (the notifier fires for every
+    /// new order) short-circuit before any `valid_from` write happens —
+    /// only orders the handler actually owns get touched.
     #[instrument(skip_all)]
     async fn handle(&self, order_uid: domain::OrderUid) {
+        // Always run this check first: the DB is the source of truth
+        // for whether this uid is a pending fast-path order. Regular
+        // orders (or orders the handler already classified) drop out
+        // here without having their `valid_from` overwritten.
+        match self.persistence.is_pending_fast_path(order_uid).await {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(err) => {
+                tracing::error!(?err, "failed to check pending fast-path status");
+                return;
+            }
+        }
+
         let now = model::time::now_in_epoch_seconds() as i64;
 
-        // Try to line up a fast-path settle. If any prerequisite is
-        // missing we still need to write `valid_from` so the order
-        // can enter the next regular auction.
-        let settle_attempt = self.prepare_fast_path_settle(order_uid).await;
+        // From here we know we owe the order a `valid_from`. Try to
+        // line up a fast-path settle; a missing prerequisite (feature
+        // disabled, no staged quote, limit check fails) means we still
+        // write `valid_from = now()` so the order can enter the next
+        // regular auction.
+        let settle_attempt = if self.fast_path_enabled {
+            self.prepare_fast_path_settle(order_uid).await
+        } else {
+            None
+        };
 
         let valid_from = if settle_attempt.is_some() {
             now + self.exclusivity_secs().cast_signed()
@@ -183,19 +203,14 @@ impl FastPathHandler {
 
     /// Loads the staged quote competition and runs the same fee-adjusted
     /// limit-price check the orderbook enforces at placement. Returns
-    /// `None` when the order isn't eligible for a fast-path settle —
-    /// feature disabled, no staged competition (ethflow), or the check
-    /// fails. Callers use `Some` as the signal to actually attempt the
-    /// settle and to extend `valid_from`.
+    /// `None` when the order isn't eligible for a fast-path settle — no
+    /// staged competition (ethflow), or the check fails. Only called
+    /// when `fast_path_enabled` and the order is already known to be
+    /// pending, so both of those gates live in the caller.
     async fn prepare_fast_path_settle(
         &self,
         order_uid: domain::OrderUid,
     ) -> Option<FastPathSettleAttempt> {
-        // Feature disabled: skip the DB lookup entirely.
-        if !self.fast_path_enabled {
-            return None;
-        }
-
         let fast_path_data = match self.persistence.fast_path_order(order_uid).await {
             Ok(Some(data)) => data,
             Ok(None) => {
@@ -223,13 +238,12 @@ impl FastPathHandler {
             .filter(|p| matches!(p, domain::fee::Policy::Volume { .. }))
             .collect();
 
-        let factors = volume_fee_policies
+        let volume_fee_factors = volume_fee_policies
             .iter()
             .filter_map(|policy| match policy {
                 domain::fee::Policy::Volume { factor } => Some(*factor),
                 _ => None,
-            })
-            .collect::<Vec<_>>();
+            });
 
         let winner = fast_path_data.winner();
         if shared::fee::check_fast_path_limit_fits(
@@ -238,7 +252,7 @@ impl FastPathHandler {
             fast_path_data.model_order.data.buy_amount,
             winner.quoted_sell,
             winner.quoted_buy,
-            factors.iter().copied(),
+            volume_fee_factors,
         )
         .is_err()
         {
@@ -253,7 +267,6 @@ impl FastPathHandler {
         Some(FastPathSettleAttempt {
             fast_path_data,
             volume_fee_policies,
-            _factors: factors,
         })
     }
 
@@ -264,7 +277,6 @@ impl FastPathHandler {
         let FastPathSettleAttempt {
             fast_path_data,
             volume_fee_policies,
-            _factors: _,
         } = attempt;
 
         let winning_solver = fast_path_data.winner().solver;
@@ -444,10 +456,6 @@ impl FastPathHandler {
 struct FastPathSettleAttempt {
     fast_path_data: FastPathOrder,
     volume_fee_policies: Vec<domain::fee::Policy>,
-    /// Kept for symmetry — the factors are already baked into
-    /// `volume_fee_policies`; the field is here so the limit-check math
-    /// happens exactly once per handler run.
-    _factors: Vec<FeeFactor>,
 }
 
 /// Output of the fee-policy computation and bid-adjustment step of the
