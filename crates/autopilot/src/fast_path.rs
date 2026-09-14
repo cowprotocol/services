@@ -243,15 +243,10 @@ impl FastPathHandler {
         })
     }
 
-    /// Persists `valid_from` (so the order is barred from the regular
-    /// auction for the length of the exclusivity window), promotes the
-    /// staged competition, and hands the `/settle` request to the
-    /// driver. Errors bubble up to the caller so the handler can log
-    /// them uniformly.
-    async fn execute_fast_path_settle(
-        &self,
-        attempt: FastPathSettleAttempt,
-    ) -> anyhow::Result<()> {
+    /// Promotes the staged competition, claims the exclusivity window,
+    /// and hands the `/settle` request to the driver. Errors bubble up
+    /// to the caller so the handler can log them uniformly.
+    async fn execute_fast_path_settle(&self, attempt: FastPathSettleAttempt) -> anyhow::Result<()> {
         // TODO: for the initial version we just use the same submission
         // deadline as the main auction uses which likely extends beyond
         // the valid_from period. It's still not possible for the same
@@ -261,7 +256,6 @@ impl FastPathHandler {
         //
         // The final implementation should take the order's valid_from
         // and the expected end of the current auction into account.
-        let order_uid: domain::OrderUid = attempt.model_order.metadata.uid.into();
         let winning_solver = attempt.staged.winner().solver;
         let winner = self
             .drivers
@@ -273,30 +267,15 @@ impl FastPathHandler {
 
         let current_block = self.eth.current_block().borrow().number;
         let submission_deadline = current_block + self.submission_deadline;
-        let valid_from =
-            model::time::now_in_epoch_seconds() as i64 + self.exclusivity_secs().cast_signed();
-        let auction_id = attempt.staged.data.auction_id;
-        let solution_id = attempt.staged.winner().solution_id;
-        let solution_uid = attempt.staged.winner().solution_uid;
 
         let final_execution = self
             .compute_and_persist_final_execution(&attempt, current_block, submission_deadline)
             .await
             .context("failed to record fast-path fee policies")?;
 
-        // Only claim the exclusivity window once the staging promotion
-        // and driver bookkeeping have succeeded — a failure before this
-        // point would leave the order pending fast-path with `valid_from`
-        // set, which the next auction cycle would then pick up in an
-        // inconsistent state.
-        self.persistence
-            .set_order_valid_from(order_uid, valid_from)
-            .await
-            .context("failed to set valid_from")?;
-
         let request = settle::Request {
-            auction_id,
-            solution_id,
+            auction_id: attempt.staged.data.auction_id,
+            solution_id: attempt.staged.winner().solution_id,
             submission_deadline_latest_block: submission_deadline,
             fast_path: Some(settle::FastPath {
                 order: dto::order::from_domain(&final_execution.order),
@@ -309,7 +288,12 @@ impl FastPathHandler {
 
         let res = self
             .settle_coordinator
-            .settle(winner, winner.submission_address, solution_uid, request)
+            .settle(
+                winner,
+                winner.submission_address,
+                attempt.staged.winner().solution_uid,
+                request,
+            )
             .await;
         Metrics::fast_path_finished(&winner.name, res.is_ok());
         match res {
@@ -322,9 +306,13 @@ impl FastPathHandler {
     /// Adjusts every staged solution's bid by the volume-fee policies,
     /// promotes the staged quote competition into the permanent
     /// `competition_auctions` / `proposed_solutions` /
-    /// `proposed_trade_executions` tables, and returns the
+    /// `proposed_trade_executions` tables, claims the exclusivity
+    /// window on the order via `valid_from`, and returns the
     /// fully-built [`FinalOrderExecution`] the caller hands to the
-    /// driver.
+    /// driver. Grouping the two persistence writes here keeps the
+    /// "we're committing to running this fast-path" moment in one place
+    /// — a failure anywhere in this function leaves the row `valid_from
+    /// IS NULL` so the regular auction can still pick it up cleanly.
     async fn compute_and_persist_final_execution(
         &self,
         attempt: &FastPathSettleAttempt,
@@ -405,7 +393,15 @@ impl FastPathHandler {
                 solutions: solution_rows,
                 fee_policies: volume_fee_policies.to_vec(),
             })
-            .await?;
+            .await
+            .context("failed to promote staged fast-path competition")?;
+
+        let valid_from =
+            model::time::now_in_epoch_seconds() as i64 + self.exclusivity_secs().cast_signed();
+        self.persistence
+            .set_order_valid_from(order_uid, valid_from)
+            .await
+            .context("failed to set valid_from")?;
 
         let order = boundary::order::to_domain(
             &attempt.model_order,
