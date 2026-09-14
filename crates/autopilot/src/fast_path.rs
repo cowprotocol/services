@@ -116,7 +116,7 @@ impl FastPathHandler {
             }
         };
         if !uids.is_empty() {
-            tracing::info!(count = uids.len(), "re-driving pending fast-path orders");
+            tracing::info!(count = uids.len(), "processing fast path order backlog");
         }
         for uid in uids {
             self.clone().dispatch(uid);
