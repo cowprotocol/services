@@ -172,21 +172,15 @@ impl FastPathHandler {
             .then(|| self.try_build_settle_attempt(pending, order_uid))
             .flatten();
 
-        let now = model::time::now_in_epoch_seconds() as i64;
         if let Some(settle_attempt) = settle_attempt {
-            let valid_from = now + self.exclusivity_secs().cast_signed();
-            let current_block = self.eth.current_block().borrow().number;
-            let submission_deadline = current_block + self.submission_deadline;
-            let _ = self
-                .execute_fast_path_settle(settle_attempt, valid_from, submission_deadline)
-                .await
-                .inspect_err(|err| tracing::error!(?err, "failed to execute fast-path settle"));
+            if let Err(err) = self.execute_fast_path_settle(settle_attempt).await {
+                tracing::error!(?err, "failed to execute fast-path settle");
+            }
         } else {
-            let _ = self
-                .persistence
-                .set_order_valid_from(order_uid, now)
-                .await
-                .inspect_err(|err| tracing::error!(?err, "failed to fall through to regular auction"));
+            let now = model::time::now_in_epoch_seconds() as i64;
+            if let Err(err) = self.persistence.set_order_valid_from(order_uid, now).await {
+                tracing::error!(?err, "failed to fall through to regular auction");
+            }
         };
     }
 
@@ -257,8 +251,6 @@ impl FastPathHandler {
     async fn execute_fast_path_settle(
         &self,
         attempt: FastPathSettleAttempt,
-        valid_from: i64,
-        submission_deadline: u64,
     ) -> anyhow::Result<()> {
         // TODO: for the initial version we just use the same submission
         // deadline as the main auction uses which likely extends beyond
@@ -280,6 +272,9 @@ impl FastPathHandler {
             })?;
 
         let current_block = self.eth.current_block().borrow().number;
+        let submission_deadline = current_block + self.submission_deadline;
+        let valid_from =
+            model::time::now_in_epoch_seconds() as i64 + self.exclusivity_secs().cast_signed();
         let auction_id = attempt.staged.data.auction_id;
         let solution_id = attempt.staged.winner().solution_id;
         let solution_uid = attempt.staged.winner().solution_uid;
