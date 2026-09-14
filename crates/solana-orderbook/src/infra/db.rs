@@ -8,7 +8,7 @@ use {
         byte_array::ByteArray,
         solana::{OrderEventLabel, OrderKind},
     },
-    sqlx::PgExecutor,
+    sqlx::{PgExecutor, PgPool},
 };
 
 /// One order joined with its fill state.
@@ -147,6 +147,93 @@ pub async fn order_has_trade(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<b
     .context("check solana.trades existence")
 }
 
+/// A sponsored order as accepted by the placement endpoint: the intent
+/// fields plus the user's partially signed `CreateOrder` transaction and
+/// the block height at which that transaction dies with its blockhash.
+#[derive(Clone, Debug)]
+pub struct NewSponsoredOrder {
+    pub uid: [u8; 32],
+    pub owner: [u8; 32],
+    pub sell_token: [u8; 32],
+    pub buy_token: [u8; 32],
+    pub sell_token_account: [u8; 32],
+    pub buy_token_account: [u8; 32],
+    pub sell_amount: u64,
+    pub buy_amount: u64,
+    pub valid_to: u32,
+    pub kind: OrderKind,
+    pub partially_fillable: bool,
+    pub app_data: [u8; 32],
+    pub order_pda: [u8; 32],
+    pub presigned_transaction: Vec<u8>,
+    pub last_valid_block_height: u64,
+}
+
+/// Insert a sponsored order and its `created` event in one transaction.
+/// A duplicate uid or order PDA surfaces as a unique violation.
+pub async fn insert_sponsored_order(pool: &PgPool, order: &NewSponsoredOrder) -> Result<()> {
+    const QUERY: &str = r#"
+INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
+    buy_token_account, sell_amount, buy_amount, valid_to, kind,
+    partially_fillable, app_data, creation_timestamp, order_pda,
+    presigned_transaction, last_valid_block_height)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
+    "#;
+    let mut tx = pool.begin().await.context("begin sponsored order insert")?;
+    sqlx::query(QUERY)
+        .bind(ByteArray(order.uid))
+        .bind(ByteArray(order.owner))
+        .bind(ByteArray(order.sell_token))
+        .bind(ByteArray(order.buy_token))
+        .bind(ByteArray(order.sell_token_account))
+        .bind(ByteArray(order.buy_token_account))
+        .bind(BigDecimal::from(order.sell_amount))
+        .bind(BigDecimal::from(order.buy_amount))
+        .bind(i64::from(order.valid_to))
+        .bind(order.kind)
+        .bind(order.partially_fillable)
+        .bind(order.app_data.to_vec())
+        .bind(ByteArray(order.order_pda))
+        .bind(&order.presigned_transaction)
+        .bind(i64::try_from(order.last_valid_block_height).context("block height exceeds i64")?)
+        .execute(&mut *tx)
+        .await
+        .context("insert sponsored order")?;
+    sqlx::query(
+        "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
+    )
+    .bind(ByteArray(order.uid))
+    .bind(OrderEventLabel::Created)
+    .execute(&mut *tx)
+    .await
+    .context("insert created event")?;
+    tx.commit().await.context("commit sponsored order insert")
+}
+
+/// A stored sponsored creation: the presigned transaction and its expiry.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct SponsoredCreation {
+    pub presigned_transaction: Vec<u8>,
+    pub last_valid_block_height: i64,
+}
+
+/// The sponsored creation of an order. `None` when the uid is unknown or
+/// the order was not placed through the sponsored path.
+pub async fn sponsored_creation(
+    ex: impl PgExecutor<'_>,
+    uid: [u8; 32],
+) -> Result<Option<SponsoredCreation>> {
+    sqlx::query_as(
+        "SELECT presigned_transaction, last_valid_block_height
+         FROM solana.orders
+         WHERE uid = $1 AND presigned_transaction IS NOT NULL",
+    )
+    .bind(ByteArray(uid))
+    .fetch_optional(ex)
+    .await
+    .context("read sponsored creation")
+}
+
 /// The label of the order's most recent auction-progress event.
 pub async fn latest_order_event(
     ex: impl PgExecutor<'_>,
@@ -246,6 +333,63 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         let second = orders_by_owner(&pool, [0xAA; 32], 1, 1).await.unwrap();
         assert_eq!(second.len(), 1);
         assert_eq!(second[0].uid, ByteArray([0x12; 32]));
+    }
+
+    /// A sponsored order lands with its presigned transaction, expiry, and
+    /// `created` event in one shot, and a duplicate uid is rejected.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_inserts_a_sponsored_order_once() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        sqlx::query("TRUNCATE solana.order_pda, solana.orders, solana.order_events CASCADE")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let order = NewSponsoredOrder {
+            uid: [0x11; 32],
+            owner: [0xAA; 32],
+            sell_token: [0x66; 32],
+            buy_token: [0x55; 32],
+            sell_token_account: [0x33; 32],
+            buy_token_account: [0x22; 32],
+            sell_amount: 1_000,
+            buy_amount: 2_000,
+            valid_to: u32::MAX,
+            kind: OrderKind::Sell,
+            partially_fillable: false,
+            app_data: [0x44; 32],
+            order_pda: [0xB0; 32],
+            presigned_transaction: vec![0xC0; 128],
+            last_valid_block_height: 12_345,
+        };
+        insert_sponsored_order(&pool, &order).await.unwrap();
+
+        let creation = sponsored_creation(&pool, order.uid).await.unwrap().unwrap();
+        assert_eq!(creation.presigned_transaction, vec![0xC0; 128]);
+        assert_eq!(creation.last_valid_block_height, 12_345);
+        let events: Vec<(Vec<u8>, OrderEventLabel)> =
+            sqlx::query_as("SELECT order_uid, label FROM solana.order_events")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(events, vec![(order.uid.to_vec(), OrderEventLabel::Created)]);
+
+        // The uid is the primary key: placing the same order twice fails and
+        // leaves no second event behind.
+        assert!(insert_sponsored_order(&pool, &order).await.is_err());
+        let events: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(events, 1);
+
+        // An order indexed from chain has no sponsored creation.
+        assert!(
+            sponsored_creation(&pool, [0x99; 32])
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
