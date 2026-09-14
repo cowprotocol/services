@@ -10,14 +10,16 @@
 //! the timestamp.
 //!
 //! Three cases:
-//! - No exclusivity configured (feature disabled at runtime): write `valid_from
-//!   = now()` so the order flows straight into the next regular auction.
+//! - `fast_path_enabled = false` at runtime: write `valid_from = now()` so the
+//!   order flows straight into the next regular auction.
 //! - No staged quote competition (e.g. an ethflow fast-path order that never
 //!   went through the quoter) or the fee-adjusted limit check fails: same,
 //!   `valid_from = now()`. The caller still opted into fast-path treatment, but
 //!   the autopilot can't honour it.
-//! - Otherwise: write `valid_from = now + exclusivity` and initiate the
-//!   fast-path settlement.
+//! - Otherwise: initiate the fast-path settlement and write `valid_from = now +
+//!   submission_deadline × chain block time`, so the order is barred from a
+//!   regular auction for exactly as long as the settle attempt runs — no
+//!   separate wall-clock knob to drift out of sync with the block deadline.
 //!
 //! [`FastPathHandler::spawn`] wires the handler up to an
 //! `mpsc::UnboundedReceiver<OrderUid>` fed by the DB order notifier
@@ -45,7 +47,7 @@ use {
     futures::{StreamExt, channel::mpsc},
     model::order::OrderKind,
     number::conversions::u256_to_big_decimal,
-    std::{sync::Arc, time::Duration},
+    std::sync::Arc,
     tracing::{Instrument, instrument},
 };
 
@@ -56,12 +58,17 @@ pub struct FastPathHandler {
     protocol_fees: Arc<domain::ProtocolFees>,
     surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
     settle_coordinator: Arc<SettleCallCoordinator>,
+    /// Block-count deadline for the fast-path settle attempt. Doubles
+    /// as the exclusivity window in wall clock: `valid_from` is set to
+    /// `now + submission_deadline × chain.block_time`, so the order
+    /// isn't picked up by the regular auction until the settle attempt
+    /// has definitely elapsed. Reusing the same knob for both keeps
+    /// them from drifting out of sync.
     submission_deadline: u64,
-    /// How long the fast-path settle attempt gets exclusive rights to
-    /// the order. `None` disables fast-path settlement — orders are
-    /// still classified (so `valid_from` gets written) but never sent
-    /// to the driver's `/settle`.
-    default_fast_path_exclusivity: Option<Duration>,
+    /// Runtime toggle: when `false`, the handler skips the driver
+    /// `/settle` call entirely and just writes `valid_from = now()` so
+    /// the order flows into the next regular auction.
+    fast_path_enabled: bool,
 }
 
 impl FastPathHandler {
@@ -74,7 +81,7 @@ impl FastPathHandler {
         surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
         settle_coordinator: Arc<SettleCallCoordinator>,
         submission_deadline: u64,
-        default_fast_path_exclusivity: Option<Duration>,
+        fast_path_enabled: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             eth,
@@ -84,8 +91,19 @@ impl FastPathHandler {
             surplus_capturing_jit_order_owners,
             settle_coordinator,
             submission_deadline,
-            default_fast_path_exclusivity,
+            fast_path_enabled,
         })
+    }
+
+    /// Wall-clock length of the fast-path exclusivity window: the number
+    /// of blocks the settle attempt has (`submission_deadline`) scaled
+    /// by the network's block time. Rounded up so the regular auction
+    /// only picks the order up once the settle deadline has definitely
+    /// elapsed.
+    fn exclusivity_secs(&self) -> u64 {
+        let block_time_ms = self.eth.chain().block_time_in_ms().as_millis() as u64;
+        let window_ms = self.submission_deadline.saturating_mul(block_time_ms);
+        window_ms.div_ceil(1_000)
     }
 
     /// Spawns the fast-path listener: pulls order uids off `receiver`
@@ -143,9 +161,10 @@ impl FastPathHandler {
         // can enter the next regular auction.
         let settle_attempt = self.prepare_fast_path_settle(order_uid).await;
 
-        let valid_from = match (self.default_fast_path_exclusivity, &settle_attempt) {
-            (Some(exclusivity), Some(_)) => now + exclusivity.as_secs().cast_signed(),
-            _ => now,
+        let valid_from = if settle_attempt.is_some() {
+            now + self.exclusivity_secs().cast_signed()
+        } else {
+            now
         };
 
         if let Err(err) = self
@@ -173,7 +192,9 @@ impl FastPathHandler {
         order_uid: domain::OrderUid,
     ) -> Option<FastPathSettleAttempt> {
         // Feature disabled: skip the DB lookup entirely.
-        self.default_fast_path_exclusivity?;
+        if !self.fast_path_enabled {
+            return None;
+        }
 
         let fast_path_data = match self.persistence.fast_path_order(order_uid).await {
             Ok(Some(data)) => data,

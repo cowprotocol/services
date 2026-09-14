@@ -11,6 +11,7 @@ use {
                 FeePolicyKind as ConfigFeePolicyKind,
                 FeePolicyOrderClass as ConfigFeePolicyOrderClass,
             },
+            run_loop::RunLoopConfig,
             solver::Solver,
         },
         order_quoting::{ExternalSolver, OrderQuoting},
@@ -37,9 +38,14 @@ use {
     std::time::Duration,
 };
 
-/// Sets `default_fast_path_exclusivity` on the autopilot side (the only
-/// consumer of that field: the orderbook stopped reading it once the
-/// autopilot's fast-path handler took over ownership of `valid_from`).
+/// Enables the fast path on the autopilot and pins
+/// `run_loop.submission_deadline` to the block count that produces the
+/// requested exclusivity given the network's block time. The
+/// autopilot's fast-path handler uses `submission_deadline × block time`
+/// as the wall-clock exclusivity window — the two are the same knob,
+/// so tests dial in the wall-clock value they need and let the handler
+/// derive the rest.
+///
 /// `max_partner_fee` is still mirrored onto the orderbook because its
 /// placement-time limit-price check needs to size partner fees the same
 /// way the autopilot would charge them at settle time.
@@ -53,11 +59,22 @@ fn with_fast_path_exclusivity(
         .max_partner_fee
         .or(orderbook.order_quoting.max_partner_fee)
         .or(Some(autopilot.fee_policies.max_partner_fee));
+    // Local anvil advertises the Hardhat chain-id, so the handler
+    // computes with `Chain::Hardhat::block_time_in_ms()` (12s).
+    const HARDHAT_BLOCK_SECS: u64 = 12;
+    let submission_deadline = exclusivity
+        .as_secs()
+        .div_ceil(HARDHAT_BLOCK_SECS)
+        .max(1);
     let autopilot = AutopilotConfiguration {
         order_quoting: OrderQuoting {
-            default_fast_path_exclusivity: Some(exclusivity),
+            fast_path_enabled: true,
             max_partner_fee,
             ..autopilot.order_quoting
+        },
+        run_loop: RunLoopConfig {
+            submission_deadline,
+            ..autopilot.run_loop
         },
         ..autopilot
     };
