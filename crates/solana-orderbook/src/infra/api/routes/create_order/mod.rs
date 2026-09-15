@@ -1,7 +1,13 @@
-//! The sponsored order placement endpoint: a partially signed `CreateOrder`
+//! The sponsored order placement endpoint: a partially signed creation
 //! transaction comes in and the order it carries becomes placeable. Every
 //! order field derives from the transaction itself, so the stored order and
 //! the transaction that will create it on chain cannot disagree.
+//!
+//! The funder countersigns as fee payer, so the transaction may only carry
+//! the whitelisted preparation steps in front of the mandatory trailing
+//! `CreateOrder`: wrap SOL, delegate the sell account to the settlement
+//! state PDA, and create the buy token account. Anything else would run at
+//! the funder's expense.
 
 use {
     crate::infra::{
@@ -10,17 +16,24 @@ use {
     },
     axum::{Json, http::StatusCode},
     cow_settlement_interface::{
-        data::intent::{EncodedOrderIntent, OrderKind as IntentOrderKind},
+        data::intent::{EncodedOrderIntent, OrderIntent, OrderKind as IntentOrderKind},
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
-        pda::order::find_order_pda,
+        pda::{order::find_order_pda, state::find_state_pda},
     },
     database::solana::OrderKind,
     serde::Deserialize,
     serde_with::{base64::Base64, serde_as},
-    solana_sdk::{clock::MAX_PROCESSING_AGE, transaction::VersionedTransaction},
+    solana_sdk::{
+        clock::MAX_PROCESSING_AGE,
+        message::compiled_instruction::CompiledInstruction,
+        pubkey::Pubkey,
+        transaction::VersionedTransaction,
+    },
+    solana_system_interface::instruction::SystemInstruction,
+    spl_token_interface::instruction::TokenInstruction,
 };
 
-/// Request body: the user's partially signed `CreateOrder` transaction,
+/// Request body: the user's partially signed creation transaction,
 /// base64-encoded on the wire. Signed by the owner, with the configured
 /// funder as its unsigned fee payer.
 #[serde_as]
@@ -42,6 +55,7 @@ enum PlacementError {
     WrongRentPayer,
     InvalidIntentFlags,
     WrongOrderPda,
+    WrongDelegate,
     InsufficientValidTo,
     InvalidSignature,
     BlockhashExpired,
@@ -71,6 +85,10 @@ impl From<PlacementError> for error::Reply {
             PlacementError::WrongOrderPda => {
                 ("WrongOrderPda", "the order PDA does not match the intent")
             }
+            PlacementError::WrongDelegate => (
+                "WrongDelegate",
+                "the delegation must target the settlement state PDA",
+            ),
             PlacementError::InsufficientValidTo => {
                 ("InsufficientValidTo", "validTo lies in the past")
             }
@@ -162,30 +180,17 @@ fn validate(
     if keys.first() != Some(&sponsoring.funder) {
         return Err(PlacementError::WrongFeePayer);
     }
-    // TODO(BE-277): accept the whitelisted bundle template (wrap SOL, approve
-    // the delegate, create the destination account) in front of `CreateOrder`.
-    // A lone `CreateOrder` fits only traders whose accounts are already set
-    // up, so this gate has to fall before the frontend integrates.
-    let [instruction] = message.instructions() else {
+    let Some((instruction, preparations)) = message.instructions().split_last() else {
         return Err(PlacementError::InvalidTransaction(
-            "the transaction must carry exactly one instruction",
+            "the transaction carries no instructions",
         ));
     };
     if keys.get(usize::from(instruction.program_id_index)) != Some(&sponsoring.settlement_program) {
         return Err(PlacementError::InvalidTransaction(
-            "the instruction does not target the settlement program",
+            "the transaction must end with a CreateOrder instruction",
         ));
     }
-    let accounts: Vec<_> = instruction
-        .accounts
-        .iter()
-        .filter_map(|&index| keys.get(usize::from(index)).copied())
-        .collect();
-    if accounts.len() != instruction.accounts.len() {
-        return Err(PlacementError::InvalidTransaction(
-            "an account index is out of range",
-        ));
-    }
+    let accounts = resolve_accounts(instruction, keys)?;
     let input = CreateOrderInput::parse(&instruction.data, &accounts)
         .map_err(|_| PlacementError::InvalidTransaction("not a CreateOrder instruction"))?;
     if *input.created_by != sponsoring.funder {
@@ -202,6 +207,20 @@ fn validate(
     }
     if i64::from(intent.valid_to) <= chrono::Utc::now().timestamp() {
         return Err(PlacementError::InsufficientValidTo);
+    }
+
+    // The preparation instructions may only follow the template: each step
+    // at most once, in template order, all omittable.
+    let state_pda = find_state_pda(&sponsoring.settlement_program).0;
+    let mut last_step = 0;
+    for preparation in preparations {
+        let step = preparation_step(sponsoring, &state_pda, &intent, keys, preparation)?;
+        if step <= last_step {
+            return Err(PlacementError::InvalidTransaction(
+                "the instructions do not follow the sponsored template order",
+            ));
+        }
+        last_step = step;
     }
 
     // Every required signer except the funder must have signed: the funder's
@@ -224,7 +243,200 @@ fn validate(
         }
     }
 
-    Ok(db::SponsoredOrder {
+    Ok(build_order(intent, uid, order_pda))
+}
+
+/// Resolve an instruction's account indexes into the transaction's keys.
+fn resolve_accounts(
+    instruction: &CompiledInstruction,
+    keys: &[Pubkey],
+) -> Result<Vec<Pubkey>, PlacementError> {
+    let accounts: Vec<_> = instruction
+        .accounts
+        .iter()
+        .filter_map(|&index| keys.get(usize::from(index)).copied())
+        .collect();
+    if accounts.len() != instruction.accounts.len() {
+        return Err(PlacementError::InvalidTransaction(
+            "an account index is out of range",
+        ));
+    }
+    Ok(accounts)
+}
+
+/// Template positions of the preparation steps. Ascending ranks encode the
+/// only accepted instruction order.
+const WRAP_CREATE: u8 = 1;
+const WRAP_TRANSFER: u8 = 2;
+const WRAP_SYNC: u8 = 3;
+const APPROVE: u8 = 4;
+const CREATE_DESTINATION: u8 = 5;
+
+/// Classify one preparation instruction against the sponsored template and
+/// pin every account it touches to the order. The funder pays for the whole
+/// transaction, so anything the template does not name is rejected.
+fn preparation_step(
+    sponsoring: &Sponsoring,
+    state_pda: &Pubkey,
+    intent: &OrderIntent,
+    keys: &[Pubkey],
+    instruction: &CompiledInstruction,
+) -> Result<u8, PlacementError> {
+    let Some(program) = keys.get(usize::from(instruction.program_id_index)) else {
+        return Err(PlacementError::InvalidTransaction(
+            "an account index is out of range",
+        ));
+    };
+    let accounts = resolve_accounts(instruction, keys)?;
+    // Wrap steps only make sense when the order sells native SOL through the
+    // wSOL mint.
+    let wrapped_sell = intent.sell_mint == spl_token_interface::native_mint::ID;
+
+    if *program == solana_system_interface::program::ID {
+        if !matches!(
+            bincode::deserialize(&instruction.data),
+            Ok(SystemInstruction::Transfer { .. })
+        ) {
+            return Err(PlacementError::InvalidTransaction(
+                "only a transfer is accepted from the system program",
+            ));
+        }
+        let [from, to] = accounts[..] else {
+            return Err(PlacementError::InvalidTransaction(
+                "a wrap transfer names a sender and a recipient",
+            ));
+        };
+        if !wrapped_sell {
+            return Err(PlacementError::InvalidTransaction(
+                "wrap steps apply only to orders selling native SOL",
+            ));
+        }
+        if from != intent.owner {
+            return Err(PlacementError::InvalidTransaction(
+                "the wrap transfer must come from the order owner",
+            ));
+        }
+        if to != intent.sell_token_account {
+            return Err(PlacementError::InvalidTransaction(
+                "the wrap transfer must fund the sell token account",
+            ));
+        }
+        Ok(WRAP_TRANSFER)
+    } else if *program == spl_token_interface::ID {
+        match TokenInstruction::unpack(&instruction.data) {
+            Ok(TokenInstruction::SyncNative) => {
+                let [account] = accounts[..] else {
+                    return Err(PlacementError::InvalidTransaction(
+                        "a sync names one account",
+                    ));
+                };
+                if !wrapped_sell {
+                    return Err(PlacementError::InvalidTransaction(
+                        "wrap steps apply only to orders selling native SOL",
+                    ));
+                }
+                if account != intent.sell_token_account {
+                    return Err(PlacementError::InvalidTransaction(
+                        "the sync must target the sell token account",
+                    ));
+                }
+                Ok(WRAP_SYNC)
+            }
+            Ok(TokenInstruction::Approve { .. }) => {
+                let [source, delegate, owner] = accounts[..] else {
+                    return Err(PlacementError::InvalidTransaction(
+                        "an approve names a source, a delegate, and an owner",
+                    ));
+                };
+                approve_step(state_pda, intent, source, delegate, owner)
+            }
+            Ok(TokenInstruction::ApproveChecked { .. }) => {
+                let [source, mint, delegate, owner] = accounts[..] else {
+                    return Err(PlacementError::InvalidTransaction(
+                        "a checked approve names a source, a mint, a delegate, and an owner",
+                    ));
+                };
+                if mint != intent.sell_mint {
+                    return Err(PlacementError::InvalidTransaction(
+                        "the approve must cover the sell mint",
+                    ));
+                }
+                approve_step(state_pda, intent, source, delegate, owner)
+            }
+            _ => Err(PlacementError::InvalidTransaction(
+                "only approve and sync-native are accepted from the token program",
+            )),
+        }
+    } else if *program == spl_associated_token_account_interface::program::ID {
+        // The data byte selects Create ([] or [0]) or CreateIdempotent ([1]).
+        if !matches!(instruction.data.as_slice(), [] | [0] | [1]) {
+            return Err(PlacementError::InvalidTransaction(
+                "only account creation is accepted from the associated token program",
+            ));
+        }
+        let [payer, account, owner, mint, _system, _token] = accounts[..] else {
+            return Err(PlacementError::InvalidTransaction(
+                "an account creation names six accounts",
+            ));
+        };
+        if payer != sponsoring.funder && payer != intent.owner {
+            return Err(PlacementError::InvalidTransaction(
+                "the account creation must be paid by the funder or the owner",
+            ));
+        }
+        if owner != intent.owner {
+            return Err(PlacementError::InvalidTransaction(
+                "the created account must belong to the order owner",
+            ));
+        }
+        if wrapped_sell && account == intent.sell_token_account && mint == intent.sell_mint {
+            Ok(WRAP_CREATE)
+        } else if account == intent.buy_token_account && mint == intent.buy_mint {
+            Ok(CREATE_DESTINATION)
+        } else {
+            Err(PlacementError::InvalidTransaction(
+                "the created account does not belong to the order",
+            ))
+        }
+    } else {
+        Err(PlacementError::InvalidTransaction(
+            "an instruction targets a program outside the sponsored template",
+        ))
+    }
+}
+
+/// Pin a delegation to the order: the sell token account approves the
+/// settlement state PDA, signed by the order owner.
+fn approve_step(
+    state_pda: &Pubkey,
+    intent: &OrderIntent,
+    source: Pubkey,
+    delegate: Pubkey,
+    owner: Pubkey,
+) -> Result<u8, PlacementError> {
+    if source != intent.sell_token_account {
+        return Err(PlacementError::InvalidTransaction(
+            "the approve must cover the sell token account",
+        ));
+    }
+    if delegate != *state_pda {
+        return Err(PlacementError::WrongDelegate);
+    }
+    if owner != intent.owner {
+        return Err(PlacementError::InvalidTransaction(
+            "the approve owner must be the order owner",
+        ));
+    }
+    Ok(APPROVE)
+}
+
+/// Assemble the order row from the validated intent.
+fn build_order(
+    intent: OrderIntent,
+    uid: solana_sdk::hash::Hash,
+    order_pda: Pubkey,
+) -> db::SponsoredOrder {
+    db::SponsoredOrder {
         uid: uid.to_bytes(),
         owner: intent.owner.to_bytes(),
         sell_token: intent.sell_mint.to_bytes(),
@@ -243,5 +455,5 @@ fn validate(
         order_pda: order_pda.to_bytes(),
         presigned_transaction: Vec::new(),
         last_valid_block_height: 0,
-    })
+    }
 }
