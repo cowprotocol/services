@@ -476,6 +476,7 @@ pub struct QuoteSearchParameters {
     /// Sum of the gas limits of the order's pre- and post-hooks.
     pub hook_gas: u64,
     pub verification: Verification,
+    pub fast_path: bool,
 }
 
 impl QuoteSearchParameters {
@@ -1774,6 +1775,7 @@ mod tests {
                 from: Address::from([3; 20]),
                 ..Default::default()
             },
+            fast_path: false,
         };
 
         let stored = QuoteData {
@@ -1847,6 +1849,7 @@ mod tests {
                 from: Address::from([3; 20]),
                 ..Default::default()
             },
+            fast_path: false,
         };
 
         let stored = QuoteData {
@@ -1916,6 +1919,7 @@ mod tests {
                 from: Address::from([3; 20]),
                 ..Default::default()
             },
+            fast_path: false,
         };
 
         let stored = QuoteData {

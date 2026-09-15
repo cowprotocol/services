@@ -1011,6 +1011,7 @@ impl OrderValidating for OrderValidator {
             .map_err(|_| ValidationError::InvalidSignature)?,
             hook_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
+            fast_path: app_data.inner.protocol.enable_fast_path,
         };
 
         // Check if we need to re-classify the market order if it is outside the
@@ -3004,6 +3005,7 @@ mod tests {
                 from: Address::from([0xf0; 20]),
                 ..Default::default()
             },
+            fast_path: false,
         };
         let quote_data = Quote {
             fee_amount: alloy::primitives::U256::from(6),
@@ -3246,6 +3248,7 @@ mod tests {
                 receiver: Address::from([0xf0; 20]),
                 app_data: Arc::new("{}".to_string()),
             },
+            fast_path: false,
         };
         let quote_id = Some(42);
         let quote_data = Quote {

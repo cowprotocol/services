@@ -564,6 +564,7 @@ async fn get_quote(
         // Because we want to be generous with refunding EthFlow orders we therefore don't request a
         // verified quote here on purpose.
         verification: Default::default(),
+        fast_path: false,
     };
 
     get_quote_and_check_fee(
