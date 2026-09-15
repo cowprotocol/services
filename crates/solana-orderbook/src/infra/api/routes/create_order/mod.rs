@@ -162,6 +162,10 @@ fn validate(
     if keys.first() != Some(&sponsoring.funder) {
         return Err(PlacementError::WrongFeePayer);
     }
+    // TODO(BE-277): accept the whitelisted bundle template (wrap SOL, approve
+    // the delegate, create the destination account) in front of `CreateOrder`.
+    // A lone `CreateOrder` fits only traders whose accounts are already set
+    // up, so this gate has to fall before the frontend integrates.
     let [instruction] = message.instructions() else {
         return Err(PlacementError::InvalidTransaction(
             "the transaction must carry exactly one instruction",
