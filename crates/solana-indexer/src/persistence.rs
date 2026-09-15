@@ -408,6 +408,58 @@ WHERE pda.order_uid = deltas.order_uid
         Ok(tx.commit().await?)
     }
 
+    /// Claim up to `limit` parked dead letters for a replay attempt,
+    /// least recently tried first, and stamp them as tried. The rotation
+    /// keeps a permanently failing row from starving the rest of the queue.
+    pub(crate) async fn claim_dead_letters(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<(Signature, Slot)>, PersistenceError> {
+        let rows: Vec<(Vec<u8>, i64)> = sqlx::query_as(
+            r#"
+UPDATE solana.dead_letter SET last_attempt_at = now()
+WHERE tx_signature IN (
+    SELECT tx_signature FROM solana.dead_letter
+    ORDER BY last_attempt_at, slot
+    LIMIT $1
+)
+RETURNING tx_signature, slot
+            "#,
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(bytes, slot)| {
+                Some((
+                    Signature::try_from(bytes.as_slice()).ok()?,
+                    from_db_slot(slot),
+                ))
+            })
+            .collect())
+    }
+
+    /// Apply a replayed transaction's events and unpark it in one SQL
+    /// transaction: the deletion goes first, so an apply that parks the
+    /// transaction again wins, and a failed apply rolls the deletion back.
+    pub(crate) async fn replay_events(
+        &self,
+        signature: Signature,
+        events: Vec<DecodedEvent>,
+        slot: Slot,
+    ) -> Result<(), PersistenceError> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM solana.dead_letter WHERE tx_signature = $1")
+            .bind(signature.as_ref())
+            .execute(&mut *tx)
+            .await?;
+        for event in events {
+            Self::apply(&mut tx, event, slot).await?;
+        }
+        Ok(tx.commit().await?)
+    }
+
     /// Advance the finalized watermark. Update-only: before the first flush
     /// there is no state row and nothing indexed to finalize. A backward
     /// write is a no-op.
@@ -477,6 +529,35 @@ mod tests {
         solana_sdk::pubkey::Pubkey,
         sqlx::{PgPool, Row},
     };
+
+    /// Claiming dead letters rotates: least recently tried rows come first,
+    /// so a failing row cannot starve the queue.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_dead_letter_claims_rotate() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+        let first = Signature::from([1; 64]);
+        let second = Signature::from([2; 64]);
+        postgres
+            .record_decode_failure(first, Slot(10))
+            .await
+            .unwrap();
+        postgres
+            .record_decode_failure(second, Slot(11))
+            .await
+            .unwrap();
+
+        let claimed = postgres.claim_dead_letters(1).await.unwrap();
+        assert_eq!(claimed, vec![(first, Slot(10))]);
+        // The stamped row rotates behind the untried one.
+        let claimed = postgres.claim_dead_letters(1).await.unwrap();
+        assert_eq!(claimed, vec![(second, Slot(11))]);
+        // Both tried: the earliest attempt comes around again.
+        let claimed = postgres.claim_dead_letters(1).await.unwrap();
+        assert_eq!(claimed, vec![(first, Slot(10))]);
+    }
 
     /// Reverting a vanished transaction deletes its settlement, trades, and
     /// dead letter, subtracts the fills its trades added, and marks the
