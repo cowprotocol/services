@@ -49,16 +49,6 @@ pub struct OrderQuoting {
     )]
     pub standard_offchain_quote_validity: Duration,
 
-    /// Runtime toggle for the autopilot's fast-path handler. When
-    /// `false`, fast-path orders are still accepted at placement but the
-    /// handler skips the out-of-competition settle and drops them into
-    /// the next regular auction. The exclusivity window itself is
-    /// derived from `run_loop.submission_deadline` (blocks) × the
-    /// network's block time — the two used to be separate knobs that
-    /// could drift out of sync.
-    #[serde(default)]
-    pub fast_path_enabled: bool,
-
     /// Upper bound on the sum of partner volume-fee factors declared in an
     /// order's app-data. Must mirror the autopilot's
     #[serde(default)]
@@ -93,7 +83,6 @@ impl crate::test_util::TestDefault for OrderQuoting {
             eip1271_onchain_quote_validity: default_eip1271_onchain_quote_validity(),
             presign_onchain_quote_validity: default_presign_onchain_quote_validity(),
             standard_offchain_quote_validity: default_standard_offchain_quote_validity(),
-            fast_path_enabled: false,
             max_partner_fee: None,
         }
     }
@@ -122,7 +111,6 @@ mod tests {
             config.standard_offchain_quote_validity,
             Duration::from_mins(1)
         );
-        assert!(!config.fast_path_enabled);
         assert!(config.max_partner_fee.is_none());
     }
 
@@ -132,7 +120,6 @@ mod tests {
         eip1271-onchain-quote-validity = "5m"
         presign-onchain-quote-validity = "20m"
         standard-offchain-quote-validity = "30s"
-        fast-path-enabled = true
         max-partner-fee = 0.01
 
         [[price-estimation-drivers]]
@@ -158,7 +145,6 @@ mod tests {
             config.standard_offchain_quote_validity,
             Duration::from_secs(30)
         );
-        assert!(config.fast_path_enabled);
         assert_eq!(config.max_partner_fee.map(|f| f.get()), Some(0.01));
     }
 
@@ -196,7 +182,6 @@ mod tests {
             eip1271_onchain_quote_validity: Duration::from_secs(300),
             presign_onchain_quote_validity: Duration::from_secs(600),
             standard_offchain_quote_validity: Duration::from_secs(60),
-            fast_path_enabled: true,
             max_partner_fee: Some(FeeFactor::try_from(0.01).unwrap()),
         };
         let serialized = toml::to_string(&config).unwrap();

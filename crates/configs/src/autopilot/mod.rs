@@ -167,6 +167,15 @@ pub struct Configuration {
     /// Configurations for the order creation process.
     pub order_quoting: OrderQuoting,
 
+    /// Runtime toggle for the autopilot's fast-path handler. When
+    /// `false`, fast-path orders are still accepted at placement but
+    /// the handler skips the out-of-competition settle and drops them
+    /// into the next regular auction. The exclusivity window itself
+    /// is derived from `run_loop.submission_deadline` (blocks) × the
+    /// network's block time.
+    #[serde(default)]
+    pub fast_path_enabled: bool,
+
     /// Configurations for price estimation (tenderly, rate limiting, CoinGecko,
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
@@ -240,6 +249,7 @@ impl Configuration {
             max_auction_age: default_max_auction_age(),
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
+            fast_path_enabled: false,
             price_estimation: TestDefault::test_default(),
             balance_cache: TestDefault::test_default(),
         }
@@ -273,6 +283,7 @@ impl Configuration {
             max_auction_age: default_max_auction_age(),
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
+            fast_path_enabled: false,
             price_estimation: TestDefault::test_default(),
             balance_cache: TestDefault::test_default(),
         }

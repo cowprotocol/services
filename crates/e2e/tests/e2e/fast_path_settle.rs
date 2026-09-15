@@ -64,8 +64,8 @@ fn with_fast_path_exclusivity(
     const HARDHAT_BLOCK_SECS: u64 = 12;
     let submission_deadline = exclusivity.as_secs().div_ceil(HARDHAT_BLOCK_SECS).max(1);
     let autopilot = AutopilotConfiguration {
+        fast_path_enabled: true,
         order_quoting: OrderQuoting {
-            fast_path_enabled: true,
             max_partner_fee,
             ..autopilot.order_quoting
         },
