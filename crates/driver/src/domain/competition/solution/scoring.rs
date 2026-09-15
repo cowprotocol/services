@@ -275,7 +275,7 @@ impl Trade {
                     self.volume_fee(*max_volume_factor)?,
                 )
             }
-            FeePolicy::Volume { factor } => self.volume_fee(*factor)?,
+            FeePolicy::Volume { factor, .. } => self.volume_fee(*factor)?,
         };
         Ok(eth::SurplusTokenAmount(amount.0))
     }

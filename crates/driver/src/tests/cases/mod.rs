@@ -13,8 +13,6 @@ pub mod example_config;
 pub mod fees;
 mod flashloan_hints;
 pub mod gas_fee_override;
-pub mod haircut;
-pub mod haircut_pre_processing;
 pub mod internalization;
 pub mod jit_orders;
 pub mod merge_settlements;
@@ -26,6 +24,8 @@ pub mod protocol_fees;
 pub mod quote;
 pub mod settle;
 pub mod solver_balance;
+pub mod solver_fee;
+pub mod solver_fee_pre_processing;
 
 /// The default surplus factor. Set to a high value to ensure a positive score
 /// by default. Use a surplus factor of 1 if you want to test negative scores.

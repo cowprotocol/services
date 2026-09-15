@@ -247,28 +247,28 @@ impl<'a> Services<'a> {
         orderbook_config: configs::orderbook::Configuration,
         solver: TestAccount,
     ) {
-        self.start_protocol_with_args_and_haircut(autopilot_config, orderbook_config, solver, 0)
+        self.start_protocol_with_args_and_solver_fee(autopilot_config, orderbook_config, solver, 0)
             .await;
     }
 
-    pub async fn start_protocol_with_args_and_haircut(
+    pub async fn start_protocol_with_args_and_solver_fee(
         &self,
         autopilot_config: configs::autopilot::Configuration,
         orderbook_config: configs::orderbook::Configuration,
         solver: TestAccount,
-        haircut_bps: u32,
+        solver_fee_bps: u32,
     ) {
         colocation::start_driver(
             self.contracts,
             vec![
-                colocation::start_baseline_solver_with_haircut(
+                colocation::start_baseline_solver_with_solver_fee(
                     "test_solver".into(),
                     solver.clone(),
                     *self.contracts.weth.address(),
                     vec![],
                     1,
                     true,
-                    haircut_bps,
+                    solver_fee_bps,
                 )
                 .await,
             ],
@@ -319,7 +319,7 @@ impl<'a> Services<'a> {
             endpoint: external_solver_endpoint,
             base_tokens: vec![],
             merge_solutions: true,
-            haircut_bps: 0,
+            solver_fee_bps: 0,
             submission_keys: vec![],
         }];
 

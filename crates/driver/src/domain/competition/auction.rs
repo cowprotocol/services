@@ -90,6 +90,18 @@ impl Auction {
         &self.orders
     }
 
+    /// Inject the configured solver fee (see
+    /// [`crate::infra::Solver::solver_fee`]) so that the existing protocol
+    /// fee machinery makes the delivered price correspondingly worse.
+    pub fn with_solver_fee(mut self, policy: &competition::order::FeePolicy) -> Self {
+        for order in &mut self.orders {
+            let mut data = (*order.data).clone();
+            data.protocol_fees.push(policy.clone());
+            order.data = Arc::new(data);
+        }
+        self
+    }
+
     /// The tokens used in the auction.
     pub fn tokens(&self) -> &Tokens {
         &self.tokens
