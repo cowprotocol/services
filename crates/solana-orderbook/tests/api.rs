@@ -369,19 +369,30 @@ async fn spawn_sponsored_server(
     addr
 }
 
-/// A partially signed sponsored `CreateOrder` transaction: the owner signed,
-/// the fee payer slot (the funder) left as a placeholder.
-fn sponsored_creation_tx(
-    funder: solana_sdk::pubkey::Pubkey,
-    owner: &solana_sdk::signer::keypair::Keypair,
-    sign: bool,
-) -> String {
-    let intent = cow_settlement_interface::data::intent::OrderIntent {
-        owner: cow_settlement_interface::Pubkey::new_from_array(owner.pubkey().to_bytes()),
-        buy_token_account: cow_settlement_interface::Pubkey::new_from_array([0x22; 32]),
-        sell_token_account: cow_settlement_interface::Pubkey::new_from_array([0x33; 32]),
-        buy_mint: cow_settlement_interface::Pubkey::new_from_array([0x55; 32]),
-        sell_mint: cow_settlement_interface::Pubkey::new_from_array([0x66; 32]),
+/// The order intent a sponsored transaction carries. `native` sells SOL
+/// through the wSOL mint with real associated token accounts, so preparation
+/// steps can accompany the transaction.
+fn sponsored_intent(
+    owner: solana_sdk::pubkey::Pubkey,
+    native: bool,
+) -> cow_settlement_interface::data::intent::OrderIntent {
+    let buy_mint = solana_sdk::pubkey::Pubkey::new_from_array([0x55; 32]);
+    let (sell_mint, sell_token_account, buy_token_account) = if native {
+        let sell_mint = spl_token_interface::native_mint::ID;
+        (sell_mint, ata(owner, sell_mint), ata(owner, buy_mint))
+    } else {
+        (
+            solana_sdk::pubkey::Pubkey::new_from_array([0x66; 32]),
+            solana_sdk::pubkey::Pubkey::new_from_array([0x33; 32]),
+            ata(owner, buy_mint),
+        )
+    };
+    cow_settlement_interface::data::intent::OrderIntent {
+        owner,
+        buy_token_account,
+        sell_token_account,
+        buy_mint,
+        sell_mint,
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: u32::MAX,
@@ -391,17 +402,87 @@ fn sponsored_creation_tx(
             partially_fillable: false,
         },
         app_data: [0x44; 32],
-    };
-    let instruction: solana_sdk::instruction::Instruction =
+    }
+}
+
+/// The owner's associated token account for `mint` under the SPL Token
+/// program.
+fn ata(
+    owner: solana_sdk::pubkey::Pubkey,
+    mint: solana_sdk::pubkey::Pubkey,
+) -> solana_sdk::pubkey::Pubkey {
+    spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+        &owner,
+        &mint,
+        &spl_token_interface::ID,
+    )
+}
+
+/// The settlement state PDA delegations must target.
+fn state_pda() -> solana_sdk::pubkey::Pubkey {
+    cow_settlement_interface::pda::state::find_state_pda(&cow_settlement_interface::id()).0
+}
+
+/// The full whitelisted preparation prefix for a native-sell intent: create
+/// the wSOL account, fund it, sync it, delegate it, create the buy account.
+fn full_preparations(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: solana_sdk::pubkey::Pubkey,
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+) -> Vec<solana_sdk::instruction::Instruction> {
+    vec![
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+            &funder,
+            &owner,
+            &intent.sell_mint,
+            &spl_token_interface::ID,
+        ),
+        solana_system_interface::instruction::transfer(&owner, &intent.sell_token_account, 1_000),
+        spl_token_interface::instruction::sync_native(
+            &spl_token_interface::ID,
+            &intent.sell_token_account,
+        )
+        .unwrap(),
+        spl_token_interface::instruction::approve(
+            &spl_token_interface::ID,
+            &intent.sell_token_account,
+            &state_pda(),
+            &owner,
+            &[],
+            1_000,
+        )
+        .unwrap(),
+        spl_associated_token_account_interface::instruction::create_associated_token_account(
+            &funder,
+            &owner,
+            &intent.buy_mint,
+            &spl_token_interface::ID,
+        ),
+    ]
+}
+
+/// A partially signed sponsored creation transaction: the given preparation
+/// instructions in front of `CreateOrder`, the owner signed, the fee payer
+/// slot (the funder) left as a placeholder.
+fn creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+    preparations: Vec<solana_sdk::instruction::Instruction>,
+    sign: bool,
+) -> String {
+    let mut instructions = preparations;
+    instructions.push(
         cow_settlement_client::instructions::CreateOrder {
             program_id: cow_settlement_interface::id(),
             owner: owner.pubkey(),
             created_by: funder,
-            intent: &intent,
+            intent,
         }
-        .into();
+        .into(),
+    );
     let message = solana_sdk::message::Message::new_with_blockhash(
-        &[instruction],
+        &instructions,
         Some(&funder),
         &solana_sdk::hash::Hash::new_unique(),
     );
@@ -421,6 +502,32 @@ fn sponsored_creation_tx(
         message: solana_sdk::message::VersionedMessage::Legacy(message),
     };
     base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
+}
+
+/// The mandatory buy-account creation step for the intent.
+fn destination_creation(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: solana_sdk::pubkey::Pubkey,
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+) -> solana_sdk::instruction::Instruction {
+    spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+        &funder,
+        &owner,
+        &intent.buy_mint,
+        &spl_token_interface::ID,
+    )
+}
+
+/// A sponsored creation transaction with an arbitrary SPL sell and only the
+/// mandatory buy-account creation in front of `CreateOrder`.
+fn sponsored_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+    sign: bool,
+) -> String {
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    creation_tx(funder, owner, &intent, vec![destination], sign)
 }
 
 async fn post_order(addr: SocketAddr, transaction: String) -> (reqwest::StatusCode, String) {
@@ -489,6 +596,83 @@ async fn create_order_rejects_invalid_submissions() {
     );
 }
 
+/// Preparation instructions outside the template, touching the funder, or
+/// out of order are rejected. All rejections come from validation, so no
+/// database or RPC probe is consumed.
+#[tokio::test]
+async fn create_order_checks_the_preparation_template() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner_keypair = solana_sdk::signer::keypair::Keypair::new();
+    let owner = owner_keypair.pubkey();
+    let intent = sponsored_intent(owner, true);
+    let addr =
+        spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
+
+    let transfer = |from: solana_sdk::pubkey::Pubkey| {
+        solana_system_interface::instruction::transfer(&from, &intent.sell_token_account, 1_000)
+    };
+    let approve = |delegate: solana_sdk::pubkey::Pubkey| {
+        spl_token_interface::instruction::approve(
+            &spl_token_interface::ID,
+            &intent.sell_token_account,
+            &delegate,
+            &owner,
+            &[],
+            1_000,
+        )
+        .unwrap()
+    };
+
+    for (preparations, expected) in [
+        // The buy-account creation is mandatory.
+        (vec![], "InvalidTransaction"),
+        // A program outside the template never rides on the funder's fee.
+        (
+            vec![solana_sdk::instruction::Instruction::new_with_bytes(
+                solana_sdk::pubkey::Pubkey::new_unique(),
+                &[],
+                vec![],
+            )],
+            "InvalidTransaction",
+        ),
+        // A transfer draining the funder instead of wrapping the owner's SOL.
+        (vec![transfer(funder)], "InvalidTransaction"),
+        // A delegation to anyone but the settlement state PDA.
+        (
+            vec![approve(solana_sdk::pubkey::Pubkey::new_unique())],
+            "WrongDelegate",
+        ),
+        // Steps out of template order.
+        (
+            vec![approve(state_pda()), transfer(owner)],
+            "InvalidTransaction",
+        ),
+        // A step twice.
+        (
+            vec![approve(state_pda()), approve(state_pda())],
+            "InvalidTransaction",
+        ),
+    ] {
+        let transaction = creation_tx(funder, &owner_keypair, &intent, preparations, true);
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected)
+        );
+    }
+
+    // Wrap steps on an order that does not sell native SOL.
+    let plain = sponsored_intent(owner, false);
+    let wrap =
+        solana_system_interface::instruction::transfer(&owner, &plain.sell_token_account, 1_000);
+    let transaction = creation_tx(funder, &owner_keypair, &plain, vec![wrap], true);
+    let (status, kind) = post_order(addr, transaction).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
+    );
+}
+
 /// The happy path lands the order and the duplicate is rejected.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
@@ -501,7 +685,11 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
-    let transaction = sponsored_creation_tx(funder, &owner, true);
+    // The full preparation prefix in front of `CreateOrder`, as the frontend
+    // sends it for a first-time native-SOL sell.
+    let intent = sponsored_intent(owner.pubkey(), true);
+    let preparations = full_preparations(funder, owner.pubkey(), &intent);
+    let transaction = creation_tx(funder, &owner, &intent, preparations, true);
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
