@@ -78,12 +78,25 @@ impl GasPriceEstimator {
             )
         };
 
+        // Add headroom on top of the estimate so a base-fee increase between
+        // submission and inclusion does not strand the tx below the new base
+        // fee. max_fee_per_gas is a ceiling, not the amount paid.
+        let factor_as_bps = self.adjustments.max_fee_per_gas_factor * 10000.0;
+        let suggested_max_fee_per_gas = eth::U256::from(estimate.max_fee_per_gas)
+            .checked_mul(eth::U256::from(factor_as_bps as u128))
+            .ok_or_else(|| {
+                Error::GasPrice(anyhow!(
+                    "overflow on multiplication (max_fee_per_gas * max_fee_per_gas_factor)"
+                ))
+            })?
+            / eth::U256::from(10000u128);
+
         // make sure the used max fee per gas is at least big enough to cover
         // the tip - otherwise the tx will be rejected by the node
         // immediately
-        let suggested_max_fee_per_gas = eth::U256::from(estimate.max_fee_per_gas);
         let suggested_max_fee_per_gas =
             std::cmp::max(suggested_max_fee_per_gas, max_priority_fee_per_gas);
+
         if suggested_max_fee_per_gas > self.adjustments.max_fee_per_gas {
             return Err(Error::GasPrice(anyhow::anyhow!(
                 "suggested gas price is higher than maximum allowed gas price (network is too \
@@ -123,6 +136,9 @@ pub struct GasPriceParameters {
     max_fee_per_gas: eth::U256,
     /// We'll always tip at least this value for `max_priority_fee_per_gas`.
     min_priority_fee: eth::U256,
+    /// The `max_fee_per_gas` suggested by the estimator gets multiplied with
+    /// this factor to leave headroom for a base-fee increase before inclusion.
+    max_fee_per_gas_factor: f64,
 }
 
 pub fn adjustments(mempools: &[mempool::Config]) -> GasPriceParameters {
@@ -133,6 +149,7 @@ pub fn adjustments(mempools: &[mempool::Config]) -> GasPriceParameters {
     let mut additional_tip_percentage = 0.0f64;
     let mut max_fee_per_gas = eth::U256::MAX;
     let mut min_priority_fee = eth::U256::ZERO;
+    let mut max_fee_per_gas_factor = 1.0f64;
 
     for mempool in mempools {
         max_additional_tip = max_additional_tip.max(mempool.max_additional_tip);
@@ -140,6 +157,7 @@ pub fn adjustments(mempools: &[mempool::Config]) -> GasPriceParameters {
             additional_tip_percentage.max(mempool.additional_tip_percentage);
         max_fee_per_gas = max_fee_per_gas.min(mempool.gas_price_cap);
         min_priority_fee = min_priority_fee.max(mempool.min_priority_fee);
+        max_fee_per_gas_factor = max_fee_per_gas_factor.max(mempool.max_fee_per_gas_factor);
     }
 
     GasPriceParameters {
@@ -147,5 +165,6 @@ pub fn adjustments(mempools: &[mempool::Config]) -> GasPriceParameters {
         additional_tip_factor: additional_tip_percentage,
         max_fee_per_gas,
         min_priority_fee,
+        max_fee_per_gas_factor,
     }
 }
