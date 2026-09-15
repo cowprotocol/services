@@ -1045,7 +1045,7 @@ impl Persistence {
     pub async fn set_order_valid_from(
         &self,
         uid: domain::OrderUid,
-        valid_from: i64,
+        valid_from: u32,
     ) -> anyhow::Result<()> {
         let _timer = Metrics::get()
             .database_queries
@@ -1234,7 +1234,7 @@ pub struct FastPathPromotion {
     /// time. Written atomically with the rest of the promotion so the
     /// order can never be observed "settle-committed, exclusivity not
     /// claimed" from another connection.
-    pub valid_from: i64,
+    pub valid_from: u32,
     pub native_prices: HashMap<eth::Address, eth::U256>,
     /// Fully-built solver-competition rows (one per staged solution).
     /// Constructed by the caller so per-bid encoding decisions —

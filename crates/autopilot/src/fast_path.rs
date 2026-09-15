@@ -94,17 +94,6 @@ impl FastPathHandler {
         })
     }
 
-    /// Wall-clock length of the fast-path exclusivity window: the number
-    /// of blocks the settle attempt has (`submission_deadline`) scaled
-    /// by the network's block time. Rounded up so the regular auction
-    /// only picks the order up once the settle deadline has definitely
-    /// elapsed.
-    fn exclusivity_secs(&self) -> u64 {
-        let block_time_ms = self.eth.chain().block_time_in_ms().as_millis() as u64;
-        let window_ms = self.submission_deadline.saturating_mul(block_time_ms);
-        window_ms.div_ceil(1_000)
-    }
-
     /// Spawns the fast-path listener: pulls order uids off `receiver`
     /// and dispatches each one on a fresh task so a slow handler run
     /// never blocks subsequent orders.
@@ -177,7 +166,7 @@ impl FastPathHandler {
                 tracing::error!(?err, "failed to execute fast-path settle");
             }
         } else {
-            let now = model::time::now_in_epoch_seconds() as i64;
+            let now = model::time::now_in_epoch_seconds();
             if let Err(err) = self.persistence.set_order_valid_from(order_uid, now).await {
                 tracing::error!(?err, "failed to fall through to regular auction");
             }
@@ -247,15 +236,6 @@ impl FastPathHandler {
     /// and hands the `/settle` request to the driver. Errors bubble up
     /// to the caller so the handler can log them uniformly.
     async fn execute_fast_path_settle(&self, attempt: FastPathSettleAttempt) -> anyhow::Result<()> {
-        // TODO: for the initial version we just use the same submission
-        // deadline as the main auction uses which likely extends beyond
-        // the valid_from period. It's still not possible for the same
-        // order to be part of the fast path and a regular auction at the
-        // same time because the SettleCallCoordinator populates tables
-        // which feed the filter of the inflight order detection.
-        //
-        // The final implementation should take the order's valid_from
-        // and the expected end of the current auction into account.
         let winning_solver = attempt.staged.winner().solver;
         let winner = self
             .drivers
@@ -265,18 +245,17 @@ impl FastPathHandler {
                 format!("winning driver {winning_solver:?} is currently not configured")
             })?;
 
-        let current_block = self.eth.current_block().borrow().number;
-        let submission_deadline = current_block + self.submission_deadline;
+        let deadline = self.submission_deadline();
 
         let final_execution = self
-            .compute_and_persist_final_execution(&attempt, current_block, submission_deadline)
+            .compute_and_persist_final_execution(&attempt, &deadline)
             .await
             .context("failed to record fast-path fee policies")?;
 
         let request = settle::Request {
             auction_id: attempt.staged.data.auction_id,
             solution_id: attempt.staged.winner().solution_id,
-            submission_deadline_latest_block: submission_deadline,
+            submission_deadline_latest_block: deadline.block,
             fast_path: Some(settle::FastPath {
                 order: dto::order::from_domain(&final_execution.order),
                 limit_prices: settle::LimitPrices {
@@ -316,8 +295,7 @@ impl FastPathHandler {
     async fn compute_and_persist_final_execution(
         &self,
         attempt: &FastPathSettleAttempt,
-        block: u64,
-        deadline: u64,
+        deadline: &SubmissionDeadline,
     ) -> anyhow::Result<FinalOrderExecution> {
         let order_uid: domain::OrderUid = attempt.model_order.metadata.uid.into();
         let order_kind = attempt.model_order.data.kind;
@@ -382,16 +360,14 @@ impl FastPathHandler {
         let (limit_sell, limit_buy) =
             winning_adjusted.expect("winner is present in staged competition");
 
-        let valid_from =
-            model::time::now_in_epoch_seconds() as i64 + self.exclusivity_secs().cast_signed();
         self.persistence
             .finalize_fast_path(FastPathPromotion {
                 quote_id: attempt.staged.quote_id,
                 auction_id: attempt.staged.data.auction_id,
                 order_uid,
-                block,
-                deadline,
-                valid_from,
+                block: deadline.computed_at_block,
+                deadline: deadline.block,
+                valid_from: deadline.timestamp,
                 native_prices: attempt.staged.data.native_prices.clone(),
                 solutions: solution_rows,
                 fee_policies: volume_fee_policies.to_vec(),
@@ -410,6 +386,28 @@ impl FastPathHandler {
             limit_sell,
             limit_buy,
         })
+    }
+
+    /// Computes timestamp and number of the last block the order may be
+    /// executed in.
+    fn submission_deadline(&self) -> SubmissionDeadline {
+        // TODO: for the initial version we just use the same submission
+        // deadline as the main auction uses which likely extends beyond
+        // the valid_from period. It's still not possible for the same
+        // order to be part of the fast path and a regular auction at the
+        // same time because the SettleCallCoordinator populates tables
+        // which feed the filter of the inflight order detection.
+        //
+        // The final implementation should take the order's valid_from
+        // and the expected end of the current auction into account.
+        let block_time_ms = self.eth.chain().block_time_in_ms().as_millis() as u64;
+        let window_ms = self.submission_deadline.saturating_mul(block_time_ms);
+        let current_block = self.eth.current_block().borrow();
+        SubmissionDeadline {
+            computed_at_block: current_block.number,
+            timestamp: (current_block.timestamp + window_ms.div_ceil(1000)) as u32,
+            block: current_block.number + self.submission_deadline,
+        }
     }
 }
 
@@ -432,6 +430,15 @@ struct FinalOrderExecution {
     limit_sell: U256,
     /// Quoted buy amount after all Volume-type policies are applied.
     limit_buy: U256,
+}
+
+struct SubmissionDeadline {
+    /// Block at which this deadline was computed at.
+    computed_at_block: u64,
+    /// Last block at which the order may be executed in.
+    block: u64,
+    /// UNIX timestamp at which the target block will be mined
+    timestamp: u32,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

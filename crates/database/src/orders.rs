@@ -246,12 +246,12 @@ WHERE uid = $1
 pub async fn set_valid_from(
     ex: &mut PgConnection,
     uid: &OrderUid,
-    valid_from: i64,
+    valid_from: u32,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "UPDATE orders SET valid_from = $2 WHERE uid = $1";
     sqlx::query(QUERY)
         .bind(uid)
-        .bind(valid_from)
+        .bind(valid_from as i64)
         .execute(ex)
         .await?;
     Ok(())
