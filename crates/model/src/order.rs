@@ -737,6 +737,13 @@ pub struct OrderMetadata {
     /// auction. `None` means no lower bound (eligible immediately).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub valid_from: Option<u32>,
+    /// Whether the caller asked for fast-path treatment (the
+    /// `enableFastPath` app-data flag was set). Persisted so the
+    /// autopilot's fast-path handler can pick the order up and decide
+    /// whether to actually run the fast path or fall through to a
+    /// regular auction.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fast_path: bool,
     /// If the order was created with a quote, then this field contains that
     /// quote data for reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -501,7 +501,7 @@ where
                     solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.clone().try_into()?,
-                    auction_id: quote.data.auction_id,
+                    quote_id: Some(quote_id),
                 }),
                 Err(err) => {
                     let err_label = err.to_metrics_label();
@@ -564,6 +564,7 @@ async fn get_quote(
         // Because we want to be generous with refunding EthFlow orders we therefore don't request a
         // verified quote here on purpose.
         verification: Default::default(),
+        fast_path: false,
     };
 
     get_quote_and_check_fee(
@@ -632,6 +633,9 @@ fn convert_onchain_order_placement(
         // Backfilled from the order's app-data in `handle_app_data` before the
         // order is persisted; the full app-data isn't available at this point.
         valid_from: None,
+        // Same as `valid_from`: filled in from the app-data after it has been
+        // fetched.
+        fast_path: false,
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -684,10 +688,18 @@ fn extract_order_data_from_onchain_order_placement_event(
     Ok((order_data, owner, signing_scheme, order_uid))
 }
 
-/// Populates all app-data-derived order fields before the orders are persisted:
-/// backfills each order's `valid_from` and indexes its pre/post hook
-/// interactions. Must run before the orders are inserted (it mutates them).
-/// Orders whose app-data is unknown or unparseable are left unchanged.
+/// Populates all app-data-derived order fields before the orders are
+/// persisted: sets `fast_path` from the `enableFastPath` app-data flag,
+/// backfills `valid_from` for non-fast-path orders that requested one,
+/// and indexes pre/post hook interactions. Must run before the orders
+/// are inserted (it mutates them). Orders whose app-data is unknown or
+/// unparseable are left unchanged.
+///
+/// For fast-path orders `valid_from` is intentionally left `NULL`: the
+/// autopilot's fast-path handler (`crates/autopilot/src/fast_path.rs`)
+/// owns that field and will set it either to `now()` (feature disabled
+/// or limit-price check failed) or to `now + exclusivity` when it
+/// initiates the fast-path settle.
 async fn handle_app_data(
     db: &mut PgConnection,
     orders: &mut [Order],
@@ -707,7 +719,13 @@ async fn handle_app_data(
         };
 
         store_hooks(db, order, &parsed, trampoline).await?;
-        order.valid_from = parsed.valid_from.map(i64::from);
+        order.fast_path = parsed.enable_fast_path;
+        // Only honour an explicit user-set `validFrom` for non-fast-path
+        // orders; fast-path orders are handled by the autopilot's
+        // fast-path handler.
+        if !parsed.enable_fast_path {
+            order.valid_from = parsed.valid_from.map(i64::from);
+        }
     }
     Ok(())
 }
@@ -1048,6 +1066,7 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
             valid_from: None,
+            fast_path: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1162,6 +1181,7 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
             valid_from: None,
+            fast_path: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1317,7 +1337,7 @@ mod test {
             solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.clone().try_into().unwrap(),
-            auction_id: quote.data.auction_id,
+            quote_id: Some(0i64),
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(
