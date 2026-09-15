@@ -598,7 +598,7 @@ impl Solution {
                 let projected_buy_amount = sell_amount
                     .checked_mul(clearing.sell)
                     .ok_or(error::Math::Overflow)?
-                    .checked_ceil_div(&clearing.buy)
+                    .checked_div(clearing.buy)
                     .ok_or(error::Math::DivisionByZero)?;
                 projected_buy_amount >= limit_prices.buy
             }
