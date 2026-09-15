@@ -174,7 +174,7 @@ impl FastPathHandler {
             // path execution. To not ignore this order forever we simply set
             // `valid_from: now()` so that the regular auction build picks it
             // up going forward.
-            tracing::debug!("fast path not possible making order valid immediately");
+            tracing::debug!("fast path not possible, making order valid immediately");
             let now = model::time::now_in_epoch_seconds();
             if let Err(err) = self.persistence.set_order_valid_from(order_uid, now).await {
                 tracing::error!(?err, "failed to fall through to regular auction");
