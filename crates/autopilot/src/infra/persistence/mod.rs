@@ -1056,21 +1056,21 @@ impl Persistence {
         Ok(())
     }
 
-    /// UIDs of every fast-path order whose `valid_from` has not been
-    /// set yet. Called on autopilot startup to re-drive the handler for
-    /// orders whose `new_order` notification landed while the process
-    /// was down.
-    pub async fn pending_fast_path_order_uids(&self) -> anyhow::Result<Vec<domain::OrderUid>> {
+    /// Bulk-flushes fast-path orders whose `valid_from` was never
+    /// populated: their `new_order` notification landed while the
+    /// autopilot was down, and by the time it comes back the intended
+    /// exclusivity window has long since elapsed. Running the full
+    /// fast-path against a stale quote would just settle against
+    /// moved on-chain prices, so we drop them straight into the next
+    /// regular auction by setting `valid_from = now`. Returns the
+    /// number of rows updated.
+    pub async fn flush_pending_fast_path_backlog(&self, now: u32) -> anyhow::Result<u64> {
         let _timer = Metrics::get()
             .database_queries
-            .with_label_values(&["pending_fast_path_order_uids"])
+            .with_label_values(&["flush_pending_fast_path_backlog"])
             .start_timer();
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-        let uids = database::orders::pending_fast_path_uids(&mut ex).await?;
-        Ok(uids
-            .into_iter()
-            .map(|uid| domain::OrderUid(uid.0))
-            .collect())
+        Ok(database::orders::flush_pending_fast_path_backlog(&mut ex, now).await?)
     }
 
     /// Returns the order iff it is a fast-path order the handler still

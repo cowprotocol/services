@@ -94,11 +94,16 @@ impl FastPathHandler {
         })
     }
 
-    /// Spawns the fast-path listener: pulls order uids off `receiver`
-    /// and dispatches each one on a fresh task so a slow handler run
-    /// never blocks subsequent orders.
-    pub fn spawn(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<domain::OrderUid>) {
-        tokio::spawn(self.clone().process_order_backlog());
+    /// Flushes the pre-startup backlog and then spawns the fast-path
+    /// listener: pulls order uids off `receiver` and dispatches each
+    /// one on a fresh task so a slow handler run never blocks
+    /// subsequent orders.
+    ///
+    /// Awaits the backlog flush before starting the receiver so a
+    /// live notification that lands during startup isn't dropped by
+    /// the concurrent bulk update.
+    pub async fn spawn(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<domain::OrderUid>) {
+        self.clone().process_order_backlog().await;
         tokio::spawn(async move {
             while let Some(order_uid) = receiver.next().await {
                 self.clone().spawn_order_handler(order_uid);
@@ -106,26 +111,20 @@ impl FastPathHandler {
         });
     }
 
-    /// The autopilot is responsible for populating the `valid_from`
-    /// column in the orders table. Additionally fast path orders that
-    /// don't have a `valid_from` yet are not allowed to be part of
-    /// the auction. That means whenever there was a downtime or also
-    /// just during a regular restart the autopilot needs to process
-    /// the backlog of unfinalized orders which is what this function
-    /// is doing.
+    /// Fast-path orders sitting with `valid_from IS NULL` when the
+    /// autopilot starts up are the backlog left behind by a restart or
+    /// downtime — their `new_order` notification is gone and by the
+    /// time we see them the intended exclusivity window has long since
+    /// elapsed. Trying to run the fast-path against a stale quote
+    /// would just settle against moved on-chain prices, so instead
+    /// bulk-update all of them to `valid_from = now()` and let the
+    /// next regular auction pick them up.
     async fn process_order_backlog(self: Arc<Self>) {
-        let uids = match self.persistence.pending_fast_path_order_uids().await {
-            Ok(uids) => uids,
-            Err(err) => {
-                tracing::error!(?err, "failed to fetch pending fast-path orders on startup");
-                return;
-            }
-        };
-        if !uids.is_empty() {
-            tracing::info!(count = uids.len(), "processing fast path order backlog");
-        }
-        for uid in uids {
-            self.clone().spawn_order_handler(uid);
+        let now = model::time::now_in_epoch_seconds();
+        match self.persistence.flush_pending_fast_path_backlog(now).await {
+            Ok(0) => {}
+            Ok(count) => tracing::info!(count, "flushed fast-path backlog into regular auction"),
+            Err(err) => tracing::error!(?err, "failed to flush fast-path backlog on startup"),
         }
     }
 
@@ -401,11 +400,22 @@ impl FastPathHandler {
         // The final implementation should take the order's valid_from
         // and the expected end of the current auction into account.
         let block_time_ms = self.eth.chain().block_time_in_ms().as_millis() as u64;
-        let window_ms = self.submission_deadline.saturating_mul(block_time_ms);
+        let window_secs = self
+            .submission_deadline
+            .saturating_mul(block_time_ms)
+            .div_ceil(1000);
         let current_block = self.eth.current_block().borrow();
+        // Anchor to whichever is later: on-chain block time (in prod
+        // this tracks wall clock closely and captures a stalled chain)
+        // or wall clock (guards against test setups / stale forks where
+        // the chain's timestamp lags real time). Either way the value
+        // is a safe upper bound on when the settle deadline block will
+        // actually arrive.
+        let now = model::time::now_in_epoch_seconds() as u64;
+        let anchor = current_block.timestamp.max(now);
         SubmissionDeadline {
             computed_at_block: current_block.number,
-            timestamp: (current_block.timestamp + window_ms.div_ceil(1000)) as u32,
+            timestamp: (anchor + window_secs) as u32,
             block: current_block.number + self.submission_deadline,
         }
     }

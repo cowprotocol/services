@@ -680,7 +680,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         run_loop_config.submission_deadline,
         config.order_quoting.fast_path_enabled,
     );
-    fast_path_handler.spawn(fast_path_receiver);
+    fast_path_handler.spawn(fast_path_receiver).await;
 
     let run = RunLoop::new(
         run_loop_config,

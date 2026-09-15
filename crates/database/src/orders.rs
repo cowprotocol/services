@@ -257,16 +257,26 @@ pub async fn set_valid_from(
     Ok(())
 }
 
-/// UIDs of every fast-path order whose `valid_from` has not been set.
-/// Used by the autopilot on startup to re-drive the handler for orders
-/// whose Postgres notification was missed while the process was down.
-/// The `WHERE fast_path` half of the predicate is served by the partial
-/// index `orders_fast_path`; the `valid_from IS NULL` filter runs on
-/// the (small) indexed subset.
+/// Flushes any fast-path orders whose `valid_from` was never populated
+/// by setting them to `now`. Called on autopilot startup: notifications
+/// for orders placed while the process was down are gone, and by the
+/// time the process comes back the intended exclusivity window has
+/// long since elapsed anyway — running the full fast-path against a
+/// stale quote would just settle against moved on-chain prices. This
+/// lets those orders enter the very next regular auction. The partial
+/// index `orders_fast_path` narrows the scan to the (small) fast-path
+/// slice; the `valid_from IS NULL` filter runs on that subset.
+///
+/// Returns the number of rows that were updated (for observability).
 #[instrument(skip_all)]
-pub async fn pending_fast_path_uids(ex: &mut PgConnection) -> Result<Vec<OrderUid>, sqlx::Error> {
-    const QUERY: &str = "SELECT uid FROM orders WHERE fast_path AND valid_from IS NULL";
-    sqlx::query_scalar(QUERY).fetch_all(ex).await
+pub async fn flush_pending_fast_path_backlog(
+    ex: &mut PgConnection,
+    now: u32,
+) -> Result<u64, sqlx::Error> {
+    const QUERY: &str =
+        "UPDATE orders SET valid_from = $1 WHERE fast_path AND valid_from IS NULL";
+    let result = sqlx::query(QUERY).bind(now as i64).execute(ex).await?;
+    Ok(result.rows_affected())
 }
 
 pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
