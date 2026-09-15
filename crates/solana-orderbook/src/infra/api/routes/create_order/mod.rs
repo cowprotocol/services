@@ -88,8 +88,8 @@ impl From<PlacementError> for error::Reply {
     }
 }
 
-fn internal(err: impl std::fmt::Debug, what: &str) -> error::Reply {
-    tracing::error!(?err, what);
+fn internal_error_reply(err: impl std::fmt::Debug, what: &str) -> error::Reply {
+    tracing::error!(?err, "{what}");
     error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
 }
 
@@ -117,7 +117,7 @@ pub async fn create_order(
         .rpc
         .is_blockhash_valid(blockhash)
         .await
-        .map_err(|err| internal(err, "blockhash validity check failed"))?;
+        .map_err(|err| internal_error_reply(err, "blockhash validity check failed"))?;
     if !valid {
         return Err(PlacementError::BlockhashExpired.into());
     }
@@ -125,7 +125,7 @@ pub async fn create_order(
         .rpc
         .block_height()
         .await
-        .map_err(|err| internal(err, "block height fetch failed"))?;
+        .map_err(|err| internal_error_reply(err, "block height fetch failed"))?;
     order.last_valid_block_height = u64::from(height) + MAX_PROCESSING_AGE as u64;
 
     let uid = order.uid;
@@ -137,7 +137,7 @@ pub async fn create_order(
         if duplicate {
             return Err(PlacementError::DuplicatedOrder.into());
         }
-        return Err(internal(err, "sponsored order insert failed"));
+        return Err(internal_error_reply(err, "sponsored order insert failed"));
     }
     Ok((StatusCode::CREATED, Json(const_hex::encode_prefixed(uid))))
 }
