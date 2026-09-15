@@ -114,7 +114,8 @@ impl Settlement {
             .iter()
             .copied()
             .chain(buffers.iter().map(|token| token.address))
-            .chain(sell_atas.iter().map(|token| token.address));
+            .chain(sell_atas.iter().map(|token| token.address))
+            .chain(self.orders.iter().map(|order| order.buy_token_account));
 
         let snapshot = blockchain
             .accounts_snapshot(addresses)
@@ -138,6 +139,27 @@ impl Settlement {
         let mut missing_payer_atas = missing_setup_accounts(&sell_atas, &snapshot)?;
         missing_payer_atas.sort_unstable();
         missing_payer_atas.dedup();
+
+        // The settlement never creates the order's buy_token_account. A missing
+        // or non-token destination reverts FinalizeSettle with
+        // InvalidAccountData.
+        // TODO(BE-191): the autopilot should exclude such orders from the
+        // auction. The driver can only observe here: dropping one order
+        // would invalidate the solver's solution.
+        for order in &self.orders {
+            if !matches!(
+                snapshot.token_account_state(&order.buy_token_account),
+                TokenAccountState::Initialized
+            ) {
+                tracing::warn!(
+                    order = %order.uid,
+                    account = %order.buy_token_account,
+                    mint = %order.buy_token,
+                    "order buy_token_account is not an initialized token account, \
+                     FinalizeSettle will revert"
+                );
+            }
+        }
 
         Ok(ResolvedSettlement {
             settlement: self,
