@@ -37,7 +37,7 @@ use {
             persistence::{FastPathOrder, FastPathPromotion, StagedFastPathCompetition, dto},
             solvers::dto::settle,
         },
-        settle_call_coordinator::SettleCallCoordinator,
+        settle_call::SettleCall,
     },
     alloy::primitives::{Address, U256},
     anyhow::Context,
@@ -56,7 +56,7 @@ pub struct FastPathHandler {
     drivers: Vec<Arc<infra::Driver>>,
     protocol_fees: Arc<domain::ProtocolFees>,
     surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
-    settle_coordinator: Arc<SettleCallCoordinator>,
+    settle_coordinator: Arc<SettleCall>,
     /// Block-count deadline for the fast-path settle attempt. Doubles
     /// as the exclusivity window in wall clock: `valid_from` is set to
     /// `now + submission_deadline × chain.block_time`, so the order
@@ -78,7 +78,7 @@ impl FastPathHandler {
         drivers: Vec<Arc<infra::Driver>>,
         protocol_fees: Arc<domain::ProtocolFees>,
         surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
-        settle_coordinator: Arc<SettleCallCoordinator>,
+        settle_coordinator: Arc<SettleCall>,
         submission_deadline: u64,
         fast_path_enabled: bool,
     ) -> Arc<Self> {

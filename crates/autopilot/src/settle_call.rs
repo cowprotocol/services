@@ -23,7 +23,7 @@ pub enum SettleError {
     Timeout,
 }
 
-pub struct SettleCallCoordinator {
+pub struct SettleCall {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
     maintenance: MaintenanceSync,
@@ -32,7 +32,7 @@ pub struct SettleCallCoordinator {
     max_settlement_transaction_wait: Duration,
 }
 
-impl SettleCallCoordinator {
+impl SettleCall {
     pub fn new(
         eth: infra::Ethereum,
         persistence: infra::Persistence,

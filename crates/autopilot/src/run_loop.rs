@@ -17,7 +17,7 @@ use {
         leader_lock_tracker::LeaderLockTracker,
         maintenance::{MaintenanceSync, SyncTarget},
         run::Liveness,
-        settle_call_coordinator::{SettleCallCoordinator, SettleError},
+        settle_call::{SettleCall, SettleError},
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
@@ -168,7 +168,7 @@ pub struct RunLoop {
     drivers: Vec<Arc<infra::Driver>>,
     /// Sends `/settle` calls to drivers and waits for the resulting
     /// transaction to be mined.
-    settle_coordinator: Arc<SettleCallCoordinator>,
+    settle_coordinator: Arc<SettleCall>,
 }
 
 impl RunLoop {
@@ -183,7 +183,7 @@ impl RunLoop {
         probes: Probes,
         maintenance: MaintenanceSync,
         wake_runloop: Arc<tokio::sync::Notify>,
-        settle_coordinator: Arc<SettleCallCoordinator>,
+        settle_coordinator: Arc<SettleCall>,
     ) -> Self {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();

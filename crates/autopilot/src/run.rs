@@ -21,7 +21,7 @@ use {
         infra,
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
-        settle_call_coordinator::SettleCallCoordinator,
+        settle_call::SettleCall,
         shadow,
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
@@ -664,7 +664,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let awaiter = maintenance
         .spawn_maintenance_task(eth.current_block().clone(), config.max_maintenance_timeout);
 
-    let settle_coordinator = Arc::new(SettleCallCoordinator::new(
+    let settle_coordinator = Arc::new(SettleCall::new(
         eth.clone(),
         persistence.clone(),
         awaiter.clone(),
