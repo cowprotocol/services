@@ -103,10 +103,14 @@ impl FastPathHandler {
     /// live notification that lands during startup isn't dropped by
     /// the concurrent bulk update.
     pub async fn spawn(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<domain::OrderUid>) {
-        self.clone().process_order_backlog().await;
+        self.process_order_backlog().await;
         tokio::spawn(async move {
             while let Some(order_uid) = receiver.next().await {
-                self.clone().spawn_order_handler(order_uid);
+                tokio::spawn(
+                    self.clone()
+                        .handle(order_uid)
+                        .instrument(tracing::info_span!("fast_path", ?order_uid)),
+                );
             }
         });
     }
@@ -114,12 +118,12 @@ impl FastPathHandler {
     /// Fast-path orders sitting with `valid_from IS NULL` when the
     /// autopilot starts up are the backlog left behind by a restart or
     /// downtime — their `new_order` notification is gone and by the
-    /// time we see them the intended exclusivity window has long since
+    /// time we see them the intended exclusivity window may have long
     /// elapsed. Trying to run the fast-path against a stale quote
     /// would just settle against moved on-chain prices, so instead
     /// bulk-update all of them to `valid_from = now()` and let the
     /// next regular auction pick them up.
-    async fn process_order_backlog(self: Arc<Self>) {
+    async fn process_order_backlog(&self) {
         let now = model::time::now_in_epoch_seconds();
         match self.persistence.flush_pending_fast_path_backlog(now).await {
             Ok(0) => {}
@@ -128,21 +132,12 @@ impl FastPathHandler {
         }
     }
 
-    fn spawn_order_handler(self: Arc<Self>, order_uid: domain::OrderUid) {
-        tokio::spawn(
-            async move {
-                self.handle(order_uid).await;
-            }
-            .instrument(tracing::info_span!("fast_path", ?order_uid)),
-        );
-    }
-
     /// Classifies a single fast-path order. See the module docs for the
     /// three cases. Non-fast-path orders (the notifier fires for every
     /// new order) short-circuit before any `valid_from` write happens —
     /// only orders the handler actually owns get touched.
     #[instrument(skip_all)]
-    async fn handle(&self, order_uid: domain::OrderUid) {
+    async fn handle(self: Arc<Self>, order_uid: domain::OrderUid) {
         // Source of truth: the DB. Regular orders (and fast-path
         // orders the handler already classified) return `None` here
         // and are left completely alone.
@@ -165,6 +160,10 @@ impl FastPathHandler {
                 tracing::error!(?err, "failed to execute fast-path settle");
             }
         } else {
+            // fast path handling is disabled or order is not viable for fast
+            // path execution. To not ignore this order forever we simply set
+            // `valid_from: now()` so that the regular auction build picks it
+            // up going forward.
             let now = model::time::now_in_epoch_seconds();
             if let Err(err) = self.persistence.set_order_valid_from(order_uid, now).await {
                 tracing::error!(?err, "failed to fall through to regular auction");
@@ -405,17 +404,15 @@ impl FastPathHandler {
             .saturating_mul(block_time_ms)
             .div_ceil(1000);
         let current_block = self.eth.current_block().borrow();
-        // Anchor to whichever is later: on-chain block time (in prod
-        // this tracks wall clock closely and captures a stalled chain)
-        // or wall clock (guards against test setups / stale forks where
-        // the chain's timestamp lags real time). Either way the value
-        // is a safe upper bound on when the settle deadline block will
-        // actually arrive.
-        let now = model::time::now_in_epoch_seconds() as u64;
-        let anchor = current_block.timestamp.max(now);
+        // Anchor to the current block's on-chain timestamp — the
+        // deadline block will arrive at approximately `current +
+        // submission_deadline × block_time` seconds after this one.
+        // Using wall-clock `now` instead would overestimate mid-block
+        // (an order placed 6s into a 12s slot would push `valid_from`
+        // out by a whole block's worth).
         SubmissionDeadline {
             computed_at_block: current_block.number,
-            timestamp: (anchor + window_secs) as u32,
+            timestamp: (current_block.timestamp + window_secs) as u32,
             block: current_block.number + self.submission_deadline,
         }
     }

@@ -194,24 +194,8 @@ async fn fast_path_settle(web3: Web3) {
         &onchain.contracts().domain_separator,
         &trader.signer,
     );
+    let placed_at = std::time::Instant::now();
     let uid = services.create_order(&order).await.unwrap();
-
-    // The autopilot's fast-path handler populates `valid_from` shortly
-    // after the order lands. Poll until it shows up — that's the signal
-    // that the handler classified the order.
-    let valid_from_cell = std::cell::Cell::new(None);
-    wait_for_condition(TIMEOUT, || async {
-        let valid_from = services
-            .get_order(&uid)
-            .await
-            .ok()
-            .and_then(|order| order.metadata.valid_from);
-        valid_from_cell.set(valid_from);
-        valid_from.is_some()
-    })
-    .await
-    .expect("fast-path order should get a valid_from from the autopilot handler");
-    let valid_from = valid_from_cell.get().unwrap();
 
     tracing::info!("Waiting for the fast-path settlement.");
     wait_for_condition(TIMEOUT, || async {
@@ -223,11 +207,15 @@ async fn fast_path_settle(web3: Web3) {
     .await
     .unwrap();
 
-    // Settling before `valid_from` is only possible via the fast path — the
-    // regular auction is barred from picking the order up until then.
+    // Regular-auction fallback would need to wait for the whole
+    // `exclusivity` window to elapse before touching the order. If it
+    // Fulfilled well within that window, only the fast path can be
+    // responsible.
+    let elapsed = placed_at.elapsed();
     assert!(
-        model::time::now_in_epoch_seconds() < valid_from,
-        "order settled after the exclusivity window; can't attribute it to the fast path"
+        elapsed < exclusivity / 2,
+        "settled after {elapsed:?} — regular auction fallback would have taken at least \
+         {exclusivity:?}, so this can't be attributed to the fast path",
     );
 }
 
@@ -742,6 +730,7 @@ async fn fast_path_ethflow_settle(web3: Web3) {
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(300);
     let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+    let placed_at = std::time::Instant::now();
     ethflow_order
         .mine_order_creation(trader.address(), ethflow_contract)
         .await;
@@ -761,18 +750,6 @@ async fn fast_path_ethflow_settle(web3: Web3) {
     .await
     .unwrap();
 
-    // The autopilot's on-chain ingestion derived `valid_from` from the
-    // configured exclusivity — pull the value back out via the API so the
-    // "fulfilled before valid_from" check below can attribute the settlement
-    // to the fast path.
-    let valid_from = services
-        .get_order(&order_uid)
-        .await
-        .unwrap()
-        .metadata
-        .valid_from
-        .expect("autopilot should populate valid_from for fast-path ethflow orders");
-
     tracing::info!("Waiting for the fast-path settlement.");
     wait_for_condition(TIMEOUT, || async {
         services
@@ -783,9 +760,15 @@ async fn fast_path_ethflow_settle(web3: Web3) {
     .await
     .unwrap();
 
+    // Regular-auction fallback would need to wait for the whole
+    // `exclusivity` window to elapse before touching the order. If it
+    // Fulfilled well within that window, only the fast path can be
+    // responsible.
+    let elapsed = placed_at.elapsed();
     assert!(
-        model::time::now_in_epoch_seconds() < valid_from,
-        "ethflow order settled after the exclusivity window; can't attribute it to the fast path"
+        elapsed < exclusivity / 2,
+        "ethflow order settled after {elapsed:?} — regular auction fallback would have taken at \
+         least {exclusivity:?}, so this can't be attributed to the fast path",
     );
 }
 

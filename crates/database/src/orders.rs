@@ -273,8 +273,7 @@ pub async fn flush_pending_fast_path_backlog(
     ex: &mut PgConnection,
     now: u32,
 ) -> Result<u64, sqlx::Error> {
-    const QUERY: &str =
-        "UPDATE orders SET valid_from = $1 WHERE fast_path AND valid_from IS NULL";
+    const QUERY: &str = "UPDATE orders SET valid_from = $1 WHERE fast_path AND valid_from IS NULL";
     let result = sqlx::query(QUERY).bind(now as i64).execute(ex).await?;
     Ok(result.rows_affected())
 }
