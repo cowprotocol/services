@@ -1,3 +1,6 @@
+mod builders;
+
+pub use builders::Builder;
 use {
     crate::{
         boundary::{Web3, unbuffered_web3},
@@ -7,14 +10,16 @@ use {
     alloy::{
         consensus::Transaction,
         eips::{BlockNumberOrTag, eip1559::Eip1559Estimation},
+        network::{Ethereum, NetworkWallet, TransactionBuilder, TxSigner},
         primitives::Address,
         providers::{Provider, ext::TxPoolApi},
         rpc::types::TransactionRequest,
     },
     anyhow::Context,
+    builders::Builders,
     dashmap::DashMap,
     eth_domain_types as eth,
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
     url::Url,
 };
 
@@ -32,6 +37,9 @@ pub struct Config {
     pub revert_protection: RevertProtection,
     pub max_additional_tip: eth::U256,
     pub additional_tip_percentage: f64,
+    /// Block builders to broadcast the signed transaction to. When empty the
+    /// transaction is sent to `url` instead.
+    pub builders: Vec<Builder>,
 }
 
 #[cfg(test)]
@@ -47,6 +55,7 @@ impl Config {
             additional_tip_percentage: 0.,
             revert_protection: infra::mempool::RevertProtection::Disabled,
             nonce_block_number: None,
+            builders: Default::default(),
             url,
         }
     }
@@ -66,6 +75,11 @@ pub enum RevertProtection {
 #[derive(Debug, Clone)]
 pub struct Mempool {
     transport: Web3,
+    /// The configured block builders. Empty when the settlement is submitted
+    /// to `config.url` instead.
+    builders: Builders,
+    /// Chain id of the transactions we sign ourselves for the builders.
+    chain_id: u64,
     config: Config,
     last_submissions: Arc<DashMap<Address, Submission>>,
 }
@@ -83,15 +97,42 @@ impl std::fmt::Display for Mempool {
 }
 
 impl Mempool {
-    pub fn new(config: Config, solver_accounts: Vec<Account>) -> Self {
+    pub fn new(config: Config, solver_accounts: Vec<Account>, chain_id: u64) -> Self {
         let transport = unbuffered_web3(&config.url);
         // Register the solver accounts into the wallet to submit txs on their
         // behalf
+        let mut signers = HashMap::new();
         for account in solver_accounts {
+            signers.insert(TxSigner::address(&account), account.clone());
             transport.wallet.register_signer(account);
         }
+        if !config.builders.is_empty() {
+            // Builders get txs we sign ourselves. An address-only account
+            // relies on the node to sign and would fail on every settlement.
+            let address_only: Vec<_> = signers
+                .iter()
+                .filter(|(_, account)| matches!(account, Account::Address(_)))
+                .map(|(address, _)| address)
+                .collect();
+            assert!(
+                address_only.is_empty(),
+                "mempool {} submits to builders but accounts {address_only:?} cannot sign",
+                config.name
+            );
+        }
+        let builders = Builders::new(config.name.clone(), config.builders.clone(), signers);
+
+        tracing::info!(
+            mempool = config.name,
+            url = %config.url,
+            builders = ?config.builders,
+            "configured mempool"
+        );
+
         Self {
             transport,
+            builders,
+            chain_id,
             config,
             last_submissions: Default::default(),
         }
@@ -141,17 +182,18 @@ impl Mempool {
             .gas_limit(gas_limit)
             .input(tx.input.into())
             .value(tx.value.0)
-            .access_list(tx.access_list.into());
+            .access_list(tx.access_list.into())
+            // Must be explicit: signing the request ourselves for the builders
+            // silently falls back to mainnet when the chain id is missing.
+            .with_chain_id(self.chain_id);
 
-        let submission = self
-            .transport
-            .provider
-            .send_transaction(tx_request)
-            .await
-            .map_err(anyhow::Error::from);
+        let submission = match self.submits_to_builders() {
+            true => self.send_to_builders(tx_request, signer).await,
+            false => self.send_to_node(tx_request).await,
+        };
 
         match submission {
-            Ok(tx) => {
+            Ok(hash) => {
                 tracing::debug!(
                     ?nonce,
                     ?gas_price,
@@ -161,7 +203,7 @@ impl Mempool {
                 );
                 self.last_submissions
                     .insert(signer, Submission { nonce, gas_price });
-                Ok(eth::TxId(*tx.tx_hash()))
+                Ok(hash)
             }
             Err(err) => {
                 // log pending tx in case we failed to replace a pending tx
@@ -179,6 +221,25 @@ impl Mempool {
                 Err(mempools::Error::Other(err))
             }
         }
+    }
+
+    /// Sends the transaction to the configured node, which signs it with the
+    /// registered wallet and forwards it to its own mempool.
+    async fn send_to_node(&self, tx: TransactionRequest) -> anyhow::Result<eth::TxId> {
+        let pending = self.transport.provider.send_transaction(tx).await?;
+        Ok(eth::TxId(*pending.tx_hash()))
+    }
+
+    /// Signs the transaction locally and hands the raw bytes to the builders.
+    async fn send_to_builders(
+        &self,
+        tx: TransactionRequest,
+        signer: eth::Address,
+    ) -> anyhow::Result<eth::TxId> {
+        let envelope = NetworkWallet::<Ethereum>::sign_request(&self.transport.wallet, tx)
+            .await
+            .context("failed to sign tx for the builders")?;
+        self.builders.broadcast(&envelope, signer).await
     }
 
     /// Queries the mempool for a pending transaction of the given solver and
@@ -214,6 +275,12 @@ impl Mempool {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// Whether the settlement is signed here and handed to block builders
+    /// instead of being forwarded to the mempool of `config.url`.
+    pub fn submits_to_builders(&self) -> bool {
+        !self.builders.is_empty()
     }
 
     pub fn reverts_can_get_mined(&self) -> bool {
