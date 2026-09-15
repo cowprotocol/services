@@ -44,7 +44,6 @@ use {
             OnchainOrderData,
             Order,
             OrderBuilder,
-            OrderClass,
             OrderCreationAppData,
             OrderKind,
             OrderUid,
@@ -840,7 +839,6 @@ async fn test_order_parameters(
             placement_error: None,
         })
     );
-    assert_eq!(response.metadata.class, OrderClass::Limit);
     assert!(
         order
             .is_valid_cowswap_signature(&response.signature, contracts, ethflow_contract)
@@ -892,7 +890,6 @@ impl ExtendedEthFlowOrder {
             .with_buy_amount(self.0.buyAmount)
             .with_valid_to(u32::MAX)
             .with_app_data(self.0.appData.0)
-            .with_class(OrderClass::Market) // Eth-flow orders only support market orders at this point in time
             .with_eip1271(*ethflow_contract.address(), vec![])
             .build()
     }
