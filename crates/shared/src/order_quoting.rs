@@ -242,9 +242,6 @@ pub struct QuoteData {
     pub solver: Address,
     /// Were we able to verify that this quote is accurate?
     pub verified: bool,
-    /// Whether the quoting solver supports fast-path (out-of-competition)
-    /// execution for this order.
-    pub supports_fast_path: bool,
     /// Additional data associated with the quote.
     pub metadata: QuoteMetadata,
 }
@@ -330,7 +327,6 @@ impl QuoteCompetition {
             quote_kind: self.request.quote_kind.clone(),
             solver: winner.solver,
             verified: winner.verified,
-            supports_fast_path: winner.supports_fast_path,
             metadata: winner.metadata.clone(),
         }
     }
@@ -381,8 +377,6 @@ impl TryFrom<QuoteRow> for QuoteData {
             quote_kind: row.quote_kind,
             solver: Address::from_slice(&row.solver.0),
             verified: row.verified,
-            // Not stored in the DB yet; defaults to false until persisted.
-            supports_fast_path: false,
             metadata: row.metadata.try_into()?,
         })
     }
