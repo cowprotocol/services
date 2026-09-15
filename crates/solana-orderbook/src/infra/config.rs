@@ -45,6 +45,8 @@ pub struct Config {
     pub http: Http,
     /// Quote endpoint configuration.
     pub quoting: Quoting,
+    /// The Solana JSON-RPC node. Required by sponsored order placement.
+    pub rpc: Option<Rpc>,
     /// Sponsored order placement. Absent disables `POST /api/v1/orders`.
     pub sponsoring: Option<Sponsoring>,
     /// Logging configuration.
@@ -98,6 +100,17 @@ impl Quoting {
     }
 }
 
+/// Solana JSON-RPC node configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Rpc {
+    /// HTTP endpoint of the Solana JSON-RPC node.
+    pub endpoint: Url,
+    /// Ceiling on one RPC request.
+    #[serde(with = "humantime_serde", default = "default_rpc_timeout")]
+    pub request_timeout: Duration,
+}
+
 /// Sponsored order placement configuration.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -113,11 +126,6 @@ pub struct Sponsoring {
         deserialize_with = "deserialize_solana_pubkey_b58"
     )]
     pub settlement_program: Pubkey,
-    /// RPC endpoint for blockhash freshness checks.
-    pub rpc_endpoint: Url,
-    /// Ceiling on one RPC request.
-    #[serde(with = "humantime_serde", default = "default_rpc_timeout")]
-    pub rpc_request_timeout: Duration,
 }
 
 fn default_settlement_program_id() -> Pubkey {

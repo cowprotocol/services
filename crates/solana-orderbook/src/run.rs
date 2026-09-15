@@ -86,14 +86,20 @@ pub async fn run(args: Args) {
     let metrics = serve_probes(pool.clone(), config.http.bind_address);
 
     let shutdown_token = tokio_util::sync::CancellationToken::new();
-    let sponsoring = config.sponsoring.as_ref().map(|sponsoring| Sponsoring {
-        funder: sponsoring.funder,
-        settlement_program: sponsoring.settlement_program,
-        rpc: SolanaRPC::new_with_timeout_and_commitment(
-            &sponsoring.rpc_endpoint,
-            sponsoring.rpc_request_timeout,
-            CommitmentConfig::confirmed(),
-        ),
+    let sponsoring = config.sponsoring.as_ref().map(|sponsoring| {
+        let rpc = config
+            .rpc
+            .as_ref()
+            .expect("the [sponsoring] section requires the [rpc] section");
+        Sponsoring {
+            funder: sponsoring.funder,
+            settlement_program: sponsoring.settlement_program,
+            rpc: SolanaRPC::new_with_timeout_and_commitment(
+                &rpc.endpoint,
+                rpc.request_timeout,
+                CommitmentConfig::confirmed(),
+            ),
+        }
     });
     let api = Api {
         addr: config.http.bind_address,
