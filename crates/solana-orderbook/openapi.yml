@@ -202,7 +202,7 @@ paths:
             `WrongRentPayer`), a PDA not derived from the intent
             (`WrongOrderPda`), an intent without the on-chain flag
             (`InvalidIntentFlags`), a missing owner signature
-            (`MissingSignature`), an expired order (`OrderExpired`), a dead
+            (`InvalidSignature`), an expired order (`InsufficientValidTo`), a dead
             blockhash (`BlockhashExpired`), or a known uid
             (`DuplicatedOrder`).
           content:

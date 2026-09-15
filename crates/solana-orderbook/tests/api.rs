@@ -456,7 +456,7 @@ async fn create_order_rejects_invalid_submissions() {
     let addr =
         spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
     for (transaction, expected) in [
-        ("not base64!".to_owned(), "InvalidTransaction"),
+        ("bm90IGEgdHg=".to_owned(), "InvalidTransaction"),
         // The owner as fee payer: the funder must front the fees.
         (
             sponsored_creation_tx(owner.pubkey(), &owner, true),
@@ -465,7 +465,7 @@ async fn create_order_rejects_invalid_submissions() {
         // Nobody signed: the owner's signature is required.
         (
             sponsored_creation_tx(funder, &owner, false),
-            "MissingSignature",
+            "InvalidSignature",
         ),
     ] {
         let (status, kind) = post_order(addr, transaction).await;
