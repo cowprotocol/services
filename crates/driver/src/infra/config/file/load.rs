@@ -152,7 +152,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::AtBlock::Latest => liquidity::AtBlock::Latest,
                     file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                 },
-                haircut_bps: solver_config.haircut_bps,
+                solver_fee_bps: solver_config.solver_fee_bps,
                 submission_accounts: join_all(
                     solver_config
                         .submission_accounts

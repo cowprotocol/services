@@ -362,7 +362,7 @@ async fn create_config_file(
                http-time-buffer = "{}ms"
                fee-handler = {}
                merge-solutions = {}
-               haircut-bps = {}
+               solver-fee-bps = {}
                max-solutions-to-propose = {}
                fast-path-enabled = {}
                "#,
@@ -379,7 +379,7 @@ async fn create_config_file(
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),
             solver.merge_solutions,
-            solver.haircut_bps,
+            solver.solver_fee_bps,
             solver.max_solutions_to_propose,
             solver.fast_path_enabled,
         )

@@ -70,9 +70,12 @@ impl Quote {
 
     /// Compute clearing prices for the quote.
     ///
-    /// Uses uniform clearing prices from the solution, adjusted for haircut
-    /// when enabled. Uses `custom_prices()` which includes haircut effects
-    /// to make quotes conservative for users.
+    /// Uses uniform clearing prices from the solution. If the quoted order
+    /// carries fee policies (e.g. an injected solver fee, see
+    /// [`Solver::solver_fee`]), the pair's prices are replaced with the
+    /// trade's custom prices, which include the effect of those policies as
+    /// applied by the regular protocol fee machinery when the solution was
+    /// formed.
     fn compute_clearing_prices(
         solution: &competition::Solution,
     ) -> Result<HashMap<eth::Address, eth::U256>, Error> {
@@ -85,10 +88,11 @@ impl Quote {
 
         // Quote competitions contain only a single order (see
         // `fake_auction()`), so there's at most one fulfillment in the
-        // solution. Apply haircut adjustment to prices if there's a
-        // fulfillment with non-zero haircut.
+        // solution.
         if let Some(trade) = solution.trades().iter().find(|trade| match trade {
-            solution::Trade::Fulfillment(f) => f.haircut_fee() > eth::U256::ZERO,
+            solution::Trade::Fulfillment(fulfillment) => {
+                !fulfillment.order().protocol_fees.is_empty()
+            }
             _ => false,
         }) {
             let sell_token: eth::Address = trade.sell().token.into();
@@ -152,6 +156,12 @@ impl Order {
         };
 
         let auction = self.single_order_auction(eth, tokens).await?;
+        // Inject the solver fee like the competition does, so it is applied
+        // by the regular protocol fee machinery when the solution is formed.
+        let auction = match solver.solver_fee() {
+            Some(policy) => auction.with_solver_fee(&policy),
+            None => auction,
+        };
         let auction = competition
             .risk_detector
             .filter_unsupported_orders_in_auction(auction)

@@ -19,7 +19,7 @@ pub mod signature;
 
 /// The immutable, auction-independent data of an order. Wrapped in [`Arc`] so
 /// that per-solver copies of [`Order`] share a single allocation.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OrderData {
     pub uid: Uid,
     /// The user specified a custom address to receive the output of this order.
