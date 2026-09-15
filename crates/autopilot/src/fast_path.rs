@@ -42,11 +42,12 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::Context,
     bigdecimal::BigDecimal,
+    chrono::{DateTime, Utc},
     database::byte_array::ByteArray,
     futures::{StreamExt, channel::mpsc},
     model::order::OrderKind,
     number::conversions::u256_to_big_decimal,
-    std::sync::Arc,
+    std::{sync::Arc, time::Instant},
     tracing::{Instrument, instrument},
 };
 
@@ -138,6 +139,7 @@ impl FastPathHandler {
     /// only orders the handler actually owns get touched.
     #[instrument(skip_all)]
     async fn handle(self: Arc<Self>, order_uid: domain::OrderUid) {
+        let notified_at = Instant::now();
         // Source of truth: the DB. Regular orders (and fast-path
         // orders the handler already classified) return `None` here
         // and are left completely alone.
@@ -148,27 +150,31 @@ impl FastPathHandler {
                 return;
             }
             Err(err) => {
+                Metrics::preflight_failed("db_lookup");
                 tracing::error!(?err, "failed to look up pending fast-path order");
                 return;
             }
         };
 
+        let creation_date = pending.model_order.metadata.creation_date;
+
         let settle_attempt = match self.fast_path_enabled {
-            true => self
-                .try_build_settle_request(pending)
-                .await
-                .inspect_err(|err| {
-                    tracing::warn!(?err, "could not finalize fast path settle attempt")
-                })
-                .ok(),
+            true => match self.try_build_settle_request(pending).await {
+                Ok(attempt) => Some(attempt),
+                Err(err) => {
+                    Metrics::preflight_failed(err.reason());
+                    tracing::warn!(?err, "could not finalize fast path settle attempt");
+                    None
+                }
+            },
             false => None,
         };
 
         if let Some(settle_attempt) = settle_attempt {
             tracing::debug!("initiating fast path execution");
-            if let Err(err) = self.execute_fast_path_settle(settle_attempt).await {
-                tracing::error!(?err, "failed to execute fast-path settle");
-            }
+            Metrics::notify_to_settle(notified_at.elapsed());
+            self.execute_fast_path_settle(settle_attempt, creation_date)
+                .await
         } else {
             // fast path handling is disabled or order is not viable for fast
             // path execution. To not ignore this order forever we simply set
@@ -191,10 +197,8 @@ impl FastPathHandler {
     async fn try_build_settle_request(
         &self,
         pending: FastPathOrder,
-    ) -> anyhow::Result<FastPathSettleAttempt> {
-        let staged = pending
-            .staged
-            .context("no staged competition data available")?;
+    ) -> Result<FastPathSettleAttempt, PreflightError> {
+        let staged = pending.staged.ok_or(PreflightError::NoStagedData)?;
 
         // Volume-only: fast-path settles at the quoted price, so any
         // policy that requires a surplus baseline doesn't apply.
@@ -217,7 +221,7 @@ impl FastPathHandler {
             });
 
         let winner = staged.winner();
-        if shared::fee::check_fast_path_limit_fits(
+        shared::fee::check_fast_path_limit_fits(
             pending.model_order.data.kind,
             pending.model_order.data.sell_amount,
             pending.model_order.data.buy_amount,
@@ -225,22 +229,13 @@ impl FastPathHandler {
             winner.quoted_buy,
             volume_fee_factors,
         )
-        .is_err()
-        {
-            Metrics::fast_path_limit_too_tight();
-            anyhow::bail!("fast-path limit check failed; falling through to regular auction");
-        }
+        .map_err(|_| PreflightError::LimitTooTight)?;
 
         let winner = self
             .drivers
             .iter()
             .find(|driver| driver.submission_address == winner.solver)
-            .with_context(|| {
-                format!(
-                    "winning driver {:?} is currently not configured",
-                    winner.solver
-                )
-            })?;
+            .ok_or(PreflightError::DriverNotConfigured(winner.solver))?;
 
         let deadline = self.submission_deadline();
 
@@ -254,8 +249,7 @@ impl FastPathHandler {
                 volume_fee_policies,
                 &deadline,
             )
-            .await
-            .context("failed to record fast-path fee policies")?;
+            .await?;
 
         Ok(FastPathSettleAttempt {
             settle_request: settle::Request {
@@ -278,7 +272,11 @@ impl FastPathHandler {
     /// Promotes the staged competition, claims the exclusivity window,
     /// and hands the `/settle` request to the driver. Errors bubble up
     /// to the caller so the handler can log them uniformly.
-    async fn execute_fast_path_settle(&self, attempt: FastPathSettleAttempt) -> anyhow::Result<()> {
+    async fn execute_fast_path_settle(
+        &self,
+        attempt: FastPathSettleAttempt,
+        creation_date: DateTime<Utc>,
+    ) {
         let res = self
             .settle_coordinator
             .settle(
@@ -290,10 +288,12 @@ impl FastPathHandler {
             .await;
         Metrics::fast_path_finished(&attempt.winner.name, res.is_ok());
         match res {
-            Ok(tx) => tracing::info!(?tx, "settled order"),
+            Ok(tx) => {
+                Metrics::creation_to_execution(Utc::now() - creation_date);
+                tracing::info!(?tx, "settled order");
+            }
             Err(err) => tracing::debug!(?err, "failed to settle order"),
         };
-        Ok(())
     }
 
     /// Adjusts every staged solution's bid by the volume-fee policies,
@@ -312,7 +312,7 @@ impl FastPathHandler {
         staged: StagedFastPathCompetition,
         volume_fee_policies: Vec<domain::fee::Policy>,
         deadline: &SubmissionDeadline,
-    ) -> anyhow::Result<FinalOrderExecution> {
+    ) -> Result<FinalOrderExecution, PreflightError> {
         let order_uid: domain::OrderUid = order.metadata.uid.into();
         let order_kind = order.data.kind;
         let uid = ByteArray(order_uid.0);
@@ -339,7 +339,7 @@ impl FastPathHandler {
                     winning_adjusted = Some((adjusted_sell, adjusted_buy));
                 }
                 let solution_uid = i64::try_from(solution.solution_uid)
-                    .context("solution index does not fit in i64")?;
+                    .map_err(|_| PreflightError::SolutionIndexOverflow(solution.solution_uid))?;
                 let limit_sell = u256_to_big_decimal(&solution.quoted_sell);
                 let limit_buy = u256_to_big_decimal(&solution.quoted_buy);
                 Ok(database::solver_competition_v2::Solution {
@@ -369,10 +369,9 @@ impl FastPathHandler {
                     price_values: vec![limit_buy, limit_sell],
                 })
             })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>, PreflightError>>()?;
 
-        let (limit_sell, limit_buy) =
-            winning_adjusted.expect("winner is present in staged competition");
+        let (limit_sell, limit_buy) = winning_adjusted.ok_or(PreflightError::MissingWinner)?;
 
         self.persistence
             .finalize_fast_path(FastPathPromotion {
@@ -459,16 +458,54 @@ struct SubmissionDeadline {
     timestamp: u32,
 }
 
+/// Errors that prevent the actual fast path execution.
+#[derive(Debug, thiserror::Error)]
+enum PreflightError {
+    #[error("no staged competition data available")]
+    NoStagedData,
+    #[error("fast-path limit check failed; falling through to regular auction")]
+    LimitTooTight,
+    #[error("winning driver {0:?} is currently not configured")]
+    DriverNotConfigured(Address),
+    #[error("solution index {0} does not fit in i64")]
+    SolutionIndexOverflow(usize),
+    #[error("staged competition has no solution flagged as winner")]
+    MissingWinner,
+    #[error("failed to finalize the fast path data in the DB")]
+    PersistFailed(#[from] anyhow::Error),
+}
+
+impl PreflightError {
+    fn reason(&self) -> &'static str {
+        match self {
+            Self::NoStagedData => "no_staged_data",
+            Self::LimitTooTight => "limit_too_tight",
+            Self::DriverNotConfigured(_) => "driver_not_configured",
+            Self::SolutionIndexOverflow(_) => "solution_index_overflow",
+            Self::MissingWinner => "missing_winner",
+            Self::PersistFailed(_) => "persist_failed",
+        }
+    }
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
-#[metric(subsystem = "runloop")]
+#[metric(subsystem = "fast_path")]
 struct Metrics {
     /// Tracks the outcome of fast-path settlements.
     #[metric(labels("driver", "result"))]
-    fast_path_executions: prometheus::IntCounterVec,
-    /// Incremented when the fast-path limit-price check would have
-    /// rejected the order at settle time, so we fell through to the
-    /// regular auction instead of attempting the fast-path.
-    fast_path_limit_too_tight: prometheus::IntCounter,
+    executions: prometheus::IntCounterVec,
+    /// Counts orders where an error prevented the autopilot from
+    /// initiating a fast-path settle at all.
+    #[metric(labels("reason"))]
+    errors: prometheus::IntCounterVec,
+    /// Seconds between the order's `creation_date` and observing
+    /// the settlement onchain.
+    #[metric(buckets(0.5, 1, 1.5, 2, 2.5, 3, 5, 7.5, 10, 12, 24))]
+    total_duration: prometheus::Histogram,
+    /// Seconds between the autopilot receiving the fast-path
+    /// notification for an order and firing the driver `/settle` call.
+    #[metric(buckets(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5))]
+    processing: prometheus::Histogram,
 }
 
 impl Metrics {
@@ -479,13 +516,24 @@ impl Metrics {
     fn fast_path_finished(solver: &str, success: bool) {
         let result = if success { "success" } else { "failure" };
         Self::get()
-            .fast_path_executions
+            .executions
             .with_label_values(&[solver, result])
             .inc();
     }
 
-    fn fast_path_limit_too_tight() {
-        Self::get().fast_path_limit_too_tight.inc();
+    fn preflight_failed(reason: &str) {
+        Self::get().errors.with_label_values(&[reason]).inc();
+    }
+
+    fn notify_to_settle(elapsed: std::time::Duration) {
+        Self::get().processing.observe(elapsed.as_secs_f64());
+    }
+
+    fn creation_to_execution(elapsed: chrono::Duration) {
+        // Clamp to zero to guard against clock skew between the
+        // orderbook (which stamped `creation_date`) and the autopilot.
+        let secs = (elapsed.num_milliseconds() as f64 / 1000.0).max(0.0);
+        Self::get().total_duration.observe(secs);
     }
 }
 
