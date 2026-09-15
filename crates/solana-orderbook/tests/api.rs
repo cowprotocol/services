@@ -1,7 +1,10 @@
 //! Integration tests for the HTTP API server.
 
 use {
+    base64::Engine,
+    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     solana_orderbook::infra::{api::Api, quoter::Quoter},
+    solana_sdk::signer::Signer,
     sqlx::PgPool,
     std::{net::SocketAddr, time::Duration},
     tokio_util::sync::CancellationToken,
@@ -16,6 +19,7 @@ fn mock_api() -> Api {
         quoter: dead_quoter(),
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
+        sponsoring: None,
     }
 }
 
@@ -330,4 +334,200 @@ async fn account_orders_rejects_bad_parameters() {
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["errorType"], "LIMIT_OUT_OF_BOUNDS");
+}
+
+/// A sponsored-placement server: a fixed funder pubkey, the interface's
+/// default settlement program, and a mock RPC answering the blockhash and
+/// height probes.
+async fn spawn_sponsored_server(
+    pool: PgPool,
+    funder: solana_sdk::pubkey::Pubkey,
+    blockhash_valid: bool,
+) -> SocketAddr {
+    let mocks = Mocks::from([
+        (
+            RpcRequest::IsBlockhashValid,
+            serde_json::json!({
+                "context": { "slot": 1u64, "apiVersion": "2.0.0" },
+                "value": blockhash_valid,
+            }),
+        ),
+        (RpcRequest::GetBlockHeight, serde_json::json!(100u64)),
+    ]);
+    let api = Api {
+        pool,
+        sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
+            funder,
+            settlement_program: cow_settlement_interface::id(),
+            rpc: SolanaRPC::new_mock_with_mocks(mocks),
+        }),
+        ..mock_api()
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    addr
+}
+
+/// A partially signed sponsored `CreateOrder` transaction: the owner signed,
+/// the fee payer slot (the funder) left as a placeholder.
+fn sponsored_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+    sign: bool,
+) -> String {
+    let intent = cow_settlement_interface::data::intent::OrderIntent {
+        owner: cow_settlement_interface::Pubkey::new_from_array(owner.pubkey().to_bytes()),
+        buy_token_account: cow_settlement_interface::Pubkey::new_from_array([0x22; 32]),
+        sell_token_account: cow_settlement_interface::Pubkey::new_from_array([0x33; 32]),
+        buy_mint: cow_settlement_interface::Pubkey::new_from_array([0x55; 32]),
+        sell_mint: cow_settlement_interface::Pubkey::new_from_array([0x66; 32]),
+        sell_amount: 1_000,
+        buy_amount: 2_000,
+        valid_to: u32::MAX,
+        flags: cow_settlement_interface::data::intent::Flags {
+            created_on_chain: true,
+            kind: cow_settlement_interface::data::intent::OrderKind::Sell,
+            partially_fillable: false,
+        },
+        app_data: [0x44; 32],
+    };
+    let instruction: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instructions::CreateOrder {
+            program_id: cow_settlement_interface::id(),
+            owner: owner.pubkey(),
+            created_by: funder,
+            intent: &intent,
+        }
+        .into();
+    let message = solana_sdk::message::Message::new_with_blockhash(
+        &[instruction],
+        Some(&funder),
+        &solana_sdk::hash::Hash::new_unique(),
+    );
+    let signers = usize::from(message.header.num_required_signatures);
+    let serialized = message.serialize();
+    let mut signatures = vec![solana_sdk::signature::Signature::default(); signers];
+    if sign {
+        let keys = &message.account_keys;
+        for (index, key) in keys.iter().take(signers).enumerate() {
+            if *key == owner.pubkey() {
+                signatures[index] = owner.sign_message(&serialized);
+            }
+        }
+    }
+    let tx = solana_sdk::transaction::VersionedTransaction {
+        signatures,
+        message: solana_sdk::message::VersionedMessage::Legacy(message),
+    };
+    base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
+}
+
+async fn post_order(addr: SocketAddr, transaction: String) -> (reqwest::StatusCode, String) {
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({ "transaction": transaction }))
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    let json: serde_json::Value = response.json().await.unwrap();
+    (
+        status,
+        json["errorType"].as_str().unwrap_or_default().to_owned(),
+    )
+}
+
+/// Placement validation runs before any database access: every rejection
+/// here answers without a live pool.
+#[tokio::test]
+async fn create_order_rejects_invalid_submissions() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+
+    // The feature is off without sponsoring config.
+    let plain = spawn_server().await;
+    let (status, kind) = post_order(plain, "AAAA".to_owned()).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "SponsoringDisabled")
+    );
+
+    let addr =
+        spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
+    for (transaction, expected) in [
+        ("bm90IGEgdHg=".to_owned(), "InvalidTransaction"),
+        // The owner as fee payer: the funder must front the fees.
+        (
+            sponsored_creation_tx(owner.pubkey(), &owner, true),
+            "WrongFeePayer",
+        ),
+        // Nobody signed: the owner's signature is required.
+        (
+            sponsored_creation_tx(funder, &owner, false),
+            "InvalidSignature",
+        ),
+    ] {
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected)
+        );
+    }
+
+    // A well-formed transaction whose blockhash already died.
+    let addr = spawn_sponsored_server(
+        PgPool::connect_lazy("postgresql://").unwrap(),
+        funder,
+        false,
+    )
+    .await;
+    let (status, kind) = post_order(addr, sponsored_creation_tx(funder, &owner, true)).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "BlockhashExpired")
+    );
+}
+
+/// The happy path lands the order and the duplicate is rejected.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_persists_a_sponsored_order() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query("TRUNCATE solana.order_pda, solana.orders, solana.order_events CASCADE")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let transaction = sponsored_creation_tx(funder, &owner, true);
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({ "transaction": transaction.clone() }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let uid: String = response.json().await.unwrap();
+    assert!(uid.starts_with("0x") && uid.len() == 66);
+
+    let (stored, expiry): (Vec<u8>, i64) =
+        sqlx::query_as("SELECT presigned_transaction, last_valid_block_height FROM solana.orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!stored.is_empty());
+    // Mocked height 100 plus the maximum blockhash age.
+    assert_eq!(expiry, 250);
+
+    // The mock RPC answers each probe once, so the duplicate goes through a
+    // fresh server over the same database.
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let (status, kind) = post_order(addr, transaction).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "DuplicatedOrder")
+    );
 }

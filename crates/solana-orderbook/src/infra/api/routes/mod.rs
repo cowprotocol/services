@@ -1,4 +1,5 @@
 mod account;
+mod create_order;
 mod healthz;
 mod order;
 mod quote;
@@ -7,6 +8,7 @@ mod trades;
 
 pub use {
     account::account_orders,
+    create_order::create_order,
     healthz::healthz,
     order::order,
     quote::quote,
