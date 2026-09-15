@@ -143,6 +143,9 @@ impl Settlement {
         // The settlement never creates the order's buy_token_account. A missing
         // or non-token destination reverts FinalizeSettle with
         // InvalidAccountData.
+        // TODO(BE-191): the autopilot should exclude such orders from the
+        // auction. The driver can only observe here: dropping one order
+        // would invalidate the solver's solution.
         for order in &self.orders {
             if !matches!(
                 snapshot.token_account_state(&order.buy_token_account),
