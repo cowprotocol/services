@@ -1187,6 +1187,7 @@ impl Persistence {
 /// therefore be settled out of competition); ethflow fast-path orders
 /// arrive with `staged = None` and fall straight through to the regular
 /// auction.
+#[derive(Debug)]
 pub struct FastPathOrder {
     /// The order in the raw API model form. Callers pass this to
     /// `ProtocolFees::apply` and can then convert it to `domain::Order` via
@@ -1199,6 +1200,7 @@ pub struct FastPathOrder {
 /// The staged quote competition produced when the fast-path order was
 /// quoted. Carries the `quote_id` back to `finalize_fast_path` so the
 /// staging row can be dropped atomically with the promotion.
+#[derive(Debug)]
 pub struct StagedFastPathCompetition {
     pub quote_id: database::quotes::QuoteId,
     pub data: shared::quote_storage::StagedQuoteCompetition,

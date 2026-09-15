@@ -143,19 +143,29 @@ impl FastPathHandler {
         // and are left completely alone.
         let pending = match self.persistence.pending_fast_path_order(order_uid).await {
             Ok(Some(pending)) => pending,
-            Ok(None) => return,
+            Ok(None) => {
+                tracing::trace!("not a fast path order");
+                return;
+            }
             Err(err) => {
                 tracing::error!(?err, "failed to look up pending fast-path order");
                 return;
             }
         };
 
-        let settle_attempt = self
-            .fast_path_enabled
-            .then(|| self.try_build_settle_attempt(pending, order_uid))
-            .flatten();
+        let settle_attempt = match self.fast_path_enabled {
+            true => self
+                .try_build_settle_request(pending)
+                .await
+                .inspect_err(|err| {
+                    tracing::warn!(?err, "could not finalize fast path settle attempt")
+                })
+                .ok(),
+            false => None,
+        };
 
         if let Some(settle_attempt) = settle_attempt {
+            tracing::debug!("initiating fast path execution");
             if let Err(err) = self.execute_fast_path_settle(settle_attempt).await {
                 tracing::error!(?err, "failed to execute fast-path settle");
             }
@@ -164,6 +174,7 @@ impl FastPathHandler {
             // path execution. To not ignore this order forever we simply set
             // `valid_from: now()` so that the regular auction build picks it
             // up going forward.
+            tracing::debug!("fast path not possible making order valid immediately");
             let now = model::time::now_in_epoch_seconds();
             if let Err(err) = self.persistence.set_order_valid_from(order_uid, now).await {
                 tracing::error!(?err, "failed to fall through to regular auction");
@@ -177,12 +188,13 @@ impl FastPathHandler {
     /// and the fee-adjusted limit-price check passes. Anything else
     /// returns `None` and the caller drops the order into the next
     /// regular auction by writing `valid_from = now()`.
-    fn try_build_settle_attempt(
+    async fn try_build_settle_request(
         &self,
         pending: FastPathOrder,
-        order_uid: domain::OrderUid,
-    ) -> Option<FastPathSettleAttempt> {
-        let staged = pending.staged?;
+    ) -> anyhow::Result<FastPathSettleAttempt> {
+        let staged = pending
+            .staged
+            .context("no staged competition data available")?;
 
         // Volume-only: fast-path settles at the quoted price, so any
         // policy that requires a surplus baseline doesn't apply.
@@ -215,18 +227,51 @@ impl FastPathHandler {
         )
         .is_err()
         {
-            tracing::info!(
-                ?order_uid,
-                "fast-path limit check failed; falling through to regular auction"
-            );
             Metrics::fast_path_limit_too_tight();
-            return None;
+            anyhow::bail!("fast-path limit check failed; falling through to regular auction");
         }
 
-        Some(FastPathSettleAttempt {
-            model_order: pending.model_order,
-            staged,
-            volume_fee_policies,
+        let winner = self
+            .drivers
+            .iter()
+            .find(|driver| driver.submission_address == winner.solver)
+            .with_context(|| {
+                format!(
+                    "winning driver {:?} is currently not configured",
+                    winner.solver
+                )
+            })?;
+
+        let deadline = self.submission_deadline();
+
+        let auction_id = staged.data.auction_id;
+        let solution_id = staged.winner().solution_id;
+        let solution_uid = staged.winner().solution_uid;
+        let final_execution = self
+            .compute_and_persist_final_execution(
+                pending.model_order,
+                staged,
+                volume_fee_policies,
+                &deadline,
+            )
+            .await
+            .context("failed to record fast-path fee policies")?;
+
+        Ok(FastPathSettleAttempt {
+            settle_request: settle::Request {
+                auction_id,
+                solution_id,
+                submission_deadline_latest_block: deadline.block,
+                fast_path: Some(settle::FastPath {
+                    order: dto::order::from_domain(&final_execution.order),
+                    limit_prices: settle::LimitPrices {
+                        sell: final_execution.limit_sell,
+                        buy: final_execution.limit_buy,
+                    },
+                }),
+            },
+            winner: winner.clone(),
+            solution_uid,
         })
     }
 
@@ -234,45 +279,16 @@ impl FastPathHandler {
     /// and hands the `/settle` request to the driver. Errors bubble up
     /// to the caller so the handler can log them uniformly.
     async fn execute_fast_path_settle(&self, attempt: FastPathSettleAttempt) -> anyhow::Result<()> {
-        let winning_solver = attempt.staged.winner().solver;
-        let winner = self
-            .drivers
-            .iter()
-            .find(|driver| driver.submission_address == winning_solver)
-            .with_context(|| {
-                format!("winning driver {winning_solver:?} is currently not configured")
-            })?;
-
-        let deadline = self.submission_deadline();
-
-        let final_execution = self
-            .compute_and_persist_final_execution(&attempt, &deadline)
-            .await
-            .context("failed to record fast-path fee policies")?;
-
-        let request = settle::Request {
-            auction_id: attempt.staged.data.auction_id,
-            solution_id: attempt.staged.winner().solution_id,
-            submission_deadline_latest_block: deadline.block,
-            fast_path: Some(settle::FastPath {
-                order: dto::order::from_domain(&final_execution.order),
-                limit_prices: settle::LimitPrices {
-                    sell: final_execution.limit_sell,
-                    buy: final_execution.limit_buy,
-                },
-            }),
-        };
-
         let res = self
             .settle_coordinator
             .settle(
-                winner,
-                winner.submission_address,
-                attempt.staged.winner().solution_uid,
-                request,
+                &attempt.winner,
+                attempt.winner.submission_address,
+                attempt.solution_uid,
+                attempt.settle_request,
             )
             .await;
-        Metrics::fast_path_finished(&winner.name, res.is_ok());
+        Metrics::fast_path_finished(&attempt.winner.name, res.is_ok());
         match res {
             Ok(tx) => tracing::info!(?tx, "settled order"),
             Err(err) => tracing::debug!(?err, "failed to settle order"),
@@ -292,20 +308,20 @@ impl FastPathHandler {
     /// IS NULL` so the regular auction can still pick it up cleanly.
     async fn compute_and_persist_final_execution(
         &self,
-        attempt: &FastPathSettleAttempt,
+        order: model::order::Order,
+        staged: StagedFastPathCompetition,
+        volume_fee_policies: Vec<domain::fee::Policy>,
         deadline: &SubmissionDeadline,
     ) -> anyhow::Result<FinalOrderExecution> {
-        let order_uid: domain::OrderUid = attempt.model_order.metadata.uid.into();
-        let order_kind = attempt.model_order.data.kind;
+        let order_uid: domain::OrderUid = order.metadata.uid.into();
+        let order_kind = order.data.kind;
         let uid = ByteArray(order_uid.0);
-        let sell_token = ByteArray(attempt.staged.data.sell_token.0.0);
-        let buy_token = ByteArray(attempt.staged.data.buy_token.0.0);
+        let sell_token = ByteArray(staged.data.sell_token.0.0);
+        let buy_token = ByteArray(staged.data.buy_token.0.0);
         let side = shared::db_order_conversions::order_kind_into(order_kind);
-        let volume_fee_policies = attempt.volume_fee_policies.as_slice();
 
         let mut winning_adjusted: Option<(U256, U256)> = None;
-        let solution_rows: Vec<database::solver_competition_v2::Solution> = attempt
-            .staged
+        let solution_rows: Vec<database::solver_competition_v2::Solution> = staged
             .data
             .solutions
             .iter()
@@ -314,7 +330,7 @@ impl FastPathHandler {
                     solution.quoted_sell,
                     solution.quoted_buy,
                     order_kind,
-                    volume_fee_policies,
+                    &volume_fee_policies,
                 );
                 if solution.is_winner {
                     // keep the adjusted prices of the winner as those are the
@@ -360,25 +376,20 @@ impl FastPathHandler {
 
         self.persistence
             .finalize_fast_path(FastPathPromotion {
-                quote_id: attempt.staged.quote_id,
-                auction_id: attempt.staged.data.auction_id,
+                quote_id: staged.quote_id,
+                auction_id: staged.data.auction_id,
                 order_uid,
                 block: deadline.computed_at_block,
                 deadline: deadline.block,
                 valid_from: deadline.timestamp,
-                native_prices: attempt.staged.data.native_prices.clone(),
+                native_prices: staged.data.native_prices.clone(),
                 solutions: solution_rows,
-                fee_policies: volume_fee_policies.to_vec(),
+                fee_policies: volume_fee_policies.clone(),
             })
             .await
             .context("failed to promote staged fast-path competition")?;
 
-        let order = boundary::order::to_domain(
-            &attempt.model_order,
-            volume_fee_policies.to_vec(),
-            None,
-            None,
-        );
+        let order = boundary::order::to_domain(&order, volume_fee_policies, None, None);
         Ok(FinalOrderExecution {
             order,
             limit_sell,
@@ -422,9 +433,9 @@ impl FastPathHandler {
 /// [`FastPathHandler::try_build_settle_attempt`] once we know the order
 /// clears the limit-price check.
 struct FastPathSettleAttempt {
-    model_order: model::order::Order,
-    staged: StagedFastPathCompetition,
-    volume_fee_policies: Vec<domain::fee::Policy>,
+    winner: Arc<infra::Driver>,
+    solution_uid: usize,
+    settle_request: settle::Request,
 }
 
 /// Output of the fee-policy computation and bid-adjustment step of the
