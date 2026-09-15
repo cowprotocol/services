@@ -32,6 +32,17 @@ use {
 /// `env_filter` has similar syntax to env_logger. It is documented at
 /// https://docs.rs/tracing-subscriber/0.2.15/tracing_subscriber/filter/struct.EnvFilter.html
 pub fn initialize(config: &Config) {
+    // rustls 0.23 requires exactly one crypto provider to be installed at the
+    // process level. Both the `ring` and `aws-lc-rs` providers are linked into
+    // the build graph through feature unification (ring via async-nats, aws-lc-rs
+    // via reqwest and hyper-rustls), so rustls cannot pick one automatically and
+    // the first ClientConfig::builder() call panics when no provider is installed.
+    // Installing aws-lc-rs here, before any connection is opened, resolves the
+    // ambiguity for every binary that calls observe::initialize. The result is
+    // ignored because install_default returns Err when a provider is already
+    // installed, which is the normal case on subsequent calls.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     set_tracing_subscriber(config);
     std::panic::set_hook(Box::new(tracing_panic_hook));
 }
