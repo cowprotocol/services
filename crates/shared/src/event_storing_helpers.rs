@@ -29,7 +29,6 @@ pub fn create_quote_row(competition: &QuoteCompetition) -> Result<DbQuote> {
         solver: ByteArray(*data.solver.0),
         verified: data.verified,
         metadata: data.metadata.try_into()?,
-        auction_id: None,
     })
 }
 
@@ -46,5 +45,6 @@ pub fn create_db_search_parameters(
         kind: order_kind_into(params.kind),
         expiration,
         quote_kind: quote_kind_from_signing_scheme(&params.signing_scheme),
+        fast_path: params.fast_path,
     }
 }

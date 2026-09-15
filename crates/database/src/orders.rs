@@ -4,7 +4,6 @@ use {
         AppId,
         OrderUid,
         TransactionHash,
-        auction::AuctionId,
         onchain_broadcasted_orders::OnchainOrderPlacementError,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
     },
@@ -90,6 +89,10 @@ pub struct Order {
     pub buy_token_balance: BuyTokenDestination,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     pub valid_from: Option<i64>,
+    /// Set from the order's `enableFastPath` app-data flag at placement.
+    /// The autopilot's fast-path handler owns `valid_from` once this is
+    /// `true`; `false` orders never go through that pipeline.
+    pub fast_path: bool,
 }
 
 #[instrument(skip_all)]
@@ -138,7 +141,8 @@ INSERT INTO orders (
     buy_token_balance,
     cancellation_timestamp,
     true_valid_to,
-    valid_from
+    valid_from,
+    fast_path
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
@@ -151,7 +155,8 @@ VALUES (
         ELSE
             $20
     END,
-    $21
+    $21,
+    $22
 )
     "#;
 
@@ -196,6 +201,7 @@ async fn insert_order_execute_sqlx(
         // true_valid_to takes the same value as valid_to when inserting an order
         .bind(order.valid_to)
         .bind(order.valid_from)
+        .bind(order.fast_path)
         .execute(ex)
         .await
         .map(|result| result.rows_affected() > 0)
@@ -217,6 +223,46 @@ SELECT * FROM ORDERS
 WHERE uid = $1
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+}
+
+/// Sets `valid_from` on the given order. The autopilot's fast-path
+/// handler is the sole writer once `orders.fast_path = true`: either
+/// `now()` (feature disabled or limit-price check failed) or
+/// `now + exclusivity` (fast-path settle about to be attempted).
+#[instrument(skip_all)]
+pub async fn set_valid_from(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+    valid_from: u32,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = "UPDATE orders SET valid_from = $2 WHERE uid = $1";
+    sqlx::query(QUERY)
+        .bind(uid)
+        .bind(valid_from as i64)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+/// Flushes any fast-path orders whose `valid_from` was never populated
+/// by setting them to `now`. Called on autopilot startup: notifications
+/// for orders placed while the process was down are gone, and by the
+/// time the process comes back the intended exclusivity window has
+/// long since elapsed anyway — running the full fast-path against a
+/// stale quote would just settle against moved on-chain prices. This
+/// lets those orders enter the very next regular auction. The partial
+/// index `orders_fast_path` narrows the scan to the (small) fast-path
+/// slice; the `valid_from IS NULL` filter runs on that subset.
+///
+/// Returns the number of rows that were updated (for observability).
+#[instrument(skip_all)]
+pub async fn flush_pending_fast_path_backlog(
+    ex: &mut PgConnection,
+    now: u32,
+) -> Result<u64, sqlx::Error> {
+    const QUERY: &str = "UPDATE orders SET valid_from = $1 WHERE fast_path AND valid_from IS NULL";
+    let result = sqlx::query(QUERY).bind(now as i64).execute(ex).await?;
+    Ok(result.rows_affected())
 }
 
 pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
@@ -348,7 +394,7 @@ pub struct Quote {
     pub solver: Address,
     pub verified: bool,
     pub metadata: serde_json::Value,
-    pub auction_id: Option<AuctionId>,
+    pub quote_id: Option<crate::quotes::QuoteId>,
 }
 
 #[instrument(skip_all)]
@@ -370,7 +416,7 @@ INSERT INTO order_quotes (
     solver,
     verified,
     metadata,
-    auction_id
+    quote_id
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#;
 
@@ -388,7 +434,7 @@ pub async fn insert_quote_and_update_on_conflict(
 SET gas_amount = $2, gas_price = $3,
 sell_token_price = $4, sell_amount = $5,
 buy_amount = $6, verified = $8, metadata = $9,
-auction_id = $10
+quote_id = $10
     "
     );
     sqlx::query(QUERY)
@@ -401,7 +447,7 @@ auction_id = $10
         .bind(quote.solver)
         .bind(quote.verified)
         .bind(&quote.metadata)
-        .bind(quote.auction_id)
+        .bind(quote.quote_id)
         .execute(ex)
         .await?;
     Ok(())
@@ -419,7 +465,7 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
         .bind(quote.solver)
         .bind(quote.verified)
         .bind(&quote.metadata)
-        .bind(quote.auction_id)
+        .bind(quote.quote_id)
         .execute(ex)
         .await?;
     Ok(())
@@ -485,7 +531,7 @@ AND cancellation_timestamp IS NULL
 /// This is done as sqlx does not support reading arrays of more complicated
 /// types than just one field. The pre_ and post_interaction's data of
 /// target, value and data are composed to an array of interactions later.
-type RawInteraction = (Address, BigDecimal, Vec<u8>);
+pub type RawInteraction = (Address, BigDecimal, Vec<u8>);
 
 /// Order with extra information from other tables. Has all the information
 /// needed to construct a model::Order.
@@ -501,6 +547,9 @@ pub struct FullOrder {
     pub valid_to: i64,
     /// Earliest time (unix seconds) the order may enter a batch auction.
     pub valid_from: Option<i64>,
+    /// Whether the caller asked for fast-path treatment. See
+    /// `Order::fast_path` for the write path.
+    pub fast_path: bool,
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
@@ -555,7 +604,7 @@ pub struct FullOrderWithQuote {
     pub quote_verified: Option<bool>,
     pub quote_metadata: Option<serde_json::Value>,
     pub solver: Option<Address>,
-    pub quote_auction_id: Option<AuctionId>,
+    pub quote_id: Option<crate::quotes::QuoteId>,
 }
 
 impl FullOrderWithQuote {
@@ -589,7 +638,7 @@ impl FullOrderWithQuote {
                 solver,
                 verified,
                 metadata,
-                auction_id: self.quote_auction_id,
+                quote_id: self.quote_id,
             }),
             _ => None,
         };
@@ -621,7 +670,7 @@ impl FullOrderWithQuote {
 // that with the current amount of data this wouldn't be better.
 pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
-o.valid_to, o.valid_from, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
+o.valid_to, o.valid_from, o.fast_path, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 FALSE AS is_liquidity_order,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
@@ -663,7 +712,7 @@ const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
     ", o_quotes.verified as quote_verified",
     ", o_quotes.metadata as quote_metadata",
     ", o_quotes.solver as solver",
-    ", o_quotes.auction_id as quote_auction_id",
+    ", o_quotes.quote_id as quote_id",
     " FROM ",
     FROM,
     " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
@@ -762,6 +811,14 @@ pub fn solvable_orders(
         WHERE  o.cancellation_timestamp IS NULL
             AND o.true_valid_to >= $1
             AND (o.valid_from IS NULL OR o.valid_from <= $2)
+            -- Fast-path orders wait for the autopilot's fast-path handler
+            -- to populate `valid_from` (either `now()` for fallthrough or
+            -- `now + exclusivity` for a real fast-path settle attempt).
+            -- Until then they must not enter a regular auction. This runs
+            -- as a post-filter — the surrounding predicates already
+            -- narrow the row set enough that the `orders_fast_path`
+            -- index isn't the planner's pick here.
+            AND NOT (o.fast_path AND o.valid_from IS NULL)
             AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
@@ -786,6 +843,7 @@ pub fn solvable_orders(
         lo.buy_amount,
         lo.valid_to,
         lo.valid_from,
+        lo.fast_path,
         lo.app_data,
         lo.fee_amount,
         lo.kind,
@@ -889,6 +947,11 @@ WITH selected_orders AS (
     WHERE (
             (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))
             AND (o.valid_from IS NULL OR o.valid_from <= $3)
+            -- Pending fast-path orders (autopilot handler hasn't written
+            -- `valid_from` yet) must not enter a regular auction; the
+            -- crossing branch below already excludes them because it
+            -- requires `valid_from IS NOT NULL`.
+            AND NOT (o.fast_path AND o.valid_from IS NULL)
           )
        OR (o.valid_from IS NOT NULL
             AND o.valid_from >  EXTRACT(EPOCH FROM $1)::bigint
@@ -914,6 +977,7 @@ SELECT
     so.buy_amount,
     so.valid_to,
     so.valid_from,
+    so.fast_path,
     so.app_data,
     so.fee_amount,
     so.kind,
@@ -1570,7 +1634,8 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
-            auction_id: None,
+
+            quote_id: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         insert_quote_and_update_on_conflict(&mut db, &quote)
@@ -1647,7 +1712,8 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: true,
             metadata,
-            auction_id: None,
+
+            quote_id: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let quote_ = read_quote(&mut db, &quote.order_uid)
@@ -1676,7 +1742,8 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
-            auction_id: None,
+
+            quote_id: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let order_with_quote = single_full_order_with_quote(&mut db, &quote.order_uid)
@@ -2828,7 +2895,8 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
-            auction_id: None,
+
+            quote_id: None,
         };
 
         // insert quote with verified and metadata fields stored as NULL

@@ -312,13 +312,14 @@ impl Orderbook {
             .await?;
 
         let order_uid = order.metadata.uid;
+        let quote_id = quote.as_ref().and_then(|q| q.id);
 
         // Check if it has to replace an existing order
         if let Some(old_order) = replaced_order {
-            self.replace_order(order, old_order).await?
+            self.replace_order(order, old_order, quote_id).await?
         } else {
             self.database
-                .insert_order(&order)
+                .insert_order(&order, quote_id)
                 .await
                 .map_err(|err| AddOrderError::from_insertion(err, &order))?;
             Metrics::on_order_operation(&order, OrderOperation::Created);
@@ -458,6 +459,7 @@ impl Orderbook {
         &self,
         validated_new_order: Order,
         old_order: Order,
+        quote_id: Option<QuoteId>,
     ) -> Result<(), AddOrderError> {
         validated_new_order
             .signature
@@ -487,7 +489,7 @@ impl Orderbook {
         }
 
         self.database
-            .replace_order(&old_order.metadata.uid, &validated_new_order)
+            .replace_order(&old_order.metadata.uid, &validated_new_order, quote_id)
             .await
             .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
         Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
@@ -809,7 +811,7 @@ mod tests {
                 let old_order = old_order.clone();
                 move |_| Ok(Some(old_order.clone()))
             });
-        database.expect_replace_order().returning(|_, _| Ok(()));
+        database.expect_replace_order().returning(|_, _, _| Ok(()));
 
         let mut order_validator = MockOrderValidating::new();
         order_validator
@@ -833,7 +835,7 @@ mod tests {
         let database =
             crate::database::Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
-        database.insert_order(&old_order).await.unwrap();
+        database.insert_order(&old_order, None).await.unwrap();
 
         let database_replica = database.clone();
         let app_data = Arc::new(crate::app_data::Registry::new(
