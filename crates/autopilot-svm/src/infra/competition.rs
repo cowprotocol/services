@@ -96,7 +96,15 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
                                 .inner
                                 .orders()
                                 .iter()
-                                .map(|order| order.uid.to_string())
+                                .map(|o| format!(
+                                    "{} {:?} sell {:?}/{:?} buy {:?}/{:?}",
+                                    o.uid,
+                                    o.side,
+                                    o.executed_sell,
+                                    o.sell_amount,
+                                    o.executed_buy,
+                                    o.buy_amount
+                                ))
                                 .collect::<Vec<_>>(),
                             "proposed solution"
                         );
