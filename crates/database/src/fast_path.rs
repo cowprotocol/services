@@ -89,9 +89,6 @@ pub struct PendingFastPathOrder {
     pub signing_scheme: SigningScheme,
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
-    /// The order's class (Market / Limit / Liquidity). Loaded here so
-    /// `ProtocolFees::apply` can gate the protocol Volume policy on
-    /// `OrderClass::Limit`.
     pub class: OrderClass,
     pub pre_interactions: Vec<RawInteraction>,
     pub post_interactions: Vec<RawInteraction>,
