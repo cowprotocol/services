@@ -384,7 +384,7 @@ fn sponsored_intent(
         (
             solana_sdk::pubkey::Pubkey::new_from_array([0x66; 32]),
             solana_sdk::pubkey::Pubkey::new_from_array([0x33; 32]),
-            solana_sdk::pubkey::Pubkey::new_from_array([0x22; 32]),
+            ata(owner, buy_mint),
         )
     };
     cow_settlement_interface::data::intent::OrderIntent {
@@ -504,20 +504,30 @@ fn creation_tx(
     base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
 }
 
-/// A sponsored creation transaction with no preparation steps and an
-/// arbitrary SPL sell.
+/// The mandatory buy-account creation step for the intent.
+fn destination_creation(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: solana_sdk::pubkey::Pubkey,
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+) -> solana_sdk::instruction::Instruction {
+    spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+        &funder,
+        &owner,
+        &intent.buy_mint,
+        &spl_token_interface::ID,
+    )
+}
+
+/// A sponsored creation transaction with an arbitrary SPL sell and only the
+/// mandatory buy-account creation in front of `CreateOrder`.
 fn sponsored_creation_tx(
     funder: solana_sdk::pubkey::Pubkey,
     owner: &solana_sdk::signer::keypair::Keypair,
     sign: bool,
 ) -> String {
-    creation_tx(
-        funder,
-        owner,
-        &sponsored_intent(owner.pubkey(), false),
-        vec![],
-        sign,
-    )
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    creation_tx(funder, owner, &intent, vec![destination], sign)
 }
 
 async fn post_order(addr: SocketAddr, transaction: String) -> (reqwest::StatusCode, String) {
@@ -614,6 +624,8 @@ async fn create_order_checks_the_preparation_template() {
     };
 
     for (preparations, expected) in [
+        // The buy-account creation is mandatory.
+        (vec![], "InvalidTransaction"),
         // A program outside the template never rides on the funder's fee.
         (
             vec![solana_sdk::instruction::Instruction::new_with_bytes(

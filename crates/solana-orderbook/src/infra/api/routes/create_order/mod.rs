@@ -8,6 +8,11 @@
 //! `CreateOrder`: wrap SOL, delegate the sell account to the settlement
 //! state PDA, and create the buy token account. Anything else would run at
 //! the funder's expense.
+//!
+//! The buy-account creation is mandatory: settlement pays out to that
+//! account and never creates it, so an order without one would revert every
+//! settlement it is batched into. The creation is idempotent on chain, a
+//! no-op when the account already exists.
 
 use {
     crate::infra::{
@@ -210,7 +215,8 @@ fn validate(
     }
 
     // The preparation instructions may only follow the template: each step
-    // at most once, in template order, all omittable.
+    // at most once, in template order. The buy-account creation is the one
+    // mandatory step, everything else is omittable.
     let state_pda = find_state_pda(&sponsoring.settlement_program).0;
     let mut last_step = 0;
     for preparation in preparations {
@@ -221,6 +227,11 @@ fn validate(
             ));
         }
         last_step = step;
+    }
+    if last_step != CREATE_DESTINATION {
+        return Err(PlacementError::InvalidTransaction(
+            "the bundle must create the buy token account",
+        ));
     }
 
     // Every required signer except the funder must have signed: the funder's

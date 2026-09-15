@@ -174,12 +174,13 @@ paths:
         Place a sponsored order: the body carries the user's partially signed
         creation transaction (owner signed, the deployment's funder as its
         unsigned fee payer), and every order field derives from its trailing
-        `CreateOrder` instruction. In front of it the transaction may carry
-        the preparation steps, in this order with omissions allowed: create
-        the wSOL account, fund it, sync it (native SOL sells only), approve
-        the settlement delegate, and create the buy token account. The order
-        competes in auctions until the transaction's blockhash expires (about
-        a minute) or it settles.
+        `CreateOrder` instruction. In front of it the transaction carries the
+        preparation steps, in this order: create the wSOL account, fund it,
+        sync it, and approve the settlement delegate, each omittable (the
+        wrap steps only for native SOL sells), followed by the mandatory buy
+        token account creation (idempotent, a no-op when the account already
+        exists). The order competes in auctions until the transaction's
+        blockhash expires (about a minute) or it settles.
       requestBody:
         required: true
         content:
