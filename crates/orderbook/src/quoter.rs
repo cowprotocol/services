@@ -512,7 +512,6 @@ mod tests {
                 quote_kind: database::quotes::QuoteKind::Standard,
                 solver: Default::default(),
                 verified: false,
-                supports_fast_path: false,
                 metadata: Default::default(),
             },
             sell_amount,

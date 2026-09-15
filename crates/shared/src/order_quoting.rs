@@ -1264,7 +1264,6 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
-                    supports_fast_path: false,
                     metadata: Default::default(),
                 },
                 sell_amount: U256::from(70),
@@ -1425,7 +1424,6 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
-                    supports_fast_path: false,
                     metadata: Default::default(),
                 },
                 sell_amount: U256::from(100),
@@ -1581,7 +1579,6 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
-                    supports_fast_path: false,
                     metadata: Default::default(),
                 },
                 sell_amount: U256::from(100),
@@ -1787,7 +1784,6 @@ mod tests {
             quote_kind: QuoteKind::Standard,
             solver: Address::repeat_byte(1),
             verified: false,
-            supports_fast_path: false,
             metadata: Default::default(),
         };
         let mut storage = MockQuoteStoring::new();
@@ -1861,7 +1857,6 @@ mod tests {
             quote_kind: QuoteKind::Standard,
             solver: Address::repeat_byte(1),
             verified: false,
-            supports_fast_path: false,
             metadata: Default::default(),
         };
         let mut storage = MockQuoteStoring::new();
@@ -1931,7 +1926,6 @@ mod tests {
             quote_kind: QuoteKind::Standard,
             solver: Address::repeat_byte(1),
             verified: false,
-            supports_fast_path: false,
             metadata: Default::default(),
         };
         let mut storage = MockQuoteStoring::new();
