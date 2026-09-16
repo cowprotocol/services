@@ -33,7 +33,7 @@ url = "http://localhost:11088"
 [logging]
 filter = "info,autopilot_svm=debug"
 
-# Sponsored order execution. Omit the section and winning solutions with
-# pending sponsored orders are skipped.
+# Sponsored order execution. Must be set when the orderbook accepts
+# sponsored orders: without it their winning solutions fail at the driver.
 # [sponsoring]
 # funder-keypair = "/path/to/funder-keypair.json"
