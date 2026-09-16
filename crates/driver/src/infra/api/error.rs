@@ -22,6 +22,7 @@ enum Kind {
     InvalidTokens,
     InvalidAmounts,
     QuoteSameTokens,
+    MissingQuoteId,
     FailedToSubmit,
     NoValidOrders,
     MalformedRequest,
@@ -55,6 +56,7 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
             Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
+            Kind::MissingQuoteId => "Quote request without a quoteId",
             Kind::InvalidTokens => {
                 "Invalid tokens specified in the auction, the tokens for some orders are missing"
             }
@@ -188,6 +190,7 @@ impl From<api::routes::OrderError> for (axum::http::StatusCode, axum::Json<Error
     fn from(value: api::routes::OrderError) -> Self {
         let error = match value {
             api::routes::OrderError::SameTokens => Kind::QuoteSameTokens,
+            api::routes::OrderError::MissingQuoteId => Kind::MissingQuoteId,
         };
         error.into()
     }

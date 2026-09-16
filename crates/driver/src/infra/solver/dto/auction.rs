@@ -71,7 +71,13 @@ pub fn new(
     }
 
     solvers_dto::auction::Auction {
-        id: auction.id().as_ref().map(|id| id.0),
+        // A competition auction has an id of its own; a quote auction is
+        // identified by the quote it computes. One of the two always exists.
+        id: auction
+            .id()
+            .map(|id| id.0)
+            .or_else(|| auction.quote_id().map(|id| id.0))
+            .expect("auction is either a competition auction or a quote"),
         orders: auction
             .orders()
             .iter()

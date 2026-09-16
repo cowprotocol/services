@@ -523,6 +523,7 @@ pub fn setup() -> Setup {
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
+        quote_id: QUOTE_ID,
         settle_submission_deadline: 3,
         flashloans_enabled: true,
         ..Default::default()
@@ -543,6 +544,8 @@ pub struct Setup {
     /// Should the /quote request ask for fast-path (out-of-competition)
     /// execution, i.e. set `enableFastPath` and pass the auction id?
     quote_fast_path: bool,
+    /// Id the orderbook allocated for the quote of this test.
+    quote_id: i64,
     /// List of solvers in this test
     solvers: Vec<Solver>,
     /// Should simulation be enabled? True by default.
@@ -803,6 +806,8 @@ pub fn eth_solution() -> Solution {
 
 // Hardcoded trader account. Don't use this account for anything else!!!
 pub const TRADER_ADDRESS: Address = address!("d2525C68A663295BBE347B65C87c8e17De936a0a");
+/// Quote id the tests pretend the orderbook minted for fast-path quotes.
+pub const QUOTE_ID: i64 = 7;
 
 impl Setup {
     /// Set an explicit name for this test. If a name is set, it will be logged
@@ -1014,7 +1019,7 @@ impl Setup {
                 quoted_orders: &quotes,
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
-                quote_fast_path_auction_id: self.quote_fast_path.then_some(self.auction_id),
+                quote_id: self.quote.then_some(self.quote_id),
                 fee_handler: solver.fee_handler,
                 private_key: solver.signer.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
@@ -1054,6 +1059,7 @@ impl Setup {
             quoted_orders: quotes,
             quote: self.quote,
             quote_fast_path: self.quote_fast_path,
+            quote_id: self.quote_id,
             surplus_capturing_jit_order_owners,
             auction_id: self.auction_id,
         }
@@ -1106,6 +1112,8 @@ pub struct Test {
     quote: bool,
     /// Should the /quote request ask for fast-path execution?
     quote_fast_path: bool,
+    /// Id the orderbook allocated for the quote of this test.
+    quote_id: i64,
     /// List of surplus capturing JIT-order owners
     surplus_capturing_jit_order_owners: Vec<eth::Address>,
     auction_id: i64,
@@ -1193,7 +1201,13 @@ impl Test {
     }
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
-        self.settle_request(solver_name, solution_id, None).await
+        self.settle_request(solver_name, Some(solution_id), None)
+            .await
+    }
+
+    /// The quote id the fast-path quote of this test was cached under.
+    pub fn quote_id(&self) -> i64 {
+        self.quote_id
     }
 
     /// The /solve-shaped JSON for the single quoted order.
@@ -1206,16 +1220,6 @@ impl Test {
         )
     }
 
-    /// Native prices for the single quoted order's tokens.
-    pub fn prices_json(&self) -> serde_json::Value {
-        driver::prices_json(
-            self,
-            self.quoted_orders
-                .first()
-                .expect("prices_json requires a quoted order"),
-        )
-    }
-
     /// The fast-path limit prices for the single quoted order.
     pub fn limit_prices_json(&self) -> serde_json::Value {
         driver::limit_prices_json(
@@ -1225,28 +1229,27 @@ impl Test {
         )
     }
 
-    /// Call /settle with the fast-path bundle: the real `order`, its
-    /// `limit_prices`, and native `prices`.
+    /// Call /settle for the fast path: the `quote_id` the quote was cached
+    /// under, the real `order` and its `limit_prices`.
     pub async fn settle_with_order(
         &self,
-        solution_id: u64,
+        quote_id: i64,
         order: serde_json::Value,
         limit_prices: serde_json::Value,
-        prices: serde_json::Value,
     ) -> Settle {
         let fast_path = serde_json::json!({
+            "quoteId": quote_id,
             "order": order,
             "limitPrices": limit_prices,
-            "nativePrices": prices,
         });
-        self.settle_request(solver::NAME, solution_id, Some(fast_path))
+        self.settle_request(solver::NAME, None, Some(fast_path))
             .await
     }
 
     async fn settle_request(
         &self,
         solver_name: &str,
-        solution_id: u64,
+        solution_id: Option<u64>,
         fast_path: Option<serde_json::Value>,
     ) -> Settle {
         let submission_deadline_latest_block: u64 =
@@ -1616,15 +1619,9 @@ impl QuoteOk<'_> {
         &self.body
     }
 
-    /// The id of the cached fast-path solution. Present only when the solution
-    /// was successfully cached for a later `/settle`.
-    pub fn solution_id(&self) -> u64 {
-        let body: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        body.get("solutionId").unwrap().as_u64().unwrap()
-    }
-
-    /// Assert the quote carries no fast-path settle info (regular quote).
-    pub fn no_fast_path_settle_info(self) -> Self {
+    /// Assert the quote carries no driver-minted solution id: fast-path quotes
+    /// are referenced by the orderbook's quote id instead.
+    pub fn no_solution_id(self) -> Self {
         let body: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(body.get("solutionId").is_none());
         self

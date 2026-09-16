@@ -244,13 +244,20 @@ impl FastPathHandler {
 
         let deadline = self.submission_deadline();
 
-        let auction_id = staged.data.auction_id;
-        let solution_id = staged.winner().solution_id;
+        // The fast-path settlement gets a real auction id of its own,
+        // allocated only now that the order is actually being settled.
+        let auction_id = self
+            .persistence
+            .get_next_auction_id()
+            .await
+            .context("failed to allocate fast-path auction id")?;
+        let quote_id = staged.quote_id;
         let solution_uid = staged.winner().solution_uid;
         let final_execution = self
             .compute_and_persist_final_execution(
                 pending.model_order,
                 staged,
+                auction_id,
                 volume_fee_policies,
                 &deadline,
             )
@@ -258,18 +265,16 @@ impl FastPathHandler {
             .context("failed to record fast-path fee policies")?;
 
         Ok(FastPathSettleAttempt {
-            settle_request: settle::Request {
-                auction_id,
-                solution_id,
+            settle_request: settle::Request::FastPath(Box::new(settle::FastPathRequest {
+                quote_id,
+                order: dto::order::from_domain(&final_execution.order),
+                limit_prices: settle::LimitPrices {
+                    sell: final_execution.limit_sell,
+                    buy: final_execution.limit_buy,
+                },
                 submission_deadline_latest_block: deadline.block,
-                fast_path: Some(settle::FastPath {
-                    order: dto::order::from_domain(&final_execution.order),
-                    limit_prices: settle::LimitPrices {
-                        sell: final_execution.limit_sell,
-                        buy: final_execution.limit_buy,
-                    },
-                }),
-            },
+                auction_id,
+            })),
             winner: winner.clone(),
             solution_uid,
         })
@@ -310,6 +315,7 @@ impl FastPathHandler {
         &self,
         order: model::order::Order,
         staged: StagedFastPathCompetition,
+        auction_id: database::auction::AuctionId,
         volume_fee_policies: Vec<domain::fee::Policy>,
         deadline: &SubmissionDeadline,
     ) -> anyhow::Result<FinalOrderExecution> {
@@ -320,6 +326,7 @@ impl FastPathHandler {
         let buy_token = ByteArray(staged.data.buy_token.0.0);
         let side = shared::db_order_conversions::order_kind_into(order_kind);
 
+        let quote_id = staged.quote_id;
         let mut winning_adjusted: Option<(U256, U256)> = None;
         let solution_rows: Vec<database::solver_competition_v2::Solution> = staged
             .data
@@ -344,7 +351,9 @@ impl FastPathHandler {
                 let limit_buy = u256_to_big_decimal(&solution.quoted_buy);
                 Ok(database::solver_competition_v2::Solution {
                     uid: solution_uid,
-                    id: BigDecimal::from(solution.solution_id),
+                    // Fast-path solutions are identified by the quote they
+                    // were produced for.
+                    id: BigDecimal::from(quote_id),
                     solver: ByteArray(solution.solver.0.0),
                     is_winner: solution.is_winner,
                     // TODO: populate in a way that is consistent with the usual
@@ -377,7 +386,7 @@ impl FastPathHandler {
         self.persistence
             .finalize_fast_path(FastPathPromotion {
                 quote_id: staged.quote_id,
-                auction_id: staged.data.auction_id,
+                auction_id,
                 order_uid,
                 block: deadline.computed_at_block,
                 deadline: deadline.block,

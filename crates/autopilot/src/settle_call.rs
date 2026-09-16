@@ -58,22 +58,22 @@ impl SettleCall {
         solution_uid: usize,
         request: settle::Request,
     ) -> Result<TxId, SettleError> {
-        let auction_id = request.auction_id;
-        let deadline = request.submission_deadline_latest_block;
+        let auction_id = request.auction_id();
+        let deadline = request.submission_deadline_latest_block();
 
         let settle = async move {
             let current_block = self.eth.current_block().borrow().number;
             anyhow::ensure!(
-                current_block < request.submission_deadline_latest_block,
+                current_block < request.submission_deadline_latest_block(),
                 "submission deadline was missed"
             );
 
             self.store_execution_started(
-                request.auction_id,
+                request.auction_id(),
                 solver,
                 solution_uid,
                 current_block,
-                request.submission_deadline_latest_block,
+                request.submission_deadline_latest_block(),
             );
             driver
                 .settle(&request, self.max_settlement_transaction_wait)

@@ -2,7 +2,10 @@ mod dto;
 
 use {
     crate::{
-        domain::competition::{auction, solution},
+        domain::{
+            competition::{auction, solution},
+            quote,
+        },
         infra::{
             api::{self, Error, State, extract::LoggingJson},
             observe,
@@ -20,29 +23,38 @@ async fn route(
     LoggingJson(req): LoggingJson<dto::SettleRequest>,
 ) -> Result<(), (axum::http::StatusCode, axum::Json<Error>)> {
     let auction_id =
-        auction::Id::try_from(req.auction_id).map_err(api::routes::AuctionError::from)?;
+        auction::Id::try_from(req.auction_id()).map_err(api::routes::AuctionError::from)?;
+    let submission_deadline = req.submission_deadline_latest_block();
     let solver = state.solver().name().to_string();
 
     async move {
         observe::settling();
-        if let Some(fast_path) = req.fast_path {
-            let order = fast_path.order.into_domain(None);
-            let limit_prices = solution::LimitPrices {
-                sell: fast_path.limit_prices.sell,
-                buy: fast_path.limit_prices.buy,
-            };
-            state
-                .competition()
-                .reencode_quote_solution(auction_id, req.solution_id, order, limit_prices)
-                .await?;
-        }
+        let solution_id = match req {
+            dto::SettleRequest::Auction(req) => req.solution_id,
+            // A fast-path settlement references the quote cached by `/quote`;
+            // re-encoding it against the real order yields the solution to
+            // settle.
+            dto::SettleRequest::FastPath(req) => {
+                let req = *req;
+                let order = req.order.into_domain(None);
+                let limit_prices = solution::LimitPrices {
+                    sell: req.limit_prices.sell,
+                    buy: req.limit_prices.buy,
+                };
+                state
+                    .competition()
+                    .reencode_quote_solution(
+                        auction_id,
+                        quote::Id(req.quote_id),
+                        order,
+                        limit_prices,
+                    )
+                    .await?
+            }
+        };
         let result = state
             .competition()
-            .settle(
-                auction_id,
-                req.solution_id,
-                req.submission_deadline_latest_block.into(),
-            )
+            .settle(auction_id, solution_id, submission_deadline.into())
             .await;
         result.map(|_| ()).map_err(Into::into)
     }

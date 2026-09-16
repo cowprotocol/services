@@ -2,7 +2,9 @@ use {
     super::Postgres,
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
+    futures::future::{BoxFuture, FutureExt},
     model::quote::QuoteId,
+    price_estimation::QuoteIdAllocating,
     shared::{
         event_storing_helpers::create_db_search_parameters,
         order_quoting::{QuoteCompetition, QuoteData, QuoteSearchParameters, QuoteStoring},
@@ -55,14 +57,30 @@ impl QuoteStoring for Postgres {
             .transpose()
     }
 
-    async fn get_next_auction_id(&self) -> Result<i64> {
+    async fn next_quote_id(&self) -> Result<QuoteId> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["get_next_auction_id"])
+            .with_label_values(&["next_quote_id"])
             .start_timer();
         let mut ex = self.pool.acquire().await?;
-        database::auction::get_next_auction_id(&mut ex)
+        database::quotes::next_id(&mut ex)
             .await
-            .context("failed to fetch next auction_id")
+            .context("failed to allocate next quote id")
+    }
+}
+
+impl QuoteIdAllocating for Postgres {
+    fn allocate(&self, n: usize) -> BoxFuture<'_, Result<Vec<QuoteId>>> {
+        async move {
+            let _timer = super::Metrics::get()
+                .database_queries
+                .with_label_values(&["next_quote_ids"])
+                .start_timer();
+            let mut ex = self.pool.acquire().await?;
+            database::quotes::next_ids(&mut ex, n)
+                .await
+                .context("failed to allocate quote ids")
+        }
+        .boxed()
     }
 }

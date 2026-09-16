@@ -39,12 +39,36 @@ pub struct Quote {
     pub metadata: serde_json::Value,
 }
 
-/// Stores the quote and returns the id. The id of the quote parameter is not
-/// used.
+/// Allocates the id of the next quote from the `quotes` id sequence, so the
+/// id is known before the quote is computed and stored.
+#[instrument(skip_all)]
+pub async fn next_id(ex: &mut PgConnection) -> Result<QuoteId, sqlx::Error> {
+    const QUERY: &str = r#"SELECT nextval(pg_get_serial_sequence('quotes', 'id'))::bigint;"#;
+    let (id,) = sqlx::query_as(QUERY).fetch_one(ex).await?;
+    Ok(id)
+}
+
+/// Allocates `n` quote ids from the `quotes` id sequence in one round trip.
+#[instrument(skip_all)]
+pub async fn next_ids(ex: &mut PgConnection, n: usize) -> Result<Vec<QuoteId>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT nextval(pg_get_serial_sequence('quotes', 'id'))::bigint
+FROM generate_series(1, $1);
+    "#;
+    let ids: Vec<(QuoteId,)> = sqlx::query_as(QUERY)
+        .bind(i64::try_from(n).unwrap_or(i64::MAX))
+        .fetch_all(ex)
+        .await?;
+    Ok(ids.into_iter().map(|(id,)| id).collect())
+}
+
+/// Stores the quote under its `id` (allocated with [`next_id`] or
+/// [`next_ids`]) and returns it.
 #[instrument(skip_all)]
 pub async fn save(ex: &mut PgConnection, quote: &Quote) -> Result<QuoteId, sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO quotes (
+    id,
     sell_token,
     buy_token,
     sell_amount,
@@ -59,10 +83,11 @@ INSERT INTO quotes (
     verified,
     metadata
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
+        .bind(quote.id)
         .bind(quote.sell_token)
         .bind(quote.buy_token)
         .bind(&quote.sell_amount)

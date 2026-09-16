@@ -74,6 +74,7 @@ pub struct PriceEstimatorFactory<'a> {
     settlement_simulator: Option<SettlementSimulator>,
     trade_verifier: Option<Arc<dyn TradeVerifying>>,
     estimators: HashMap<String, EstimatorEntry>,
+    quote_ids: Option<Arc<dyn crate::QuoteIdAllocating>>,
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
@@ -96,11 +97,20 @@ impl<'a> PriceEstimatorFactory<'a> {
             network,
             components,
             estimators: HashMap::new(),
+            quote_ids: None,
         })
     }
 
     pub fn settlement_simulator(&self) -> Option<&SettlementSimulator> {
         self.settlement_simulator.as_ref()
+    }
+
+    /// Configures where the ids quotes are stored under come from. The quote
+    /// competitions built by this factory then ask every solver with its own
+    /// id.
+    pub fn with_quote_ids(mut self, quote_ids: Arc<dyn crate::QuoteIdAllocating>) -> Self {
+        self.quote_ids = Some(quote_ids);
+        self
     }
 
     async fn build_simulator(
@@ -379,7 +389,11 @@ impl<'a> PriceEstimatorFactory<'a> {
                 )
             })
             .collect();
-        CompetitionEstimator::new(vec![estimators], ranking)
+        let competition = CompetitionEstimator::new(vec![estimators], ranking);
+        match &self.quote_ids {
+            Some(quote_ids) => competition.with_quote_ids(quote_ids.clone()),
+            None => competition,
+        }
     }
 
     pub fn price_estimator(
