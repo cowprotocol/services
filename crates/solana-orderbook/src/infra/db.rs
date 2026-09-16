@@ -31,6 +31,10 @@ pub struct OrderRow {
     pub amount_withdrawn: BigDecimal,
     pub amount_received: BigDecimal,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
+    /// The height the stored creation transaction dies at, while the order
+    /// still awaits its on-chain creation. `None` once created, and for
+    /// orders that were never sponsored.
+    pub last_valid_block_height: Option<i64>,
 }
 
 /// Read one order with its fill state. `None` when the uid is unknown.
@@ -42,7 +46,9 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
-       p.cancellation_timestamp
+       p.cancellation_timestamp,
+       CASE WHEN o.presigned_transaction IS NOT NULL AND p.order_uid IS NULL
+            THEN o.last_valid_block_height END AS last_valid_block_height
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.uid = $1 AND NOT COALESCE(p.is_reorged, false)
@@ -68,7 +74,9 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
-       p.cancellation_timestamp
+       p.cancellation_timestamp,
+       CASE WHEN o.presigned_transaction IS NOT NULL AND p.order_uid IS NULL
+            THEN o.last_valid_block_height END AS last_valid_block_height
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.owner = $1
