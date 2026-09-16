@@ -522,9 +522,8 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     // Mocked height 100 plus the maximum blockhash age.
     assert_eq!(expiry, 250);
 
-    // The mock RPC answers each probe once, so the duplicate goes through a
-    // fresh server over the same database.
-    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    // The duplicate short-circuits on the stored uid before any RPC probe,
+    // so the same server (with its mocks consumed) answers it.
     let (status, kind) = post_order(addr, transaction).await;
     assert_eq!(
         (status, kind.as_str()),

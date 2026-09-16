@@ -109,6 +109,15 @@ pub async fn create_order(
     let mut order = validate(sponsoring, &transaction)?;
     order.presigned_transaction = params.transaction;
 
+    // Short-circuit replays before the RPC probes. The insert's unique
+    // violation below stays as the race-safe backstop.
+    let duplicate = db::order_exists(state.pool(), &order.uid)
+        .await
+        .map_err(|err| internal_error_reply(err, "order existence check failed"))?;
+    if duplicate {
+        return Err(PlacementError::DuplicatedOrder.into());
+    }
+
     // The countersign re-checks freshness, so the stored expiry only has to
     // be an upper bound: the tip cannot have moved past the blockhash's own
     // last valid height by more than the maximum age.
