@@ -39,7 +39,7 @@ use {
         },
         settle_call::SettleCall,
     },
-    alloy::primitives::{Address, U256},
+    alloy::primitives::{Address, U256, U512},
     anyhow::Context,
     bigdecimal::BigDecimal,
     database::byte_array::ByteArray,
@@ -315,6 +315,8 @@ impl FastPathHandler {
     ) -> anyhow::Result<FinalOrderExecution> {
         let order_uid: domain::OrderUid = order.metadata.uid.into();
         let order_kind = order.data.kind;
+        let signed_sell = order.data.sell_amount;
+        let signed_buy = order.data.buy_amount;
         let uid = ByteArray(order_uid.0);
         let sell_token = ByteArray(staged.data.sell_token.0.0);
         let buy_token = ByteArray(staged.data.buy_token.0.0);
@@ -332,6 +334,11 @@ impl FastPathHandler {
                     order_kind,
                     &volume_fee_policies,
                 );
+                // For the data to be consistent with regular auctions we
+                // must mark all bids as filtered out where the volume fee
+                // adjusted bid does not satisfy the order's limit price.
+                let filtered_out =
+                    !satisfies_limit_price(signed_sell, signed_buy, adjusted_sell, adjusted_buy);
                 if solution.is_winner {
                     // keep the adjusted prices of the winner as those are the
                     // exact prices the solver is supposed to settle the trade
@@ -347,9 +354,7 @@ impl FastPathHandler {
                     id: BigDecimal::from(solution.solution_id),
                     solver: ByteArray(solution.solver.0.0),
                     is_winner: solution.is_winner,
-                    // TODO: populate in a way that is consistent with the usual
-                    // winner selection logic
-                    filtered_out: false,
+                    filtered_out,
                     // TODO: populate in a way that is consisent with the usual
                     // winner selection logic
                     score: BigDecimal::from(0),
@@ -512,6 +517,25 @@ fn apply_volume_fees(
         })
 }
 
+/// Mirrors the on-chain limit-price constraint the settlement contract
+/// enforces:
+///     executed_sell * signed_buy <= executed_buy * signed_sell
+///
+/// Covers both legs in a single proportional check: a trade that sells more
+/// than the signed cap, receives less than the signed floor, or drifts the
+/// effective price against the trader all fail here. Widens the
+/// multiplication so realistic wei-scale amounts can't overflow.
+fn satisfies_limit_price(
+    signed_sell: U256,
+    signed_buy: U256,
+    executed_sell: U256,
+    executed_buy: U256,
+) -> bool {
+    let lhs: U512 = executed_sell.widening_mul(signed_buy);
+    let rhs: U512 = executed_buy.widening_mul(signed_sell);
+    lhs <= rhs
+}
+
 #[cfg(test)]
 mod tests {
     // The per-factor arithmetic is covered by `shared::fee` tests; here we
@@ -569,5 +593,88 @@ mod tests {
         // Only the single 1% volume fee took effect.
         assert_eq!(sell, U256::from(1_000u64));
         assert_eq!(buy, U256::from(990u64));
+    }
+
+    #[test]
+    fn satisfies_limit_price_output_at_signed_ratio() {
+        let signed_sell = U256::from(1_000u64);
+        let signed_buy = U256::from(900u64);
+        // Full fill at the signed ratio — accepted.
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_000u64),
+            U256::from(900u64),
+        ));
+        // 1 wei more output at the same input — better than signed, accepted.
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_000u64),
+            U256::from(901u64),
+        ));
+        // 1 wei less output at the same input — trader shortchanged.
+        assert!(!satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_000u64),
+            U256::from(899u64),
+        ));
+    }
+
+    #[test]
+    fn satisfies_limit_price_input_at_signed_ratio() {
+        let signed_sell = U256::from(1_100u64);
+        let signed_buy = U256::from(1_000u64);
+        // Full buy fill at the signed ratio — accepted.
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_100u64),
+            U256::from(1_000u64),
+        ));
+        // 1 wei less input for the same output — trader pays less, accepted.
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_099u64),
+            U256::from(1_000u64),
+        ));
+        // 1 wei more input for the same output — trader overcharged.
+        assert!(!satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_101u64),
+            U256::from(1_000u64),
+        ));
+    }
+
+    #[test]
+    fn satisfies_limit_price_partial_fill_at_signed_ratio() {
+        // A partial fill that keeps the effective price identical to the
+        // signed ratio must still be accepted (100 tokens sold for 90 buy
+        // matches the same 1000-for-900 rate the trader signed).
+        let signed_sell = U256::from(1_000u64);
+        let signed_buy = U256::from(900u64);
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(100u64),
+            U256::from(90u64),
+        ));
+        // Partial fill slightly better than the signed ratio — accepted.
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(100u64),
+            U256::from(91u64),
+        ));
+        // Partial fill slightly worse than the signed ratio — rejected.
+        assert!(!satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(100u64),
+            U256::from(89u64),
+        ));
     }
 }
