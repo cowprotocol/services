@@ -32,6 +32,10 @@ pub struct Order {
     pub partially_fillable: bool,
     pub order_pda: Pubkey,
     pub app_data: AppData,
+    /// Whether the order PDA already exists on chain. A pending sponsored
+    /// order creates its own accounts (the order PDA, the buy token account)
+    /// only at settlement time through its presigned transaction.
+    pub created_on_chain: bool,
 }
 
 /// The cut auction the loop fans out to solvers.
@@ -77,6 +81,7 @@ mod tests {
             partially_fillable: false,
             order_pda: chain_types::solana::Pubkey([7; 32]),
             app_data: AppData([0; 32]),
+            created_on_chain: true,
         }
     }
 
