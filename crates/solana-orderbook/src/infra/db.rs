@@ -169,6 +169,15 @@ pub struct SponsoredOrder {
     pub last_valid_block_height: u64,
 }
 
+/// Whether an order with this uid is already stored.
+pub async fn order_exists(pool: &PgPool, uid: &[u8; 32]) -> Result<bool> {
+    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM solana.orders WHERE uid = $1)")
+        .bind(ByteArray(*uid))
+        .fetch_one(pool)
+        .await
+        .context("check solana.orders existence")
+}
+
 /// Insert a sponsored order and its `created` event in one transaction.
 /// A duplicate uid or order PDA surfaces as a unique violation.
 pub async fn insert_sponsored_order(pool: &PgPool, order: &SponsoredOrder) -> Result<()> {

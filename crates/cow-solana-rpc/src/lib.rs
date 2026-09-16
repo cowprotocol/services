@@ -211,6 +211,14 @@ impl SolanaRPC {
             .map(|response| response.value)
     }
 
+    /// Whether the blockhash is still usable for a new transaction at
+    /// confirmed commitment.
+    pub async fn is_blockhash_valid(&self, blockhash: &Hash) -> Result<bool, Error> {
+        self.inner
+            .is_blockhash_valid(blockhash, CommitmentConfig::confirmed())
+            .await
+    }
+
     /// Send a versioned transaction and wait until it reaches the client's
     /// configured commitment level.
     ///
