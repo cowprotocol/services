@@ -97,7 +97,6 @@ fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
         name: "mock".to_owned(),
         endpoint: format!("http://{addr}").parse().unwrap(),
         signer_keypair: keypair_path,
-        max_in_flight: NonZero::new(1).unwrap(),
         solve_every_nth_auction: None,
     })
     .expect("solver construction should succeed");
@@ -117,7 +116,6 @@ fn throttled_dead_solver(stride: u64) -> Solver {
         name: "mock".to_owned(),
         endpoint: "http://127.0.0.1:1".parse().unwrap(),
         signer_keypair: keypair_file.path().to_path_buf(),
-        max_in_flight: NonZero::new(1).unwrap(),
         solve_every_nth_auction: NonZero::new(stride),
     })
     .expect("solver construction should succeed")
