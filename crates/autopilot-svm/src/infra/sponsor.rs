@@ -29,7 +29,10 @@ impl Sponsor {
     /// chain. Orders already created contribute nothing. An error means one
     /// creation can no longer land (dead blockhash) or did not countersign,
     /// so the solution containing it cannot settle.
-    pub async fn creations(&self, uids: impl Iterator<Item = IntentHash>) -> Result<Vec<Vec<u8>>> {
+    pub async fn countersign_creations(
+        &self,
+        uids: impl Iterator<Item = IntentHash>,
+    ) -> Result<Vec<Vec<u8>>> {
         let uids: Vec<Vec<u8>> = uids.map(|uid| uid.0.to_vec()).collect();
         let pending = db::pending_creations(&self.pool, &uids).await?;
         let mut creations = Vec::with_capacity(pending.len());
