@@ -25,7 +25,7 @@ use {
         byte_array::ByteArray,
         events::EventIndex,
         onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
-        orders::{Order, OrderClass, insert_quotes},
+        orders::{Order, insert_quotes},
     },
     ethrpc::{Web3, block_stream::timestamp_of_block_in_seconds},
     event_indexing::{block_retriever::RangeInclusive, event_handler::EventStoring},
@@ -55,7 +55,7 @@ use {
         order_validation::{
             ValidationError,
             convert_signing_scheme_into_quote_signing_scheme,
-            get_quote_and_check_fee,
+            get_or_create_quote,
         },
     },
     sqlx::PgConnection,
@@ -478,7 +478,13 @@ where
             }
             let (order_data, owner, signing_scheme, order_uid) = detailed_order_data?;
 
-            let quote_result = get_quote(quoter, order_data, signing_scheme, &quote_id).await;
+            // Orders that sign a fee upfront (the former market orders) are no
+            // longer supported, so don't bother quoting them.
+            let quote_result = if order_data.fee_amount.is_zero() {
+                get_quote(quoter, order_data, signing_scheme, &quote_id).await
+            } else {
+                Err(OnchainOrderPlacementError::NonZeroFee)
+            };
             let order_data = convert_onchain_order_placement(
                 &event,
                 event_timestamp,
@@ -501,7 +507,7 @@ where
                     solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.clone().try_into()?,
-                    auction_id: quote.data.auction_id,
+                    quote_id: Some(quote_id),
                 }),
                 Err(err) => {
                     let err_label = err.to_metrics_label();
@@ -564,20 +570,15 @@ async fn get_quote(
         // Because we want to be generous with refunding EthFlow orders we therefore don't request a
         // verified quote here on purpose.
         verification: Default::default(),
+        fast_path: false,
     };
 
-    get_quote_and_check_fee(
-        quoter,
-        &parameters.clone(),
-        Some(*quote_id),
-        Some(order_data.fee_amount),
-    )
-    .await
-    .map_err(|err| match err {
-        ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
-        ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
-        _ => OnchainOrderPlacementError::Other,
-    })
+    get_or_create_quote(quoter, &parameters, Some(*quote_id))
+        .await
+        .map_err(|err| match err {
+            ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
+            _ => OnchainOrderPlacementError::Other,
+        })
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -625,13 +626,12 @@ fn convert_onchain_order_placement(
         sell_token_balance: sell_token_source_into(order_data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order_data.buy_token_balance),
         cancellation_timestamp: None,
-        class: match order_data.fee_amount.is_zero() {
-            true => OrderClass::Limit,
-            false => OrderClass::Market,
-        },
         // Backfilled from the order's app-data in `handle_app_data` before the
         // order is persisted; the full app-data isn't available at this point.
         valid_from: None,
+        // Same as `valid_from`: filled in from the app-data after it has been
+        // fetched.
+        fast_path: false,
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -684,10 +684,18 @@ fn extract_order_data_from_onchain_order_placement_event(
     Ok((order_data, owner, signing_scheme, order_uid))
 }
 
-/// Populates all app-data-derived order fields before the orders are persisted:
-/// backfills each order's `valid_from` and indexes its pre/post hook
-/// interactions. Must run before the orders are inserted (it mutates them).
-/// Orders whose app-data is unknown or unparseable are left unchanged.
+/// Populates all app-data-derived order fields before the orders are
+/// persisted: sets `fast_path` from the `enableFastPath` app-data flag,
+/// backfills `valid_from` for non-fast-path orders that requested one,
+/// and indexes pre/post hook interactions. Must run before the orders
+/// are inserted (it mutates them). Orders whose app-data is unknown or
+/// unparseable are left unchanged.
+///
+/// For fast-path orders `valid_from` is intentionally left `NULL`: the
+/// autopilot's fast-path handler (`crates/autopilot/src/fast_path.rs`)
+/// owns that field and will set it either to `now()` (feature disabled
+/// or limit-price check failed) or to `now + exclusivity` when it
+/// initiates the fast-path settle.
 async fn handle_app_data(
     db: &mut PgConnection,
     orders: &mut [Order],
@@ -707,7 +715,13 @@ async fn handle_app_data(
         };
 
         store_hooks(db, order, &parsed, trampoline).await?;
-        order.valid_from = parsed.valid_from.map(i64::from);
+        order.fast_path = parsed.enable_fast_path;
+        // Only honour an explicit user-set `validFrom` for non-fast-path
+        // orders; fast-path orders are handled by the autopilot's
+        // fast-path handler.
+        if !parsed.enable_fast_path {
+            order.valid_from = parsed.valid_from.map(i64::from);
+        }
     }
     Ok(())
 }
@@ -941,7 +955,7 @@ mod test {
     }
 
     #[test]
-    fn test_convert_onchain_order_placement() {
+    fn test_convert_onchain_order_placement_with_non_zero_fee() {
         let sell_token = Address::from([1; 20]);
         let buy_token = Address::from([2; 20]);
         let receiver = Address::from([3; 20]);
@@ -991,14 +1005,15 @@ mod test {
             data: Default::default(),
         };
         let settlement_contract = Address::repeat_byte(8);
-        let quote = Quote::default();
         let order_uid = OrderUid([9u8; 56]);
         let signing_scheme = SigningScheme::Eip1271;
         let event_timestamp = 234354345;
+        // Non-zero fee orders don't get quoted; the error is recorded on the
+        // placement while the order itself is still indexed.
         let (onchain_order_placement, order) = convert_onchain_order_placement(
             &order_placement,
             event_timestamp,
-            Ok(quote),
+            Err(OnchainOrderPlacementError::NonZeroFee),
             order_data,
             signing_scheme,
             order_uid,
@@ -1023,7 +1038,7 @@ mod test {
         let expected_onchain_order_placement = OnchainOrderPlacement {
             order_uid: ByteArray(order_uid.0),
             sender: ByteArray(order_placement.sender.0.0),
-            placement_error: None,
+            placement_error: Some(OnchainOrderPlacementError::NonZeroFee),
         };
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
@@ -1039,7 +1054,6 @@ mod test {
             app_data: ByteArray(expected_order_data.app_data.0),
             fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             kind: order_kind_into(expected_order_data.kind),
-            class: OrderClass::Market,
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.data.to_vec(),
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
@@ -1048,6 +1062,7 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
             valid_from: None,
+            fast_path: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1153,7 +1168,6 @@ mod test {
             app_data: ByteArray(expected_order_data.app_data.0),
             fee_amount: u256_to_big_decimal(&fee_amount),
             kind: order_kind_into(expected_order_data.kind),
-            class: OrderClass::Limit,
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.data.to_vec(),
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
@@ -1162,6 +1176,7 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
             valid_from: None,
+            fast_path: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1178,7 +1193,7 @@ mod test {
         let buy_amount = U256::from(11);
         let valid_to = 1u32;
         let app_data = [5u8; 32];
-        let fee_amount = U256::from(12);
+        let fee_amount = U256::ZERO;
         let owner = Address::from([6; 20]);
         let order_placement = ContractOrderPlacement {
             sender,
@@ -1317,7 +1332,7 @@ mod test {
             solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.clone().try_into().unwrap(),
-            auction_id: quote.data.auction_id,
+            quote_id: Some(0i64),
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(

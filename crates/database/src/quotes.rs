@@ -1,5 +1,5 @@
 use {
-    crate::{Address, auction::AuctionId, orders::OrderKind},
+    crate::{Address, orders::OrderKind},
     bigdecimal::BigDecimal,
     sqlx::{
         PgConnection,
@@ -37,7 +37,6 @@ pub struct Quote {
     pub solver: Address,
     pub verified: bool,
     pub metadata: serde_json::Value,
-    pub auction_id: Option<AuctionId>,
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not
@@ -58,10 +57,9 @@ INSERT INTO quotes (
     quote_kind,
     solver,
     verified,
-    metadata,
-    auction_id
+    metadata
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
@@ -78,7 +76,6 @@ RETURNING id
         .bind(quote.solver)
         .bind(quote.verified)
         .bind(&quote.metadata)
-        .bind(quote.auction_id)
         .fetch_one(ex)
         .await?;
     Ok(id)
@@ -105,6 +102,7 @@ pub struct QuoteSearchParameters {
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
     pub quote_kind: QuoteKind,
+    pub fast_path: bool,
 }
 
 #[instrument(skip_all)]
@@ -114,7 +112,8 @@ pub async fn find(
 ) -> Result<Option<Quote>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT *
-FROM quotes
+FROM quotes q
+LEFT JOIN quote_competitions qc ON qc.quote_id = q.id
 WHERE
     sell_token = $1 AND
     buy_token = $2 AND
@@ -125,7 +124,9 @@ WHERE
     ) AND
     order_kind = $6 AND
     expiration_timestamp >= $7 AND
-    quote_kind = $8
+    quote_kind = $8 AND
+    -- if a fast path quote is requested the quote competition data must exist
+    (qc.quote_id IS NOT NULL) = $9
 -- Return the best quote for the user, mirroring the price-estimation
 -- competition: prefer verified quotes over unverified ones, then take the
 -- highest buy/sell exchange rate net of the sell-token-denominated fee.
@@ -143,6 +144,7 @@ LIMIT 1
         .bind(params.kind)
         .bind(params.expiration)
         .bind(&params.quote_kind)
+        .bind(params.fast_path)
         .fetch_optional(ex)
         .await
 }
@@ -202,7 +204,6 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
-            auction_id: Some(12),
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
@@ -238,7 +239,6 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
-            auction_id: None,
         };
 
         let token_b = ByteArray([2; 20]);
@@ -257,7 +257,6 @@ mod tests {
             solver: ByteArray([2; 20]),
             verified: false,
             metadata: Default::default(),
-            auction_id: None,
         };
 
         // Save two measurements for token_a
@@ -306,6 +305,7 @@ mod tests {
             kind: quote_a.order_kind,
             expiration: now,
             quote_kind: QuoteKind::Standard,
+            fast_path: false,
         };
         assert_eq!(
             find(&mut db, &search_a).await.unwrap().unwrap(),
@@ -366,6 +366,7 @@ mod tests {
             kind: quote_b.order_kind,
             expiration: now,
             quote_kind: QuoteKind::Standard,
+            fast_path: false,
         };
         assert_eq!(
             find(&mut db, &search_b).await.unwrap().unwrap(),
@@ -432,7 +433,6 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
-            auction_id: None,
         };
 
         // Highest absolute buy amount, but an expensive fee.
@@ -464,6 +464,7 @@ mod tests {
             kind: OrderKind::Sell,
             expiration: now,
             quote_kind: QuoteKind::Standard,
+            fast_path: false,
         };
         assert_eq!(find(&mut db, &search).await.unwrap().unwrap(), best_rate);
     }
@@ -493,7 +494,6 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
-            auction_id: None,
         };
 
         // Lowest absolute sell amount, but an expensive fee -> total spend
@@ -525,6 +525,7 @@ mod tests {
             kind: OrderKind::Buy,
             expiration: now,
             quote_kind: QuoteKind::Standard,
+            fast_path: false,
         };
 
         assert_eq!(
@@ -558,7 +559,6 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
-            auction_id: None,
         };
 
         // Unverified but strictly better rate (more buy for the same sell).
@@ -588,6 +588,7 @@ mod tests {
             kind: OrderKind::Sell,
             expiration: now,
             quote_kind: QuoteKind::Standard,
+            fast_path: false,
         };
         assert_eq!(
             find(&mut db, &search).await.unwrap().unwrap(),
@@ -620,7 +621,6 @@ mod tests {
                 solver: ByteArray([1; 20]),
                 verified: false,
                 metadata: Default::default(),
-                auction_id: None,
             };
             let id = save(&mut db, &quote).await.unwrap();
             quote.id = id;
@@ -636,11 +636,79 @@ mod tests {
             kind: quote.order_kind,
             expiration: quote.expiration_timestamp,
             quote_kind: quote.quote_kind.clone(),
+            fast_path: false,
         };
 
         assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
         search_a.quote_kind = QuoteKind::Standard;
         assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_find_quote_differentiates_fast_path() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let now = low_precision_now();
+        let base = Quote {
+            id: Default::default(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 100.into(),
+            buy_amount: 200.into(),
+            gas_amount: 1.,
+            gas_price: 1.,
+            sell_token_price: 1.,
+            order_kind: OrderKind::Sell,
+            expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: Default::default(),
+        };
+
+        // A regular quote (no staged competition).
+        let mut regular = base.clone();
+        regular.id = save(&mut db, &regular).await.unwrap();
+
+        // A fast-path quote (staged competition attached).
+        let mut fast_path = base.clone();
+        fast_path.id = save(&mut db, &fast_path).await.unwrap();
+        crate::fast_path::save_competition(&mut db, fast_path.id, serde_json::json!({}))
+            .await
+            .unwrap();
+
+        let search = QuoteSearchParameters {
+            sell_token: base.sell_token,
+            buy_token: base.buy_token,
+            sell_amount_0: base.sell_amount.clone(),
+            sell_amount_1: base.sell_amount.clone(),
+            buy_amount: base.buy_amount.clone(),
+            kind: base.order_kind,
+            expiration: now,
+            quote_kind: QuoteKind::Standard,
+            fast_path: false,
+        };
+
+        // Regular searches skip the quote with a staged competition.
+        assert_eq!(find(&mut db, &search).await.unwrap().unwrap(), regular);
+
+        // Fast-path searches only return the quote with a staged competition.
+        assert_eq!(
+            find(
+                &mut db,
+                &QuoteSearchParameters {
+                    fast_path: true,
+                    ..search.clone()
+                }
+            )
+            .await
+            .unwrap()
+            .unwrap(),
+            fast_path,
+        );
     }
 
     #[tokio::test]
@@ -679,7 +747,6 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: metadata.clone(),
-            auction_id: None,
         };
         // store quote in database
         let id = save(&mut db, &quote).await.unwrap();

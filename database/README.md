@@ -225,7 +225,7 @@ Quotes that an order was created with. These quotes get stored persistently and 
  verified            | boolean     | not null | information if quote was verified
  metadata            | json        | not null | additional data associated with the quote in json format
  creation\_timestamp | timestamptz | not null | when the entry was created (DEFAULT NOW() for new and 1970-01-01 for historical data)
- auction\_id         | bigint      | nullable | the auction competition that was the basis for this quote, the limit price of fast path executions will be derived from this competition
+ quote\_id           | bigint      | nullable | `quotes.id` this order was placed against — used by the autopilot's fast-path handler to look up the associated `quote_competitions` staging row
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
@@ -256,7 +256,7 @@ Column                    | Type                         | Nullable | Details
  settlement\_contract     | bytea                        | not null | address of the contract that should be used to settle this order
  sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
- class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
+ class                    | [enum](#orderclass)          | not null | deprecated and no longer read by the services; new rows always get the default `limit`. Kept for one release so the previous orderbook version can still write it, dropped in a follow-up migration
  true_valid_to | bigint                       | not null | UNIX timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
  valid\_from               | bigint                       | nullable | earliest UNIX timestamp (in seconds) at which the order may enter a batch auction. Taken from the order's app-data (`validFrom`). NULL means no lower bound, i.e. the order is eligible immediately (the default for all existing orders).
 
@@ -272,7 +272,8 @@ Indexes:
 - orders\_true\_valid\_to: btree(`true_valid_to`)
 - orders\_valid\_from: btree(`valid_from`) WHERE valid_from IS NOT NULL
 - orders_owner_covering: btree(`owner`) INCLUDE (`uid`, `kind`, `buy_amount`, `sell_amount`, `fee_amount`, `buy_token`, `sell_token`)
-- orders_owner_class_valid_composite: btree(`owner`, `class`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL
+- orders_owner_valid_composite: btree(`owner`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL
+- orders_owner_class_valid_composite: btree(`owner`, `class`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL (superseded by `orders_owner_valid_composite`, dropped together with the `class` column in a follow-up migration)
 
 ### fee_policies
 
@@ -341,11 +342,22 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  solver                | bytea              | not null | public address of the solver that provided this quote
  verified              | boolean            | not null | information if quote was verified
  metadata              | json               | not null | additional data associated with the quote in json format
- auction\_id           | bigint             | nullable | the auction competition that was the basis for this quote, the limit price of fast path executions will be derived from this competition
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
 - quotes\_token\_expiration: btree (`sell_token`, `buy_token`, `expiration_timestamp` DESC)
+
+### quote\_competitions
+
+Stores the full competition data (all quotes, native prices, quote request, etc.) that produced the `quotes` row with the same id. Similar to the `quotes` table data in this table is temporary and only gets moved into permanent tables once the fast path execution of an order that requests it was initiated. The data is stored in a JSON blob for maximum flexibility and may change across deployments.
+
+ Column       | Type   | Nullable | Details
+--------------|--------|----------|--------
+ quote\_id    | bigint | not null | `quotes.id` this staging row belongs to
+ competition  | jsonb  | not null | serialized competition data — carries the `auction_id`, sell/buy tokens, order side, native prices, and one entry per participating solver (solver, `solution_id`, `is_winner`, quoted amounts)
+
+Indexes:
+- PRIMARY KEY: btree(`quote_id`)
 
 ### proposed\_solutions
 
@@ -497,7 +509,6 @@ Column                    | Type                         | Nullable | Details
  signing\_scheme          | [enum](#signingscheme)       | not null | what kind of signature was used to proof that the `owner` actually created the order
  sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
- class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
@@ -600,11 +611,13 @@ We support different expiration times for orders with different signing schemes.
 
 #### orderclass
 
+Deprecated: order classes no longer exist in the services (every order is a limit order and JIT orders live in `jit_orders`). The type and the `orders.class` column only remain until the follow-up migration drops them.
+
  Value     | Meaning
 -----------|--------
- market    | Short lived order that may receive surplus. Users agree to a static fee upfront by signing it.
- liquidity | These orders must be traded at their limit price and may not receive any surplus. Violating this is a slashable offence.
- limit     | Long lived order that may receive surplus. Users sign a static fee of 0 upfront and either the backend or the solvers compute a dynamic fee that gets taken from the surplus (while still respecting the user's limit price!).
+ market    | Historic: short lived order that paid a static fee signed upfront. No longer accepted.
+ liquidity | Historic: order traded at its limit price without surplus. JIT orders replaced these.
+ limit     | Order that may receive surplus; the protocol fee is taken from the surplus. The only value written today (column default).
 
 ## Notes on Migrations
 
