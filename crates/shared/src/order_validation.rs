@@ -1732,53 +1732,49 @@ mod tests {
 
     #[tokio::test]
     async fn enforces_minimum_validity_window() {
-        let build_validator = || {
-            let mut order_quoter = MockOrderQuoting::new();
-            order_quoter
-                .expect_find_quote()
-                .returning(|_, _| Ok(Default::default()));
-            let mut balance_fetcher = MockBalanceFetching::new();
-            balance_fetcher
-                .expect_can_transfer()
-                .returning(|_, _| Ok(()));
-            let mut signature_validating = MockSignatureValidating::new();
-            signature_validating
-                .expect_validate_signature_and_get_additional_gas()
-                .never();
-            let hooks = HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
-                ProviderBuilder::new()
-                    .connect_mocked_client(Asserter::new())
-                    .erased(),
-            );
-            let mut limit_order_counter = MockLimitOrderCounting::new();
-            limit_order_counter.expect_count().returning(|_| Ok(0u64));
-            let native_token =
-                WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
-            OrderValidator::new(
-                native_token,
-                Arc::new(order_validation::banned::Users::none()),
-                OrderValidPeriodConfiguration {
-                    min: Duration::from_secs(60),
-                    max: Duration::from_secs(200),
-                },
-                false,
-                Default::default(),
-                hooks,
-                Arc::new(order_quoter),
-                Arc::new(balance_fetcher),
-                Arc::new(signature_validating),
-                None,
-                Arc::new(limit_order_counter),
-                1,
-                Default::default(),
-                u64::MAX,
-                SameTokensPolicy::Disallow,
-                None,
-                None,
-            )
-        };
-        let validator = build_validator();
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        let mut balance_fetcher = MockBalanceFetching::new();
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Ok(()));
+        let mut signature_validating = MockSignatureValidating::new();
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .never();
+        let hooks = HooksTrampoline::Instance::new(
+            Address::from([0xcf; 20]),
+            ProviderBuilder::new()
+                .connect_mocked_client(Asserter::new())
+                .erased(),
+        );
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let validator = OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(60),
+                max: Duration::from_secs(200),
+            },
+            false,
+            Default::default(),
+            hooks,
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validating),
+            None,
+            Arc::new(limit_order_counter),
+            1,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+            None,
+            None,
+        );
 
         let now = time::now_in_epoch_seconds();
         let plain = |valid_to: u32| OrderCreation {
