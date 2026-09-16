@@ -11,8 +11,11 @@
 //!
 //! The buy-account creation is mandatory: settlement pays out to that
 //! account and never creates it, so an order without one would revert every
-//! settlement it is batched into. The creation is idempotent on chain, a
-//! no-op when the account already exists.
+//! settlement it is batched into. It stays mandatory when the account
+//! already exists: the creation is idempotent on chain (a no-op then), and
+//! an always-present instruction proves receivability structurally, with no
+//! placement-time lookup and no window for the account to disappear between
+//! placement and settlement.
 
 use {
     crate::infra::{
