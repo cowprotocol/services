@@ -1500,6 +1500,7 @@ dependencies = [
  "async-trait",
  "axum",
  "bigdecimal",
+ "bincode",
  "chain-types",
  "chrono",
  "clap",

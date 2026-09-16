@@ -6,6 +6,7 @@ use {
         infra::{
             driver::{Driver, dto},
             observation::SettlementWindows,
+            sponsor::Sponsor,
         },
         run_loop::SettlementExecutor,
     },
@@ -20,11 +21,22 @@ pub struct DriverExecutor {
     /// Opens a settlement-execution window per dispatched settlement, which
     /// the observation side later resolves or times out.
     windows: SettlementWindows,
+    /// Countersigns pending sponsored creations. Absent, winners containing
+    /// them are skipped.
+    sponsor: Option<Sponsor>,
 }
 
 impl DriverExecutor {
-    pub fn new(drivers: Vec<Arc<Driver>>, windows: SettlementWindows) -> Self {
-        Self { drivers, windows }
+    pub fn new(
+        drivers: Vec<Arc<Driver>>,
+        windows: SettlementWindows,
+        sponsor: Option<Sponsor>,
+    ) -> Self {
+        Self {
+            drivers,
+            windows,
+            sponsor,
+        }
     }
 }
 
@@ -43,10 +55,33 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             };
             let driver = Arc::clone(driver);
             tracing::info!(driver = %driver.name, solution = winner.id(), "executing solution");
+            // Countersign the winner's pending sponsored creations. A winner
+            // whose creations cannot land any more cannot settle, so it is
+            // skipped rather than dispatched to fail.
+            let creations = match &self.sponsor {
+                Some(sponsor) => {
+                    match sponsor
+                        .creations(winner.orders().iter().map(|order| order.uid))
+                        .await
+                    {
+                        Ok(creations) => creations,
+                        Err(err) => {
+                            tracing::warn!(
+                                solution = winner.id(),
+                                ?err,
+                                "skipping winner, sponsored creations unavailable"
+                            );
+                            continue;
+                        }
+                    }
+                }
+                None => vec![],
+            };
             let request = dto::SettleRequest {
                 auction_id,
                 solution_id: winner.id(),
                 submission_deadline_slot: deadline,
+                creations,
             };
             // A window that cannot be opened must not block the settlement,
             // the dispatch is the priority.

@@ -86,6 +86,27 @@ pub struct LandedWindow {
     pub submitted_signature: ByteArray<64>,
 }
 
+/// The stored creation transactions of the given orders that do not exist on
+/// chain yet.
+pub async fn pending_creations(
+    ex: impl PgExecutor<'_>,
+    uids: &[Vec<u8>],
+) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    const QUERY: &str = r#"
+SELECT o.uid, o.presigned_transaction
+FROM solana.orders o
+LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+WHERE o.uid = ANY($1)
+  AND o.presigned_transaction IS NOT NULL
+  AND p.order_uid IS NULL
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(uids)
+        .fetch_all(ex)
+        .await
+        .context("read pending solana.orders creations")
+}
+
 /// Open a settlement-execution window for a dispatched settlement.
 pub async fn open_settlement_window(
     ex: impl PgExecutor<'_>,

@@ -58,6 +58,9 @@ pub struct Config {
     /// The driver endpoints participating in every auction.
     #[serde(deserialize_with = "deserialize_nonempty_vec")]
     pub drivers: Vec<Driver>,
+    /// Sponsored order execution. Absent, winning solutions with pending
+    /// sponsored orders are skipped.
+    pub sponsoring: Option<Sponsoring>,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -97,6 +100,16 @@ pub struct Rpc {
     /// Timeout for a single RPC request.
     #[serde(with = "humantime_serde")]
     pub request_timeout: Duration,
+}
+
+/// Sponsored order execution configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Sponsoring {
+    /// Path to the funder keypair countersigning sponsored creation
+    /// transactions. TODO: plaintext keypair paths are temporary. Secrets
+    /// must not live in the config or its repository long term.
+    pub funder_keypair: std::path::PathBuf,
 }
 
 /// On-chain addresses: programs and mints.
