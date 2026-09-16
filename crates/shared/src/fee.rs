@@ -174,7 +174,9 @@ pub struct FastPathLimitTooTight;
 
 /// Mirrors the on-chain settlement contract's limit-price constraint:
 ///
-///     executed_sell * signed_buy <= executed_buy * signed_sell
+/// ```text
+/// executed_sell * signed_buy <= executed_buy * signed_sell
+/// ```
 ///
 /// A single symmetric check covering both legs — a bid that oversells,
 /// undersells, or drifts the effective price against the trader fails here.
