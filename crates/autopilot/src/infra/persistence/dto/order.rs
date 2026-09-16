@@ -36,8 +36,13 @@ pub struct Order {
     pub post_interactions: Vec<boundary::InteractionData>,
     pub sell_token_balance: boundary::SellTokenSource,
     pub buy_token_balance: boundary::BuyTokenDestination,
-    #[serde(flatten)]
-    pub class: boundary::OrderClass,
+    /// Deprecated: always `"limit"`, kept so drivers and API consumers that
+    /// still expect the field keep working.
+    #[serde(
+        skip_deserializing,
+        serialize_with = "boundary::serialize_legacy_order_class"
+    )]
+    pub class: (),
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
@@ -85,7 +90,7 @@ pub fn from_domain(order: &domain::Order) -> Order {
             .collect(),
         sell_token_balance: order.sell_token_balance.clone().into(),
         buy_token_balance: order.buy_token_balance.clone().into(),
-        class: boundary::OrderClass::Limit,
+        class: (),
         app_data: order.app_data.clone().into(),
         signature: order.signature.clone().into(),
         quote: order.quote.as_ref().map(Quote::from_domain),

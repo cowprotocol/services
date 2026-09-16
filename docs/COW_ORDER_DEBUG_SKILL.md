@@ -46,12 +46,12 @@ curl -s "https://barn.api.cow.fi/$NETWORK/api/v1/orders/$ORDER_UID" | jq .
 | `receiver` | Who gets buy tokens | null = order owner |
 
 **Additional API fields:**
-- `class`: "market" vs "limit" — see note below
+- `class`: deprecated, always "limit" — see note below
 - `status`: fulfilled/open/cancelled/expired
 - `surplusFee`: Protocol's fee estimate for limit orders
 - `surplusFeeTimestamp`: Must be <10 min old or order won't enter auction
 
-**Note on order class:** In the DB, almost every order is stored as `class = 'limit'`. The "market" vs "limit" distinction is about **fee policy**, not order type:
+**Note on order class:** Order classes no longer exist (there is no `class` column in the DB anymore and the API always returns `limit`). The "market" vs "limit" distinction that still matters is about **fee policy**, not order type:
 - **Market order**: Had a quote attached, and the order's limit price is within that quote (in-market). Gets market fee policy.
 - **Limit order**: Either no quote, or limit price is outside the quote (out-of-market). Gets limit fee policy with surplus fee.
 
