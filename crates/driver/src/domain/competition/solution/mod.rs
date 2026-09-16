@@ -20,7 +20,10 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
-    number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
+    number::{
+        conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
+        u256_ext::U256Ext,
+    },
     simulator::{self, Simulator, encoding::WrapperCall},
     solvers_dto::solution::Flashloan,
     std::{
@@ -583,9 +586,31 @@ impl Solution {
                 .clearing_price(order.buy.token)
                 .ok_or(error::Error::FastPathOrderMismatch)?,
         };
+        // This solution was cached from a quote request. If there is a bug
+        // that causes the autopilot to tell us to settle an order with at a
+        // price our original solution cannot support we want to detect that
+        // and throw an error instead of submitting a transaction that will
+        // ultimately revert.
+        // This should not happen but let's check just to be sure.
         let within_limit = match order.side {
-            order::Side::Sell => user.buy_amount(&clearing)?.0 >= limit_prices.buy,
-            order::Side::Buy => user.sell_amount(&clearing)?.0 <= limit_prices.sell,
+            order::Side::Sell => {
+                let sell_amount = order.sell.amount.0;
+                let projected_buy_amount = sell_amount
+                    .checked_mul(clearing.sell)
+                    .ok_or(error::Math::Overflow)?
+                    .checked_ceil_div(&clearing.buy)
+                    .ok_or(error::Math::DivisionByZero)?;
+                projected_buy_amount >= limit_prices.buy
+            }
+            order::Side::Buy => {
+                let buy_amount = order.buy.amount.0;
+                let projected_sell_amount = buy_amount
+                    .checked_mul(clearing.buy)
+                    .ok_or(error::Math::Overflow)?
+                    .checked_ceil_div(&clearing.sell)
+                    .ok_or(error::Math::DivisionByZero)?;
+                projected_sell_amount <= limit_prices.sell
+            }
         };
         if !within_limit {
             return Err(error::Error::FastPathLimitNotMet);

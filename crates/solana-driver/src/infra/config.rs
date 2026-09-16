@@ -124,8 +124,6 @@ pub struct Solver {
     /// plaintext config long-term; KMS-backed signers are planned, mirroring
     /// the EVM driver's `submission_accounts`.
     pub signer_keypair: PathBuf,
-    /// Maximum number of concurrent solve requests kept in flight per solver.
-    pub max_in_flight: NonZero<usize>,
     /// Temporary staging knob: solve only auctions whose id is a multiple of
     /// this value and sit the rest out, so other solvers win settlements to
     /// test against. Absent means every auction.
@@ -148,7 +146,6 @@ mod tests {
         );
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");
-        assert_eq!(config.solvers[0].max_in_flight.get(), 1);
         assert_eq!(
             config.solvers[0].signer_keypair,
             Path::new("/path/to/keypair.json")
@@ -164,28 +161,10 @@ mod tests {
             name = "baseline"
             endpoint = "http://localhost:8001"
             signer-keypair = "/path/to/keypair.json"
-            max-in-flight = 1
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
         assert_eq!(solver.name, "baseline");
         assert_eq!(solver.signer_keypair, Path::new("/path/to/keypair.json"));
-        assert_eq!(solver.max_in_flight.get(), 1);
-    }
-
-    #[test]
-    fn zero_max_in_flight_rejected() {
-        let solver_config = r#"
-            name = "baseline"
-            endpoint = "http://localhost:8001"
-            signer-keypair = "/path/to/keypair.json"
-            max-in-flight = 0
-        "#;
-        let err = toml::de::from_str::<Solver>(solver_config)
-            .expect_err("zero max-in-flight should be rejected");
-        assert!(
-            err.to_string().contains("expected a nonzero usize"),
-            "unexpected error: {err}"
-        );
     }
 
     #[test]

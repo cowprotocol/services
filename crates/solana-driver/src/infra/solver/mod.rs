@@ -15,7 +15,6 @@ use {
     },
     std::{num::NonZero, sync::Arc},
     thiserror::Error,
-    tokio::sync::Semaphore,
 };
 
 pub mod dto;
@@ -27,7 +26,6 @@ pub struct Solver {
     keypair: Arc<Keypair>,
     client: reqwest::Client,
     base_url: reqwest::Url,
-    in_flight: Arc<Semaphore>,
     solve_every_nth_auction: Option<NonZero<u64>>,
 }
 
@@ -73,7 +71,6 @@ impl Solver {
             keypair,
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
-            in_flight: Arc::new(Semaphore::new(config.max_in_flight.get())),
             solve_every_nth_auction: config.solve_every_nth_auction,
         })
     }
@@ -94,16 +91,7 @@ impl Solver {
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
 
-        let _permit = self
-            .in_flight
-            .acquire()
-            .await
-            .expect("semaphore is never closed");
-
-        // Calculate the time remaining until the auction's deadline. Do this
-        // after acquiring the permit. Otherwise the wait for the permit could
-        // use part of the time budget and the solve could run past the
-        // deadline.
+        // Calculate the time remaining until the auction's deadline.
         //
         // TODO: Split the deadline budget between solver time and driver
         // processing time. Give the solver a configurable fraction of the
@@ -174,7 +162,7 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, solana_testlib::temp_keypair, std::num::NonZero};
+    use {super::*, solana_testlib::temp_keypair};
 
     #[tokio::test]
     async fn solve_with_past_deadline_returns_empty() {
@@ -187,7 +175,6 @@ mod tests {
             name: "test".to_owned(),
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
             signer_keypair: keypair_path,
-            max_in_flight: NonZero::new(1).unwrap(),
             solve_every_nth_auction: None,
         })
         .expect("solver construction should succeed");

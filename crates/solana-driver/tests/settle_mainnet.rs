@@ -265,7 +265,6 @@ async fn spawn_driver(
                 name: s.name,
                 endpoint,
                 signer_keypair: s.signer_keypair,
-                max_in_flight: s.max_in_flight,
                 solve_every_nth_auction: None,
             })
         })
