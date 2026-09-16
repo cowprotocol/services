@@ -308,6 +308,10 @@ components:
             - erc20
             - internal
         class:
+          deprecated: true
+          description: >
+            Every order is a `limit` order. The field is ignored by the driver,
+            retained for compatibility and will be removed.
           type: string
           enum:
             - market

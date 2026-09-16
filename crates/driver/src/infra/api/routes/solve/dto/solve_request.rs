@@ -167,6 +167,10 @@ pub(crate) struct Order {
     sell_token_balance: SellTokenBalance,
     #[serde(default)]
     buy_token_balance: BuyTokenBalance,
+    /// Deprecated: every order is a limit order. The field is still accepted
+    /// for backwards compatibility but ignored.
+    #[serde(default)]
+    #[allow(dead_code)]
     class: Class,
     #[serde_as(as = "serde_ext::Hex")]
     pub(crate) app_data: [u8; order::app_data::APP_DATA_LEN],
@@ -210,10 +214,6 @@ impl Order {
                 side: match self.kind {
                     Kind::Sell => competition::order::Side::Sell,
                     Kind::Buy => competition::order::Side::Buy,
-                },
-                kind: match self.class {
-                    Class::Market => competition::order::Kind::Market,
-                    Class::Limit => competition::order::Kind::Limit,
                 },
                 pre_interactions: self
                     .pre_interactions
@@ -344,10 +344,11 @@ enum SigningScheme {
     Eip1271,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum Class {
     Market,
+    #[default]
     Limit,
 }
 

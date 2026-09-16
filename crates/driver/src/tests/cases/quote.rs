@@ -56,12 +56,9 @@ async fn matrix() {
 #[ignore]
 async fn with_jit_order() {
     let side = order::Side::Sell;
-    let kind = order::Kind::Limit;
     let jit_order = setup::JitOrder {
         order: ab_order()
-            .kind(order::Kind::Limit)
             .side(side)
-            .kind(kind)
             .pre_interaction(setup::blockchain::Interaction {
                 address: ab_order().owner,
                 calldata: std::iter::repeat_n(0xab, 32).collect(),
@@ -73,10 +70,10 @@ async fn with_jit_order() {
     };
 
     let test = tests::setup()
-        .name(format!("{side:?} {kind:?}"))
+        .name(format!("{side:?}"))
         .pool(ab_pool())
         .jit_order(jit_order)
-        .order(ab_order().side(side).kind(kind).no_surplus())
+        .order(ab_order().side(side).no_surplus())
         .solution(ab_solution())
         .quote()
         .done()
@@ -272,7 +269,6 @@ async fn with_quote_haircut() {
         .order(
             ab_order()
                 .side(order::Side::Sell)
-                .kind(order::Kind::Limit)
                 .buy_amount(40u64.ether().into_wei()) // Set a limit to create slack
         )
         .solution(ab_solution())
@@ -294,7 +290,6 @@ async fn with_quote_haircut() {
         .order(
             ab_order()
                 .side(order::Side::Sell)
-                .kind(order::Kind::Limit)
                 .buy_amount(40u64.ether().into_wei()) // Same limit to create slack
         )
         .solution(ab_solution())
