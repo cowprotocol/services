@@ -61,7 +61,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             let creations = match &self.sponsor {
                 Some(sponsor) => {
                     match sponsor
-                        .creations(winner.orders().iter().map(|order| order.uid))
+                        .countersign_creations(winner.orders().iter().map(|order| order.uid))
                         .await
                     {
                         Ok(creations) => creations,
