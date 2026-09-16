@@ -473,7 +473,7 @@ fn creation_tx(
 ) -> String {
     let mut instructions = preparations;
     instructions.push(
-        cow_settlement_client::instructions::CreateOrder {
+        cow_settlement_client::instruction::CreateOrder {
             program_id: cow_settlement_interface::id(),
             owner: owner.pubkey(),
             created_by: funder,
@@ -633,7 +633,7 @@ async fn create_order_requires_the_owner_as_signer() {
     let intent = sponsored_intent(owner.pubkey(), false);
     let destination = destination_creation(funder, owner.pubkey(), &intent);
     let instruction: solana_sdk::instruction::Instruction =
-        cow_settlement_client::instructions::CreateOrder {
+        cow_settlement_client::instruction::CreateOrder {
             program_id: cow_settlement_interface::id(),
             owner: owner.pubkey(),
             created_by: funder,
