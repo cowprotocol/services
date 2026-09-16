@@ -198,13 +198,11 @@ impl Competition {
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
 
         // Land the creations only after the solution validated: an invalid
-        // solution must not cost the funder any fees. The creations get half
-        // the window, the settlement the rest, and a fast creation phase
-        // rolls its unused half over since the settlement runs against the
-        // full deadline.
-        let window = deadline.saturating_duration_since(Instant::now());
-        self.land_creations(&creations, deadline - window / 2)
-            .await?;
+        // solution must not cost the funder any fees. They get the full
+        // remaining window: the settlement cannot run without them, so
+        // reserving time for it would only waste attempts, and the
+        // zero-timeout guard below aborts retryably when nothing remains.
+        self.land_creations(&creations, deadline).await?;
 
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
@@ -285,14 +283,15 @@ impl Competition {
                     Ok(())
                 }
                 Err(error) => {
+                    // A failed status check must not mask the send failure:
+                    // treat it as not landed and surface the original error.
                     let landed = match creation.signatures.first() {
                         Some(signature) => self
                             .blockchain
                             .known_signatures(&[*signature])
                             .await
-                            .map_err(Error::Rpc)?
-                            .first()
-                            .copied()
+                            .ok()
+                            .and_then(|known| known.first().copied())
                             .unwrap_or(false),
                         None => false,
                     };
