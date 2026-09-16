@@ -122,7 +122,14 @@ async fn run(config: Config) {
 
     let auction_loop = AuctionLoop::new(
         Box::new(SlotTrigger::new(rpc, config.min_auction_interval)),
-        Box::new(DbAuctionProvider::new(pool.clone())),
+        Box::new(DbAuctionProvider::new(
+            pool.clone(),
+            SolanaRPC::new_with_timeout_and_commitment(
+                &config.rpc.endpoint,
+                config.rpc.request_timeout,
+                CommitmentConfig::confirmed(),
+            ),
+        )),
         Box::new(DriverCompetition::new(
             drivers.clone(),
             config.competition.solve_deadline,

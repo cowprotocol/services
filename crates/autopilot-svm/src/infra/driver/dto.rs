@@ -167,6 +167,7 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey([0x77; 32]),
             app_data: AppData([0; 32]),
+            created_on_chain: true,
         }
     }
 

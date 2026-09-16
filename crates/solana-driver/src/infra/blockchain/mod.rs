@@ -60,6 +60,12 @@ impl Solana {
         self.rpc.send_and_confirm_transaction(transaction).await
     }
 
+    /// Whether each signature is known to the cluster, within the node's
+    /// transaction-history horizon.
+    pub async fn known_signatures(&self, signatures: &[Signature]) -> Result<Vec<bool>, Error> {
+        self.rpc.known_signatures(signatures).await
+    }
+
     /// Fetch the accounts at `keys` in a single batched fetch (split into
     /// parallel requests above the server's per-request cap) and return them
     /// as a snapshot ready for typed interpretation.

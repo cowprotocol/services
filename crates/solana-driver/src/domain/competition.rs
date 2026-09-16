@@ -122,12 +122,18 @@ impl Competition {
         auction_id: Id,
         solution_id: u64,
         submission_deadline_slot: u64,
+        creations: Vec<VersionedTransaction>,
     ) -> Result<Signature, Error> {
         let this = Arc::clone(self);
         let task = tokio::spawn(
             async move {
                 let result = this
-                    .process_settle_request(auction_id, solution_id, submission_deadline_slot)
+                    .process_settle_request(
+                        auction_id,
+                        solution_id,
+                        submission_deadline_slot,
+                        creations,
+                    )
                     .await;
                 match &result {
                     Ok(signature) => tracing::info!(%signature, "settlement submitted"),
@@ -159,6 +165,7 @@ impl Competition {
         auction_id: Id,
         solution_id: u64,
         submission_deadline_slot: u64,
+        creations: Vec<VersionedTransaction>,
     ) -> Result<Signature, Error> {
         let key = Key {
             auction_id,
@@ -190,6 +197,13 @@ impl Competition {
 
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
 
+        // Land the creations only after the solution validated: an invalid
+        // solution must not cost the funder any fees. They get the full
+        // remaining window: the settlement cannot run without them, so
+        // reserving time for it would only waste attempts, and the
+        // zero-timeout guard below aborts retryably when nothing remains.
+        self.land_creations(&creations, deadline).await?;
+
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?;
@@ -202,6 +216,14 @@ impl Competition {
         let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
 
         self.simulate_settlement(&transaction).await?;
+
+        // A zero timeout still polls the send future once, which could
+        // submit the transaction past the deadline, so handle it before the
+        // solution is consumed and while a retry is still possible.
+        let confirm_timeout = deadline.saturating_duration_since(Instant::now());
+        if confirm_timeout.is_zero() {
+            return Err(Error::DeadlineExceeded);
+        }
 
         // Consume the entry only now, when the transaction is about to reach
         // the network. One atomic removal takes the chosen solution. A
@@ -217,12 +239,6 @@ impl Competition {
         // TODO: a provably unsent transaction (connect failure at send time)
         // loses the solution here; restore the cache entry on that class. Needs
         // the send/confirm split in cow-solana-rpc (planned follow-up PR).
-        // A zero timeout still polls the send future once, which could
-        // submit the transaction past the deadline, so handle it here.
-        let confirm_timeout = deadline.saturating_duration_since(Instant::now());
-        if confirm_timeout.is_zero() {
-            return Err(Error::DeadlineExceeded);
-        }
         let signature = tokio::time::timeout(
             confirm_timeout,
             self.blockchain.send_and_confirm_transaction(&transaction),
@@ -232,6 +248,63 @@ impl Competition {
         .map_err(Error::FailedToSubmit)?;
 
         Ok(signature)
+    }
+
+    /// Land the sponsored creation transactions before `deadline`. The
+    /// settlement needs them confirmed first: `BeginSettle` reads the order
+    /// PDAs, and the simulation runs against confirmed state. The
+    /// transactions are independent, so they land concurrently. A send
+    /// failure whose signature the cluster already knows means an earlier
+    /// attempt landed the creation, which is success. A creation that landed
+    /// but failed on chain also counts as known: the settlement then fails
+    /// at the simulation over the missing order PDA.
+    async fn land_creations(
+        &self,
+        creations: &[VersionedTransaction],
+        deadline: Instant,
+    ) -> Result<(), Error> {
+        if creations.is_empty() {
+            return Ok(());
+        }
+        let timeout = deadline.saturating_duration_since(Instant::now());
+        if timeout.is_zero() {
+            return Err(Error::DeadlineExceeded);
+        }
+        futures::future::try_join_all(creations.iter().map(|creation| async move {
+            let sent = tokio::time::timeout(
+                timeout,
+                self.blockchain.send_and_confirm_transaction(creation),
+            )
+            .await
+            .map_err(|_| Error::DeadlineExceeded)?;
+            match sent {
+                Ok(signature) => {
+                    tracing::info!(%signature, "order creation submitted");
+                    Ok(())
+                }
+                Err(error) => {
+                    // A failed status check must not mask the send failure:
+                    // treat it as not landed and surface the original error.
+                    let landed = match creation.signatures.first() {
+                        Some(signature) => self
+                            .blockchain
+                            .known_signatures(&[*signature])
+                            .await
+                            .ok()
+                            .and_then(|known| known.first().copied())
+                            .unwrap_or(false),
+                        None => false,
+                    };
+                    if landed {
+                        Ok(())
+                    } else {
+                        Err(Error::FailedToCreate(error))
+                    }
+                }
+            }
+        }))
+        .await?;
+        Ok(())
     }
 
     /// Simulate a settlement transaction before sending it.
@@ -286,6 +359,8 @@ pub(crate) enum Error {
     Rpc(#[source] cow_solana_rpc::Error),
     #[error("failed to submit or confirm settlement: {0}")]
     FailedToSubmit(#[source] cow_solana_rpc::Error),
+    #[error("failed to submit or confirm an order creation: {0}")]
+    FailedToCreate(#[source] cow_solana_rpc::Error),
     /// The pre-submission simulation failed. The transaction was not sent.
     #[error("settlement simulation failed: {0}")]
     SimulationFailed(#[from] cow_solana_rpc::UiTransactionError),
