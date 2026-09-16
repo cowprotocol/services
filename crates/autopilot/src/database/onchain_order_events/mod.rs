@@ -710,28 +710,29 @@ async fn handle_app_data(
             continue;
         };
         let Ok(parsed) = app_data::parse(&appdata_json) else {
-            tracing::debug!(appdata = %String::from_utf8_lossy(&appdata_json), "could not parse appdata");
+            // An on-chain order can't be rejected at placement, so a both-set
+            // order is marked invalid to keep it out of auctions.
+            if app_data::sets_conflicting_fields(&appdata_json) {
+                database::onchain_broadcasted_orders::set_placement_error(
+                    db,
+                    &order.uid,
+                    OnchainOrderPlacementError::InvalidOrderData,
+                )
+                .await
+                .context("failed to mark order invalid")?;
+            } else {
+                tracing::debug!(appdata = %String::from_utf8_lossy(&appdata_json), "could not parse appdata");
+            }
             continue;
         };
 
-        if parsed.enable_fast_path && parsed.valid_from.is_some() {
-            database::onchain_broadcasted_orders::set_placement_error(
-                db,
-                &order.uid,
-                OnchainOrderPlacementError::InvalidOrderData,
-            )
-            .await
-            .context("failed to mark order invalid")?;
-            continue;
-        }
-
         store_hooks(db, order, &parsed, trampoline).await?;
-        order.fast_path = parsed.enable_fast_path;
+        order.fast_path = parsed.is_fast_path();
         // Only honour an explicit user-set `validFrom` for non-fast-path
         // orders; fast-path orders are handled by the autopilot's
         // fast-path handler.
-        if !parsed.enable_fast_path {
-            order.valid_from = parsed.valid_from.map(i64::from);
+        if !parsed.is_fast_path() {
+            order.valid_from = parsed.valid_from().map(i64::from);
         }
     }
     Ok(())

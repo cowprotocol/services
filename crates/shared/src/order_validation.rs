@@ -716,7 +716,7 @@ impl OrderValidator {
         quote: Option<&Quote>,
         order: &OrderData,
     ) -> Result<Option<u32>, ValidationError> {
-        if app_data.inner.protocol.enable_fast_path {
+        if app_data.inner.protocol.is_fast_path() {
             let Some(quote) = quote else {
                 return Err(ValidationError::FastPathLimitTooTight);
             };
@@ -739,7 +739,7 @@ impl OrderValidator {
 
         // Non-fast-path orders may still declare `valid_from` explicitly
         // in app-data.
-        let valid_from = app_data.inner.protocol.valid_from;
+        let valid_from = app_data.inner.protocol.valid_from();
         if let Some(valid_from) = valid_from {
             let min = self.validity_configuration.min.as_secs();
             if u64::from(order.valid_to) < u64::from(valid_from) + min {
@@ -1007,7 +1007,7 @@ impl OrderValidating for OrderValidator {
             .map_err(|_| ValidationError::InvalidSignature)?,
             hook_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
-            fast_path: app_data.inner.protocol.enable_fast_path,
+            fast_path: app_data.inner.protocol.is_fast_path(),
         };
 
         let quote = match get_or_create_quote(&*self.quoter, &quote_parameters, order.quote_id)
@@ -1053,7 +1053,7 @@ impl OrderValidating for OrderValidator {
         }
 
         let valid_from = self.compute_and_validate_valid_from(&app_data, quote.as_ref(), &data)?;
-        let fast_path = app_data.inner.protocol.enable_fast_path;
+        let fast_path = app_data.inner.protocol.is_fast_path();
 
         let order = Order {
             metadata: OrderMetadata {

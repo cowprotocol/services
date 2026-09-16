@@ -23,26 +23,49 @@ pub struct ValidatedAppData {
     pub protocol: ProtocolAppData,
 }
 
+/// `enableFastPath` and `validFrom` are mutually exclusive; an order can set
+/// at most one of them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FastPathOrValidFrom {
+    /// Out-of-competition ("fast path") execution.
+    FastPath,
+    /// The order only becomes solvable at this UNIX timestamp.
+    ValidFrom(u32),
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
-#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
-#[serde(rename_all = "camelCase")]
+#[cfg_attr(
+    any(test, feature = "test_helpers"),
+    derive(Serialize),
+    serde(into = "RawProtocolAppData")
+)]
+#[serde(try_from = "RawProtocolAppData")]
 pub struct ProtocolAppData {
-    #[serde(default)]
     pub hooks: Hooks,
     pub signer: Option<Address>,
     pub replaced_order: Option<ReplacedOrder>,
-    #[serde(default)]
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
-    #[serde(default)]
     pub wrappers: Vec<WrapperCall>,
-    /// Opt into out-of-competition ("fast path") execution.
-    #[serde(default)]
-    pub enable_fast_path: bool,
-    /// Earliest time (UNIX timestamp) the order may enter a batch auction.
-    /// Honored if set; the backend picks one for fast-path orders when it
-    /// is not.
-    pub valid_from: Option<u32>,
+    pub fast_path_or_valid_from: Option<FastPathOrValidFrom>,
+}
+
+impl ProtocolAppData {
+    /// Whether the order opted into fast-path execution.
+    pub fn is_fast_path(&self) -> bool {
+        matches!(
+            self.fast_path_or_valid_from,
+            Some(FastPathOrValidFrom::FastPath)
+        )
+    }
+
+    /// The user-set `validFrom`, if any.
+    pub fn valid_from(&self) -> Option<u32> {
+        match self.fast_path_or_valid_from {
+            Some(FastPathOrValidFrom::ValidFrom(valid_from)) => Some(valid_from),
+            _ => None,
+        }
+    }
 }
 
 /// Contains information to hint at how a solver could make
@@ -288,12 +311,6 @@ impl Validator {
         let document = String::from_utf8(full_app_data.to_vec())?;
         let protocol = parse(full_app_data)?;
 
-        if protocol.enable_fast_path && protocol.valid_from.is_some() {
-            return Err(anyhow!(
-                "`enableFastPath` and `validFrom` are mutually exclusive"
-            ));
-        }
-
         Ok(ValidatedAppData {
             hash: AppDataHash(hash_full_app_data(full_app_data)),
             document,
@@ -304,13 +321,85 @@ impl Validator {
 
 pub fn parse(full_app_data: &[u8]) -> Result<ProtocolAppData, serde_json::Error> {
     let root = serde_json::from_slice::<Root>(full_app_data)?;
-    let parsed = root
+    Ok(root
         .metadata
         .or_else(|| root.backend.map(ProtocolAppData::from))
         // If the key doesn't exist, default. Makes life easier for API
         // consumers, who don't care about protocol app data.
-        .unwrap_or_default();
-    Ok(parsed)
+        .unwrap_or_default())
+}
+
+/// Whether the order sets both of the mutually exclusive fields
+/// (`enableFastPath` and `validFrom`).
+pub fn sets_conflicting_fields(full_app_data: &[u8]) -> bool {
+    let Ok(root) = serde_json::from_slice::<serde_json::Value>(full_app_data) else {
+        return false;
+    };
+    let metadata = &root["metadata"];
+    metadata["enableFastPath"].as_bool() == Some(true) && !metadata["validFrom"].is_null()
+}
+
+/// The wire form of [`ProtocolAppData`], mirrors the JSON `metadata` object
+#[derive(Default, Deserialize)]
+#[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
+#[serde(rename_all = "camelCase")]
+struct RawProtocolAppData {
+    #[serde(default)]
+    hooks: Hooks,
+    signer: Option<Address>,
+    replaced_order: Option<ReplacedOrder>,
+    #[serde(default)]
+    partner_fee: PartnerFees,
+    flashloan: Option<Flashloan>,
+    #[serde(default)]
+    wrappers: Vec<WrapperCall>,
+    #[serde(default)]
+    enable_fast_path: bool,
+    valid_from: Option<u32>,
+}
+
+impl TryFrom<RawProtocolAppData> for ProtocolAppData {
+    type Error = &'static str;
+
+    fn try_from(raw: RawProtocolAppData) -> Result<Self, Self::Error> {
+        let fast_path_or_valid_from = match (raw.enable_fast_path, raw.valid_from) {
+            (true, Some(_)) => {
+                return Err("`enableFastPath` and `validFrom` are mutually exclusive");
+            }
+            (true, None) => Some(FastPathOrValidFrom::FastPath),
+            (false, Some(valid_from)) => Some(FastPathOrValidFrom::ValidFrom(valid_from)),
+            (false, None) => None,
+        };
+        Ok(Self {
+            hooks: raw.hooks,
+            signer: raw.signer,
+            replaced_order: raw.replaced_order,
+            partner_fee: raw.partner_fee,
+            flashloan: raw.flashloan,
+            wrappers: raw.wrappers,
+            fast_path_or_valid_from,
+        })
+    }
+}
+
+impl From<ProtocolAppData> for RawProtocolAppData {
+    fn from(protocol: ProtocolAppData) -> Self {
+        let (enable_fast_path, valid_from) = match protocol.fast_path_or_valid_from {
+            None => (false, None),
+            Some(FastPathOrValidFrom::FastPath) => (true, None),
+            Some(FastPathOrValidFrom::ValidFrom(valid_from)) => (false, Some(valid_from)),
+        };
+        Self {
+            hooks: protocol.hooks,
+            signer: protocol.signer,
+            replaced_order: protocol.replaced_order,
+            partner_fee: protocol.partner_fee,
+            flashloan: protocol.flashloan,
+            wrappers: protocol.wrappers,
+            enable_fast_path,
+            valid_from,
+        }
+    }
 }
 
 /// Extracts the `appCode` from a full app-data document, if present.
@@ -559,13 +648,7 @@ impl From<BackendAppData> for ProtocolAppData {
     fn from(value: BackendAppData) -> Self {
         Self {
             hooks: value.hooks,
-            wrappers: Vec::new(),
-            signer: None,
-            replaced_order: None,
-            partner_fee: PartnerFees::default(),
-            flashloan: None,
-            enable_fast_path: false,
-            valid_from: None,
+            ..Default::default()
         }
     }
 }
@@ -592,7 +675,7 @@ mod tests {
         assert_app_data!(
             r#"{ "metadata": { "enableFastPath": true } }"#,
             ProtocolAppData {
-                enable_fast_path: true,
+                fast_path_or_valid_from: Some(FastPathOrValidFrom::FastPath),
                 ..Default::default()
             },
         );
@@ -603,7 +686,7 @@ mod tests {
         assert_app_data!(
             r#"{ "metadata": { "validFrom": 1700000000 } }"#,
             ProtocolAppData {
-                valid_from: Some(1_700_000_000),
+                fast_path_or_valid_from: Some(FastPathOrValidFrom::ValidFrom(1_700_000_000)),
                 ..Default::default()
             },
         );
@@ -971,5 +1054,21 @@ mod tests {
             )
             .unwrap_err();
         assert!(err.to_string().contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn detects_conflicting_fields() {
+        let both = r#"{ "metadata": { "enableFastPath": true, "validFrom": 1700000000 } }"#;
+        assert!(sets_conflicting_fields(both.as_bytes()));
+
+        for ok in [
+            r#"{ "metadata": { "enableFastPath": true } }"#,
+            r#"{ "metadata": { "validFrom": 1700000000 } }"#,
+            r#"{ "metadata": {} }"#,
+            "{}",
+            "not json",
+        ] {
+            assert!(!sets_conflicting_fields(ok.as_bytes()));
+        }
     }
 }
