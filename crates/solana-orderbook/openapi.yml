@@ -352,6 +352,14 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         status:
           $ref: "#/components/schemas/OrderStatus"
+        lastValidBlockHeight:
+          description: |
+            The block height a pending sponsored creation dies at. Present
+            only while the order awaits its on-chain creation: past this
+            height the stored transaction can no longer land and a fresh
+            signature is needed.
+          type: integer
+          format: int64
     CompetitionOrderStatus:
       description: |
         Auction progress of an order. `solved`, `executing`, and `traded`
