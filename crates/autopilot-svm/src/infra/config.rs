@@ -58,8 +58,9 @@ pub struct Config {
     /// The driver endpoints participating in every auction.
     #[serde(deserialize_with = "deserialize_nonempty_vec")]
     pub drivers: Vec<Driver>,
-    /// Sponsored order execution. Absent, winning solutions with pending
-    /// sponsored orders are skipped.
+    /// Sponsored order execution. Must be set when the orderbook accepts
+    /// sponsored orders: without it their winning solutions dispatch without
+    /// creations and fail at the driver.
     pub sponsoring: Option<Sponsoring>,
     /// Logging configuration.
     #[serde(default)]

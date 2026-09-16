@@ -21,8 +21,9 @@ pub struct DriverExecutor {
     /// Opens a settlement-execution window per dispatched settlement, which
     /// the observation side later resolves or times out.
     windows: SettlementWindows,
-    /// Countersigns pending sponsored creations. Absent, winners containing
-    /// them are skipped.
+    /// Countersigns pending sponsored creations. Absent, winners dispatch
+    /// without creations, and one containing a pending sponsored order fails
+    /// at the driver.
     sponsor: Option<Sponsor>,
 }
 
