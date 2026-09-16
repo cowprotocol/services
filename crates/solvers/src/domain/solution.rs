@@ -224,9 +224,7 @@ impl Single {
 
         // The solver fee covers the gas cost of the swap, denominated in the
         // order's sell token. Quote auctions don't contain native prices, so
-        // the gas cost can't be converted into a sell token fee there. Fall
-        // back to a zero fee: the orderbook API estimates the fee for quotes
-        // itself.
+        // the gas cost can't be converted into a sell token fee there.
         let fee = match sell_token {
             Some(price) => eth::SellTokenAmount(
                 price.ether_value(eth::Ether(
