@@ -19,7 +19,9 @@ const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
 /// target; other clusters can drift.
 const SLOT_DURATION_MS: u64 = 400;
 /// Wall-clock reserve for the settlement itself (encode, simulate, send,
-/// confirm) after the sponsored creations landed.
+/// confirm) after the sponsored creations landed. That cost is roughly
+/// fixed, so the reserve is capped rather than proportional, and a short
+/// window caps it further at half.
 const SETTLEMENT_HEADROOM: Duration = Duration::from_secs(5);
 
 /// Cache key for a proposed solution.
@@ -191,10 +193,9 @@ impl Competition {
         // The creations get the window up to a reserve for the settlement
         // itself: landing them with no time left to settle would spend the
         // funder's fees without a trade.
-        let creations_deadline = deadline
-            .checked_sub(SETTLEMENT_HEADROOM)
-            .unwrap_or_else(Instant::now);
-        self.land_creations(&creations, creations_deadline).await?;
+        let window = deadline.saturating_duration_since(Instant::now());
+        let reserve = SETTLEMENT_HEADROOM.min(window / 2);
+        self.land_creations(&creations, deadline - reserve).await?;
 
         // TODO: admission semaphore(1).
 
