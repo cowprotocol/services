@@ -185,14 +185,6 @@ impl Competition {
                 (submission_deadline_slot - current_slot).saturating_mul(SLOT_DURATION_MS),
             );
 
-        // The creations get half the window, the settlement the rest:
-        // landing creations with no time left to settle would spend the
-        // funder's fees without a trade. A fast creation phase rolls its
-        // unused half over, the settlement runs against the full deadline.
-        let window = deadline.saturating_duration_since(Instant::now());
-        self.land_creations(&creations, deadline - window / 2)
-            .await?;
-
         // TODO: admission semaphore(1).
 
         let program_id = self.blockchain.program_id();
@@ -204,6 +196,15 @@ impl Competition {
         );
 
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
+
+        // Land the creations only after the solution validated: an invalid
+        // solution must not cost the funder any fees. The creations get half
+        // the window, the settlement the rest, and a fast creation phase
+        // rolls its unused half over since the settlement runs against the
+        // full deadline.
+        let window = deadline.saturating_duration_since(Instant::now());
+        self.land_creations(&creations, deadline - window / 2)
+            .await?;
 
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
@@ -256,7 +257,9 @@ impl Competition {
     /// PDAs, and the simulation runs against confirmed state. The
     /// transactions are independent, so they land concurrently. A send
     /// failure whose signature the cluster already knows means an earlier
-    /// attempt landed the creation, which is success.
+    /// attempt landed the creation, which is success. A creation that landed
+    /// but failed on chain also counts as known: the settlement then fails
+    /// at the simulation over the missing order PDA.
     async fn land_creations(
         &self,
         creations: &[VersionedTransaction],
