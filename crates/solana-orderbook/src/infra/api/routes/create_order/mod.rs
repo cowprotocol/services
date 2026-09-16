@@ -134,15 +134,6 @@ pub async fn create_order(
     let mut order = validate(sponsoring, &transaction, state.validation().min_validity)?;
     order.presigned_transaction = params.transaction;
 
-    // Short-circuit replays before the RPC probes. The insert's unique
-    // violation below stays as the race-safe backstop.
-    let duplicate = db::order_exists(state.pool(), &order.uid)
-        .await
-        .map_err(|err| internal_error_reply(err, "order existence check failed"))?;
-    if duplicate {
-        return Err(PlacementError::DuplicatedOrder.into());
-    }
-
     // The countersign re-checks freshness, so the stored expiry only has to
     // be an upper bound: the tip cannot have moved past the blockhash's own
     // last valid height by more than the maximum age.
@@ -161,6 +152,16 @@ pub async fn create_order(
         .await
         .map_err(|err| internal_error_reply(err, "block height fetch failed"))?;
     order.last_valid_block_height = u64::from(height) + MAX_PROCESSING_AGE as u64;
+
+    // Short-circuit replays with a cheap read before the insert. A replayed
+    // transaction usually dies at the blockhash check already, and the
+    // insert's unique violation stays as the race-safe backstop.
+    let duplicate = db::order_exists(state.pool(), &order.uid)
+        .await
+        .map_err(|err| internal_error_reply(err, "order existence check failed"))?;
+    if duplicate {
+        return Err(PlacementError::DuplicatedOrder.into());
+    }
 
     let uid = order.uid;
     if let Err(err) = db::insert_sponsored_order(state.pool(), &order).await {
