@@ -44,6 +44,7 @@ url = { workspace = true }
 winner-selection = { workspace = true }
 
 [dev-dependencies]
+base64 = { workspace = true }
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
 
 [lints]

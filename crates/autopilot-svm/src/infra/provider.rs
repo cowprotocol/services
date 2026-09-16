@@ -65,7 +65,7 @@ impl DbAuctionProvider {
                 let account = Pubkey::new_from_array(order.buy_token_account.0);
                 let receivable = accounts
                     .get(&account)
-                    .is_some_and(initialized_token_account);
+                    .is_some_and(|found| receivable_token_account(found, order.buy_token.0));
                 if !receivable {
                     tracing::warn!(
                         order = %const_hex::encode(order.uid.0),
@@ -119,12 +119,15 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
     }
 }
 
-/// Mirrors the driver's receivability check: an initialized, unfrozen
-/// account of the classic SPL token program.
-fn initialized_token_account(account: &Account) -> bool {
+/// An initialized, unfrozen account of the classic SPL token program holding
+/// the order's buy mint: anything else reverts the payout at settlement.
+/// TODO(token-2022): accounts of the token-2022 program are dropped here,
+/// like the driver cannot settle them yet.
+fn receivable_token_account(account: &Account, buy_mint: [u8; 32]) -> bool {
     account.owner == spl_token_interface::ID
-        && TokenAccount::unpack(&account.data)
-            .is_ok_and(|account| account.state == AccountState::Initialized)
+        && TokenAccount::unpack(&account.data).is_ok_and(|account| {
+            account.state == AccountState::Initialized && account.mint.to_bytes() == buy_mint
+        })
 }
 
 #[cfg(test)]
@@ -162,22 +165,16 @@ mod tests {
         )
     }
 
-    /// The lookup answers for the two created orders in candidate order: the
-    /// first account initialized, the second absent. The pending sponsored
-    /// order is exempt from the check.
+    /// The lookup answers for the three created orders in candidate order:
+    /// initialized with the buy mint, initialized with a wrong mint, absent.
+    /// The pending sponsored order is exempt from the check.
     #[tokio::test]
     async fn drops_created_orders_with_unreceivable_buy_accounts() {
         let response = serde_json::json!({
             "context": {"slot": 1u64, "apiVersion": "2.0.0"},
             "value": [
-                {
-                    "lamports": 2_039_280u64,
-                    "data": [crate::tests::TOKEN_ACCOUNT_DATA, "base64"],
-                    "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-                    "executable": false,
-                    "rentEpoch": 0u64,
-                    "space": 165u64,
-                },
+                crate::tests::token_account_json([0x44; 32]),
+                crate::tests::token_account_json([0x99; 32]),
                 null,
             ],
         });
@@ -186,6 +183,7 @@ mod tests {
             order([0x01; 32], true),
             order([0x02; 32], false),
             order([0x03; 32], true),
+            order([0x04; 32], true),
         ];
         let kept: Vec<u8> = provider
             .receivable_orders(orders)

@@ -23,6 +23,7 @@ use {
     },
     async_trait::async_trait,
     axum::{Json, Router, extract::State, routing::post},
+    base64::{Engine, prelude::BASE64_STANDARD},
     chain_types::solana::{IntentHash, Pubkey, Signature},
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     database::byte_array::ByteArray,
@@ -86,24 +87,30 @@ async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
     addr
 }
 
-/// 165 zeroed token-account bytes with the state byte set to Initialized,
-/// base64.
-pub(crate) const TOKEN_ACCOUNT_DATA: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+/// A canned `getMultipleAccounts` entry: an initialized account of the
+/// classic SPL token program holding `mint`.
+pub(crate) fn token_account_json(mint: [u8; 32]) -> serde_json::Value {
+    let mut data = [0u8; 165];
+    data[..32].copy_from_slice(&mint);
+    // The account state byte: 1 is Initialized.
+    data[108] = 1;
+    serde_json::json!({
+        "lamports": 2_039_280u64,
+        "data": [BASE64_STANDARD.encode(data), "base64"],
+        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "executable": false,
+        "rentEpoch": 0u64,
+        "space": 165u64,
+    })
+}
 
 /// A mock RPC answering one buy-account lookup with an initialized token
-/// account. Each canned response serves once, later cuts fail open and keep
-/// the orders.
+/// account of the seeded order's buy mint. Each canned response serves once,
+/// later cuts fail open and keep the orders.
 fn mock_rpc() -> SolanaRPC {
     let response = serde_json::json!({
         "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-        "value": [{
-            "lamports": 2_039_280u64,
-            "data": [TOKEN_ACCOUNT_DATA, "base64"],
-            "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-            "executable": false,
-            "rentEpoch": 0u64,
-            "space": 165u64,
-        }],
+        "value": [token_account_json([0xAB; 32])],
     });
     SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]))
 }
