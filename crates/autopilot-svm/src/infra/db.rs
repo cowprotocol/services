@@ -32,11 +32,17 @@ pub struct OrderRow {
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
-/// and not fully filled. Settleable means the driver can produce the order
-/// PDA: it already exists on chain (an order placed via `CreateOrder`
-/// directly), or the driver can create it at settlement time from a signed
-/// intent or a presigned transaction.
-pub async fn open_orders(ex: impl PgExecutor<'_>, now_unix: i64) -> Result<Vec<OrderRow>> {
+/// and not fully filled. A pending sponsored order whose stored creation
+/// transaction died at `block_height` is excluded, and a `None` height skips
+/// that check rather than excluding everything. Settleable means the driver can
+/// produce the order PDA: it already exists on chain (an order placed via
+/// `CreateOrder` directly), or the driver can create it at settlement time from
+/// a signed intent or a presigned transaction.
+pub async fn open_orders(
+    ex: impl PgExecutor<'_>,
+    now_unix: i64,
+    block_height: Option<i64>,
+) -> Result<Vec<OrderRow>> {
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
@@ -51,6 +57,10 @@ WHERE o.valid_to >= $1
        OR o.presigned_transaction IS NOT NULL
        OR p.order_uid IS NOT NULL)
   AND p.cancellation_timestamp IS NULL
+  AND ($2::bigint IS NULL
+       OR o.presigned_transaction IS NULL
+       OR p.order_uid IS NOT NULL
+       OR o.last_valid_block_height >= $2)
   AND COALESCE(
       CASE o.kind
           WHEN 'sell' THEN p.amount_withdrawn < o.sell_amount
@@ -61,6 +71,7 @@ ORDER BY o.uid
     "#;
     sqlx::query_as(QUERY)
         .bind(now_unix)
+        .bind(block_height)
         .fetch_all(ex)
         .await
         .context("read open solana.orders")
@@ -191,8 +202,13 @@ pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>
 }
 
 /// Cut an auction from the open orders.
-pub async fn cut(ex: impl PgExecutor<'_>, id: i64, now_unix: i64) -> Result<Auction> {
-    let orders = orders_from_rows(open_orders(ex, now_unix).await?);
+pub async fn cut(
+    ex: impl PgExecutor<'_>,
+    id: i64,
+    now_unix: i64,
+    block_height: Option<i64>,
+) -> Result<Auction> {
+    let orders = orders_from_rows(open_orders(ex, now_unix, block_height).await?);
     Ok(Auction { id, orders })
 }
 
@@ -384,10 +400,31 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         // Dropped: buy side fully received.
         insert_order(&mut tx, 8, 2_000, true, database::solana::OrderKind::Buy).await;
         insert_pda(&mut tx, 8, false, 0, 2_000).await;
+        // A pending sponsored order whose creation dies at height 150: kept
+        // while the chain is below that height or the height is unknown,
+        // dropped after.
+        insert_order(&mut tx, 10, 2_000, true, database::solana::OrderKind::Sell).await;
+        sqlx::query(
+            r#"
+UPDATE solana.orders
+SET presigned_transaction = '\x01', last_valid_block_height = 150
+WHERE uid = $1
+            "#,
+        )
+        .bind(database::byte_array::ByteArray([10u8; 32]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
 
-        let orders = open_orders(&mut *tx, 1_000).await.unwrap();
-        let uids: Vec<u8> = orders.iter().map(|order| order.uid.0[0]).collect();
-        assert_eq!(uids, vec![1, 5, 6]);
+        let uids = |orders: Vec<super::OrderRow>| -> Vec<u8> {
+            orders.iter().map(|order| order.uid.0[0]).collect()
+        };
+        let orders = open_orders(&mut *tx, 1_000, Some(100)).await.unwrap();
+        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
+        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        let orders = open_orders(&mut *tx, 1_000, Some(151)).await.unwrap();
+        assert_eq!(uids(orders), vec![1, 5, 6]);
     }
 
     #[tokio::test]
