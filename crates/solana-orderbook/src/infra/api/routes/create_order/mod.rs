@@ -232,7 +232,8 @@ fn validate(
     if *input.order_pda != order_pda {
         return Err(PlacementError::WrongOrderPda);
     }
-    let earliest = chrono::Utc::now().timestamp() + min_validity.as_secs() as i64;
+    let earliest = chrono::Utc::now().timestamp()
+        + i64::try_from(min_validity.as_secs()).unwrap_or(i64::MAX);
     if i64::from(intent.valid_to) <= earliest {
         return Err(PlacementError::InsufficientValidTo);
     }
