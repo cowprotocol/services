@@ -11,15 +11,18 @@
 //! * *lane* — one storage slot of the shared registry, holding one venue's live
 //!   quote for one token pair and direction. Venues quote a lane at most once
 //!   per block and leave the ones they aren't quoting alone.
-//! * *stamp* — the leading four bytes of a lane's word, holding the timestamp
-//!   of the block the quote is meant for. The venue reverts `StaleUpdate()`
-//!   unless it equals the timestamp of the block the call runs in; the
-//!   remaining 28 bytes are the maker's price.
+//! * *stamp* — the bytes of a lane's word holding the timestamp of the block
+//!   the quote is meant for. The venue reverts (`StaleUpdate()`,
+//!   `FeedStalled()`) unless it matches the timestamp of the block the call
+//!   runs in; the remaining bytes are the maker's price. Where in the word the
+//!   stamp sits and what it counts differs per venue.
 //!
 //! Which words are stamps is never guessed from their contents: the block a
 //! frame quotes for is named in the frame, and the timestamp that block will
 //! carry is projected from the chain itself, so the value to look for is known
-//! before the words are read.
+//! before the words are read. Only *where* a word carries that value is
+//! searched for, which is what keeps the layout of each venue's word out of
+//! this module.
 
 use {
     alloy_primitives::{Address, B256, map::B256Map},
@@ -37,10 +40,76 @@ use {
     tokio::sync::watch,
 };
 
-/// Number of leading bytes of a storage word holding the venue's freshness
-/// stamp. The remaining bytes are the maker's price and must survive
-/// restamping untouched.
-const STAMP_LEN: usize = 4;
+/// The units a venue may keep its stamp in, along with the width of the field
+/// holding it. A wider field holding the same value only adds leading zero
+/// bytes, so it is found and rewritten through its significant bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Unit {
+    /// Four bytes of unix seconds, as Fermi leads its words with.
+    Seconds,
+    /// Six bytes of unix milliseconds, as Metric keeps at the end of its words.
+    Millis,
+}
+
+impl Unit {
+    const ALL: [Unit; 2] = [Unit::Seconds, Unit::Millis];
+
+    /// Width in bytes of a field holding this unit.
+    const fn width(self) -> usize {
+        match self {
+            Unit::Seconds => 4,
+            Unit::Millis => 6,
+        }
+    }
+
+    /// Whether `field` (exactly `width()` bytes, big-endian) holds `stamp`.
+    ///
+    /// Makers stamp milliseconds with sub-second precision, so for that unit
+    /// any instant within the quoted second is the stamp.
+    fn holds(self, field: &[u8], stamp: u32) -> bool {
+        let value = field
+            .iter()
+            .fold(0u64, |value, byte| (value << 8) | u64::from(*byte));
+        match self {
+            Unit::Seconds => value == u64::from(stamp),
+            Unit::Millis => value / 1000 == u64::from(stamp),
+        }
+    }
+
+    /// Writes `timestamp` (unix seconds) into `field` in this unit.
+    fn write(self, timestamp: u64, field: &mut [u8]) {
+        let value = match self {
+            Unit::Seconds => timestamp,
+            Unit::Millis => timestamp * 1000,
+        };
+        field.copy_from_slice(&value.to_be_bytes()[8 - self.width()..]);
+    }
+}
+
+/// The fields of `word` holding `stamp`, as (offset, unit) pairs.
+fn stamp_fields(word: &B256, stamp: u32) -> impl Iterator<Item = (usize, Unit)> + '_ {
+    Unit::ALL.into_iter().flat_map(move |unit| {
+        word.windows(unit.width())
+            .enumerate()
+            .filter(move |(_, field)| unit.holds(field, stamp))
+            .map(move |(offset, _)| (offset, unit))
+    })
+}
+
+/// Whether `word` carries `stamp` anywhere, in any unit.
+fn carries_stamp(word: &B256, stamp: u32) -> bool {
+    stamp_fields(word, stamp).next().is_some()
+}
+
+/// Rewrites every field of `word` holding `stamp` to `timestamp`, in the unit
+/// and at the offset the venue keeps it. Words not carrying `stamp` are left
+/// untouched.
+fn restamp_word(word: &mut B256, stamp: u32, timestamp: u64) {
+    let fields: Vec<_> = stamp_fields(word, stamp).collect();
+    for (offset, unit) in fields {
+        unit.write(timestamp, &mut word[offset..offset + unit.width()]);
+    }
+}
 
 /// How many recent block gaps are kept to infer the chain's block spacing. A
 /// handful is enough to see past a slot nobody proposed, and few enough that a
@@ -129,14 +198,10 @@ fn restamp(mut overrides: StateOverride, stamp: Option<u32>, timestamp: u64) -> 
     let Some(stamp) = stamp else {
         return overrides;
     };
-    let stamp = stamp.to_be_bytes();
-    let timestamp = (timestamp as u32).to_be_bytes();
     for account in overrides.values_mut() {
         let words = [account.state.as_mut(), account.state_diff.as_mut()];
         for word in words.into_iter().flatten().flat_map(B256Map::values_mut) {
-            if word[..STAMP_LEN] == stamp {
-                word[..STAMP_LEN].copy_from_slice(&timestamp);
-            }
+            restamp_word(word, stamp, timestamp);
         }
     }
     overrides
@@ -369,10 +434,8 @@ impl Venues {
     fn update(&mut self, frame: Frame, quoted_at: Option<u32>) {
         for (venue, update) in frame.venues {
             let overrides = update.state_override;
-            let stamp = quoted_at.filter(|stamp| {
-                let stamp = stamp.to_be_bytes();
-                words(&overrides).any(|word| word[..STAMP_LEN] == stamp)
-            });
+            let stamp =
+                quoted_at.filter(|stamp| words(&overrides).any(|word| carries_stamp(word, *stamp)));
             self.0.insert(venue, Quotes { overrides, stamp });
         }
     }
@@ -516,6 +579,10 @@ mod tests {
 
     /// Shared `PrioUpdateRegistry` every venue writes its lanes into.
     const REGISTRY: Address = address!("da7afeed01fe625cf15d187a19f94b45f00b8c5f");
+    /// Width of the seconds stamp Fermi leads its words with.
+    const STAMP_LEN: usize = Unit::Seconds.width();
+    /// Bytes of a Metric word holding its milliseconds stamp.
+    const MILLIS_STAMP: std::ops::Range<usize> = 25..31;
     /// Block the captured frames below quote for.
     const QUOTED_BLOCK: u64 = 25_475_333;
     /// Stamp their freshly quoted lanes carry: the timestamp `QUOTED_BLOCK`
@@ -858,25 +925,98 @@ mod tests {
     }
 
     #[test]
-    fn unrelated_words_are_never_mistaken_for_a_stamp() {
-        // This venue's word leads with bytes that read as a perfectly plausible
-        // unix timestamp (2019-07-25) — just not the one the frame is quoting
-        // for, so the frame is recognised as quoting no lane at all and the
-        // word survives the accessor untouched.
-        let frame: Frame = serde_json::from_str(OTHER_FRAME).unwrap();
+    fn millisecond_stamp_elsewhere_in_the_word_is_recognised() {
+        // This venue leads its word with bytes that read as a plausible unix
+        // timestamp (2019-07-25) but keeps its actual stamp near the end, in
+        // milliseconds: 1783363067443, which is `QUOTED_AT` and 443ms. The
+        // frame is recognised as quoting for `QUOTED_AT` through that field
+        // alone, and only that field moves into the simulated block.
         let venue = address!("28d9ccedf1b7ac9b3f090f4f0292837de87c1d39");
         let mut venues = Venues::default();
-        venues.update(frame, Some(QUOTED_AT));
-        assert_eq!(venues.fold().1, None);
+        venues.update(serde_json::from_str(OTHER_FRAME).unwrap(), Some(QUOTED_AT));
+        let (original, stamp) = venues.fold();
+        assert_eq!(stamp, Some(QUOTED_AT));
+        let (slot, before) = original[&venue]
+            .state_diff
+            .as_ref()
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        assert!(Unit::Millis.holds(&before[MILLIS_STAMP], QUOTED_AT));
 
-        let handle = handle_for(
-            vec![serde_json::from_str(OTHER_FRAME).unwrap()],
-            100,
-            Duration::from_secs(30),
-        );
         let simulated_at = QUOTED_AT - SPACING;
-        let overrides = handle.overrides_for(99, simulated_at.into()).unwrap();
-        assert_eq!(overrides[&venue], venues.fold().0[&venue]);
+        let restamped = restamp(original.clone(), stamp, simulated_at.into());
+        let after = restamped[&venue].state_diff.as_ref().unwrap()[slot];
+        assert_eq!(
+            after[MILLIS_STAMP],
+            (u64::from(simulated_at) * 1000).to_be_bytes()[2..]
+        );
+        assert_eq!(after[..MILLIS_STAMP.start], before[..MILLIS_STAMP.start]);
+        assert_eq!(after[MILLIS_STAMP.end..], before[MILLIS_STAMP.end..]);
+    }
+
+    #[test]
+    fn metric_quote_is_restamped_to_the_simulated_block() {
+        // Metric word captured from Titan for block 25,925,280, stamped
+        // 1788781715000ms. Simulated at the parent block, 12s earlier, the
+        // stamp follows and every other byte stays.
+        let original: B256 = "0x5f3f82df171805f5e2f401018738ad0713148735fecc13140001a07bb2de3800"
+            .parse()
+            .unwrap();
+        let expected: B256 = "0x5f3f82df171805f5e2f401018738ad0713148735fecc13140001a07bb2af5800"
+            .parse()
+            .unwrap();
+        let (quoted_at, simulated_at) = (1_788_781_715u32, 1_788_781_703u64);
+        let mut venues = Venues::default();
+        venues.update(
+            registry_frame(Address::ZERO, &[(lane(1), original)]),
+            Some(quoted_at),
+        );
+        let (sender, receiver) = watch::channel(non_empty_snapshot(0, Instant::now()));
+        publish(&venues, 25_925_280, &sender);
+        let handle = handle(receiver, Duration::from_secs(30));
+
+        let overrides = handle.overrides_for(25_925_279, simulated_at).unwrap();
+        assert_eq!(lanes_of(&overrides)[&lane(1)], expected);
+
+        // Simulated at the block it was quoted for, the word is already right.
+        let overrides = handle.overrides_for(25_925_280, quoted_at.into()).unwrap();
+        assert_eq!(lanes_of(&overrides)[&lane(1)], original);
+    }
+
+    #[test]
+    fn a_stamp_is_found_at_any_offset_and_width() {
+        let simulated_at = QUOTED_AT - SPACING;
+
+        // Seconds right-aligned as a uint256.
+        let mut word = B256::from([0xab; 32]);
+        word[28..].copy_from_slice(&QUOTED_AT.to_be_bytes());
+        assert_eq!(
+            stamp_fields(&word, QUOTED_AT).collect::<Vec<_>>(),
+            [(28, Unit::Seconds)]
+        );
+        restamp_word(&mut word, QUOTED_AT, simulated_at.into());
+        assert_eq!(word[28..], simulated_at.to_be_bytes());
+        assert_eq!(word[..28], [0xab; 28]);
+
+        // Milliseconds as a uint64, found through its six significant bytes.
+        let mut word = B256::from([0xab; 32]);
+        word[8..16].copy_from_slice(&(u64::from(QUOTED_AT) * 1000 + 999).to_be_bytes());
+        assert_eq!(
+            stamp_fields(&word, QUOTED_AT).collect::<Vec<_>>(),
+            [(10, Unit::Millis)]
+        );
+        restamp_word(&mut word, QUOTED_AT, simulated_at.into());
+        assert_eq!(word[8..16], (u64::from(simulated_at) * 1000).to_be_bytes());
+        assert_eq!(word[..8], [0xab; 8]);
+        assert_eq!(word[16..], [0xab; 16]);
+
+        // A neighbouring second, in either unit, is not the stamp.
+        let mut word = B256::from([0xab; 32]);
+        word[..4].copy_from_slice(&(QUOTED_AT - 1).to_be_bytes());
+        word[MILLIS_STAMP].copy_from_slice(&((u64::from(QUOTED_AT) + 1) * 1000).to_be_bytes()[2..]);
+        assert!(!carries_stamp(&word, QUOTED_AT));
     }
 
     #[test]
