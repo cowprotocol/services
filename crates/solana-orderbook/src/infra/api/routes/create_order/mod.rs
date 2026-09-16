@@ -1,21 +1,13 @@
 //! The sponsored order placement endpoint: a partially signed creation
-//! transaction comes in and the order it carries becomes placeable. Every
-//! order field derives from the transaction itself, so the stored order and
-//! the transaction that will create it on chain cannot disagree.
+//! transaction comes in, and every order field derives from it, so the
+//! stored order and the transaction creating it on chain cannot disagree.
 //!
-//! The funder countersigns as fee payer, so the transaction may only carry
-//! the whitelisted preparation steps in front of the mandatory trailing
-//! `CreateOrder`: wrap SOL, delegate the sell account to the settlement
-//! state PDA, and create the buy token account. Anything else would run at
-//! the funder's expense.
-//!
-//! The buy-account creation is mandatory: settlement pays out to that
-//! account and never creates it, so an order without one would revert every
-//! settlement it is batched into. It stays mandatory when the account
-//! already exists: the creation is idempotent on chain (a no-op then), and
-//! an always-present instruction proves receivability structurally, with no
-//! placement-time lookup and no window for the account to disappear between
-//! placement and settlement.
+//! The funder countersigns as fee payer, so only the whitelisted
+//! preparation steps may precede the mandatory trailing `CreateOrder`: wrap
+//! SOL, delegate the sell account, create the buy token account. The
+//! buy-account creation is required even when the account exists (it is
+//! idempotent on chain): settlement pays out to it and never creates it,
+//! and the instruction proves receivability without a lookup or a race.
 
 use {
     crate::infra::{
