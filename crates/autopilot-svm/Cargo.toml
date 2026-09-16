@@ -27,6 +27,8 @@ database = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
 observe = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde-ext = { workspace = true }

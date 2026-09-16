@@ -67,7 +67,11 @@ impl DbAuctionProvider {
                     .get(&account)
                     .is_some_and(|found| receivable_token_account(found, order.buy_token.0));
                 if !receivable {
-                    tracing::warn!(
+                    // A doomed order repeats this on every cut until it
+                    // expires: the counter is the alerting signal, the log
+                    // line stays at debug.
+                    metrics().unreceivable_orders.inc();
+                    tracing::debug!(
                         order = %const_hex::encode(order.uid.0),
                         %account,
                         "excluding order, its buy token account cannot receive the payout"
@@ -117,6 +121,18 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         auction.orders = self.receivable_orders(auction.orders).await;
         (!auction.orders.is_empty()).then_some(auction)
     }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "auction_provider")]
+struct Metrics {
+    /// Orders excluded from auction cuts because their buy token account
+    /// cannot receive the payout.
+    unreceivable_orders: prometheus::IntCounter,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
 }
 
 /// An initialized, unfrozen account of the classic SPL token program holding
