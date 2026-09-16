@@ -172,10 +172,15 @@ paths:
       operationId: createOrder
       description: |
         Place a sponsored order: the body carries the user's partially signed
-        `CreateOrder` transaction (owner signed, the deployment's funder as
-        its unsigned fee payer), and every order field derives from it. The
-        order competes in auctions until the transaction's blockhash expires
-        (about a minute) or it settles.
+        creation transaction (owner signed, the deployment's funder as its
+        unsigned fee payer), and every order field derives from its trailing
+        `CreateOrder` instruction. In front of it the transaction carries the
+        preparation steps, in this order: create the wSOL account, fund it,
+        sync it, and approve the settlement delegate, each omittable (the
+        wrap steps only for native SOL sells), followed by the mandatory buy
+        token account creation (idempotent, a no-op when the account already
+        exists). The order competes in auctions until the transaction's
+        blockhash expires (about a minute) or it settles.
       requestBody:
         required: true
         content:
@@ -200,11 +205,13 @@ paths:
             undecodable or wrongly shaped transaction (`InvalidTransaction`),
             a fee or rent payer other than the funder (`WrongFeePayer`,
             `WrongRentPayer`), a PDA not derived from the intent
-            (`WrongOrderPda`), an intent without the on-chain flag
-            (`InvalidIntentFlags`), a missing owner signature
-            (`InvalidSignature`), an expired order (`InsufficientValidTo`), a dead
-            blockhash (`BlockhashExpired`), or a known uid
-            (`DuplicatedOrder`).
+            (`WrongOrderPda`), a delegation not targeting the settlement
+            state PDA (`WrongDelegate`), an intent without the on-chain flag
+            (`InvalidIntentFlags`), equal mints (`SameBuyAndSellToken`), a
+            zero amount (`ZeroAmount`), a missing owner signature
+            (`InvalidSignature`), a validTo below the minimum validity
+            (`InsufficientValidTo`), a dead blockhash (`BlockhashExpired`),
+            or a known uid (`DuplicatedOrder`).
           content:
             application/json:
               schema:

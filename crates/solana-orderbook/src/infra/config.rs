@@ -79,7 +79,8 @@ pub struct Quoting {
     /// How long the driver has to answer before the quote fails.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
     pub timeout: Duration,
-    /// Least far in the future a quoted order's `validTo` may lie.
+    /// Least far in the future an order's `validTo` may lie, for quotes and
+    /// sponsored placement alike.
     #[serde(with = "humantime_serde", default = "default_min_validity")]
     pub min_validity: Duration,
     /// Furthest in the future a quoted order's `validTo` may lie.
