@@ -150,7 +150,7 @@ impl FastPathHandler {
                 return;
             }
             Err(err) => {
-                Metrics::preflight_failed("db_lookup");
+                Metrics::settlement_not_initiated("db_lookup");
                 tracing::error!(?err, "failed to look up pending fast-path order");
                 return;
             }
@@ -162,12 +162,15 @@ impl FastPathHandler {
             true => match self.try_build_settle_request(pending).await {
                 Ok(attempt) => Some(attempt),
                 Err(err) => {
-                    Metrics::preflight_failed(err.reason());
+                    Metrics::settlement_not_initiated(err.reason());
                     tracing::warn!(?err, "could not finalize fast path settle attempt");
                     None
                 }
             },
-            false => None,
+            false => {
+                Metrics::settlement_not_initiated("disabled");
+                None
+            }
         };
 
         if let Some(settle_attempt) = settle_attempt {
@@ -292,7 +295,7 @@ impl FastPathHandler {
                 Metrics::creation_to_execution(Utc::now() - creation_date);
                 tracing::info!(?tx, "settled order");
             }
-            Err(err) => tracing::debug!(?err, "failed to settle order"),
+            Err(err) => tracing::warn!(?err, "failed to settle order"),
         };
     }
 
@@ -521,7 +524,7 @@ impl Metrics {
             .inc();
     }
 
-    fn preflight_failed(reason: &str) {
+    fn settlement_not_initiated(reason: &str) {
         Self::get().errors.with_label_values(&[reason]).inc();
     }
 
