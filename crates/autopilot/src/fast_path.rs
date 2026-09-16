@@ -491,21 +491,21 @@ impl PreflightError {
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "fast_path")]
 struct Metrics {
-    /// Tracks the outcome of fast-path settlements.
+    /// Tracks the outcome of fast-path settle requests.
     #[metric(labels("driver", "result"))]
     executions: prometheus::IntCounterVec,
-    /// Counts orders where an error prevented the autopilot from
-    /// initiating a fast-path settle at all.
+    /// Counts errors that prevented the autopilot from
+    /// initiating a fast-path settle request.
     #[metric(labels("reason"))]
     errors: prometheus::IntCounterVec,
     /// Seconds between the order's `creation_date` and observing
     /// the settlement onchain.
-    #[metric(buckets(0.5, 1, 1.5, 2, 2.5, 3, 5, 7.5, 10, 12, 24))]
+    #[metric(buckets(0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 9, 10, 12, 24))]
     total_duration: prometheus::Histogram,
     /// Seconds between the autopilot receiving the fast-path
     /// notification for an order and firing the driver `/settle` call.
     #[metric(buckets(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5))]
-    processing: prometheus::Histogram,
+    processing_latency: prometheus::Histogram,
 }
 
 impl Metrics {
@@ -526,7 +526,9 @@ impl Metrics {
     }
 
     fn notify_to_settle(elapsed: std::time::Duration) {
-        Self::get().processing.observe(elapsed.as_secs_f64());
+        Self::get()
+            .processing_latency
+            .observe(elapsed.as_secs_f64());
     }
 
     fn creation_to_execution(elapsed: chrono::Duration) {
