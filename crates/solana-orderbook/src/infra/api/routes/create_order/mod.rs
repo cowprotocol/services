@@ -209,11 +209,10 @@ fn validate(
     if !intent.flags.created_on_chain {
         return Err(PlacementError::InvalidIntentFlags);
     }
-    // The signature loop below skips the funder's slot, so an intent owned by
-    // the funder would be authorized by the countersign alone, letting anyone
-    // spend the funder's assets. The owner must also actually be a signer:
-    // the attacker controls the message header, and an owner outside the
-    // signer region would only fail at creation broadcast, after winning.
+    // The signature loop below skips the funder's slot, so a funder-owned
+    // intent would be authorized by the countersign alone. The owner must
+    // also sit among the required signers: the header is client-controlled,
+    // and an owner outside it would fail only at broadcast, after winning.
     if intent.owner == sponsoring.funder {
         return Err(PlacementError::InvalidTransaction(
             "the funder cannot own a sponsored order",
@@ -261,11 +260,7 @@ fn validate(
     // Every required signer except the funder must have signed: the funder's
     // slot stays a placeholder until the autopilot countersigns.
     let message_bytes = message.serialize();
-    for (index, key) in keys
-        .iter()
-        .take(usize::from(message.header().num_required_signatures))
-        .enumerate()
-    {
+    for (index, key) in keys.iter().take(signers).enumerate() {
         if *key == sponsoring.funder {
             continue;
         }
