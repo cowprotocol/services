@@ -582,6 +582,31 @@ async fn create_order_rejects_invalid_submissions() {
         );
     }
 
+    // Intent-level rejections: the funder as owner, equal mints, zero
+    // amounts, and a validTo below the minimum validity.
+    let mut funder_owned = sponsored_intent(owner.pubkey(), false);
+    funder_owned.owner = funder;
+    let mut same_token = sponsored_intent(owner.pubkey(), false);
+    same_token.buy_mint = same_token.sell_mint;
+    let mut zero_amount = sponsored_intent(owner.pubkey(), false);
+    zero_amount.sell_amount = 0;
+    let mut expiring = sponsored_intent(owner.pubkey(), false);
+    expiring.valid_to = u32::try_from(chrono::Utc::now().timestamp() + 30).unwrap();
+    for (intent, expected) in [
+        (funder_owned, "InvalidTransaction"),
+        (same_token, "SameBuyAndSellToken"),
+        (zero_amount, "ZeroAmount"),
+        (expiring, "InsufficientValidTo"),
+    ] {
+        let destination = destination_creation(funder, owner.pubkey(), &intent);
+        let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected)
+        );
+    }
+
     // A well-formed transaction whose blockhash already died.
     let addr = spawn_sponsored_server(
         PgPool::connect_lazy("postgresql://").unwrap(),
@@ -593,6 +618,44 @@ async fn create_order_rejects_invalid_submissions() {
     assert_eq!(
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "BlockhashExpired")
+    );
+}
+
+/// A message header that leaves the owner outside the signer region is
+/// rejected: on chain the creation would demand the owner's signature, so
+/// accepting it would only defer the failure past a won auction.
+#[tokio::test]
+async fn create_order_requires_the_owner_as_signer() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let addr =
+        spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    let instruction: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instructions::CreateOrder {
+            program_id: cow_settlement_interface::id(),
+            owner: owner.pubkey(),
+            created_by: funder,
+            intent: &intent,
+        }
+        .into();
+    let mut message = solana_sdk::message::Message::new_with_blockhash(
+        &[destination, instruction],
+        Some(&funder),
+        &solana_sdk::hash::Hash::new_unique(),
+    );
+    // Demote the owner out of the signer region.
+    message.header.num_required_signatures = 1;
+    let tx = solana_sdk::transaction::VersionedTransaction {
+        signatures: vec![solana_sdk::signature::Signature::default()],
+        message: solana_sdk::message::VersionedMessage::Legacy(message),
+    };
+    let transaction = base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap());
+    let (status, kind) = post_order(addr, transaction).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "InvalidSignature")
     );
 }
 
@@ -641,6 +704,18 @@ async fn create_order_checks_the_preparation_template() {
         (
             vec![approve(solana_sdk::pubkey::Pubkey::new_unique())],
             "WrongDelegate",
+        ),
+        // An account creation for a mint the order does not trade.
+        (
+            vec![
+                spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                    &funder,
+                    &owner,
+                    &solana_sdk::pubkey::Pubkey::new_unique(),
+                    &spl_token_interface::ID,
+                ),
+            ],
+            "InvalidTransaction",
         ),
         // Steps out of template order.
         (

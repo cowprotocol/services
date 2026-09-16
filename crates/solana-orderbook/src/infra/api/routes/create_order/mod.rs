@@ -56,6 +56,8 @@ enum PlacementError {
     InvalidIntentFlags,
     WrongOrderPda,
     WrongDelegate,
+    SameBuyAndSellToken,
+    ZeroAmount,
     InsufficientValidTo,
     InvalidSignature,
     BlockhashExpired,
@@ -89,9 +91,14 @@ impl From<PlacementError> for error::Reply {
                 "WrongDelegate",
                 "the delegation must target the settlement state PDA",
             ),
-            PlacementError::InsufficientValidTo => {
-                ("InsufficientValidTo", "validTo lies in the past")
+            PlacementError::SameBuyAndSellToken => {
+                ("SameBuyAndSellToken", "buy and sell token must differ")
             }
+            PlacementError::ZeroAmount => ("ZeroAmount", "order amounts must not be zero"),
+            PlacementError::InsufficientValidTo => (
+                "InsufficientValidTo",
+                "validTo lies closer than the minimum validity",
+            ),
             PlacementError::InvalidSignature => (
                 "InvalidSignature",
                 "a required signer other than the funder has not signed",
@@ -124,7 +131,7 @@ pub async fn create_order(
         bincode::deserialize(&params.transaction).map_err(|_| {
             PlacementError::InvalidTransaction("the bytes do not decode to a transaction")
         })?;
-    let mut order = validate(sponsoring, &transaction)?;
+    let mut order = validate(sponsoring, &transaction, state.validation().min_validity)?;
     order.presigned_transaction = params.transaction;
 
     // The countersign re-checks freshness, so the stored expiry only has to
@@ -166,6 +173,7 @@ pub async fn create_order(
 fn validate(
     sponsoring: &Sponsoring,
     transaction: &VersionedTransaction,
+    min_validity: std::time::Duration,
 ) -> Result<db::SponsoredOrder, PlacementError> {
     let message = &transaction.message;
     if message
@@ -201,11 +209,32 @@ fn validate(
     if !intent.flags.created_on_chain {
         return Err(PlacementError::InvalidIntentFlags);
     }
+    // The signature loop below skips the funder's slot, so an intent owned by
+    // the funder would be authorized by the countersign alone, letting anyone
+    // spend the funder's assets. The owner must also actually be a signer:
+    // the attacker controls the message header, and an owner outside the
+    // signer region would only fail at creation broadcast, after winning.
+    if intent.owner == sponsoring.funder {
+        return Err(PlacementError::InvalidTransaction(
+            "the funder cannot own a sponsored order",
+        ));
+    }
+    let signers = usize::from(message.header().num_required_signatures);
+    if !keys.iter().take(signers).any(|key| *key == intent.owner) {
+        return Err(PlacementError::InvalidSignature);
+    }
+    if intent.sell_mint == intent.buy_mint {
+        return Err(PlacementError::SameBuyAndSellToken);
+    }
+    if intent.sell_amount == 0 || intent.buy_amount == 0 {
+        return Err(PlacementError::ZeroAmount);
+    }
     let order_pda = find_order_pda(&sponsoring.settlement_program, &uid).0;
     if *input.order_pda != order_pda {
         return Err(PlacementError::WrongOrderPda);
     }
-    if i64::from(intent.valid_to) <= chrono::Utc::now().timestamp() {
+    let earliest = chrono::Utc::now().timestamp() + min_validity.as_secs() as i64;
+    if i64::from(intent.valid_to) <= earliest {
         return Err(PlacementError::InsufficientValidTo);
     }
 
@@ -380,11 +409,18 @@ fn preparation_step(
                 "only account creation is accepted from the associated token program",
             ));
         }
-        let [payer, account, owner, mint, _system, _token] = accounts[..] else {
+        let [payer, account, owner, mint, system, token_program] = accounts[..] else {
             return Err(PlacementError::InvalidTransaction(
                 "an account creation names six accounts",
             ));
         };
+        if system != solana_system_interface::program::ID
+            || token_program != spl_token_interface::ID
+        {
+            return Err(PlacementError::InvalidTransaction(
+                "the account creation must reference the system and token programs",
+            ));
+        }
         if payer != sponsoring.funder && payer != intent.owner {
             return Err(PlacementError::InvalidTransaction(
                 "the account creation must be paid by the funder or the owner",
