@@ -144,7 +144,10 @@ async fn sell() {
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("okx", super::config(&api.address)).await;
+    // The swap gets simulated to determine its gas usage.
+    let node = mock::http::setup(vec![mock::node::gas_simulation(303_750)]).await;
+
+    let engine = tests::SolverEngine::new("okx", super::config(&api.address, &node.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -178,7 +181,7 @@ async fn sell() {
                     "fullBuyAmount": "200000000000000000000",
                     "kind": "sell",
                     "partiallyFillable": false,
-                    "class": "market",
+                    "class": "limit",
                     "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
                     "preInteractions": [],
@@ -235,12 +238,13 @@ async fn sell() {
                  "postInteractions":[],
                  "preInteractions":[],
                  "prices":{
-                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":"6556259156432631386442",
-                    "0xe41d2489571d322189246dafa5ebde1f4699f498":"1000000000000000000"
+                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":"6515924296132454848400",
+                    "0xe41d2489571d322189246dafa5ebde1f4699f498":"993847885000000000"
                  },
                  "trades":[
                     {
-                       "executedAmount":"1000000000000000000",
+                       "executedAmount":"993847885000000000",
+                       "fee":"6152115000000000",
                        "kind":"fulfillment",
                        "order":"0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                     }
@@ -255,7 +259,10 @@ async fn sell() {
 async fn buy_disabled() {
     let api = mock::http::setup(vec![]).await;
 
-    let engine = tests::SolverEngine::new("okx", super::config(&api.address)).await;
+    // Buy orders are disabled, so the node is never queried.
+    let node = mock::http::setup(vec![]).await;
+
+    let engine = tests::SolverEngine::new("okx", super::config(&api.address, &node.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -289,7 +296,7 @@ async fn buy_disabled() {
                     "fullBuyAmount": "200000000000000000000",
                     "kind": "buy",
                     "partiallyFillable": false,
-                    "class": "market",
+                    "class": "limit",
                     "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
                     "preInteractions": [],
@@ -315,10 +322,13 @@ async fn buy_disabled() {
 #[tokio::test]
 async fn buy_enabled() {
     /// Config with buy orders enabled.
-    fn config_with_buy_orders(solver_addr: &std::net::SocketAddr) -> tests::Config {
+    fn config_with_buy_orders(
+        solver_addr: &std::net::SocketAddr,
+        node_addr: &std::net::SocketAddr,
+    ) -> tests::Config {
         tests::Config::String(format!(
             r"
-node-url = 'http://localhost:8545'
+node-url = 'http://{node_addr}'
 [dex]
 chain-id = '1'
 sell-orders-endpoint = 'http://{solver_addr}/'
@@ -449,7 +459,11 @@ api-passphrase = 'pass'
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("okx", config_with_buy_orders(&api.address)).await;
+    // The swap gets simulated to determine its gas usage.
+    let node = mock::http::setup(vec![mock::node::gas_simulation(303_750)]).await;
+
+    let engine =
+        tests::SolverEngine::new("okx", config_with_buy_orders(&api.address, &node.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -483,7 +497,7 @@ api-passphrase = 'pass'
                     "fullBuyAmount": "200000000000000000000",
                     "kind": "buy",
                     "partiallyFillable": false,
-                    "class": "market",
+                    "class": "limit",
                     "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
                     "preInteractions": [],
@@ -546,6 +560,7 @@ api-passphrase = 'pass'
                  "trades":[
                     {
                        "executedAmount":"200000000000000000000",
+                       "fee":"6152115000000000",
                        "kind":"fulfillment",
                        "order":"0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                     }
@@ -696,7 +711,14 @@ async fn sell_twice() {
 
     let api = mock::http::setup(http_requests).await;
 
-    let engine = tests::SolverEngine::new("okx", super::config(&api.address)).await;
+    // Both swaps get simulated to determine their gas usage.
+    let node = mock::http::setup(vec![
+        mock::node::gas_simulation(303_750),
+        mock::node::gas_simulation(303_750),
+    ])
+    .await;
+
+    let engine = tests::SolverEngine::new("okx", super::config(&api.address, &node.address)).await;
 
     let auction = json!({
         "id": "1",
@@ -729,7 +751,7 @@ async fn sell_twice() {
                 "fullBuyAmount": "200000000000000000000",
                 "kind": "sell",
                 "partiallyFillable": false,
-                "class": "market",
+                "class": "limit",
                 "sellTokenSource": "erc20",
                 "buyTokenDestination": "erc20",
                 "preInteractions": [],
@@ -787,12 +809,13 @@ async fn sell_twice() {
                  "postInteractions":[],
                  "preInteractions":[],
                  "prices":{
-                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":"6556259156432631386442",
-                    "0xe41d2489571d322189246dafa5ebde1f4699f498":"1000000000000000000"
+                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":"6515924296132454848400",
+                    "0xe41d2489571d322189246dafa5ebde1f4699f498":"993847885000000000"
                  },
                  "trades":[
                     {
-                       "executedAmount":"1000000000000000000",
+                       "executedAmount":"993847885000000000",
+                       "fee":"6152115000000000",
                        "kind":"fulfillment",
                        "order":"0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                     }
@@ -950,7 +973,14 @@ async fn sell_twice_parallel() {
 
     let api = mock::http::setup(http_requests).await;
 
-    let engine = tests::SolverEngine::new("okx", super::config(&api.address)).await;
+    // Both swaps get simulated to determine their gas usage.
+    let node = mock::http::setup(vec![
+        mock::node::gas_simulation(303_750),
+        mock::node::gas_simulation(303_750),
+    ])
+    .await;
+
+    let engine = tests::SolverEngine::new("okx", super::config(&api.address, &node.address)).await;
 
     let auction = json!({
         "id": "1",
@@ -983,7 +1013,7 @@ async fn sell_twice_parallel() {
                 "fullBuyAmount": "200000000000000000000",
                 "kind": "sell",
                 "partiallyFillable": false,
-                "class": "market",
+                "class": "limit",
                 "sellTokenSource": "erc20",
                 "buyTokenDestination": "erc20",
                 "preInteractions": [],
@@ -1046,12 +1076,13 @@ async fn sell_twice_parallel() {
                  "postInteractions":[],
                  "preInteractions":[],
                  "prices":{
-                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":"6556259156432631386442",
-                    "0xe41d2489571d322189246dafa5ebde1f4699f498":"1000000000000000000"
+                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":"6515924296132454848400",
+                    "0xe41d2489571d322189246dafa5ebde1f4699f498":"993847885000000000"
                  },
                  "trades":[
                     {
-                       "executedAmount":"1000000000000000000",
+                       "executedAmount":"993847885000000000",
+                       "fee":"6152115000000000",
                        "kind":"fulfillment",
                        "order":"0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                     }
