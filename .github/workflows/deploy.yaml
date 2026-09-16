@@ -93,8 +93,8 @@ jobs:
         with:
           cache-all-crates: true
           cache-workspace-crates: true
-          # Always use whatever cache was last written for main
-          shared-key: main
+          # A constant key, so tag builds read the cache that main writes
+          shared-key: deploy
           # Only write to the cache if running on main
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
