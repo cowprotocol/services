@@ -1822,7 +1822,9 @@ mod tests {
             validate(delayed(now + 50, now + 90)).await,
             Err(ValidationError::InvalidValidFrom)
         );
-        validate(delayed(now + 50, now + 150)).await.unwrap();
+        // A user-set `valid_from` is respected.
+        let (order, _) = validate(delayed(now + 50, now + 150)).await.unwrap();
+        assert_eq!(order.metadata.valid_from, Some(now + 50));
 
         // Fast-path orders never carry `valid_from` at placement — the
         // autopilot's fast-path handler owns that field. See
@@ -1836,6 +1838,18 @@ mod tests {
         let (order, _) = validate(fast_path).await.unwrap();
         assert!(order.metadata.valid_from.is_none());
         assert!(order.metadata.fast_path);
+
+        let both = OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableFastPath": true, "validFrom": now + 50 } })
+                    .to_string(),
+            },
+            ..plain(now + 150)
+        };
+        std::assert_matches!(
+            validate(both).await,
+            Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
+        );
     }
 
     #[tokio::test]

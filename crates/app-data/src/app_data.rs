@@ -288,6 +288,12 @@ impl Validator {
         let document = String::from_utf8(full_app_data.to_vec())?;
         let protocol = parse(full_app_data)?;
 
+        if protocol.enable_fast_path && protocol.valid_from.is_some() {
+            return Err(anyhow!(
+                "`enableFastPath` and `validFrom` are mutually exclusive"
+            ));
+        }
+
         Ok(ValidatedAppData {
             hash: AppDataHash(hash_full_app_data(full_app_data)),
             document,
@@ -590,10 +596,13 @@ mod tests {
                 ..Default::default()
             },
         );
+    }
+
+    #[test]
+    fn valid_from() {
         assert_app_data!(
-            r#"{ "metadata": { "enableFastPath": true, "validFrom": 1700000000 } }"#,
+            r#"{ "metadata": { "validFrom": 1700000000 } }"#,
             ProtocolAppData {
-                enable_fast_path: true,
                 valid_from: Some(1_700_000_000),
                 ..Default::default()
             },
@@ -943,5 +952,24 @@ mod tests {
         let size_limit = r#"{"hello":"world"}"#.as_bytes();
         let err = validator.validate(size_limit).unwrap_err();
         dbg!(err);
+    }
+
+    #[test]
+    fn validate_rejects_fast_path_with_valid_from() {
+        let validator = Validator::default();
+
+        validator
+            .validate(r#"{ "metadata": { "enableFastPath": true } }"#.as_bytes())
+            .unwrap();
+        validator
+            .validate(r#"{ "metadata": { "validFrom": 1700000000 } }"#.as_bytes())
+            .unwrap();
+
+        let err = validator
+            .validate(
+                r#"{ "metadata": { "enableFastPath": true, "validFrom": 1700000000 } }"#.as_bytes(),
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("mutually exclusive"));
     }
 }

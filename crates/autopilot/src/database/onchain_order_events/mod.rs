@@ -714,6 +714,17 @@ async fn handle_app_data(
             continue;
         };
 
+        if parsed.enable_fast_path && parsed.valid_from.is_some() {
+            database::onchain_broadcasted_orders::set_placement_error(
+                db,
+                &order.uid,
+                OnchainOrderPlacementError::InvalidOrderData,
+            )
+            .await
+            .context("failed to mark order invalid")?;
+            continue;
+        }
+
         store_hooks(db, order, &parsed, trampoline).await?;
         order.fast_path = parsed.enable_fast_path;
         // Only honour an explicit user-set `validFrom` for non-fast-path

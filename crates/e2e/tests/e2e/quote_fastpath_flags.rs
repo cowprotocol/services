@@ -112,3 +112,66 @@ async fn fast_path_flags_fall_through_when_disabled(web3: Web3) {
         "fast-path fallthrough should not delay `valid_from`, got {valid_from}",
     );
 }
+
+#[tokio::test]
+#[ignore]
+async fn local_node_rejects_fast_path_with_valid_from() {
+    run_test(rejects_fast_path_with_valid_from).await;
+}
+
+/// `enableFastPath` and `validFrom` are mutually exclusive; an order setting
+/// both in its app-data is rejected at placement.
+async fn rejects_fast_path_with_valid_from(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    let sell_amount = 1u64.eth();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, sell_amount)
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(sell_amount)
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let valid_from = model::time::now_in_epoch_seconds() + 300;
+    let app_data = format!(r#"{{"metadata":{{"enableFastPath":true,"validFrom":{valid_from}}}}}"#);
+    let order = OrderCreation {
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount,
+        buy_token: *token.address(),
+        buy_amount: U256::from(1u64),
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full { full: app_data },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+
+    let err = services.create_order(&order).await.unwrap_err();
+    assert_eq!(err.0, reqwest::StatusCode::BAD_REQUEST);
+    assert!(err.1.contains("InvalidAppData"), "got: {}", err.1);
+    assert!(err.1.contains("mutually exclusive"), "got: {}", err.1);
+}
