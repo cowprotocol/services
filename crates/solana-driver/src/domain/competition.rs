@@ -18,6 +18,9 @@ const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
 /// deadline slot into a wall-clock confirmation timeout. This is mainnet's
 /// target; other clusters can drift.
 const SLOT_DURATION_MS: u64 = 400;
+/// Wall-clock reserve for the settlement itself (encode, simulate, send,
+/// confirm) after the sponsored creations landed.
+const SETTLEMENT_HEADROOM: Duration = Duration::from_secs(5);
 
 /// Cache key for a proposed solution.
 ///
@@ -185,7 +188,13 @@ impl Competition {
                 (submission_deadline_slot - current_slot).saturating_mul(SLOT_DURATION_MS),
             );
 
-        self.land_creations(&creations, deadline).await?;
+        // The creations get the window up to a reserve for the settlement
+        // itself: landing them with no time left to settle would spend the
+        // funder's fees without a trade.
+        let creations_deadline = deadline
+            .checked_sub(SETTLEMENT_HEADROOM)
+            .unwrap_or_else(Instant::now);
+        self.land_creations(&creations, creations_deadline).await?;
 
         // TODO: admission semaphore(1).
 
@@ -212,6 +221,14 @@ impl Competition {
 
         self.simulate_settlement(&transaction).await?;
 
+        // A zero timeout still polls the send future once, which could
+        // submit the transaction past the deadline, so handle it before the
+        // solution is consumed and while a retry is still possible.
+        let confirm_timeout = deadline.saturating_duration_since(Instant::now());
+        if confirm_timeout.is_zero() {
+            return Err(Error::DeadlineExceeded);
+        }
+
         // Consume the entry only now, when the transaction is about to reach
         // the network. One atomic removal takes the chosen solution. A
         // concurrent `/settle` for it then observes a missing entry and
@@ -226,12 +243,6 @@ impl Competition {
         // TODO: a provably unsent transaction (connect failure at send time)
         // loses the solution here; restore the cache entry on that class. Needs
         // the send/confirm split in cow-solana-rpc (planned follow-up PR).
-        // A zero timeout still polls the send future once, which could
-        // submit the transaction past the deadline, so handle it here.
-        let confirm_timeout = deadline.saturating_duration_since(Instant::now());
-        if confirm_timeout.is_zero() {
-            return Err(Error::DeadlineExceeded);
-        }
         let signature = tokio::time::timeout(
             confirm_timeout,
             self.blockchain.send_and_confirm_transaction(&transaction),
@@ -243,21 +254,25 @@ impl Competition {
         Ok(signature)
     }
 
-    /// Land the sponsored creation transactions, each within the remaining
-    /// submission deadline. The settlement needs them confirmed first:
-    /// `BeginSettle` reads the order PDAs, and the simulation runs against
-    /// confirmed state. A send failure whose signature the cluster already
-    /// knows means an earlier attempt landed the creation, which is success.
+    /// Land the sponsored creation transactions before `deadline`. The
+    /// settlement needs them confirmed first: `BeginSettle` reads the order
+    /// PDAs, and the simulation runs against confirmed state. The
+    /// transactions are independent, so they land concurrently. A send
+    /// failure whose signature the cluster already knows means an earlier
+    /// attempt landed the creation, which is success.
     async fn land_creations(
         &self,
         creations: &[VersionedTransaction],
         deadline: Instant,
     ) -> Result<(), Error> {
-        for creation in creations {
-            let timeout = deadline.saturating_duration_since(Instant::now());
-            if timeout.is_zero() {
-                return Err(Error::DeadlineExceeded);
-            }
+        if creations.is_empty() {
+            return Ok(());
+        }
+        let timeout = deadline.saturating_duration_since(Instant::now());
+        if timeout.is_zero() {
+            return Err(Error::DeadlineExceeded);
+        }
+        futures::future::try_join_all(creations.iter().map(|creation| async move {
             let sent = tokio::time::timeout(
                 timeout,
                 self.blockchain.send_and_confirm_transaction(creation),
@@ -265,7 +280,10 @@ impl Competition {
             .await
             .map_err(|_| Error::DeadlineExceeded)?;
             match sent {
-                Ok(signature) => tracing::info!(%signature, "order creation submitted"),
+                Ok(signature) => {
+                    tracing::info!(%signature, "order creation submitted");
+                    Ok(())
+                }
                 Err(error) => {
                     let landed = match creation.signatures.first() {
                         Some(signature) => self
@@ -278,12 +296,15 @@ impl Competition {
                             .unwrap_or(false),
                         None => false,
                     };
-                    if !landed {
-                        return Err(Error::FailedToCreate(error));
+                    if landed {
+                        Ok(())
+                    } else {
+                        Err(Error::FailedToCreate(error))
                     }
                 }
             }
-        }
+        }))
+        .await?;
         Ok(())
     }
 
