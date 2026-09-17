@@ -23,16 +23,6 @@ pub struct ValidatedAppData {
     pub protocol: ProtocolAppData,
 }
 
-/// `enableFastPath` and `validFrom` are mutually exclusive; an order can set
-/// at most one of them.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum FastPathOrValidFrom {
-    /// Out-of-competition ("fast path") execution.
-    FastPath,
-    /// The order only becomes solvable at this UNIX timestamp.
-    ValidFrom(u32),
-}
-
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[cfg_attr(
     any(test, feature = "test_helpers"),
@@ -47,25 +37,20 @@ pub struct ProtocolAppData {
     pub partner_fee: PartnerFees,
     pub flashloan: Option<Flashloan>,
     pub wrappers: Vec<WrapperCall>,
-    pub fast_path_or_valid_from: Option<FastPathOrValidFrom>,
+    pub execution_mode: ExecutionMode,
 }
 
-impl ProtocolAppData {
-    /// Whether the order opted into fast-path execution.
-    pub fn is_fast_path(&self) -> bool {
-        matches!(
-            self.fast_path_or_valid_from,
-            Some(FastPathOrValidFrom::FastPath)
-        )
-    }
-
-    /// The user-set `validFrom`, if any.
-    pub fn valid_from(&self) -> Option<u32> {
-        match self.fast_path_or_valid_from {
-            Some(FastPathOrValidFrom::ValidFrom(valid_from)) => Some(valid_from),
-            _ => None,
-        }
-    }
+/// How an order becomes solvable. The variants are mutually exclusive by
+/// construction, so `enableFastPath` and `validFrom` can never both be set.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum ExecutionMode {
+    /// Join the regular batch auction, solvable immediately.
+    #[default]
+    RegularAuction,
+    /// Only become solvable at this UNIX timestamp.
+    ValidFrom(u32),
+    /// Out-of-competition ("fast path") execution.
+    FastPath,
 }
 
 /// Contains information to hint at how a solver could make
@@ -329,17 +314,12 @@ pub fn parse(full_app_data: &[u8]) -> Result<ProtocolAppData, serde_json::Error>
         .unwrap_or_default())
 }
 
-/// Whether the order sets both of the mutually exclusive fields
-/// (`enableFastPath` and `validFrom`).
-pub fn sets_conflicting_fields(full_app_data: &[u8]) -> bool {
-    let Ok(root) = serde_json::from_slice::<serde_json::Value>(full_app_data) else {
-        return false;
-    };
-    let metadata = &root["metadata"];
-    metadata["enableFastPath"].as_bool() == Some(true) && !metadata["validFrom"].is_null()
-}
-
-/// The wire form of [`ProtocolAppData`], mirrors the JSON `metadata` object
+/// The wire form of [`ProtocolAppData`], mirroring the flat JSON `metadata`
+/// object one-to-one. It exists because `enableFastPath` and `validFrom` arrive
+/// as two independent JSON fields but are modelled as one [`ExecutionMode`]:
+/// serde deserializes into this struct, then [`ProtocolAppData::try_from`]
+/// collapses the two fields into the enum and rejects any orders try to set
+/// both fields simultaneously.
 #[derive(Default, Deserialize)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
 #[serde(rename_all = "camelCase")]
@@ -362,13 +342,13 @@ impl TryFrom<RawProtocolAppData> for ProtocolAppData {
     type Error = &'static str;
 
     fn try_from(raw: RawProtocolAppData) -> Result<Self, Self::Error> {
-        let fast_path_or_valid_from = match (raw.enable_fast_path, raw.valid_from) {
+        let execution_mode = match (raw.enable_fast_path, raw.valid_from) {
             (true, Some(_)) => {
                 return Err("`enableFastPath` and `validFrom` are mutually exclusive");
             }
-            (true, None) => Some(FastPathOrValidFrom::FastPath),
-            (false, Some(valid_from)) => Some(FastPathOrValidFrom::ValidFrom(valid_from)),
-            (false, None) => None,
+            (true, None) => ExecutionMode::FastPath,
+            (false, Some(valid_from)) => ExecutionMode::ValidFrom(valid_from),
+            (false, None) => ExecutionMode::RegularAuction,
         };
         Ok(Self {
             hooks: raw.hooks,
@@ -377,17 +357,17 @@ impl TryFrom<RawProtocolAppData> for ProtocolAppData {
             partner_fee: raw.partner_fee,
             flashloan: raw.flashloan,
             wrappers: raw.wrappers,
-            fast_path_or_valid_from,
+            execution_mode,
         })
     }
 }
 
 impl From<ProtocolAppData> for RawProtocolAppData {
     fn from(protocol: ProtocolAppData) -> Self {
-        let (enable_fast_path, valid_from) = match protocol.fast_path_or_valid_from {
-            None => (false, None),
-            Some(FastPathOrValidFrom::FastPath) => (true, None),
-            Some(FastPathOrValidFrom::ValidFrom(valid_from)) => (false, Some(valid_from)),
+        let (enable_fast_path, valid_from) = match protocol.execution_mode {
+            ExecutionMode::RegularAuction => (false, None),
+            ExecutionMode::FastPath => (true, None),
+            ExecutionMode::ValidFrom(valid_from) => (false, Some(valid_from)),
         };
         Self {
             hooks: protocol.hooks,
@@ -675,7 +655,7 @@ mod tests {
         assert_app_data!(
             r#"{ "metadata": { "enableFastPath": true } }"#,
             ProtocolAppData {
-                fast_path_or_valid_from: Some(FastPathOrValidFrom::FastPath),
+                execution_mode: ExecutionMode::FastPath,
                 ..Default::default()
             },
         );
@@ -686,7 +666,7 @@ mod tests {
         assert_app_data!(
             r#"{ "metadata": { "validFrom": 1700000000 } }"#,
             ProtocolAppData {
-                fast_path_or_valid_from: Some(FastPathOrValidFrom::ValidFrom(1_700_000_000)),
+                execution_mode: ExecutionMode::ValidFrom(1_700_000_000),
                 ..Default::default()
             },
         );
@@ -1054,21 +1034,5 @@ mod tests {
             )
             .unwrap_err();
         assert!(err.to_string().contains("mutually exclusive"));
-    }
-
-    #[test]
-    fn detects_conflicting_fields() {
-        let both = r#"{ "metadata": { "enableFastPath": true, "validFrom": 1700000000 } }"#;
-        assert!(sets_conflicting_fields(both.as_bytes()));
-
-        for ok in [
-            r#"{ "metadata": { "enableFastPath": true } }"#,
-            r#"{ "metadata": { "validFrom": 1700000000 } }"#,
-            r#"{ "metadata": {} }"#,
-            "{}",
-            "not json",
-        ] {
-            assert!(!sets_conflicting_fields(ok.as_bytes()));
-        }
     }
 }

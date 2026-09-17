@@ -14,7 +14,7 @@ use {
     account_balances::{self, BalanceFetching, TransferSimulationError},
     alloy::primitives::{Address, B256, U256},
     anyhow::{Result, anyhow},
-    app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
+    app_data::{AppDataHash, ExecutionMode, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
@@ -716,7 +716,7 @@ impl OrderValidator {
         quote: Option<&Quote>,
         order: &OrderData,
     ) -> Result<Option<u32>, ValidationError> {
-        if app_data.inner.protocol.is_fast_path() {
+        if matches!(app_data.inner.protocol.execution_mode, ExecutionMode::FastPath) {
             let Some(quote) = quote else {
                 return Err(ValidationError::FastPathLimitTooTight);
             };
@@ -739,7 +739,10 @@ impl OrderValidator {
 
         // Non-fast-path orders may still declare `valid_from` explicitly
         // in app-data.
-        let valid_from = app_data.inner.protocol.valid_from();
+        let valid_from = match app_data.inner.protocol.execution_mode {
+            ExecutionMode::ValidFrom(valid_from) => Some(valid_from),
+            _ => None,
+        };
         if let Some(valid_from) = valid_from {
             let min = self.validity_configuration.min.as_secs();
             if u64::from(order.valid_to) < u64::from(valid_from) + min {
@@ -1007,7 +1010,10 @@ impl OrderValidating for OrderValidator {
             .map_err(|_| ValidationError::InvalidSignature)?,
             hook_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
-            fast_path: app_data.inner.protocol.is_fast_path(),
+            fast_path: matches!(
+                app_data.inner.protocol.execution_mode,
+                ExecutionMode::FastPath
+            ),
         };
 
         let quote = match get_or_create_quote(&*self.quoter, &quote_parameters, order.quote_id)
@@ -1053,7 +1059,10 @@ impl OrderValidating for OrderValidator {
         }
 
         let valid_from = self.compute_and_validate_valid_from(&app_data, quote.as_ref(), &data)?;
-        let fast_path = app_data.inner.protocol.is_fast_path();
+        let fast_path = matches!(
+            app_data.inner.protocol.execution_mode,
+            ExecutionMode::FastPath
+        );
 
         let order = Order {
             metadata: OrderMetadata {
