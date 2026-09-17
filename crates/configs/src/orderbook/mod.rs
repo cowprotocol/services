@@ -248,8 +248,7 @@ mod tests {
 
         [order-validation]
         min-order-validity-period = "2m"
-        max-order-validity-period = "6h"
-        max-limit-order-validity-period = "30d"
+        max-order-validity-period = "30d"
         max-limit-orders-per-user = 5
         max-gas-per-order = 5000000
         same-tokens-policy = "allow-sell"
@@ -291,10 +290,6 @@ mod tests {
         );
         assert_eq!(
             config.order_validation.max_order_validity_period,
-            Duration::from_secs(21600)
-        );
-        assert_eq!(
-            config.order_validation.max_limit_order_validity_period,
             Duration::from_secs(2_592_000)
         );
 
@@ -327,10 +322,6 @@ mod tests {
         );
         assert_eq!(
             config.order_validation.max_order_validity_period,
-            Duration::from_secs(10800)
-        );
-        assert_eq!(
-            config.order_validation.max_limit_order_validity_period,
             Duration::from_secs(31_536_000)
         );
 
@@ -349,8 +340,7 @@ mod tests {
             bind_address: default_bind_address(),
             order_validation: OrderValidationConfig {
                 min_order_validity_period: Duration::from_secs(120),
-                max_order_validity_period: Duration::from_secs(7200),
-                max_limit_order_validity_period: Duration::from_secs(86400),
+                max_order_validity_period: Duration::from_secs(86400),
                 max_limit_orders_per_user: 5,
                 max_gas_per_order: 6_000_000,
                 same_tokens_policy: SameTokensPolicy::AllowSell,

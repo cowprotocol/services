@@ -10,4 +10,5 @@ pub mod observation;
 pub mod observer;
 pub mod order_events;
 pub mod provider;
+pub mod sponsor;
 pub mod trigger;
