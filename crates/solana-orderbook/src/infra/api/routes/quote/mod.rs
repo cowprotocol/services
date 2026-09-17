@@ -17,10 +17,13 @@ use {
 /// How long a quoted order stays valid when the request names no validity.
 const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
 
-/// How long storing the quote may hold up the answer before it degrades to
-/// an id-less one, so a database outage slows quotes instead of stalling
-/// them behind the pool's acquire timeout.
-const SAVE_TIMEOUT: Duration = Duration::from_secs(1);
+/// How long storing the quote may hold up the answer. No component consumes
+/// the quote id, so a slow or down database costs the id, not the quote.
+/// Without the cap every quote in an outage would stall for the pool's
+/// acquire timeout.
+/// TODO: fail the quote on a store error instead, like the EVM orderbook,
+/// once fee policies consume the link and the id becomes load-bearing.
+const SAVE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Handle `POST /api/v1/quote`.
 pub async fn quote(
