@@ -5,15 +5,22 @@ pub mod dto;
 use {
     crate::infra::{
         api::{State, ValidationParameters, error, extract},
+        db,
         quoter,
     },
     axum::{Json, http::StatusCode},
     chrono::Utc,
+    database::solana::OrderKind,
     std::time::Duration,
 };
 
 /// How long a quoted order stays valid when the request names no validity.
 const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
+
+/// How long storing the quote may hold up the answer before it degrades to
+/// an id-less one, so a database outage slows quotes instead of stalling
+/// them behind the pool's acquire timeout.
+const SAVE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Handle `POST /api/v1/quote`.
 pub async fn quote(
@@ -49,6 +56,35 @@ pub async fn quote(
             error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
         })?;
 
+    let expiration = now + state.quote_expiry();
+    // The id only links a later order back to this quote, the amounts stand
+    // on their own, so a failed insert answers without an id instead of
+    // failing the quote.
+    let quote = db::Quote {
+        sell_token: request.sell_token.to_bytes(),
+        buy_token: request.buy_token.to_bytes(),
+        sell_amount: quoted.sell_amount,
+        buy_amount: quoted.buy_amount,
+        kind: match kind {
+            dto::Kind::Sell => OrderKind::Sell,
+            dto::Kind::Buy => OrderKind::Buy,
+        },
+        solver: quoted.solver.to_bytes(),
+        expiration,
+    };
+    let save = db::save_quote(state.pool(), &quote);
+    let id = match tokio::time::timeout(SAVE_TIMEOUT, save).await {
+        Ok(Ok(id)) => Some(id),
+        Ok(Err(err)) => {
+            tracing::error!(?err, "quote insert failed");
+            None
+        }
+        Err(_) => {
+            tracing::error!("quote insert timed out");
+            None
+        }
+    };
+
     Ok(Json(dto::Response {
         quote: dto::Quote {
             sell_token: request.sell_token,
@@ -63,8 +99,8 @@ pub async fn quote(
             partially_fillable: false,
         },
         from: request.from,
-        expiration: now + state.quote_expiry(),
-        id: None,
+        expiration,
+        id,
         verified: false,
     }))
 }

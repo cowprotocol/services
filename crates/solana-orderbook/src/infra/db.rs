@@ -270,6 +270,39 @@ LIMIT 1
         .context("read solana.order_events")
 }
 
+/// A quote as the quote endpoint hands it out.
+#[derive(Clone, Debug)]
+pub struct Quote {
+    pub sell_token: [u8; 32],
+    pub buy_token: [u8; 32],
+    pub sell_amount: u64,
+    pub buy_amount: u64,
+    pub kind: OrderKind,
+    pub solver: [u8; 32],
+    pub expiration: DateTime<Utc>,
+}
+
+/// Store a quote and return the id allocated for it.
+pub async fn save_quote(ex: impl PgExecutor<'_>, quote: &Quote) -> Result<i64> {
+    const QUERY: &str = r#"
+INSERT INTO solana.quotes (sell_token, buy_token, sell_amount, buy_amount,
+    kind, solver, expiration_timestamp)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id
+    "#;
+    sqlx::query_scalar(QUERY)
+        .bind(ByteArray(quote.sell_token))
+        .bind(ByteArray(quote.buy_token))
+        .bind(BigDecimal::from(quote.sell_amount))
+        .bind(BigDecimal::from(quote.buy_amount))
+        .bind(quote.kind)
+        .bind(ByteArray(quote.solver))
+        .bind(quote.expiration)
+        .fetch_one(ex)
+        .await
+        .context("insert solana.quotes")
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, sqlx::PgPool};
