@@ -70,29 +70,50 @@ pub struct Config {
     pub logging: LoggingConfig,
 }
 
-/// CoinGecko native price lookups.
+/// Native price lookups.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NativePrices {
-    /// Base URL of the CoinGecko API.
-    #[serde(default = "default_prices_endpoint")]
-    pub endpoint: url::Url,
-    /// API key sent with every price request, for keyed CoinGecko plans.
-    #[serde(default)]
-    pub api_key: Option<String>,
+    /// Price sources in fallback order: a token the first one does not price
+    /// is asked from the next.
+    #[serde(default = "default_prices_estimators")]
+    pub estimators: Vec<NativePriceEstimator>,
     /// How long a fetched price serves auctions before it is refetched.
     #[serde(with = "humantime_serde", default = "default_prices_ttl")]
     pub ttl: Duration,
 }
 
+/// One native price source, tagged like the EVM estimator config.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum NativePriceEstimator {
+    /// The CoinGecko `simple/token_price` API.
+    CoinGecko {
+        #[serde(default = "default_prices_endpoint")]
+        endpoint: url::Url,
+        /// API key sent with every price request, for keyed CoinGecko plans.
+        #[serde(default)]
+        api_key: Option<String>,
+    },
+    /// A solver driver, quoted through its regular `/quote` route. The url
+    /// includes the solver path, like the `[[drivers]]` entries.
+    Driver { name: String, url: url::Url },
+}
+
 impl Default for NativePrices {
     fn default() -> Self {
         Self {
-            endpoint: default_prices_endpoint(),
-            api_key: None,
+            estimators: default_prices_estimators(),
             ttl: default_prices_ttl(),
         }
     }
+}
+
+fn default_prices_estimators() -> Vec<NativePriceEstimator> {
+    vec![NativePriceEstimator::CoinGecko {
+        endpoint: default_prices_endpoint(),
+        api_key: None,
+    }]
 }
 
 fn default_prices_endpoint() -> url::Url {
@@ -214,12 +235,14 @@ mod tests {
         assert_eq!(config.competition.submission_deadline_slots.get(), 25);
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
-        assert_eq!(
-            config.native_prices.endpoint.as_str(),
-            "https://api.coingecko.com/api/v3/"
-        );
-        assert_eq!(config.native_prices.api_key, None);
         assert_eq!(config.native_prices.ttl, Duration::from_secs(30));
+        assert!(matches!(
+            &config.native_prices.estimators[..],
+            [
+                NativePriceEstimator::CoinGecko { endpoint, api_key: None },
+                NativePriceEstimator::Driver { name, .. },
+            ] if endpoint.as_str() == "https://api.coingecko.com/api/v3/" && name == "baseline"
+        ));
         assert_eq!(config.drivers.len(), 1);
         assert_eq!(config.drivers[0].name, "baseline");
         assert_eq!(config.logging.filter, "info,autopilot_svm=debug");
