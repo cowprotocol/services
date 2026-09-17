@@ -258,6 +258,37 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     .await
     .unwrap();
     assert_eq!(open_windows, 1);
+    // The competition was persisted: the snapshot row, the proposed solution
+    // under its generated uid, its execution, and the window keyed by the
+    // same uid.
+    let snapshots: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.competition_auctions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(snapshots, 1);
+    let (solution_uid, solver_id, is_winner): (i64, i64, bool) =
+        sqlx::query_as("SELECT uid, id, is_winner FROM solana.proposed_solutions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((solution_uid, solver_id, is_winner), (0, 7, true));
+    let (executed_sell, executed_buy): (String, String) = sqlx::query_as(
+        "SELECT executed_sell::text, executed_buy::text FROM solana.proposed_trade_executions \
+         WHERE solution_uid = 0",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (executed_sell.as_str(), executed_buy.as_str()),
+        ("1000", "600")
+    );
+    let window_uid: i64 =
+        sqlx::query_scalar("SELECT solution_uid FROM solana.settlement_executions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(window_uid, 0);
     // The cycle reported the order's auction progress. The writes are detached
     // from the cycle, so they can land after `run_cycle` returns.
     let events = tokio::time::timeout(Duration::from_secs(5), async {

@@ -85,10 +85,16 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                 creations,
             };
             // A window that cannot be opened must not block the settlement,
-            // the dispatch is the priority.
+            // the dispatch is the priority. The window carries the generated
+            // solution uid, the driver request keeps the driver-local id its
+            // solution cache is keyed by.
+            let uid = ranking.uids.get(&key).copied().unwrap_or_else(|| {
+                tracing::error!(solution_id = winner.id(), "winner without a uid");
+                i64::MAX
+            });
             if let Err(err) = self
                 .windows
-                .open_dispatched(auction_id, winner.solver(), winner.id(), *tip, deadline)
+                .open_dispatched(auction_id, winner.solver(), uid, *tip, deadline)
                 .await
             {
                 tracing::error!(auction_id, ?err, "failed to open the settlement window");

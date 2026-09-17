@@ -70,6 +70,24 @@ impl WinnerSelection<SolanaCycle> for SolanaArbitrator {
         for winner in inner.winners() {
             tracing::info!(solver = %winner.solver(), solution = winner.id(), "winner");
         }
-        Ranking { inner, drivers }
+        // Ranked before filtered, so winner uids come first.
+        let uids = inner
+            .ranked
+            .iter()
+            .map(|solution| (solution.solver(), solution.id()))
+            .chain(
+                inner
+                    .filtered_out
+                    .iter()
+                    .map(|solution| (solution.solver(), solution.id())),
+            )
+            .enumerate()
+            .map(|(uid, key)| (key, i64::try_from(uid).unwrap_or(i64::MAX)))
+            .collect();
+        Ranking {
+            inner,
+            drivers,
+            uids,
+        }
     }
 }
