@@ -40,7 +40,6 @@ use {
         settle_call::SettleCall,
     },
     alloy::primitives::{Address, U256},
-    anyhow::Context,
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     database::byte_array::ByteArray,
@@ -449,7 +448,7 @@ impl FastPathHandler {
                 penalty_cap_native: 0.into(),
             })
             .await
-            .context("failed to promote staged fast-path competition")?;
+            .map_err(PreflightError::PersistFailed)?;
 
         let order = boundary::order::to_domain(&order, volume_fee_policies, None, None);
         Ok(FinalOrderExecution {
