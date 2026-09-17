@@ -13,9 +13,9 @@ use {
 fn mock_api() -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
-        // A lazy pool never connects unless queried, and `/healthz` does not
-        // query, so the tests run without a database.
-        pool: PgPool::connect_lazy("postgresql://").unwrap(),
+        // A lazy pool at a dead endpoint keeps these tests database-free: a
+        // quote insert degrades to an id-less answer, nothing else queries.
+        pool: PgPool::connect_lazy("postgresql://127.0.0.1:1/").unwrap(),
         quoter: dead_quoter(),
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
@@ -286,6 +286,80 @@ async fn quote_without_a_route_is_no_liquidity() {
         (status, kind.as_str()),
         (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
     );
+}
+
+/// The answered quote lands in `solana.quotes` and its id comes back.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_quote_is_persisted() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query("TRUNCATE solana.quotes")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": solver.to_string(),
+    }))
+    .await;
+    let api = Api {
+        pool: pool.clone(),
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        ..mock_api()
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&quote_body(serde_json::json!({"validFor": 1800})))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    let id = json["id"].as_i64().unwrap();
+
+    type Row = (
+        i64,
+        Vec<u8>,
+        Vec<u8>,
+        String,
+        String,
+        String,
+        Vec<u8>,
+        chrono::DateTime<chrono::Utc>,
+    );
+    let row: Row = sqlx::query_as(
+        "SELECT id, sell_token, buy_token, sell_amount::text, buy_amount::text, kind::text, \
+         solver, expiration_timestamp FROM solana.quotes",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let sell: solana_sdk::pubkey::Pubkey = "So11111111111111111111111111111111111111112"
+        .parse()
+        .unwrap();
+    let buy: solana_sdk::pubkey::Pubkey = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        .parse()
+        .unwrap();
+    assert_eq!(row.0, id);
+    assert_eq!(row.1, sell.to_bytes());
+    assert_eq!(row.2, buy.to_bytes());
+    assert_eq!(row.3, "10000000");
+    assert_eq!(row.4, "1234567");
+    assert_eq!(row.5, "sell");
+    assert_eq!(row.6, solver.to_bytes());
+    // The stored expiry is the answered one, up to timestamptz rounding.
+    let answered: chrono::DateTime<chrono::Utc> =
+        json["expiration"].as_str().unwrap().parse().unwrap();
+    assert!((row.7 - answered).num_milliseconds().abs() <= 1);
 }
 
 /// Parameter validation of the trades endpoint short-circuits before any

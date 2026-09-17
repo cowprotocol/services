@@ -522,7 +522,7 @@ components:
           type: string
           format: date-time
         id:
-          description: The quote's database id. Null until quotes are persisted.
+          description: The stored quote's id. Null when storing the quote failed.
           type: integer
           format: int64
           nullable: true

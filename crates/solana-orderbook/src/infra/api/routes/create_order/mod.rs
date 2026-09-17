@@ -20,7 +20,7 @@ use {
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
         pda::{order::find_order_pda, state::find_state_pda},
     },
-    database::solana::OrderKind,
+    database::{byte_array::ByteArray, solana::OrderKind},
     serde::Deserialize,
     serde_with::{base64::Base64, serde_as},
     solana_sdk::{
@@ -156,7 +156,7 @@ pub async fn create_order(
     // Short-circuit replays with a cheap read before the insert. A replayed
     // transaction usually dies at the blockhash check already, and the
     // insert's unique violation stays as the race-safe backstop.
-    let duplicate = db::order_exists(state.pool(), &order.uid)
+    let duplicate = db::order_exists(state.pool(), &order.uid.0)
         .await
         .map_err(|err| internal_error_reply(err, "order existence check failed"))?;
     if duplicate {
@@ -174,7 +174,7 @@ pub async fn create_order(
         }
         return Err(internal_error_reply(err, "sponsored order insert failed"));
     }
-    Ok((StatusCode::CREATED, Json(const_hex::encode_prefixed(uid))))
+    Ok((StatusCode::CREATED, Json(const_hex::encode_prefixed(uid.0))))
 }
 
 /// Check the transaction is exactly the sponsored-creation shape and derive
@@ -485,12 +485,12 @@ fn build_order(
     order_pda: Pubkey,
 ) -> db::SponsoredOrder {
     db::SponsoredOrder {
-        uid: uid.to_bytes(),
-        owner: intent.owner.to_bytes(),
-        sell_token: intent.sell_mint.to_bytes(),
-        buy_token: intent.buy_mint.to_bytes(),
-        sell_token_account: intent.sell_token_account.to_bytes(),
-        buy_token_account: intent.buy_token_account.to_bytes(),
+        uid: ByteArray(uid.to_bytes()),
+        owner: ByteArray(intent.owner.to_bytes()),
+        sell_token: ByteArray(intent.sell_mint.to_bytes()),
+        buy_token: ByteArray(intent.buy_mint.to_bytes()),
+        sell_token_account: ByteArray(intent.sell_token_account.to_bytes()),
+        buy_token_account: ByteArray(intent.buy_token_account.to_bytes()),
         sell_amount: intent.sell_amount,
         buy_amount: intent.buy_amount,
         valid_to: intent.valid_to,
@@ -499,8 +499,8 @@ fn build_order(
             IntentOrderKind::Buy => OrderKind::Buy,
         },
         partially_fillable: intent.flags.partially_fillable,
-        app_data: intent.app_data,
-        order_pda: order_pda.to_bytes(),
+        app_data: ByteArray(intent.app_data),
+        order_pda: ByteArray(order_pda.to_bytes()),
         presigned_transaction: Vec::new(),
         last_valid_block_height: 0,
     }
