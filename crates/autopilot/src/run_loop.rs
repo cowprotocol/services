@@ -493,7 +493,7 @@ impl RunLoop {
             let submission_start = Instant::now();
 
             let request = settle::Request {
-                solution_id,
+                solution_id: Some(solution_id),
                 submission_deadline_latest_block: block_deadline,
                 auction_id,
                 fast_path: None,

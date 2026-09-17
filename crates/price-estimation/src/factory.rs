@@ -63,6 +63,9 @@ pub struct Components {
     pub http_factory: HttpClientFactory,
     pub deny_listed_tokens: DenyListedTokens,
     pub tokens: Arc<dyn TokenInfoFetching>,
+    /// Where the ids quotes are stored under come from. Every solver in a
+    /// quote competition is asked with its own id.
+    pub quote_id_generator: Arc<dyn crate::QuoteIdGenerating>,
 }
 
 /// A factory for initializing shared price estimators.
@@ -380,6 +383,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             })
             .collect();
         CompetitionEstimator::new(vec![estimators], ranking)
+            .with_quote_id_generator(self.components.quote_id_generator.clone())
     }
 
     pub fn price_estimator(

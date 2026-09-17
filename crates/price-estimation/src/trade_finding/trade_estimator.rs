@@ -75,6 +75,7 @@ impl Inner {
                 buy_token: query.buy_token,
                 in_amount: query.in_amount,
                 kind: query.kind,
+                quote_id: query.quote_id,
             };
 
             return verifier
@@ -90,7 +91,7 @@ impl Inner {
             solver: quote.solver,
             verified: false,
             supports_fast_path: quote.supports_fast_path,
-            solution_id: quote.solution_id,
+            quote_id: query.quote_id,
             execution: quote.execution,
         })
     }

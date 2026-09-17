@@ -11,11 +11,15 @@ use {
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
-    /// Unique ID of the solution (per driver competition), to settle.
-    pub solution_id: u64,
+    /// Unique ID of the solution (per driver competition), to settle. Not set
+    /// for fast-path settlements, where the solution to settle only comes into
+    /// existence when the driver re-encodes the cached quote solution.
+    pub solution_id: Option<u64>,
     /// The last block number in which the solution TX can be included
     pub submission_deadline_latest_block: u64,
-    /// Auction ID in which the specified solution ID is competing.
+    /// Auction ID in which the specified solution ID is competing. For
+    /// fast-path settlements the quote was computed outside of any auction,
+    /// but its settlement is still attributed to one.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub auction_id: i64,
     /// Fast-path (out-of-competition) inputs. Present only when settling a
@@ -27,6 +31,8 @@ pub struct Request {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FastPath {
+    /// Id of the quote whose cached solution the driver should settle.
+    pub quote_id: i64,
     /// The real signed order the cached solution is re-encoded against.
     pub order: Order,
     /// The sell/buy amounts the order must fill at exactly.

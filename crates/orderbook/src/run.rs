@@ -266,6 +266,7 @@ pub async fn run(config: Configuration) {
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
+            quote_id_generator: Arc::new(postgres_write.clone()),
         },
     )
     .await
