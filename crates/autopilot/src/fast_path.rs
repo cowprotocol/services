@@ -355,10 +355,6 @@ impl FastPathHandler {
         };
 
         let mut winning_adjusted: Option<(U256, U256)> = None;
-        // Scores are collected alongside the DB rows so the reference score
-        // (winning − best other non-filtered) can be computed after the
-        // loop without re-parsing BigDecimals.
-        let mut scores: Vec<ScoredStagedSolution> = Vec::with_capacity(staged.data.solutions.len());
         let solution_rows: Vec<database::solver_competition_v2::Solution> = staged
             .data
             .solutions
@@ -423,12 +419,6 @@ impl FastPathHandler {
                     );
                     U256::ZERO
                 });
-                scores.push(ScoredStagedSolution {
-                    solver: solution.solver,
-                    is_winner: solution.is_winner,
-                    filtered_out,
-                    score,
-                });
                 Ok(database::solver_competition_v2::Solution {
                     uid: solution_uid,
                     id: BigDecimal::from(solution.solution_id),
@@ -456,7 +446,7 @@ impl FastPathHandler {
 
         let (limit_sell, limit_buy) = winning_adjusted.ok_or(PreflightError::MissingWinner)?;
 
-        let reference_scores = build_reference_scores(staged.data.auction_id, &scores);
+        let reference_score = compute_reference_score(staged.data.auction_id, &solution_rows)?;
 
         self.persistence
             .finalize_fast_path(FastPathPromotion {
@@ -469,7 +459,7 @@ impl FastPathHandler {
                 native_prices: staged.data.native_prices.clone(),
                 solutions: solution_rows,
                 fee_policies: volume_fee_policies.clone(),
-                reference_scores,
+                reference_score,
             })
             .await
             .context("failed to promote staged fast-path competition")?;
@@ -574,45 +564,35 @@ impl PreflightError {
     }
 }
 
-/// Per-staged-solution scoring metadata retained after building the DB rows
-/// so the reference score can be computed without re-parsing `BigDecimal`s.
-struct ScoredStagedSolution {
-    solver: Address,
-    is_winner: bool,
-    filtered_out: bool,
-    score: U256,
-}
-
-/// Reference score for the winning solver: the *counterfactual* score — what
-/// would have been achieved without this solver — same convention
-/// `winsel::Arbitrator::compute_reference_scores` uses. For a single-order
-/// auction that collapses to the best non-winner non-filtered solution's
-/// score, or `0` when the winner is the only non-filtered solution.
-///
-/// Downstream reward logic computes `reward = total_score − reference_score`
-/// (see `shadow.rs`), so storing the counterfactual — not the delta — is
-/// what keeps fast-path rewards consistent with regular-auction rewards.
-fn build_reference_scores(
+/// Computes reference score for the winning solver: the *counterfactual*
+/// score — what would have been achieved without this solver.
+/// This is defined as the second best score or 0 if there was only 1
+/// solution.
+fn compute_reference_score(
     auction_id: database::auction::AuctionId,
-    scores: &[ScoredStagedSolution],
-) -> Vec<database::reference_scores::Score> {
-    let Some(winner) = scores.iter().find(|s| s.is_winner && !s.filtered_out) else {
-        // The winner was filtered out (or missing) — no reference score to
-        // record. `finalize_fast_path` still commits the promotion, keeping
-        // proposed_solutions consistent even though rewards can't be paid.
-        return Vec::new();
+    solution_rows: &[database::solver_competition_v2::Solution],
+) -> Result<database::reference_scores::Score, PreflightError> {
+    let Some(winner) = solution_rows
+        .iter()
+        .find(|s| s.is_winner && !s.filtered_out)
+    else {
+        // for some reason there is no winner - abort execution to keep data
+        // consistent
+        tracing::error!(?solution_rows, "no winner for reference score computation");
+        return Err(PreflightError::MissingWinner);
     };
-    let counterfactual = scores
+    let reference_score = solution_rows
         .iter()
         .filter(|s| !s.is_winner && !s.filtered_out)
-        .map(|s| s.score)
+        .map(|s| &s.score)
         .max()
-        .unwrap_or(U256::ZERO);
-    vec![database::reference_scores::Score {
+        .cloned()
+        .unwrap_or_else(|| BigDecimal::from(0));
+    Ok(database::reference_scores::Score {
         auction_id,
-        solver: ByteArray(winner.solver.0.0),
-        reference_score: u256_to_big_decimal(&counterfactual),
-    }]
+        solver: winner.solver,
+        reference_score,
+    })
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -746,55 +726,5 @@ mod tests {
         // Only the single 1% volume fee took effect.
         assert_eq!(sell, U256::from(1_000u64));
         assert_eq!(buy, U256::from(990u64));
-    }
-
-    fn scored(is_winner: bool, filtered_out: bool, score: u64) -> ScoredStagedSolution {
-        // Solver addresses only need to be unique enough for the reference
-        // score row to identify the winner; use the score as a stand-in.
-        ScoredStagedSolution {
-            solver: Address::from([score as u8; 20]),
-            is_winner,
-            filtered_out,
-            score: U256::from(score),
-        }
-    }
-
-    #[test]
-    fn reference_score_is_best_non_winner_non_filtered() {
-        // Counterfactual: without the winner, the next best surviving
-        // solution would clear at score 60.
-        let scores = vec![
-            scored(true, false, 100),
-            scored(false, false, 60),
-            scored(false, false, 30),
-        ];
-        let rows = build_reference_scores(42, &scores);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].auction_id, 42);
-        assert_eq!(rows[0].solver, ByteArray([100u8; 20]));
-        assert_eq!(
-            rows[0].reference_score,
-            u256_to_big_decimal(&U256::from(60))
-        );
-    }
-
-    #[test]
-    fn reference_score_is_zero_when_winner_is_the_only_non_filtered() {
-        let scores = vec![
-            scored(true, false, 100),
-            // filtered-out alternatives don't count — the counterfactual
-            // has nothing to fall back on.
-            scored(false, true, 200),
-        ];
-        let rows = build_reference_scores(1, &scores);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].reference_score, u256_to_big_decimal(&U256::ZERO));
-    }
-
-    #[test]
-    fn no_reference_score_when_winner_is_filtered_out() {
-        let scores = vec![scored(true, true, 100), scored(false, false, 30)];
-        let rows = build_reference_scores(9, &scores);
-        assert!(rows.is_empty());
     }
 }
