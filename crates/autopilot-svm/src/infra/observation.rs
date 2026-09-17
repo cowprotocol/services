@@ -59,10 +59,19 @@ impl SettlementWindows {
         .await
     }
 
+    /// Close an open window whose driver reported the settlement failed.
+    pub async fn close_rejected(
+        &self,
+        auction_id: i64,
+        solver: Pubkey,
+        solution_uid: i64,
+    ) -> Result<()> {
+        db::close_rejected_window(&self.pool, auction_id, solver, solution_uid).await
+    }
+
     /// Close every open window whose deadline is at or before the slot as
-    /// timed out, logging each. Driven by the competition cycle, so on a
-    /// chain with no active auctions a timeout surfaces with the next
-    /// competition, not at its deadline slot.
+    /// timed out, logging each. Driven by the competition cycle and by the
+    /// idle sweep, so a timeout surfaces even when no auction is running.
     pub async fn expire_past_deadline(&self, slot: u64) -> Result<()> {
         let slot = to_db_integer(slot);
         for auction_id in db::expire_settlement_windows(&self.pool, slot).await? {
@@ -213,5 +222,29 @@ VALUES (10, $1, 0, $2, $3, NULL)
             .await
             .unwrap();
         assert_eq!(outcome(&pool, 1).await.as_deref(), Some("landed"));
+    }
+
+    /// A driver-reported failure closes the window as rejected, and landed
+    /// evidence still upgrades the verdict: the driver may have given up on
+    /// a settlement that landed.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_rejection_closes_the_window_until_evidence() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+
+        let windows = SettlementWindows::new(pool.clone());
+        windows
+            .open_dispatched(3, Pubkey([7; 32]), 1, 90, 100)
+            .await
+            .unwrap();
+        windows.close_rejected(3, Pubkey([7; 32]), 1).await.unwrap();
+        assert_eq!(outcome(&pool, 3).await.as_deref(), Some("rejected"));
+
+        insert_settlement(&pool, 3).await;
+        crate::infra::db::close_landed_windows(&pool, 3)
+            .await
+            .unwrap();
+        assert_eq!(outcome(&pool, 3).await.as_deref(), Some("landed"));
     }
 }

@@ -159,8 +159,9 @@ ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
 
 /// Close the auction's windows against the settlements the indexer recorded,
 /// matching each window to its solver's settlement. A window already closed
-/// as timed out upgrades to landed: the settlement executed, just late, and
-/// lateness stays visible as `end_slot` past `deadline_slot`.
+/// as timed out or rejected upgrades to landed: the settlement executed
+/// despite the earlier verdict (late, or reported failed by a driver whose
+/// confirmation budget ran out), and the landed evidence wins.
 ///
 /// A settlement carries no solution uid, so a solver holding several windows
 /// of one auction closes all of them on its first settlement. Correct while
@@ -177,7 +178,7 @@ FROM solana.settlements s
 WHERE e.auction_id = $1
   AND s.auction_id = e.auction_id
   AND s.solver = e.solver
-  AND (e.outcome IS NULL OR e.outcome = 'timeout')
+  AND (e.outcome IS NULL OR e.outcome IN ('timeout', 'rejected'))
 RETURNING e.solver, e.end_slot, e.submitted_signature
     "#;
     sqlx::query_as(QUERY)
@@ -185,6 +186,31 @@ RETURNING e.solver, e.end_slot, e.submitted_signature
         .fetch_all(ex)
         .await
         .context("close landed settlement execution windows")
+}
+
+/// Close an open window as rejected: its driver reported the settlement
+/// failed. The indexer's landed evidence still upgrades the verdict, a
+/// driver that gave up after submitting reports failure for a settlement
+/// that lands.
+pub async fn close_rejected_window(
+    ex: impl PgExecutor<'_>,
+    auction_id: i64,
+    solver: Pubkey,
+    solution_uid: i64,
+) -> Result<()> {
+    const QUERY: &str = r#"
+UPDATE solana.settlement_executions
+SET outcome = 'rejected', end_timestamp = now()
+WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3 AND outcome IS NULL
+    "#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(solver.0)
+        .bind(solution_uid)
+        .execute(ex)
+        .await
+        .context("close rejected settlement execution window")?;
+    Ok(())
 }
 
 /// Close every open window whose deadline is at or before the slot as timed

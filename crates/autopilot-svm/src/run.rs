@@ -32,6 +32,11 @@ use {
     },
 };
 
+/// How often the idle sweep closes overdue settlement windows. Coarser than
+/// a submission deadline, fine enough that stale windows never hold orders
+/// out of auctions for long.
+const IDLE_SWEEP_INTERVAL: Duration = Duration::from_secs(10);
+
 /// Fails the liveness probe when the auction loop stops completing cycles.
 struct Liveness {
     max_auction_age: Duration,
@@ -94,6 +99,31 @@ async fn run(config: Config) {
         db::SETTLEMENT_FINALIZED_CHANNEL,
         windows.clone(),
     );
+
+    // Windows also expire during competition cycles, but an idle chain runs
+    // no cycles, so a sweep closes overdue windows on its own clock.
+    {
+        let windows = windows.clone();
+        let rpc = SolanaRPC::new_with_timeout_and_commitment(
+            &config.rpc.endpoint,
+            config.rpc.request_timeout,
+            CommitmentConfig::confirmed(),
+        );
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(IDLE_SWEEP_INTERVAL);
+            loop {
+                interval.tick().await;
+                match rpc.slot().await {
+                    Ok(slot) => {
+                        if let Err(err) = windows.expire_past_deadline(slot).await {
+                            tracing::warn!(?err, "the idle window sweep failed");
+                        }
+                    }
+                    Err(err) => tracing::warn!(?err, "the idle sweep slot poll failed"),
+                }
+            }
+        });
+    }
 
     let rpc = SolanaRPC::new_with_timeout_and_commitment(
         &config.rpc.endpoint,
