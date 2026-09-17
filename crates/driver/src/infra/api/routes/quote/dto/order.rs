@@ -16,7 +16,7 @@ impl Order {
             },
             deadline: self.deadline,
             enable_fast_path: self.enable_fast_path,
-            auction_id: self.auction_id,
+            quote_id: quote::Id(self.quote_id),
         }
     }
 }
@@ -33,11 +33,10 @@ pub struct Order {
     deadline: chrono::DateTime<chrono::Utc>,
     #[serde(default)]
     enable_fast_path: bool,
-    /// Real auction id the orderbook allocated from the shared `auctions`
-    /// sequence, under which a fast-path solution is cached for a later
-    /// `/settle`. Only present for fast-path quotes.
-    #[serde(default)]
-    auction_id: Option<i64>,
+    /// Id of the quote, allocated by the orderbook and sent with every quote
+    /// request. Passed on to the solver as the id of the quote auction, and
+    /// the key a fast-path solution is cached under for a later `/settle`.
+    quote_id: i64,
 }
 
 #[derive(Debug, Deserialize)]

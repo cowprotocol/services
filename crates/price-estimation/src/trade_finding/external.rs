@@ -73,7 +73,7 @@ impl ExternalTradeFinder {
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
                 fast_path: query.fast_path,
-                auction_id: query.auction_id,
+                quote_id: query.quote_id,
             };
             let block_dependent = query.block_dependent;
             let id = observe::tracing::distributed::request_id::from_current_span();
@@ -184,7 +184,6 @@ impl From<dto::LegacyQuote> for LegacyTrade {
             solver: quote.solver,
             tx_origin: quote.tx_origin,
             supports_fast_path: quote.supports_fast_path,
-            solution_id: quote.solution_id,
         }
     }
 }
@@ -216,7 +215,6 @@ impl From<dto::Quote> for Trade {
             tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders,
             supports_fast_path: quote.supports_fast_path,
-            solution_id: quote.solution_id,
         }
     }
 }
@@ -360,12 +358,12 @@ impl TradeFinding for ExternalTradeFinder {
                     buy_token: query.buy_token,
                     kind: query.kind,
                     in_amount: query.in_amount,
+                    quote_id: query.quote_id,
                 })
                 .map_err(TradeError::Other)?,
             gas_estimate,
             solver: trade.solver(),
             supports_fast_path: trade.supports_fast_path(),
-            solution_id: trade.solution_id(),
             execution: QuoteExecution {
                 interactions: map_interactions_data(trade.interactions()),
                 pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -412,8 +410,11 @@ pub mod dto {
             skip_serializing_if = "std::ops::Not::not"
         )]
         pub fast_path: bool,
+        /// Id of the quote being computed, allocated by the orderbook. Lets
+        /// the solver match its quote to the order eventually placed with it
+        /// and keys a cached fast-path solution in the driver.
         #[serde(skip_serializing_if = "Option::is_none")]
-        pub auction_id: Option<i64>,
+        pub quote_id: Option<i64>,
     }
 
     #[serde_as]
@@ -437,8 +438,6 @@ pub mod dto {
         pub tx_origin: Option<Address>,
         #[serde(default)]
         pub supports_fast_path: bool,
-        #[serde(default)]
-        pub solution_id: Option<u64>,
     }
 
     #[serde_as]
@@ -458,8 +457,6 @@ pub mod dto {
         pub jit_orders: Vec<JitOrder>,
         #[serde(default)]
         pub supports_fast_path: bool,
-        #[serde(default)]
-        pub solution_id: Option<u64>,
     }
 
     #[serde_as]

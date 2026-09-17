@@ -163,10 +163,9 @@ pub struct Query {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
     pub timeout: Duration,
-    /// Only populated for fast path requests and used to later tell the
-    /// driver which solution to execute.
+    /// Id the quote is stored under if it wins
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auction_id: Option<i64>,
+    pub quote_id: Option<model::quote::QuoteId>,
 }
 
 /// Conditions under which a given price estimate needs to work in order to be
@@ -203,7 +202,11 @@ pub struct Estimate {
     /// Whether the quoting solver supports fast-path (out-of-competition)
     /// execution for this order.
     pub supports_fast_path: bool,
-    pub solution_id: Option<u64>,
+    /// Id of the quote this estimate is stored under if it wins the
+    /// competition: the id the solver was asked with. `None` for estimates
+    /// that did not come from a solver.
+    #[serde(default)]
+    pub quote_id: Option<model::quote::QuoteId>,
     /// Data associated with this estimation.
     #[debug(ignore)]
     pub execution: QuoteExecution,
@@ -257,6 +260,11 @@ impl RankedEstimates {
         Self { values }
     }
 
+    /// The best estimate.
+    pub fn best(&self) -> &Estimate {
+        &self.values[0]
+    }
+
     /// Returns all estimates ordered best to worst.
     #[cfg(test)]
     pub fn into_vec(self) -> Vec<Estimate> {
@@ -278,6 +286,13 @@ pub trait CompetitionPriceEstimating: Send + Sync + 'static {
         &self,
         query: Arc<Query>,
     ) -> BoxFuture<'_, Result<RankedEstimates, PriceEstimationError>>;
+}
+
+/// Generates the ids quotes get stored under, one per solver asked, so that
+/// every solver can be sent the id its quote will have if it wins.
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
+pub trait QuoteIdGenerating: Send + Sync + 'static {
+    fn generate(&self, n: usize) -> BoxFuture<'_, anyhow::Result<Vec<model::quote::QuoteId>>>;
 }
 
 pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);

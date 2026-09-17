@@ -112,22 +112,6 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
     order
 }
 
-/// The native-price map (`{token: wei}`, 1 ETH each) for a quoted order's
-/// tokens, in the shape the driver expects on the /settle request.
-pub fn prices_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_json::Value {
-    let prices: std::collections::BTreeMap<String, &str> =
-        [quote.order.sell_token, quote.order.buy_token]
-            .into_iter()
-            .map(|token| {
-                (
-                    test.blockchain.get_token(token).encode_hex_with_prefix(),
-                    "1000000000000000000",
-                )
-            })
-            .collect();
-    json!(prices)
-}
-
 /// Create a request for the driver /solve endpoint.
 pub fn solve_req(test: &Test) -> serde_json::Value {
     let mut tokens_json = Vec::new();
@@ -184,18 +168,22 @@ pub fn reveal_req(solution_id: u64, auction_id: &str) -> serde_json::Value {
     })
 }
 
-/// Create a request for the driver /settle endpoint.
+/// Create a request for the driver /settle endpoint: an auction settlement
+/// for `solution_id`, or a fast-path settlement carrying the `fast_path`
+/// bundle (`quoteId`, `order`, `limitPrices`).
 pub fn settle_req(
     submission_deadline_latest_block: u64,
-    solution_id: u64,
+    solution_id: Option<u64>,
     auction_id: &str,
     fast_path: Option<serde_json::Value>,
 ) -> serde_json::Value {
     let mut req = json!({
-        "solutionId": solution_id,
         "submissionDeadlineLatestBlock": submission_deadline_latest_block,
         "auctionId": auction_id,
     });
+    if let Some(solution_id) = solution_id {
+        req["solutionId"] = json!(solution_id);
+    }
     if let Some(fast_path) = fast_path {
         req["fastPath"] = fast_path;
     }
@@ -230,12 +218,11 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
         },
         "deadline": test.deadline,
     });
+    // The orderbook allocates the quote id before quoting and sends it with
+    // every quote request.
+    req["quoteId"] = json!(test.quote_id);
     if test.quote_fast_path {
-        // Mirrors what the orderbook does for fast-path quotes: request
-        // fast-path and hand over the real auction id it allocated from
-        // the shared sequence.
         req["enableFastPath"] = json!(true);
-        req["auctionId"] = json!(test.auction_id);
     }
     req
 }

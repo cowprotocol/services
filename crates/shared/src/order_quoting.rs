@@ -7,10 +7,7 @@ use {
     alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
-    database::{
-        auction::AuctionId,
-        quotes::{Quote as QuoteRow, QuoteKind},
-    },
+    database::quotes::{Quote as QuoteRow, QuoteKind},
     futures::{StreamExt, TryFutureExt},
     gas_price_estimation::GasPriceEstimating,
     model::{
@@ -56,11 +53,7 @@ impl QuoteParameters {
         &self,
         default_quote_timeout: std::time::Duration,
         max_quote_timeout: std::time::Duration,
-        auction_id: Option<i64>,
     ) -> price_estimation::Query {
-        // TODO: refactor interfaces to make them impossible to misuse.
-        debug_assert_eq!(auction_id.is_some(), self.fast_path);
-
         let (kind, in_amount) = self.side.kind_and_amount();
 
         let timeout = self
@@ -77,7 +70,7 @@ impl QuoteParameters {
             block_dependent: true,
             fast_path: self.fast_path,
             timeout,
-            auction_id,
+            quote_id: None,
         }
     }
 }
@@ -268,7 +261,12 @@ pub struct QuoteRequest {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct QuoteCompetitionMetadata {
-    pub auction_id: Option<AuctionId>,
+    /// Id of the quote: the id the winning solver was asked with. The stored
+    /// quote gets this id, and the order placed with the quote references it.
+    pub quote_id: QuoteId,
+    /// Whether the quote was requested for fast-path execution, in which case
+    /// the competition is staged for the autopilot to settle it directly.
+    pub fast_path: bool,
     pub expiration: DateTime<Utc>,
     pub gas_price: f64,
     pub buy_token_price: f64,
@@ -284,7 +282,6 @@ pub struct QuoteResponse {
     pub verified: bool,
     pub supports_fast_path: bool,
     pub metadata: QuoteMetadata,
-    pub solution_id: Option<u64>,
 }
 
 impl QuoteCompetition {
@@ -520,9 +517,10 @@ pub trait QuoteStoring: Send + Sync {
         expiration: DateTime<Utc>,
     ) -> Result<Option<(QuoteId, QuoteData)>>;
 
-    /// Generates a new unique auction id. This is used to associate a fast path
-    /// quote with auction competition data.
-    async fn get_next_auction_id(&self) -> Result<i64>;
+    /// Allocates an id for a quote no solver was asked for (e.g. trivial
+    /// ETH/WETH quotes). Quotes computed by solvers carry the id their solver
+    /// was asked with instead.
+    async fn next_quote_id(&self) -> Result<QuoteId>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -610,15 +608,23 @@ impl OrderQuoter {
         self
     }
 
+    /// The id the winning estimate's quote is stored under: the id its solver
+    /// was asked with, or a freshly allocated one for quotes no solver was
+    /// asked for (e.g. trivial ETH/WETH quotes).
+    async fn quote_id_for(
+        &self,
+        best: &price_estimation::Estimate,
+    ) -> Result<QuoteId, CalculateQuoteError> {
+        match best.quote_id {
+            Some(id) => Ok(id),
+            None => Ok(self.storage.next_quote_id().await?),
+        }
+    }
+
     async fn compute_quote_data(
         &self,
         parameters: &QuoteParameters,
     ) -> Result<QuoteCompetition, CalculateQuoteError> {
-        let auction_id = match parameters.fast_path {
-            true => Some(self.storage.get_next_auction_id().await?),
-            false => None,
-        };
-
         let expiration = match parameters.signing_scheme {
             QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
@@ -630,11 +636,8 @@ impl OrderQuoter {
             _ => self.now.now() + self.validity.standard_quote,
         };
 
-        let trade_query = Arc::new(parameters.to_price_query(
-            self.default_quote_timeout,
-            self.max_quote_timeout,
-            auction_id,
-        ));
+        let trade_query =
+            Arc::new(parameters.to_price_query(self.default_quote_timeout, self.max_quote_timeout));
         let (effective_gas_price, trade_estimates, sell_token_price, buy_token_price) = futures::try_join!(
             self.gas_estimator
                 .effective_gas_price()
@@ -653,6 +656,7 @@ impl OrderQuoter {
                 .map_err(|err| (EstimatorKind::NativeBuy, err).into()),
         )?;
 
+        let quote_id = self.quote_id_for(trade_estimates.best()).await?;
         assemble_quote_data(
             parameters,
             trade_estimates,
@@ -660,7 +664,7 @@ impl OrderQuoter {
             sell_token_price,
             buy_token_price,
             expiration,
-            auction_id,
+            quote_id,
         )
     }
 }
@@ -768,16 +772,9 @@ impl StreamingQuoting for OrderQuoter {
         let estimator = self.streaming_price_estimator.clone().ok_or_else(|| {
             CalculateQuoteError::Other(anyhow::anyhow!("streaming estimator not configured"))
         })?;
-        let auction_id = match parameters.fast_path {
-            true => Some(self.storage.get_next_auction_id().await?),
-            false => None,
-        };
 
-        let trade_query = Arc::new(parameters.to_price_query(
-            self.default_quote_timeout,
-            self.max_quote_timeout,
-            auction_id,
-        ));
+        let trade_query =
+            Arc::new(parameters.to_price_query(self.default_quote_timeout, self.max_quote_timeout));
 
         let (effective_gas_price, sell_token_price, buy_token_price) = futures::try_join!(
             self.gas_estimator
@@ -837,6 +834,16 @@ impl StreamingQuoting for OrderQuoter {
                     continue;
                 }
                 quotes.push(new_best_quote.clone());
+                let quote_id = match new_best_quote.quote_id {
+                    Some(id) => id,
+                    None => match storage.next_quote_id().await {
+                        Ok(id) => id,
+                        Err(err) => {
+                            tracing::error!(?err, "failed to allocate quote id");
+                            continue;
+                        }
+                    },
+                };
                 let competition = match assemble_quote_data(
                     &parameters,
                     // skip 1 item in reverse iter to not clone best quote twice
@@ -845,7 +852,7 @@ impl StreamingQuoting for OrderQuoter {
                     sell_token_price,
                     buy_token_price,
                     expiration,
-                    auction_id,
+                    quote_id,
                 ) {
                     Ok(c) => c,
                     Err(err @ CalculateQuoteError::SellAmountDoesNotCoverFee { .. }) => {
@@ -925,7 +932,7 @@ fn assemble_quote_data(
     sell_token_price: f64,
     buy_token_price: f64,
     expiration: DateTime<Utc>,
-    auction_id: Option<AuctionId>,
+    quote_id: QuoteId,
 ) -> Result<QuoteCompetition, CalculateQuoteError> {
     let kind = match &parameters.side {
         OrderQuoteSide::Sell { .. } => OrderKind::Sell,
@@ -965,7 +972,6 @@ fn assemble_quote_data(
                 jit_orders: estimate.execution.jit_orders,
             }
             .into(),
-            solution_id: estimate.solution_id,
         }
     };
 
@@ -982,7 +988,8 @@ fn assemble_quote_data(
         into_quote_response(best),
         rest.map(into_quote_response),
         QuoteCompetitionMetadata {
-            auction_id,
+            quote_id,
+            fast_path: parameters.fast_path,
             expiration,
             gas_price: effective_gas_price as f64,
             buy_token_price,
@@ -1156,7 +1163,7 @@ mod tests {
                     block_dependent: true,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
+                    quote_id: None,
                 }
             })
             .returning(|_| {
@@ -1168,7 +1175,7 @@ mod tests {
                             solver: Address::repeat_byte(1),
                             verified: false,
                             supports_fast_path: false,
-                            solution_id: None,
+                            quote_id: Some(1337),
                             execution: Default::default(),
                         },
                         [],
@@ -1196,6 +1203,7 @@ mod tests {
         let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let mut storage = MockQuoteStoring::new();
+        storage.expect_next_quote_id().returning(|| Ok(1337));
         storage
             .expect_save()
             .with(eq(QuoteCompetition::new(
@@ -1214,11 +1222,11 @@ mod tests {
                     verified: false,
                     supports_fast_path: false,
                     metadata: Default::default(),
-                    solution_id: None,
                 },
                 [],
                 QuoteCompetitionMetadata {
-                    auction_id: None,
+                    quote_id: 1337,
+                    fast_path: false,
                     expiration: now + Duration::seconds(60i64),
                     gas_price: 2.,
                     buy_token_price: 0.2,
@@ -1316,7 +1324,7 @@ mod tests {
                     block_dependent: true,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
+                    quote_id: None,
                 }
             })
             .returning(|_| {
@@ -1328,7 +1336,7 @@ mod tests {
                             solver: Address::repeat_byte(1),
                             verified: false,
                             supports_fast_path: false,
-                            solution_id: None,
+                            quote_id: Some(1337),
                             execution: Default::default(),
                         },
                         [],
@@ -1356,6 +1364,7 @@ mod tests {
         let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let mut storage = MockQuoteStoring::new();
+        storage.expect_next_quote_id().returning(|| Ok(1337));
         storage
             .expect_save()
             .with(eq(QuoteCompetition::new(
@@ -1374,11 +1383,11 @@ mod tests {
                     verified: false,
                     supports_fast_path: false,
                     metadata: Default::default(),
-                    solution_id: None,
                 },
                 [],
                 QuoteCompetitionMetadata {
-                    auction_id: None,
+                    quote_id: 1337,
+                    fast_path: false,
                     expiration: now + chrono::Duration::seconds(60i64),
                     gas_price: 2.,
                     buy_token_price: 0.2,
@@ -1471,7 +1480,7 @@ mod tests {
                     block_dependent: true,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
+                    quote_id: None,
                 }
             })
             .returning(|_| {
@@ -1483,7 +1492,7 @@ mod tests {
                             solver: Address::repeat_byte(1),
                             verified: false,
                             supports_fast_path: false,
-                            solution_id: None,
+                            quote_id: Some(1337),
                             execution: Default::default(),
                         },
                         [],
@@ -1511,6 +1520,7 @@ mod tests {
         let gas_estimator = FakeGasPriceEstimator::new(gas_price);
 
         let mut storage = MockQuoteStoring::new();
+        storage.expect_next_quote_id().returning(|| Ok(1337));
         storage
             .expect_save()
             .with(eq(QuoteCompetition::new(
@@ -1529,11 +1539,11 @@ mod tests {
                     verified: false,
                     supports_fast_path: false,
                     metadata: Default::default(),
-                    solution_id: None,
                 },
                 [],
                 QuoteCompetitionMetadata {
-                    auction_id: None,
+                    quote_id: 1337,
+                    fast_path: false,
                     expiration: now + chrono::Duration::seconds(60i64),
                     gas_price: 2.,
                     buy_token_price: 0.2,
@@ -1621,7 +1631,7 @@ mod tests {
                         solver: Address::repeat_byte(1),
                         verified: false,
                         supports_fast_path: false,
-                        solution_id: None,
+                        quote_id: Some(1337),
                         execution: Default::default(),
                     },
                     [],
@@ -1652,7 +1662,7 @@ mod tests {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
-            storage: Arc::new(MockQuoteStoring::new()),
+            storage: Arc::new(storage_allocating_quote_id_generator()),
             now: Arc::new(Utc::now),
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
@@ -1700,7 +1710,7 @@ mod tests {
                         solver: Address::repeat_byte(1),
                         verified: false,
                         supports_fast_path: false,
-                        solution_id: None,
+                        quote_id: Some(1337),
                         execution: Default::default(),
                     },
                     [],
@@ -1731,7 +1741,7 @@ mod tests {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
-            storage: Arc::new(MockQuoteStoring::new()),
+            storage: Arc::new(storage_allocating_quote_id_generator()),
             now: Arc::new(Utc::now),
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
@@ -1786,6 +1796,7 @@ mod tests {
             metadata: Default::default(),
         };
         let mut storage = MockQuoteStoring::new();
+        storage.expect_next_quote_id().returning(|| Ok(1337));
         {
             let stored = stored.clone();
             storage
@@ -1859,6 +1870,7 @@ mod tests {
             metadata: Default::default(),
         };
         let mut storage = MockQuoteStoring::new();
+        storage.expect_next_quote_id().returning(|| Ok(1337));
         {
             let stored = stored.clone();
             storage
@@ -1928,6 +1940,7 @@ mod tests {
             metadata: Default::default(),
         };
         let mut storage = MockQuoteStoring::new();
+        storage.expect_next_quote_id().returning(|| Ok(1337));
         {
             let stored = stored.clone();
             storage
@@ -1969,6 +1982,7 @@ mod tests {
         };
 
         let mut storage = MockQuoteStoring::new();
+        storage.expect_next_quote_id().returning(|| Ok(1337));
         let mut sequence = Sequence::new();
         storage
             .expect_get()
@@ -2021,6 +2035,7 @@ mod tests {
     #[tokio::test]
     async fn find_quote_error_when_not_found() {
         let mut storage = MockQuoteStoring::new();
+        storage.expect_next_quote_id().returning(|| Ok(1337));
         storage.expect_get().returning(move |_| Ok(None));
         storage.expect_find().returning(move |_, _| Ok(None));
 
@@ -2186,7 +2201,7 @@ mod tests {
             solver: Address::repeat_byte(7),
             verified: true,
             supports_fast_path: false,
-            solution_id: None,
+            quote_id: Some(1337),
             execution: Default::default(),
         };
 
@@ -2197,7 +2212,7 @@ mod tests {
             0.5,
             0.5,
             expiration,
-            None,
+            1337,
         )
         .unwrap();
         let data = competition.to_quote_data();
@@ -2245,7 +2260,7 @@ mod tests {
             solver: Address::repeat_byte(7),
             verified: false,
             supports_fast_path: false,
-            solution_id: None,
+            quote_id: Some(1337),
             execution: Default::default(),
         };
 
@@ -2256,7 +2271,7 @@ mod tests {
             0.5,
             0.5,
             expiration,
-            None,
+            1337,
         )
         .unwrap();
         let data = competition.to_quote_data();
@@ -2276,6 +2291,7 @@ mod tests {
     ) -> OrderQuoter {
         let next_id = std::sync::atomic::AtomicI64::new(1);
         let mut storage = MockQuoteStoring::new();
+        storage.expect_next_quote_id().returning(|| Ok(1337));
         storage
             .expect_save()
             .times(0..)
@@ -2351,7 +2367,7 @@ mod tests {
                     solver: Address::repeat_byte(1),
                     verified: false,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: Some(1337),
                     execution: Default::default(),
                 }),
                 Ok(price_estimation::Estimate {
@@ -2360,7 +2376,7 @@ mod tests {
                     solver: Address::repeat_byte(2),
                     verified: false,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: Some(1337),
                     execution: Default::default(),
                 }),
             ])
@@ -2409,7 +2425,7 @@ mod tests {
                     solver: Address::repeat_byte(1),
                     verified: false,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: Some(1337),
                     execution: Default::default(),
                 }),
                 // zero gas - must be dropped silently
@@ -2419,7 +2435,7 @@ mod tests {
                     solver: Address::repeat_byte(2),
                     verified: false,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: Some(1337),
                     execution: Default::default(),
                 }),
                 // zero out_amount - must be dropped silently
@@ -2429,7 +2445,7 @@ mod tests {
                     solver: Address::repeat_byte(3),
                     verified: false,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: Some(1337),
                     execution: Default::default(),
                 }),
             ])
@@ -2461,7 +2477,7 @@ mod tests {
             price_estimator: Arc::new(MockCompetitionPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
-            storage: Arc::new(MockQuoteStoring::new()),
+            storage: Arc::new(storage_allocating_quote_id_generator()),
             now: Arc::new(now),
             validity: Validity::default(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
@@ -2517,7 +2533,7 @@ mod tests {
                 solver: Address::repeat_byte(1),
                 verified: false,
                 supports_fast_path: false,
-                solution_id: None,
+                quote_id: Some(1337),
                 execution: Default::default(),
             })])
             .boxed()
@@ -2567,7 +2583,7 @@ mod tests {
                 solver: Address::repeat_byte(1),
                 verified: false,
                 supports_fast_path: false,
-                solution_id: None,
+                quote_id: Some(1337),
                 execution: Default::default(),
             }
         }
@@ -2689,5 +2705,13 @@ mod tests {
         // verification gas is added on top.
         let quote = competition(true).to_final_quote(&parameters);
         assert_eq!(quote.fee_amount, U256::from(130_000));
+    }
+
+    /// Storage mock that only hands out quote ids, for tests that never get
+    /// as far as storing a quote.
+    fn storage_allocating_quote_id_generator() -> MockQuoteStoring {
+        let mut storage = MockQuoteStoring::new();
+        storage.expect_next_quote_id().returning(|| Ok(1337));
+        storage
     }
 }
