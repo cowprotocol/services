@@ -1164,6 +1164,9 @@ impl Persistence {
         database::solver_competition_v2::save(&mut tx, promotion.auction_id, &promotion.solutions)
             .await
             .context("save proposed_solutions / proposed_trade_executions")?;
+        database::reference_scores::insert(&mut tx, &promotion.reference_scores)
+            .await
+            .context("insert fast-path reference_scores")?;
         database::fee_policies::insert_batch(tx.deref_mut(), policy_rows)
             .await
             .context("insert fast-path fee policies")?;
@@ -1244,6 +1247,10 @@ pub struct FastPathPromotion {
     /// handler rather than here.
     pub solutions: Vec<database::solver_competition_v2::Solution>,
     pub fee_policies: Vec<domain::fee::Policy>,
+    /// Reference score for the winning solver, computed the same way the
+    /// regular auction does (`winning_score − best_non_filtered_alternative`,
+    /// or 0). Empty when no winner cleared the fast-path limit check.
+    pub reference_scores: Vec<database::reference_scores::Score>,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
