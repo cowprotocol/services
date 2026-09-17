@@ -122,8 +122,7 @@ async fn driver_solves_against_live_jupiter_engine() {
     let solver = Solver::new(&config::Solver {
         name: "jupiter-live".to_string(),
         endpoint: format!("http://{addr}").parse().unwrap(),
-        signer_keypair: Some(keypair_path),
-        signer_kms_key: None,
+        signer: config::SettlementSigner::Keypair(keypair_path),
         solve_every_nth_auction: None,
     })
     .await

@@ -96,8 +96,7 @@ async fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
     let solver = Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: format!("http://{addr}").parse().unwrap(),
-        signer_keypair: Some(keypair_path),
-        signer_kms_key: None,
+        signer: config::SettlementSigner::Keypair(keypair_path),
         solve_every_nth_auction: None,
     })
     .await
@@ -117,8 +116,7 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
     Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: "http://127.0.0.1:1".parse().unwrap(),
-        signer_keypair: Some(keypair_file.path().to_path_buf()),
-        signer_kms_key: None,
+        signer: config::SettlementSigner::Keypair(keypair_file.path().to_path_buf()),
         solve_every_nth_auction: NonZero::new(stride),
     })
     .await

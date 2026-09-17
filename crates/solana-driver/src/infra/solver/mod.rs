@@ -50,8 +50,8 @@ impl Solver {
     /// Build a solver client from its configuration, loading the signer the
     /// config names: a local keypair file or an AWS KMS key.
     pub async fn new(config: &config::Solver) -> Result<Self, Error> {
-        let signer = match (&config.signer_keypair, &config.signer_kms_key) {
-            (Some(path), None) => {
+        let signer = match &config.signer {
+            config::SettlementSigner::Keypair(path) => {
                 let keypair =
                     solana_sdk::signer::keypair::read_keypair_file(path).map_err(|error| {
                         Error::SignerKeypair {
@@ -62,18 +62,13 @@ impl Solver {
                     })?;
                 signer::Signer::Keypair(Arc::new(keypair))
             }
-            (None, Some(key_id)) => {
+            config::SettlementSigner::KmsKey(key_id) => {
                 signer::Signer::Kms(signer::KmsSigner::new(key_id.clone()).await.map_err(
                     |error| Error::Signer {
                         solver: config.name.clone(),
                         error,
                     },
                 )?)
-            }
-            _ => {
-                return Err(Error::SignerConfig {
-                    solver: config.name.clone(),
-                });
             }
         };
         tracing::info!(
@@ -180,9 +175,6 @@ pub enum Error {
         #[source]
         error: signer::Error,
     },
-    /// The config names both or neither of the signer backends.
-    #[error("solver {solver} must set exactly one of signer-keypair and signer-kms-key")]
-    SignerConfig { solver: String },
 }
 
 #[cfg(test)]
@@ -199,8 +191,7 @@ mod tests {
         let solver = Solver::new(&config::Solver {
             name: "test".to_owned(),
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
-            signer_keypair: Some(keypair_path),
-            signer_kms_key: None,
+            signer: config::SettlementSigner::Keypair(keypair_path),
             solve_every_nth_auction: None,
         })
         .await

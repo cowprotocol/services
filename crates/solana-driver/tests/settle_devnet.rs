@@ -366,8 +366,7 @@ async fn spawn_driver(
         Solver::new(&config::Solver {
             name: s.name,
             endpoint,
-            signer_keypair: s.signer_keypair,
-            signer_kms_key: s.signer_kms_key,
+            signer: s.signer,
             solve_every_nth_auction: None,
         })
         .await
@@ -458,10 +457,9 @@ async fn settle_devnet() {
     // The solver keypair doubles as the user/payer: it creates+mints the
     // fake tokens, creates the order, and settles it. The settlement program
     // does not require the user and the solver to be different identities.
-    let keypair_path = config.solvers[0]
-        .signer_keypair
-        .as_ref()
-        .expect("the devnet test needs a keypair-file solver");
+    let config::SettlementSigner::Keypair(keypair_path) = &config.solvers[0].signer else {
+        panic!("the devnet test needs a keypair-file solver");
+    };
     let payer = read_keypair_file(keypair_path).expect("failed to read solver/payer keypair");
     let payer_pk = payer.pubkey();
 

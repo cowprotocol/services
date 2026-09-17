@@ -261,8 +261,7 @@ async fn spawn_driver(
         Solver::new(&config::Solver {
             name: s.name,
             endpoint,
-            signer_keypair: s.signer_keypair,
-            signer_kms_key: s.signer_kms_key,
+            signer: s.signer,
             solve_every_nth_auction: None,
         })
         .await
@@ -471,10 +470,9 @@ async fn settle_on_mainnet() {
     // The solver keypair doubles as the user. The test needs exactly one
     // funded keypair — it creates the order, approves the delegate, and the
     // driver signs the settlement tx with the same keypair.
-    let keypair_path = config.solvers[0]
-        .signer_keypair
-        .as_ref()
-        .expect("the mainnet test needs a keypair-file solver");
+    let config::SettlementSigner::Keypair(keypair_path) = &config.solvers[0].signer else {
+        panic!("the mainnet test needs a keypair-file solver");
+    };
     let user = read_keypair_file(keypair_path).expect("failed to read solver/user keypair");
 
     // --- nonblocking RPC client for order creation and confirmation ---
