@@ -67,6 +67,7 @@ impl Unit {
     /// Makers stamp milliseconds with sub-second precision, so for that unit
     /// any instant within the quoted second is the stamp.
     fn holds(self, field: &[u8], stamp: u32) -> bool {
+        // u64::from_be_bytes() but with &[u8] instead of [u8; 8]
         let value = field
             .iter()
             .fold(0u64, |value, byte| (value << 8) | u64::from(*byte));
@@ -77,6 +78,9 @@ impl Unit {
     }
 
     /// Writes `timestamp` (unix seconds) into `field` in this unit.
+    ///
+    /// Sub-second precision is dropped, because the only thing the venue can
+    /// compare against is the block timestamp, which is whole seconds.
     fn write(self, timestamp: u64, field: &mut [u8]) {
         let value = match self {
             Unit::Seconds => timestamp,
@@ -87,6 +91,9 @@ impl Unit {
 }
 
 /// The fields of `word` holding `stamp`, as (offset, unit) pairs.
+///
+/// We never match both units, since the same timestamp (base 10) interpreted in
+/// seconds and milliseconds bytes (base 16) never share any bytes.
 fn stamp_fields(word: &B256, stamp: u32) -> impl Iterator<Item = (usize, Unit)> + '_ {
     Unit::ALL.into_iter().flat_map(move |unit| {
         word.windows(unit.width())
@@ -104,8 +111,23 @@ fn carries_stamp(word: &B256, stamp: u32) -> bool {
 /// Rewrites every field of `word` holding `stamp` to `timestamp`, in the unit
 /// and at the offset the venue keeps it. Words not carrying `stamp` are left
 /// untouched.
+///
+/// Every match is rewritten rather than just the first. We wouldn't know which
+/// one to override. We could bail in this case, but the result would be the
+/// same as the worst case outcome for wrongly overriding a non-timestamp
+/// related field; simulation would fail. Several matches are logged either way,
+/// so a venue keeping more than one copy of its stamp — or a coincidence
+/// actually happening — is visible rather than inferred from a quote that
+/// mysteriously stopped verifying.
 fn restamp_word(word: &mut B256, stamp: u32, timestamp: u64) {
     let fields: Vec<_> = stamp_fields(word, stamp).collect();
+    if fields.len() > 1 {
+        tracing::warn!(
+            ?word,
+            stamp,
+            "word carries several fields reading as timestamp; restamping all of them"
+        );
+    }
     for (offset, unit) in fields {
         unit.write(timestamp, &mut word[offset..offset + unit.width()]);
     }
@@ -948,10 +970,14 @@ mod tests {
         let simulated_at = QUOTED_AT - SPACING;
         let restamped = restamp(original.clone(), stamp, simulated_at.into());
         let after = restamped[&venue].state_diff.as_ref().unwrap()[slot];
+
+        // The stamp field now reads the simulated second, in milliseconds...
         assert_eq!(
             after[MILLIS_STAMP],
             (u64::from(simulated_at) * 1000).to_be_bytes()[2..]
         );
+        // ...and every byte on either side of it — the maker's price, and the
+        // leading bytes that merely look like a timestamp — is untouched.
         assert_eq!(after[..MILLIS_STAMP.start], before[..MILLIS_STAMP.start]);
         assert_eq!(after[MILLIS_STAMP.end..], before[MILLIS_STAMP.end..]);
     }
@@ -986,7 +1012,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stamp_is_found_at_any_offset_and_width() {
+    fn stamp_is_located_by_value_not_by_position() {
         let simulated_at = QUOTED_AT - SPACING;
 
         // Seconds right-aligned as a uint256.
@@ -1017,6 +1043,26 @@ mod tests {
         word[..4].copy_from_slice(&(QUOTED_AT - 1).to_be_bytes());
         word[MILLIS_STAMP].copy_from_slice(&((u64::from(QUOTED_AT) + 1) * 1000).to_be_bytes()[2..]);
         assert!(!carries_stamp(&word, QUOTED_AT));
+    }
+
+    #[test]
+    fn every_copy_of_the_stamp_moves() {
+        // A venue keeping its stamp in more than one field only has its quote
+        // accepted if all of them move together, so each match is rewritten.
+        let simulated_at = QUOTED_AT - SPACING;
+        let mut word = B256::from([0xab; 32]);
+        word[..4].copy_from_slice(&QUOTED_AT.to_be_bytes());
+        word[16..20].copy_from_slice(&QUOTED_AT.to_be_bytes());
+        assert_eq!(
+            stamp_fields(&word, QUOTED_AT).collect::<Vec<_>>(),
+            [(0, Unit::Seconds), (16, Unit::Seconds)]
+        );
+
+        restamp_word(&mut word, QUOTED_AT, simulated_at.into());
+        assert_eq!(word[..4], simulated_at.to_be_bytes());
+        assert_eq!(word[16..20], simulated_at.to_be_bytes());
+        assert_eq!(word[4..16], [0xab; 12]);
+        assert_eq!(word[20..], [0xab; 12]);
     }
 
     #[test]
