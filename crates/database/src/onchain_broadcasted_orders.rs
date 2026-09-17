@@ -65,6 +65,17 @@ pub async fn mark_as_reorged(
 }
 
 #[instrument(skip_all)]
+pub async fn set_placement_error(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+    error: OnchainOrderPlacementError,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = "UPDATE onchain_placed_orders SET placement_error = $2 WHERE uid = $1;";
+    sqlx::query(QUERY).bind(uid).bind(error).execute(ex).await?;
+    Ok(())
+}
+
+#[instrument(skip_all)]
 pub async fn append(
     ex: &mut PgTransaction<'_>,
     events: &[(EventIndex, OnchainOrderPlacement)],
@@ -149,6 +160,52 @@ mod tests {
             crate::clear_DANGER_(&mut db).await.unwrap();
             round_trip_for_error(&mut db, Some(error)).await;
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_set_placement_error() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let event_index = EventIndex {
+            block_number: 7,
+            log_index: 3,
+        };
+        let order = OnchainOrderPlacement {
+            order_uid: ByteArray([1; 56]),
+            sender: ByteArray([2; 20]),
+            placement_error: None,
+        };
+        insert_onchain_order(&mut db, &event_index, &order)
+            .await
+            .unwrap();
+
+        set_placement_error(
+            &mut db,
+            &order.order_uid,
+            OnchainOrderPlacementError::InvalidOrderData,
+        )
+        .await
+        .unwrap();
+
+        // Only `placement_error` changes; the rest of the row is untouched.
+        let row = read_order(&mut db, &order.order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            row,
+            OnchainOrderPlacementRow {
+                uid: order.order_uid,
+                sender: order.sender,
+                placement_error: Some(OnchainOrderPlacementError::InvalidOrderData),
+                is_reorged: false,
+                block_number: event_index.block_number,
+                log_index: event_index.log_index,
+            }
+        );
     }
 
     #[tokio::test]

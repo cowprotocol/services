@@ -139,13 +139,6 @@ impl Single {
             return None;
         }
 
-        // Orders whose fee the solver doesn't determine (market orders, whose
-        // fee was pre-determined by the protocol) are not charged anything.
-        let fee = if order.solver_determines_fee() {
-            fee
-        } else {
-            Default::default()
-        };
         let surplus_fee = fee.0;
 
         // Compute total executed sell and buy amounts accounting for solver
@@ -229,24 +222,18 @@ impl Single {
             return None;
         }
 
-        let fee = if order.solver_determines_fee() {
-            match sell_token {
-                Some(price) => eth::SellTokenAmount(
-                    price.ether_value(eth::Ether(
-                        swap.0
-                            .checked_add(gas_offset.0)?
-                            .checked_mul(gas_price.0.0)?,
-                    ))?,
-                ),
-                // For quote auctions (which don't contain native prices) we fall back to a zero
-                // fee. The orderbook API will estimate a proper fee itself.
-                None => Default::default(),
-            }
-        } else {
-            // Orders whose fee the solver doesn't determine (market orders,
-            // whose fee was pre-determined by the protocol) are not charged
-            // anything.
-            Default::default()
+        // The solver fee covers the gas cost of the swap, denominated in the
+        // order's sell token. Quote auctions don't contain native prices, so
+        // the gas cost can't be converted into a sell token fee there.
+        let fee = match sell_token {
+            Some(price) => eth::SellTokenAmount(
+                price.ether_value(eth::Ether(
+                    swap.0
+                        .checked_add(gas_offset.0)?
+                        .checked_mul(gas_price.0.0)?,
+                ))?,
+            ),
+            None => Default::default(),
         };
         let surplus_fee = fee.0;
 
@@ -375,12 +362,13 @@ impl Fulfillment {
     }
 
     /// Returns the solver computed fee that was charged to the order as an
-    /// asset (token address and amount).
-    pub fn surplus_fee(&self) -> Option<eth::Asset> {
-        self.order.solver_determines_fee().then_some(eth::Asset {
+    /// asset (token address and amount). The fee is always charged in the
+    /// order's sell token.
+    pub fn fee(&self) -> eth::Asset {
+        eth::Asset {
             token: self.order.sell.token,
             amount: self.fee.0,
-        })
+        }
     }
 }
 
