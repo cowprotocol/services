@@ -928,4 +928,37 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         .await
         .unwrap();
     assert_eq!(copies, 1, "the mismatched quote must not be copied");
+
+    // An expired quote is dropped even when everything else matches.
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let late_owner = solana_sdk::signer::keypair::Keypair::new();
+    let late = sponsored_intent(late_owner.pubkey(), false);
+    let expired = db::save_quote(
+        &pool,
+        &db::Quote {
+            sell_token: ByteArray(late.sell_mint.to_bytes()),
+            buy_token: ByteArray(late.buy_mint.to_bytes()),
+            sell_amount: late.sell_amount,
+            buy_amount: late.buy_amount,
+            kind: OrderKind::Sell,
+            solver: ByteArray([0xDD; 32]),
+            expiration: chrono::Utc::now() - chrono::Duration::seconds(1),
+        },
+    )
+    .await
+    .unwrap();
+    let destination = destination_creation(funder, late_owner.pubkey(), &late);
+    let transaction = creation_tx(funder, &late_owner, &late, vec![destination], true);
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({ "transaction": transaction, "quoteId": expired }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let copies: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_quotes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(copies, 1, "the expired quote must not be copied");
 }
