@@ -4,10 +4,9 @@
 //!
 //! The funder countersigns as fee payer, so only the whitelisted
 //! preparation steps may precede the mandatory trailing `CreateOrder`: wrap
-//! SOL, delegate the sell account, create the buy token account. The
-//! buy-account creation is required even when the account exists (it is
-//! idempotent on chain): settlement pays out to it and never creates it,
-//! and the instruction proves receivability without a lookup or a race.
+//! SOL, delegate the sell account, create the buy token account. Every
+//! preparation step is omittable: a buy token account missing at settlement
+//! time is created by the winning solution.
 
 use {
     crate::infra::{
@@ -249,8 +248,7 @@ fn validate(
     }
 
     // The preparation instructions may only follow the template: each step
-    // at most once, in template order. The buy-account creation is the one
-    // mandatory step, everything else is omittable.
+    // at most once, in template order, every step omittable.
     let state_pda = find_state_pda(&sponsoring.settlement_program).0;
     let mut last_step = 0;
     for preparation in preparations {
@@ -261,11 +259,6 @@ fn validate(
             ));
         }
         last_step = step;
-    }
-    if last_step != CREATE_DESTINATION {
-        return Err(PlacementError::InvalidTransaction(
-            "the bundle must create the buy token account",
-        ));
     }
 
     // Every required signer except the funder must have signed: the funder's
