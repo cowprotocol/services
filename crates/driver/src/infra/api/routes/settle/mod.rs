@@ -34,7 +34,8 @@ async fn route(
             state
                 .competition()
                 .reencode_quote_solution(auction_id, req.solution_id, order, limit_prices)
-                .await?;
+                .await
+                .inspect_err(|err| tracing::debug!(?err, "couldn't reencode solution"))?;
         }
         let result = state
             .competition()
