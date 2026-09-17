@@ -192,6 +192,14 @@ paths:
                 transaction:
                   description: The partially signed transaction, base64.
                   type: string
+                quoteId:
+                  description: |
+                    The id the quote endpoint answered for this order. Stored
+                    with the order when the quote matches it, dropped
+                    otherwise.
+                  type: integer
+                  format: int64
+                  nullable: true
       responses:
         "201":
           description: The order uid.
