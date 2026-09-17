@@ -414,14 +414,19 @@ fn decode_settlement(
                 Ok(Vec::new())
             }
             // No domain event: `Initialize` bootstraps program state,
-            // `ReclaimBuffer` recovers rent, and `TransferAuthority`/`AddSolver`
-            // manage program governance, none touching order state.
+            // `ReclaimBuffer` recovers rent, and `TransferAuthority` plus
+            // `AddSolver`/`RemoveSolver` manage program governance, none
+            // touching order state.
             // TODO: map `ReclaimOrder` to `OrderClosed`.
+            // TODO: index `CreateSelfOrder` (fee-withdrawal orders) once fee
+            // handling lands.
             SettlementInstruction::Initialize
             | SettlementInstruction::ReclaimOrder
             | SettlementInstruction::ReclaimBuffer
             | SettlementInstruction::TransferAuthority
-            | SettlementInstruction::AddSolver => Ok(Vec::new()),
+            | SettlementInstruction::AddSolver
+            | SettlementInstruction::RemoveSolver
+            | SettlementInstruction::CreateSelfOrder => Ok(Vec::new()),
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),

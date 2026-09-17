@@ -371,7 +371,7 @@ fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) 
         },
         app_data: [0x44; 32],
     };
-    let instruction = cow_settlement_client::instructions::CreateOrder {
+    let instruction = cow_settlement_client::instruction::CreateOrder {
         program_id: settlement,
         owner: pubkey(11),
         created_by,
@@ -744,19 +744,20 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     };
     let order_pda = find_order_pda(&settlement, &intent.uid()).0;
 
-    let begin = cow_settlement_client::instructions::BeginSettle {
+    let begin = cow_settlement_client::instruction::BeginSettle {
+        only_token_program: None,
         program_id: settlement,
         solver,
         finalize_ix_index: 1,
         auction_id: 4242,
-        orders: &[cow_settlement_client::instructions::InitializedIntent {
+        orders: &[cow_settlement_client::instruction::InitializedIntent {
             intent: &intent,
             pulls: &[
-                cow_settlement_client::instructions::Pull {
+                cow_settlement_client::instruction::Pull {
                     destination: pubkey(27),
                     amount: 300,
                 },
-                cow_settlement_client::instructions::Pull {
+                cow_settlement_client::instruction::Pull {
                     destination: pubkey(28),
                     amount: 700,
                 },
@@ -764,10 +765,11 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         }],
     }
     .into();
-    let finalize = cow_settlement_client::instructions::FinalizeSettle {
+    let finalize = cow_settlement_client::instruction::FinalizeSettle {
+        only_token_program: None,
         program_id: settlement,
         begin_ix_index: 0,
-        orders: &[cow_settlement_client::instructions::FinalizedIntent {
+        orders: &[cow_settlement_client::instruction::FinalizedIntent {
             intent: &intent,
             amount: 1_234,
         }],

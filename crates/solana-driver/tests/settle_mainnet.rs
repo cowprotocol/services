@@ -44,7 +44,7 @@ use {
             data::intent::{Flags, OrderIntent, OrderKind},
             pda::{buffer::find_buffer_pda, order::find_order_pda, state::find_state_pda},
         },
-        instructions::CreateOrder,
+        instruction::CreateOrder,
     },
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     observe::tracing::init::initialize_reentrant,
