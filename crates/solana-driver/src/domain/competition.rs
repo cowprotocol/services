@@ -149,7 +149,15 @@ impl Competition {
         );
         task.await.unwrap_or_else(|error| {
             tracing::error!(?error, "settle task panicked");
-            Err(Error::TaskPanicked)
+            // The task's own counting unwound with the panic, so the panic
+            // is counted here. Every other outcome counts inside the task,
+            // which keeps counting when a disconnect detaches it.
+            let result = Err(Error::TaskPanicked);
+            metrics()
+                .outcomes
+                .with_label_values(&[outcome_label(&result), self.solver.name()])
+                .inc();
+            result
         })
     }
 
