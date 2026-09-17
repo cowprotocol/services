@@ -301,10 +301,13 @@ fn validate(
 
 /// The quote copy to store under the order: filled when the stored quote
 /// matches the order (same pair and side, same fixed amount, unexpired),
-/// `None` otherwise.
+/// `None` otherwise. The unfixed side carries the user's slippage and stays
+/// unchecked, like the EVM `find_quote` match, so the linked quote's
+/// promised price is not a trustworthy value.
 /// TODO: once fee policies consume the link, a miss must re-quote and link
 /// the fresh quote instead of dropping the link, like the EVM orderbook's
-/// `find_quote` fallback, so every order carries a quote.
+/// `find_quote` fallback, and the match must tighten (the unfixed side
+/// within the order's slippage) so the consumed price cannot be shopped in.
 async fn link_quote(
     pool: &sqlx::PgPool,
     id: i64,
