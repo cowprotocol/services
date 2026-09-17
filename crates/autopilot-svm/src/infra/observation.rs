@@ -39,13 +39,12 @@ impl SettlementWindows {
     }
 
     /// Open a window for a dispatched settlement. `solution_uid` is the
-    /// winner's driver-local solution id until competition persistence
-    /// allocates uids.
+    /// autopilot-generated uid the competition persisted.
     pub async fn open_dispatched(
         &self,
         auction_id: i64,
         solver: Pubkey,
-        solution_uid: u64,
+        solution_uid: i64,
         start_slot: u64,
         deadline_slot: u64,
     ) -> Result<()> {
@@ -53,7 +52,7 @@ impl SettlementWindows {
             &self.pool,
             auction_id,
             solver,
-            to_db_integer(solution_uid),
+            solution_uid,
             to_db_integer(start_slot),
             to_db_integer(deadline_slot),
         )

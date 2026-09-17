@@ -45,6 +45,10 @@ pub struct Ranking {
     pub inner: winner_selection::Ranking<Solana>,
     /// Driver index per solution, keyed by `(solver, solution id)`.
     pub drivers: HashMap<SolutionKey, usize>,
+    /// Autopilot-generated solution uid per solution, unique within the
+    /// auction. It disambiguates solver-assigned ids across drivers, and
+    /// everything persisted references it.
+    pub uids: HashMap<SolutionKey, i64>,
 }
 
 impl RankingInfo<SolanaCycle> for Ranking {
