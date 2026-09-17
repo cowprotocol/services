@@ -72,7 +72,7 @@ impl DbAuctionProvider {
                     // line stays at debug.
                     metrics().unreceivable_orders.inc();
                     tracing::debug!(
-                        order = %const_hex::encode(order.uid.0),
+                        order = %order.uid,
                         %account,
                         "excluding order, its buy token account cannot receive the payout"
                     );
