@@ -504,7 +504,7 @@ fn creation_tx(
     base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
 }
 
-/// The mandatory buy-account creation step for the intent.
+/// The buy-account creation step for the intent.
 fn destination_creation(
     funder: solana_sdk::pubkey::Pubkey,
     owner: solana_sdk::pubkey::Pubkey,
@@ -519,7 +519,7 @@ fn destination_creation(
 }
 
 /// A sponsored creation transaction with an arbitrary SPL sell and only the
-/// mandatory buy-account creation in front of `CreateOrder`.
+/// buy-account creation in front of `CreateOrder`.
 fn sponsored_creation_tx(
     funder: solana_sdk::pubkey::Pubkey,
     owner: &solana_sdk::signer::keypair::Keypair,
@@ -687,8 +687,6 @@ async fn create_order_checks_the_preparation_template() {
     };
 
     for (preparations, expected) in [
-        // The buy-account creation is mandatory.
-        (vec![], "InvalidTransaction"),
         // A program outside the template never rides on the funder's fee.
         (
             vec![solana_sdk::instruction::Instruction::new_with_bytes(
@@ -794,4 +792,13 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "DuplicatedOrder")
     );
+
+    // A bundle without any preparation steps is accepted: a buy token
+    // account missing at settlement time is created by the winning solution.
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let bare_owner = solana_sdk::signer::keypair::Keypair::new();
+    let bare = sponsored_intent(bare_owner.pubkey(), false);
+    let transaction = creation_tx(funder, &bare_owner, &bare, vec![], true);
+    let (status, _) = post_order(addr, transaction).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
 }

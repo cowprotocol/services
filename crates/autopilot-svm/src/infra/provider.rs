@@ -38,13 +38,13 @@ impl DbAuctionProvider {
         }
     }
 
-    /// Drop orders whose buy token account cannot receive the settlement
-    /// payout: their settlement would revert at `FinalizeSettle`. Only orders
-    /// already created on chain are checked, a pending sponsored order
-    /// creates its own accounts at settlement time. When the account lookup
-    /// fails every order passes, a doomed order then costs one failed
-    /// settlement instead of the whole cut.
-    async fn receivable_orders(&self, orders: Vec<Order>) -> Vec<Order> {
+    /// Count the orders whose buy token account cannot receive the
+    /// settlement payout as it stands: their settlement only succeeds when
+    /// the solution creates the account, so the counter tracks how much the
+    /// auction leans on solver-side creation. Only orders already created on
+    /// chain are checked, a pending sponsored order may create its accounts
+    /// in its own creation bundle. A failed lookup counts nothing.
+    async fn observe_unreceivable_orders(&self, orders: &[Order]) {
         let candidates = orders
             .iter()
             .filter(|order| order.created_on_chain)
@@ -52,34 +52,24 @@ impl DbAuctionProvider {
         let accounts = match self.rpc.multiple_accounts(candidates).await {
             Ok(accounts) => accounts,
             Err(err) => {
-                tracing::warn!(?err, "buy account lookup failed, keeping all orders");
-                return orders;
+                tracing::warn!(?err, "buy account lookup failed");
+                return;
             }
         };
-        orders
-            .into_iter()
-            .filter(|order| {
-                if !order.created_on_chain {
-                    return true;
-                }
-                let account = Pubkey::new_from_array(order.buy_token_account.0);
-                let receivable = accounts
-                    .get(&account)
-                    .is_some_and(|found| receivable_token_account(found, order.buy_token.0));
-                if !receivable {
-                    // A doomed order repeats this on every cut until it
-                    // expires: the counter is the alerting signal, the log
-                    // line stays at debug.
-                    metrics().unreceivable_orders.inc();
-                    tracing::debug!(
-                        order = %const_hex::encode(order.uid.0),
-                        %account,
-                        "excluding order, its buy token account cannot receive the payout"
-                    );
-                }
-                receivable
-            })
-            .collect()
+        for order in orders.iter().filter(|order| order.created_on_chain) {
+            let account = Pubkey::new_from_array(order.buy_token_account.0);
+            let receivable = accounts
+                .get(&account)
+                .is_some_and(|found| receivable_token_account(found, order.buy_token.0));
+            if !receivable {
+                metrics().unreceivable_orders.inc();
+                tracing::debug!(
+                    order = %const_hex::encode(order.uid.0),
+                    %account,
+                    "the buy token account does not exist, a solution must create it"
+                );
+            }
+        }
     }
 
     /// Allocates the next auction id: the current unix second, or one past
@@ -114,11 +104,11 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
 
     async fn cut_auction(&self, _tip: &u64) -> Option<crate::domain::auction::Auction> {
         let now = now_unix();
-        let mut auction = db::cut(&self.pool, self.next_id(now), now)
+        let auction = db::cut(&self.pool, self.next_id(now), now)
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
-        auction.orders = self.receivable_orders(auction.orders).await;
+        self.observe_unreceivable_orders(&auction.orders).await;
         (!auction.orders.is_empty()).then_some(auction)
     }
 }
@@ -126,8 +116,9 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "auction_provider")]
 struct Metrics {
-    /// Orders excluded from auction cuts because their buy token account
-    /// cannot receive the payout.
+    /// Auctioned orders without a buy token account able to receive the
+    /// payout, counted once per cut: settling them requires the solution to
+    /// create the account.
     unreceivable_orders: prometheus::IntCounter,
 }
 
@@ -136,9 +127,10 @@ fn metrics() -> &'static Metrics {
 }
 
 /// An initialized, unfrozen account of the classic SPL token program holding
-/// the order's buy mint: anything else reverts the payout at settlement.
-/// TODO(token-2022): accounts of the token-2022 program are dropped here,
-/// like the driver cannot settle them yet.
+/// the order's buy mint: anything else needs the solution to create the
+/// payout account.
+/// TODO(token-2022): accounts of the token-2022 program are counted here,
+/// the driver cannot settle them yet.
 fn receivable_token_account(account: &Account, buy_mint: [u8; 32]) -> bool {
     account.owner == spl_token_interface::ID
         && TokenAccount::unpack(&account.data).is_ok_and(|account| {
@@ -183,9 +175,27 @@ mod tests {
 
     /// The lookup answers for the three created orders in candidate order:
     /// initialized with the buy mint, initialized with a wrong mint, absent.
-    /// The pending sponsored order is exempt from the check.
+    /// The wrong mint and the absent account are counted, the pending
+    /// sponsored order is exempt from the check. A failed lookup (here a
+    /// malformed response) counts nothing. One test, the counter is
+    /// process-global.
     #[tokio::test]
-    async fn drops_created_orders_with_unreceivable_buy_accounts() {
+    async fn counts_orders_with_unreceivable_buy_accounts() {
+        let orders = vec![
+            order([0x01; 32], true),
+            order([0x02; 32], false),
+            order([0x03; 32], true),
+            order([0x04; 32], true),
+        ];
+        let before = metrics().unreceivable_orders.get();
+
+        let failing = provider(Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!("not an account list"),
+        )]));
+        failing.observe_unreceivable_orders(&orders).await;
+        assert_eq!(metrics().unreceivable_orders.get(), before);
+
         let response = serde_json::json!({
             "context": {"slot": 1u64, "apiVersion": "2.0.0"},
             "value": [
@@ -194,30 +204,8 @@ mod tests {
                 null,
             ],
         });
-        let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
-        let orders = vec![
-            order([0x01; 32], true),
-            order([0x02; 32], false),
-            order([0x03; 32], true),
-            order([0x04; 32], true),
-        ];
-        let kept: Vec<u8> = provider
-            .receivable_orders(orders)
-            .await
-            .iter()
-            .map(|order| order.buy_token_account.0[0])
-            .collect();
-        assert_eq!(kept, [0x01, 0x02]);
-    }
-
-    /// A failed lookup (here a malformed response) keeps every order.
-    #[tokio::test]
-    async fn keeps_all_orders_when_the_lookup_fails() {
-        let provider = provider(Mocks::from([(
-            RpcRequest::GetMultipleAccounts,
-            serde_json::json!("not an account list"),
-        )]));
-        let orders = vec![order([0x01; 32], true)];
-        assert_eq!(provider.receivable_orders(orders).await.len(), 1);
+        let counting = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
+        counting.observe_unreceivable_orders(&orders).await;
+        assert_eq!(metrics().unreceivable_orders.get(), before + 2);
     }
 }
