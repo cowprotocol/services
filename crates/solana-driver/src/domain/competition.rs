@@ -213,7 +213,9 @@ impl Competition {
             .latest_confirmed_blockhash()
             .await
             .map_err(Error::Rpc)?;
-        let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
+        let transaction = resolved
+            .encode(self.solver.signer(), latest.blockhash)
+            .await?;
 
         self.simulate_settlement(&transaction).await?;
 

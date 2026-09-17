@@ -2,13 +2,16 @@
 
 use {
     super::{Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
-    crate::infra::blockchain::{
-        AccountsSnapshot,
-        InvalidAddressLookupTableReason,
-        Solana,
-        TokenAccountState,
-        associated_token_address,
-        create_associated_token_account_idempotent,
+    crate::infra::{
+        blockchain::{
+            AccountsSnapshot,
+            InvalidAddressLookupTableReason,
+            Solana,
+            TokenAccountState,
+            associated_token_address,
+            create_associated_token_account_idempotent,
+        },
+        signer::Signer,
     },
     cow_settlement_client::instruction::{
         BeginSettle,
@@ -27,9 +30,8 @@ use {
     solana_sdk::{
         hash::Hash,
         instruction::Instruction,
-        message::{AddressLookupTableAccount, VersionedMessage, v0::Message as MessageV0},
+        message::{AddressLookupTableAccount, v0::Message as MessageV0},
         pubkey::Pubkey,
-        signer::{Signer, keypair::Keypair},
         transaction::VersionedTransaction,
     },
 };
@@ -252,7 +254,11 @@ impl ResolvedSettlement {
     }
 
     /// Encode the resolved settlement as a signed v0 transaction.
-    pub fn encode(self, signer: &Keypair, blockhash: Hash) -> Result<VersionedTransaction, Error> {
+    pub async fn encode(
+        self,
+        signer: &Signer,
+        blockhash: Hash,
+    ) -> Result<VersionedTransaction, Error> {
         let instructions = self.instructions(signer.pubkey())?;
         let message = MessageV0::try_compile(
             &signer.pubkey(),
@@ -260,8 +266,10 @@ impl ResolvedSettlement {
             &self.lookup_tables,
             blockhash,
         )?;
-        let transaction = VersionedTransaction::try_new(VersionedMessage::V0(message), &[signer])?;
-        Ok(transaction)
+        signer
+            .sign(message)
+            .await
+            .map_err(|err| Error::Sign(err.to_string()))
     }
 }
 
@@ -551,7 +559,7 @@ pub enum Error {
     Compile(#[from] solana_sdk::message::CompileError),
     /// The transaction failed to sign.
     #[error("failed to sign transaction: {0}")]
-    Sign(#[from] solana_sdk::signer::SignerError),
+    Sign(String),
     /// The instruction index does not fit in `u16`.
     #[error("instruction index does not fit in u16")]
     InstructionIndexOverflow,

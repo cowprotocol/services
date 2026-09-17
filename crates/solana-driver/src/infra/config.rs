@@ -117,13 +117,18 @@ pub struct Solver {
     /// HTTP endpoint of the solver engine API.
     #[serde(deserialize_with = "deserialize_url_with_trailing_slash")]
     pub endpoint: url::Url,
-    /// Path to the solver's settlement signer keypair. The driver's on-chain
-    /// identity for this solver is derived from this keypair.
+    /// Path to the solver's settlement signer keypair. Exactly one of this
+    /// and `signer-kms-key` must be set.
     ///
     /// TODO: plaintext keypair paths are temporary. Secrets must not live in
-    /// plaintext config long-term; KMS-backed signers are planned, mirroring
-    /// the EVM driver's `submission_accounts`.
-    pub signer_keypair: PathBuf,
+    /// plaintext config long-term; prefer `signer-kms-key`.
+    #[serde(default)]
+    pub signer_keypair: Option<PathBuf>,
+    /// Id, alias, or ARN of an AWS KMS Ed25519 key signing this solver's
+    /// settlements. The private key never reaches the driver. Exactly one of
+    /// this and `signer-keypair` must be set.
+    #[serde(default)]
+    pub signer_kms_key: Option<String>,
     /// Temporary staging knob: solve only auctions whose id is a multiple of
     /// this value and sit the rest out, so other solvers win settlements to
     /// test against. Absent means every auction.
@@ -147,8 +152,8 @@ mod tests {
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");
         assert_eq!(
-            config.solvers[0].signer_keypair,
-            Path::new("/path/to/keypair.json")
+            config.solvers[0].signer_keypair.as_deref(),
+            Some(Path::new("/path/to/keypair.json"))
         );
         assert_eq!(config.logging.filter, "info,solana_driver=debug");
         assert_eq!(config.logging.stderr_threshold, None);
@@ -164,7 +169,25 @@ mod tests {
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
         assert_eq!(solver.name, "baseline");
-        assert_eq!(solver.signer_keypair, Path::new("/path/to/keypair.json"));
+        assert_eq!(
+            solver.signer_keypair.as_deref(),
+            Some(Path::new("/path/to/keypair.json"))
+        );
+    }
+
+    #[test]
+    fn solver_config_parses_a_kms_signer() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer-kms-key = "arn:aws:kms:eu-central-1:1:key/2"
+        "#;
+        let solver: Solver = toml::de::from_str(solver_config).unwrap();
+        assert!(solver.signer_keypair.is_none());
+        assert_eq!(
+            solver.signer_kms_key.as_deref(),
+            Some("arn:aws:kms:eu-central-1:1:key/2")
+        );
     }
 
     #[test]

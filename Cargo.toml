@@ -35,6 +35,7 @@ async-stream = "0.3.5"
 async-trait = "0.1.80"
 autopilot = { path = "crates/autopilot" }
 aws-config = "1.5.1"
+aws-sdk-kms = { version = "1.49.0", default-features = false }
 aws-sdk-s3 = { version = "1.34.0", default-features = false }
 axum = "0.8"
 backtrace = { version = "0.3.76", default-features = false }
