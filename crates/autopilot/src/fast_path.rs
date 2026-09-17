@@ -174,7 +174,10 @@ impl FastPathHandler {
         };
 
         if let Some(settle_attempt) = settle_attempt {
-            tracing::debug!("initiating fast path execution");
+            tracing::debug!(
+                auction_id = settle_attempt.settle_request.auction_id,
+                "initiating fast path execution"
+            );
             Metrics::notify_to_settle(notified_at.elapsed());
             self.execute_fast_path_settle(settle_attempt, creation_date)
                 .await
@@ -197,6 +200,7 @@ impl FastPathHandler {
     /// and the fee-adjusted limit-price check passes. Anything else
     /// returns `None` and the caller drops the order into the next
     /// regular auction by writing `valid_from = now()`.
+    #[instrument(skip_all)]
     async fn try_build_settle_request(
         &self,
         pending: FastPathOrder,
@@ -275,6 +279,7 @@ impl FastPathHandler {
     /// Promotes the staged competition, claims the exclusivity window,
     /// and hands the `/settle` request to the driver. Errors bubble up
     /// to the caller so the handler can log them uniformly.
+    #[instrument(skip_all)]
     async fn execute_fast_path_settle(
         &self,
         attempt: FastPathSettleAttempt,

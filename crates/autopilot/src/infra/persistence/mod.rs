@@ -1042,6 +1042,7 @@ impl Persistence {
     /// for the solvable-orders cache — either immediately (`now`, when
     /// fast-path settle isn't going to fire) or delayed by the
     /// exclusivity window.
+    #[instrument(skip_all)]
     pub async fn set_order_valid_from(
         &self,
         uid: domain::OrderUid,
@@ -1083,6 +1084,7 @@ impl Persistence {
     /// through the quoter return `None` there, meaning no
     /// out-of-competition settle is possible and the caller should just
     /// mark the order eligible for the regular auction.
+    #[instrument(skip_all)]
     pub async fn pending_fast_path_order(
         &self,
         uid: domain::OrderUid,
