@@ -444,7 +444,7 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
     );
     assert!(
         winner_sol.score >= runner_up.score,
-        "winner has a bigger score than runner up"
+        "winner score is at least as big as runner up"
     );
     assert!(
         winner_sol.score > 0 && runner_up.score > 0,

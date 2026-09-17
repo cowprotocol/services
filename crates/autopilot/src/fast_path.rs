@@ -107,11 +107,31 @@ impl FastPathHandler {
         self.process_order_backlog().await;
         tokio::spawn(async move {
             while let Some(order_uid) = receiver.next().await {
-                tokio::spawn(
-                    self.clone()
-                        .handle(order_uid)
-                        .instrument(tracing::info_span!("fast_path", ?order_uid)),
-                );
+                let this = self.clone();
+                tokio::spawn(async move {
+                    let started_at = Instant::now();
+                    let pending = match this.persistence.pending_fast_path_order(order_uid).await {
+                        Ok(Some(pending)) => pending,
+                        Ok(None) => {
+                            tracing::trace!(?order_uid, "not a fast path order");
+                            return;
+                        }
+                        Err(err) => {
+                            Metrics::settlement_not_initiated("db_lookup");
+                            tracing::error!(
+                                ?order_uid,
+                                ?err,
+                                "failed to look up pending fast-path order"
+                            );
+                            return;
+                        }
+                    };
+
+                    let auction_id = pending.staged.as_ref().map(|s| s.data.auction_id);
+                    this.handle(pending, started_at)
+                        .instrument(tracing::info_span!("fast_path", ?order_uid, auction_id))
+                        .await
+                });
             }
         });
     }
@@ -138,25 +158,9 @@ impl FastPathHandler {
     /// new order) short-circuit before any `valid_from` write happens —
     /// only orders the handler actually owns get touched.
     #[instrument(skip_all)]
-    async fn handle(self: Arc<Self>, order_uid: domain::OrderUid) {
-        let notified_at = Instant::now();
-        // Source of truth: the DB. Regular orders (and fast-path
-        // orders the handler already classified) return `None` here
-        // and are left completely alone.
-        let pending = match self.persistence.pending_fast_path_order(order_uid).await {
-            Ok(Some(pending)) => pending,
-            Ok(None) => {
-                tracing::trace!("not a fast path order");
-                return;
-            }
-            Err(err) => {
-                Metrics::settlement_not_initiated("db_lookup");
-                tracing::error!(?err, "failed to look up pending fast-path order");
-                return;
-            }
-        };
-
+    async fn handle(self: Arc<Self>, pending: FastPathOrder, notified_at: Instant) {
         let creation_date = pending.model_order.metadata.creation_date;
+        let uid = pending.model_order.metadata.uid.into();
 
         let settle_attempt = match self.fast_path_enabled {
             true => match self.try_build_settle_request(pending).await {
@@ -174,10 +178,7 @@ impl FastPathHandler {
         };
 
         if let Some(settle_attempt) = settle_attempt {
-            tracing::debug!(
-                auction_id = settle_attempt.settle_request.auction_id,
-                "initiating fast path execution"
-            );
+            tracing::debug!("initiating fast path execution");
             Metrics::notify_to_settle(notified_at.elapsed());
             self.execute_fast_path_settle(settle_attempt, creation_date)
                 .await
@@ -188,7 +189,7 @@ impl FastPathHandler {
             // up going forward.
             tracing::debug!("fast path not possible, making order valid immediately");
             let now = model::time::now_in_epoch_seconds();
-            if let Err(err) = self.persistence.set_order_valid_from(order_uid, now).await {
+            if let Err(err) = self.persistence.set_order_valid_from(uid, now).await {
                 tracing::error!(?err, "failed to fall through to regular auction");
             }
         };
@@ -330,11 +331,7 @@ impl FastPathHandler {
         let buy_token = ByteArray(staged.data.buy_token.0.0);
         let side = shared::db_order_conversions::order_kind_into(order_kind);
 
-        // AuctionContext for `winsel::Arbitrator::score`. Native prices come
-        // straight from the staged competition (captured at quote time).
-        // Including the order UID in `fee_policies` — even with an empty vec
-        // — keeps `contributes_to_score` true so the single fast-path order
-        // is always scored.
+        // AuctionContext for winner selection logic to compute scores.
         let scoring_ctx = winsel::AuctionContext {
             fee_policies: [(
                 winsel::OrderUid(order_uid.0),
@@ -403,7 +400,10 @@ impl FastPathHandler {
                     &scoring_ctx,
                 ) {
                     Ok(score) => (false, score),
-                    Err(_err) => (true, U256::ZERO),
+                    Err(err) => {
+                        tracing::debug!(?err, "solution could not be scored");
+                        (true, U256::ZERO)
+                    }
                 };
 
                 Ok(database::solver_competition_v2::Solution {
