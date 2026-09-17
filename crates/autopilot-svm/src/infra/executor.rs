@@ -99,6 +99,8 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             {
                 tracing::error!(auction_id, ?err, "failed to open the settlement window");
             }
+            let windows = self.windows.clone();
+            let solver = winner.solver();
             tokio::spawn(async move {
                 match driver.settle(&request).await {
                     Ok(response) => tracing::info!(
@@ -108,12 +110,20 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                         tx_signature = %response.tx_signature,
                         "settlement submitted"
                     ),
-                    Err(err) => tracing::error!(
-                        driver = %driver.name,
-                        auction_id,
-                        ?err,
-                        "settlement failed"
-                    ),
+                    Err(err) => {
+                        tracing::error!(
+                            driver = %driver.name,
+                            auction_id,
+                            ?err,
+                            "settlement failed"
+                        );
+                        // Close the window so its orders return to the next
+                        // auction. A settlement the driver gave up on can
+                        // still land, the indexer then upgrades the verdict.
+                        if let Err(err) = windows.close_rejected(auction_id, solver, uid).await {
+                            tracing::error!(auction_id, ?err, "failed to reject the window");
+                        }
+                    }
                 }
             });
         }
