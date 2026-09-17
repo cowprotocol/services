@@ -1148,7 +1148,7 @@ impl Persistence {
             price_tokens,
             price_values,
             surplus_capturing_jit_order_owners: Vec::new(),
-            penalty_caps_native: Some(Vec::new()),
+            penalty_caps_native: Some(vec![promotion.penalty_cap_native]),
         };
 
         let policy_rows: Vec<_> = promotion
@@ -1248,6 +1248,9 @@ pub struct FastPathPromotion {
     pub solutions: Vec<database::solver_competition_v2::Solution>,
     pub fee_policies: Vec<domain::fee::Policy>,
     pub reference_score: database::reference_scores::Score,
+    /// Cap of the penalty the solver will get for not executing the order.
+    /// Denominated in the native token.
+    pub penalty_cap_native: BigDecimal,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

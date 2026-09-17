@@ -460,6 +460,10 @@ impl FastPathHandler {
                 solutions: solution_rows,
                 fee_policies: volume_fee_policies.clone(),
                 reference_score,
+                // TODO: populate penalty caps correctly. For a brief period after the
+                // launch there will be no penalties but we already need to store a
+                // 0 value for the accounting pipeline to work.
+                penalty_cap_native: 0.into(),
             })
             .await
             .context("failed to promote staged fast-path competition")?;
