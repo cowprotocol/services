@@ -302,6 +302,9 @@ fn validate(
 /// The quote id to store on the order: `id` when the stored quote matches
 /// the order (same pair and side, same fixed amount, unexpired), `None`
 /// otherwise.
+/// TODO: once fee policies consume the link, a miss must re-quote and link
+/// the fresh quote instead of dropping the link, like the EVM orderbook's
+/// `find_quote` fallback, so every order carries a quote.
 async fn link_quote(pool: &sqlx::PgPool, id: i64, order: &db::SponsoredOrder) -> Option<i64> {
     let quote = match db::read_quote(pool, id).await {
         Ok(Some(quote)) => quote,
