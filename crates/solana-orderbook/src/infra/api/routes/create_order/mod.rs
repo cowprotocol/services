@@ -15,6 +15,7 @@ use {
         db,
     },
     axum::{Json, http::StatusCode},
+    bigdecimal::BigDecimal,
     cow_settlement_interface::{
         data::intent::{EncodedOrderIntent, OrderIntent, OrderKind as IntentOrderKind},
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
@@ -42,6 +43,9 @@ use {
 pub struct Params {
     #[serde_as(as = "Base64")]
     pub transaction: Vec<u8>,
+    /// The id the quote endpoint answered for this order, if any.
+    #[serde(default)]
+    pub quote_id: Option<i64>,
 }
 
 /// Rejections of a sponsored order placement. The names follow the EVM
@@ -162,6 +166,14 @@ pub async fn create_order(
     if duplicate {
         return Err(PlacementError::DuplicatedOrder.into());
     }
+
+    // The link is best-effort: a quote that is missing, expired, or not the
+    // one this order came from is dropped with a warning instead of
+    // rejecting an otherwise valid order.
+    order.quote_id = match params.quote_id {
+        Some(id) => link_quote(state.pool(), id, &order).await,
+        None => None,
+    };
 
     let uid = order.uid;
     if let Err(err) = db::insert_sponsored_order(state.pool(), &order).await {
@@ -285,6 +297,39 @@ fn validate(
     }
 
     Ok(build_order(intent, uid, order_pda))
+}
+
+/// The quote id to store on the order: `id` when the stored quote matches
+/// the order (same pair and side, same fixed amount, unexpired), `None`
+/// otherwise.
+async fn link_quote(pool: &sqlx::PgPool, id: i64, order: &db::SponsoredOrder) -> Option<i64> {
+    let quote = match db::read_quote(pool, id).await {
+        Ok(Some(quote)) => quote,
+        Ok(None) => {
+            tracing::warn!(id, "quote link dropped, no such quote");
+            return None;
+        }
+        Err(err) => {
+            tracing::warn!(id, ?err, "quote link dropped, lookup failed");
+            return None;
+        }
+    };
+    // The unfixed side of the order carries the user's slippage, so only the
+    // fixed one is expected to equal the quote's.
+    let fixed_amount_matches = match order.kind {
+        OrderKind::Sell => quote.sell_amount == BigDecimal::from(order.sell_amount),
+        OrderKind::Buy => quote.buy_amount == BigDecimal::from(order.buy_amount),
+    };
+    let matches = quote.sell_token.0 == order.sell_token
+        && quote.buy_token.0 == order.buy_token
+        && quote.kind == order.kind
+        && fixed_amount_matches
+        && quote.expiration > chrono::Utc::now();
+    if !matches {
+        tracing::warn!(id, "quote link dropped, the quote does not match the order");
+        return None;
+    }
+    Some(id)
 }
 
 /// Resolve an instruction's account indexes into the transaction's keys.
@@ -503,5 +548,6 @@ fn build_order(
         order_pda: order_pda.to_bytes(),
         presigned_transaction: Vec::new(),
         last_valid_block_height: 0,
+        quote_id: None,
     }
 }

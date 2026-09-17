@@ -175,6 +175,7 @@ pub struct SponsoredOrder {
     pub order_pda: [u8; 32],
     pub presigned_transaction: Vec<u8>,
     pub last_valid_block_height: u64,
+    pub quote_id: Option<i64>,
 }
 
 /// Whether an order with this uid is already stored.
@@ -193,8 +194,8 @@ pub async fn insert_sponsored_order(pool: &PgPool, order: &SponsoredOrder) -> Re
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda,
-    presigned_transaction, last_valid_block_height)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
+    presigned_transaction, last_valid_block_height, quote_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15, $16)
     "#;
     let mut tx = pool.begin().await.context("begin sponsored order insert")?;
     sqlx::query(QUERY)
@@ -213,6 +214,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
         .bind(ByteArray(order.order_pda))
         .bind(&order.presigned_transaction)
         .bind(i64::try_from(order.last_valid_block_height).context("block height exceeds i64")?)
+        .bind(order.quote_id)
         .execute(&mut *tx)
         .await
         .context("insert sponsored order")?;
@@ -301,6 +303,32 @@ RETURNING id
         .fetch_one(ex)
         .await
         .context("insert solana.quotes")
+}
+
+/// A stored quote, as read back to link an order against it.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct StoredQuote {
+    pub sell_token: ByteArray<32>,
+    pub buy_token: ByteArray<32>,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub kind: OrderKind,
+    pub expiration: DateTime<Utc>,
+}
+
+/// Read one stored quote. `None` when the id is unknown.
+pub async fn read_quote(ex: impl PgExecutor<'_>, id: i64) -> Result<Option<StoredQuote>> {
+    const QUERY: &str = r#"
+SELECT sell_token, buy_token, sell_amount, buy_amount, kind,
+       expiration_timestamp AS expiration
+FROM solana.quotes
+WHERE id = $1
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(id)
+        .fetch_optional(ex)
+        .await
+        .context("read solana.quotes")
 }
 
 #[cfg(test)]
@@ -411,6 +439,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             order_pda: [0xB0; 32],
             presigned_transaction: vec![0xC0; 128],
             last_valid_block_height: 12_345,
+            quote_id: Some(7),
         };
         insert_sponsored_order(&pool, &order).await.unwrap();
 
@@ -420,6 +449,11 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             .unwrap();
         assert_eq!(creation.presigned_transaction, vec![0xC0; 128]);
         assert_eq!(creation.last_valid_block_height, 12_345);
+        let quote_id: Option<i64> = sqlx::query_scalar("SELECT quote_id FROM solana.orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(quote_id, Some(7));
         let events: Vec<(Vec<u8>, OrderEventLabel)> =
             sqlx::query_as("SELECT order_uid, label FROM solana.order_events")
                 .fetch_all(&pool)
