@@ -444,6 +444,14 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
         "with two non-filtered bids, the winner's reference score is the runner-up's score \
          (winner={winner_sol:?}, runner_up={runner_up:?})",
     );
+    assert!(
+        winner_sol.score >= runner_up.score,
+        "winner has a bigger score than runner up"
+    );
+    assert!(
+        winner_sol.score > 0 && runner_up.score > 0,
+        "both solutions have a non-zero score"
+    );
 
     // (2) The order ends up `Fulfilled` after `valid_from`.
     tracing::info!("Waiting for the regular-auction settlement.");
