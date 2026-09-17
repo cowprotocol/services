@@ -1,5 +1,10 @@
--- The quote a sponsored order was placed against, when the creation body
--- named one and it matched the order. Orders created on chain never carry
--- one.
-ALTER TABLE solana.orders
-    ADD COLUMN quote_id bigint;
+-- The quote a sponsored order was placed against, copied at placement so the
+-- record outlives any cleanup of solana.quotes, like the EVM order_quotes
+-- table. The quote id stays as provenance.
+CREATE TABLE solana.order_quotes (
+    order_uid   bytea PRIMARY KEY,
+    quote_id    bigint,
+    sell_amount numeric(20,0) NOT NULL,
+    buy_amount  numeric(20,0) NOT NULL,
+    solver      bytea NOT NULL
+);

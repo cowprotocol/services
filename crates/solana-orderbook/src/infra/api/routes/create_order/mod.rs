@@ -15,7 +15,7 @@ use {
         db,
     },
     axum::{Json, http::StatusCode},
-    bigdecimal::BigDecimal,
+    bigdecimal::ToPrimitive,
     cow_settlement_interface::{
         data::intent::{EncodedOrderIntent, OrderIntent, OrderKind as IntentOrderKind},
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
@@ -170,13 +170,13 @@ pub async fn create_order(
     // The link is best-effort: a quote that is missing, expired, or not the
     // one this order came from is dropped with a warning instead of
     // rejecting an otherwise valid order.
-    order.quote_id = match params.quote_id {
+    let quote = match params.quote_id {
         Some(id) => link_quote(state.pool(), id, &order).await,
         None => None,
     };
 
     let uid = order.uid;
-    if let Err(err) = db::insert_sponsored_order(state.pool(), &order).await {
+    if let Err(err) = db::insert_sponsored_order(state.pool(), &order, quote.as_ref()).await {
         let duplicate = err
             .downcast_ref::<sqlx::Error>()
             .and_then(|err| err.as_database_error())
@@ -299,13 +299,17 @@ fn validate(
     Ok(build_order(intent, uid, order_pda))
 }
 
-/// The quote id to store on the order: `id` when the stored quote matches
-/// the order (same pair and side, same fixed amount, unexpired), `None`
-/// otherwise.
+/// The quote copy to store under the order: filled when the stored quote
+/// matches the order (same pair and side, same fixed amount, unexpired),
+/// `None` otherwise.
 /// TODO: once fee policies consume the link, a miss must re-quote and link
 /// the fresh quote instead of dropping the link, like the EVM orderbook's
 /// `find_quote` fallback, so every order carries a quote.
-async fn link_quote(pool: &sqlx::PgPool, id: i64, order: &db::SponsoredOrder) -> Option<i64> {
+async fn link_quote(
+    pool: &sqlx::PgPool,
+    id: i64,
+    order: &db::SponsoredOrder,
+) -> Option<db::OrderQuote> {
     let quote = match db::read_quote(pool, id).await {
         Ok(Some(quote)) => quote,
         Ok(None) => {
@@ -320,8 +324,8 @@ async fn link_quote(pool: &sqlx::PgPool, id: i64, order: &db::SponsoredOrder) ->
     // The unfixed side of the order carries the user's slippage, so only the
     // fixed one is expected to equal the quote's.
     let fixed_amount_matches = match order.kind {
-        OrderKind::Sell => quote.sell_amount == BigDecimal::from(order.sell_amount),
-        OrderKind::Buy => quote.buy_amount == BigDecimal::from(order.buy_amount),
+        OrderKind::Sell => quote.sell_amount.to_u64() == Some(order.sell_amount),
+        OrderKind::Buy => quote.buy_amount.to_u64() == Some(order.buy_amount),
     };
     let matches = quote.sell_token == order.sell_token
         && quote.buy_token == order.buy_token
@@ -332,7 +336,12 @@ async fn link_quote(pool: &sqlx::PgPool, id: i64, order: &db::SponsoredOrder) ->
         tracing::warn!(id, "quote link dropped, the quote does not match the order");
         return None;
     }
-    Some(id)
+    Some(db::OrderQuote {
+        quote_id: id,
+        sell_amount: quote.sell_amount,
+        buy_amount: quote.buy_amount,
+        solver: quote.solver,
+    })
 }
 
 /// Resolve an instruction's account indexes into the transaction's keys.
@@ -551,6 +560,5 @@ fn build_order(
         order_pda: ByteArray(order_pda.to_bytes()),
         presigned_transaction: Vec::new(),
         last_valid_block_height: 0,
-        quote_id: None,
     }
 }

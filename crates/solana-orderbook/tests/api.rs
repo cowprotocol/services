@@ -828,10 +828,13 @@ async fn create_order_checks_the_preparation_template() {
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_persists_a_sponsored_order() {
     let pool = PgPool::connect("postgresql://").await.unwrap();
-    sqlx::query("TRUNCATE solana.order_pda, solana.orders, solana.order_events CASCADE")
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
@@ -873,11 +876,14 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     assert!(!stored.is_empty());
     // Mocked height 100 plus the maximum blockhash age.
     assert_eq!(expiry, 250);
-    let linked: Option<i64> = sqlx::query_scalar("SELECT quote_id FROM solana.orders")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(linked, Some(quote_id));
+    let linked: (Vec<u8>, Option<i64>, String) =
+        sqlx::query_as("SELECT order_uid, quote_id, sell_amount::text FROM solana.order_quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(linked.0, const_hex::decode(&uid[2..]).unwrap());
+    assert_eq!(linked.1, Some(quote_id));
+    assert_eq!(linked.2, intent.sell_amount.to_string());
 
     // The duplicate check runs after the RPC probes and the mock answers
     // each probe once, so the duplicate goes through a fresh server over the
@@ -917,11 +923,9 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         .await
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::CREATED);
-    let unlinked: Option<i64> =
-        sqlx::query_scalar("SELECT quote_id FROM solana.orders WHERE owner = $1")
-            .bind(other_owner.pubkey().to_bytes().to_vec())
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(unlinked, None);
+    let copies: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_quotes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(copies, 1, "the mismatched quote must not be copied");
 }

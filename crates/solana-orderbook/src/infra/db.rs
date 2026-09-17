@@ -175,7 +175,16 @@ pub struct SponsoredOrder {
     pub order_pda: ByteArray<32>,
     pub presigned_transaction: Vec<u8>,
     pub last_valid_block_height: u64,
-    pub quote_id: Option<i64>,
+}
+
+/// The quote an order was placed against, copied under the order's uid so
+/// the record outlives any cleanup of `solana.quotes`.
+#[derive(Clone, Debug)]
+pub struct OrderQuote {
+    pub quote_id: i64,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub solver: ByteArray<32>,
 }
 
 /// Whether an order with this uid is already stored.
@@ -187,15 +196,20 @@ pub async fn order_exists(pool: &PgPool, uid: &[u8; 32]) -> Result<bool> {
         .context("check solana.orders existence")
 }
 
-/// Insert a sponsored order and its `created` event in one transaction.
-/// A duplicate uid or order PDA surfaces as a unique violation.
-pub async fn insert_sponsored_order(pool: &PgPool, order: &SponsoredOrder) -> Result<()> {
+/// Insert a sponsored order, its quote copy when one matched, and its
+/// `created` event in one transaction. A duplicate uid or order PDA surfaces
+/// as a unique violation.
+pub async fn insert_sponsored_order(
+    pool: &PgPool,
+    order: &SponsoredOrder,
+    quote: Option<&OrderQuote>,
+) -> Result<()> {
     const QUERY: &str = r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda,
-    presigned_transaction, last_valid_block_height, quote_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15, $16)
+    presigned_transaction, last_valid_block_height)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
     "#;
     let mut tx = pool.begin().await.context("begin sponsored order insert")?;
     sqlx::query(QUERY)
@@ -214,10 +228,23 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15,
         .bind(order.order_pda)
         .bind(&order.presigned_transaction)
         .bind(i64::try_from(order.last_valid_block_height).context("block height exceeds i64")?)
-        .bind(order.quote_id)
         .execute(&mut *tx)
         .await
         .context("insert sponsored order")?;
+    if let Some(quote) = quote {
+        sqlx::query(
+            "INSERT INTO solana.order_quotes (order_uid, quote_id, sell_amount, buy_amount, \
+             solver) VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(order.uid)
+        .bind(quote.quote_id)
+        .bind(&quote.sell_amount)
+        .bind(&quote.buy_amount)
+        .bind(quote.solver)
+        .execute(&mut *tx)
+        .await
+        .context("insert order quote")?;
+    }
     sqlx::query(
         "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
     )
@@ -313,13 +340,14 @@ pub struct StoredQuote {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub kind: OrderKind,
+    pub solver: ByteArray<32>,
     pub expiration: DateTime<Utc>,
 }
 
 /// Read one stored quote. `None` when the id is unknown.
 pub async fn read_quote(ex: impl PgExecutor<'_>, id: i64) -> Result<Option<StoredQuote>> {
     const QUERY: &str = r#"
-SELECT sell_token, buy_token, sell_amount, buy_amount, kind,
+SELECT sell_token, buy_token, sell_amount, buy_amount, kind, solver,
        expiration_timestamp AS expiration
 FROM solana.quotes
 WHERE id = $1
@@ -419,10 +447,13 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_inserts_a_sponsored_order_once() {
         let pool = PgPool::connect("postgresql://").await.unwrap();
-        sqlx::query("TRUNCATE solana.order_pda, solana.orders, solana.order_events CASCADE")
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+             CASCADE",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         let order = SponsoredOrder {
             uid: ByteArray([0x11; 32]),
             owner: ByteArray([0xAA; 32]),
@@ -439,9 +470,16 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             order_pda: ByteArray([0xB0; 32]),
             presigned_transaction: vec![0xC0; 128],
             last_valid_block_height: 12_345,
-            quote_id: Some(7),
         };
-        insert_sponsored_order(&pool, &order).await.unwrap();
+        let quote = OrderQuote {
+            quote_id: 7,
+            sell_amount: BigDecimal::from(1_000u64),
+            buy_amount: BigDecimal::from(2_100u64),
+            solver: ByteArray([0xDD; 32]),
+        };
+        insert_sponsored_order(&pool, &order, Some(&quote))
+            .await
+            .unwrap();
 
         let creation = find_sponsored_creation(&pool, order.uid.0)
             .await
@@ -449,11 +487,16 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             .unwrap();
         assert_eq!(creation.presigned_transaction, vec![0xC0; 128]);
         assert_eq!(creation.last_valid_block_height, 12_345);
-        let quote_id: Option<i64> = sqlx::query_scalar("SELECT quote_id FROM solana.orders")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(quote_id, Some(7));
+        let copied: (Vec<u8>, Option<i64>, String, Vec<u8>) = sqlx::query_as(
+            "SELECT order_uid, quote_id, buy_amount::text, solver FROM solana.order_quotes",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(copied.0, order.uid.0.to_vec());
+        assert_eq!(copied.1, Some(7));
+        assert_eq!(copied.2, "2100");
+        assert_eq!(copied.3, [0xDD; 32].to_vec());
         let events: Vec<(Vec<u8>, OrderEventLabel)> =
             sqlx::query_as("SELECT order_uid, label FROM solana.order_events")
                 .fetch_all(&pool)
@@ -466,7 +509,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
 
         // The uid is the primary key: placing the same order twice fails and
         // leaves no second event behind.
-        assert!(insert_sponsored_order(&pool, &order).await.is_err());
+        assert!(insert_sponsored_order(&pool, &order, None).await.is_err());
         let events: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_events")
             .fetch_one(&pool)
             .await
