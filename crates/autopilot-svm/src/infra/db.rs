@@ -5,6 +5,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
+    chrono::{DateTime, Utc},
     database::byte_array::ByteArray,
     sqlx::PgExecutor,
 };
@@ -246,10 +247,40 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
         .with_context(|| format!("amount {value} does not fit u64"))
 }
 
+/// Delete quotes whose expiration passed. Answers the number removed.
+pub async fn remove_expired_quotes(ex: impl PgExecutor<'_>, now: DateTime<Utc>) -> Result<u64> {
+    let result = sqlx::query("DELETE FROM solana.quotes WHERE expiration_timestamp < $1")
+        .bind(now)
+        .execute(ex)
+        .await
+        .context("delete expired quotes")?;
+    Ok(result.rows_affected())
+}
+
+/// Delete order events recorded before the timestamp. Answers the number
+/// removed.
+pub async fn remove_order_events_before(
+    ex: impl PgExecutor<'_>,
+    timestamp: DateTime<Utc>,
+) -> Result<u64> {
+    let result = sqlx::query("DELETE FROM solana.order_events WHERE timestamp < $1")
+        .bind(timestamp)
+        .execute(ex)
+        .await
+        .context("delete old order events")?;
+    Ok(result.rows_affected())
+}
+
 #[cfg(test)]
 mod tests {
     use {
-        super::{last_indexed_slot, open_orders},
+        super::{
+            Utc,
+            last_indexed_slot,
+            open_orders,
+            remove_expired_quotes,
+            remove_order_events_before,
+        },
         bigdecimal::BigDecimal,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
@@ -407,5 +438,55 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
             .await
             .unwrap();
         assert_eq!(last_indexed_slot(&mut *tx).await.unwrap(), Some(42));
+    }
+
+    /// Expired quotes and old order events are deleted, fresh rows survive.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_cleanup_removes_expired_rows() {
+        let pool = crate::test_db::pool().await;
+        sqlx::query("TRUNCATE solana.quotes, solana.order_events")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.quotes (sell_token, buy_token, sell_amount, buy_amount, kind, \
+             solver, expiration_timestamp) VALUES ($1, $2, 1, 2, 'sell'::solana.OrderKind, $3, \
+             now() - interval '1 minute'), ($1, $2, 1, 2, 'sell'::solana.OrderKind, $3, now() + \
+             interval '1 hour')",
+        )
+        .bind(ByteArray([0x11; 32]))
+        .bind(ByteArray([0x22; 32]))
+        .bind(ByteArray([0x33; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now() - \
+             interval '40 days', 'created'::solana.OrderEventLabel), ($1, now(), \
+             'created'::solana.OrderEventLabel)",
+        )
+        .bind(ByteArray([0x44; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let now = Utc::now();
+        assert_eq!(remove_expired_quotes(&pool, now).await.unwrap(), 1);
+        assert_eq!(
+            remove_order_events_before(&pool, now - chrono::Duration::days(30))
+                .await
+                .unwrap(),
+            1
+        );
+        let quotes: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let events: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!((quotes, events), (1, 1));
     }
 }
