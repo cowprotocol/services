@@ -456,7 +456,7 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
 ///   autopilot) — already baked into the quote returned to the user.
 /// * 1% partner volume fee declared in app-data.
 /// * 2% haircut on the bad solver.
-/// * users signs at 2% below the (protocol-fee-adjsuted) quote. This accounts
+/// * user signs at 2% below the (protocol-fee-adjusted) quote. This accounts
 ///   for the 1% partner fee AND gives 1% slippage on top. The 2% haircut will
 ///   not have an issue with the 1% partner fee because the user accounted for
 ///   that but the 1% slippage is not enough for the 2% haircut solution to
