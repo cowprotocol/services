@@ -3,10 +3,11 @@
 use {
     crate::{
         domain::{auction::Order, cycle::SolanaCycle},
-        infra::db,
+        infra::{db, prices::NativePrices},
         run_loop::AuctionProvider,
     },
     async_trait::async_trait,
+    chain_types::solana::Pubkey as ChainPubkey,
     cow_solana_rpc::SolanaRPC,
     solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey},
     spl_token_interface::state::{Account as TokenAccount, AccountState},
@@ -21,6 +22,7 @@ use {
 pub struct DbAuctionProvider {
     pool: PgPool,
     rpc: SolanaRPC,
+    prices: NativePrices,
     /// Last allocated auction id. Ids are unix seconds, bumped past the
     /// previous allocation when cycles land within the same second. Unique
     /// only per process: no table allocates auction ids.
@@ -30,10 +32,11 @@ pub struct DbAuctionProvider {
 }
 
 impl DbAuctionProvider {
-    pub fn new(pool: PgPool, rpc: SolanaRPC) -> Self {
+    pub fn new(pool: PgPool, rpc: SolanaRPC, prices: NativePrices) -> Self {
         Self {
             pool,
             rpc,
+            prices,
             last_id: AtomicI64::new(0),
         }
     }
@@ -129,7 +132,29 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
         auction.orders = self.receivable_orders(auction.orders).await;
-        (!auction.orders.is_empty()).then_some(auction)
+        if auction.orders.is_empty() {
+            return None;
+        }
+        // A cut without prices would rank solutions on incomparable scores,
+        // so a failed lookup skips the cycle instead.
+        let tokens = auction
+            .orders
+            .iter()
+            .flat_map(|order| [order.sell_token, order.buy_token])
+            .map(|token| Pubkey::new_from_array(token.0))
+            .collect();
+        let prices = match self.prices.prices(tokens).await {
+            Ok(prices) => prices,
+            Err(err) => {
+                tracing::warn!(?err, "native price lookup failed, skipping the cut");
+                return None;
+            }
+        };
+        auction.native_prices = prices
+            .into_iter()
+            .map(|(token, price)| (ChainPubkey(token.to_bytes()), price))
+            .collect();
+        Some(auction)
     }
 }
 
@@ -188,6 +213,7 @@ mod tests {
         DbAuctionProvider::new(
             sqlx::PgPool::connect_lazy("postgresql://").unwrap(),
             SolanaRPC::new_mock_with_mocks(mocks),
+            NativePrices::seeded([]),
         )
     }
 

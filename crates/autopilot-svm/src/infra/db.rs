@@ -209,7 +209,11 @@ pub async fn cut(
     block_height: Option<i64>,
 ) -> Result<Auction> {
     let orders = orders_from_rows(open_orders(ex, now_unix, block_height).await?);
-    Ok(Auction { id, orders })
+    Ok(Auction {
+        id,
+        orders,
+        native_prices: Default::default(),
+    })
 }
 
 /// A row the indexer wrote always converts (on-chain values fit the domain
