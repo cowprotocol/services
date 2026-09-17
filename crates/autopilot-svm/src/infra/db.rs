@@ -28,6 +28,7 @@ pub struct OrderRow {
     pub partially_fillable: bool,
     pub order_pda: ByteArray<32>,
     pub app_data: ByteArray<32>,
+    pub created_on_chain: bool,
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
@@ -39,7 +40,8 @@ pub async fn open_orders(ex: impl PgExecutor<'_>, now_unix: i64) -> Result<Vec<O
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
-       o.kind, o.partially_fillable, o.order_pda, o.app_data
+       o.kind, o.partially_fillable, o.order_pda, o.app_data,
+       p.order_uid IS NOT NULL AS created_on_chain
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.valid_to >= $1
@@ -84,6 +86,27 @@ pub struct LandedWindow {
     pub solver: ByteArray<32>,
     pub end_slot: i64,
     pub submitted_signature: ByteArray<64>,
+}
+
+/// The stored creation transactions of the given orders that do not exist on
+/// chain yet.
+pub async fn pending_creations(
+    ex: impl PgExecutor<'_>,
+    uids: &[Vec<u8>],
+) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    const QUERY: &str = r#"
+SELECT o.uid, o.presigned_transaction
+FROM solana.orders o
+LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+WHERE o.uid = ANY($1)
+  AND o.presigned_transaction IS NOT NULL
+  AND p.order_uid IS NULL
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(uids)
+        .fetch_all(ex)
+        .await
+        .context("read pending solana.orders creations")
 }
 
 /// Open a settlement-execution window for a dispatched settlement.
@@ -211,6 +234,7 @@ impl TryFrom<OrderRow> for Order {
             partially_fillable: row.partially_fillable,
             order_pda: Pubkey(row.order_pda.0),
             app_data: AppData(row.app_data.0),
+            created_on_chain: row.created_on_chain,
         })
     }
 }
@@ -246,6 +270,7 @@ mod tests {
             partially_fillable: false,
             order_pda: ByteArray([7; 32]),
             app_data: ByteArray([0; 32]),
+            created_on_chain: true,
         }
     }
 
