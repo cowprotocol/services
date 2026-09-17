@@ -17,10 +17,6 @@ use {
 /// How long a quoted order stays valid when the request names no validity.
 const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
 
-/// How long storing the quote may hold up the answer. No component consumes
-/// the quote id, so a slow or down database costs the id, not the quote.
-/// Without the cap every quote in an outage would stall for the pool's
-/// acquire timeout.
 /// TODO: fail the quote on a store error instead, like the EVM orderbook,
 /// once fee policies consume the link and the id becomes load-bearing.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -60,9 +56,9 @@ pub async fn quote(
         })?;
 
     let expiration = now + state.quote_expiry();
-    // The id only links a later order back to this quote, the amounts stand
-    // on their own, so a failed insert answers without an id instead of
-    // failing the quote.
+    // A failed insert answers without an id instead of failing the quote,
+    // since the fees are not yet implemented and stored quote are not mandatory
+    // at the moment.
     let quote = db::Quote {
         sell_token: request.sell_token.to_bytes(),
         buy_token: request.buy_token.to_bytes(),
