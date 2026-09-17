@@ -3,7 +3,8 @@
 use {
     base64::Engine,
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-    solana_orderbook::infra::{api::Api, quoter::Quoter},
+    database::{byte_array::ByteArray, solana::OrderKind},
+    solana_orderbook::infra::{api::Api, db, quoter::Quoter},
     solana_sdk::signer::Signer,
     sqlx::PgPool,
     std::{net::SocketAddr, time::Duration},
@@ -827,10 +828,13 @@ async fn create_order_checks_the_preparation_template() {
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_persists_a_sponsored_order() {
     let pool = PgPool::connect("postgresql://").await.unwrap();
-    sqlx::query("TRUNCATE solana.order_pda, solana.orders, solana.order_events CASCADE")
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
@@ -839,10 +843,24 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     let intent = sponsored_intent(owner.pubkey(), true);
     let preparations = full_preparations(funder, owner.pubkey(), &intent);
     let transaction = creation_tx(funder, &owner, &intent, preparations, true);
+    let quote_id = db::save_quote(
+        &pool,
+        &db::Quote {
+            sell_token: ByteArray(intent.sell_mint.to_bytes()),
+            buy_token: ByteArray(intent.buy_mint.to_bytes()),
+            sell_amount: intent.sell_amount,
+            buy_amount: intent.buy_amount,
+            kind: OrderKind::Sell,
+            solver: ByteArray([0xDD; 32]),
+            expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
+        },
+    )
+    .await
+    .unwrap();
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "transaction": transaction.clone() }))
+        .json(&serde_json::json!({ "transaction": transaction.clone(), "quoteId": quote_id }))
         .send()
         .await
         .unwrap();
@@ -858,6 +876,14 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     assert!(!stored.is_empty());
     // Mocked height 100 plus the maximum blockhash age.
     assert_eq!(expiry, 250);
+    let linked: (Vec<u8>, Option<i64>, String) =
+        sqlx::query_as("SELECT order_uid, quote_id, sell_amount::text FROM solana.order_quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(linked.0, const_hex::decode(&uid[2..]).unwrap());
+    assert_eq!(linked.1, Some(quote_id));
+    assert_eq!(linked.2, intent.sell_amount.to_string());
 
     // The duplicate check runs after the RPC probes and the mock answers
     // each probe once, so the duplicate goes through a fresh server over the
@@ -868,4 +894,71 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "DuplicatedOrder")
     );
+
+    // A named quote that does not match the order (wrong pair here) is
+    // dropped: the order lands unlinked.
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let other_owner = solana_sdk::signer::keypair::Keypair::new();
+    let other = sponsored_intent(other_owner.pubkey(), false);
+    let mismatched = db::save_quote(
+        &pool,
+        &db::Quote {
+            sell_token: ByteArray([0x99; 32]),
+            buy_token: ByteArray(other.buy_mint.to_bytes()),
+            sell_amount: other.sell_amount,
+            buy_amount: other.buy_amount,
+            kind: OrderKind::Sell,
+            solver: ByteArray([0xDD; 32]),
+            expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
+        },
+    )
+    .await
+    .unwrap();
+    let destination = destination_creation(funder, other_owner.pubkey(), &other);
+    let transaction = creation_tx(funder, &other_owner, &other, vec![destination], true);
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({ "transaction": transaction, "quoteId": mismatched }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let copies: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_quotes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(copies, 1, "the mismatched quote must not be copied");
+
+    // An expired quote is dropped even when everything else matches.
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let late_owner = solana_sdk::signer::keypair::Keypair::new();
+    let late = sponsored_intent(late_owner.pubkey(), false);
+    let expired = db::save_quote(
+        &pool,
+        &db::Quote {
+            sell_token: ByteArray(late.sell_mint.to_bytes()),
+            buy_token: ByteArray(late.buy_mint.to_bytes()),
+            sell_amount: late.sell_amount,
+            buy_amount: late.buy_amount,
+            kind: OrderKind::Sell,
+            solver: ByteArray([0xDD; 32]),
+            expiration: chrono::Utc::now() - chrono::Duration::seconds(1),
+        },
+    )
+    .await
+    .unwrap();
+    let destination = destination_creation(funder, late_owner.pubkey(), &late);
+    let transaction = creation_tx(funder, &late_owner, &late, vec![destination], true);
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({ "transaction": transaction, "quoteId": expired }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let copies: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_quotes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(copies, 1, "the expired quote must not be copied");
 }
