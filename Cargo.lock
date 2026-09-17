@@ -1520,7 +1520,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "solana-sdk",
- "spl-token-interface 2.0.0",
+ "spl-token-interface",
  "sqlx",
  "thiserror 1.0.69",
  "tikv-jemallocator",
@@ -2294,7 +2294,7 @@ dependencies = [
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "syn 3.0.5",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -11202,9 +11202,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.5"
+version = "3.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12df2e0110f65b775f769bb17ef989067a1d931b2eb822bd4346631eeada89f9"
+checksum = "8593e8e72159ed2257d083c7a454a85cbf854f37a0966d8d483aff8c8a3ebcee"
 dependencies = [
  "proc-macro2",
  "quote",
