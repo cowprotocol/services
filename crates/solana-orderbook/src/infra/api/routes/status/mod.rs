@@ -27,7 +27,7 @@ pub async fn order_status(
     {
         return Ok(Json(dto::Status::Traded(Vec::new())));
     }
-    let row = db::order_by_uid(state.pool(), uid)
+    let row = db::find_order_by_uid(state.pool(), uid)
         .await
         .map_err(internal)?
         .ok_or_else(|| error::reply(StatusCode::NOT_FOUND, "NotFound", "order status not found"))?;
@@ -35,7 +35,7 @@ pub async fn order_status(
     if row.cancellation_timestamp.is_some() {
         return Ok(Json(dto::Status::Cancelled));
     }
-    if let Some(label) = db::latest_order_event(state.pool(), uid)
+    if let Some(label) = db::find_latest_order_event(state.pool(), uid)
         .await
         .map_err(internal)?
     {

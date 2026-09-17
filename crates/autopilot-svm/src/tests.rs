@@ -23,7 +23,9 @@ use {
     },
     async_trait::async_trait,
     axum::{Json, Router, extract::State, routing::post},
+    base64::{Engine, prelude::BASE64_STANDARD},
     chain_types::solana::{IntentHash, Pubkey, Signature},
+    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     database::byte_array::ByteArray,
     sqlx::PgPool,
     std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration},
@@ -83,6 +85,34 @@ async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     addr
+}
+
+/// A canned `getMultipleAccounts` entry: an initialized account of the
+/// classic SPL token program holding `mint`.
+pub(crate) fn token_account_json(mint: [u8; 32]) -> serde_json::Value {
+    let mut data = [0u8; 165];
+    data[..32].copy_from_slice(&mint);
+    // The account state byte: 1 is Initialized.
+    data[108] = 1;
+    serde_json::json!({
+        "lamports": 2_039_280u64,
+        "data": [BASE64_STANDARD.encode(data), "base64"],
+        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "executable": false,
+        "rentEpoch": 0u64,
+        "space": 165u64,
+    })
+}
+
+/// A mock RPC answering one buy-account lookup with an initialized token
+/// account of the seeded order's buy mint. Each canned response serves once,
+/// later cuts fail open and keep the orders.
+fn mock_rpc() -> SolanaRPC {
+    let response = serde_json::json!({
+        "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+        "value": [token_account_json([0xAB; 32])],
+    });
+    SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]))
 }
 
 async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
@@ -148,7 +178,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
 
     // Stage probes: pinpoint the failing phase before driving the loop.
     {
-        let provider = DbAuctionProvider::new(pool.clone());
+        let provider = DbAuctionProvider::new(pool.clone(), mock_rpc());
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
         let competition = DriverCompetition::new(vec![Arc::clone(&driver)], Duration::from_secs(6));
@@ -161,13 +191,13 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     let windows = SettlementWindows::new(pool.clone());
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
-        Box::new(DbAuctionProvider::new(pool.clone())),
+        Box::new(DbAuctionProvider::new(pool.clone(), mock_rpc())),
         Box::new(DriverCompetition::new(
             vec![Arc::clone(&driver)],
             Duration::from_secs(6),
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
-        Box::new(DriverExecutor::new(vec![driver], windows.clone())),
+        Box::new(DriverExecutor::new(vec![driver], windows.clone(), None)),
         Box::new(CompetitionObserver::new(pool.clone(), windows.clone())),
         25,
     );

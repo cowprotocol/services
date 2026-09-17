@@ -10,7 +10,7 @@ use {
         associated_token_address,
         create_associated_token_account_idempotent,
     },
-    cow_settlement_client::instructions::{
+    cow_settlement_client::instruction::{
         BeginSettle,
         CreateBuffers,
         FinalizeSettle,
@@ -21,6 +21,7 @@ use {
     cow_settlement_interface::{
         data::intent::{Flags, OrderIntent, OrderKind},
         pda::{buffer::find_buffer_pda, order::find_order_pda},
+        token_program::TokenProgram,
     },
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_sdk::{
@@ -197,6 +198,9 @@ impl ResolvedSettlement {
                 CreateBuffers {
                     program_id: self.settlement.program_id,
                     payer,
+                    // The driver only routes classic SPL mints, see the
+                    // token-2022 TODO on the blockchain token helpers.
+                    token_program: TokenProgram::SplToken,
                     mints: &self.missing_buffers,
                 }
                 .into(),
@@ -226,6 +230,9 @@ impl ResolvedSettlement {
                 solver: payer,
                 finalize_ix_index,
                 auction_id: self.settlement.auction_id.get(),
+                // Both token programs stay enabled until the driver settles
+                // token-2022 end to end and can pick per settlement.
+                only_token_program: None,
                 orders: &initialized_intents,
             }
             .into(),
@@ -235,6 +242,7 @@ impl ResolvedSettlement {
             FinalizeSettle {
                 program_id: self.settlement.program_id,
                 begin_ix_index,
+                only_token_program: None,
                 orders: &finalized_intents,
             }
             .into(),

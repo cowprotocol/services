@@ -46,6 +46,11 @@ pub struct Order {
     #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigDecimal,
     pub status: Status,
+    /// The block height a pending sponsored creation dies at. Present only
+    /// while the order awaits its on-chain creation: past this height the
+    /// stored transaction can no longer land and a fresh signature is needed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_valid_block_height: Option<u64>,
 }
 
 /// Which amount the order fixes.
@@ -96,6 +101,9 @@ impl Order {
             executed_sell_amount: row.amount_withdrawn,
             executed_buy_amount: row.amount_received,
             status,
+            last_valid_block_height: row
+                .last_valid_block_height
+                .map(|height| height.try_into().expect("block height fits u64")),
         }
     }
 }
@@ -144,6 +152,7 @@ mod tests {
             amount_withdrawn: 0.into(),
             amount_received: 0.into(),
             cancellation_timestamp: None,
+            last_valid_block_height: None,
         }
     }
 
@@ -192,5 +201,14 @@ mod tests {
         assert_eq!(json["kind"], "sell");
         assert_eq!(json["appData"], format!("0x{}", "77".repeat(32)));
         assert_eq!(json["creationDate"], "1970-01-01T00:16:40Z");
+        // Absent unless a sponsored creation is pending.
+        assert!(json.get("lastValidBlockHeight").is_none());
+
+        let pending = OrderRow {
+            last_valid_block_height: Some(250),
+            ..row()
+        };
+        let json = serde_json::to_value(Order::new(pending, 1_500)).unwrap();
+        assert_eq!(json["lastValidBlockHeight"], 250);
     }
 }

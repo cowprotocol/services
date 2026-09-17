@@ -13,6 +13,7 @@ use {
             observation::SettlementWindows,
             observer::CompetitionObserver,
             provider::DbAuctionProvider,
+            sponsor::Sponsor,
             trigger::SlotTrigger,
         },
         run_loop::AuctionLoop,
@@ -105,9 +106,30 @@ async fn run(config: Config) {
         .map(|driver| Arc::new(Driver::new(driver.name.clone(), &driver.url)))
         .collect();
 
+    let sponsor = config.sponsoring.as_ref().map(|sponsoring| {
+        let keypair = solana_sdk::signer::keypair::read_keypair_file(&sponsoring.funder_keypair)
+            .expect("read the funder keypair");
+        Sponsor::new(
+            keypair,
+            SolanaRPC::new_with_timeout_and_commitment(
+                &config.rpc.endpoint,
+                config.rpc.request_timeout,
+                CommitmentConfig::confirmed(),
+            ),
+            pool.clone(),
+        )
+    });
+
     let auction_loop = AuctionLoop::new(
         Box::new(SlotTrigger::new(rpc, config.min_auction_interval)),
-        Box::new(DbAuctionProvider::new(pool.clone())),
+        Box::new(DbAuctionProvider::new(
+            pool.clone(),
+            SolanaRPC::new_with_timeout_and_commitment(
+                &config.rpc.endpoint,
+                config.rpc.request_timeout,
+                CommitmentConfig::confirmed(),
+            ),
+        )),
         Box::new(DriverCompetition::new(
             drivers.clone(),
             config.competition.solve_deadline,
@@ -116,7 +138,7 @@ async fn run(config: Config) {
             config.competition.max_winners.get(),
             Pubkey(config.contracts.wrapped_native_mint.to_bytes()),
         )),
-        Box::new(DriverExecutor::new(drivers, windows.clone())),
+        Box::new(DriverExecutor::new(drivers, windows.clone(), sponsor)),
         Box::new(CompetitionObserver::new(pool, windows)),
         config.competition.submission_deadline_slots.get(),
     );
