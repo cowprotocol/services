@@ -318,6 +318,8 @@ impl FastPathHandler {
     ) -> Result<FinalOrderExecution, PreflightError> {
         let order_uid: domain::OrderUid = order.metadata.uid.into();
         let order_kind = order.data.kind;
+        let signed_sell = order.data.sell_amount;
+        let signed_buy = order.data.buy_amount;
         let uid = ByteArray(order_uid.0);
         let sell_token = ByteArray(staged.data.sell_token.0.0);
         let buy_token = ByteArray(staged.data.buy_token.0.0);
@@ -335,6 +337,18 @@ impl FastPathHandler {
                     order_kind,
                     &volume_fee_policies,
                 );
+                // For the data to be consistent with regular auctions we
+                // must mark all bids as filtered out where the volume fee
+                // adjusted bid does not satisfy the order's limit price.
+                // Routes through the same helper the orderbook and the
+                // winner-admission check use so the three fast-path
+                // limit-price decisions can't diverge.
+                let filtered_out = !shared::fee::satisfies_limit_price(
+                    signed_sell,
+                    signed_buy,
+                    adjusted_sell,
+                    adjusted_buy,
+                );
                 if solution.is_winner {
                     // keep the adjusted prices of the winner as those are the
                     // exact prices the solver is supposed to settle the trade
@@ -350,9 +364,7 @@ impl FastPathHandler {
                     id: BigDecimal::from(solution.solution_id),
                     solver: ByteArray(solution.solver.0.0),
                     is_winner: solution.is_winner,
-                    // TODO: populate in a way that is consistent with the usual
-                    // winner selection logic
-                    filtered_out: false,
+                    filtered_out,
                     // TODO: populate in a way that is consisent with the usual
                     // winner selection logic
                     score: BigDecimal::from(0),
