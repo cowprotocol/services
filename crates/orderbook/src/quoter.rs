@@ -300,7 +300,10 @@ impl QuoteHandler {
                 },
                 signing_scheme: request.signing_scheme,
                 hook_gas: app_data.inner.protocol.hooks.gas_limit(),
-                fast_path: app_data.inner.protocol.enable_fast_path,
+                fast_path: matches!(
+                    app_data.inner.protocol.execution_mode,
+                    ::app_data::ExecutionMode::FastPath
+                ),
                 timeout: request.timeout,
             },
             valid_to,
