@@ -14,18 +14,12 @@ pub struct Order {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub side: Side,
-    pub class: Class,
     pub partially_fillable: bool,
     pub flashloan_hint: Option<FlashloanHint>,
     pub wrappers: Vec<WrapperCall>,
 }
 
 impl Order {
-    /// Returns `true` if the order expects a solver-computed fee.
-    pub fn solver_determines_fee(&self) -> bool {
-        self.class == Class::Limit
-    }
-
     /// Returns the owner address of the order extracted from the UID.
     pub fn owner(&self) -> eth::Address {
         let mut bytes = [0u8; 20];
@@ -61,13 +55,6 @@ pub enum Side {
     Sell,
 }
 
-/// The order classification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Class {
-    Market,
-    Limit,
-}
-
 /// An order that can be used to provide just-in-time liquidity in form of a CoW
 /// Protocol order. This is how solvers integrate private market makers into
 /// their solutions.
@@ -78,7 +65,6 @@ pub struct JitOrder {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub side: Side,
-    pub class: Class,
     pub partially_fillable: bool,
     pub valid_to: u32,
     pub app_data: AppData,

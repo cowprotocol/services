@@ -36,6 +36,8 @@ pub struct Api {
     pub validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     pub quote_expiry: std::time::Duration,
+    /// Sponsored placement dependencies, absent when the feature is off.
+    pub sponsoring: Option<Sponsoring>,
 }
 
 /// Bounds on a quoted order's `validTo`. The defaults are the EVM
@@ -83,7 +85,13 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
-        let state = State::new(self.pool, self.quoter, self.validation, self.quote_expiry);
+        let state = State::new(
+            self.pool,
+            self.quoter,
+            self.validation,
+            self.quote_expiry,
+            self.sponsoring,
+        );
 
         // Browsers call this API directly, so it answers cross-origin
         // requests like the EVM orderbook does.
@@ -106,6 +114,7 @@ impl Api {
             .route("/api/v1/orders/{uid}", get(routes::order))
             .route("/api/v1/orders/{uid}/status", get(routes::order_status))
             .route("/api/v2/trades", get(routes::trades))
+            .route("/api/v1/orders", post(routes::create_order))
             .route("/api/v1/quote", post(routes::quote))
             .layer(cors)
             .layer(RequestDecompressionLayer::new())
@@ -122,18 +131,29 @@ impl Api {
 #[derive(Clone)]
 pub struct State(Arc<Inner>);
 
+/// Sponsored order placement dependencies: the funder identity the incoming
+/// transactions must commit to, the settlement program they must target, and
+/// the RPC client that vouches for blockhash freshness.
+pub struct Sponsoring {
+    pub funder: solana_sdk::pubkey::Pubkey,
+    pub settlement_program: solana_sdk::pubkey::Pubkey,
+    pub rpc: cow_solana_rpc::SolanaRPC,
+}
+
 impl State {
     fn new(
         pool: PgPool,
         quoter: Quoter,
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
+        sponsoring: Option<Sponsoring>,
     ) -> Self {
         Self(Arc::new(Inner {
             pool,
             quoter,
             validation,
             quote_expiry,
+            sponsoring,
         }))
     }
 
@@ -157,6 +177,11 @@ impl State {
     pub fn quote_expiry(&self) -> std::time::Duration {
         self.0.quote_expiry
     }
+
+    /// Sponsored placement dependencies, absent when the feature is off.
+    pub fn sponsoring(&self) -> Option<&Sponsoring> {
+        self.0.sponsoring.as_ref()
+    }
 }
 
 struct Inner {
@@ -168,4 +193,6 @@ struct Inner {
     validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     quote_expiry: std::time::Duration,
+    /// Sponsored placement dependencies, absent when the feature is off.
+    sponsoring: Option<Sponsoring>,
 }

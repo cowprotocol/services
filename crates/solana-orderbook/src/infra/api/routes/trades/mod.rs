@@ -82,7 +82,7 @@ pub async fn trades(
     // conceivable row.
     let offset = i64::try_from(offset).unwrap_or(i64::MAX);
     let limit = i64::try_from(limit).expect("limit is at most 1000");
-    let rows = db::trades(state.pool(), order_uid, owner, offset, limit)
+    let rows = db::get_trades(state.pool(), order_uid, owner, offset, limit)
         .await
         .map_err(|err| {
             tracing::error!(?err, "trades lookup failed");

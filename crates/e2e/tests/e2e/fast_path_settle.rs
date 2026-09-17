@@ -115,6 +115,12 @@ async fn local_node_fast_path_limit_too_tight_rejected() {
     run_test(fast_path_limit_too_tight_rejected).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_fast_path_records_filtered_out_solutions() {
+    run_test(fast_path_records_filtered_out_solutions).await;
+}
+
 async fn fast_path_settle(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -441,6 +447,237 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
         solver_b.address(),
         "fallback settlement should be submitted by solver_b (funded)"
     );
+}
+
+/// Two otherwise identical baseline solvers compete on a fast-path order,
+/// with realistic volume-fee and slippage settings layered on top:
+///
+/// * 2% protocol volume fee (configured on both the orderbook and the
+///   autopilot) — already baked into the quote returned to the user.
+/// * 1% partner volume fee declared in app-data.
+/// * 2% haircut on the bad solver.
+/// * user signs at 2% below the (protocol-fee-adjusted) quote. This accounts
+///   for the 1% partner fee AND gives 1% slippage on top. The 2% haircut will
+///   not have an issue with the 1% partner fee because the user accounted for
+///   that but the 1% slippage is not enough for the 2% haircut solution to
+///   still clear the bar.
+///
+/// After the fast-path handler runs, `/solver_competition` must expose the
+/// bad solver's solution as `filtered_out = true` (its 2%-haircut bid
+/// compounded with the volume fees no longer clears the signed limit)
+/// while the winning solver's solution remains `filtered_out = false`.
+async fn fast_path_records_filtered_out_solutions(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    // Both solvers get funded — only the good one will actually submit, but
+    // this keeps the setup symmetric so the only real difference between the
+    // two is the haircut.
+    let [good_solver, bad_solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    let sell_amount = 1u64.eth();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, sell_amount)
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(sell_amount)
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    // Long exclusivity so the fast path is the only viable path within the
+    // test window — the settlement we observe *must* be the fast-path one.
+    let exclusivity = Duration::from_secs(300);
+
+    // `good_solver` is named `test_solver` so the default native-price
+    // estimator wiring resolves without an override; `bad_solver` runs the
+    // same baseline with a 2% haircut so its reported bid is 2% below the
+    // market rate.
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver_with_haircut(
+                "test_solver".into(),
+                good_solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                0,
+            )
+            .await,
+            colocation::start_baseline_solver_with_haircut(
+                "bad_solver".into(),
+                bad_solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                200, // 2% haircut
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
+
+    // 2% protocol volume fee, configured symmetrically on both sides so the
+    // orderbook's placement check and the autopilot's fast-path handler
+    // apply the same math. 1% partner volume fee will be declared in
+    // app-data further down.
+    let protocol_volume_factor: f64 = 0.02;
+    let partner_volume_bps: u64 = 100;
+    let partner_recipient = Address::repeat_byte(0xb0);
+
+    let quoter_good = ExternalSolver::new("test_solver", "http://localhost:11088/test_solver");
+    let quoter_bad = ExternalSolver::new("bad_solver", "http://localhost:11088/bad_solver");
+    let autopilot_config = AutopilotConfiguration {
+        drivers: vec![
+            Solver::test("test_solver", good_solver.address()),
+            Solver::test("bad_solver", bad_solver.address()),
+        ],
+        order_quoting: OrderQuoting::test_with_drivers(vec![
+            quoter_good.clone(),
+            quoter_bad.clone(),
+        ]),
+        fee_policies: FeePoliciesConfig {
+            policies: vec![ConfigFeePolicy {
+                kind: ConfigFeePolicyKind::Volume {
+                    factor: protocol_volume_factor.try_into().unwrap(),
+                },
+                order_class: ConfigFeePolicyOrderClass::Any,
+            }],
+            // Room for the 1% partner factor.
+            max_partner_fee: 0.05.try_into().unwrap(),
+            ..Default::default()
+        },
+        ..AutopilotConfiguration::test_no_drivers()
+    };
+    let orderbook_config = configs::orderbook::Configuration {
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter_good, quoter_bad]),
+        volume_fee: Some(configs::orderbook::VolumeFeeConfig {
+            factor: Some(protocol_volume_factor.try_into().unwrap()),
+            effective_from_timestamp: None,
+        }),
+        ..configs::orderbook::Configuration::test_default()
+    };
+    let (autopilot_config, orderbook_config) =
+        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+
+    services.start_autopilot(None, autopilot_config).await;
+    services.start_api(orderbook_config).await;
+
+    let app_data = json!({
+        "version": "1.1.0",
+        "metadata": {
+            "enableFastPath": true,
+            "partnerFee": {
+                "volumeBps": partner_volume_bps,
+                "recipient": partner_recipient,
+            }
+        }
+    })
+    .to_string();
+
+    tracing::info!("Quoting with enableFastPath and a partner fee.");
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(sell_amount).unwrap(),
+            },
+        },
+        app_data: OrderCreationAppData::Full {
+            full: app_data.clone(),
+        },
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+    let quote_id = quote.id.expect("fast-path quote should carry an id");
+
+    // The API's `quote.buy_amount` already reflects the 2% protocol fee. We
+    // still need to leave room for the 1% partner fee and ~1% price
+    // slippage between quote and settle time, so sign 2% below the quote.
+    // At those numbers the winner's fee-adjusted bid (~= quote * 0.99) still
+    // clears the signed floor, while the bad solver's 2%-haircut bid
+    // (~= quote * 0.98 * 0.99) falls just below it.
+    let signed_buy = quote.quote.buy_amount * U256::from(98u8) / U256::from(100u8);
+    tracing::info!("Placing the fast-path order.");
+    let order = OrderCreation {
+        quote_id: Some(quote_id),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount,
+        buy_token: *token.address(),
+        buy_amount: signed_buy,
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full { full: app_data },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for the fast-path settlement.");
+    wait_for_condition(TIMEOUT, || async {
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
+    })
+    .await
+    .unwrap();
+
+    let trade = services
+        .get_trades(&uid)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("settled order should have a trade");
+    let tx_hash = trade.tx_hash.expect("settled trade should have a tx hash");
+    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+
+    let good = competition
+        .solutions
+        .iter()
+        .find(|solution| solution.solver_address == good_solver.address())
+        .expect("good solver's solution must appear in the competition");
+    let bad = competition
+        .solutions
+        .iter()
+        .find(|solution| solution.solver_address == bad_solver.address())
+        .expect("bad solver's solution must appear in the competition");
+
+    assert!(good.is_winner, "good solver should win the fast-path quote");
+    assert!(
+        !good.filtered_out,
+        "winning solver's bid respects the signed limit and must not be filtered out"
+    );
+    assert!(
+        bad.filtered_out,
+        "2%-haircut solver's bid compounded with volume fees can't clear the signed limit and \
+         must be filtered out"
+    );
+    assert!(!bad.is_winner, "bad solver must not have won the quote");
 }
 
 /// Configures a protocol volume fee via the autopilot config and a partner

@@ -25,7 +25,7 @@ use {
     eth_domain_types::NonZeroU256,
     ethrpc::alloy::CallBuilderExt,
     model::{
-        order::{OrderClass, OrderCreation, OrderKind},
+        order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
@@ -231,8 +231,7 @@ async fn single_limit_order_test(web3: Web3) {
     );
 
     onchain.mint_block().await;
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
@@ -396,8 +395,7 @@ async fn two_limit_orders_test(web3: Web3) {
     let order_id = services.create_order(&order_a).await.unwrap();
     onchain.mint_block().await;
 
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert!(limit_order.metadata.class.is_limit());
+    services.get_order(&order_id).await.unwrap();
 
     let order_b = OrderCreation {
         sell_token: *token_b.address(),
@@ -415,8 +413,7 @@ async fn two_limit_orders_test(web3: Web3) {
     );
     let order_id = services.create_order(&order_b).await.unwrap();
 
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert!(limit_order.metadata.class.is_limit());
+    services.get_order(&order_id).await.unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
@@ -921,8 +918,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         &trader.signer,
     );
     let order_id = services.create_order(&order).await.unwrap();
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert!(limit_order.metadata.class.is_limit());
+    services.get_order(&order_id).await.unwrap();
 
     // Place another "in-market" order in order to check it is not limited
     let order = OrderCreation {
@@ -1044,8 +1040,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     let sell_token_balance_before = token_usdt.balanceOf(trader.address()).call().await.unwrap();
     let buy_token_balance_before = token_usdc.balanceOf(trader.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
@@ -1131,8 +1126,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         .unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
@@ -1222,8 +1216,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     );
     let order_id = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Cannot place orders with unsupported tokens
     order.sell_token = *unsupported.address();
@@ -1402,8 +1395,7 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     let order_id = services.create_order(&order).await.unwrap();
 
     onchain.mint_block().await;
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Drive solution - order should execute even with haircut applied
     tracing::info!("Waiting for trade with haircut.");
@@ -1599,8 +1591,7 @@ async fn buy_order_with_haircut_test(web3: Web3) {
     let order_id = services.create_order(&order).await.unwrap();
 
     onchain.mint_block().await;
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Wait for trade to execute
     tracing::info!("Waiting for buy order trade with haircut.");
