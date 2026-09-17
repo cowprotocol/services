@@ -716,7 +716,10 @@ impl OrderValidator {
         quote: Option<&Quote>,
         order: &OrderData,
     ) -> Result<Option<u32>, ValidationError> {
-        if matches!(app_data.inner.protocol.execution_mode, ExecutionMode::FastPath) {
+        if matches!(
+            app_data.inner.protocol.execution_mode,
+            ExecutionMode::FastPath
+        ) {
             let Some(quote) = quote else {
                 return Err(ValidationError::FastPathLimitTooTight);
             };

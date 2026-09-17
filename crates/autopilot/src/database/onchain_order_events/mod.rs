@@ -729,9 +729,7 @@ async fn handle_app_data(
         // orders get their `valid_from` from the autopilot's fast-path handler.
         match parsed.execution_mode {
             ExecutionMode::FastPath => order.fast_path = true,
-            ExecutionMode::ValidFrom(valid_from) => {
-                order.valid_from = Some(i64::from(valid_from))
-            }
+            ExecutionMode::ValidFrom(valid_from) => order.valid_from = Some(i64::from(valid_from)),
             ExecutionMode::RegularAuction => {}
         }
     }
