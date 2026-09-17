@@ -412,10 +412,8 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
         "order settled during the exclusivity window; fast path was expected to fail to submit"
     );
 
-    // Reference-score wiring: both bids clear the signed limit (no volume
-    // fees; solver_b's 1% haircut still leaves it above the user's 90%
-    // signed buy), so `build_reference_scores` in `fast_path.rs` records
-    // the runner-up's raw score as the winner's counterfactual.
+    // Both bids clear the signed limit price so we can assert things about the
+    // solution scores and reference scores.
     let fast_path_competition = services.get_latest_solver_competition().await.unwrap();
     assert!(
         fast_path_competition
