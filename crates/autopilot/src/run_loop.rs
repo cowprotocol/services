@@ -492,12 +492,11 @@ impl RunLoop {
             tracing::info!(driver = %driver_.name, solution = %solution_id, "settling");
             let submission_start = Instant::now();
 
-            let request = settle::Request {
+            let request = settle::Request::Auction(settle::AuctionRequest {
                 solution_id,
                 submission_deadline_latest_block: block_deadline,
                 auction_id,
-                fast_path: None,
-            };
+            });
 
             match self_
                 .settle_coordinator

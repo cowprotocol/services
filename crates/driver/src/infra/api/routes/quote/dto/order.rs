@@ -6,8 +6,8 @@ use {
 };
 
 impl Order {
-    pub fn into_domain(self) -> quote::Order {
-        quote::Order {
+    pub fn into_domain(self) -> Result<quote::Order, Error> {
+        Ok(quote::Order {
             tokens: quote::Tokens::new(self.sell_token.into(), self.buy_token.into()),
             amount: self.amount.into(),
             side: match self.kind {
@@ -16,8 +16,8 @@ impl Order {
             },
             deadline: self.deadline,
             enable_fast_path: self.enable_fast_path,
-            auction_id: self.auction_id,
-        }
+            quote_id: self.quote_id.map(quote::Id).ok_or(Error::MissingQuoteId)?,
+        })
     }
 }
 
@@ -33,11 +33,12 @@ pub struct Order {
     deadline: chrono::DateTime<chrono::Utc>,
     #[serde(default)]
     enable_fast_path: bool,
-    /// Real auction id the orderbook allocated from the shared `auctions`
-    /// sequence, under which a fast-path solution is cached for a later
-    /// `/settle`. Only present for fast-path quotes.
+    /// Id of the quote, allocated by the orderbook and sent with every quote
+    /// request. Passed on to the solver as the id of the quote auction, and
+    /// the key a fast-path solution is cached under for a later `/settle`.
+    /// Deserialized as optional only to report its absence as a proper error.
     #[serde(default)]
-    auction_id: Option<i64>,
+    quote_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,4 +52,6 @@ enum Kind {
 pub enum Error {
     #[error("received an order with identical buy and sell tokens")]
     SameTokens,
+    #[error("received a quote request without a quote id")]
+    MissingQuoteId,
 }

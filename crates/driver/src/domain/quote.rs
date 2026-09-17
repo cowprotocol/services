@@ -35,7 +35,6 @@ pub struct Quote {
     pub tx_origin: Option<eth::Address>,
     #[debug(ignore)]
     pub jit_orders: Vec<solution::trade::Jit>,
-    pub solution_id: Option<u64>,
 }
 
 impl Quote {
@@ -64,7 +63,6 @@ impl Quote {
                     _ => None,
                 })
                 .collect(),
-            solution_id: None,
         })
     }
 
@@ -121,9 +119,16 @@ pub struct Order {
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
     pub enable_fast_path: bool,
-    /// Unique auction id for a fast-path quote. `None` for regular quotes.
-    pub auction_id: Option<i64>,
+    /// Id of the quote, allocated by the orderbook. Passed on to the solver as
+    /// the id of the quote auction so it can match its quote to the order
+    /// eventually placed with it, and the key a fast-path solution is cached
+    /// under.
+    pub quote_id: Id,
 }
+
+/// Id of a quote, allocated by the orderbook before it asks solvers to quote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Id(pub i64);
 
 impl Order {
     /// Generate a quote for this order. This calls `/solve` on the solver with
@@ -166,22 +171,18 @@ impl Order {
             .into_iter()
             .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
             .ok_or(QuotingFailed::NoSolutions)?;
-        let mut quote = Quote::try_new(eth, &solution)?;
+        let quote = Quote::try_new(eth, &solution)?;
 
-        // Cache the fast-path solution so the autopilot can settle it during
-        // the exclusivity window. The quote's order is synthetic
-        // (unsigned), so the settlement is re-encoded against the real
-        // order at settle time.
-        quote.solution_id = match (self.enable_fast_path, self.auction_id) {
-            (true, Some(auction_id)) => {
-                let solution_id = solution.id().get();
-                competition
-                    .cache_quote_solution(auction::Id(auction_id), auction.clone(), solution)
-                    .await;
-                Some(solution_id)
-            }
-            _ => None,
-        };
+        // Cache the fast-path solution under the id the orderbook minted for
+        // this request, so the autopilot can settle it during the exclusivity
+        // window by referencing that id. The quote's order is synthetic
+        // (unsigned), so the settlement is re-encoded against the real order
+        // at settle time.
+        if self.enable_fast_path {
+            competition
+                .cache_quote_solution(self.quote_id, auction.clone(), solution)
+                .await;
+        }
         Ok(quote)
     }
 
@@ -197,8 +198,8 @@ impl Order {
         let buy_token_metadata = tokens.get(&self.buy().token);
         let sell_token_metadata = tokens.get(&self.sell().token);
 
-        competition::Auction::new(
-            self.auction_id.map(auction::Id),
+        let mut auction = competition::Auction::new(
+            None,
             vec![competition::Order {
                 data: std::sync::Arc::new(competition::order::OrderData {
                     uid: Default::default(),
@@ -254,8 +255,10 @@ impl Order {
         )
         .await
         .map_err(|err| match err {
-            auction::Error::Blockchain(e) => e.into(),
-        })
+            auction::Error::Blockchain(e) => Error::from(e),
+        })?;
+        auction.quote_id = Some(self.quote_id);
+        Ok(auction)
     }
 
     /// The asset being bought, or [`eth::U256::one`] if this is a sell, to

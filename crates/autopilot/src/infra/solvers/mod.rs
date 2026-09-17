@@ -102,7 +102,7 @@ impl Driver {
             .post(url)
             .json(request)
             .timeout(timeout)
-            .header("X-REQUEST-ID", request.auction_id.to_string())
+            .header("X-REQUEST-ID", request.auction_id().to_string())
             .headers(tracing_headers())
             .send()
             .await

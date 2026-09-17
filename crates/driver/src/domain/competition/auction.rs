@@ -23,6 +23,8 @@ use {
 pub struct Auction {
     /// See the [`Self::id`] method.
     pub(crate) id: Option<Id>,
+    /// See the [`Self::quote_id`] method.
+    pub(crate) quote_id: Option<crate::domain::quote::Id>,
     /// See the [`Self::orders`] method.
     pub(crate) orders: Vec<competition::Order>,
     /// The tokens that are used in the orders of this auction.
@@ -71,6 +73,7 @@ impl Auction {
 
         Ok(Self {
             id,
+            quote_id: None,
             orders,
             tokens: Arc::new(tokens),
             gas_price,
@@ -83,6 +86,12 @@ impl Auction {
     /// [`crate::domain::quote`].
     pub fn id(&self) -> Option<Id> {
         self.id
+    }
+
+    /// The id of the quote this auction was built to compute, if it is a quote
+    /// auction rather than a real one. See [`crate::domain::quote`].
+    pub fn quote_id(&self) -> Option<crate::domain::quote::Id> {
+        self.quote_id
     }
 
     /// The orders for the auction.

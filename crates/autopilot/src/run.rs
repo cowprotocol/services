@@ -335,7 +335,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     )
     .instrument(info_span!("price_estimator_factory"))
     .await
-    .expect("failed to initialize price estimator factory");
+    .expect("failed to initialize price estimator factory")
+    .with_quote_ids(Arc::new(db_write.clone()));
 
     let weth = eth.contracts().weth().clone();
     let prices = db_write.fetch_latest_prices().await.unwrap();

@@ -37,7 +37,6 @@ pub struct Quote {
     pub solver: Address,
     /// Whether the quoting solver supports fast-path execution.
     pub supports_fast_path: bool,
-    pub solution_id: Option<u64>,
     #[debug(ignore)]
     pub execution: QuoteExecution,
 }
@@ -88,13 +87,6 @@ impl TradeKind {
         match self {
             TradeKind::Legacy(trade) => trade.tx_origin,
             TradeKind::Regular(trade) => trade.tx_origin,
-        }
-    }
-
-    pub fn solution_id(&self) -> Option<u64> {
-        match self {
-            TradeKind::Legacy(trade) => trade.solution_id,
-            TradeKind::Regular(trade) => trade.solution_id,
         }
     }
 
@@ -156,7 +148,6 @@ pub struct LegacyTrade {
     pub tx_origin: Option<Address>,
     /// Whether the quoting solver supports fast-path execution.
     pub supports_fast_path: bool,
-    pub solution_id: Option<u64>,
 }
 
 /// A trade with JIT orders.
@@ -178,7 +169,6 @@ pub struct Trade {
     pub jit_orders: Vec<dto::JitOrder>,
     /// Whether the quoting solver supports fast-path execution.
     pub supports_fast_path: bool,
-    pub solution_id: Option<u64>,
 }
 
 impl Trade {

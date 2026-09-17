@@ -80,6 +80,10 @@ impl Inner {
             return verifier
                 .verify(&price_query, &query.verification, trade)
                 .await
+                .map(|estimate| Estimate {
+                    quote_id: query.quote_id,
+                    ..estimate
+                })
                 .map_err(PriceEstimationError::EstimatorInternal);
         }
 
@@ -90,7 +94,7 @@ impl Inner {
             solver: quote.solver,
             verified: false,
             supports_fast_path: quote.supports_fast_path,
-            solution_id: quote.solution_id,
+            quote_id: query.quote_id,
             execution: quote.execution,
         })
     }

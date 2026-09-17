@@ -269,7 +269,8 @@ pub async fn run(config: Configuration) {
         },
     )
     .await
-    .expect("failed to initialize price estimator factory");
+    .expect("failed to initialize price estimator factory")
+    .with_quote_ids(Arc::new(postgres_write.clone()));
 
     let prices = postgres_write.fetch_latest_prices().await.unwrap();
     let cache = price_estimation::native_price_cache::Cache::new(
