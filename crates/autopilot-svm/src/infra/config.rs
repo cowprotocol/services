@@ -62,9 +62,42 @@ pub struct Config {
     /// sponsored orders: without it their winning solutions dispatch without
     /// creations and fail at the driver.
     pub sponsoring: Option<Sponsoring>,
+    /// Periodic deletion of expired quotes and old order events.
+    #[serde(default)]
+    pub db_cleanup: DbCleanup,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
+}
+
+/// Database cleanup cadence. The age threshold applies to order events,
+/// expired quotes are removed regardless of age.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct DbCleanup {
+    /// Time between cleanup runs.
+    #[serde(with = "humantime_serde", default = "default_cleanup_interval")]
+    pub cleanup_interval: Duration,
+    /// Age at which an order event is deleted.
+    #[serde(with = "humantime_serde", default = "default_cleanup_threshold")]
+    pub cleanup_threshold: Duration,
+}
+
+impl Default for DbCleanup {
+    fn default() -> Self {
+        Self {
+            cleanup_interval: default_cleanup_interval(),
+            cleanup_threshold: default_cleanup_threshold(),
+        }
+    }
+}
+
+const fn default_cleanup_interval() -> Duration {
+    Duration::from_secs(24 * 60 * 60)
+}
+
+const fn default_cleanup_threshold() -> Duration {
+    Duration::from_secs(30 * 24 * 60 * 60)
 }
 
 impl Config {
@@ -176,6 +209,14 @@ mod tests {
         assert_eq!(config.competition.submission_deadline_slots.get(), 25);
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
+        assert_eq!(
+            config.db_cleanup.cleanup_interval,
+            Duration::from_secs(24 * 60 * 60)
+        );
+        assert_eq!(
+            config.db_cleanup.cleanup_threshold,
+            Duration::from_secs(30 * 24 * 60 * 60)
+        );
         assert_eq!(config.drivers.len(), 1);
         assert_eq!(config.drivers[0].name, "baseline");
         assert_eq!(config.logging.filter, "info,autopilot_svm=debug");

@@ -1,5 +1,6 @@
 //! Infrastructure: database access, driver clients, and the loop seams.
 
+pub mod cleanup;
 pub mod competition;
 pub mod config;
 pub mod db;

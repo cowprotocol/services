@@ -4,6 +4,7 @@ use {
     crate::{
         domain::arbitrator::SolanaArbitrator,
         infra::{
+            cleanup::Cleanup,
             competition::DriverCompetition,
             config::{self, Config},
             db,
@@ -86,6 +87,15 @@ async fn run(config: Config) {
         .connect(config.database.write_url.as_str())
         .await
         .expect("database connection");
+
+    tokio::spawn(
+        Cleanup::new(
+            pool.clone(),
+            config.db_cleanup.cleanup_interval,
+            config.db_cleanup.cleanup_threshold,
+        )
+        .run_forever(),
+    );
 
     let windows = SettlementWindows::new(pool.clone());
     let listen = ListenSession::spawn(

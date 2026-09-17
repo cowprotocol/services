@@ -30,6 +30,10 @@ submission-deadline-slots = 25
 name = "baseline"
 url = "http://localhost:11088"
 
+[db-cleanup]
+cleanup-interval = "1d"
+cleanup-threshold = "30d"
+
 [logging]
 filter = "info,autopilot_svm=debug"
 
