@@ -114,7 +114,17 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
 
     async fn cut_auction(&self, _tip: &u64) -> Option<crate::domain::auction::Auction> {
         let now = now_unix();
-        let mut auction = db::cut(&self.pool, self.next_id(now), now)
+        // A pending sponsored order dies with its creation blockhash, so the
+        // cut drops the dead ones. A failed height fetch keeps them all: they
+        // then fall out at the countersign instead of the cut.
+        let block_height = match self.rpc.block_height().await {
+            Ok(height) => Some(i64::try_from(u64::from(height)).unwrap_or(i64::MAX)),
+            Err(err) => {
+                tracing::warn!(?err, "block height lookup failed, keeping pending orders");
+                None
+            }
+        };
+        let mut auction = db::cut(&self.pool, self.next_id(now), now, block_height)
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
