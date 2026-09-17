@@ -423,6 +423,9 @@ WHERE uid = $1
         assert_eq!(uids(orders), vec![1, 5, 6, 10]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
         assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        // Boundary: still alive when the chain height equals the stored height.
+        let orders = open_orders(&mut *tx, 1_000, Some(150)).await.unwrap();
+        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
         let orders = open_orders(&mut *tx, 1_000, Some(151)).await.unwrap();
         assert_eq!(uids(orders), vec![1, 5, 6]);
     }
