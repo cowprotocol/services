@@ -357,24 +357,23 @@ async fn spawn_driver(
     config: config::Config,
     solver_addr: std::net::SocketAddr,
 ) -> (std::net::SocketAddr, CancellationToken) {
-    let solvers: Vec<Solver> = config
-        .solvers
-        .into_iter()
-        .map(|s| {
-            let endpoint = if s.name == "jupiter-live" {
-                format!("http://{solver_addr}/").parse().unwrap()
-            } else {
-                s.endpoint
-            };
-            Solver::new(&config::Solver {
-                name: s.name,
-                endpoint,
-                signer_keypair: s.signer_keypair,
-                solve_every_nth_auction: None,
-            })
+    let solvers = config.solvers.into_iter().map(|s| async move {
+        let endpoint = if s.name == "jupiter-live" {
+            format!("http://{solver_addr}/").parse().unwrap()
+        } else {
+            s.endpoint
+        };
+        Solver::new(&config::Solver {
+            name: s.name,
+            endpoint,
+            signer: s.signer,
+            solve_every_nth_auction: None,
         })
-        .collect::<Result<_, _>>()
-        .expect("failed to load solver signer keypairs");
+        .await
+    });
+    let solvers: Vec<Solver> = futures::future::try_join_all(solvers)
+        .await
+        .expect("failed to load solver signers");
 
     let blockchain = Arc::new(Solana::new(
         SolanaRPC::new_with_timeout_and_commitment(
@@ -458,7 +457,9 @@ async fn settle_devnet() {
     // The solver keypair doubles as the user/payer: it creates+mints the
     // fake tokens, creates the order, and settles it. The settlement program
     // does not require the user and the solver to be different identities.
-    let keypair_path = &config.solvers[0].signer_keypair;
+    let config::SettlementSigner::Keypair(keypair_path) = &config.solvers[0].signer else {
+        panic!("the devnet test needs a keypair-file solver");
+    };
     let payer = read_keypair_file(keypair_path).expect("failed to read solver/payer keypair");
     let payer_pk = payer.pubkey();
 

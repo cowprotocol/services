@@ -19,10 +19,10 @@ filter = "info,solana_driver=debug"
 [[solvers]]
 name = "baseline"
 endpoint = "http://localhost:8001"
-# Path to the solver's settlement signer keypair. The driver's on-chain
-# identity for this solver is derived from this keypair.
-# TODO: plaintext keypair paths are temporary; KMS is planned.
-signer-keypair = "/path/to/keypair.json"
+# The solver's settlement signer: a keypair file, or the id, alias, or ARN
+# of an AWS KMS Ed25519 key so the private key never reaches the driver.
+signer = { keypair = "/path/to/keypair.json" }
+# signer = { kms-key = "arn:aws:kms:eu-central-1:123456789012:key/11111111-2222-3333-4444-555555555555" }
 # Temporary staging knob: solve only auctions whose id is a multiple of this
 # value, sitting the rest out so other solvers win settlements to test
 # against. Omit to participate in every auction.
