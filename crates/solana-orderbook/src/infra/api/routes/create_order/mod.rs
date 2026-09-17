@@ -323,8 +323,8 @@ async fn link_quote(pool: &sqlx::PgPool, id: i64, order: &db::SponsoredOrder) ->
         OrderKind::Sell => quote.sell_amount == BigDecimal::from(order.sell_amount),
         OrderKind::Buy => quote.buy_amount == BigDecimal::from(order.buy_amount),
     };
-    let matches = quote.sell_token.0 == order.sell_token
-        && quote.buy_token.0 == order.buy_token
+    let matches = quote.sell_token == order.sell_token
+        && quote.buy_token == order.buy_token
         && quote.kind == order.kind
         && fixed_amount_matches
         && quote.expiration > chrono::Utc::now();

@@ -3,7 +3,7 @@
 use {
     base64::Engine,
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-    database::solana::OrderKind,
+    database::{byte_array::ByteArray, solana::OrderKind},
     solana_orderbook::infra::{api::Api, db, quoter::Quoter},
     solana_sdk::signer::Signer,
     sqlx::PgPool,
@@ -843,12 +843,12 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     let quote_id = db::save_quote(
         &pool,
         &db::Quote {
-            sell_token: intent.sell_mint.to_bytes(),
-            buy_token: intent.buy_mint.to_bytes(),
+            sell_token: ByteArray(intent.sell_mint.to_bytes()),
+            buy_token: ByteArray(intent.buy_mint.to_bytes()),
             sell_amount: intent.sell_amount,
             buy_amount: intent.buy_amount,
             kind: OrderKind::Sell,
-            solver: [0xDD; 32],
+            solver: ByteArray([0xDD; 32]),
             expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
         },
     )
@@ -897,12 +897,12 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     let mismatched = db::save_quote(
         &pool,
         &db::Quote {
-            sell_token: [0x99; 32],
-            buy_token: other.buy_mint.to_bytes(),
+            sell_token: ByteArray([0x99; 32]),
+            buy_token: ByteArray(other.buy_mint.to_bytes()),
             sell_amount: other.sell_amount,
             buy_amount: other.buy_amount,
             kind: OrderKind::Sell,
-            solver: [0xDD; 32],
+            solver: ByteArray([0xDD; 32]),
             expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
         },
     )
