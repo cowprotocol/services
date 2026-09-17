@@ -148,7 +148,10 @@ async fn sell() {
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("okx", super::config(&api.address)).await;
+    // Quotes carry no token prices, so the swap is not simulated.
+    let node = mock::http::setup(vec![]).await;
+
+    let engine = tests::SolverEngine::new("okx", super::config(&api.address, &node.address)).await;
 
     let solution = engine
         .solve(json!({
