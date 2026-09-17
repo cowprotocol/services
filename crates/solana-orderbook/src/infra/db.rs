@@ -160,19 +160,19 @@ pub async fn order_has_trade(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<b
 /// the block height at which that transaction dies with its blockhash.
 #[derive(Clone, Debug)]
 pub struct SponsoredOrder {
-    pub uid: [u8; 32],
-    pub owner: [u8; 32],
-    pub sell_token: [u8; 32],
-    pub buy_token: [u8; 32],
-    pub sell_token_account: [u8; 32],
-    pub buy_token_account: [u8; 32],
+    pub uid: ByteArray<32>,
+    pub owner: ByteArray<32>,
+    pub sell_token: ByteArray<32>,
+    pub buy_token: ByteArray<32>,
+    pub sell_token_account: ByteArray<32>,
+    pub buy_token_account: ByteArray<32>,
     pub sell_amount: u64,
     pub buy_amount: u64,
     pub valid_to: u32,
     pub kind: OrderKind,
     pub partially_fillable: bool,
-    pub app_data: [u8; 32],
-    pub order_pda: [u8; 32],
+    pub app_data: ByteArray<32>,
+    pub order_pda: ByteArray<32>,
     pub presigned_transaction: Vec<u8>,
     pub last_valid_block_height: u64,
     pub quote_id: Option<i64>,
@@ -199,19 +199,19 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15,
     "#;
     let mut tx = pool.begin().await.context("begin sponsored order insert")?;
     sqlx::query(QUERY)
-        .bind(ByteArray(order.uid))
-        .bind(ByteArray(order.owner))
-        .bind(ByteArray(order.sell_token))
-        .bind(ByteArray(order.buy_token))
-        .bind(ByteArray(order.sell_token_account))
-        .bind(ByteArray(order.buy_token_account))
+        .bind(order.uid)
+        .bind(order.owner)
+        .bind(order.sell_token)
+        .bind(order.buy_token)
+        .bind(order.sell_token_account)
+        .bind(order.buy_token_account)
         .bind(BigDecimal::from(order.sell_amount))
         .bind(BigDecimal::from(order.buy_amount))
         .bind(i64::from(order.valid_to))
         .bind(order.kind)
         .bind(order.partially_fillable)
-        .bind(ByteArray(order.app_data))
-        .bind(ByteArray(order.order_pda))
+        .bind(order.app_data)
+        .bind(order.order_pda)
         .bind(&order.presigned_transaction)
         .bind(i64::try_from(order.last_valid_block_height).context("block height exceeds i64")?)
         .bind(order.quote_id)
@@ -221,7 +221,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15,
     sqlx::query(
         "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
     )
-    .bind(ByteArray(order.uid))
+    .bind(order.uid)
     .bind(OrderEventLabel::Created)
     .execute(&mut *tx)
     .await
@@ -275,12 +275,12 @@ LIMIT 1
 /// A quote as the quote endpoint hands it out.
 #[derive(Clone, Debug)]
 pub struct Quote {
-    pub sell_token: [u8; 32],
-    pub buy_token: [u8; 32],
+    pub sell_token: ByteArray<32>,
+    pub buy_token: ByteArray<32>,
     pub sell_amount: u64,
     pub buy_amount: u64,
     pub kind: OrderKind,
-    pub solver: [u8; 32],
+    pub solver: ByteArray<32>,
     pub expiration: DateTime<Utc>,
 }
 
@@ -293,12 +293,12 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id
     "#;
     sqlx::query_scalar(QUERY)
-        .bind(ByteArray(quote.sell_token))
-        .bind(ByteArray(quote.buy_token))
+        .bind(quote.sell_token)
+        .bind(quote.buy_token)
         .bind(BigDecimal::from(quote.sell_amount))
         .bind(BigDecimal::from(quote.buy_amount))
         .bind(quote.kind)
-        .bind(ByteArray(quote.solver))
+        .bind(quote.solver)
         .bind(quote.expiration)
         .fetch_one(ex)
         .await
@@ -424,26 +424,26 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             .await
             .unwrap();
         let order = SponsoredOrder {
-            uid: [0x11; 32],
-            owner: [0xAA; 32],
-            sell_token: [0x66; 32],
-            buy_token: [0x55; 32],
-            sell_token_account: [0x33; 32],
-            buy_token_account: [0x22; 32],
+            uid: ByteArray([0x11; 32]),
+            owner: ByteArray([0xAA; 32]),
+            sell_token: ByteArray([0x66; 32]),
+            buy_token: ByteArray([0x55; 32]),
+            sell_token_account: ByteArray([0x33; 32]),
+            buy_token_account: ByteArray([0x22; 32]),
             sell_amount: 1_000,
             buy_amount: 2_000,
             valid_to: u32::MAX,
             kind: OrderKind::Sell,
             partially_fillable: false,
-            app_data: [0x44; 32],
-            order_pda: [0xB0; 32],
+            app_data: ByteArray([0x44; 32]),
+            order_pda: ByteArray([0xB0; 32]),
             presigned_transaction: vec![0xC0; 128],
             last_valid_block_height: 12_345,
             quote_id: Some(7),
         };
         insert_sponsored_order(&pool, &order).await.unwrap();
 
-        let creation = find_sponsored_creation(&pool, order.uid)
+        let creation = find_sponsored_creation(&pool, order.uid.0)
             .await
             .unwrap()
             .unwrap();
@@ -459,7 +459,10 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
                 .fetch_all(&pool)
                 .await
                 .unwrap();
-        assert_eq!(events, vec![(order.uid.to_vec(), OrderEventLabel::Created)]);
+        assert_eq!(
+            events,
+            vec![(order.uid.0.to_vec(), OrderEventLabel::Created)]
+        );
 
         // The uid is the primary key: placing the same order twice fails and
         // leaves no second event behind.
