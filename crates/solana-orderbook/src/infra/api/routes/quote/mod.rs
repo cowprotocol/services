@@ -10,7 +10,7 @@ use {
     },
     axum::{Json, http::StatusCode},
     chrono::Utc,
-    database::solana::OrderKind,
+    database::{byte_array::ByteArray, solana::OrderKind},
     std::time::Duration,
 };
 
@@ -60,15 +60,15 @@ pub async fn quote(
     // since the fees are not yet implemented and stored quote are not mandatory
     // at the moment.
     let quote = db::Quote {
-        sell_token: request.sell_token.to_bytes(),
-        buy_token: request.buy_token.to_bytes(),
+        sell_token: ByteArray(request.sell_token.to_bytes()),
+        buy_token: ByteArray(request.buy_token.to_bytes()),
         sell_amount: quoted.sell_amount,
         buy_amount: quoted.buy_amount,
         kind: match kind {
             dto::Kind::Sell => OrderKind::Sell,
             dto::Kind::Buy => OrderKind::Buy,
         },
-        solver: quoted.solver.to_bytes(),
+        solver: ByteArray(quoted.solver.to_bytes()),
         expiration,
     };
     let save = db::save_quote(state.pool(), &quote);
