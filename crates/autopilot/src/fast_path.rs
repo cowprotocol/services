@@ -366,18 +366,6 @@ impl FastPathHandler {
                     order_kind,
                     &volume_fee_policies,
                 );
-                // For the data to be consistent with regular auctions we
-                // must mark all bids as filtered out where the volume fee
-                // adjusted bid does not satisfy the order's limit price.
-                // Routes through the same helper the orderbook and the
-                // winner-admission check use so the three fast-path
-                // limit-price decisions can't diverge.
-                let filtered_out = !shared::fee::satisfies_limit_price(
-                    signed_sell,
-                    signed_buy,
-                    adjusted_sell,
-                    adjusted_buy,
-                );
                 if solution.is_winner {
                     // keep the adjusted prices of the winner as those are the
                     // exact prices the solver is supposed to settle the trade
@@ -393,7 +381,7 @@ impl FastPathHandler {
                 // trade can still settle at the quoted price. Log and fall
                 // back to 0 so the solution row is still persisted and the
                 // reference-score comparison treats it as no-value-added.
-                let score = winsel::arbitrator::score(
+                let (filtered_out, score) = match winsel::arbitrator::score(
                     &winsel::Solution::new(
                         solution.solution_id,
                         solution.solver,
@@ -409,16 +397,11 @@ impl FastPathHandler {
                         }],
                     ),
                     &scoring_ctx,
-                )
-                .unwrap_or_else(|err| {
-                    tracing::warn!(
-                        ?err,
-                        solution_id = solution.solution_id,
-                        solver = ?solution.solver,
-                        "failed to score fast-path solution; defaulting to 0"
-                    );
-                    U256::ZERO
-                });
+                ) {
+                    Ok(score) => (false, score),
+                    Err(_err) => (true, U256::ZERO),
+                };
+
                 Ok(database::solver_competition_v2::Solution {
                     uid: solution_uid,
                     id: BigDecimal::from(solution.solution_id),
