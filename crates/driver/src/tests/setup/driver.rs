@@ -71,18 +71,12 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
         "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
         "sellAmount": quote.sell_amount().to_string(),
         "buyAmount": quote.buy_amount().to_string(),
-        "protocolFees": match quote.order.kind {
-            order::Kind::Market => json!([]),
-            order::Kind::Limit => {
-                let fee_policies_json: Vec<serde_json::Value> = quote
-                    .order
-                    .fee_policy
-                    .iter()
-                    .map(|policy| policy.to_json_value())
-                    .collect();
-                json!(fee_policies_json)
-            }
-        },
+        "protocolFees": quote
+            .order
+            .fee_policy
+            .iter()
+            .map(|policy| policy.to_json_value())
+            .collect::<Vec<_>>(),
         "created": quote.order.created,
         "validTo": quote.order.valid_to,
         "kind": match quote.order.side {
@@ -97,10 +91,7 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
         },
         "preInteractions": [],
         "postInteractions": [],
-        "class": match quote.order.kind {
-            order::Kind::Market => "market",
-            order::Kind::Limit => "limit",
-        },
+        "class": "limit",
         "appData": app_data::AppDataHash(quote.order.app_data.hash().0 .0),
         "signingScheme": "eip712",
         "signature": const_hex::encode_prefixed(quote.order_signature(&test.blockchain)),

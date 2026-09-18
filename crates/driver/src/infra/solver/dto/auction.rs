@@ -132,10 +132,8 @@ pub fn new(
                     receiver: order.receiver,
                     owner: order.signature.signer,
                     partially_fillable: order.is_partial(),
-                    class: match order.kind {
-                        order::Kind::Market => solvers_dto::auction::Class::Market,
-                        order::Kind::Limit => solvers_dto::auction::Class::Limit,
-                    },
+                    // Deprecated field, every order is a limit order.
+                    class: solvers_dto::auction::Class::Limit,
                     pre_interactions: order
                         .pre_interactions
                         .iter()
