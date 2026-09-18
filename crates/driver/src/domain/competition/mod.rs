@@ -365,6 +365,14 @@ impl Competition {
 
         let auction = self.assemble_auction(&tasks).await;
 
+        // Inject the configured solver fee as an additional volume-based fee
+        // policy on every order, reusing the protocol fee machinery for
+        // conservative bidding.
+        let auction = match self.solver.solver_fee() {
+            Some(policy) => auction.with_solver_fee(&policy),
+            None => auction,
+        };
+
         let liquidity = async {
             match self.solver.liquidity() {
                 solver::Liquidity::Fetch => tasks.liquidity.await,
@@ -453,7 +461,6 @@ impl Competition {
                     .user_trades()
                     .map(|trade| trade.order().uid)
                     .collect();
-                let has_haircut = solution.has_haircut();
                 match result {
                     Ok(encoded) => {
                         self.risk_detector.encoding_succeeded(&orders);
@@ -463,17 +470,8 @@ impl Competition {
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
                         self.risk_detector.encoding_failed(&orders);
-                        observe::encoding_failed(
-                            self.solver.name(),
-                            &id,
-                            &err,
-                            has_haircut,
-                            &orders,
-                        );
-                        // don't notify on errors for solutions with haircut
-                        if !has_haircut {
-                            notify::encoding_failed(&self.solver, auction.id(), &id, &err);
-                        }
+                        observe::encoding_failed(self.solver.name(), &id, &err, &orders);
+                        notify::encoding_failed(&self.solver, auction.id(), &id, &err);
                         None
                     }
                 }
@@ -685,17 +683,14 @@ impl Competition {
             Err(simulator::Error::Revert(err)) => err,
             _ => return None,
         };
-        let has_haircut = settlement.has_haircut();
-        observe::winner_voided(self.solver.name(), block, &err, has_haircut);
-        if !has_haircut {
-            notify::simulation_failed(
-                &self.solver,
-                auction.id(),
-                settlement.solution(),
-                &simulator::Error::Revert(err),
-                true,
-            );
-        }
+        observe::winner_voided(self.solver.name(), block, &err);
+        notify::simulation_failed(
+            &self.solver,
+            auction.id(),
+            settlement.solution(),
+            &simulator::Error::Revert(err),
+            true,
+        );
         Some(solved.id.get())
     }
 

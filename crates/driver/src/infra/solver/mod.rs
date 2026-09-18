@@ -205,10 +205,12 @@ pub struct Config {
     /// Defines at which block the liquidity needs to be fetched on /solve
     /// requests.
     pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
-    /// Quote haircut in basis points (0-10000). Applied to solver-reported
-    /// economics to make competition bids more conservative. Does not modify
-    /// interaction calldata. Default: 0 (no haircut).
-    pub haircut_bps: u32,
+    /// Volume-based solver fee in basis points (0-10000). Injected as an
+    /// additional `FeePolicy::Volume` on every auction order, reusing the
+    /// protocol fee machinery to make competition bids and delivered prices
+    /// more conservative. Does not modify interaction calldata.
+    /// Default: 0 (no fee).
+    pub solver_fee_bps: u32,
     /// Additional EOAs for parallel settlement submission via EIP-7702.
     /// When non-empty, these accounts submit txs to the solver EOA (which
     /// delegates to Solver7702Delegate), enabling concurrent submissions.
@@ -222,6 +224,12 @@ pub struct Config {
 
 impl Config {
     fn validate(&self) -> Result<()> {
+        anyhow::ensure!(
+            self.solver_fee_bps < dto::MAX_BASE_POINT,
+            "solver '{}': solver-fee-bps must be below {}",
+            self.name,
+            dto::MAX_BASE_POINT,
+        );
         if self.submission_accounts.is_empty() {
             anyhow::ensure!(
                 self.max_solutions_to_propose.get() == 1,
@@ -342,9 +350,13 @@ impl Solver {
         self.config.fetch_liquidity_at_block.clone()
     }
 
-    /// Quote haircut in basis points (0-10000) for conservative bidding.
-    pub fn haircut_bps(&self) -> u32 {
-        self.config.haircut_bps
+    /// The volume-based fee policy injected for this solver, if configured.
+    /// Reuses the protocol fee machinery for conservative bidding.
+    pub fn solver_fee(&self) -> Option<order::FeePolicy> {
+        (self.config.solver_fee_bps > 0).then(|| order::FeePolicy::Volume {
+            factor: f64::from(self.config.solver_fee_bps) / f64::from(dto::MAX_BASE_POINT),
+            excluded_from_score: true,
+        })
     }
 
     /// Additional submission accounts for EIP-7702 parallel settlement.
@@ -379,7 +391,6 @@ impl Solver {
             &flashloan_hints,
             &wrappers,
             auction.deadline(self.timeouts()).solvers(),
-            self.config.haircut_bps,
         );
 
         let url = shared::url::join(&self.config.endpoint, "solve");
@@ -616,7 +627,7 @@ mod tests {
             settle_queue_size: 0,
             flashloans_enabled: false,
             fetch_liquidity_at_block: infra::liquidity::AtBlock::Latest,
-            haircut_bps: 0,
+            solver_fee_bps: 0,
             submission_accounts: vec![],
             max_solutions_to_propose: NonZeroUsize::new(1).unwrap(),
             post_processing_concurrency_limit: NonZeroUsize::MAX,
