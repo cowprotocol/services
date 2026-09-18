@@ -3,9 +3,15 @@
 use {
     super::{Auction, Order, auction::Id, solution::Solution},
     crate::infra::{blockchain::Solana, solver::Solver},
+    cow_settlement_interface::SettlementError,
     itertools::Itertools,
     moka::sync::Cache,
-    solana_sdk::{signature::Signature, transaction::VersionedTransaction},
+    solana_sdk::{
+        instruction::InstructionError,
+        pubkey::Pubkey,
+        signature::Signature,
+        transaction::{TransactionError, VersionedTransaction},
+    },
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -274,7 +280,15 @@ impl Competition {
             }
             Error::DeadlineExceeded
         })?
-        .map_err(Error::FailedToSubmit)?;
+        .map_err(|err| {
+            if let Some(error) = err
+                .get_transaction_error()
+                .and_then(|err| settlement_error(program_id, &transaction, &err))
+            {
+                tracing::warn!(?error, "the settlement program rejected the transaction");
+            }
+            Error::FailedToSubmit(err)
+        })?;
 
         Ok(signature)
     }
@@ -353,12 +367,44 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         if let Some(err) = &simulation.err {
-            tracing::warn!(?err, logs = ?simulation.logs, "settlement simulation failed");
+            let error = settlement_error(
+                self.blockchain.program_id(),
+                transaction,
+                &err.clone().into(),
+            );
+            tracing::warn!(
+                ?err,
+                settlement_error = ?error,
+                logs = ?simulation.logs,
+                "settlement simulation failed"
+            );
             return Err(err.clone().into());
         }
         tracing::debug!("settlement simulation passed");
         Ok(())
     }
+}
+
+/// The settlement program's own error behind a failed transaction. Only the
+/// failing instruction's owner can interpret a custom code: a foreign
+/// program's code (a Jupiter route, for example) must not be read as ours,
+/// and a code newer than the interface crate decodes to nothing.
+fn settlement_error(
+    program_id: Pubkey,
+    transaction: &VersionedTransaction,
+    err: &TransactionError,
+) -> Option<SettlementError> {
+    let TransactionError::InstructionError(index, InstructionError::Custom(code)) = err else {
+        return None;
+    };
+    let message = &transaction.message;
+    let instruction = message.instructions().get(usize::from(*index))?;
+    let program = message
+        .static_account_keys()
+        .get(usize::from(instruction.program_id_index))?;
+    (*program == program_id)
+        .then(|| SettlementError::try_from(*code).ok())
+        .flatten()
 }
 
 /// The program settles exactly the orders passed to `BeginSettle`, so the
@@ -487,5 +533,43 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
         Error::Resolve(_) => "resolve_failed",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Only a custom code from the settlement program's own instruction
+    /// decodes: a foreign program's code, an unknown code, and a non-custom
+    /// error read as nothing.
+    #[test]
+    fn decodes_only_own_custom_codes() {
+        let ours = Pubkey::new_unique();
+        let foreign = Pubkey::new_unique();
+        let message = solana_sdk::message::Message::new(
+            &[
+                solana_sdk::instruction::Instruction::new_with_bytes(foreign, &[], vec![]),
+                solana_sdk::instruction::Instruction::new_with_bytes(ours, &[], vec![]),
+            ],
+            Some(&Pubkey::new_unique()),
+        );
+        let transaction = VersionedTransaction {
+            signatures: vec![],
+            message: solana_sdk::message::VersionedMessage::Legacy(message),
+        };
+        let custom =
+            |index, code| TransactionError::InstructionError(index, InstructionError::Custom(code));
+
+        assert_eq!(
+            settlement_error(ours, &transaction, &custom(1, 16)),
+            Some(SettlementError::OrderExpired)
+        );
+        assert_eq!(settlement_error(ours, &transaction, &custom(0, 16)), None);
+        assert_eq!(settlement_error(ours, &transaction, &custom(1, 9999)), None);
+        assert_eq!(
+            settlement_error(ours, &transaction, &TransactionError::BlockhashNotFound),
+            None
+        );
     }
 }

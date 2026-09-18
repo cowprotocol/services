@@ -181,3 +181,8 @@ clippy.cast_possible_wrap = "deny"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tokio_unstable)"] }
+
+# Until the interface crate releases the SettlementError decoding added in
+# cowprotocol/solana-programs#160.
+[patch.crates-io]
+cow-settlement-interface = { git = "https://github.com/cowprotocol/solana-programs", rev = "d20b482ff981f7e993ae76977f4c568c72316052" }
