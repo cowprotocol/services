@@ -6,14 +6,21 @@ use {
         infra::{
             driver::{Driver, dto},
             inflight::InFlightOrders,
-            observation::SettlementWindows,
+            observation::{Landed, SettlementWindows},
             sponsor::Sponsor,
         },
         run_loop::SettlementExecutor,
     },
     async_trait::async_trait,
-    std::sync::Arc,
+    chain_types::solana::Pubkey,
+    solana_sdk::clock::MAX_PROCESSING_AGE,
+    std::{sync::Arc, time::Duration},
+    tokio::sync::broadcast,
 };
+
+/// Mainnet's target slot duration, converting the landable slot window into
+/// the wall-clock bound of a settle task.
+const SLOT_DURATION: Duration = Duration::from_millis(400);
 
 /// Sends `/settle` to each winner's driver. Submission runs detached, the
 /// loop starts the next cycle while settlements land.
@@ -92,8 +99,8 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             };
             // Held before the dispatch: the next cut must not re-auction
             // these orders while the settlement can still land.
-            self.inflight
-                .hold(winner.orders().iter().map(|order| order.uid), deadline);
+            let uids: Vec<_> = winner.orders().iter().map(|order| order.uid).collect();
+            self.inflight.hold(uids.iter().copied(), deadline);
             // A window that cannot be opened must not block the settlement,
             // the dispatch is the priority.
             if let Err(err) = self
@@ -103,23 +110,111 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             {
                 tracing::error!(auction_id, ?err, "failed to open the settlement window");
             }
+            let landed_events = self.windows.landed_events();
+            let inflight = self.inflight.clone();
+            let solver = winner.solver();
+            // The last instant the settlement transaction can land: the
+            // deadline plus the blockhash lifetime, in wall-clock terms.
+            let landable_until = tokio::time::Instant::now()
+                + SLOT_DURATION
+                    * u32::try_from(
+                        deadline
+                            .saturating_sub(*tip)
+                            .saturating_add(MAX_PROCESSING_AGE as u64),
+                    )
+                    .unwrap_or(u32::MAX);
             tokio::spawn(async move {
-                match driver.settle(&request).await {
-                    Ok(response) => tracing::info!(
-                        driver = %driver.name,
-                        auction_id,
-                        deadline,
-                        tx_signature = %response.tx_signature,
-                        "settlement submitted"
-                    ),
-                    Err(err) => tracing::error!(
-                        driver = %driver.name,
-                        auction_id,
-                        ?err,
-                        "settlement failed"
-                    ),
-                }
+                settle_task(
+                    driver,
+                    request,
+                    landed_events,
+                    inflight,
+                    uids,
+                    solver,
+                    landable_until,
+                )
+                .await
             });
+        }
+    }
+}
+
+/// One dispatched settlement: race the driver response against the on-chain
+/// observation and release the orders on the first evidence that no second
+/// settlement can happen. A driver answer that proves nothing (the
+/// transaction may be on the wire) keeps the orders held until the landing
+/// is observed or nothing can land any more.
+async fn settle_task(
+    driver: Arc<Driver>,
+    request: dto::SettleRequest,
+    mut landed_events: broadcast::Receiver<Landed>,
+    inflight: InFlightOrders,
+    uids: Vec<chain_types::solana::IntentHash>,
+    solver: Pubkey,
+    landable_until: tokio::time::Instant,
+) {
+    let auction_id = request.auction_id;
+    let deadline = request.submission_deadline_slot;
+    let landed = wait_landed(&mut landed_events, auction_id, solver);
+    tokio::pin!(landed);
+
+    tokio::select! {
+        () = &mut landed => {
+            tracing::info!(
+                driver = %driver.name,
+                auction_id,
+                "settlement observed on chain before the driver response"
+            );
+            inflight.release(uids.iter());
+            return;
+        }
+        result = driver.settle(&request) => match result {
+            Ok(response) => tracing::info!(
+                driver = %driver.name,
+                auction_id,
+                deadline,
+                tx_signature = %response.tx_signature,
+                "settlement submitted"
+            ),
+            Err(err) if err.settlement_provably_unsent() => {
+                tracing::error!(
+                    driver = %driver.name,
+                    auction_id,
+                    ?err,
+                    "settlement rejected before submission"
+                );
+                inflight.release(uids.iter());
+                return;
+            }
+            Err(err) => tracing::error!(
+                driver = %driver.name,
+                auction_id,
+                ?err,
+                "settlement failed"
+            ),
+        },
+    }
+
+    // The driver's answer proves nothing about the transaction: release on
+    // the observed landing, or let the hold expire once nothing can land.
+    if tokio::time::timeout_at(landable_until, &mut landed)
+        .await
+        .is_ok()
+    {
+        inflight.release(uids.iter());
+    }
+}
+
+/// Resolves when the auction's solver has a settlement observed on chain.
+/// Pends forever when the channel closes, the caller's timeout bounds it.
+async fn wait_landed(events: &mut broadcast::Receiver<Landed>, auction_id: i64, solver: Pubkey) {
+    loop {
+        match events.recv().await {
+            Ok(landed) if landed.auction_id == auction_id && landed.solver == solver => return,
+            Ok(_) => {}
+            // Skipped messages cannot be recovered, later ones still arrive.
+            Err(broadcast::error::RecvError::Lagged(_)) => {}
+            Err(broadcast::error::RecvError::Closed) => std::future::pending().await,
         }
     }
 }

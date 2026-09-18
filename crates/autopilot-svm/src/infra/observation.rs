@@ -31,11 +31,29 @@ use {
 #[derive(Clone)]
 pub struct SettlementWindows {
     pool: PgPool,
+    /// Fans out every settlement observed on chain, so settle tasks can end
+    /// on the on-chain evidence instead of a driver response.
+    landed: tokio::sync::broadcast::Sender<Landed>,
+}
+
+/// One settlement the indexer observed on chain.
+#[derive(Clone, Copy, Debug)]
+pub struct Landed {
+    pub auction_id: i64,
+    pub solver: Pubkey,
 }
 
 impl SettlementWindows {
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        // Landings are rare next to the channel's capacity, a lagging
+        // receiver only misses an early release.
+        let (landed, _) = tokio::sync::broadcast::channel(128);
+        Self { pool, landed }
+    }
+
+    /// Subscribe to settlements observed on chain.
+    pub fn landed_events(&self) -> tokio::sync::broadcast::Receiver<Landed> {
+        self.landed.subscribe()
     }
 
     /// Open a window for a dispatched settlement. `solution_uid` is the
@@ -75,13 +93,16 @@ impl SettlementWindows {
     /// Close the auction's windows against its observed settlements.
     async fn close_landed(&self, auction_id: i64) -> Result<()> {
         for landed in db::close_landed_windows(&self.pool, auction_id).await? {
+            let solver = Pubkey(landed.solver.0);
             tracing::info!(
                 auction_id,
                 slot = landed.end_slot,
-                solver = %Pubkey(landed.solver.0),
+                %solver,
                 tx_signature = %Signature(landed.submitted_signature.0),
                 "settlement observed on chain"
             );
+            // Send failures only mean nobody subscribed.
+            let _ = self.landed.send(Landed { auction_id, solver });
         }
         Ok(())
     }
@@ -165,6 +186,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
             db::SETTLEMENT_FINALIZED_CHANNEL,
             windows.clone(),
         );
+        let mut landed_events = windows.landed_events();
 
         insert_settlement(&pool, 4242).await;
 
@@ -176,6 +198,8 @@ VALUES (10, $1, 0, $2, $3, NULL)
         }
         task.abort();
         assert_eq!(outcome(&pool, 4242).await.as_deref(), Some("landed"));
+        let landed = landed_events.try_recv().expect("landed event broadcast");
+        assert_eq!(landed.auction_id, 4242);
         let signature: Vec<u8> = sqlx::query_scalar(
             "SELECT submitted_signature FROM solana.settlement_executions WHERE auction_id = 4242",
         )
