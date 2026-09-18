@@ -66,8 +66,9 @@ pub struct Config {
     /// sponsored orders: without it their winning solutions dispatch without
     /// creations and fail at the driver.
     pub sponsoring: Option<Sponsoring>,
-    /// Native price lookups for auction tokens.
-    #[serde(default)]
+    /// Native price lookups for auction tokens. Required with no default
+    /// source, like the EVM estimator configuration: pricing through a
+    /// third party is a deployment decision, never a silent fallback.
     pub native_prices: NativePrices,
     /// Logging configuration.
     #[serde(default)]
@@ -79,7 +80,6 @@ pub struct Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NativePrices {
     /// Base URL of the CoinGecko API.
-    #[serde(default = "default_prices_endpoint")]
     pub endpoint: url::Url,
     /// API key sent with every price request as the CoinGecko Pro header,
     /// like the EVM estimator.
@@ -88,22 +88,6 @@ pub struct NativePrices {
     /// How long a fetched price serves auctions before it is refetched.
     #[serde(with = "humantime_serde", default = "default_prices_ttl")]
     pub ttl: Duration,
-}
-
-impl Default for NativePrices {
-    fn default() -> Self {
-        Self {
-            endpoint: default_prices_endpoint(),
-            api_key: None,
-            ttl: default_prices_ttl(),
-        }
-    }
-}
-
-fn default_prices_endpoint() -> url::Url {
-    "https://api.coingecko.com/api/v3/"
-        .parse()
-        .expect("valid literal url")
 }
 
 const fn default_prices_ttl() -> Duration {
