@@ -21,9 +21,14 @@ use {
 /// CoinGecko's authorization header for Pro plans.
 const API_KEY_HEADER: &str = "x-cg-pro-api-key";
 
-/// Ceiling on one request to a price source. Every source shares it, so a
-/// hung endpoint cannot stall the auction cut.
+/// Ceiling on one request to a price source, so a hung endpoint cannot stall
+/// the auction cut.
 const SOURCE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Ceiling on one driver probe quote, which costs the solver a route search
+/// and so runs longer than a price API answer. Kept under the solve deadline
+/// the same solvers work to.
+const DRIVER_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Driver quotes in flight at once, bounding the load one lookup puts on a
 /// single driver.
@@ -488,9 +493,15 @@ async fn driver(
                 buy_token: wrapped_native,
                 amount: probe_amount,
                 kind: "buy",
-                deadline: chrono::Utc::now() + SOURCE_TIMEOUT,
+                deadline: chrono::Utc::now() + DRIVER_TIMEOUT,
             };
-            let response = client.post(url).json(&request).send().await.ok()?;
+            let response = client
+                .post(url)
+                .json(&request)
+                .timeout(DRIVER_TIMEOUT)
+                .send()
+                .await
+                .ok()?;
             if !response.status().is_success() {
                 return None;
             }
@@ -514,7 +525,9 @@ async fn driver(
             // the stored price is lamports per atom scaled by 10^9.
             let price = (u128::from(quote.buy_amount) * 1_000_000_000)
                 .checked_div(u128::from(quote.sell_amount))?;
-            let price = u64::try_from(price).unwrap_or(u64::MAX);
+            // A price outside the scaled range counts as unpriced: clamping
+            // would let it outrank every real one.
+            let price = u64::try_from(price).ok()?;
             (price > 0).then_some((token, price))
         })
         .collect())
