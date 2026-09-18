@@ -130,6 +130,7 @@ async fn run(config: Config) {
                 config.rpc.request_timeout,
                 CommitmentConfig::confirmed(),
             ),
+            config.max_indexer_lag_slots,
             NativePrices::new(
                 &config.native_prices,
                 SolanaRPC::new_with_timeout_and_commitment(

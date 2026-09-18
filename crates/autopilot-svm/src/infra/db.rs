@@ -79,10 +79,6 @@ ORDER BY o.uid
 
 /// Latest slot the indexer fully processed. `None` before the indexer's first
 /// write. `solana.indexer_state` is a single-row table.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the freshness gating")
-)]
 pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
     const QUERY: &str = r#"SELECT slot FROM solana.indexer_state"#;
     sqlx::query_scalar(QUERY)

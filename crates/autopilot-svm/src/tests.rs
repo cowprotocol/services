@@ -214,6 +214,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         let provider = DbAuctionProvider::new(
             pool.clone(),
             mock_rpc(),
+            150,
             NativePrices::seeded(test_prices()),
         );
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
@@ -231,6 +232,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         Box::new(DbAuctionProvider::new(
             pool.clone(),
             mock_rpc(),
+            150,
             NativePrices::seeded(test_prices()),
         )),
         Box::new(DriverCompetition::new(
