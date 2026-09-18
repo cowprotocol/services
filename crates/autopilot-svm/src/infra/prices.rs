@@ -19,6 +19,10 @@ use {
 /// CoinGecko's authorization header for Pro plans.
 const API_KEY_HEADER: &str = "x-cg-pro-api-key";
 
+/// Ceiling on one request to the price endpoint, so a hung endpoint cannot
+/// stall the auction cut.
+const SOURCE_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Mints per `getMultipleAccounts` request, the RPC method's cap.
 const ACCOUNTS_CHUNK: usize = 100;
 
@@ -58,7 +62,10 @@ impl NativePrices {
     /// runtime.
     pub fn new(config: &config::NativePrices, rpc: SolanaRPC, wrapped_native: Pubkey) -> Self {
         let inner = Arc::new(Inner {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(SOURCE_TIMEOUT)
+                .build()
+                .expect("reqwest client"),
             endpoint: config.endpoint.clone(),
             api_key: config.api_key.clone(),
             rpc,
@@ -319,18 +326,19 @@ impl Inner {
 }
 
 /// A whole-token price in SOL converted to the scaled atom price:
-/// `price * 10^(18 - decimals)`, saturating at `u64::MAX`. `None` when the
-/// price rounds below one, those tokens count as unpriced.
+/// `price * 10^(18 - decimals)`. `None` for a price that is not a positive
+/// real number, rounds below one atom of value, or does not fit the scaled
+/// range: those tokens count as unpriced. Clamping instead would let a
+/// nonsense price outrank every real one.
 fn scale(price: f64, decimals: u8) -> Option<u64> {
-    let scaled = price * 10f64.powi(18 - i32::from(decimals));
-    if scaled.is_nan() || scaled < 1.0 {
+    if !price.is_normal() || price <= 0.0 {
         return None;
     }
-    Some(if scaled >= u64::MAX as f64 {
-        u64::MAX
-    } else {
-        scaled as u64
-    })
+    let scaled = price * 10f64.powi(18 - i32::from(decimals));
+    if !scaled.is_finite() || scaled < 1.0 || scaled >= u64::MAX as f64 {
+        return None;
+    }
+    Some(scaled as u64)
 }
 
 #[cfg(test)]
@@ -377,8 +385,12 @@ mod tests {
         // The native token itself: 1.0 * 10^9.
         assert_eq!(scale(1.0, 9), Some(Solana::NATIVE_PRICE_DENOMINATOR));
         assert_eq!(scale(0.0, 6), None);
+        assert_eq!(scale(-1.0, 6), None);
         assert_eq!(scale(f64::NAN, 6), None);
-        assert_eq!(scale(f64::MAX, 0), Some(u64::MAX));
+        assert_eq!(scale(f64::INFINITY, 6), None);
+        // Beyond the scaled range: unpriced beats ranking first on nonsense.
+        assert_eq!(scale(f64::MAX, 0), None);
+        assert_eq!(scale(1e9, 0), None);
     }
 
     /// The wrapped native mint is priced at the denominator without any
