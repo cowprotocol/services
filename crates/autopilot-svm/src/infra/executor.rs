@@ -116,13 +116,13 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                     // No transaction went out, so the orders can re-enter
                     // the next cut instead of waiting out the hold.
                     Err(err) if err.settlement_provably_unsent() => {
-                        tracing::error!(
+                        tracing::warn!(
                             driver = %driver.name,
                             auction_id,
                             ?err,
                             "settlement rejected before submission"
                         );
-                        inflight.release(uids.iter());
+                        inflight.release(uids);
                     }
                     Err(err) => tracing::error!(
                         driver = %driver.name,

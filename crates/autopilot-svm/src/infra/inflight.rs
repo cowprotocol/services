@@ -16,7 +16,7 @@ use {
     chain_types::solana::IntentHash,
     solana_sdk::clock::MAX_PROCESSING_AGE,
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
     },
 };
@@ -42,19 +42,19 @@ impl InFlightOrders {
 
     /// Release the orders: their settlement landed or provably never went
     /// out, so no second settlement can collide.
-    pub fn release<'a>(&self, uids: impl IntoIterator<Item = &'a IntentHash>) {
+    pub fn release(&self, uids: impl IntoIterator<Item = IntentHash>) {
         let mut held = self.0.lock().expect("mutex poisoned");
         for uid in uids {
-            held.remove(uid);
+            held.remove(&uid);
         }
     }
 
-    /// Whether the order is still held at the tip. Expired entries are
-    /// pruned on the way.
-    pub fn held(&self, uid: &IntentHash, tip: u64) -> bool {
+    /// The orders still held at the tip. Expired entries are pruned on the
+    /// way.
+    pub fn held_at(&self, tip: u64) -> HashSet<IntentHash> {
         let mut held = self.0.lock().expect("mutex poisoned");
         held.retain(|_, held_until| *held_until >= tip);
-        held.contains_key(uid)
+        held.keys().copied().collect()
     }
 }
 
@@ -69,10 +69,9 @@ mod tests {
         inflight.hold([uid], 100);
         let expiry = 100 + MAX_PROCESSING_AGE as u64;
 
-        assert!(inflight.held(&uid, 100));
-        assert!(inflight.held(&uid, expiry));
-        assert!(!inflight.held(&uid, expiry + 1));
-        assert!(!inflight.held(&IntentHash([8; 32]), 50));
+        assert!(inflight.held_at(100).contains(&uid));
+        assert!(inflight.held_at(expiry).contains(&uid));
+        assert!(inflight.held_at(expiry + 1).is_empty());
     }
 
     #[test]
@@ -81,10 +80,11 @@ mod tests {
         let uid = IntentHash([7; 32]);
         let other = IntentHash([8; 32]);
         inflight.hold([uid, other], 100);
-        inflight.release([uid].iter());
+        inflight.release([uid]);
 
-        assert!(!inflight.held(&uid, 50));
-        assert!(inflight.held(&other, 50));
+        let held = inflight.held_at(50);
+        assert!(!held.contains(&uid));
+        assert!(held.contains(&other));
     }
 
     #[test]
@@ -94,6 +94,10 @@ mod tests {
         inflight.hold([uid], 100);
         inflight.hold([uid], 90);
 
-        assert!(inflight.held(&uid, 100 + MAX_PROCESSING_AGE as u64));
+        assert!(
+            inflight
+                .held_at(100 + MAX_PROCESSING_AGE as u64)
+                .contains(&uid)
+        );
     }
 }
