@@ -17,9 +17,9 @@ async fn local_node_fast_path_flags_fall_through_when_disabled() {
     run_test(fast_path_flags_fall_through_when_disabled).await;
 }
 
-/// When `default_fast_path_exclusivity` is unset, the orderbook still
-/// accepts an `enableFastPath` order — but the autopilot's fast-path
-/// handler classifies it into the regular auction immediately by
+/// When the fast-path handler is disabled (`fast_path_enabled = false`),
+/// the orderbook still accepts an `enableFastPath` order — but the
+/// autopilot classifies it into the regular auction immediately by
 /// writing `valid_from = now()`, so it settles like any other order.
 ///
 /// This guards against a regression where turning the fast-path feature
@@ -52,12 +52,12 @@ async fn fast_path_flags_fall_through_when_disabled(web3: Web3) {
         .await
         .unwrap();
 
-    tracing::info!("Starting services (no fast-path exclusivity configured).");
+    tracing::info!("Starting services with the fast-path handler disabled.");
     let services = Services::new(&onchain).await;
-    // `default_fast_path_exclusivity` intentionally left unset — the
-    // autopilot's fast-path handler still runs and writes
-    // `valid_from = now()` for the order so the regular auction picks
-    // it up on the very next cycle.
+    // `fast_path_enabled` is false (the test config default), so the
+    // fast-path handler still runs but skips the settle and writes
+    // `valid_from = now()`, letting the regular auction pick the order
+    // up on the very next cycle.
     services
         .start_protocol_with_args(
             AutopilotConfiguration::test("test_solver", solver.address()),
