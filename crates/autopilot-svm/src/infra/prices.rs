@@ -45,10 +45,15 @@ const PRICES_CHUNK: usize = 100;
 /// estimators are asked in order: a token the first one does not price is
 /// asked from the next. A background task keeps the tokens of the latest
 /// lookup fresh, so a cut normally reads the cache instead of waiting on a
-/// source.
-pub struct NativePrices(Arc<Inner>);
+/// source. Without sources every token prices at the native denominator.
+pub enum NativePrices {
+    /// No sources configured: every token prices at the native denominator
+    /// and nothing is fetched.
+    Denominated,
+    Configured(Arc<Inner>),
+}
 
-struct Inner {
+pub struct Inner {
     sources: Vec<Source>,
     rpc: SolanaRPC,
     wrapped_native: Pubkey,
@@ -113,8 +118,15 @@ struct QuoteResponse {
 
 impl NativePrices {
     /// Builds the lookup and spawns its refresher. Must run inside a tokio
-    /// runtime.
+    /// runtime. Without configured sources the lookup prices every token at
+    /// the denominator instead.
     pub fn new(config: &config::NativePrices, rpc: SolanaRPC, wrapped_native: Pubkey) -> Self {
+        if config.estimators.is_empty() {
+            tracing::warn!(
+                "no native price sources configured, pricing every token at the denominator"
+            );
+            return Self::Denominated;
+        }
         let client = reqwest::Client::builder()
             .timeout(SOURCE_TIMEOUT)
             .build()
@@ -157,7 +169,7 @@ impl NativePrices {
                 refresher.refresh().await;
             }
         });
-        Self(inner)
+        Self::Configured(inner)
     }
 
     /// The lamport value of one atom of each token, scaled by 10^9 like
@@ -167,14 +179,20 @@ impl NativePrices {
     /// failed: a partially priced auction is normal, a wholly unpriced one on
     /// broken sources is not worth ranking.
     pub async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
-        self.0.prices(tokens).await
+        match self {
+            Self::Denominated => Ok(tokens
+                .into_iter()
+                .map(|token| (token, Solana::NATIVE_PRICE_DENOMINATOR))
+                .collect()),
+            Self::Configured(inner) => inner.prices(tokens).await,
+        }
     }
 
     /// A lookup pre-seeded for tests: the given prices never expire, nothing
     /// is fetched, and no refresher runs.
     #[cfg(test)]
     pub(crate) fn seeded(entries: impl IntoIterator<Item = (Pubkey, u64)>) -> Self {
-        Self(Arc::new(Inner {
+        Self::Configured(Arc::new(Inner {
             sources: Vec::new(),
             rpc: SolanaRPC::new_mock_with_mocks(Default::default()),
             wrapped_native: Pubkey::default(),
@@ -658,6 +676,24 @@ mod tests {
         );
         let result = prices.prices(HashSet::from([wrapped])).await.unwrap();
         assert_eq!(result[&wrapped], Solana::NATIVE_PRICE_DENOMINATOR);
+    }
+
+    /// Without sources every token prices at the denominator and nothing is
+    /// fetched: the RPC here is dead.
+    #[tokio::test]
+    async fn prices_at_the_denominator_without_sources() {
+        let token = Pubkey::new_unique();
+        let prices = NativePrices::new(
+            &config::NativePrices {
+                estimators: Vec::new(),
+                ttl: Duration::from_secs(60),
+                driver_probe_lamports: PROBE_LAMPORTS,
+            },
+            SolanaRPC::new_mock_with_mocks(Mocks::default()),
+            Pubkey::new_unique(),
+        );
+        let result = prices.prices(HashSet::from([token])).await.unwrap();
+        assert_eq!(result[&token], Solana::NATIVE_PRICE_DENOMINATOR);
     }
 
     /// A listed token is priced through its decimals, an unlisted one is

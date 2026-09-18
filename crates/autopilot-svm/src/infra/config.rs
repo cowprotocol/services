@@ -80,9 +80,10 @@ pub struct Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NativePrices {
     /// Price sources in fallback order: a token the first one does not price
-    /// is asked from the next. At least one source is required, pricing
-    /// through a third party is a deployment decision.
-    #[serde(deserialize_with = "deserialize_nonempty_vec")]
+    /// is asked from the next. Empty, the autopilot prices every token at the
+    /// native denominator, so scores compare raw surplus. Pricing through a
+    /// third party stays a deployment decision, there is no default source.
+    #[serde(default)]
     pub estimators: Vec<NativePriceEstimator>,
     /// How long a fetched price serves auctions before it is refetched.
     #[serde(with = "humantime_serde", default = "default_prices_ttl")]
