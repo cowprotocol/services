@@ -11,7 +11,6 @@ use {
                 FeePolicyKind as ConfigFeePolicyKind,
                 FeePolicyOrderClass as ConfigFeePolicyOrderClass,
             },
-            run_loop::RunLoopConfig,
             solver::Solver,
         },
         order_quoting::{ExternalSolver, OrderQuoting},
@@ -38,13 +37,10 @@ use {
     std::time::Duration,
 };
 
-/// Enables the fast path on the autopilot and pins
-/// `run_loop.submission_deadline` to the block count that produces the
-/// requested exclusivity given the network's block time. The
-/// autopilot's fast-path handler uses `submission_deadline × block time`
-/// as the wall-clock exclusivity window — the two are the same knob,
-/// so tests dial in the wall-clock value they need and let the handler
-/// derive the rest.
+/// Enables the fast path on the autopilot and sets
+/// `fast_path_submission_deadline` to the block count that produces the
+/// requested wall-clock window on the local Hardhat chain (12s blocks), so a
+/// test can dial in the exclusivity it needs.
 ///
 /// `max_partner_fee` is still mirrored onto the orderbook because its
 /// placement-time limit-price check needs to size partner fees the same
@@ -59,19 +55,15 @@ fn with_fast_path_exclusivity(
         .max_partner_fee
         .or(orderbook.order_quoting.max_partner_fee)
         .or(Some(autopilot.fee_policies.max_partner_fee));
-    // Local anvil advertises the Hardhat chain-id, so the handler
-    // computes with `Chain::Hardhat::block_time_in_ms()` (12s).
+    // Local anvil advertises the Hardhat chain-id (12s blocks).
     const HARDHAT_BLOCK_SECS: u64 = 12;
-    let submission_deadline = exclusivity.as_secs().div_ceil(HARDHAT_BLOCK_SECS).max(1);
+    let fast_path_submission_deadline = exclusivity.as_secs().div_ceil(HARDHAT_BLOCK_SECS).max(1);
     let autopilot = AutopilotConfiguration {
         fast_path_enabled: true,
+        fast_path_submission_deadline,
         order_quoting: OrderQuoting {
             max_partner_fee,
             ..autopilot.order_quoting
-        },
-        run_loop: RunLoopConfig {
-            submission_deadline,
-            ..autopilot.run_loop
         },
         ..autopilot
     };
@@ -959,8 +951,8 @@ async fn fast_path_ethflow_settle(web3: Web3) {
     // ethflow contract only emits its hash, so the orderbook needs the full
     // payload to reconstruct the metadata. The autopilot's on-chain event
     // ingestion sees `enableFastPath: true` and derives
-    // `valid_from = now + default_fast_path_exclusivity` itself (same behaviour
-    // as the orderbook applies to API-placed orders).
+    // `valid_from = now + fast_path_submission_deadline × block time` itself
+    // (same behaviour as the orderbook applies to API-placed orders).
     tracing::info!("Registering fast-path app data.");
     let fast_path_app_data = r#"{"metadata":{"enableFastPath":true}}"#;
     let app_data_hex = services
