@@ -10,7 +10,7 @@ use {
     spl_token_interface::state::Mint,
     std::{
         collections::{HashMap, HashSet},
-        sync::Mutex,
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
     url::Url,
@@ -27,8 +27,13 @@ const ACCOUNTS_CHUNK: usize = 100;
 /// the URL bounded.
 const PRICES_CHUNK: usize = 100;
 
-/// Native price lookups for auction tokens, cached per token.
-pub struct NativePrices {
+/// Native price lookups for auction tokens, cached per token. A background
+/// task keeps the tokens of the latest lookup fresh, so a cut normally reads
+/// the cache instead of waiting on the price endpoint, like the EVM native
+/// price cache.
+pub struct NativePrices(Arc<Inner>);
+
+struct Inner {
     client: reqwest::Client,
     endpoint: Url,
     api_key: Option<String>,
@@ -40,6 +45,8 @@ pub struct NativePrices {
     prices: Mutex<HashMap<Pubkey, (Instant, Option<u64>)>>,
     /// Mint decimals never change, so they are cached forever.
     decimals: Mutex<HashMap<Pubkey, u8>>,
+    /// The tokens of the latest lookup, the set the refresher keeps fresh.
+    maintained: Mutex<HashSet<Pubkey>>,
 }
 
 /// One priced entry of the CoinGecko `simple/token_price` response.
@@ -49,8 +56,10 @@ struct Entry {
 }
 
 impl NativePrices {
+    /// Builds the lookup and spawns its refresher. Must run inside a tokio
+    /// runtime.
     pub fn new(config: &config::NativePrices, rpc: SolanaRPC, wrapped_native: Pubkey) -> Self {
-        Self {
+        let inner = Arc::new(Inner {
             client: reqwest::Client::new(),
             endpoint: config.endpoint.clone(),
             api_key: config.api_key.clone(),
@@ -59,14 +68,35 @@ impl NativePrices {
             ttl: config.ttl,
             prices: Mutex::new(HashMap::new()),
             decimals: Mutex::new(HashMap::new()),
-        }
+            maintained: Mutex::new(HashSet::new()),
+        });
+        let refresher = Arc::clone(&inner);
+        tokio::spawn(async move {
+            // Ticking well inside the refresh margin keeps an entry from
+            // expiring between two passes.
+            let tick = (refresher.ttl / 6).max(Duration::from_millis(50));
+            loop {
+                tokio::time::sleep(tick).await;
+                refresher.refresh().await;
+            }
+        });
+        Self(inner)
     }
 
-    /// A lookup pre-seeded for tests: the given prices never expire and
-    /// nothing is fetched.
+    /// The lamport value of one atom of each token, scaled by 10^9 like
+    /// [`ChainTypes::NATIVE_PRICE_DENOMINATOR`]. Tokens CoinGecko does not
+    /// list are absent from the result. Any lookup failure fails the whole
+    /// call: a partially priced auction would rank solutions on incomparable
+    /// scores.
+    pub async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
+        self.0.prices(tokens).await
+    }
+
+    /// A lookup pre-seeded for tests: the given prices never expire, nothing
+    /// is fetched, and no refresher runs.
     #[cfg(test)]
     pub(crate) fn seeded(entries: impl IntoIterator<Item = (Pubkey, u64)>) -> Self {
-        Self {
+        Self(Arc::new(Inner {
             client: reqwest::Client::new(),
             endpoint: "http://127.0.0.1:1/".parse().expect("literal url"),
             api_key: None,
@@ -80,6 +110,36 @@ impl NativePrices {
                     .collect(),
             ),
             decimals: Mutex::new(HashMap::new()),
+            maintained: Mutex::new(HashSet::new()),
+        }))
+    }
+}
+
+impl Inner {
+    /// One refresher pass: refetch the maintained tokens nearing expiry, so
+    /// lookups keep hitting fresh entries. A failed pass only logs, the
+    /// entries then expire and the next lookup fetches inline.
+    async fn refresh(&self) {
+        let margin = self.ttl / 3;
+        let now = Instant::now();
+        let expiring: Vec<Pubkey> = {
+            let maintained = self.maintained.lock().expect("maintained set poisoned");
+            let cache = self.prices.lock().expect("price cache poisoned");
+            maintained
+                .iter()
+                .filter(|token| {
+                    cache.get(token).is_none_or(|(fetched, _)| {
+                        now.duration_since(*fetched) + margin >= self.ttl
+                    })
+                })
+                .copied()
+                .collect()
+        };
+        if expiring.is_empty() {
+            return;
+        }
+        if let Err(err) = self.fetch_into_cache(&expiring).await {
+            tracing::warn!(?err, "native price refresh failed");
         }
     }
 
@@ -88,56 +148,75 @@ impl NativePrices {
     /// list are absent from the result. Any lookup failure fails the whole
     /// call: a partially priced auction would rank solutions on incomparable
     /// scores.
-    pub async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
+    async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
         let now = Instant::now();
         {
             let cache = self.prices.lock().expect("price cache poisoned");
-            for token in tokens {
-                if token == self.wrapped_native {
-                    result.insert(token, Solana::NATIVE_PRICE_DENOMINATOR);
+            for token in &tokens {
+                if *token == self.wrapped_native {
+                    result.insert(*token, Solana::NATIVE_PRICE_DENOMINATOR);
                     continue;
                 }
-                match cache.get(&token) {
+                match cache.get(token) {
                     Some((fetched, price)) if now.duration_since(*fetched) < self.ttl => {
                         if let Some(price) = price {
-                            result.insert(token, *price);
+                            result.insert(*token, *price);
                         }
                     }
-                    _ => fetch.push(token),
+                    _ => fetch.push(*token),
                 }
             }
+        }
+        {
+            // The refresher maintains what the latest lookup asked for.
+            let mut maintained = self.maintained.lock().expect("maintained set poisoned");
+            *maintained = tokens
+                .into_iter()
+                .filter(|token| *token != self.wrapped_native)
+                .collect();
         }
         if fetch.is_empty() {
             return Ok(result);
         }
 
-        let decimals = self.decimals(&fetch).await?;
-        let quoted = self.fetch(&fetch).await?;
+        self.fetch_into_cache(&fetch).await?;
+        let cache = self.prices.lock().expect("price cache poisoned");
+        for token in fetch {
+            if let Some((_, Some(price))) = cache.get(&token) {
+                result.insert(token, *price);
+            }
+        }
+        Ok(result)
+    }
+
+    /// Fetch the tokens' prices and cache every answer, the missing ones
+    /// negatively.
+    async fn fetch_into_cache(&self, tokens: &[Pubkey]) -> Result<()> {
+        let decimals = self.decimals(tokens).await?;
+        let quoted = self.fetch(tokens).await?;
         // A non-empty answer naming none of the asked mints is contract
         // drift (a changed key format, for example), not a market answer.
         // Failing keeps the drift loud instead of caching every token as
         // unlisted.
         if !quoted.is_empty()
-            && fetch
+            && tokens
                 .iter()
                 .all(|token| !quoted.contains_key(&token.to_string()))
         {
             return Err(anyhow!("price response keys match no requested mint"));
         }
+        let now = Instant::now();
         let mut cache = self.prices.lock().expect("price cache poisoned");
-        for token in fetch {
+        for token in tokens {
             let price = quoted
                 .get(&token.to_string())
                 .and_then(|entry| entry.sol)
-                .and_then(|sol| scale(sol, decimals[&token]));
-            cache.insert(token, (now, price));
-            if let Some(price) = price {
-                result.insert(token, price);
-            }
+                .and_then(|sol| scale(sol, decimals[token]));
+            cache.insert(*token, (now, price));
         }
-        Ok(result)
+        Ok(())
     }
 
     /// Decimals per mint, from the cache or the mint accounts on chain.
@@ -394,6 +473,48 @@ mod tests {
         );
 
         assert!(prices.prices(HashSet::from([token])).await.is_err());
+    }
+
+    /// The refresher refetches the maintained token on its own, and the next
+    /// lookup is served from the refreshed cache.
+    #[tokio::test]
+    async fn refreshes_maintained_prices_in_the_background() {
+        let listed = Pubkey::new_unique();
+        let (endpoint, requests) = coingecko(serde_json::json!({
+            listed.to_string(): { "sol": 0.005 },
+        }))
+        .await;
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!({
+                "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                "value": [crate::tests::mint_account_json(6)],
+            }),
+        )]);
+        let prices = NativePrices::new(
+            &config::NativePrices {
+                endpoint,
+                api_key: None,
+                ttl: Duration::from_millis(600),
+            },
+            SolanaRPC::new_mock_with_mocks(mocks),
+            Pubkey::new_unique(),
+        );
+
+        let result = prices.prices(HashSet::from([listed])).await.unwrap();
+        assert_eq!(result.get(&listed), Some(&5_000_000_000));
+        assert_eq!(requests.load(Ordering::Relaxed), 1);
+
+        // The background pass refetches without another lookup.
+        for _ in 0..200 {
+            if requests.load(Ordering::Relaxed) >= 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert!(requests.load(Ordering::Relaxed) >= 2);
+        let result = prices.prices(HashSet::from([listed])).await.unwrap();
+        assert_eq!(result.get(&listed), Some(&5_000_000_000));
     }
 
     /// A failing price endpoint fails the whole lookup.
