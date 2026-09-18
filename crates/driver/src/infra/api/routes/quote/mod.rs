@@ -19,7 +19,7 @@ async fn route(
     LoggingQuery(order): LoggingQuery<dto::Order>,
 ) -> Result<axum::Json<dto::Quote>, (axum::http::StatusCode, axum::Json<Error>)> {
     let order = order.into_domain();
-    let quote_id = order.quote_id.0;
+    let quote_id = order.quote_id.map(|id| id.0);
     let handle_request = async {
         observe::quoting(&order);
         let result = order

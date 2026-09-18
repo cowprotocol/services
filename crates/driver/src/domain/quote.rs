@@ -119,7 +119,7 @@ pub struct Order {
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
     pub enable_fast_path: bool,
-    pub quote_id: Id,
+    pub quote_id: Option<Id>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -170,9 +170,11 @@ impl Order {
 
         // Cache the fast-path solution under the id the orderbook minted for
         // this request, so we can later settle it by referencing that id.
-        if self.enable_fast_path {
+        // Only a quote with an id can be settled later: the autopilot
+        // addresses the cached solution by it.
+        if let (true, Some(quote_id)) = (self.enable_fast_path, self.quote_id) {
             competition
-                .cache_quote_solution(self.quote_id, auction.clone(), solution)
+                .cache_quote_solution(quote_id, auction.clone(), solution)
                 .await;
         }
         Ok(quote)
