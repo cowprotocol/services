@@ -5,6 +5,7 @@ pub mod config;
 pub mod db;
 pub mod driver;
 pub mod executor;
+pub mod inflight;
 pub mod listen;
 pub mod observation;
 pub mod observer;
