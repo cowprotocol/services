@@ -66,9 +66,32 @@ pub struct Config {
     /// sponsored orders: without it their winning solutions dispatch without
     /// creations and fail at the driver.
     pub sponsoring: Option<Sponsoring>,
+    /// Native price lookups for auction tokens. Required with no default
+    /// source: pricing through a third party is a deployment decision,
+    /// never a silent fallback.
+    pub native_prices: NativePrices,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
+}
+
+/// CoinGecko native price lookups.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct NativePrices {
+    /// Base URL of the CoinGecko API.
+    pub endpoint: url::Url,
+    /// API key sent with every price request as the CoinGecko Pro plan
+    /// header.
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// How long a fetched price serves auctions before it is refetched.
+    #[serde(with = "humantime_serde", default = "default_prices_ttl")]
+    pub ttl: Duration,
+}
+
+const fn default_prices_ttl() -> Duration {
+    Duration::from_secs(30)
 }
 
 impl Config {
@@ -187,6 +210,12 @@ mod tests {
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
         assert_eq!(config.max_indexer_lag_slots, 150);
+        assert_eq!(
+            config.native_prices.endpoint.as_str(),
+            "https://api.coingecko.com/api/v3/"
+        );
+        assert_eq!(config.native_prices.api_key, None);
+        assert_eq!(config.native_prices.ttl, Duration::from_secs(30));
         assert_eq!(config.drivers.len(), 1);
         assert_eq!(config.drivers[0].name, "baseline");
         assert_eq!(config.logging.filter, "info,autopilot_svm=debug");

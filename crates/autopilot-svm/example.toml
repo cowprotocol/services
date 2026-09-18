@@ -32,6 +32,13 @@ submission-deadline-slots = 25
 name = "baseline"
 url = "http://localhost:11088"
 
+# Native price lookups for auction tokens. The key is optional: without one
+# the public CoinGecko API and its rate limits apply.
+[native-prices]
+endpoint = "https://api.coingecko.com/api/v3/"
+# api-key = "..."
+ttl = "30s"
+
 [logging]
 filter = "info,autopilot_svm=debug"
 
