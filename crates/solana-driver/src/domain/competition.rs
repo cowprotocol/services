@@ -236,6 +236,13 @@ impl Competition {
             return Err(Error::SolutionNotAvailable);
         }
 
+        // The driver signs the transaction, so the signature is known before
+        // the send. A confirmation that never returns must still leave it in
+        // the logs.
+        if let Some(signature) = transaction.signatures.first() {
+            tracing::info!(%signature, "submitting settlement");
+        }
+
         // TODO: a provably unsent transaction (connect failure at send time)
         // loses the solution here; restore the cache entry on that class. Needs
         // the send/confirm split in cow-solana-rpc (planned follow-up PR).
@@ -244,7 +251,15 @@ impl Competition {
             self.blockchain.send_and_confirm_transaction(&transaction),
         )
         .await
-        .map_err(|_| Error::DeadlineExceeded)?
+        .map_err(|_| {
+            if let Some(signature) = transaction.signatures.first() {
+                tracing::warn!(
+                    %signature,
+                    "confirmation timed out, the transaction may still land"
+                );
+            }
+            Error::DeadlineExceeded
+        })?
         .map_err(Error::FailedToSubmit)?;
 
         Ok(signature)
@@ -276,7 +291,15 @@ impl Competition {
                 self.blockchain.send_and_confirm_transaction(creation),
             )
             .await
-            .map_err(|_| Error::DeadlineExceeded)?;
+            .map_err(|_| {
+                if let Some(signature) = creation.signatures.first() {
+                    tracing::warn!(
+                        %signature,
+                        "creation confirmation timed out, the transaction may still land"
+                    );
+                }
+                Error::DeadlineExceeded
+            })?;
             match sent {
                 Ok(signature) => {
                     tracing::info!(%signature, "order creation submitted");
