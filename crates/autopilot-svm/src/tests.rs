@@ -220,16 +220,18 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         .expect("settle channel open");
     assert_eq!(settle.solution_id, 7);
     assert!(settle.auction_id > 0);
-    // The dispatched order is held out of the next cut until its submission
-    // deadline passes.
+    // The dispatched order is held out of the next cut until its settlement
+    // transaction cannot land any more: the deadline plus the blockhash
+    // lifetime.
+    let expired = tip + 25 + solana_sdk::clock::MAX_PROCESSING_AGE as u64 + 1;
     let held_provider = DbAuctionProvider::new(pool.clone(), mock_rpc(), inflight.clone());
     assert!(
-        held_provider.cut_auction(&tip).await.is_none(),
+        held_provider.cut_auction(&(expired - 1)).await.is_none(),
         "in-flight order excluded from the cut"
     );
     assert!(
-        held_provider.cut_auction(&(tip + 26)).await.is_some(),
-        "order returns after the deadline"
+        held_provider.cut_auction(&expired).await.is_some(),
+        "order returns once the transaction cannot land"
     );
     // The dispatch opened a settlement-execution window.
     let open_windows: i64 = sqlx::query_scalar(
