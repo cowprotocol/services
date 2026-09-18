@@ -283,6 +283,7 @@ async fn spawn_driver(
         addr: "127.0.0.1:0".parse().unwrap(),
         blockchain,
         solvers,
+        push_reduction_bps: Vec::new(),
     };
     let (listener, addr) = api.bind().await.expect("bind driver API");
     println!("driver API listening on {addr}");

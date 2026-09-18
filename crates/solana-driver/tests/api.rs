@@ -59,6 +59,7 @@ fn api_with(solvers: Vec<Solver>) -> Api {
         addr: "0.0.0.0:0".parse().unwrap(),
         blockchain: blockchain(),
         solvers,
+        push_reduction_bps: Vec::new(),
     }
 }
 
@@ -378,6 +379,7 @@ async fn settle_rejects_a_passed_submission_deadline() {
         addr: "0.0.0.0:0".parse().unwrap(),
         blockchain,
         solvers: vec![solver],
+        push_reduction_bps: Vec::new(),
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();

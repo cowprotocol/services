@@ -34,6 +34,8 @@ pub struct Api {
     pub blockchain: Arc<Solana>,
     /// The solver engines.
     pub solvers: Vec<Solver>,
+    /// Push reductions in ascending basis points; empty disables them.
+    pub push_reduction_bps: Vec<u16>,
 }
 
 impl Api {
@@ -68,7 +70,11 @@ impl Api {
         for solver in self.solvers {
             let solver_name = solver.name().to_owned();
             let solve_every_nth_auction = solver.solve_every_nth_auction();
-            let competition = domain::Competition::new(solver, self.blockchain.clone());
+            let competition = domain::Competition::new(
+                solver,
+                self.blockchain.clone(),
+                self.push_reduction_bps.clone(),
+            );
             let state = State::new(competition, solve_every_nth_auction);
 
             let router = Router::new()

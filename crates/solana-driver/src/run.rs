@@ -54,6 +54,7 @@ pub async fn run(args: Args) {
         addr: config.http.bind_address,
         blockchain,
         solvers,
+        push_reduction_bps: config.settlement.push_reduction_bps,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());

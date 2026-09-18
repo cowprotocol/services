@@ -53,6 +53,9 @@ pub struct Config {
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
+    /// Settlement submission configuration.
+    #[serde(default)]
+    pub settlement: Settlement,
     /// Configured solver engines to query for solutions.
     #[serde(deserialize_with = "deserialize_nonempty_vec")]
     pub solvers: Vec<Solver>,
@@ -131,6 +134,37 @@ pub struct Solver {
     pub solve_every_nth_auction: Option<NonZero<u64>>,
 }
 
+/// Settlement submission configuration.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Settlement {
+    /// Push reductions, in basis points of the promised buy amount, a
+    /// settlement may fall back to when the solver's swap delivers less than
+    /// promised. They are simulated alongside the promise and the smallest
+    /// passing one is submitted, never below the order's limit price. Must be
+    /// strictly ascending; empty disables the fallback.
+    #[serde(default, deserialize_with = "deserialize_push_reduction_bps")]
+    pub push_reduction_bps: Vec<u16>,
+}
+
+fn deserialize_push_reduction_bps<'de, D>(deserializer: D) -> Result<Vec<u16>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let bps: Vec<u16> = serde::Deserialize::deserialize(deserializer)?;
+    if let Some(out_of_range) = bps.iter().find(|bps| !(1..=10_000).contains(*bps)) {
+        return Err(serde::de::Error::custom(format!(
+            "push reduction of {out_of_range} bps is outside 1..=10000"
+        )));
+    }
+    if !bps.is_sorted_by(|a, b| a < b) {
+        return Err(serde::de::Error::custom(
+            "push reductions must be strictly ascending",
+        ));
+    }
+    Ok(bps)
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, std::path::Path};
@@ -165,6 +199,17 @@ mod tests {
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
         assert_eq!(solver.name, "baseline");
         assert_eq!(solver.signer_keypair, Path::new("/path/to/keypair.json"));
+    }
+
+    #[test]
+    fn push_reductions_must_be_strictly_ascending_basis_points() {
+        let parse =
+            |bps: &str| toml::de::from_str::<Settlement>(&format!("push-reduction-bps = {bps}"));
+        assert!(parse("[1, 2, 4]").is_ok());
+        assert!(parse("[]").is_ok());
+        for rejected in ["[0]", "[10001]", "[2, 1]", "[1, 1]"] {
+            assert!(parse(rejected).is_err(), "{rejected} must be rejected");
+        }
     }
 
     #[test]

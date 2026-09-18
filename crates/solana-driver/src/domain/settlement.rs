@@ -1,7 +1,13 @@
 //! Settlement encoding.
 
 use {
-    super::{Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
+    super::{
+        Order,
+        Side,
+        auction::Id,
+        order_uid::OrderUid,
+        solution::{Solution, Trade},
+    },
     crate::infra::blockchain::{
         AccountsSnapshot,
         InvalidAddressLookupTableReason,
@@ -26,11 +32,11 @@ use {
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_sdk::{
         hash::Hash,
-        instruction::Instruction,
+        instruction::{Instruction, InstructionError},
         message::{AddressLookupTableAccount, VersionedMessage, v0::Message as MessageV0},
         pubkey::Pubkey,
         signer::{Signer, keypair::Keypair},
-        transaction::VersionedTransaction,
+        transaction::{TransactionError, VersionedTransaction},
     },
 };
 
@@ -252,7 +258,7 @@ impl ResolvedSettlement {
     }
 
     /// Encode the resolved settlement as a signed v0 transaction.
-    pub fn encode(self, signer: &Keypair, blockhash: Hash) -> Result<VersionedTransaction, Error> {
+    pub fn encode(&self, signer: &Keypair, blockhash: Hash) -> Result<VersionedTransaction, Error> {
         let instructions = self.instructions(signer.pubkey())?;
         let message = MessageV0::try_compile(
             &signer.pubkey(),
@@ -263,6 +269,84 @@ impl ResolvedSettlement {
         let transaction = VersionedTransaction::try_new(VersionedMessage::V0(message), &[signer])?;
         Ok(transaction)
     }
+
+    pub fn pushes(&self) -> Result<Vec<u64>, Error> {
+        self.settlement
+            .orders
+            .iter()
+            .map(|order| Ok(executed_amounts(order, &self.settlement.solution)?.buy))
+            .collect()
+    }
+
+    /// A copy with every push lowered by `bps` basis points, floored at the
+    /// order's limit price. Non-partially-fillable buy orders keep their
+    /// promise: the program requires their push to equal `buy_amount`.
+    pub fn reduced(&self, bps: u16) -> Result<Self, Error> {
+        let mut settlement = self.settlement.clone();
+        settlement.solution.trades = self
+            .settlement
+            .orders
+            .iter()
+            .map(|order| {
+                let mut amounts = executed_amounts(order, &self.settlement.solution)?;
+                if order.side == Side::Sell || order.partially_fillable {
+                    amounts.buy = reduced_push(order, &amounts, bps);
+                }
+                Ok(Trade {
+                    order_uid: order.uid,
+                    executed_sell: amounts.sell,
+                    executed_buy: amounts.buy,
+                })
+            })
+            .collect::<Result<_, Error>>()?;
+        validate_orders(
+            &settlement.program_id,
+            &settlement.orders,
+            &settlement.solution,
+        )?;
+        Ok(Self {
+            settlement,
+            lookup_tables: self.lookup_tables.clone(),
+            missing_buffers: self.missing_buffers.clone(),
+            missing_payer_atas: self.missing_payer_atas.clone(),
+        })
+    }
+}
+
+/// Whether a simulation error is SPL Token `InsufficientFunds` on a push.
+///
+/// That is custom error 1 at `FinalizeSettle`, the last instruction, which
+/// makes one SPL Token transfer per push and nothing else; the settlement
+/// program's own error 1 (`BeginFinalizePairOverlap`) is only raised by
+/// `BeginSettle`.
+pub(crate) fn is_push_shortfall(
+    transaction: &VersionedTransaction,
+    err: &TransactionError,
+) -> bool {
+    let finalize_ix_index = transaction.message.instructions().len() - 1;
+    matches!(
+        err,
+        TransactionError::InstructionError(index, InstructionError::Custom(1))
+            if usize::from(*index) == finalize_ix_index
+    )
+}
+
+fn reduced_push(order: &Order, amounts: &ExecutedAmounts, bps: u16) -> u64 {
+    let reduction = u128::from(amounts.buy) * u128::from(bps) / 10_000;
+    let reduced = amounts
+        .buy
+        .saturating_sub(u64::try_from(reduction).unwrap_or(u64::MAX));
+    reduced.max(limit_price_floor(order, amounts.sell))
+}
+
+fn limit_price_floor(order: &Order, executed_sell: u64) -> u64 {
+    // A zero sell amount makes the limit price vacuous, see `validate_orders`.
+    if order.sell_amount == 0 {
+        return 0;
+    }
+    let floor = (u128::from(executed_sell) * u128::from(order.buy_amount))
+        .div_ceil(u128::from(order.sell_amount));
+    u64::try_from(floor).unwrap_or(u64::MAX)
 }
 
 /// Represents a token account required either as a buffer account or a Solver
@@ -1011,5 +1095,76 @@ mod tests {
             base.uid, with_other_buy_account.uid,
             "orders that differ only in the buy token account must have different uids"
         );
+    }
+
+    fn push_amounts(finalize: &Instruction) -> Vec<u64> {
+        let accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
+        FinalizeSettleInput::parse(&finalize.data, &accounts)
+            .unwrap()
+            .pushes
+            .iter()
+            .map(|push| push.amount)
+            .collect()
+    }
+
+    #[test]
+    fn reduced_lowers_the_push_by_basis_points() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = test_order(&program_id);
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_100)]).unwrap();
+
+        let reduced = resolve_for_test(settlement).reduced(100).unwrap();
+
+        // [SetComputeUnitLimit, BeginSettle, FinalizeSettle].
+        let instructions = reduced.instructions(payer).unwrap();
+        assert_eq!(push_amounts(&instructions[2]), vec![2_079]);
+    }
+
+    #[test]
+    fn reduced_floors_the_push_at_the_limit_price() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = test_order(&program_id);
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_010)]).unwrap();
+
+        let reduced = resolve_for_test(settlement).reduced(100).unwrap();
+
+        let instructions = reduced.instructions(payer).unwrap();
+        assert_eq!(push_amounts(&instructions[2]), vec![2_000]);
+    }
+
+    /// Selling 900 of 1_000 puts the limit-price floor at 1_800, so only the
+    /// fill-or-kill exemption holds the push at 2_000.
+    #[test]
+    fn reduced_keeps_fill_or_kill_buy_orders_whole() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = test_order_with(&program_id, |order| order.side = Side::Buy);
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 900, 2_000)]).unwrap();
+
+        let reduced = resolve_for_test(settlement).reduced(100).unwrap();
+
+        let instructions = reduced.instructions(payer).unwrap();
+        assert_eq!(push_amounts(&instructions[2]), vec![2_000]);
+    }
+
+    #[test]
+    fn push_shortfall_is_custom_error_one_at_finalize_settle() {
+        let program_id = pubkey(0xaa);
+        let order = test_order(&program_id);
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
+        let transaction = resolve_for_test(settlement)
+            .encode(&Keypair::new(), Hash::default())
+            .unwrap();
+
+        // [SetComputeUnitLimit, BeginSettle, FinalizeSettle].
+        let at = |index| TransactionError::InstructionError(index, InstructionError::Custom(1));
+        assert!(is_push_shortfall(&transaction, &at(2)));
+        assert!(!is_push_shortfall(&transaction, &at(1)));
     }
 }
