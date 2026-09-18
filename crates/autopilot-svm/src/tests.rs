@@ -178,7 +178,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
 
     // Stage probes: pinpoint the failing phase before driving the loop.
     {
-        let provider = DbAuctionProvider::new(pool.clone(), mock_rpc());
+        let provider = DbAuctionProvider::new(pool.clone(), mock_rpc(), 150);
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
         let competition = DriverCompetition::new(vec![Arc::clone(&driver)], Duration::from_secs(6));
@@ -191,7 +191,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     let windows = SettlementWindows::new(pool.clone());
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
-        Box::new(DbAuctionProvider::new(pool.clone(), mock_rpc())),
+        Box::new(DbAuctionProvider::new(pool.clone(), mock_rpc(), 150)),
         Box::new(DriverCompetition::new(
             vec![Arc::clone(&driver)],
             Duration::from_secs(6),
