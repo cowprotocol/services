@@ -16,8 +16,16 @@ use {
     url::Url,
 };
 
-/// CoinGecko's authorization header.
+/// CoinGecko's authorization header for Pro plans, matching the EVM
+/// estimator.
 const API_KEY_HEADER: &str = "x-cg-pro-api-key";
+
+/// Mints per `getMultipleAccounts` request, the RPC method's cap.
+const ACCOUNTS_CHUNK: usize = 100;
+
+/// Mints per price request, keeping the `contract_addresses` parameter and
+/// the URL bounded.
+const PRICES_CHUNK: usize = 100;
 
 /// Native price lookups for auction tokens, cached per token.
 pub struct NativePrices {
@@ -107,6 +115,17 @@ impl NativePrices {
 
         let decimals = self.decimals(&fetch).await?;
         let quoted = self.fetch(&fetch).await?;
+        // A non-empty answer naming none of the asked mints is contract
+        // drift (a changed key format, for example), not a market answer.
+        // Failing keeps the drift loud instead of caching every token as
+        // unlisted.
+        if !quoted.is_empty()
+            && fetch
+                .iter()
+                .all(|token| !quoted.contains_key(&token.to_string()))
+        {
+            return Err(anyhow!("price response keys match no requested mint"));
+        }
         let mut cache = self.prices.lock().expect("price cache poisoned");
         for token in fetch {
             let price = quoted
@@ -139,11 +158,15 @@ impl NativePrices {
         if fetch.is_empty() {
             return Ok(result);
         }
-        let accounts = self
-            .rpc
-            .multiple_accounts(fetch.iter().copied())
-            .await
-            .context("fetch mint accounts")?;
+        let mut accounts = HashMap::new();
+        for chunk in fetch.chunks(ACCOUNTS_CHUNK) {
+            accounts.extend(
+                self.rpc
+                    .multiple_accounts(chunk.iter().copied())
+                    .await
+                    .context("fetch mint accounts")?,
+            );
+        }
         let mut cache = self.decimals.lock().expect("decimals cache poisoned");
         for token in fetch {
             let account = accounts
@@ -157,31 +180,42 @@ impl NativePrices {
         Ok(result)
     }
 
-    /// One `simple/token_price` request for the given mints.
+    /// The `simple/token_price` entries for the given mints, requested in
+    /// chunks.
     async fn fetch(&self, tokens: &[Pubkey]) -> Result<HashMap<String, Entry>> {
-        let mut url = self
-            .endpoint
-            .join("simple/token_price/solana")
-            .context("price endpoint")?;
-        let addresses = tokens
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        url.query_pairs_mut()
-            .append_pair("contract_addresses", &addresses)
-            .append_pair("vs_currencies", "sol");
-        let mut request = self.client.get(url);
-        if let Some(key) = &self.api_key {
-            request = request.header(API_KEY_HEADER, key);
+        // `Url::join` resolves relative to the last slash and would drop a
+        // final path segment of an endpoint configured without a trailing
+        // slash, so the path is appended textually.
+        let url = format!(
+            "{}/simple/token_price/solana",
+            self.endpoint.as_str().trim_end_matches('/')
+        );
+        let mut result = HashMap::new();
+        for chunk in tokens.chunks(PRICES_CHUNK) {
+            let mut url = Url::parse(&url).context("price endpoint")?;
+            let addresses = chunk
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            url.query_pairs_mut()
+                .append_pair("contract_addresses", &addresses)
+                .append_pair("vs_currencies", "sol");
+            let mut request = self.client.get(url);
+            if let Some(key) = &self.api_key {
+                request = request.header(API_KEY_HEADER, key);
+            }
+            let response = request.send().await.context("price request")?;
+            let status = response.status();
+            if !status.is_success() {
+                let body = response.text().await.unwrap_or_default();
+                return Err(anyhow!("price request answered {status}: {body}"));
+            }
+            let entries: HashMap<String, Entry> =
+                response.json().await.context("price response")?;
+            result.extend(entries);
         }
-        let response = request.send().await.context("price request")?;
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            return Err(anyhow!("price request answered {status}: {body}"));
-        }
-        response.json().await.context("price response")
+        Ok(result)
     }
 }
 
@@ -303,6 +337,63 @@ mod tests {
             .unwrap();
         assert_eq!(result.get(&listed), Some(&5_000_000_000));
         assert_eq!(requests.load(Ordering::Relaxed), 1);
+    }
+
+    /// An endpoint configured without a trailing slash keeps its base path.
+    #[tokio::test]
+    async fn endpoint_path_survives_a_missing_trailing_slash() {
+        let listed = Pubkey::new_unique();
+        let response = serde_json::json!({ listed.to_string(): { "sol": 0.005 } });
+        let app = axum::Router::new().route(
+            "/api/v3/simple/token_price/solana",
+            axum::routing::get(move || {
+                let response = response.clone();
+                async move { axum::Json(response) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!({
+                "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                "value": [crate::tests::mint_account_json(6)],
+            }),
+        )]);
+        let prices = NativePrices::new(
+            &config(format!("http://{addr}/api/v3").parse().unwrap()),
+            SolanaRPC::new_mock_with_mocks(mocks),
+            Pubkey::new_unique(),
+        );
+
+        let result = prices.prices(HashSet::from([listed])).await.unwrap();
+        assert_eq!(result.get(&listed), Some(&5_000_000_000));
+    }
+
+    /// An answer naming none of the asked mints fails the lookup instead of
+    /// negatively caching every token.
+    #[tokio::test]
+    async fn fails_when_response_keys_match_no_mint() {
+        let token = Pubkey::new_unique();
+        let (endpoint, _) = coingecko(serde_json::json!({
+            "someotherkey": { "sol": 0.005 },
+        }))
+        .await;
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!({
+                "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                "value": [crate::tests::mint_account_json(6)],
+            }),
+        )]);
+        let prices = NativePrices::new(
+            &config(endpoint),
+            SolanaRPC::new_mock_with_mocks(mocks),
+            Pubkey::new_unique(),
+        );
+
+        assert!(prices.prices(HashSet::from([token])).await.is_err());
     }
 
     /// A failing price endpoint fails the whole lookup.

@@ -81,7 +81,8 @@ pub struct NativePrices {
     /// Base URL of the CoinGecko API.
     #[serde(default = "default_prices_endpoint")]
     pub endpoint: url::Url,
-    /// API key sent with every price request, for keyed CoinGecko plans.
+    /// API key sent with every price request as the CoinGecko Pro header,
+    /// like the EVM estimator.
     #[serde(default)]
     pub api_key: Option<String>,
     /// How long a fetched price serves auctions before it is refetched.
