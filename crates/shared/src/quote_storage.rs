@@ -3,10 +3,14 @@
 //! same rows in the DB.
 
 use {
-    crate::{event_storing_helpers::create_quote_row, order_quoting::QuoteCompetition},
+    crate::{
+        event_storing_helpers::{create_db_search_parameters, create_quote_row},
+        order_quoting::{QuoteCompetition, QuoteData, QuoteSearchParameters},
+    },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
-    database::{PgTransaction, auction::AuctionId, fast_path},
+    chrono::{DateTime, Utc},
+    database::{PgPool, PgTransaction, auction::AuctionId, fast_path},
     model::{order::OrderKind, quote::QuoteId},
     price_estimation::native::to_normalized_price,
     serde::{Deserialize, Serialize},
@@ -47,9 +51,17 @@ pub struct StagedSolution {
     pub quoted_buy: U256,
 }
 
+/// Stores a quote (and, for fast-path quotes, its staged competition data).
+pub async fn save_quote(pool: &PgPool, data: QuoteCompetition) -> Result<QuoteId> {
+    let mut tx = pool.begin().await?;
+    let id = save_quote_competition(&mut tx, data).await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
 /// Persists a quote row and — for fast-path quotes — stages the associated
 /// competition data in `quote_competitions`.
-pub async fn save_quote_competition(
+async fn save_quote_competition(
     tx: &mut PgTransaction<'_>,
     data: QuoteCompetition,
 ) -> Result<QuoteId> {
@@ -61,6 +73,29 @@ pub async fn save_quote_competition(
     }
 
     Ok(id)
+}
+
+/// Looks up a quote by id.
+pub async fn get_quote(pool: &PgPool, id: QuoteId) -> Result<Option<QuoteData>> {
+    let mut ex = pool.acquire().await?;
+    let quote = database::quotes::get(&mut ex, id).await?;
+    quote.map(TryFrom::try_from).transpose()
+}
+
+/// Finds the most recent quote matching the given search parameters.
+pub async fn find_quote(
+    pool: &PgPool,
+    params: QuoteSearchParameters,
+    expiration: DateTime<Utc>,
+) -> Result<Option<(QuoteId, QuoteData)>> {
+    let mut ex = pool.acquire().await?;
+    let params = create_db_search_parameters(params, expiration);
+    let quote = database::quotes::find(&mut ex, &params)
+        .await
+        .context("failed finding quote by parameters")?;
+    quote
+        .map(|quote| Ok((quote.id, quote.try_into()?)))
+        .transpose()
 }
 
 async fn stage_competition(

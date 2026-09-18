@@ -4,9 +4,8 @@ use {
     chrono::{DateTime, Utc},
     model::quote::QuoteId,
     shared::{
-        event_storing_helpers::create_db_search_parameters,
         order_quoting::{QuoteCompetition, QuoteData, QuoteSearchParameters, QuoteStoring},
-        quote_storage::save_quote_competition,
+        quote_storage::{find_quote, get_quote, save_quote},
     },
 };
 
@@ -18,10 +17,7 @@ impl QuoteStoring for Postgres {
             .with_label_values(&["save_quote"])
             .start_timer();
 
-        let mut tx = self.pool.begin().await?;
-        let id = save_quote_competition(&mut tx, data).await?;
-        tx.commit().await?;
-        Ok(id)
+        save_quote(&self.pool, data).await
     }
 
     async fn get(&self, id: QuoteId) -> Result<Option<QuoteData>> {
@@ -30,9 +26,7 @@ impl QuoteStoring for Postgres {
             .with_label_values(&["get_quote"])
             .start_timer();
 
-        let mut ex = self.pool.acquire().await?;
-        let quote = database::quotes::get(&mut ex, id).await?;
-        quote.map(TryFrom::try_from).transpose()
+        get_quote(&self.pool, id).await
     }
 
     async fn find(
@@ -45,14 +39,7 @@ impl QuoteStoring for Postgres {
             .with_label_values(&["find_quote"])
             .start_timer();
 
-        let mut ex = self.pool.acquire().await?;
-        let params = create_db_search_parameters(params, expiration);
-        let quote = database::quotes::find(&mut ex, &params)
-            .await
-            .context("failed finding quote by parameters")?;
-        quote
-            .map(|quote| Ok((quote.id, quote.try_into()?)))
-            .transpose()
+        find_quote(&self.pool, params, expiration).await
     }
 
     async fn get_next_auction_id(&self) -> Result<i64> {
