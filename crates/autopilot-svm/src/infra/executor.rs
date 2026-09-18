@@ -92,8 +92,8 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             };
             // Held before the dispatch: the next cut must not re-auction
             // these orders while the settlement can still land.
-            self.inflight
-                .hold(winner.orders().iter().map(|order| order.uid), deadline);
+            let uids: Vec<_> = winner.orders().iter().map(|order| order.uid).collect();
+            self.inflight.hold(uids.iter().copied(), deadline);
             // A window that cannot be opened must not block the settlement,
             // the dispatch is the priority.
             if let Err(err) = self
@@ -103,6 +103,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             {
                 tracing::error!(auction_id, ?err, "failed to open the settlement window");
             }
+            let inflight = self.inflight.clone();
             tokio::spawn(async move {
                 match driver.settle(&request).await {
                     Ok(response) => tracing::info!(
@@ -112,6 +113,17 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                         tx_signature = %response.tx_signature,
                         "settlement submitted"
                     ),
+                    // No transaction went out, so the orders can re-enter
+                    // the next cut instead of waiting out the hold.
+                    Err(err) if err.settlement_provably_unsent() => {
+                        tracing::error!(
+                            driver = %driver.name,
+                            auction_id,
+                            ?err,
+                            "settlement rejected before submission"
+                        );
+                        inflight.release(uids.iter());
+                    }
                     Err(err) => tracing::error!(
                         driver = %driver.name,
                         auction_id,

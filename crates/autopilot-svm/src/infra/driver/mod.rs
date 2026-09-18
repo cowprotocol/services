@@ -40,6 +40,36 @@ pub enum Error {
     },
 }
 
+impl Error {
+    /// Whether a failed `/settle` provably never sent the settlement
+    /// transaction, so the orders can re-enter auctions immediately. Every
+    /// listed kind rejects before the send. `DeadlineExceeded` stays out: the
+    /// driver also answers it when the confirmation wait expired with the
+    /// transaction already on the wire. Transport failures reveal nothing.
+    pub fn settlement_provably_unsent(&self) -> bool {
+        let Error::Status { body, .. } = self else {
+            return false;
+        };
+        let kind = serde_json::from_str::<serde_json::Value>(body)
+            .ok()
+            .and_then(|body| {
+                body.get("kind")
+                    .and_then(|kind| kind.as_str().map(String::from))
+            });
+        matches!(
+            kind.as_deref(),
+            Some(
+                "InvalidAuctionId"
+                    | "SolutionNotAvailable"
+                    | "TooManyPendingSettlements"
+                    | "InvalidCreation"
+                    | "FailedToCreate"
+                    | "SimulationFailed"
+            )
+        )
+    }
+}
+
 /// Append a path segment to the base URL. `Url::join` is RFC 3986 relative
 /// resolution, which drops the base's last path segment unless it ends in a
 /// slash, so a base like `http://driver/svm` would lose its prefix.
@@ -90,6 +120,24 @@ impl Driver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_pre_send_rejections_count_as_provably_unsent() {
+        let status = |kind: &str| Error::Status {
+            status: StatusCode::BAD_REQUEST,
+            body: format!(r#"{{"kind":"{kind}","description":""}}"#),
+        };
+        assert!(status("SimulationFailed").settlement_provably_unsent());
+        assert!(status("SolutionNotAvailable").settlement_provably_unsent());
+        // The driver answers this both before and after the send.
+        assert!(!status("DeadlineExceeded").settlement_provably_unsent());
+        assert!(!status("FailedToSubmit").settlement_provably_unsent());
+        let garbage = Error::Status {
+            status: StatusCode::BAD_GATEWAY,
+            body: "not json".to_string(),
+        };
+        assert!(!garbage.settlement_provably_unsent());
+    }
 
     /// A base URL with a path and no trailing slash keeps its prefix,
     /// the case `Url::join` gets wrong.

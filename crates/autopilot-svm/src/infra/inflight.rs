@@ -40,6 +40,15 @@ impl InFlightOrders {
         }
     }
 
+    /// Release the orders: their settlement landed or provably never went
+    /// out, so no second settlement can collide.
+    pub fn release<'a>(&self, uids: impl IntoIterator<Item = &'a IntentHash>) {
+        let mut held = self.0.lock().expect("mutex poisoned");
+        for uid in uids {
+            held.remove(uid);
+        }
+    }
+
     /// Whether the order is still held at the tip. Expired entries are
     /// pruned on the way.
     pub fn held(&self, uid: &IntentHash, tip: u64) -> bool {
@@ -64,6 +73,18 @@ mod tests {
         assert!(inflight.held(&uid, expiry));
         assert!(!inflight.held(&uid, expiry + 1));
         assert!(!inflight.held(&IntentHash([8; 32]), 50));
+    }
+
+    #[test]
+    fn released_orders_re_enter_immediately() {
+        let inflight = InFlightOrders::default();
+        let uid = IntentHash([7; 32]);
+        let other = IntentHash([8; 32]);
+        inflight.hold([uid, other], 100);
+        inflight.release([uid].iter());
+
+        assert!(!inflight.held(&uid, 50));
+        assert!(inflight.held(&other, 50));
     }
 
     #[test]
