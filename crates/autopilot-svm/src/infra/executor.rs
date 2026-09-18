@@ -165,7 +165,7 @@ async fn settle_task(
                 auction_id,
                 "settlement observed on chain before the driver response"
             );
-            inflight.release(uids.iter());
+            inflight.release(uids.iter().copied());
             return;
         }
         result = driver.settle(&request) => match result {
@@ -177,13 +177,13 @@ async fn settle_task(
                 "settlement submitted"
             ),
             Err(err) if err.settlement_provably_unsent() => {
-                tracing::error!(
+                tracing::warn!(
                     driver = %driver.name,
                     auction_id,
                     ?err,
                     "settlement rejected before submission"
                 );
-                inflight.release(uids.iter());
+                inflight.release(uids.iter().copied());
                 return;
             }
             Err(err) => tracing::error!(
@@ -201,7 +201,7 @@ async fn settle_task(
         .await
         .is_ok()
     {
-        inflight.release(uids.iter());
+        inflight.release(uids.iter().copied());
     }
 }
 

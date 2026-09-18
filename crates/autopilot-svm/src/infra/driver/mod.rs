@@ -40,6 +40,12 @@ pub enum Error {
     },
 }
 
+/// The driver's wire error body, reduced to the routed field.
+#[derive(serde::Deserialize)]
+struct ErrorBody {
+    kind: String,
+}
+
 impl Error {
     /// Whether a failed `/settle` provably never sent the settlement
     /// transaction, so the orders can re-enter auctions immediately. Every
@@ -50,22 +56,17 @@ impl Error {
         let Error::Status { body, .. } = self else {
             return false;
         };
-        let kind = serde_json::from_str::<serde_json::Value>(body)
-            .ok()
-            .and_then(|body| {
-                body.get("kind")
-                    .and_then(|kind| kind.as_str().map(String::from))
-            });
+        let Ok(body) = serde_json::from_str::<ErrorBody>(body) else {
+            return false;
+        };
         matches!(
-            kind.as_deref(),
-            Some(
-                "InvalidAuctionId"
-                    | "SolutionNotAvailable"
-                    | "TooManyPendingSettlements"
-                    | "InvalidCreation"
-                    | "FailedToCreate"
-                    | "SimulationFailed"
-            )
+            body.kind.as_str(),
+            "InvalidAuctionId"
+                | "SolutionNotAvailable"
+                | "TooManyPendingSettlements"
+                | "InvalidCreation"
+                | "FailedToCreate"
+                | "SimulationFailed"
         )
     }
 }

@@ -132,15 +132,18 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
-        // An order with a settlement in flight stays out until its submission
-        // deadline passes: a second winner could double-settle it.
+        // An order with a settlement in flight stays out until the
+        // settlement cannot land any more: a second winner could
+        // double-settle it.
+        let held = self.inflight.held_at(*tip);
         let before = auction.orders.len();
-        auction
-            .orders
-            .retain(|order| !self.inflight.held(&order.uid, *tip));
-        let held = before - auction.orders.len();
-        if held > 0 {
-            tracing::debug!(held, "orders held out with settlements in flight");
+        auction.orders.retain(|order| !held.contains(&order.uid));
+        let held_out = before - auction.orders.len();
+        if held_out > 0 {
+            metrics()
+                .held_out_orders
+                .inc_by(u64::try_from(held_out).unwrap_or(u64::MAX));
+            tracing::debug!(held_out, "orders held out with settlements in flight");
         }
         auction.orders = self.receivable_orders(auction.orders).await;
         (!auction.orders.is_empty()).then_some(auction)
@@ -153,6 +156,9 @@ struct Metrics {
     /// Orders excluded from auction cuts because their buy token account
     /// cannot receive the payout.
     unreceivable_orders: prometheus::IntCounter,
+    /// Orders excluded from auction cuts while their settlement is in
+    /// flight.
+    held_out_orders: prometheus::IntCounter,
 }
 
 fn metrics() -> &'static Metrics {
