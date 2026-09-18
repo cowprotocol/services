@@ -83,10 +83,10 @@ impl NativePrices {
 
     /// The lamport value of one atom of each token, scaled by 10^9 like
     /// [`ChainTypes::NATIVE_PRICE_DENOMINATOR`]. A token without a listing
-    /// is absent from the result: solutions trading it score nothing. A
-    /// failed lookup fails the whole call: whether the remaining prices
-    /// still hold is unknowable, and a wrongly ranked auction is worse than
-    /// none.
+    /// or without a readable mint is absent from the result: solutions
+    /// trading it score nothing. A failed lookup fails the whole call:
+    /// whether the remaining prices still hold is unknowable, and a wrongly
+    /// ranked auction is worse than none.
     pub async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
         self.0.prices(tokens).await
     }
@@ -189,13 +189,29 @@ impl Inner {
     /// negatively.
     async fn fetch_into_cache(&self, tokens: &[Pubkey]) -> Result<()> {
         let decimals = self.decimals(tokens).await?;
-        let quoted = self.fetch(tokens).await?;
+        // A token whose mint did not resolve cannot be scaled, so it prices
+        // as unlisted until its entry expires.
+        let (priceable, unpriceable): (Vec<_>, Vec<_>) = tokens
+            .iter()
+            .copied()
+            .partition(|token| decimals.contains_key(token));
+        {
+            let now = Instant::now();
+            let mut cache = self.prices.lock().expect("price cache poisoned");
+            for token in unpriceable {
+                cache.insert(token, (now, None));
+            }
+        }
+        if priceable.is_empty() {
+            return Ok(());
+        }
+        let quoted = self.fetch(&priceable).await?;
         // A non-empty answer naming none of the asked mints is contract
         // drift (a changed key format, for example), not a market answer.
         // Failing keeps the drift loud instead of caching every token as
         // unlisted.
         if !quoted.is_empty()
-            && tokens
+            && priceable
                 .iter()
                 .all(|token| !quoted.contains_key(&token.to_string()))
         {
@@ -203,17 +219,20 @@ impl Inner {
         }
         let now = Instant::now();
         let mut cache = self.prices.lock().expect("price cache poisoned");
-        for token in tokens {
+        for token in priceable {
             let price = quoted
                 .get(&token.to_string())
                 .and_then(|entry| entry.sol)
-                .and_then(|sol| scale(sol, decimals[token]));
-            cache.insert(*token, (now, price));
+                .and_then(|sol| scale(sol, decimals[&token]));
+            cache.insert(token, (now, price));
         }
         Ok(())
     }
 
-    /// Decimals per mint, from the cache or the mint accounts on chain.
+    /// Decimals per mint, from the cache or the mint accounts on chain. A
+    /// mint that is missing or does not unpack (a token-2022 mint with
+    /// extensions, for example) is absent from the result: one odd token
+    /// must not fail the price lookup and with it every auction cut.
     async fn decimals(&self, tokens: &[Pubkey]) -> Result<HashMap<Pubkey, u8>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
@@ -242,13 +261,19 @@ impl Inner {
         }
         let mut cache = self.decimals.lock().expect("decimals cache poisoned");
         for token in fetch {
-            let account = accounts
-                .get(&token)
-                .ok_or_else(|| anyhow!("mint {token} does not exist"))?;
-            let mint = Mint::unpack(&account.data)
-                .with_context(|| format!("mint {token} does not unpack"))?;
-            cache.insert(token, mint.decimals);
-            result.insert(token, mint.decimals);
+            let Some(account) = accounts.get(&token) else {
+                tracing::warn!(%token, "mint account not found, token unpriced");
+                continue;
+            };
+            match Mint::unpack(&account.data) {
+                Ok(mint) => {
+                    cache.insert(token, mint.decimals);
+                    result.insert(token, mint.decimals);
+                }
+                Err(err) => {
+                    tracing::warn!(%token, ?err, "mint does not unpack, token unpriced");
+                }
+            }
         }
         Ok(result)
     }
@@ -510,6 +535,42 @@ mod tests {
         assert!(requests.load(Ordering::Relaxed) >= 2);
         let result = prices.prices(HashSet::from([listed])).await.unwrap();
         assert_eq!(result.get(&listed), Some(&5_000_000_000));
+    }
+
+    /// A mint that does not unpack prices as unlisted: the lookup succeeds
+    /// without it and the verdict is cached.
+    #[tokio::test]
+    async fn unreadable_mints_price_as_unlisted() {
+        let token = Pubkey::new_unique();
+        let (endpoint, requests) = coingecko(serde_json::json!({})).await;
+        // A one-byte account is no mint layout.
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!({
+                "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                "value": [{
+                    "lamports": 1u64,
+                    "data": ["AA==", "base64"],
+                    "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                    "executable": false,
+                    "rentEpoch": 0u64,
+                    "space": 1u64,
+                }],
+            }),
+        )]);
+        let prices = NativePrices::new(
+            &config(endpoint),
+            SolanaRPC::new_mock_with_mocks(mocks),
+            Pubkey::new_unique(),
+        );
+
+        let result = prices.prices(HashSet::from([token])).await.unwrap();
+        assert!(result.is_empty());
+        // Nothing was priceable, so the price endpoint was never asked, and
+        // the verdict is cached: the consumed RPC mock would fail a refetch.
+        assert_eq!(requests.load(Ordering::Relaxed), 0);
+        let result = prices.prices(HashSet::from([token])).await.unwrap();
+        assert!(result.is_empty());
     }
 
     /// A failing price endpoint fails the whole lookup.
