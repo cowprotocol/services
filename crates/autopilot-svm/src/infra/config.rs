@@ -75,19 +75,47 @@ pub struct Config {
     pub logging: LoggingConfig,
 }
 
-/// CoinGecko native price lookups.
+/// Native price lookups.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NativePrices {
-    /// Base URL of the CoinGecko API.
-    pub endpoint: url::Url,
-    /// API key sent with every price request as the CoinGecko Pro plan
-    /// header.
+    /// Price sources in fallback order: a token the first one does not price
+    /// is asked from the next. Empty, the autopilot prices every token at the
+    /// native denominator, so scores compare raw surplus. Pricing through a
+    /// third party stays a deployment decision, there is no default source.
     #[serde(default)]
-    pub api_key: Option<String>,
+    pub estimators: Vec<NativePriceEstimator>,
     /// How long a fetched price serves auctions before it is refetched.
     #[serde(with = "humantime_serde", default = "default_prices_ttl")]
     pub ttl: Duration,
+    /// Lamports a driver source buys per probe quote. The probe is
+    /// denominated in the native token so its economic size does not depend
+    /// on what one whole unit of the priced token is worth.
+    #[serde(default = "default_driver_probe_lamports")]
+    pub driver_probe_lamports: u64,
+}
+
+/// A tenth of a SOL, the fraction the EVM chains probe with.
+const fn default_driver_probe_lamports() -> u64 {
+    100_000_000
+}
+
+/// One native price source.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum NativePriceEstimator {
+    /// The CoinGecko `simple/token_price` API.
+    CoinGecko {
+        /// Base URL of the CoinGecko API.
+        endpoint: url::Url,
+        /// API key sent with every price request as the CoinGecko Pro plan
+        /// header.
+        #[serde(default)]
+        api_key: Option<String>,
+    },
+    /// A solver driver, quoted through its regular `/quote` route. The url
+    /// includes the solver path, like the `[[drivers]]` entries.
+    Driver { name: String, url: url::Url },
 }
 
 const fn default_prices_ttl() -> Duration {
@@ -210,12 +238,15 @@ mod tests {
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
         assert_eq!(config.max_indexer_lag_slots, 150);
-        assert_eq!(
-            config.native_prices.endpoint.as_str(),
-            "https://api.coingecko.com/api/v3/"
-        );
-        assert_eq!(config.native_prices.api_key, None);
         assert_eq!(config.native_prices.ttl, Duration::from_secs(30));
+        assert_eq!(config.native_prices.driver_probe_lamports, 100_000_000);
+        assert!(matches!(
+            &config.native_prices.estimators[..],
+            [
+                NativePriceEstimator::CoinGecko { endpoint, api_key: None },
+                NativePriceEstimator::Driver { name, .. },
+            ] if endpoint.as_str() == "https://api.coingecko.com/api/v3/" && name == "baseline"
+        ));
         assert_eq!(config.drivers.len(), 1);
         assert_eq!(config.drivers[0].name, "baseline");
         assert_eq!(config.logging.filter, "info,autopilot_svm=debug");
