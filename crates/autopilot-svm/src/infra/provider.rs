@@ -3,7 +3,7 @@
 use {
     crate::{
         domain::{auction::Order, cycle::SolanaCycle},
-        infra::db,
+        infra::{db, inflight::InFlightOrders},
         run_loop::AuctionProvider,
     },
     async_trait::async_trait,
@@ -21,6 +21,9 @@ use {
 pub struct DbAuctionProvider {
     pool: PgPool,
     rpc: SolanaRPC,
+    /// Orders with a settlement in flight, excluded from cuts until their
+    /// submission deadline passes.
+    inflight: InFlightOrders,
     /// Last allocated auction id. Ids are unix seconds, bumped past the
     /// previous allocation when cycles land within the same second. Unique
     /// only per process: no table allocates auction ids.
@@ -30,10 +33,11 @@ pub struct DbAuctionProvider {
 }
 
 impl DbAuctionProvider {
-    pub fn new(pool: PgPool, rpc: SolanaRPC) -> Self {
+    pub fn new(pool: PgPool, rpc: SolanaRPC, inflight: InFlightOrders) -> Self {
         Self {
             pool,
             rpc,
+            inflight,
             last_id: AtomicI64::new(0),
         }
     }
@@ -112,7 +116,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         Ok(())
     }
 
-    async fn cut_auction(&self, _tip: &u64) -> Option<crate::domain::auction::Auction> {
+    async fn cut_auction(&self, tip: &u64) -> Option<crate::domain::auction::Auction> {
         let now = now_unix();
         // A pending sponsored order dies with its creation blockhash, so the
         // cut drops the dead ones. A failed height fetch keeps them all: they
@@ -128,6 +132,16 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
+        // An order with a settlement in flight stays out until its submission
+        // deadline passes: a second winner could double-settle it.
+        let before = auction.orders.len();
+        auction
+            .orders
+            .retain(|order| !self.inflight.held(&order.uid, *tip));
+        let held = before - auction.orders.len();
+        if held > 0 {
+            tracing::debug!(held, "orders held out with settlements in flight");
+        }
         auction.orders = self.receivable_orders(auction.orders).await;
         (!auction.orders.is_empty()).then_some(auction)
     }
@@ -188,6 +202,7 @@ mod tests {
         DbAuctionProvider::new(
             sqlx::PgPool::connect_lazy("postgresql://").unwrap(),
             SolanaRPC::new_mock_with_mocks(mocks),
+            InFlightOrders::default(),
         )
     }
 
