@@ -131,6 +131,7 @@ async fn run(config: Config) {
                 config.rpc.request_timeout,
                 CommitmentConfig::confirmed(),
             ),
+            config.max_indexer_lag_slots,
             inflight.clone(),
         )),
         Box::new(DriverCompetition::new(
