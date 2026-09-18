@@ -8,6 +8,7 @@ use {
             competition::DriverCompetition,
             driver::{Driver, dto},
             executor::DriverExecutor,
+            inflight::InFlightOrders,
             observation::SettlementWindows,
             observer::CompetitionObserver,
             prices::NativePrices,
@@ -214,6 +215,8 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         let provider = DbAuctionProvider::new(
             pool.clone(),
             mock_rpc(),
+            150,
+            InFlightOrders::default(),
             NativePrices::seeded(test_prices()),
         );
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
@@ -226,11 +229,14 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     }
 
     let windows = SettlementWindows::new(pool.clone());
+    let inflight = InFlightOrders::default();
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
         Box::new(DbAuctionProvider::new(
             pool.clone(),
             mock_rpc(),
+            150,
+            inflight.clone(),
             NativePrices::seeded(test_prices()),
         )),
         Box::new(DriverCompetition::new(
@@ -238,7 +244,12 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             Duration::from_secs(6),
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
-        Box::new(DriverExecutor::new(vec![driver], windows.clone(), None)),
+        Box::new(DriverExecutor::new(
+            vec![driver],
+            windows.clone(),
+            None,
+            inflight.clone(),
+        )),
         Box::new(CompetitionObserver::new(pool.clone(), windows.clone())),
         25,
     );
@@ -250,6 +261,27 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         .expect("settle channel open");
     assert_eq!(settle.solution_id, 7);
     assert!(settle.auction_id > 0);
+    // The dispatched order is held out of the next cut until its settlement
+    // transaction cannot land any more: the deadline plus the blockhash
+    // lifetime.
+    let expired = tip + 25 + solana_sdk::clock::MAX_PROCESSING_AGE as u64 + 1;
+    // The lag gate stays out of the way: this provider tests the hold, and
+    // the watermark is still at the dispatch tip.
+    let held_provider = DbAuctionProvider::new(
+        pool.clone(),
+        mock_rpc(),
+        u64::MAX,
+        inflight.clone(),
+        NativePrices::seeded(test_prices()),
+    );
+    assert!(
+        held_provider.cut_auction(&(expired - 1)).await.is_none(),
+        "in-flight order excluded from the cut"
+    );
+    assert!(
+        held_provider.cut_auction(&expired).await.is_some(),
+        "order returns once the transaction cannot land"
+    );
     // The dispatch opened a settlement-execution window.
     let open_windows: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM solana.settlement_executions WHERE outcome IS NULL",

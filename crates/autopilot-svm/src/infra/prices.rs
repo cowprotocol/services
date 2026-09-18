@@ -12,32 +12,45 @@ use {
     spl_token_interface::state::Mint,
     std::{
         collections::{HashMap, HashSet},
-        sync::Mutex,
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
     url::Url,
 };
 
-/// CoinGecko's authorization header.
+/// CoinGecko's authorization header for Pro plans.
 const API_KEY_HEADER: &str = "x-cg-pro-api-key";
 
 /// How long one driver quote may take before the token counts as unpriced by
 /// that driver.
 const DRIVER_QUOTE_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// Mints per `getMultipleAccounts` request, the RPC method's cap.
+const ACCOUNTS_CHUNK: usize = 100;
+
+/// Mints per CoinGecko request, keeping the `contract_addresses` parameter
+/// and the URL bounded.
+const PRICES_CHUNK: usize = 100;
+
 /// Native price lookups for auction tokens, cached per token. The configured
 /// estimators are asked in order: a token the first one does not price is
-/// asked from the next.
-pub struct NativePrices {
+/// asked from the next. A background task keeps the tokens of the latest
+/// lookup fresh, so a cut normally reads the cache instead of waiting on a
+/// source.
+pub struct NativePrices(Arc<Inner>);
+
+struct Inner {
     sources: Vec<Source>,
     rpc: SolanaRPC,
     wrapped_native: Pubkey,
     ttl: Duration,
     /// Fetched prices by mint. `None` records a mint no estimator prices, so
-    /// unlisted mints are not refetched every cut.
+    /// unpriced mints are not refetched every cut.
     prices: Mutex<HashMap<Pubkey, (Instant, Option<u64>)>>,
     /// Mint decimals never change, so they are cached forever.
     decimals: Mutex<HashMap<Pubkey, u8>>,
+    /// The tokens of the latest lookup, the set the refresher keeps fresh.
+    maintained: Mutex<HashSet<Pubkey>>,
 }
 
 /// One configured price source.
@@ -47,8 +60,7 @@ enum Source {
         endpoint: Url,
         api_key: Option<String>,
     },
-    /// A solver driver quoted through its regular `/quote` route, like the
-    /// EVM driver-backed native estimators.
+    /// A solver driver quoted through its regular `/quote` route.
     Driver {
         client: reqwest::Client,
         name: String,
@@ -89,6 +101,8 @@ struct QuoteResponse {
 }
 
 impl NativePrices {
+    /// Builds the lookup and spawns its refresher. Must run inside a tokio
+    /// runtime.
     pub fn new(config: &config::NativePrices, rpc: SolanaRPC, wrapped_native: Pubkey) -> Self {
         let client = reqwest::Client::new();
         let sources = config
@@ -109,21 +123,43 @@ impl NativePrices {
                 },
             })
             .collect();
-        Self {
+        let inner = Arc::new(Inner {
             sources,
             rpc,
             wrapped_native,
             ttl: config.ttl,
             prices: Mutex::new(HashMap::new()),
             decimals: Mutex::new(HashMap::new()),
-        }
+            maintained: Mutex::new(HashSet::new()),
+        });
+        let refresher = Arc::clone(&inner);
+        tokio::spawn(async move {
+            // Ticking well inside the refresh margin keeps an entry from
+            // expiring between two passes.
+            let tick = (refresher.ttl / 6).max(Duration::from_millis(50));
+            loop {
+                tokio::time::sleep(tick).await;
+                refresher.refresh().await;
+            }
+        });
+        Self(inner)
     }
 
-    /// A lookup pre-seeded for tests: the given prices never expire and
-    /// nothing is fetched.
+    /// The lamport value of one atom of each token, scaled by 10^9 like
+    /// [`ChainTypes::NATIVE_PRICE_DENOMINATOR`]. A token no estimator prices,
+    /// or whose mint does not read, is absent from the result: solutions
+    /// trading it score nothing. The call only fails when every estimator
+    /// failed: a partially priced auction is normal, a wholly unpriced one on
+    /// broken sources is not worth ranking.
+    pub async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
+        self.0.prices(tokens).await
+    }
+
+    /// A lookup pre-seeded for tests: the given prices never expire, nothing
+    /// is fetched, and no refresher runs.
     #[cfg(test)]
     pub(crate) fn seeded(entries: impl IntoIterator<Item = (Pubkey, u64)>) -> Self {
-        Self {
+        Self(Arc::new(Inner {
             sources: Vec::new(),
             rpc: SolanaRPC::new_mock_with_mocks(Default::default()),
             wrapped_native: Pubkey::default(),
@@ -135,41 +171,103 @@ impl NativePrices {
                     .collect(),
             ),
             decimals: Mutex::new(HashMap::new()),
+            maintained: Mutex::new(HashSet::new()),
+        }))
+    }
+}
+
+impl Inner {
+    /// One refresher pass: refetch the maintained tokens nearing expiry, so
+    /// lookups keep hitting fresh entries. A failed pass only logs, the
+    /// entries then expire and the next lookup fetches inline.
+    async fn refresh(&self) {
+        let margin = self.ttl / 3;
+        let now = Instant::now();
+        let expiring: Vec<Pubkey> = {
+            let maintained = self.maintained.lock().expect("maintained set poisoned");
+            let cache = self.prices.lock().expect("price cache poisoned");
+            maintained
+                .iter()
+                .filter(|token| {
+                    cache.get(token).is_none_or(|(fetched, _)| {
+                        now.duration_since(*fetched) + margin >= self.ttl
+                    })
+                })
+                .copied()
+                .collect()
+        };
+        if expiring.is_empty() {
+            return;
+        }
+        if let Err(err) = self.fetch_into_cache(&expiring).await {
+            tracing::warn!(?err, "native price refresh failed");
         }
     }
 
-    /// The lamport value of one atom of each token, scaled by 10^9 like
-    /// [`ChainTypes::NATIVE_PRICE_DENOMINATOR`]. Tokens no estimator prices
-    /// are absent from the result. The call only fails when every estimator
-    /// failed and nothing was priced: a partially priced auction is normal
-    /// (unlisted tokens), a wholly unpriced one on a broken source is not
-    /// worth ranking.
-    pub async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
+    async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
         let mut result = HashMap::new();
-        let mut remaining = Vec::new();
+        let mut fetch = Vec::new();
         let now = Instant::now();
         {
             let cache = self.prices.lock().expect("price cache poisoned");
-            for token in tokens {
-                if token == self.wrapped_native {
-                    result.insert(token, Solana::NATIVE_PRICE_DENOMINATOR);
+            for token in &tokens {
+                if *token == self.wrapped_native {
+                    result.insert(*token, Solana::NATIVE_PRICE_DENOMINATOR);
                     continue;
                 }
-                match cache.get(&token) {
+                match cache.get(token) {
                     Some((fetched, price)) if now.duration_since(*fetched) < self.ttl => {
                         if let Some(price) = price {
-                            result.insert(token, *price);
+                            result.insert(*token, *price);
                         }
                     }
-                    _ => remaining.push(token),
+                    _ => fetch.push(*token),
                 }
             }
         }
-        if remaining.is_empty() {
+        {
+            // The refresher maintains what the latest lookup asked for.
+            let mut maintained = self.maintained.lock().expect("maintained set poisoned");
+            *maintained = tokens
+                .into_iter()
+                .filter(|token| *token != self.wrapped_native)
+                .collect();
+        }
+        if fetch.is_empty() {
             return Ok(result);
         }
 
-        let decimals = self.decimals(&remaining).await?;
+        self.fetch_into_cache(&fetch).await?;
+        let cache = self.prices.lock().expect("price cache poisoned");
+        for token in fetch {
+            if let Some((_, Some(price))) = cache.get(&token) {
+                result.insert(token, *price);
+            }
+        }
+        Ok(result)
+    }
+
+    /// Ask the sources in order for the tokens none of the earlier ones
+    /// priced, and cache every verdict.
+    async fn fetch_into_cache(&self, tokens: &[Pubkey]) -> Result<()> {
+        let decimals = self.decimals(tokens).await?;
+        // A token whose mint did not resolve cannot be scaled, so it counts
+        // as unpriced until its entry expires.
+        let (mut remaining, unpriceable): (Vec<_>, Vec<_>) = tokens
+            .iter()
+            .copied()
+            .partition(|token| decimals.contains_key(token));
+        let now = Instant::now();
+        {
+            let mut cache = self.prices.lock().expect("price cache poisoned");
+            for token in unpriceable {
+                cache.insert(token, (now, None));
+            }
+        }
+        if remaining.is_empty() {
+            return Ok(());
+        }
+
         let mut failures = 0;
         for source in &self.sources {
             if remaining.is_empty() {
@@ -184,7 +282,6 @@ impl NativePrices {
                     remaining.retain(|token| match priced.get(token) {
                         Some(price) => {
                             cache.insert(*token, (now, Some(*price)));
-                            result.insert(*token, *price);
                             false
                         }
                         None => true,
@@ -199,7 +296,7 @@ impl NativePrices {
         if failures == self.sources.len() && !self.sources.is_empty() {
             return Err(anyhow!("every native price source failed"));
         }
-        // Tokens no source listed are cached negatively so they are not
+        // Tokens no source priced are cached negatively so they are not
         // refetched every cut, but only when every source answered: a failed
         // source might know them, so its cycle retries instead.
         if failures == 0 {
@@ -208,10 +305,13 @@ impl NativePrices {
                 cache.insert(token, (now, None));
             }
         }
-        Ok(result)
+        Ok(())
     }
 
-    /// Decimals per mint, from the cache or the mint accounts on chain.
+    /// Decimals per mint, from the cache or the mint accounts on chain. A
+    /// mint that is missing or does not unpack (a token-2022 mint with
+    /// extensions, for example) is absent from the result: one odd token
+    /// must not fail the price lookup and with it every auction cut.
     async fn decimals(&self, tokens: &[Pubkey]) -> Result<HashMap<Pubkey, u8>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
@@ -229,20 +329,30 @@ impl NativePrices {
         if fetch.is_empty() {
             return Ok(result);
         }
-        let accounts = self
-            .rpc
-            .multiple_accounts(fetch.iter().copied())
-            .await
-            .context("fetch mint accounts")?;
+        let mut accounts = HashMap::new();
+        for chunk in fetch.chunks(ACCOUNTS_CHUNK) {
+            accounts.extend(
+                self.rpc
+                    .multiple_accounts(chunk.iter().copied())
+                    .await
+                    .context("fetch mint accounts")?,
+            );
+        }
         let mut cache = self.decimals.lock().expect("decimals cache poisoned");
         for token in fetch {
-            let account = accounts
-                .get(&token)
-                .ok_or_else(|| anyhow!("mint {token} does not exist"))?;
-            let mint = Mint::unpack(&account.data)
-                .with_context(|| format!("mint {token} does not unpack"))?;
-            cache.insert(token, mint.decimals);
-            result.insert(token, mint.decimals);
+            let Some(account) = accounts.get(&token) else {
+                tracing::warn!(%token, "mint account not found, token unpriced");
+                continue;
+            };
+            match Mint::unpack(&account.data) {
+                Ok(mint) => {
+                    cache.insert(token, mint.decimals);
+                    result.insert(token, mint.decimals);
+                }
+                Err(err) => {
+                    tracing::warn!(%token, ?err, "mint does not unpack, token unpriced");
+                }
+            }
         }
         Ok(result)
     }
@@ -278,7 +388,14 @@ impl Source {
     }
 }
 
-/// One `simple/token_price` request for the given mints.
+/// Append a path to a configured base URL. `Url::join` resolves relative to
+/// the last slash and would drop a final path segment of a base configured
+/// without a trailing slash.
+fn route(base: &Url, path: &str) -> Result<Url> {
+    Url::parse(&format!("{}/{path}", base.as_str().trim_end_matches('/'))).context("source url")
+}
+
+/// The `simple/token_price` prices for the given mints, requested in chunks.
 async fn coingecko(
     client: &reqwest::Client,
     endpoint: &Url,
@@ -286,28 +403,45 @@ async fn coingecko(
     tokens: &[Pubkey],
     decimals: &HashMap<Pubkey, u8>,
 ) -> Result<HashMap<Pubkey, u64>> {
-    let mut url = endpoint
-        .join("simple/token_price/solana")
-        .context("price endpoint")?;
-    let addresses = tokens
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
-    url.query_pairs_mut()
-        .append_pair("contract_addresses", &addresses)
-        .append_pair("vs_currencies", "sol");
-    let mut request = client.get(url);
-    if let Some(key) = api_key {
-        request = request.header(API_KEY_HEADER, key);
+    let base = route(endpoint, "simple/token_price/solana")?;
+    let mut quoted: HashMap<String, Entry> = HashMap::new();
+    for chunk in tokens.chunks(PRICES_CHUNK) {
+        let mut url = base.clone();
+        let addresses = chunk
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        url.query_pairs_mut()
+            .append_pair("contract_addresses", &addresses)
+            .append_pair("vs_currencies", "sol");
+        let mut request = client.get(url);
+        if let Some(key) = api_key {
+            request = request.header(API_KEY_HEADER, key);
+        }
+        let response = request.send().await.context("price request")?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow!("price request answered {status}: {body}"));
+        }
+        quoted.extend(
+            response
+                .json::<HashMap<String, Entry>>()
+                .await
+                .context("price response")?,
+        );
     }
-    let response = request.send().await.context("price request")?;
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("price request answered {status}: {body}"));
+    // An answer naming none of the asked mints is contract drift (a changed
+    // key format, for example), not a market answer. Failing the source keeps
+    // the drift loud and lets the next source try.
+    if !quoted.is_empty()
+        && tokens
+            .iter()
+            .all(|token| !quoted.contains_key(&token.to_string()))
+    {
+        return Err(anyhow!("price response keys match no requested mint"));
     }
-    let quoted: HashMap<String, Entry> = response.json().await.context("price response")?;
     Ok(tokens
         .iter()
         .filter_map(|token| {
@@ -330,7 +464,7 @@ async fn driver(
     decimals: &HashMap<Pubkey, u8>,
     wrapped_native: Pubkey,
 ) -> Result<HashMap<Pubkey, u64>> {
-    let url = endpoint.join("quote").context("quote endpoint")?;
+    let url = route(endpoint, "quote")?;
     let quotes = join_all(tokens.iter().map(|token| {
         let url = url.clone();
         async move {
@@ -422,12 +556,15 @@ mod tests {
         )])
     }
 
-    /// Serve a fixed CoinGecko response, counting the requests.
-    async fn coingecko_server(response: serde_json::Value) -> (Url, Arc<AtomicUsize>) {
+    /// Serve a fixed CoinGecko response at the given path, counting requests.
+    async fn coingecko_server_at(
+        path: &str,
+        response: serde_json::Value,
+    ) -> (Url, Arc<AtomicUsize>) {
         let requests = Arc::new(AtomicUsize::new(0));
         let counter = Arc::clone(&requests);
         let app = axum::Router::new().route(
-            "/simple/token_price/solana",
+            path,
             axum::routing::get(move || {
                 counter.fetch_add(1, Ordering::Relaxed);
                 let response = response.clone();
@@ -438,6 +575,10 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         (format!("http://{addr}/").parse().unwrap(), requests)
+    }
+
+    async fn coingecko_server(response: serde_json::Value) -> (Url, Arc<AtomicUsize>) {
+        coingecko_server_at("/simple/token_price/solana", response).await
     }
 
     /// Serve fixed driver quotes: `buy_amount` lamports for any request of
@@ -473,7 +614,7 @@ mod tests {
     }
 
     /// The wrapped native mint is priced at the denominator without any
-    /// lookup: the estimators here are gone and the RPC is dead.
+    /// lookup: the estimators here are dead and so is the RPC.
     #[tokio::test]
     async fn prices_the_native_mint_locally() {
         let wrapped = Pubkey::new_unique();
@@ -517,6 +658,99 @@ mod tests {
             .unwrap();
         assert_eq!(result.get(&listed), Some(&5_000_000_000));
         assert_eq!(requests.load(Ordering::Relaxed), 1);
+    }
+
+    /// An endpoint configured without a trailing slash keeps its base path.
+    #[tokio::test]
+    async fn endpoint_path_survives_a_missing_trailing_slash() {
+        let listed = Pubkey::new_unique();
+        let (endpoint, _) = coingecko_server_at(
+            "/api/v3/simple/token_price/solana",
+            serde_json::json!({ listed.to_string(): { "sol": 0.005 } }),
+        )
+        .await;
+        let endpoint = format!("{}api/v3", endpoint.as_str()).parse().unwrap();
+        let prices = NativePrices::new(
+            &coingecko_config(endpoint),
+            SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
+            Pubkey::new_unique(),
+        );
+
+        let result = prices.prices(HashSet::from([listed])).await.unwrap();
+        assert_eq!(result.get(&listed), Some(&5_000_000_000));
+    }
+
+    /// A mint that does not unpack counts as unpriced: the lookup succeeds
+    /// without it and the verdict is cached.
+    #[tokio::test]
+    async fn unreadable_mints_count_as_unpriced() {
+        let token = Pubkey::new_unique();
+        let (endpoint, requests) = coingecko_server(serde_json::json!({})).await;
+        // A one-byte account is no mint layout.
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!({
+                "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                "value": [{
+                    "lamports": 1u64,
+                    "data": ["AA==", "base64"],
+                    "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                    "executable": false,
+                    "rentEpoch": 0u64,
+                    "space": 1u64,
+                }],
+            }),
+        )]);
+        let prices = NativePrices::new(
+            &coingecko_config(endpoint),
+            SolanaRPC::new_mock_with_mocks(mocks),
+            Pubkey::new_unique(),
+        );
+
+        let result = prices.prices(HashSet::from([token])).await.unwrap();
+        assert!(result.is_empty());
+        // Nothing was priceable, so no source was asked, and the verdict is
+        // cached: the consumed RPC mock would fail a refetch.
+        assert_eq!(requests.load(Ordering::Relaxed), 0);
+        let result = prices.prices(HashSet::from([token])).await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    /// The refresher refetches the maintained token on its own, and the next
+    /// lookup is served from the refreshed cache.
+    #[tokio::test]
+    async fn refreshes_maintained_prices_in_the_background() {
+        let listed = Pubkey::new_unique();
+        let (endpoint, requests) = coingecko_server(serde_json::json!({
+            listed.to_string(): { "sol": 0.005 },
+        }))
+        .await;
+        let prices = NativePrices::new(
+            &config::NativePrices {
+                estimators: vec![config::NativePriceEstimator::CoinGecko {
+                    endpoint,
+                    api_key: None,
+                }],
+                ttl: Duration::from_millis(600),
+            },
+            SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
+            Pubkey::new_unique(),
+        );
+
+        let result = prices.prices(HashSet::from([listed])).await.unwrap();
+        assert_eq!(result.get(&listed), Some(&5_000_000_000));
+        assert_eq!(requests.load(Ordering::Relaxed), 1);
+
+        // The background pass refetches without another lookup.
+        for _ in 0..200 {
+            if requests.load(Ordering::Relaxed) >= 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert!(requests.load(Ordering::Relaxed) >= 2);
+        let result = prices.prices(HashSet::from([listed])).await.unwrap();
+        assert_eq!(result.get(&listed), Some(&5_000_000_000));
     }
 
     /// A token CoinGecko does not list falls through to the driver, which

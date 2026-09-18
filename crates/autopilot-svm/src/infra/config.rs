@@ -55,6 +55,10 @@ pub struct Config {
     /// Minimum time between auction cycles. Zero runs a cycle every new slot.
     #[serde(with = "humantime_serde", default = "default_min_auction_interval")]
     pub min_auction_interval: Duration,
+    /// Slots the indexer may lag behind the tip before auction cuts are
+    /// skipped, so a stalled indexer stops feeding stale orders to solvers.
+    #[serde(default = "default_max_indexer_lag_slots")]
+    pub max_indexer_lag_slots: u64,
     /// The driver endpoints participating in every auction.
     #[serde(deserialize_with = "deserialize_nonempty_vec")]
     pub drivers: Vec<Driver>,
@@ -62,8 +66,9 @@ pub struct Config {
     /// sponsored orders: without it their winning solutions dispatch without
     /// creations and fail at the driver.
     pub sponsoring: Option<Sponsoring>,
-    /// Native price lookups for auction tokens.
-    #[serde(default)]
+    /// Native price lookups for auction tokens. Required with no default
+    /// source: pricing through a third party is a deployment decision,
+    /// never a silent fallback.
     pub native_prices: NativePrices,
     /// Logging configuration.
     #[serde(default)]
@@ -75,51 +80,31 @@ pub struct Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NativePrices {
     /// Price sources in fallback order: a token the first one does not price
-    /// is asked from the next.
-    #[serde(default = "default_prices_estimators")]
+    /// is asked from the next. At least one source is required, pricing
+    /// through a third party is a deployment decision.
+    #[serde(deserialize_with = "deserialize_nonempty_vec")]
     pub estimators: Vec<NativePriceEstimator>,
     /// How long a fetched price serves auctions before it is refetched.
     #[serde(with = "humantime_serde", default = "default_prices_ttl")]
     pub ttl: Duration,
 }
 
-/// One native price source, tagged like the EVM estimator config.
+/// One native price source.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum NativePriceEstimator {
     /// The CoinGecko `simple/token_price` API.
     CoinGecko {
-        #[serde(default = "default_prices_endpoint")]
+        /// Base URL of the CoinGecko API.
         endpoint: url::Url,
-        /// API key sent with every price request, for keyed CoinGecko plans.
+        /// API key sent with every price request as the CoinGecko Pro plan
+        /// header.
         #[serde(default)]
         api_key: Option<String>,
     },
     /// A solver driver, quoted through its regular `/quote` route. The url
     /// includes the solver path, like the `[[drivers]]` entries.
     Driver { name: String, url: url::Url },
-}
-
-impl Default for NativePrices {
-    fn default() -> Self {
-        Self {
-            estimators: default_prices_estimators(),
-            ttl: default_prices_ttl(),
-        }
-    }
-}
-
-fn default_prices_estimators() -> Vec<NativePriceEstimator> {
-    vec![NativePriceEstimator::CoinGecko {
-        endpoint: default_prices_endpoint(),
-        api_key: None,
-    }]
-}
-
-fn default_prices_endpoint() -> url::Url {
-    "https://api.coingecko.com/api/v3/"
-        .parse()
-        .expect("valid literal url")
 }
 
 const fn default_prices_ttl() -> Duration {
@@ -149,6 +134,12 @@ const fn default_max_auction_age() -> Duration {
 
 const fn default_min_auction_interval() -> Duration {
     Duration::ZERO
+}
+
+/// One blockhash lifetime: beyond it the freshest pending creations in the
+/// stale data would already be dying.
+const fn default_max_indexer_lag_slots() -> u64 {
+    150
 }
 
 /// JSON-RPC client configuration.
@@ -235,6 +226,7 @@ mod tests {
         assert_eq!(config.competition.submission_deadline_slots.get(), 25);
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
+        assert_eq!(config.max_indexer_lag_slots, 150);
         assert_eq!(config.native_prices.ttl, Duration::from_secs(30));
         assert!(matches!(
             &config.native_prices.estimators[..],

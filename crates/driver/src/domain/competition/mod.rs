@@ -585,6 +585,7 @@ impl Competition {
     /// fraction of the traded tokens but not at a total ETH value which means
     /// very large trades can still incur big amounts of slippage. This should
     /// be fixed.
+    #[instrument(skip_all)]
     pub async fn reencode_quote_solution(
         &self,
         auction_id: auction::Id,
@@ -621,6 +622,7 @@ impl Competition {
                 self.solver.solver_native_token(),
             )
             .await?;
+        tracing::debug!(solution_id, orders = ?settlement.orders().keys(), "reencoded fast path solution");
         self.queue_settlement(settlement);
         Ok(())
     }

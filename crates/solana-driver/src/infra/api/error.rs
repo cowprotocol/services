@@ -8,6 +8,8 @@ use {
     serde::Serialize,
 };
 
+/// The kind strings are a wire contract: the autopilot matches on them to
+/// classify failed `/settle` calls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) enum Kind {
