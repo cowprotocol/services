@@ -179,7 +179,8 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
 
     // Stage probes: pinpoint the failing phase before driving the loop.
     {
-        let provider = DbAuctionProvider::new(pool.clone(), mock_rpc(), InFlightOrders::default());
+        let provider =
+            DbAuctionProvider::new(pool.clone(), mock_rpc(), 150, InFlightOrders::default());
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
         let competition = DriverCompetition::new(vec![Arc::clone(&driver)], Duration::from_secs(6));
@@ -196,6 +197,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         Box::new(DbAuctionProvider::new(
             pool.clone(),
             mock_rpc(),
+            150,
             inflight.clone(),
         )),
         Box::new(DriverCompetition::new(
@@ -224,7 +226,10 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     // transaction cannot land any more: the deadline plus the blockhash
     // lifetime.
     let expired = tip + 25 + solana_sdk::clock::MAX_PROCESSING_AGE as u64 + 1;
-    let held_provider = DbAuctionProvider::new(pool.clone(), mock_rpc(), inflight.clone());
+    // The lag gate stays out of the way: this provider tests the hold, and
+    // the watermark is still at the dispatch tip.
+    let held_provider =
+        DbAuctionProvider::new(pool.clone(), mock_rpc(), u64::MAX, inflight.clone());
     assert!(
         held_provider.cut_auction(&(expired - 1)).await.is_none(),
         "in-flight order excluded from the cut"

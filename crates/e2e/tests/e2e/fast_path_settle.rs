@@ -412,6 +412,45 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
         "order settled during the exclusivity window; fast path was expected to fail to submit"
     );
 
+    // Both bids clear the signed limit price so we can assert things about the
+    // solution scores and reference scores.
+    let fast_path_competition = services.get_latest_solver_competition().await.unwrap();
+    assert!(
+        fast_path_competition
+            .solutions
+            .iter()
+            .any(|s| s.orders.iter().any(|o| o.id == uid)),
+        "latest competition should still be the fast-path one before valid_from",
+    );
+    let winner_sol = fast_path_competition
+        .solutions
+        .iter()
+        .find(|s| s.is_winner)
+        .expect("fast-path competition should have a winner");
+    let runner_up = fast_path_competition
+        .solutions
+        .iter()
+        .find(|s| !s.is_winner && !s.filtered_out)
+        .expect("fast-path competition should have a non-filtered runner-up");
+    assert!(
+        !winner_sol.filtered_out,
+        "the fast-path winner must not be filtered out"
+    );
+    assert_eq!(
+        winner_sol.reference_score,
+        Some(runner_up.score),
+        "with two non-filtered bids, the winner's reference score is the runner-up's score \
+         (winner={winner_sol:?}, runner_up={runner_up:?})",
+    );
+    assert!(
+        winner_sol.score >= runner_up.score,
+        "winner score is at least as big as runner up"
+    );
+    assert!(
+        winner_sol.score > 0 && runner_up.score > 0,
+        "both solutions have a non-zero score"
+    );
+
     // (2) The order ends up `Fulfilled` after `valid_from`.
     tracing::info!("Waiting for the regular-auction settlement.");
     wait_for_condition(TIMEOUT, || async {
