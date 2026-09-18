@@ -11,7 +11,7 @@
 //! window.
 
 use {
-    crate::infra::{db, listen::NotifyHandler},
+    crate::infra::{db, inflight::InFlightOrders, listen::NotifyHandler},
     anyhow::Result,
     async_trait::async_trait,
     chain_types::solana::{Pubkey, Signature},
@@ -31,29 +31,13 @@ use {
 #[derive(Clone)]
 pub struct SettlementWindows {
     pool: PgPool,
-    /// Fans out every settlement observed on chain, so settle tasks can end
-    /// on the on-chain evidence instead of a driver response.
-    landed: tokio::sync::broadcast::Sender<Landed>,
-}
-
-/// One settlement the indexer observed on chain.
-#[derive(Clone, Copy, Debug)]
-pub struct Landed {
-    pub auction_id: i64,
-    pub solver: Pubkey,
+    /// A settlement observed on chain releases its orders from the hold-out.
+    inflight: InFlightOrders,
 }
 
 impl SettlementWindows {
-    pub fn new(pool: PgPool) -> Self {
-        // Landings are rare next to the channel's capacity, a lagging
-        // receiver only misses an early release.
-        let (landed, _) = tokio::sync::broadcast::channel(128);
-        Self { pool, landed }
-    }
-
-    /// Subscribe to settlements observed on chain.
-    pub fn landed_events(&self) -> tokio::sync::broadcast::Receiver<Landed> {
-        self.landed.subscribe()
+    pub fn new(pool: PgPool, inflight: InFlightOrders) -> Self {
+        Self { pool, inflight }
     }
 
     /// Open a window for a dispatched settlement. `solution_uid` is the
@@ -101,8 +85,7 @@ impl SettlementWindows {
                 tx_signature = %Signature(landed.submitted_signature.0),
                 "settlement observed on chain"
             );
-            // Send failures only mean nobody subscribed.
-            let _ = self.landed.send(Landed { auction_id, solver });
+            self.inflight.release_landed(auction_id, solver);
         }
         Ok(())
     }
@@ -137,8 +120,8 @@ impl NotifyHandler for SettlementWindows {
 mod tests {
     use {
         super::SettlementWindows,
-        crate::infra::{db, listen::ListenSession},
-        chain_types::solana::Pubkey,
+        crate::infra::{db, inflight::InFlightOrders, listen::ListenSession},
+        chain_types::solana::{IntentHash, Pubkey},
         sqlx::PgPool,
         std::time::Duration,
     };
@@ -175,9 +158,13 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        let windows = SettlementWindows::new(pool.clone());
+        let solver = Pubkey([7; 32]);
+        let uid = IntentHash([1; 32]);
+        let inflight = InFlightOrders::default();
+        inflight.hold(4242, solver, vec![uid], 100);
+        let windows = SettlementWindows::new(pool.clone(), inflight.clone());
         windows
-            .open_dispatched(4242, Pubkey([7; 32]), 1, 90, 100)
+            .open_dispatched(4242, solver, 1, 90, 100)
             .await
             .unwrap();
 
@@ -186,7 +173,6 @@ VALUES (10, $1, 0, $2, $3, NULL)
             db::SETTLEMENT_FINALIZED_CHANNEL,
             windows.clone(),
         );
-        let mut landed_events = windows.landed_events();
 
         insert_settlement(&pool, 4242).await;
 
@@ -198,8 +184,8 @@ VALUES (10, $1, 0, $2, $3, NULL)
         }
         task.abort();
         assert_eq!(outcome(&pool, 4242).await.as_deref(), Some("landed"));
-        let landed = landed_events.try_recv().expect("landed event broadcast");
-        assert_eq!(landed.auction_id, 4242);
+        // The observed landing released the held order.
+        assert!(inflight.held_at(90).is_empty());
         let signature: Vec<u8> = sqlx::query_scalar(
             "SELECT submitted_signature FROM solana.settlement_executions WHERE auction_id = 4242",
         )
@@ -217,7 +203,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        let windows = SettlementWindows::new(pool.clone());
+        let windows = SettlementWindows::new(pool.clone(), InFlightOrders::default());
         windows
             .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
             .await
