@@ -168,26 +168,34 @@ pub fn reveal_req(solution_id: u64, auction_id: &str) -> serde_json::Value {
     })
 }
 
-/// Create a request for the driver /settle endpoint: an auction settlement
-/// for `solution_id`, or a fast-path settlement carrying the `fast_path`
-/// bundle (`quoteId`, `order`, `limitPrices`).
+/// Create a request for the driver /settle endpoint.
 pub fn settle_req(
     submission_deadline_latest_block: u64,
-    solution_id: Option<u64>,
+    solution_id: u64,
     auction_id: &str,
-    fast_path: Option<serde_json::Value>,
 ) -> serde_json::Value {
-    let mut req = json!({
+    json!({
+        "solutionId": solution_id,
         "submissionDeadlineLatestBlock": submission_deadline_latest_block,
         "auctionId": auction_id,
-    });
-    if let Some(solution_id) = solution_id {
-        req["solutionId"] = json!(solution_id);
-    }
-    if let Some(fast_path) = fast_path {
-        req["fastPath"] = fast_path;
-    }
-    req
+    })
+}
+
+/// Create a request for the driver /settle_fast_path endpoint.
+pub fn settle_fast_path_req(
+    submission_deadline_latest_block: u64,
+    quote_id: i64,
+    auction_id: &str,
+    order: serde_json::Value,
+    limit_prices: serde_json::Value,
+) -> serde_json::Value {
+    json!({
+        "quoteId": quote_id,
+        "order": order,
+        "limitPrices": limit_prices,
+        "submissionDeadlineLatestBlock": submission_deadline_latest_block,
+        "auctionId": auction_id,
+    })
 }
 
 /// The quoted sell/buy amounts, used as the fast-path limit prices.
