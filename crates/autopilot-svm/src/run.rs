@@ -135,7 +135,7 @@ async fn run(config: Config) {
             config.max_indexer_lag_slots,
             inflight.clone(),
             NativePrices::new(
-                &config.native_prices,
+                config.native_prices.as_ref(),
                 SolanaRPC::new_with_timeout_and_commitment(
                     &config.rpc.endpoint,
                     config.rpc.request_timeout,

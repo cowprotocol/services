@@ -66,10 +66,12 @@ pub struct Config {
     /// sponsored orders: without it their winning solutions dispatch without
     /// creations and fail at the driver.
     pub sponsoring: Option<Sponsoring>,
-    /// Native price lookups for auction tokens. Required with no default
-    /// source: pricing through a third party is a deployment decision,
-    /// never a silent fallback.
-    pub native_prices: NativePrices,
+    /// Native price lookups for auction tokens. Absent, the autopilot prices
+    /// every token at the native denominator: scores then compare raw
+    /// surplus, exact within a token pair and meaningless across pairs.
+    /// Pricing through a third party stays a deployment decision, never a
+    /// silent default.
+    pub native_prices: Option<NativePrices>,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -210,12 +212,13 @@ mod tests {
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
         assert_eq!(config.max_indexer_lag_slots, 150);
+        let prices = config.native_prices.expect("the example configures prices");
         assert_eq!(
-            config.native_prices.endpoint.as_str(),
+            prices.endpoint.as_str(),
             "https://api.coingecko.com/api/v3/"
         );
-        assert_eq!(config.native_prices.api_key, None);
-        assert_eq!(config.native_prices.ttl, Duration::from_secs(30));
+        assert_eq!(prices.api_key, None);
+        assert_eq!(prices.ttl, Duration::from_secs(30));
         assert_eq!(config.drivers.len(), 1);
         assert_eq!(config.drivers[0].name, "baseline");
         assert_eq!(config.logging.filter, "info,autopilot_svm=debug");

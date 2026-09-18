@@ -33,9 +33,14 @@ const PRICES_CHUNK: usize = 100;
 /// Native price lookups for auction tokens, cached per token. A background
 /// task keeps the tokens of the latest lookup fresh, so a cut normally reads
 /// the cache instead of waiting on the price endpoint.
-pub struct NativePrices(Arc<Inner>);
+pub enum NativePrices {
+    /// Unconfigured: every token prices at the native denominator, so scores
+    /// compare raw surplus and nothing is fetched.
+    Denominated,
+    Configured(Arc<Inner>),
+}
 
-struct Inner {
+pub struct Inner {
     client: reqwest::Client,
     endpoint: Url,
     api_key: Option<String>,
@@ -59,8 +64,19 @@ struct Entry {
 
 impl NativePrices {
     /// Builds the lookup and spawns its refresher. Must run inside a tokio
-    /// runtime.
-    pub fn new(config: &config::NativePrices, rpc: SolanaRPC, wrapped_native: Pubkey) -> Self {
+    /// runtime. Without a configuration the lookup prices every token at the
+    /// denominator instead.
+    pub fn new(
+        config: Option<&config::NativePrices>,
+        rpc: SolanaRPC,
+        wrapped_native: Pubkey,
+    ) -> Self {
+        let Some(config) = config else {
+            tracing::warn!(
+                "no native price sources configured, pricing every token at the denominator"
+            );
+            return Self::Denominated;
+        };
         let inner = Arc::new(Inner {
             client: reqwest::Client::builder()
                 .timeout(SOURCE_TIMEOUT)
@@ -85,7 +101,7 @@ impl NativePrices {
                 refresher.refresh().await;
             }
         });
-        Self(inner)
+        Self::Configured(inner)
     }
 
     /// The lamport value of one atom of each token, scaled by 10^9 like
@@ -95,14 +111,20 @@ impl NativePrices {
     /// whether the remaining prices still hold is unknowable, and a wrongly
     /// ranked auction is worse than none.
     pub async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
-        self.0.prices(tokens).await
+        match self {
+            Self::Denominated => Ok(tokens
+                .into_iter()
+                .map(|token| (token, Solana::NATIVE_PRICE_DENOMINATOR))
+                .collect()),
+            Self::Configured(inner) => inner.prices(tokens).await,
+        }
     }
 
     /// A lookup pre-seeded for tests: the given prices never expire, nothing
     /// is fetched, and no refresher runs.
     #[cfg(test)]
     pub(crate) fn seeded(entries: impl IntoIterator<Item = (Pubkey, u64)>) -> Self {
-        Self(Arc::new(Inner {
+        Self::Configured(Arc::new(Inner {
             client: reqwest::Client::new(),
             endpoint: "http://127.0.0.1:1/".parse().expect("literal url"),
             api_key: None,
@@ -399,12 +421,26 @@ mod tests {
     async fn prices_the_native_mint_locally() {
         let wrapped = Pubkey::new_unique();
         let prices = NativePrices::new(
-            &config("http://127.0.0.1:1/".parse().unwrap()),
+            Some(&config("http://127.0.0.1:1/".parse().unwrap())),
             SolanaRPC::new_mock_with_mocks(Mocks::default()),
             wrapped,
         );
         let result = prices.prices(HashSet::from([wrapped])).await.unwrap();
         assert_eq!(result[&wrapped], Solana::NATIVE_PRICE_DENOMINATOR);
+    }
+
+    /// Without a configuration every token prices at the denominator and
+    /// nothing is fetched: the endpoint and the RPC here are dead.
+    #[tokio::test]
+    async fn prices_at_the_denominator_when_unconfigured() {
+        let token = Pubkey::new_unique();
+        let prices = NativePrices::new(
+            None,
+            SolanaRPC::new_mock_with_mocks(Mocks::default()),
+            Pubkey::new_unique(),
+        );
+        let result = prices.prices(HashSet::from([token])).await.unwrap();
+        assert_eq!(result[&token], Solana::NATIVE_PRICE_DENOMINATOR);
     }
 
     /// A listed token is priced through its decimals, an unlisted one is
@@ -428,7 +464,7 @@ mod tests {
             }),
         )]);
         let prices = NativePrices::new(
-            &config(endpoint),
+            Some(&config(endpoint)),
             SolanaRPC::new_mock_with_mocks(mocks),
             Pubkey::new_unique(),
         );
@@ -473,7 +509,7 @@ mod tests {
             }),
         )]);
         let prices = NativePrices::new(
-            &config(format!("http://{addr}/api/v3").parse().unwrap()),
+            Some(&config(format!("http://{addr}/api/v3").parse().unwrap())),
             SolanaRPC::new_mock_with_mocks(mocks),
             Pubkey::new_unique(),
         );
@@ -499,7 +535,7 @@ mod tests {
             }),
         )]);
         let prices = NativePrices::new(
-            &config(endpoint),
+            Some(&config(endpoint)),
             SolanaRPC::new_mock_with_mocks(mocks),
             Pubkey::new_unique(),
         );
@@ -524,11 +560,11 @@ mod tests {
             }),
         )]);
         let prices = NativePrices::new(
-            &config::NativePrices {
+            Some(&config::NativePrices {
                 endpoint,
                 api_key: None,
                 ttl: Duration::from_millis(600),
-            },
+            }),
             SolanaRPC::new_mock_with_mocks(mocks),
             Pubkey::new_unique(),
         );
@@ -571,7 +607,7 @@ mod tests {
             }),
         )]);
         let prices = NativePrices::new(
-            &config(endpoint),
+            Some(&config(endpoint)),
             SolanaRPC::new_mock_with_mocks(mocks),
             Pubkey::new_unique(),
         );
@@ -596,7 +632,7 @@ mod tests {
             }),
         )]);
         let prices = NativePrices::new(
-            &config("http://127.0.0.1:1/".parse().unwrap()),
+            Some(&config("http://127.0.0.1:1/".parse().unwrap())),
             SolanaRPC::new_mock_with_mocks(mocks),
             Pubkey::new_unique(),
         );
