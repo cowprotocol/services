@@ -20,13 +20,23 @@ const MAX_CONCURRENT_LOOKUPS: usize = 10;
 const CACHE_EXPIRY: Duration = Duration::from_secs(60 * 60);
 const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Verdict {
-    Banned,
+    /// Banned, with the name of every backend that reported it.
+    Banned(Vec<&'static str>),
     NotBanned,
     /// Every lookup failed. Treated as not banned until a maintenance-task
     /// retry succeeds.
     Unknown,
+}
+
+impl Verdict {
+    fn banned_by(&self) -> &[&'static str] {
+        match self {
+            Self::Banned(backends) => backends,
+            Self::NotBanned | Self::Unknown => &[],
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -79,7 +89,7 @@ impl Cached {
             backends,
             cache: Cache::builder().max_capacity(max_capacity).build(),
         });
-        Metrics::currently_banned(0);
+        cached.report_currently_banned();
         cached.spawn_maintenance_task();
         Some(cached)
     }
@@ -92,7 +102,7 @@ impl Cached {
         for address in addresses {
             match self.cache.get(address) {
                 Some(entry) => {
-                    (entry.verdict == Verdict::Banned).then(|| banned.insert(*address));
+                    matches!(entry.verdict, Verdict::Banned(_)).then(|| banned.insert(*address));
                 }
                 None => need_lookup.push(*address),
             }
@@ -105,13 +115,8 @@ impl Cached {
             .collect()
             .await;
 
-        for (address, is_banned) in fetched {
-            let verdict = match is_banned {
-                Some(true) => Verdict::Banned,
-                Some(false) => Verdict::NotBanned,
-                None => Verdict::Unknown,
-            };
-            if verdict == Verdict::Banned {
+        for (address, verdict) in fetched {
+            if matches!(verdict, Verdict::Banned(_)) {
                 banned.insert(address);
             }
             self.store(address, verdict);
@@ -120,46 +125,72 @@ impl Cached {
         banned
     }
 
-    /// Caches `verdict`, reporting a ban the cache did not already know about.
-    /// Returns how the number of banned entries changed.
-    fn store(&self, address: Address, verdict: Verdict) -> i64 {
-        let known_banned = self
-            .cache
-            .get(&address)
-            .is_some_and(|entry| entry.verdict == Verdict::Banned);
-        let banned = verdict == Verdict::Banned;
-        if banned && !known_banned {
-            Metrics::detected();
+    /// Caches `verdict`, reporting bans the cache did not already know about.
+    fn store(&self, address: Address, verdict: Verdict) {
+        let known = self.known(&address);
+        for backend in verdict.banned_by() {
+            if !known.banned_by().contains(backend) {
+                Metrics::detected(backend);
+            }
         }
         self.cache.insert(address, Entry::new(verdict));
-        i64::from(banned) - i64::from(known_banned)
     }
 
-    /// `Some(true)` as soon as any backend confirms a ban, since a failure
-    /// elsewhere must not mask a positive hit. `None` means no confirmation
-    /// and at least one failure.
-    async fn fetch_all(&self, address: Address) -> Option<bool> {
-        let results = join_all(self.backends.iter().map(|b| fetch_one(b.as_ref(), address))).await;
-        if results.iter().any(|r| matches!(r, Some(true))) {
-            Some(true)
-        } else if results.iter().any(Option::is_none) {
-            None
-        } else {
-            Some(false)
+    /// The cached verdict for `address`, [`Verdict::NotBanned`] when absent.
+    fn known(&self, address: &Address) -> Verdict {
+        self.cache
+            .get(address)
+            .map(|entry| entry.verdict)
+            .unwrap_or(Verdict::NotBanned)
+    }
+
+    /// Publishes how many cached addresses each backend currently bans. One
+    /// full walk per backend, once a minute: recounting from scratch keeps
+    /// the gauge right after moka evicts entries on its own.
+    fn report_currently_banned(&self) {
+        for backend in &self.backends {
+            let name = backend.name();
+            let banned = self
+                .cache
+                .iter()
+                .filter(|(_, entry)| entry.verdict.banned_by().contains(&name))
+                .count();
+            Metrics::currently_banned(name, banned);
         }
     }
 
-    /// Walks the cache once, returning the entries due for a refresh and how
-    /// many entries are currently banned. Due are the entries close enough to
-    /// expiry that the next maintenance tick may miss the window, plus
-    /// [`Verdict::Unknown`] entries awaiting a retry.
-    fn scan(&self, now: Instant) -> (Vec<Arc<Address>>, i64) {
+    /// [`Verdict::Banned`] once any backend confirms a ban: a failure elsewhere
+    /// neither masks the hit nor revokes that backend's cached credit, only an
+    /// explicit "not banned" does. [`Verdict::Unknown`]: no hit, some failure.
+    async fn fetch_all(&self, address: Address) -> Verdict {
+        let results = join_all(self.backends.iter().map(|b| fetch_one(b.as_ref(), address))).await;
+        if !results.contains(&Some(true)) {
+            return if results.contains(&None) {
+                Verdict::Unknown
+            } else {
+                Verdict::NotBanned
+            };
+        }
+        let known = self.known(&address);
+        let banned_by = self
+            .backends
+            .iter()
+            .zip(&results)
+            .filter(|(backend, result)| match result {
+                Some(banned) => *banned,
+                None => known.banned_by().contains(&backend.name()),
+            })
+            .map(|(backend, _)| backend.name())
+            .collect();
+        Verdict::Banned(banned_by)
+    }
+
+    /// Walks the cache once, returning the entries due for a refresh: those
+    /// close enough to expiry that the next maintenance tick may miss the
+    /// window, plus [`Verdict::Unknown`] entries awaiting a retry.
+    fn scan(&self, now: Instant) -> Vec<Arc<Address>> {
         let mut due = Vec::new();
-        let mut banned = 0;
         for (address, entry) in self.cache.iter() {
-            if entry.verdict == Verdict::Banned {
-                banned += 1;
-            }
             let refresh = entry.verdict == Verdict::Unknown
                 || now
                     .checked_duration_since(entry.last_updated)
@@ -169,19 +200,16 @@ impl Cached {
                 due.push(address);
             }
         }
-        (due, banned)
+        due
     }
 
     /// `None` (existing entry preserved) when `fetch_all` is uncertain — no
     /// positive confirmation and at least one backend failed.
     async fn refresh(&self, address: Address) -> Option<(Address, Verdict)> {
-        let is_banned = self.fetch_all(address).await?;
-        let verdict = if is_banned {
-            Verdict::Banned
-        } else {
-            Verdict::NotBanned
-        };
-        Some((address, verdict))
+        match self.fetch_all(address).await {
+            Verdict::Unknown => None,
+            verdict => Some((address, verdict)),
+        }
     }
 
     /// Spawns a background task that periodically refreshes near-expiry cache
@@ -195,8 +223,7 @@ impl Cached {
             loop {
                 interval.tick().await;
                 let Some(this) = weak.upgrade() else { return };
-                let now = Instant::now();
-                let (due, mut banned) = this.scan(now);
+                let due = this.scan(Instant::now());
 
                 let refreshed: Vec<_> = stream::iter(due)
                     .map(|address| this.refresh(*address))
@@ -205,9 +232,9 @@ impl Cached {
                     .await;
 
                 for (address, verdict) in refreshed.into_iter().flatten() {
-                    banned += this.store(address, verdict);
+                    this.store(address, verdict);
                 }
-                Metrics::currently_banned(banned);
+                this.report_currently_banned();
             }
         });
     }
@@ -244,8 +271,21 @@ mod tests {
     };
 
     struct FlakyBackend {
+        name: &'static str,
+        banned: Arc<AtomicBool>,
         calls: Arc<AtomicUsize>,
         fail: Arc<AtomicBool>,
+    }
+
+    impl FlakyBackend {
+        fn new(name: &'static str, banned: bool) -> Self {
+            Self {
+                name,
+                banned: Arc::new(AtomicBool::new(banned)),
+                calls: Default::default(),
+                fail: Default::default(),
+            }
+        }
     }
 
     #[async_trait]
@@ -259,24 +299,73 @@ mod tests {
                     ),
                 ))
             } else {
-                Ok(false)
+                Ok(self.banned.load(Ordering::SeqCst))
             }
         }
 
         fn name(&self) -> &'static str {
-            "flaky"
+            self.name
         }
     }
 
     fn setup(fail: bool) -> (Arc<Cached>, Arc<AtomicUsize>, Arc<AtomicBool>) {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let failing = Arc::new(AtomicBool::new(fail));
-        let backend = FlakyBackend {
-            calls: calls.clone(),
-            fail: failing.clone(),
-        };
+        let backend = FlakyBackend::new("flaky", false);
+        backend.fail.store(fail, Ordering::SeqCst);
+        let (calls, failing) = (backend.calls.clone(), backend.fail.clone());
         let cached = Cached::new(vec![Box::new(backend)], 100).unwrap();
         (cached, calls, failing)
+    }
+
+    #[tokio::test]
+    async fn every_reporting_backend_is_credited() {
+        let backend =
+            |name, banned| -> Box<dyn Backend> { Box::new(FlakyBackend::new(name, banned)) };
+        let cached = Cached::new(
+            vec![backend("a", true), backend("b", false), backend("c", true)],
+            100,
+        )
+        .unwrap();
+
+        let verdict = cached.fetch_all(Address::repeat_byte(1)).await;
+        assert_eq!(verdict.banned_by(), ["a", "c"]);
+    }
+
+    /// A backend whose refresh fails while another still confirms the ban
+    /// keeps its credit, so a transient error neither drops it from the entry
+    /// nor detects it a second time once it recovers.
+    #[tokio::test]
+    async fn failed_refresh_keeps_attribution() {
+        let chainalysis = FlakyBackend::new("chainalysis", true);
+        let (fail, banned) = (chainalysis.fail.clone(), chainalysis.banned.clone());
+        let hermod = FlakyBackend::new("hermod", true);
+        let cached = Cached::new(vec![Box::new(chainalysis), Box::new(hermod)], 100).unwrap();
+        let address = Address::repeat_byte(1);
+        let banned_by = || cached.known(&address).banned_by().to_vec();
+        let refresh = || async {
+            let (address, verdict) = cached.refresh(address).await.unwrap();
+            cached.store(address, verdict);
+        };
+        let detected = Metrics::detected_count("chainalysis");
+
+        cached.check(&HashSet::from([address])).await;
+        assert_eq!(banned_by(), ["chainalysis", "hermod"]);
+        assert_eq!(Metrics::detected_count("chainalysis"), detected + 1);
+
+        // Chainalysis errors while hermod still confirms the ban.
+        fail.store(true, Ordering::SeqCst);
+        refresh().await;
+        assert_eq!(banned_by(), ["chainalysis", "hermod"]);
+
+        // Chainalysis recovers with the same answer: nothing new to detect.
+        fail.store(false, Ordering::SeqCst);
+        refresh().await;
+        assert_eq!(banned_by(), ["chainalysis", "hermod"]);
+        assert_eq!(Metrics::detected_count("chainalysis"), detected + 1);
+
+        // Only an explicit "not banned" revokes the credit.
+        banned.store(false, Ordering::SeqCst);
+        refresh().await;
+        assert_eq!(banned_by(), ["hermod"]);
     }
 
     #[tokio::test]
@@ -294,10 +383,10 @@ mod tests {
 
         // The unknown entry stays due for a background retry until a lookup
         // succeeds.
-        assert_eq!(cached.scan(Instant::now()).0.len(), 1);
+        assert_eq!(cached.scan(Instant::now()).len(), 1);
         failing.store(false, Ordering::SeqCst);
         let (address, verdict) = cached.refresh(address).await.unwrap();
         cached.store(address, verdict);
-        assert!(cached.scan(Instant::now()).0.is_empty());
+        assert!(cached.scan(Instant::now()).is_empty());
     }
 }
