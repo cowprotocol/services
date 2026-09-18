@@ -72,7 +72,7 @@ impl ExternalTradeFinder {
                 amount: query.in_amount.get(),
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
-                fast_path: query.fast_path,
+                enable_fast_path: query.fast_path,
                 auction_id: query.auction_id,
             };
             let block_dependent = query.block_dependent;
@@ -122,9 +122,10 @@ impl ExternalTradeFinder {
                                 })
                         });
 
-                    if result
-                        .as_ref()
-                        .is_ok_and(|quote| order.fast_path && !quote.supports_fast_path())
+                    if order.enable_fast_path
+                        && result
+                            .as_ref()
+                            .is_ok_and(|quote| !quote.supports_fast_path())
                     {
                         Err(PriceEstimationError::UnsupportedOrderType(
                             "solver does not support fast path".to_string(),
@@ -405,13 +406,8 @@ pub mod dto {
         pub amount: U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
-        // Renamed to match the driver's `enableFastPath` field name.
-        #[serde(
-            rename = "enableFastPath",
-            default,
-            skip_serializing_if = "std::ops::Not::not"
-        )]
-        pub fast_path: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pub enable_fast_path: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub auction_id: Option<i64>,
     }
