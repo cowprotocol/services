@@ -5,7 +5,7 @@ use {
     anyhow::{Context, Result, anyhow},
     chain_types::{ChainTypes, solana::Solana},
     cow_solana_rpc::SolanaRPC,
-    futures::future::join_all,
+    futures::{StreamExt, stream},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::{program_pack::Pack, pubkey::Pubkey},
@@ -21,9 +21,13 @@ use {
 /// CoinGecko's authorization header for Pro plans.
 const API_KEY_HEADER: &str = "x-cg-pro-api-key";
 
-/// How long one driver quote may take before the token counts as unpriced by
-/// that driver.
-const DRIVER_QUOTE_TIMEOUT: Duration = Duration::from_secs(3);
+/// Ceiling on one request to a price source. Every source shares it, so a
+/// hung endpoint cannot stall the auction cut.
+const SOURCE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Driver quotes in flight at once, bounding the load one lookup puts on a
+/// single driver.
+const DRIVER_CONCURRENCY: usize = 10;
 
 /// Mints per `getMultipleAccounts` request, the RPC method's cap.
 const ACCOUNTS_CHUNK: usize = 100;
@@ -65,6 +69,8 @@ enum Source {
         client: reqwest::Client,
         name: String,
         endpoint: Url,
+        /// Lamports bought per probe quote.
+        probe_amount: u64,
     },
 }
 
@@ -74,7 +80,7 @@ struct Entry {
     sol: Option<f64>,
 }
 
-/// The driver `/quote` request: sell one whole token for wSOL.
+/// The driver `/quote` request: buy the probe amount of wSOL with the token.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,7 +110,10 @@ impl NativePrices {
     /// Builds the lookup and spawns its refresher. Must run inside a tokio
     /// runtime.
     pub fn new(config: &config::NativePrices, rpc: SolanaRPC, wrapped_native: Pubkey) -> Self {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(SOURCE_TIMEOUT)
+            .build()
+            .expect("reqwest client");
         let sources = config
             .estimators
             .iter()
@@ -120,6 +129,7 @@ impl NativePrices {
                     client: client.clone(),
                     name: name.clone(),
                     endpoint: url.clone(),
+                    probe_amount: config.driver_probe_lamports,
                 },
             })
             .collect();
@@ -382,8 +392,11 @@ impl Source {
                 api_key,
             } => coingecko(client, endpoint, api_key.as_deref(), tokens, decimals).await,
             Self::Driver {
-                client, endpoint, ..
-            } => driver(client, endpoint, tokens, decimals, wrapped_native).await,
+                client,
+                endpoint,
+                probe_amount,
+                ..
+            } => driver(client, endpoint, tokens, wrapped_native, *probe_amount).await,
         }
     }
 }
@@ -454,42 +467,39 @@ async fn coingecko(
         .collect())
 }
 
-/// Quote one whole unit of each token into wSOL on the driver, concurrently.
-/// A driver rejection prices nothing for that token (no route is a routine
-/// answer), a transport failure fails the source.
+/// Buy a fixed amount of wSOL with each token on the driver. The probe is
+/// denominated in the native token so its economic size is the same for every
+/// token, whatever one whole unit of it is worth. A driver rejection prices
+/// nothing for that token (no route is a routine answer), a transport failure
+/// fails the source.
 async fn driver(
     client: &reqwest::Client,
     endpoint: &Url,
     tokens: &[Pubkey],
-    decimals: &HashMap<Pubkey, u8>,
     wrapped_native: Pubkey,
+    probe_amount: u64,
 ) -> Result<HashMap<Pubkey, u64>> {
     let url = route(endpoint, "quote")?;
-    let quotes = join_all(tokens.iter().map(|token| {
+    let quotes: Vec<_> = stream::iter(tokens.iter().copied().map(|token| {
         let url = url.clone();
         async move {
-            let probe = 10u64.checked_pow(u32::from(decimals[token]))?;
             let request = QuoteRequest {
-                sell_token: *token,
+                sell_token: token,
                 buy_token: wrapped_native,
-                amount: probe,
-                kind: "sell",
-                deadline: chrono::Utc::now() + DRIVER_QUOTE_TIMEOUT,
+                amount: probe_amount,
+                kind: "buy",
+                deadline: chrono::Utc::now() + SOURCE_TIMEOUT,
             };
-            let response = client
-                .post(url)
-                .json(&request)
-                .timeout(DRIVER_QUOTE_TIMEOUT)
-                .send()
-                .await
-                .ok()?;
+            let response = client.post(url).json(&request).send().await.ok()?;
             if !response.status().is_success() {
                 return None;
             }
             let quote: QuoteResponse = response.json().await.ok()?;
-            Some((*token, quote))
+            Some((token, quote))
         }
     }))
+    .buffer_unordered(DRIVER_CONCURRENCY)
+    .collect()
     .await;
     // Every quote failing while several tokens were asked reads as the
     // driver being down rather than uniformly missing routes.
@@ -511,18 +521,19 @@ async fn driver(
 }
 
 /// A whole-token price in SOL converted to the scaled atom price:
-/// `price * 10^(18 - decimals)`, saturating at `u64::MAX`. `None` when the
-/// price rounds below one, those tokens count as unpriced.
+/// `price * 10^(18 - decimals)`. `None` for a price that is not a positive
+/// real number, rounds below one atom of value, or does not fit the scaled
+/// range: those tokens count as unpriced. Clamping instead would let a
+/// nonsense price outrank every real one.
 fn scale(price: f64, decimals: u8) -> Option<u64> {
-    let scaled = price * 10f64.powi(18 - i32::from(decimals));
-    if scaled.is_nan() || scaled < 1.0 {
+    if !price.is_normal() || price <= 0.0 {
         return None;
     }
-    Some(if scaled >= u64::MAX as f64 {
-        u64::MAX
-    } else {
-        scaled as u64
-    })
+    let scaled = price * 10f64.powi(18 - i32::from(decimals));
+    if !scaled.is_finite() || scaled < 1.0 || scaled >= u64::MAX as f64 {
+        return None;
+    }
+    Some(scaled as u64)
 }
 
 #[cfg(test)]
@@ -543,8 +554,12 @@ mod tests {
                 api_key: None,
             }],
             ttl: Duration::from_secs(60),
+            driver_probe_lamports: PROBE_LAMPORTS,
         }
     }
+
+    /// The probe the driver tests quote with: a tenth of a SOL.
+    const PROBE_LAMPORTS: u64 = 100_000_000;
 
     fn mint_mocks(mints: usize) -> Mocks {
         Mocks::from([(
@@ -581,16 +596,17 @@ mod tests {
         coingecko_server_at("/simple/token_price/solana", response).await
     }
 
-    /// Serve fixed driver quotes: `buy_amount` lamports for any request of
-    /// the recorded `sell_amount`.
-    async fn driver_server(buy_amount: u64) -> Url {
+    /// Serve one fixed driver quote: `sell_amount` token atoms buy the
+    /// probe the request asks for.
+    async fn driver_server(sell_amount: u64) -> Url {
         let app = axum::Router::new().route(
             "/quote",
             axum::routing::post(
                 move |axum::Json(request): axum::Json<serde_json::Value>| async move {
+                    assert_eq!(request["kind"], "buy", "the probe buys the native token");
                     axum::Json(serde_json::json!({
-                        "sellAmount": request["amount"],
-                        "buyAmount": buy_amount.to_string(),
+                        "sellAmount": sell_amount.to_string(),
+                        "buyAmount": request["amount"],
                         "solver": Pubkey::new_unique().to_string(),
                     }))
                 },
@@ -609,8 +625,12 @@ mod tests {
         // The native token itself: 1.0 * 10^9.
         assert_eq!(scale(1.0, 9), Some(Solana::NATIVE_PRICE_DENOMINATOR));
         assert_eq!(scale(0.0, 6), None);
+        assert_eq!(scale(-1.0, 6), None);
         assert_eq!(scale(f64::NAN, 6), None);
-        assert_eq!(scale(f64::MAX, 0), Some(u64::MAX));
+        assert_eq!(scale(f64::INFINITY, 6), None);
+        // Beyond the scaled range: unpriced beats ranking first on nonsense.
+        assert_eq!(scale(f64::MAX, 0), None);
+        assert_eq!(scale(1e9, 0), None);
     }
 
     /// The wrapped native mint is priced at the denominator without any
@@ -732,6 +752,7 @@ mod tests {
                     api_key: None,
                 }],
                 ttl: Duration::from_millis(600),
+                driver_probe_lamports: PROBE_LAMPORTS,
             },
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
@@ -759,8 +780,9 @@ mod tests {
     async fn falls_back_to_the_driver_source() {
         let token = Pubkey::new_unique();
         let (coingecko, _) = coingecko_server(serde_json::json!({})).await;
-        // One whole 6-decimals token buys 0.005 SOL.
-        let driver = driver_server(5_000_000).await;
+        // The 0.1 SOL probe costs 20 whole 6-decimals tokens, so one token is
+        // worth 0.005 SOL.
+        let driver = driver_server(20_000_000).await;
         let config = config::NativePrices {
             estimators: vec![
                 config::NativePriceEstimator::CoinGecko {
@@ -773,6 +795,7 @@ mod tests {
                 },
             ],
             ttl: Duration::from_secs(60),
+            driver_probe_lamports: PROBE_LAMPORTS,
         };
         let prices = NativePrices::new(
             &config,
@@ -780,7 +803,7 @@ mod tests {
             Pubkey::new_unique(),
         );
         let result = prices.prices(HashSet::from([token])).await.unwrap();
-        // 5_000_000 lamports per 10^6 atoms, scaled by 10^9.
+        // 10^8 lamports per 2*10^7 atoms, scaled by 10^9.
         assert_eq!(result.get(&token), Some(&5_000_000_000));
     }
 
@@ -797,13 +820,14 @@ mod tests {
             &config::NativePrices {
                 estimators: vec![dead.clone()],
                 ttl: Duration::from_secs(60),
+                driver_probe_lamports: PROBE_LAMPORTS,
             },
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
         );
         assert!(prices.prices(HashSet::from([token])).await.is_err());
 
-        let driver = driver_server(5_000_000).await;
+        let driver = driver_server(20_000_000).await;
         let prices = NativePrices::new(
             &config::NativePrices {
                 estimators: vec![
@@ -814,6 +838,7 @@ mod tests {
                     },
                 ],
                 ttl: Duration::from_secs(60),
+                driver_probe_lamports: PROBE_LAMPORTS,
             },
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),

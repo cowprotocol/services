@@ -87,6 +87,16 @@ pub struct NativePrices {
     /// How long a fetched price serves auctions before it is refetched.
     #[serde(with = "humantime_serde", default = "default_prices_ttl")]
     pub ttl: Duration,
+    /// Lamports a driver source buys per probe quote. The probe is
+    /// denominated in the native token so its economic size does not depend
+    /// on what one whole unit of the priced token is worth.
+    #[serde(default = "default_driver_probe_lamports")]
+    pub driver_probe_lamports: u64,
+}
+
+/// A tenth of a SOL, the fraction the EVM chains probe with.
+const fn default_driver_probe_lamports() -> u64 {
+    100_000_000
 }
 
 /// One native price source.
@@ -228,6 +238,7 @@ mod tests {
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
         assert_eq!(config.max_indexer_lag_slots, 150);
         assert_eq!(config.native_prices.ttl, Duration::from_secs(30));
+        assert_eq!(config.native_prices.driver_probe_lamports, 100_000_000);
         assert!(matches!(
             &config.native_prices.estimators[..],
             [
