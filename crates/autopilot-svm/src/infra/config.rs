@@ -67,8 +67,8 @@ pub struct Config {
     /// creations and fail at the driver.
     pub sponsoring: Option<Sponsoring>,
     /// Native price lookups for auction tokens. Required with no default
-    /// source, like the EVM estimator configuration: pricing through a
-    /// third party is a deployment decision, never a silent fallback.
+    /// source: pricing through a third party is a deployment decision,
+    /// never a silent fallback.
     pub native_prices: NativePrices,
     /// Logging configuration.
     #[serde(default)]
@@ -81,8 +81,8 @@ pub struct Config {
 pub struct NativePrices {
     /// Base URL of the CoinGecko API.
     pub endpoint: url::Url,
-    /// API key sent with every price request as the CoinGecko Pro header,
-    /// like the EVM estimator.
+    /// API key sent with every price request as the CoinGecko Pro plan
+    /// header.
     #[serde(default)]
     pub api_key: Option<String>,
     /// How long a fetched price serves auctions before it is refetched.

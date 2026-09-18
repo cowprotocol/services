@@ -16,8 +16,7 @@ use {
     url::Url,
 };
 
-/// CoinGecko's authorization header for Pro plans, matching the EVM
-/// estimator.
+/// CoinGecko's authorization header for Pro plans.
 const API_KEY_HEADER: &str = "x-cg-pro-api-key";
 
 /// Mints per `getMultipleAccounts` request, the RPC method's cap.
@@ -29,8 +28,7 @@ const PRICES_CHUNK: usize = 100;
 
 /// Native price lookups for auction tokens, cached per token. A background
 /// task keeps the tokens of the latest lookup fresh, so a cut normally reads
-/// the cache instead of waiting on the price endpoint, like the EVM native
-/// price cache.
+/// the cache instead of waiting on the price endpoint.
 pub struct NativePrices(Arc<Inner>);
 
 struct Inner {
@@ -84,10 +82,11 @@ impl NativePrices {
     }
 
     /// The lamport value of one atom of each token, scaled by 10^9 like
-    /// [`ChainTypes::NATIVE_PRICE_DENOMINATOR`]. Tokens CoinGecko does not
-    /// list are absent from the result. Any lookup failure fails the whole
-    /// call: a partially priced auction would rank solutions on incomparable
-    /// scores.
+    /// [`ChainTypes::NATIVE_PRICE_DENOMINATOR`]. A token without a listing
+    /// is absent from the result: solutions trading it score nothing. A
+    /// failed lookup fails the whole call: whether the remaining prices
+    /// still hold is unknowable, and a wrongly ranked auction is worse than
+    /// none.
     pub async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
         self.0.prices(tokens).await
     }
@@ -143,11 +142,6 @@ impl Inner {
         }
     }
 
-    /// The lamport value of one atom of each token, scaled by 10^9 like
-    /// [`ChainTypes::NATIVE_PRICE_DENOMINATOR`]. Tokens CoinGecko does not
-    /// list are absent from the result. Any lookup failure fails the whole
-    /// call: a partially priced auction would rank solutions on incomparable
-    /// scores.
     async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
@@ -265,13 +259,14 @@ impl Inner {
         // `Url::join` resolves relative to the last slash and would drop a
         // final path segment of an endpoint configured without a trailing
         // slash, so the path is appended textually.
-        let url = format!(
+        let base = Url::parse(&format!(
             "{}/simple/token_price/solana",
             self.endpoint.as_str().trim_end_matches('/')
-        );
+        ))
+        .context("price endpoint")?;
         let mut result = HashMap::new();
         for chunk in tokens.chunks(PRICES_CHUNK) {
-            let mut url = Url::parse(&url).context("price endpoint")?;
+            let mut url = base.clone();
             let addresses = chunk
                 .iter()
                 .map(ToString::to_string)
