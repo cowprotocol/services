@@ -1,11 +1,21 @@
 //! One `Competition` per solver engine, mounted on the API under `/{name}`.
 
 use {
-    super::{Auction, Order, auction::Id, solution::Solution},
+    super::{
+        Auction,
+        Order,
+        auction::Id,
+        settlement::{ResolvedSettlement, is_push_shortfall},
+        solution::Solution,
+    },
     crate::infra::{blockchain::Solana, solver::Solver},
     itertools::Itertools,
     moka::sync::Cache,
-    solana_sdk::{signature::Signature, transaction::VersionedTransaction},
+    solana_sdk::{
+        hash::Hash,
+        signature::Signature,
+        transaction::{TransactionError, VersionedTransaction},
+    },
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -41,14 +51,17 @@ pub(crate) struct Competition {
     solver: Solver,
     blockchain: Arc<Solana>,
     solutions: Cache<Key, CachedSolution>,
+    /// Ascending.
+    push_reduction_bps: Vec<u16>,
 }
 
 impl Competition {
-    pub fn new(solver: Solver, blockchain: Arc<Solana>) -> Self {
+    pub fn new(solver: Solver, blockchain: Arc<Solana>, push_reduction_bps: Vec<u16>) -> Self {
         Self {
             solver,
             blockchain,
             solutions: Cache::builder().time_to_live(SOLUTION_CACHE_TTL).build(),
+            push_reduction_bps,
         }
     }
 
@@ -226,10 +239,9 @@ impl Competition {
             .latest_confirmed_blockhash()
             .await
             .map_err(Error::Rpc)?;
-        let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
-        observe_transaction(&transaction, cu_estimate);
-
-        self.simulate_settlement(&transaction).await?;
+        let transaction = self
+            .simulate_candidates(&resolved, latest.blockhash, cu_estimate)
+            .await?;
 
         // A zero timeout still polls the send future once, which could
         // submit the transaction past the deadline, so handle it before the
@@ -344,21 +356,124 @@ impl Competition {
         Ok(())
     }
 
-    /// Simulate a settlement transaction before sending it.
-    async fn simulate_settlement(&self, transaction: &VersionedTransaction) -> Result<(), Error> {
-        tracing::debug!("simulating settlement transaction");
-        let simulation = self
-            .blockchain
-            .simulate_transaction(transaction)
-            .await
-            .map_err(Error::Rpc)?;
-        if let Some(err) = &simulation.err {
+    /// Simulate the promise and its reduced-push candidates concurrently and
+    /// return the passing transaction with the smallest reduction.
+    ///
+    /// A push the buffer cannot cover is the only failure a smaller push can
+    /// fix (the amount feeds nothing but the `FinalizeSettle` transfer and a
+    /// limit-price check it can only tighten), so a candidate stands in for
+    /// the promise on exactly that failure.
+    ///
+    /// The ladder is fixed because a failed simulation hides the buffer's
+    /// post-swap balance; a sequential probe at the limit-price floor with the
+    /// buffer PDA in the request's `accounts` would measure it instead.
+    async fn simulate_candidates(
+        &self,
+        resolved: &ResolvedSettlement,
+        blockhash: Hash,
+        cu_estimate: Option<u32>,
+    ) -> Result<VersionedTransaction, Error> {
+        let candidates = self.candidates(resolved, blockhash)?;
+        observe_transaction(&candidates[0].transaction, cu_estimate);
+
+        tracing::debug!(
+            candidates = candidates.len(),
+            "simulating settlement candidates"
+        );
+        let simulations = futures::future::join_all(
+            candidates
+                .iter()
+                .map(|candidate| self.blockchain.simulate_transaction(&candidate.transaction)),
+        )
+        .await;
+        let mut outcomes = candidates.into_iter().zip(simulations);
+
+        // Without the promise's result there is no evidence a reduction was
+        // needed.
+        let (promise, simulation) = outcomes
+            .next()
+            .expect("the promise is always the first candidate");
+        let simulation = simulation.map_err(Error::Rpc)?;
+        let Some(err) = simulation.err else {
+            tracing::debug!("settlement simulation passed");
+            self.count_push_reduction("unneeded", 0);
+            return Ok(promise.transaction);
+        };
+        let err = TransactionError::from(err);
+        if !is_push_shortfall(&promise.transaction, &err) {
             tracing::warn!(?err, logs = ?simulation.logs, "settlement simulation failed");
-            return Err(err.clone().into());
+            return Err(Error::SimulationFailed(err.into()));
         }
-        tracing::debug!("settlement simulation passed");
-        Ok(())
+
+        let mut failures = Vec::new();
+        for (candidate, simulation) in outcomes {
+            match simulation {
+                Ok(simulation) if simulation.err.is_none() => {
+                    tracing::info!(
+                        reduction_bps = candidate.reduction_bps,
+                        promised = ?promise.pushes,
+                        pushed = ?candidate.pushes,
+                        "settling with reduced pushes"
+                    );
+                    self.count_push_reduction("recovered", candidate.reduction_bps);
+                    return Ok(candidate.transaction);
+                }
+                simulation => failures.push((
+                    candidate.reduction_bps,
+                    simulation.map(|simulation| simulation.err),
+                )),
+            }
+        }
+        tracing::warn!(
+            ?err,
+            logs = ?simulation.logs,
+            ?failures,
+            "settlement simulation failed on a push shortfall no reduction covered"
+        );
+        self.count_push_reduction("exhausted", 0);
+        Err(Error::SimulationFailed(err.into()))
     }
+
+    fn candidates(
+        &self,
+        resolved: &ResolvedSettlement,
+        blockhash: Hash,
+    ) -> Result<Vec<Candidate>, Error> {
+        let keypair = self.solver.keypair();
+        let mut candidates = vec![Candidate {
+            reduction_bps: 0,
+            pushes: resolved.pushes()?,
+            transaction: resolved.encode(keypair, blockhash)?,
+        }];
+        for &reduction_bps in &self.push_reduction_bps {
+            let reduced = resolved.reduced(reduction_bps)?;
+            let pushes = reduced.pushes()?;
+            // Equal pushes would only repeat the previous simulation.
+            if candidates.last().is_some_and(|last| last.pushes == pushes) {
+                continue;
+            }
+            candidates.push(Candidate {
+                reduction_bps,
+                pushes,
+                transaction: reduced.encode(keypair, blockhash)?,
+            });
+        }
+        Ok(candidates)
+    }
+
+    fn count_push_reduction(&self, outcome: &str, bps: u16) {
+        metrics()
+            .push_reductions
+            .with_label_values(&[outcome, &bps.to_string(), self.solver.name()])
+            .inc();
+    }
+}
+
+/// The promise (`reduction_bps == 0`) or a reduced-push variant of it.
+struct Candidate {
+    reduction_bps: u16,
+    pushes: Vec<u64>,
+    transaction: VersionedTransaction,
 }
 
 /// The program settles exactly the orders passed to `BeginSettle`, so the
@@ -432,6 +547,10 @@ struct Metrics {
         100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000., 1_400_000.
     ))]
     compute_units: prometheus::Histogram,
+    /// Simulated settlements by outcome (`unneeded`, `recovered`,
+    /// `exhausted`), reduction applied in basis points, and solver.
+    #[metric(labels("outcome", "bps", "solver"))]
+    push_reductions: prometheus::IntCounterVec,
 }
 
 fn metrics() -> &'static Metrics {
@@ -487,5 +606,166 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
         Error::Resolve(_) => "resolve_failed",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{
+            domain::{Settlement, Side, Trade, order_uid::OrderUid},
+            infra::config,
+        },
+        cow_settlement_interface::{data::intent::OrderIntent, pda::order::find_order_pda},
+        cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
+        solana_sdk::pubkey::Pubkey,
+        solana_testlib::temp_keypair,
+        std::collections::HashMap,
+    };
+
+    /// [CreateBuffers, CreateAta, BeginSettle, FinalizeSettle]: the mock
+    /// reports every account missing and there is no compute-unit estimate.
+    const FINALIZE_INDEX: u8 = 3;
+
+    fn pubkey(byte: u8) -> Pubkey {
+        Pubkey::new_from_array([byte; 32])
+    }
+
+    fn order(program_id: &Pubkey) -> Order {
+        let mut order = Order {
+            uid: OrderUid([0; 32]),
+            owner: pubkey(0x22),
+            sell_token: pubkey(0x33),
+            buy_token: pubkey(0x44),
+            sell_token_account: pubkey(0x55),
+            buy_token_account: pubkey(0x66),
+            sell_amount: 1_000,
+            buy_amount: 2_000,
+            valid_to: u32::MAX,
+            side: Side::Sell,
+            partially_fillable: false,
+            order_pda: Pubkey::default(),
+            app_data: [0; 32],
+        };
+        let uid = OrderIntent::from(&order).uid();
+        order.uid = OrderUid(uid.to_bytes());
+        order.order_pda = find_order_pda(program_id, &uid).0;
+        order
+    }
+
+    fn solution(order: &Order, executed_buy: u64) -> Solution {
+        Solution {
+            id: 0,
+            solver: pubkey(0x99),
+            prices: HashMap::new(),
+            trades: vec![Trade {
+                order_uid: order.uid,
+                executed_sell: 1_000,
+                executed_buy,
+            }],
+            interactions: Vec::new(),
+            address_lookup_tables: Vec::new(),
+            cu_estimate: None,
+        }
+    }
+
+    fn failed_simulation(err: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "context": { "slot": 1, "apiVersion": "2.0.0" },
+            "value": {
+                "err": err,
+                "logs": [],
+                "accounts": null,
+                "unitsConsumed": 0,
+                "returnData": null,
+            }
+        })
+    }
+
+    fn failed_push() -> serde_json::Value {
+        failed_simulation(serde_json::json!({
+            "InstructionError": [FINALIZE_INDEX, { "Custom": 1 }]
+        }))
+    }
+
+    /// Answers `simulateTransaction` with `simulations` in order, then with
+    /// the mock default: success.
+    fn competition(
+        push_reduction_bps: Vec<u16>,
+        simulations: Vec<serde_json::Value>,
+    ) -> Competition {
+        let keypair_file = temp_keypair();
+        let solver = Solver::new(&config::Solver {
+            name: "mock".to_owned(),
+            endpoint: "http://127.0.0.1:1".parse().unwrap(),
+            signer_keypair: keypair_file.path().to_path_buf(),
+            solve_every_nth_auction: None,
+        })
+        .unwrap();
+        let mut mocks = MocksMap::default();
+        for simulation in simulations {
+            mocks.insert(RpcRequest::SimulateTransaction, simulation);
+        }
+        let blockchain = Arc::new(Solana::new(
+            SolanaRPC::new_mock_with_mocks_map(mocks),
+            pubkey(0xaa),
+        ));
+        Competition::new(solver, blockchain, push_reduction_bps)
+    }
+
+    async fn resolved(competition: &Competition, executed_buy: u64) -> ResolvedSettlement {
+        let program_id = competition.blockchain.program_id();
+        let order = order(&program_id);
+        let settlement = Settlement::new(
+            program_id,
+            Id::new(7).unwrap(),
+            vec![order.clone()],
+            solution(&order, executed_buy),
+        )
+        .unwrap();
+        settlement
+            .resolve_accounts(&competition.blockchain, competition.solver.pubkey())
+            .await
+            .unwrap()
+    }
+
+    /// The 1 bps step rounds to the promise's pushes; simulated instead of
+    /// skipped, it would absorb the second failure and hand the settlement
+    /// to 50 bps.
+    #[tokio::test]
+    async fn settles_the_smallest_passing_reduction() {
+        let competition = competition(vec![1, 50, 100, 200], vec![failed_push(), failed_push()]);
+        let resolved = resolved(&competition, 2_100).await;
+
+        let transaction = competition
+            .simulate_candidates(&resolved, Hash::default(), None)
+            .await
+            .unwrap();
+
+        let reduced = resolved.reduced(100).unwrap();
+        assert_eq!(reduced.pushes().unwrap(), vec![2_079]);
+        assert_eq!(
+            transaction,
+            reduced
+                .encode(competition.solver.keypair(), Hash::default())
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn fails_closed_when_the_promise_fails_without_a_shortfall() {
+        let competition = competition(
+            vec![50, 100, 200],
+            vec![failed_simulation(serde_json::json!("AccountInUse"))],
+        );
+        let resolved = resolved(&competition, 2_100).await;
+
+        let error = competition
+            .simulate_candidates(&resolved, Hash::default(), None)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, Error::SimulationFailed(_)), "{error:?}");
     }
 }

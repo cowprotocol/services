@@ -16,6 +16,11 @@ filter = "info,solana_driver=debug"
 # stderr-threshold = "warn"
 # use-json = false
 
+[settlement]
+# Push reductions, in basis points of the promised buy amount, to fall back to
+# when a solver's swap delivers less than promised. Omit to disable.
+# push-reduction-bps = [1, 2, 4, 8, 16, 32, 64]
+
 [[solvers]]
 name = "baseline"
 endpoint = "http://localhost:8001"
