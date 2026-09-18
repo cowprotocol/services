@@ -280,14 +280,11 @@ impl Competition {
             }
             Error::DeadlineExceeded
         })?
-        .map_err(|err| {
-            if let Some(error) = err
+        .map_err(|err| Error::FailedToSubmit {
+            settlement_error: err
                 .get_transaction_error()
-                .and_then(|err| settlement_error(program_id, &transaction, &err))
-            {
-                tracing::warn!(?error, "the settlement program rejected the transaction");
-            }
-            Error::FailedToSubmit(err)
+                .and_then(|err| settlement_error(program_id, &transaction, &err)),
+            err,
         })?;
 
         Ok(signature)
@@ -367,18 +364,18 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         if let Some(err) = &simulation.err {
-            let error = settlement_error(
-                self.blockchain.program_id(),
-                transaction,
-                &err.clone().into(),
-            );
-            tracing::warn!(
-                ?err,
-                settlement_error = ?error,
-                logs = ?simulation.logs,
-                "settlement simulation failed"
-            );
-            return Err(err.clone().into());
+            // Only the program logs surface here, the error itself carries
+            // the failure and its decoded settlement error to the settle
+            // task's log.
+            tracing::warn!(logs = ?simulation.logs, "settlement simulation failed");
+            return Err(Error::SimulationFailed {
+                settlement_error: settlement_error(
+                    self.blockchain.program_id(),
+                    transaction,
+                    &err.clone().into(),
+                ),
+                err: err.clone(),
+            });
         }
         tracing::debug!("settlement simulation passed");
         Ok(())
@@ -440,13 +437,21 @@ pub(crate) enum Error {
     /// A pre-submission RPC read failed; nothing was submitted.
     #[error("rpc request failed: {0}")]
     Rpc(#[source] cow_solana_rpc::Error),
-    #[error("failed to submit or confirm settlement: {0}")]
-    FailedToSubmit(#[source] cow_solana_rpc::Error),
+    #[error("failed to submit or confirm settlement: {err}, settlement error {settlement_error:?}")]
+    FailedToSubmit {
+        #[source]
+        err: cow_solana_rpc::Error,
+        settlement_error: Option<SettlementError>,
+    },
     #[error("failed to submit or confirm an order creation: {0}")]
     FailedToCreate(#[source] cow_solana_rpc::Error),
     /// The pre-submission simulation failed. The transaction was not sent.
-    #[error("settlement simulation failed: {0}")]
-    SimulationFailed(#[from] cow_solana_rpc::UiTransactionError),
+    #[error("settlement simulation failed: {err}, settlement error {settlement_error:?}")]
+    SimulationFailed {
+        #[source]
+        err: cow_solana_rpc::UiTransactionError,
+        settlement_error: Option<SettlementError>,
+    },
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
@@ -527,9 +532,9 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
         Error::DeadlineExceeded => "deadline_exceeded",
         Error::TooManyPendingSettlements => "throttled",
         Error::Rpc(_) => "rpc_failed",
-        Error::FailedToSubmit(_) => "submit_failed",
+        Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
-        Error::SimulationFailed(_) => "simulation_failed",
+        Error::SimulationFailed { .. } => "simulation_failed",
         Error::Resolve(_) => "resolve_failed",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",
