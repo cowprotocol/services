@@ -126,6 +126,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                     ?indexed,
                     "the indexer lags beyond the watermark, skipping the cut"
                 );
+                metrics().lag_skipped_cuts.inc();
                 return None;
             }
             Ok(_) => {}
@@ -157,6 +158,10 @@ struct Metrics {
     /// Orders excluded from auction cuts because their buy token account
     /// cannot receive the payout.
     unreceivable_orders: prometheus::IntCounter,
+    /// Auction cuts skipped because the indexer lags beyond the watermark.
+    /// The loop keeps spinning and stays live through a skip, so this
+    /// counter is the alerting signal for a stalled indexer.
+    lag_skipped_cuts: prometheus::IntCounter,
 }
 
 fn metrics() -> &'static Metrics {

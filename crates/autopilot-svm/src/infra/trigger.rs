@@ -31,7 +31,12 @@ impl SlotTrigger {
     pub fn new(rpc: SolanaRPC, min_interval: Duration) -> Self {
         let (sender, tip) = watch::channel(0);
         tokio::spawn(async move {
+            // A fixed cadence: a slow RPC answer delays one poll, it does
+            // not shift every following one.
+            let mut poll = tokio::time::interval(POLL_INTERVAL);
+            poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
+                poll.tick().await;
                 match rpc.slot().await {
                     // The slot can regress across RPC nodes, the tip only
                     // moves forward.
@@ -46,7 +51,6 @@ impl SlotTrigger {
                     }
                     Err(err) => tracing::warn!(?err, "failed to poll the slot"),
                 }
-                tokio::time::sleep(POLL_INTERVAL).await;
             }
         });
         Self {
