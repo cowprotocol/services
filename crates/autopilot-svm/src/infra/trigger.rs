@@ -4,13 +4,8 @@ use {
     crate::{domain::cycle::SolanaCycle, run_loop::CycleTrigger},
     async_trait::async_trait,
     cow_solana_rpc::SolanaRPC,
-    std::{
-        sync::{
-            Arc,
-            atomic::{AtomicU64, Ordering},
-        },
-        time::{Duration, Instant},
-    },
+    std::time::{Duration, Instant},
+    tokio::sync::watch,
 };
 
 /// How often the poller asks the node for the current slot. Half a slot, so
@@ -22,7 +17,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(200);
 /// the solvers spent and the submission deadline starts from now, not from
 /// the cut.
 pub struct SlotTrigger {
-    tip: Arc<AtomicU64>,
+    tip: watch::Receiver<u64>,
     /// Minimum time between cycles. Zero yields one cycle per new slot.
     min_interval: Duration,
     /// When the last cycle fired, to hold `min_interval` before the next one.
@@ -34,15 +29,20 @@ pub struct SlotTrigger {
 impl SlotTrigger {
     /// Spawns the background slot poller. Must run inside a tokio runtime.
     pub fn new(rpc: SolanaRPC, min_interval: Duration) -> Self {
-        let tip = Arc::new(AtomicU64::new(0));
-        let poller = Arc::clone(&tip);
+        let (sender, tip) = watch::channel(0);
         tokio::spawn(async move {
             loop {
                 match rpc.slot().await {
                     // The slot can regress across RPC nodes, the tip only
                     // moves forward.
                     Ok(slot) => {
-                        poller.fetch_max(slot, Ordering::Relaxed);
+                        sender.send_if_modified(|tip| {
+                            let advanced = slot > *tip;
+                            if advanced {
+                                *tip = slot;
+                            }
+                            advanced
+                        });
                     }
                     Err(err) => tracing::warn!(?err, "failed to poll the slot"),
                 }
@@ -62,27 +62,28 @@ impl SlotTrigger {
 impl CycleTrigger<SolanaCycle> for SlotTrigger {
     async fn next_cycle(&mut self) -> u64 {
         // Hold at least `min_interval` since the last cycle, then wait for
-        // the poller to observe a new slot.
+        // the poller to observe a new slot. The watch wakes this on every
+        // advance, so the yield adds no polling delay of its own.
         if let Some(last) = self.last_fired {
             let since = last.elapsed();
             if since < self.min_interval {
                 tokio::time::sleep(self.min_interval - since).await;
             }
         }
-        loop {
-            let slot = self.tip.load(Ordering::Relaxed);
-            if slot > self.last_yielded {
-                self.last_yielded = slot;
-                self.last_fired = Some(Instant::now());
-                return slot;
-            }
-            tokio::time::sleep(POLL_INTERVAL).await;
-        }
+        let last_yielded = self.last_yielded;
+        let slot = *self
+            .tip
+            .wait_for(|slot| *slot > last_yielded)
+            .await
+            .expect("the slot poller never stops");
+        self.last_yielded = slot;
+        self.last_fired = Some(Instant::now());
+        slot
     }
 
     /// The freshest polled slot, at most one poll interval old.
     fn current_tip(&self) -> u64 {
-        self.tip.load(Ordering::Relaxed)
+        *self.tip.borrow()
     }
 }
 
