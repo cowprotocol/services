@@ -1201,8 +1201,9 @@ impl Test {
     }
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
-        self.settle_request(solver_name, Some(solution_id), None)
-            .await
+        let request =
+            |deadline: u64| driver::settle_req(deadline, solution_id, &self.auction_id.to_string());
+        self.settle_request(solver_name, "settle", request).await
     }
 
     /// The quote id the fast-path quote of this test was cached under.
@@ -1229,28 +1230,34 @@ impl Test {
         )
     }
 
-    /// Call /settle for the fast path: the `quote_id` the quote was cached
-    /// under, the real `order` and its `limit_prices`.
+    /// Call /settle_fast_path: the `quote_id` the quote was cached under, the
+    /// real `order` and its `limit_prices`.
     pub async fn settle_with_order(
         &self,
         quote_id: i64,
         order: serde_json::Value,
         limit_prices: serde_json::Value,
     ) -> Settle {
-        let fast_path = serde_json::json!({
-            "quoteId": quote_id,
-            "order": order,
-            "limitPrices": limit_prices,
-        });
-        self.settle_request(solver::NAME, None, Some(fast_path))
+        let request = |deadline: u64| {
+            driver::settle_fast_path_req(
+                deadline,
+                quote_id,
+                &self.auction_id.to_string(),
+                order.clone(),
+                limit_prices.clone(),
+            )
+        };
+        self.settle_request(solver::NAME, "settle_fast_path", request)
             .await
     }
 
+    /// POST `request` (built from the computed submission deadline) to the
+    /// driver's `endpoint` and record the resulting balance changes.
     async fn settle_request(
         &self,
         solver_name: &str,
-        solution_id: Option<u64>,
-        fast_path: Option<serde_json::Value>,
+        endpoint: &str,
+        request: impl FnOnce(u64) -> serde_json::Value,
     ) -> Settle {
         let submission_deadline_latest_block: u64 =
             self.web3().provider.get_block_number().await.unwrap()
@@ -1259,15 +1266,10 @@ impl Test {
         let res = self
             .client
             .post(format!(
-                "http://{}/{}/settle",
+                "http://{}/{}/{endpoint}",
                 self.driver.addr, solver_name
             ))
-            .json(&driver::settle_req(
-                submission_deadline_latest_block,
-                solution_id,
-                &self.auction_id.to_string(),
-                fast_path,
-            ))
+            .json(&request(submission_deadline_latest_block))
             .send()
             .await
             .unwrap();
@@ -1279,7 +1281,7 @@ impl Test {
                 body: res.text().await.unwrap(),
             },
         };
-        tracing::debug!(status=?status_code, "got a response from /settle");
+        tracing::debug!(status=?status_code, endpoint, "got a response from the driver");
         Settle {
             old_balances,
             status: settle_status,
