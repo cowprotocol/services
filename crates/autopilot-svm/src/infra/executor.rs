@@ -93,7 +93,8 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             // Held before the dispatch: the next cut must not re-auction
             // these orders while the settlement can still land.
             let uids: Vec<_> = winner.orders().iter().map(|order| order.uid).collect();
-            self.inflight.hold(uids.iter().copied(), deadline);
+            self.inflight
+                .hold(auction_id, winner.solver(), uids.clone(), deadline);
             // A window that cannot be opened must not block the settlement,
             // the dispatch is the priority.
             if let Err(err) = self
