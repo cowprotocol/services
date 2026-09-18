@@ -3,7 +3,7 @@
 use {
     crate::{
         domain::{auction::Order, cycle::SolanaCycle},
-        infra::db,
+        infra::{db, inflight::InFlightOrders},
         run_loop::AuctionProvider,
     },
     async_trait::async_trait,
@@ -23,6 +23,9 @@ pub struct DbAuctionProvider {
     rpc: SolanaRPC,
     /// Slots the indexer may lag behind the tip before cuts are skipped.
     max_indexer_lag: u64,
+    /// Orders with a settlement in flight, excluded from cuts until their
+    /// submission deadline passes.
+    inflight: InFlightOrders,
     /// Last allocated auction id. Ids are unix seconds, bumped past the
     /// previous allocation when cycles land within the same second. Unique
     /// only per process: no table allocates auction ids.
@@ -32,11 +35,17 @@ pub struct DbAuctionProvider {
 }
 
 impl DbAuctionProvider {
-    pub fn new(pool: PgPool, rpc: SolanaRPC, max_indexer_lag: u64) -> Self {
+    pub fn new(
+        pool: PgPool,
+        rpc: SolanaRPC,
+        max_indexer_lag: u64,
+        inflight: InFlightOrders,
+    ) -> Self {
         Self {
             pool,
             rpc,
             max_indexer_lag,
+            inflight,
             last_id: AtomicI64::new(0),
         }
     }
@@ -147,6 +156,19 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
+        // An order with a settlement in flight stays out until the
+        // settlement cannot land any more: a second winner could
+        // double-settle it.
+        let held = self.inflight.held_at(*tip);
+        let before = auction.orders.len();
+        auction.orders.retain(|order| !held.contains(&order.uid));
+        let held_out = before - auction.orders.len();
+        if held_out > 0 {
+            metrics()
+                .held_out_orders
+                .inc_by(u64::try_from(held_out).unwrap_or(u64::MAX));
+            tracing::debug!(held_out, "orders held out with settlements in flight");
+        }
         auction.orders = self.receivable_orders(auction.orders).await;
         (!auction.orders.is_empty()).then_some(auction)
     }
@@ -162,6 +184,9 @@ struct Metrics {
     /// The loop keeps spinning and stays live through a skip, so this
     /// counter is the alerting signal for a stalled indexer.
     lag_skipped_cuts: prometheus::IntCounter,
+    /// Orders excluded from auction cuts while their settlement is in
+    /// flight.
+    held_out_orders: prometheus::IntCounter,
 }
 
 fn metrics() -> &'static Metrics {
@@ -222,6 +247,7 @@ mod tests {
             sqlx::PgPool::connect_lazy("postgresql://").unwrap(),
             SolanaRPC::new_mock_with_mocks(mocks),
             150,
+            InFlightOrders::default(),
         )
     }
 
