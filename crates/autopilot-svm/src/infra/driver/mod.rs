@@ -43,7 +43,27 @@ pub enum Error {
 /// The driver's wire error body, reduced to the routed field.
 #[derive(serde::Deserialize)]
 struct ErrorBody {
-    kind: String,
+    kind: Kind,
+}
+
+/// Mirror of the driver API's wire error kinds. The kind strings are the
+/// wire contract, kept in sync by hand. A kind this mirror does not know
+/// fails the body parse, which reads as not provably unsent, the direction
+/// that only over-holds.
+#[derive(Debug, serde::Deserialize)]
+enum Kind {
+    InvalidAuctionId,
+    SolverFailed,
+    SolutionNotAvailable,
+    DeadlineExceeded,
+    TooManyPendingSettlements,
+    FailedToSubmit,
+    InvalidCreation,
+    FailedToCreate,
+    QuoteSameTokens,
+    QuotingFailed,
+    SimulationFailed,
+    Unknown,
 }
 
 impl Error {
@@ -60,13 +80,13 @@ impl Error {
             return false;
         };
         matches!(
-            body.kind.as_str(),
-            "InvalidAuctionId"
-                | "SolutionNotAvailable"
-                | "TooManyPendingSettlements"
-                | "InvalidCreation"
-                | "FailedToCreate"
-                | "SimulationFailed"
+            body.kind,
+            Kind::InvalidAuctionId
+                | Kind::SolutionNotAvailable
+                | Kind::TooManyPendingSettlements
+                | Kind::InvalidCreation
+                | Kind::FailedToCreate
+                | Kind::SimulationFailed
         )
     }
 }
@@ -133,6 +153,8 @@ mod tests {
         // The driver answers this both before and after the send.
         assert!(!status("DeadlineExceeded").settlement_provably_unsent());
         assert!(!status("FailedToSubmit").settlement_provably_unsent());
+        // A kind newer than this mirror must read as ambiguous.
+        assert!(!status("SomeFutureKind").settlement_provably_unsent());
         let garbage = Error::Status {
             status: StatusCode::BAD_GATEWAY,
             body: "not json".to_string(),
