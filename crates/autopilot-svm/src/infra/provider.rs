@@ -3,10 +3,11 @@
 use {
     crate::{
         domain::{auction::Order, cycle::SolanaCycle},
-        infra::{db, inflight::InFlightOrders},
+        infra::{db, inflight::InFlightOrders, prices::NativePrices},
         run_loop::AuctionProvider,
     },
     async_trait::async_trait,
+    chain_types::solana::Pubkey as ChainPubkey,
     cow_solana_rpc::SolanaRPC,
     solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey},
     spl_token_interface::state::{Account as TokenAccount, AccountState},
@@ -26,6 +27,7 @@ pub struct DbAuctionProvider {
     /// Orders with a settlement in flight, excluded from cuts until their
     /// submission deadline passes.
     inflight: InFlightOrders,
+    prices: NativePrices,
     /// Last allocated auction id. Ids are unix seconds, bumped past the
     /// previous allocation when cycles land within the same second. Unique
     /// only per process: no table allocates auction ids.
@@ -40,12 +42,14 @@ impl DbAuctionProvider {
         rpc: SolanaRPC,
         max_indexer_lag: u64,
         inflight: InFlightOrders,
+        prices: NativePrices,
     ) -> Self {
         Self {
             pool,
             rpc,
             max_indexer_lag,
             inflight,
+            prices,
             last_id: AtomicI64::new(0),
         }
     }
@@ -170,7 +174,29 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             tracing::debug!(held_out, "orders held out with settlements in flight");
         }
         auction.orders = self.receivable_orders(auction.orders).await;
-        (!auction.orders.is_empty()).then_some(auction)
+        if auction.orders.is_empty() {
+            return None;
+        }
+        // A cut without prices would rank solutions on incomparable scores,
+        // so a failed lookup skips the cycle instead.
+        let tokens = auction
+            .orders
+            .iter()
+            .flat_map(|order| [order.sell_token, order.buy_token])
+            .map(|token| Pubkey::new_from_array(token.0))
+            .collect();
+        let prices = match self.prices.prices(tokens).await {
+            Ok(prices) => prices,
+            Err(err) => {
+                tracing::warn!(?err, "native price lookup failed, skipping the cut");
+                return None;
+            }
+        };
+        auction.native_prices = prices
+            .into_iter()
+            .map(|(token, price)| (ChainPubkey(token.to_bytes()), price))
+            .collect();
+        Some(auction)
     }
 }
 
@@ -248,6 +274,7 @@ mod tests {
             SolanaRPC::new_mock_with_mocks(mocks),
             150,
             InFlightOrders::default(),
+            NativePrices::seeded([]),
         )
     }
 
