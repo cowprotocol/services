@@ -7,7 +7,14 @@ use {
     },
     axum::{Router, extract::DefaultBodyLimit, routing::get},
     observe::tracing::distributed::axum::{make_span, record_trace_id},
-    std::{net::SocketAddr, num::NonZero, sync::Arc},
+    std::{
+        net::SocketAddr,
+        num::NonZero,
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
+    },
     tokio_util::sync::CancellationToken,
     tower::ServiceBuilder,
     tower_http::{decompression::RequestDecompressionLayer, trace::TraceLayer},
@@ -101,6 +108,7 @@ impl State {
         Self(Arc::new(Inner {
             competition: Arc::new(competition),
             solve_every_nth_auction,
+            solve_seq: AtomicU64::new(0),
         }))
     }
 
@@ -109,15 +117,24 @@ impl State {
         &self.0.competition
     }
 
-    /// The auction-id stride this solver participates at, when throttled.
+    /// One in every N solves this solver takes part in, when throttled.
     pub(crate) fn solve_every_nth_auction(&self) -> Option<NonZero<u64>> {
         self.0.solve_every_nth_auction
+    }
+
+    /// The next solve's sequence number, counting every solve this driver
+    /// receives. Sampling on this instead of the auction id keeps the stride
+    /// correct however the auction id is derived.
+    pub(crate) fn next_solve_seq(&self) -> u64 {
+        self.0.solve_seq.fetch_add(1, Ordering::Relaxed)
     }
 }
 
 struct Inner {
     /// The competition that runs auctions for this solver engine.
     competition: Arc<domain::Competition>,
-    /// The auction-id stride this solver participates at, when throttled.
+    /// One in every N solves this solver takes part in, when throttled.
     solve_every_nth_auction: Option<NonZero<u64>>,
+    /// Monotonic count of solves received, for the stride sampling.
+    solve_seq: AtomicU64,
 }

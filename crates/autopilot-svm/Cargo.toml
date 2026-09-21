@@ -17,6 +17,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
+bincode = { workspace = true }
 chain-types = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
@@ -27,12 +28,15 @@ database = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
 observe = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solana-sdk = { workspace = true }
+spl-token-interface = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
@@ -43,6 +47,8 @@ url = { workspace = true }
 winner-selection = { workspace = true }
 
 [dev-dependencies]
+base64 = { workspace = true }
+cow-solana-rpc = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

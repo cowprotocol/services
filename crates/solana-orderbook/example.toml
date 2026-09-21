@@ -23,3 +23,14 @@ drivers = ["http://localhost:8000"]
 filter = "info,solana_orderbook=debug"
 # stderr-threshold = "warn"
 # use-json = false
+
+# The Solana JSON-RPC node. Required by sponsored order placement.
+# [rpc]
+# endpoint = "https://api.mainnet-beta.solana.com"
+# Ceiling on one RPC request. Defaults to 5s.
+# request-timeout = "5s"
+
+# Sponsored order placement. Omit the section to disable POST /api/v1/orders.
+# [sponsoring]
+# The funding account creation transactions must name as their fee payer.
+# funder = "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"

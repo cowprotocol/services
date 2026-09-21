@@ -580,13 +580,18 @@ impl Competition {
 
     /// Re-encode a cached quote solution against the real signed `order` and
     /// promote it into the regular settle queue for `/settle`.
+    ///
+    /// TODO: The slippage of AMM interactions will only be capped at a
+    /// fraction of the traded tokens but not at a total ETH value which means
+    /// very large trades can still incur big amounts of slippage. This should
+    /// be fixed.
+    #[instrument(skip_all)]
     pub async fn reencode_quote_solution(
         &self,
         auction_id: auction::Id,
         solution_id: u64,
         mut order: Order,
         limit_prices: solution::LimitPrices,
-        native_prices: HashMap<eth::Address, eth::U256>,
     ) -> Result<(), Error> {
         let cached = self
             .quote_solutions
@@ -605,22 +610,8 @@ impl Competition {
                 solution::Error::FastPathLimitNotMet => Error::FastPathLimitNotMet,
                 other => Error::FastPathInvalidOrder(other),
             })?;
-        let prices: auction::Prices = native_prices
-            .into_iter()
-            .filter_map(
-                |(token, price)| match auction::Price::try_new(price.into()) {
-                    Ok(price) => Some((token.into(), price)),
-                    Err(_) => {
-                        tracing::warn!(?token, "dropping invalid fast-path native price");
-                        None
-                    }
-                },
-            )
-            .collect();
-        let tokens = Arc::new(cached.auction.tokens.with_native_prices(&prices));
         let auction = Auction {
             orders: vec![order],
-            tokens,
             ..cached.auction
         };
         let settlement = solution
@@ -631,6 +622,7 @@ impl Competition {
                 self.solver.solver_native_token(),
             )
             .await?;
+        tracing::debug!(solution_id, orders = ?settlement.orders().keys(), "reencoded fast path solution");
         self.queue_settlement(settlement);
         Ok(())
     }

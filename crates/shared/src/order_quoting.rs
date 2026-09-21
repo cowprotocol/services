@@ -242,14 +242,8 @@ pub struct QuoteData {
     pub solver: Address,
     /// Were we able to verify that this quote is accurate?
     pub verified: bool,
-    /// Whether the quoting solver supports fast-path (out-of-competition)
-    /// execution for this order.
-    pub supports_fast_path: bool,
     /// Additional data associated with the quote.
     pub metadata: QuoteMetadata,
-    /// Auction id linking this quote to `competition_auctions`. Only populated
-    /// for fast-path quotes.
-    pub auction_id: Option<AuctionId>,
 }
 
 /// Collection of data that describes the full quote comptition (request,
@@ -290,6 +284,7 @@ pub struct QuoteResponse {
     pub verified: bool,
     pub supports_fast_path: bool,
     pub metadata: QuoteMetadata,
+    pub solution_id: Option<u64>,
 }
 
 impl QuoteCompetition {
@@ -306,6 +301,11 @@ impl QuoteCompetition {
             quotes,
             metadata,
         }
+    }
+
+    /// All quotes sorted from best to worst. Guaranteed to be non-empty.
+    pub fn quotes(&self) -> &[QuoteResponse] {
+        &self.quotes
     }
 
     /// Flattens the winning quote and metadata from the competition in
@@ -327,9 +327,7 @@ impl QuoteCompetition {
             quote_kind: self.request.quote_kind.clone(),
             solver: winner.solver,
             verified: winner.verified,
-            supports_fast_path: winner.supports_fast_path,
             metadata: winner.metadata.clone(),
-            auction_id: self.metadata.auction_id,
         }
     }
 
@@ -379,10 +377,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             quote_kind: row.quote_kind,
             solver: Address::from_slice(&row.solver.0),
             verified: row.verified,
-            // Not stored in the DB yet; defaults to false until persisted.
-            supports_fast_path: false,
             metadata: row.metadata.try_into()?,
-            auction_id: row.auction_id,
         })
     }
 }
@@ -475,6 +470,7 @@ pub struct QuoteSearchParameters {
     /// Sum of the gas limits of the order's pre- and post-hooks.
     pub hook_gas: u64,
     pub verification: Verification,
+    pub fast_path: bool,
 }
 
 impl QuoteSearchParameters {
@@ -969,6 +965,7 @@ fn assemble_quote_data(
                 jit_orders: estimate.execution.jit_orders,
             }
             .into(),
+            solution_id: estimate.solution_id,
         }
     };
 
@@ -1171,6 +1168,7 @@ mod tests {
                             solver: Address::repeat_byte(1),
                             verified: false,
                             supports_fast_path: false,
+                            solution_id: None,
                             execution: Default::default(),
                         },
                         [],
@@ -1216,6 +1214,7 @@ mod tests {
                     verified: false,
                     supports_fast_path: false,
                     metadata: Default::default(),
+                    solution_id: None,
                 },
                 [],
                 QuoteCompetitionMetadata {
@@ -1264,9 +1263,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
-                    supports_fast_path: false,
                     metadata: Default::default(),
-                    auction_id: None,
                 },
                 sell_amount: U256::from(70),
                 buy_amount: U256::from(29),
@@ -1331,6 +1328,7 @@ mod tests {
                             solver: Address::repeat_byte(1),
                             verified: false,
                             supports_fast_path: false,
+                            solution_id: None,
                             execution: Default::default(),
                         },
                         [],
@@ -1376,6 +1374,7 @@ mod tests {
                     verified: false,
                     supports_fast_path: false,
                     metadata: Default::default(),
+                    solution_id: None,
                 },
                 [],
                 QuoteCompetitionMetadata {
@@ -1424,9 +1423,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
-                    supports_fast_path: false,
                     metadata: Default::default(),
-                    auction_id: None,
                 },
                 sell_amount: U256::from(100),
                 buy_amount: U256::from(42),
@@ -1486,6 +1483,7 @@ mod tests {
                             solver: Address::repeat_byte(1),
                             verified: false,
                             supports_fast_path: false,
+                            solution_id: None,
                             execution: Default::default(),
                         },
                         [],
@@ -1531,6 +1529,7 @@ mod tests {
                     verified: false,
                     supports_fast_path: false,
                     metadata: Default::default(),
+                    solution_id: None,
                 },
                 [],
                 QuoteCompetitionMetadata {
@@ -1579,9 +1578,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: Address::repeat_byte(1),
                     verified: false,
-                    supports_fast_path: false,
                     metadata: Default::default(),
-                    auction_id: None,
                 },
                 sell_amount: U256::from(100),
                 buy_amount: U256::from(42),
@@ -1624,6 +1621,7 @@ mod tests {
                         solver: Address::repeat_byte(1),
                         verified: false,
                         supports_fast_path: false,
+                        solution_id: None,
                         execution: Default::default(),
                     },
                     [],
@@ -1702,6 +1700,7 @@ mod tests {
                         solver: Address::repeat_byte(1),
                         verified: false,
                         supports_fast_path: false,
+                        solution_id: None,
                         execution: Default::default(),
                     },
                     [],
@@ -1766,6 +1765,7 @@ mod tests {
                 from: Address::from([3; 20]),
                 ..Default::default()
             },
+            fast_path: false,
         };
 
         let stored = QuoteData {
@@ -1783,9 +1783,7 @@ mod tests {
             quote_kind: QuoteKind::Standard,
             solver: Address::repeat_byte(1),
             verified: false,
-            supports_fast_path: false,
             metadata: Default::default(),
-            auction_id: None,
         };
         let mut storage = MockQuoteStoring::new();
         {
@@ -1840,6 +1838,7 @@ mod tests {
                 from: Address::from([3; 20]),
                 ..Default::default()
             },
+            fast_path: false,
         };
 
         let stored = QuoteData {
@@ -1857,9 +1856,7 @@ mod tests {
             quote_kind: QuoteKind::Standard,
             solver: Address::repeat_byte(1),
             verified: false,
-            supports_fast_path: false,
             metadata: Default::default(),
-            auction_id: None,
         };
         let mut storage = MockQuoteStoring::new();
         {
@@ -1910,6 +1907,7 @@ mod tests {
                 from: Address::from([3; 20]),
                 ..Default::default()
             },
+            fast_path: false,
         };
 
         let stored = QuoteData {
@@ -1927,9 +1925,7 @@ mod tests {
             quote_kind: QuoteKind::Standard,
             solver: Address::repeat_byte(1),
             verified: false,
-            supports_fast_path: false,
             metadata: Default::default(),
-            auction_id: None,
         };
         let mut storage = MockQuoteStoring::new();
         {
@@ -2190,6 +2186,7 @@ mod tests {
             solver: Address::repeat_byte(7),
             verified: true,
             supports_fast_path: false,
+            solution_id: None,
             execution: Default::default(),
         };
 
@@ -2248,6 +2245,7 @@ mod tests {
             solver: Address::repeat_byte(7),
             verified: false,
             supports_fast_path: false,
+            solution_id: None,
             execution: Default::default(),
         };
 
@@ -2353,6 +2351,7 @@ mod tests {
                     solver: Address::repeat_byte(1),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
                 Ok(price_estimation::Estimate {
@@ -2361,6 +2360,7 @@ mod tests {
                     solver: Address::repeat_byte(2),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ])
@@ -2409,6 +2409,7 @@ mod tests {
                     solver: Address::repeat_byte(1),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
                 // zero gas - must be dropped silently
@@ -2418,6 +2419,7 @@ mod tests {
                     solver: Address::repeat_byte(2),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
                 // zero out_amount - must be dropped silently
@@ -2427,6 +2429,7 @@ mod tests {
                     solver: Address::repeat_byte(3),
                     verified: false,
                     supports_fast_path: false,
+                    solution_id: None,
                     execution: Default::default(),
                 }),
             ])
@@ -2514,6 +2517,7 @@ mod tests {
                 solver: Address::repeat_byte(1),
                 verified: false,
                 supports_fast_path: false,
+                solution_id: None,
                 execution: Default::default(),
             })])
             .boxed()
@@ -2563,6 +2567,7 @@ mod tests {
                 solver: Address::repeat_byte(1),
                 verified: false,
                 supports_fast_path: false,
+                solution_id: None,
                 execution: Default::default(),
             }
         }

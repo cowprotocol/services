@@ -1,5 +1,6 @@
 use {
     crate::{
+        fee::VolumeFeePolicy,
         order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
             AdditionalCost,
@@ -13,7 +14,7 @@ use {
     account_balances::{self, BalanceFetching, TransferSimulationError},
     alloy::primitives::{Address, B256, U256},
     anyhow::{Result, anyhow},
-    app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
+    app_data::{AppDataHash, ExecutionMode, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
@@ -277,6 +278,11 @@ pub enum ValidationError {
     /// `valid_from` leaves too small a window before `valid_to` for the order
     /// to be settled.
     InvalidValidFrom,
+    /// The order opts into the fast path but the signed limit price doesn't
+    /// leave room for the configured protocol and partner volume fees.
+    /// Applying those fees would push the effective execution price past
+    /// the user's limit, making the order unfillable on chain.
+    FastPathLimitTooTight,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
     TooMuchGas,
@@ -388,6 +394,14 @@ pub struct OrderValidator {
     app_data_validator: Validator,
     max_gas_per_order: u64,
     same_tokens_policy: SameTokensPolicy,
+    /// Volume-fee policy the orderbook consults to determine the protocol
+    /// volume factor applicable to a fast-path order's token pair. `None`
+    /// means no protocol volume fee is applied (partner fees may still be).
+    protocol_volume_fee_policy: Option<Arc<VolumeFeePolicy>>,
+    /// Upper bound the orderbook enforces on the combined partner
+    /// volume-fee factor from an order's app-data. `None` disables partner
+    /// fees entirely for the fast-path limit-price check.
+    max_partner_fee: Option<configs::fee_factor::FeeFactor>,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -453,6 +467,16 @@ impl OrderValidator {
         app_data_validator: Validator,
         max_gas_per_order: u64,
         same_tokens_policy: SameTokensPolicy,
+        // Default fast-path exclusivity applied when the app-data doesn't
+        // Volume-fee policy the fast-path limit-price check consults for the
+        // protocol side of the fee stack. `None` skips the protocol
+        // contribution.
+        protocol_volume_fee_policy: Option<Arc<VolumeFeePolicy>>,
+        // Max partner volume-fee budget consulted by the fast-path
+        // limit-price check; should mirror the autopilot's
+        // `fee_policies.max_partner_fee`. `None` disables partner fees for
+        // the check.
+        max_partner_fee: Option<configs::fee_factor::FeeFactor>,
     ) -> Self {
         Self {
             native_token,
@@ -470,7 +494,39 @@ impl OrderValidator {
             app_data_validator,
             max_gas_per_order,
             same_tokens_policy,
+            protocol_volume_fee_policy,
+            max_partner_fee,
         }
+    }
+
+    /// Validates that a fast-path order's signed sell/buy amounts leave
+    /// enough room for the compounded protocol + partner volume fees the
+    /// autopilot would charge at settlement time. The pure math lives in
+    /// [`crate::fee::check_fast_path_limit_fits`]; the autopilot's
+    /// fast-path handler calls the same helper.
+    fn check_fast_path_limit_price_fits(
+        &self,
+        data: &OrderData,
+        quote: &Quote,
+        app_data: &ValidatedAppData,
+    ) -> Result<(), ValidationError> {
+        let protocol_factor = self.protocol_volume_fee_policy.as_ref().and_then(|policy| {
+            policy.get_applicable_volume_fee_factor(data.buy_token, data.sell_token, None)
+        });
+        let partner_factors = self
+            .max_partner_fee
+            .map(|cap| crate::fee::capped_partner_volume_factors(&app_data.protocol, cap))
+            .unwrap_or_default();
+
+        crate::fee::check_fast_path_limit_fits(
+            data.kind,
+            data.sell_amount,
+            data.buy_amount,
+            quote.sell_amount,
+            quote.buy_amount,
+            protocol_factor.into_iter().chain(partner_factors),
+        )
+        .map_err(|_| ValidationError::FastPathLimitTooTight)
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
@@ -653,6 +709,51 @@ impl OrderValidator {
             }
         }
     }
+
+    fn compute_and_validate_valid_from(
+        &self,
+        app_data: &OrderAppData,
+        quote: Option<&Quote>,
+        order: &OrderData,
+    ) -> Result<Option<u32>, ValidationError> {
+        if matches!(
+            app_data.inner.protocol.execution_mode,
+            ExecutionMode::FastPath
+        ) {
+            let Some(quote) = quote else {
+                return Err(ValidationError::FastPathLimitTooTight);
+            };
+            // Fast-path settlement has no surplus by design — the solver's
+            // on-chain output is what the quote said. Any volume fees the
+            // autopilot would charge at settlement time eat into that
+            // output. If the user signed a limit that doesn't leave room
+            // for those fees, the trade would revert on chain and the
+            // solver would be blamed for a failure they had no way to
+            // avoid. Reject at placement instead so integrators find out
+            // before signing rather than after landing an un-settleable
+            // order.
+            self.check_fast_path_limit_price_fits(order, quote, &app_data.inner)?;
+            // The autopilot's fast-path handler owns `valid_from` for
+            // these orders (see `crates/autopilot/src/fast_path.rs`); the
+            // orderbook writes `NULL` so the handler can classify the
+            // order after placement.
+            return Ok(None);
+        }
+
+        // Non-fast-path orders may still declare `valid_from` explicitly
+        // in app-data.
+        let valid_from = match app_data.inner.protocol.execution_mode {
+            ExecutionMode::ValidFrom(valid_from) => Some(valid_from),
+            _ => None,
+        };
+        if let Some(valid_from) = valid_from {
+            let min = self.validity_configuration.min.as_secs();
+            if u64::from(order.valid_to) < u64::from(valid_from) + min {
+                return Err(ValidationError::InvalidValidFrom);
+            }
+        }
+        Ok(valid_from)
+    }
 }
 
 #[async_trait::async_trait]
@@ -762,11 +863,6 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Full { full } => validate(full)?,
         };
 
-        if app_data.protocol.enable_fast_path {
-            return Err(AppDataValidationError::Invalid(anyhow::anyhow!(
-                "'enableFastPath' is not yet supported"
-            )));
-        }
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
@@ -917,6 +1013,10 @@ impl OrderValidating for OrderValidator {
             .map_err(|_| ValidationError::InvalidSignature)?,
             hook_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
+            fast_path: matches!(
+                app_data.inner.protocol.execution_mode,
+                ExecutionMode::FastPath
+            ),
         };
 
         let quote = match get_or_create_quote(&*self.quoter, &quote_parameters, order.quote_id)
@@ -961,12 +1061,11 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
-        if let Some(valid_from) = app_data.inner.protocol.valid_from {
-            let min = self.validity_configuration.min.as_secs();
-            if u64::from(data.valid_to) < u64::from(valid_from) + min {
-                return Err(ValidationError::InvalidValidFrom);
-            }
-        }
+        let valid_from = self.compute_and_validate_valid_from(&app_data, quote.as_ref(), &data)?;
+        let fast_path = matches!(
+            app_data.inner.protocol.execution_mode,
+            ExecutionMode::FastPath
+        );
 
         let order = Order {
             metadata: OrderMetadata {
@@ -984,7 +1083,8 @@ impl OrderValidating for OrderValidator {
                     .map(|q| q.try_to_model_order_quote())
                     .transpose()
                     .map_err(ValidationError::Other)?,
-                valid_from: app_data.inner.protocol.valid_from,
+                valid_from,
+                fast_path,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -1242,6 +1342,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         // App data with a pre-hook (a gasless approval, the shape that surfaced
@@ -1309,6 +1411,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
         std::assert_matches!(
             validator
@@ -1438,6 +1542,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1503,6 +1609,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::AllowSell,
+            None,
+            None,
         );
 
         let order = || PreOrderData {
@@ -1600,6 +1708,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Allow,
+            None,
+            None,
         );
 
         let valid_to =
@@ -1635,10 +1745,10 @@ mod tests {
     #[tokio::test]
     async fn enforces_minimum_validity_window() {
         let mut order_quoter = MockOrderQuoting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
+        let mut balance_fetcher = MockBalanceFetching::new();
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Ok(()));
@@ -1674,6 +1784,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let now = time::now_in_epoch_seconds();
@@ -1722,7 +1834,34 @@ mod tests {
             validate(delayed(now + 50, now + 90)).await,
             Err(ValidationError::InvalidValidFrom)
         );
-        validate(delayed(now + 50, now + 150)).await.unwrap();
+        // A user-set `valid_from` is respected.
+        let (order, _) = validate(delayed(now + 50, now + 150)).await.unwrap();
+        assert_eq!(order.metadata.valid_from, Some(now + 50));
+
+        // Fast-path orders never carry `valid_from` at placement — the
+        // autopilot's fast-path handler owns that field. See
+        // `crates/autopilot/src/fast_path.rs`.
+        let fast_path = OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableFastPath": true } }).to_string(),
+            },
+            ..plain(now + 150)
+        };
+        let (order, _) = validate(fast_path).await.unwrap();
+        assert!(order.metadata.valid_from.is_none());
+        assert!(order.metadata.fast_path);
+
+        let both = OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableFastPath": true, "validFrom": now + 50 } })
+                    .to_string(),
+            },
+            ..plain(now + 150)
+        };
+        std::assert_matches!(
+            validate(both).await,
+            Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
+        );
     }
 
     #[tokio::test]
@@ -1773,6 +1912,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let creation = OrderCreation {
@@ -1983,6 +2124,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let creation = OrderCreation {
@@ -2056,6 +2199,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let creation = OrderCreation {
@@ -2117,6 +2262,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -2171,6 +2318,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let order = OrderCreation {
@@ -2229,6 +2378,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let order = OrderCreation {
@@ -2293,6 +2444,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let order = OrderCreation {
@@ -2358,6 +2511,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let order = OrderCreation {
@@ -2417,6 +2572,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let creation = OrderCreation {
@@ -2487,6 +2644,8 @@ mod tests {
                 Default::default(),
                 u64::MAX,
                 SameTokensPolicy::Disallow,
+                None,
+                None,
             );
 
             let order = OrderCreation {
@@ -2581,6 +2740,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         // Test with flashloan hint that covers the sell amount
@@ -2718,6 +2879,7 @@ mod tests {
                 from: Address::from([0xf0; 20]),
                 ..Default::default()
             },
+            fast_path: false,
         };
         let quote_data = Quote {
             fee_amount: alloy::primitives::U256::from(6),
@@ -2948,6 +3110,7 @@ mod tests {
                 receiver: Address::from([0xf0; 20]),
                 app_data: Arc::new("{}".to_string()),
             },
+            fast_path: false,
         };
         let quote_id = Some(42);
         let quote_data = Quote {
@@ -2995,6 +3158,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let creation = OrderCreation {
@@ -3091,6 +3256,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         )
     }
 

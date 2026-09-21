@@ -1433,7 +1433,8 @@ components:
           description: >
             Earliest time (unix seconds) at which the order may enter a batch
             auction, taken from the order's `appData`. Omitted when the order
-            has no lower bound (eligible immediately).
+            has no lower bound (eligible immediately). Mutually exclusive with
+            `enableFastPath`: an order that sets both is rejected.
           type: integer
           nullable: true
         settlementContract:
@@ -2122,6 +2123,8 @@ components:
               description: >
                 Signals that this quote is intended for fast-path
                 (out-of-competition) execution. Propagated to the solver.
+                Mutually exclusive with the `appData` `validFrom` field: an
+                order that sets both is rejected.
               type: boolean
               default: false
             signingScheme:

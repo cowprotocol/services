@@ -48,7 +48,11 @@ async fn sell() {
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("bitget", super::config(&api.address)).await;
+    // The swap gets simulated to determine its gas usage.
+    let node = mock::http::setup(vec![mock::node::gas_simulation(303_750)]).await;
+
+    let engine =
+        tests::SolverEngine::new("bitget", super::config(&api.address, &node.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -82,7 +86,7 @@ async fn sell() {
                     "fullBuyAmount": "200000000000000000000",
                     "kind": "sell",
                     "partiallyFillable": false,
-                    "class": "market",
+                    "class": "limit",
                     "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
                     "preInteractions": [],
@@ -139,12 +143,13 @@ async fn sell() {
                  "postInteractions": [],
                  "preInteractions": [],
                  "prices":{
-                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "6556259156432631386442",
-                    "0xe41d2489571d322189246dafa5ebde1f4699f498": "1000000000000000000"
+                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "6515924296132454848400",
+                    "0xe41d2489571d322189246dafa5ebde1f4699f498": "993847885000000000"
                  },
                  "trades":[
                     {
-                       "executedAmount": "1000000000000000000",
+                       "executedAmount": "993847885000000000",
+                       "fee": "6152115000000000",
                        "kind": "fulfillment",
                        "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                     }
@@ -211,8 +216,14 @@ async fn buy() {
     ])
     .await;
 
-    let engine =
-        tests::SolverEngine::new("bitget", super::config_with_buy_orders(&api.address)).await;
+    // The swap gets simulated to determine its gas usage.
+    let node = mock::http::setup(vec![mock::node::gas_simulation(303_750)]).await;
+
+    let engine = tests::SolverEngine::new(
+        "bitget",
+        super::config_with_buy_orders(&api.address, &node.address),
+    )
+    .await;
 
     let solution = engine
         .solve(json!({
@@ -246,7 +257,7 @@ async fn buy() {
                     "fullBuyAmount": "200000000000000000000",
                     "kind": "buy",
                     "partiallyFillable": false,
-                    "class": "market",
+                    "class": "limit",
                     "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
                     "preInteractions": [],
@@ -309,6 +320,7 @@ async fn buy() {
                  "trades":[
                     {
                        "executedAmount": "200000000000000000000",
+                       "fee": "6152115000000000",
                        "kind": "fulfillment",
                        "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                     }
@@ -325,7 +337,11 @@ async fn buy_disabled() {
     // either swap endpoint and must produce no solution for a buy order.
     let api = mock::http::setup(vec![]).await;
 
-    let engine = tests::SolverEngine::new("bitget", super::config(&api.address)).await;
+    // Buy orders are disabled, so the node is never queried.
+    let node = mock::http::setup(vec![]).await;
+
+    let engine =
+        tests::SolverEngine::new("bitget", super::config(&api.address, &node.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -359,7 +375,7 @@ async fn buy_disabled() {
                     "fullBuyAmount": "200000000000000000000",
                     "kind": "buy",
                     "partiallyFillable": false,
-                    "class": "market",
+                    "class": "limit",
                     "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
                     "preInteractions": [],

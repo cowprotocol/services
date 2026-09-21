@@ -27,4 +27,3 @@ signer-keypair = "/path/to/keypair.json"
 # value, sitting the rest out so other solvers win settlements to test
 # against. Omit to participate in every auction.
 # solve-every-nth-auction = 5
-max-in-flight = 1

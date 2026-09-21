@@ -354,8 +354,8 @@ impl Decoder {
     }
 }
 
-/// One slot's accumulated output, flushed once the stream moves past the
-/// hold-back window.
+/// One slot's accumulated output, flushed when its confirmed status
+/// arrives.
 #[derive(Default)]
 struct SlotBuffer {
     events: Vec<DecodedEvent>,
@@ -414,14 +414,19 @@ fn decode_settlement(
                 Ok(Vec::new())
             }
             // No domain event: `Initialize` bootstraps program state,
-            // `ReclaimBuffer` recovers rent, and `TransferAuthority`/`AddSolver`
-            // manage program governance, none touching order state.
+            // `ReclaimBuffer` recovers rent, and `TransferAuthority` plus
+            // `AddSolver`/`RemoveSolver` manage program governance, none
+            // touching order state.
             // TODO: map `ReclaimOrder` to `OrderClosed`.
+            // TODO: index `CreateSelfOrder` (fee-withdrawal orders) once fee
+            // handling lands.
             SettlementInstruction::Initialize
             | SettlementInstruction::ReclaimOrder
             | SettlementInstruction::ReclaimBuffer
             | SettlementInstruction::TransferAuthority
-            | SettlementInstruction::AddSolver => Ok(Vec::new()),
+            | SettlementInstruction::AddSolver
+            | SettlementInstruction::RemoveSolver
+            | SettlementInstruction::CreateSelfOrder => Ok(Vec::new()),
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
@@ -837,7 +842,8 @@ fn relevant_instructions(
     resolved
 }
 
+mod backfill;
+mod replay;
+
 #[cfg(test)]
 mod tests;
-
-mod backfill;

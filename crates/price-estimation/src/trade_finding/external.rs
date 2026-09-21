@@ -72,7 +72,7 @@ impl ExternalTradeFinder {
                 amount: query.in_amount.get(),
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
-                fast_path: query.fast_path,
+                enable_fast_path: query.fast_path,
                 auction_id: query.auction_id,
             };
             let block_dependent = query.block_dependent;
@@ -122,9 +122,10 @@ impl ExternalTradeFinder {
                                 })
                         });
 
-                    if result
-                        .as_ref()
-                        .is_ok_and(|quote| order.fast_path && !quote.supports_fast_path())
+                    if order.enable_fast_path
+                        && result
+                            .as_ref()
+                            .is_ok_and(|quote| !quote.supports_fast_path())
                     {
                         Err(PriceEstimationError::UnsupportedOrderType(
                             "solver does not support fast path".to_string(),
@@ -184,6 +185,7 @@ impl From<dto::LegacyQuote> for LegacyTrade {
             solver: quote.solver,
             tx_origin: quote.tx_origin,
             supports_fast_path: quote.supports_fast_path,
+            solution_id: quote.solution_id,
         }
     }
 }
@@ -215,6 +217,7 @@ impl From<dto::Quote> for Trade {
             tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders,
             supports_fast_path: quote.supports_fast_path,
+            solution_id: quote.solution_id,
         }
     }
 }
@@ -363,6 +366,7 @@ impl TradeFinding for ExternalTradeFinder {
             gas_estimate,
             solver: trade.solver(),
             supports_fast_path: trade.supports_fast_path(),
+            solution_id: trade.solution_id(),
             execution: QuoteExecution {
                 interactions: map_interactions_data(trade.interactions()),
                 pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -403,7 +407,7 @@ pub mod dto {
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        pub fast_path: bool,
+        pub enable_fast_path: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub auction_id: Option<i64>,
     }
@@ -429,6 +433,8 @@ pub mod dto {
         pub tx_origin: Option<Address>,
         #[serde(default)]
         pub supports_fast_path: bool,
+        #[serde(default)]
+        pub solution_id: Option<u64>,
     }
 
     #[serde_as]
@@ -448,6 +454,8 @@ pub mod dto {
         pub jit_orders: Vec<JitOrder>,
         #[serde(default)]
         pub supports_fast_path: bool,
+        #[serde(default)]
+        pub solution_id: Option<u64>,
     }
 
     #[serde_as]

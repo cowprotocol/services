@@ -10,7 +10,7 @@ use {
         rpc::types::Log,
     },
     anyhow::{Context, Result, anyhow, bail},
-    app_data::{AppDataHash, ProtocolAppData},
+    app_data::{AppDataHash, ExecutionMode, ProtocolAppData},
     chrono::{TimeZone, Utc},
     contracts::{
         CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
@@ -507,7 +507,7 @@ where
                     solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.clone().try_into()?,
-                    auction_id: quote.data.auction_id,
+                    quote_id: Some(quote_id),
                 }),
                 Err(err) => {
                     let err_label = err.to_metrics_label();
@@ -570,6 +570,7 @@ async fn get_quote(
         // Because we want to be generous with refunding EthFlow orders we therefore don't request a
         // verified quote here on purpose.
         verification: Default::default(),
+        fast_path: false,
     };
 
     get_or_create_quote(quoter, &parameters, Some(*quote_id))
@@ -628,6 +629,9 @@ fn convert_onchain_order_placement(
         // Backfilled from the order's app-data in `handle_app_data` before the
         // order is persisted; the full app-data isn't available at this point.
         valid_from: None,
+        // Same as `valid_from`: filled in from the app-data after it has been
+        // fetched.
+        fast_path: false,
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -680,10 +684,18 @@ fn extract_order_data_from_onchain_order_placement_event(
     Ok((order_data, owner, signing_scheme, order_uid))
 }
 
-/// Populates all app-data-derived order fields before the orders are persisted:
-/// backfills each order's `valid_from` and indexes its pre/post hook
-/// interactions. Must run before the orders are inserted (it mutates them).
-/// Orders whose app-data is unknown or unparseable are left unchanged.
+/// Populates all app-data-derived order fields before the orders are
+/// persisted: sets `fast_path` from the `enableFastPath` app-data flag,
+/// backfills `valid_from` for non-fast-path orders that requested one,
+/// and indexes pre/post hook interactions. Must run before the orders
+/// are inserted (it mutates them). Orders whose app-data is unknown or
+/// unparseable are left unchanged.
+///
+/// For fast-path orders `valid_from` is intentionally left `NULL`: the
+/// autopilot's fast-path handler (`crates/autopilot/src/fast_path.rs`)
+/// owns that field and will set it either to `now()` (feature disabled
+/// or limit-price check failed) or to `now + exclusivity` when it
+/// initiates the fast-path settle.
 async fn handle_app_data(
     db: &mut PgConnection,
     orders: &mut [Order],
@@ -698,12 +710,28 @@ async fn handle_app_data(
             continue;
         };
         let Ok(parsed) = app_data::parse(&appdata_json) else {
-            tracing::debug!(appdata = %String::from_utf8_lossy(&appdata_json), "could not parse appdata");
+            // Unparseable app-data can't be settled correctly, and an on-chain
+            // order can't be rejected at placement, so mark it invalid to keep
+            // it out of auctions.
+            tracing::debug!(order = ?order.uid, "marking order invalid: unparseable appdata");
+            database::onchain_broadcasted_orders::set_placement_error(
+                db,
+                &order.uid,
+                OnchainOrderPlacementError::InvalidOrderData,
+            )
+            .await
+            .context("failed to mark order invalid")?;
             continue;
         };
 
         store_hooks(db, order, &parsed, trampoline).await?;
-        order.valid_from = parsed.valid_from.map(i64::from);
+        // `validFrom` is only honoured for non-fast-path orders; fast-path
+        // orders get their `valid_from` from the autopilot's fast-path handler.
+        match parsed.execution_mode {
+            ExecutionMode::FastPath => order.fast_path = true,
+            ExecutionMode::ValidFrom(valid_from) => order.valid_from = Some(i64::from(valid_from)),
+            ExecutionMode::RegularAuction => {}
+        }
     }
     Ok(())
 }
@@ -1044,6 +1072,7 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
             valid_from: None,
+            fast_path: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1157,6 +1186,7 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
             valid_from: None,
+            fast_path: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1312,7 +1342,7 @@ mod test {
             solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.clone().try_into().unwrap(),
-            auction_id: quote.data.auction_id,
+            quote_id: Some(0i64),
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(

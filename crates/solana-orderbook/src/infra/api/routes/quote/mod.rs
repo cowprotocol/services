@@ -5,15 +5,21 @@ pub mod dto;
 use {
     crate::infra::{
         api::{State, ValidationParameters, error, extract},
+        db,
         quoter,
     },
     axum::{Json, http::StatusCode},
     chrono::Utc,
+    database::{byte_array::ByteArray, solana::OrderKind},
     std::time::Duration,
 };
 
 /// How long a quoted order stays valid when the request names no validity.
 const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
+
+/// TODO: fail the quote on a store error instead, like the EVM orderbook,
+/// once fee policies consume the link and the id becomes load-bearing.
+const SAVE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Handle `POST /api/v1/quote`.
 pub async fn quote(
@@ -49,6 +55,35 @@ pub async fn quote(
             error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
         })?;
 
+    let expiration = now + state.quote_expiry();
+    // A failed insert answers without an id instead of failing the quote,
+    // since the fees are not yet implemented and stored quote are not mandatory
+    // at the moment.
+    let quote = db::Quote {
+        sell_token: ByteArray(request.sell_token.to_bytes()),
+        buy_token: ByteArray(request.buy_token.to_bytes()),
+        sell_amount: quoted.sell_amount,
+        buy_amount: quoted.buy_amount,
+        kind: match kind {
+            dto::Kind::Sell => OrderKind::Sell,
+            dto::Kind::Buy => OrderKind::Buy,
+        },
+        solver: ByteArray(quoted.solver.to_bytes()),
+        expiration,
+    };
+    let save = db::save_quote(state.pool(), &quote);
+    let id = match tokio::time::timeout(SAVE_TIMEOUT, save).await {
+        Ok(Ok(id)) => Some(id),
+        Ok(Err(err)) => {
+            tracing::error!(?err, "quote insert failed");
+            None
+        }
+        Err(_) => {
+            tracing::error!("quote insert timed out");
+            None
+        }
+    };
+
     Ok(Json(dto::Response {
         quote: dto::Quote {
             sell_token: request.sell_token,
@@ -63,8 +98,8 @@ pub async fn quote(
             partially_fillable: false,
         },
         from: request.from,
-        expiration: now + state.quote_expiry(),
-        id: None,
+        expiration,
+        id,
         verified: false,
     }))
 }

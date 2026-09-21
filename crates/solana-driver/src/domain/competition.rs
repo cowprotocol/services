@@ -122,24 +122,42 @@ impl Competition {
         auction_id: Id,
         solution_id: u64,
         submission_deadline_slot: u64,
+        creations: Vec<VersionedTransaction>,
     ) -> Result<Signature, Error> {
         let this = Arc::clone(self);
         let task = tokio::spawn(
             async move {
                 let result = this
-                    .process_settle_request(auction_id, solution_id, submission_deadline_slot)
+                    .process_settle_request(
+                        auction_id,
+                        solution_id,
+                        submission_deadline_slot,
+                        creations,
+                    )
                     .await;
                 match &result {
                     Ok(signature) => tracing::info!(%signature, "settlement submitted"),
                     Err(error) => tracing::warn!(?error, "settle failed"),
                 }
+                metrics()
+                    .outcomes
+                    .with_label_values(&[outcome_label(&result), this.solver.name()])
+                    .inc();
                 result
             }
             .instrument(tracing::info_span!("settle", ?auction_id, solution_id)),
         );
         task.await.unwrap_or_else(|error| {
             tracing::error!(?error, "settle task panicked");
-            Err(Error::TaskPanicked)
+            // The task's own counting unwound with the panic, so the panic
+            // is counted here. Every other outcome counts inside the task,
+            // which keeps counting when a disconnect detaches it.
+            let result = Err(Error::TaskPanicked);
+            metrics()
+                .outcomes
+                .with_label_values(&[outcome_label(&result), self.solver.name()])
+                .inc();
+            result
         })
     }
 
@@ -159,6 +177,7 @@ impl Competition {
         auction_id: Id,
         solution_id: u64,
         submission_deadline_slot: u64,
+        creations: Vec<VersionedTransaction>,
     ) -> Result<Signature, Error> {
         let key = Key {
             auction_id,
@@ -168,6 +187,7 @@ impl Competition {
             .solutions
             .get(&key)
             .ok_or(Error::SolutionNotAvailable)?;
+        let cu_estimate = solution.cu_estimate;
 
         let current_slot = self.blockchain.slot().await.map_err(Error::Rpc)?;
         if current_slot >= submission_deadline_slot {
@@ -190,6 +210,13 @@ impl Competition {
 
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
 
+        // Land the creations only after the solution validated: an invalid
+        // solution must not cost the funder any fees. They get the full
+        // remaining window: the settlement cannot run without them, so
+        // reserving time for it would only waste attempts, and the
+        // zero-timeout guard below aborts retryably when nothing remains.
+        self.land_creations(&creations, deadline).await?;
+
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?;
@@ -200,8 +227,17 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
+        observe_transaction(&transaction, cu_estimate);
 
         self.simulate_settlement(&transaction).await?;
+
+        // A zero timeout still polls the send future once, which could
+        // submit the transaction past the deadline, so handle it before the
+        // solution is consumed and while a retry is still possible.
+        let confirm_timeout = deadline.saturating_duration_since(Instant::now());
+        if confirm_timeout.is_zero() {
+            return Err(Error::DeadlineExceeded);
+        }
 
         // Consume the entry only now, when the transaction is about to reach
         // the network. One atomic removal takes the chosen solution. A
@@ -214,24 +250,98 @@ impl Competition {
             return Err(Error::SolutionNotAvailable);
         }
 
+        // The driver signs the transaction, so the signature is known before
+        // the send. A confirmation that never returns must still leave it in
+        // the logs.
+        if let Some(signature) = transaction.signatures.first() {
+            tracing::info!(%signature, "submitting settlement");
+        }
+
         // TODO: a provably unsent transaction (connect failure at send time)
         // loses the solution here; restore the cache entry on that class. Needs
         // the send/confirm split in cow-solana-rpc (planned follow-up PR).
-        // A zero timeout still polls the send future once, which could
-        // submit the transaction past the deadline, so handle it here.
-        let confirm_timeout = deadline.saturating_duration_since(Instant::now());
-        if confirm_timeout.is_zero() {
-            return Err(Error::DeadlineExceeded);
-        }
         let signature = tokio::time::timeout(
             confirm_timeout,
             self.blockchain.send_and_confirm_transaction(&transaction),
         )
         .await
-        .map_err(|_| Error::DeadlineExceeded)?
+        .map_err(|_| {
+            if let Some(signature) = transaction.signatures.first() {
+                tracing::warn!(
+                    %signature,
+                    "confirmation timed out, the transaction may still land"
+                );
+            }
+            Error::DeadlineExceeded
+        })?
         .map_err(Error::FailedToSubmit)?;
 
         Ok(signature)
+    }
+
+    /// Land the sponsored creation transactions before `deadline`. The
+    /// settlement needs them confirmed first: `BeginSettle` reads the order
+    /// PDAs, and the simulation runs against confirmed state. The
+    /// transactions are independent, so they land concurrently. A send
+    /// failure whose signature the cluster already knows means an earlier
+    /// attempt landed the creation, which is success. A creation that landed
+    /// but failed on chain also counts as known: the settlement then fails
+    /// at the simulation over the missing order PDA.
+    async fn land_creations(
+        &self,
+        creations: &[VersionedTransaction],
+        deadline: Instant,
+    ) -> Result<(), Error> {
+        if creations.is_empty() {
+            return Ok(());
+        }
+        let timeout = deadline.saturating_duration_since(Instant::now());
+        if timeout.is_zero() {
+            return Err(Error::DeadlineExceeded);
+        }
+        futures::future::try_join_all(creations.iter().map(|creation| async move {
+            let sent = tokio::time::timeout(
+                timeout,
+                self.blockchain.send_and_confirm_transaction(creation),
+            )
+            .await
+            .map_err(|_| {
+                if let Some(signature) = creation.signatures.first() {
+                    tracing::warn!(
+                        %signature,
+                        "creation confirmation timed out, the transaction may still land"
+                    );
+                }
+                Error::DeadlineExceeded
+            })?;
+            match sent {
+                Ok(signature) => {
+                    tracing::info!(%signature, "order creation submitted");
+                    Ok(())
+                }
+                Err(error) => {
+                    // A failed status check must not mask the send failure:
+                    // treat it as not landed and surface the original error.
+                    let landed = match creation.signatures.first() {
+                        Some(signature) => self
+                            .blockchain
+                            .known_signatures(&[*signature])
+                            .await
+                            .ok()
+                            .and_then(|known| known.first().copied())
+                            .unwrap_or(false),
+                        None => false,
+                    };
+                    if landed {
+                        Ok(())
+                    } else {
+                        Err(Error::FailedToCreate(error))
+                    }
+                }
+            }
+        }))
+        .await?;
+        Ok(())
     }
 
     /// Simulate a settlement transaction before sending it.
@@ -286,6 +396,8 @@ pub(crate) enum Error {
     Rpc(#[source] cow_solana_rpc::Error),
     #[error("failed to submit or confirm settlement: {0}")]
     FailedToSubmit(#[source] cow_solana_rpc::Error),
+    #[error("failed to submit or confirm an order creation: {0}")]
+    FailedToCreate(#[source] cow_solana_rpc::Error),
     /// The pre-submission simulation failed. The transaction was not sent.
     #[error("settlement simulation failed: {0}")]
     SimulationFailed(#[from] cow_solana_rpc::UiTransactionError),
@@ -296,4 +408,84 @@ pub(crate) enum Error {
     /// The driver does not know whether the transaction reached the network.
     #[error("settle task panicked")]
     TaskPanicked,
+}
+
+/// Per-settlement observability: attempt outcomes and the built transaction's
+/// footprint against the network's per-transaction ceilings.
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "settlement")]
+struct Metrics {
+    /// Settlement attempts by final outcome and solver.
+    #[metric(labels("outcome", "solver"))]
+    outcomes: prometheus::IntCounterVec,
+    /// Serialized settlement transaction size in bytes. The network rejects a
+    /// transaction over 1232 bytes.
+    #[metric(buckets(600., 800., 1000., 1100., 1200., 1232., 1400., 1600.))]
+    transaction_bytes: prometheus::Histogram,
+    /// Settlement transaction account count, static keys plus lookup-table
+    /// loaded. The runtime caps a transaction at 64.
+    #[metric(buckets(16., 24., 32., 40., 48., 56., 64., 80.))]
+    transaction_accounts: prometheus::Histogram,
+    /// Solver-estimated compute-unit limit for the settlement. The maximum is
+    /// 1.4M per transaction.
+    #[metric(buckets(
+        100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000., 1_400_000.
+    ))]
+    compute_units: prometheus::Histogram,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+}
+
+/// Record the built transaction's footprint against the per-transaction bytes,
+/// account, and compute-unit ceilings.
+fn observe_transaction(transaction: &VersionedTransaction, cu_estimate: Option<u32>) {
+    let metrics = metrics();
+    if let Ok(bytes) = bincode::serialized_size(transaction) {
+        metrics.transaction_bytes.observe(bytes as f64);
+    }
+    metrics
+        .transaction_accounts
+        .observe(account_count(transaction) as f64);
+    if let Some(cu) = cu_estimate {
+        metrics.compute_units.observe(f64::from(cu));
+    }
+}
+
+/// Total accounts a transaction resolves to: its static keys plus every
+/// address loaded from its lookup tables.
+fn account_count(transaction: &VersionedTransaction) -> usize {
+    let message = &transaction.message;
+    let loaded = message
+        .address_table_lookups()
+        .map(|lookups| {
+            lookups
+                .iter()
+                .map(|lookup| lookup.writable_indexes.len() + lookup.readonly_indexes.len())
+                .sum::<usize>()
+        })
+        .unwrap_or(0);
+    message.static_account_keys().len() + loaded
+}
+
+/// The metrics label for a finished settlement attempt.
+fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
+    let error = match result {
+        Ok(_) => return "submitted",
+        Err(error) => error,
+    };
+    match error {
+        Error::Solver(_) => "solver_failed",
+        Error::SolutionNotAvailable => "solution_unavailable",
+        Error::DeadlineExceeded => "deadline_exceeded",
+        Error::TooManyPendingSettlements => "throttled",
+        Error::Rpc(_) => "rpc_failed",
+        Error::FailedToSubmit(_) => "submit_failed",
+        Error::FailedToCreate(_) => "creation_failed",
+        Error::SimulationFailed(_) => "simulation_failed",
+        Error::Resolve(_) => "resolve_failed",
+        Error::Settlement(_) => "invalid_settlement",
+        Error::TaskPanicked => "panicked",
+    }
 }

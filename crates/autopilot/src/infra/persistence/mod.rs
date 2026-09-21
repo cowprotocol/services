@@ -37,7 +37,7 @@ use {
     eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
-    shared::db_order_conversions::full_order_into_model_order,
+    shared::db_order_conversions::{fast_path_order_into_model, full_order_into_model_order},
     std::{
         collections::{HashMap, HashSet},
         ops::DerefMut,
@@ -1036,6 +1036,223 @@ impl Persistence {
             .map(|o| crate::domain::OrderUid(o.0))
             .collect())
     }
+
+    /// Sets `orders.valid_from` for a fast-path order the handler has
+    /// classified. Writing this column is what makes the order eligible
+    /// for the solvable-orders cache — either immediately (`now`, when
+    /// fast-path settle isn't going to fire) or delayed by the
+    /// exclusivity window.
+    #[instrument(skip_all)]
+    pub async fn set_order_valid_from(
+        &self,
+        uid: domain::OrderUid,
+        valid_from: u32,
+    ) -> anyhow::Result<()> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["set_order_valid_from"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        database::orders::set_valid_from(&mut ex, &ByteArray(uid.0), valid_from).await?;
+        Ok(())
+    }
+
+    /// Bulk-flushes fast-path orders whose `valid_from` was never
+    /// populated: their `new_order` notification landed while the
+    /// autopilot was down, and by the time it comes back the intended
+    /// exclusivity window has long since elapsed. Running the full
+    /// fast-path against a stale quote would just settle against
+    /// moved on-chain prices, so we drop them straight into the next
+    /// regular auction by setting `valid_from = now`. Returns the
+    /// number of rows updated.
+    pub async fn flush_pending_fast_path_backlog(&self, now: u32) -> anyhow::Result<u64> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["flush_pending_fast_path_backlog"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        Ok(database::orders::flush_pending_fast_path_backlog(&mut ex, now).await?)
+    }
+
+    /// Returns the order iff it is a fast-path order the handler still
+    /// owes a `valid_from` write to. Callers use `Some` as the "we own
+    /// this order" signal — non-fast-path orders (or ones the handler
+    /// already classified) return `None` and must be left alone.
+    ///
+    /// [`FastPathOrder::staged`] carries the staged quote competition
+    /// when one exists; ethflow fast-path orders that never went
+    /// through the quoter return `None` there, meaning no
+    /// out-of-competition settle is possible and the caller should just
+    /// mark the order eligible for the regular auction.
+    #[instrument(skip_all)]
+    pub async fn pending_fast_path_order(
+        &self,
+        uid: domain::OrderUid,
+    ) -> anyhow::Result<Option<FastPathOrder>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["pending_fast_path_order"])
+            .start_timer();
+
+        let row = {
+            let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+            database::fast_path::pending_fast_path_order(&mut ex, &ByteArray(uid.0)).await?
+        };
+
+        let Some(pending) = row else {
+            return Ok(None);
+        };
+
+        let model_order = fast_path_order_into_model(&pending)?;
+        let staged = match (pending.quote_id, pending.competition) {
+            (Some(quote_id), Some(competition)) => Some(StagedFastPathCompetition {
+                quote_id,
+                data: serde_json::from_value(competition)
+                    .context("deserialize staged quote competition")?,
+            }),
+            // The LEFT JOIN returns both columns as NULL together — no
+            // staged data means no fast-path settle is possible.
+            _ => None,
+        };
+        Ok(Some(FastPathOrder {
+            model_order,
+            staged,
+        }))
+    }
+
+    /// Moves a fast-path order's staged competition into the permanent
+    /// tables. In a single transaction, writes `competition_auctions`,
+    /// the pre-built `proposed_solutions` / `proposed_trade_executions`
+    /// rows carried on the [`FastPathPromotion`], its fee-policy rows, and
+    /// deletes the `quote_competitions` staging row.
+    ///
+    /// All fee math and per-solution encoding decisions are done by the
+    /// caller (`fast_path.rs`) — this function only stitches the caller's
+    /// domain values into the surrounding DB rows and inserts everything
+    /// atomically.
+    pub async fn finalize_fast_path(&self, promotion: FastPathPromotion) -> anyhow::Result<()> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["finalize_fast_path"])
+            .start_timer();
+
+        let (price_tokens, price_values): (Vec<_>, Vec<_>) = promotion
+            .native_prices
+            .iter()
+            .map(|(token, value)| (ByteArray(token.0.0), u256_to_big_decimal(value)))
+            .unzip();
+
+        let auction_row = database::auction::Auction {
+            id: promotion.auction_id,
+            block: i64::try_from(promotion.block).context("block does not fit in i64")?,
+            deadline: i64::try_from(promotion.deadline).context("deadline does not fit in i64")?,
+            order_uids: vec![ByteArray(promotion.order_uid.0)],
+            price_tokens,
+            price_values,
+            surplus_capturing_jit_order_owners: Vec::new(),
+            penalty_caps_native: Some(vec![promotion.penalty_cap_native]),
+        };
+
+        let policy_rows: Vec<_> = promotion
+            .fee_policies
+            .iter()
+            .map(|p| dto::fee_policy::from_domain(promotion.auction_id, promotion.order_uid, *p))
+            .collect();
+
+        let mut tx = self.postgres.pool.begin().await.context("begin")?;
+        database::auction::save(tx.deref_mut(), auction_row)
+            .await
+            .context("save competition_auctions row")?;
+        database::solver_competition_v2::save(&mut tx, promotion.auction_id, &promotion.solutions)
+            .await
+            .context("save proposed_solutions / proposed_trade_executions")?;
+        database::reference_scores::insert(&mut tx, &[promotion.reference_score])
+            .await
+            .context("insert fast-path reference_scores")?;
+        database::fee_policies::insert_batch(tx.deref_mut(), policy_rows)
+            .await
+            .context("insert fast-path fee policies")?;
+        database::fast_path::delete_competition(tx.deref_mut(), promotion.quote_id)
+            .await
+            .context("delete quote_competitions staging row")?;
+        database::orders::set_valid_from(
+            tx.deref_mut(),
+            &ByteArray(promotion.order_uid.0),
+            promotion.valid_from,
+        )
+        .await
+        .context("set valid_from")?;
+        tx.commit().await.context("commit")?;
+        Ok(())
+    }
+}
+
+/// A pending fast-path order the handler has fetched. `staged` is
+/// present when the order went through the API quoter (and can
+/// therefore be settled out of competition); ethflow fast-path orders
+/// arrive with `staged = None` and fall straight through to the regular
+/// auction.
+#[derive(Debug)]
+pub struct FastPathOrder {
+    /// The order in the raw API model form. Callers pass this to
+    /// `ProtocolFees::apply` and can then convert it to `domain::Order` via
+    /// `boundary::order::to_domain` once the resulting policies are known.
+    pub model_order: model::order::Order,
+    /// Staged quote competition, when one is available.
+    pub staged: Option<StagedFastPathCompetition>,
+}
+
+/// The staged quote competition produced when the fast-path order was
+/// quoted. Carries the `quote_id` back to `finalize_fast_path` so the
+/// staging row can be dropped atomically with the promotion.
+#[derive(Debug)]
+pub struct StagedFastPathCompetition {
+    pub quote_id: database::quotes::QuoteId,
+    pub data: shared::quote_storage::StagedQuoteCompetition,
+}
+
+impl StagedFastPathCompetition {
+    /// The winning solution. Non-empty by construction of
+    /// `save_quote_competition`, which bails out when no quotes were
+    /// produced.
+    pub fn winner(&self) -> &shared::quote_storage::StagedSolution {
+        self.data
+            .solutions
+            .first()
+            .expect("staged competition is guaranteed to have at least one solution")
+    }
+}
+
+/// All the data needed to finalize a fast path order. The finalization happens
+/// by promoting the data that was so far only in the temporary
+/// `quote_competitions` table into the persistent tables that describe the
+/// usual auctions (e.g. `competition_auctions`, `proposed_solutions`, etc.).
+pub struct FastPathPromotion {
+    pub quote_id: database::quotes::QuoteId,
+    pub auction_id: database::auction::AuctionId,
+    pub order_uid: domain::OrderUid,
+    /// Block and deadline recorded on the promoted competition row — the
+    /// window the fast-path handler committed to when asking the driver to
+    /// settle.
+    pub block: u64,
+    pub deadline: u64,
+    /// Unix timestamp (seconds) the order becomes eligible for the
+    /// regular auction if the fast-path settle attempt doesn't land in
+    /// time. Written atomically with the rest of the promotion so the
+    /// order can never be observed "settle-committed, exclusivity not
+    /// claimed" from another connection.
+    pub valid_from: u32,
+    pub native_prices: HashMap<eth::Address, eth::U256>,
+    /// Fully-built solver-competition rows (one per staged solution).
+    /// Constructed by the caller so per-bid encoding decisions —
+    /// `filtered_out`, score, executed amounts — live in the domain
+    /// handler rather than here.
+    pub solutions: Vec<database::solver_competition_v2::Solution>,
+    pub fee_policies: Vec<domain::fee::Policy>,
+    pub reference_score: database::reference_scores::Score,
+    /// Cap of the penalty the solver will get for not executing the order.
+    /// Denominated in the native token.
+    pub penalty_cap_native: BigDecimal,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
