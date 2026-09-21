@@ -1,0 +1,392 @@
+openapi: 3.0.3
+info:
+  title: Solana Driver API
+  description: |
+    The API implemented by Solana drivers, queried by the autopilot for
+    auctions and by the orderbook for quotes. Every route is mounted under the
+    solver engine's name, so a driver hosting `baseline` serves
+    `/baseline/solve`.
+  version: 0.0.1
+paths:
+  /quote:
+    post:
+      operationId: quote
+      description: |-
+        Quote one order, used by the orderbook to price a trade before it is
+        placed. The quote is not cached and cannot be settled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteRequest"
+      responses:
+        "200":
+          description: Quote successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /solve:
+    post:
+      operationId: solve
+      description: |-
+        Solve the passed in auction.
+
+        The response contains the executed amounts and the score of each
+        solution but not the instructions that execute it. The driver keeps
+        those and only builds the transaction when the autopilot picks the
+        solution through `/settle`.
+
+        The driver should respond quickly enough so that the caller receives
+        the response within the deadline indicated in the request. This
+        includes taking into account network delay.
+
+        Autopilot will call this endpoint at most once for the same auction id
+        and the following call will have a larger id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SolveRequest"
+      responses:
+        "200":
+          description: Auction successfully solved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolveResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /settle:
+    post:
+      operationId: settle
+      description: |-
+        Execute a solution this driver returned for an earlier `/solve`.
+
+        The driver encodes the settlement, signs it with its solver keypair
+        and answers once the transaction is confirmed. A solution settles at
+        most once.
+
+        The response is informational: the indexer decides whether a
+        settlement executed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettleRequest"
+      responses:
+        "200":
+          description: Settlement confirmed on chain.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettleResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+components:
+  schemas:
+    Address:
+      description: 32 byte Solana address, base58 encoded.
+      type: string
+      example: "So11111111111111111111111111111111111111112"
+    Signature:
+      description: 64 byte Solana transaction signature, base58 encoded.
+      type: string
+      example: "5wHu1qwD4kLwYbTaLCEUpVhpGKtKPzFpqxrqTs8bTHHQFCFTr9oxLrBQBeQjJmzWCr1ynqZzm3JzJEbwqKGKgKQx"
+    TokenAmount:
+      description: Amount of an SPL token in atoms. 64 bit unsigned integer in decimal notation.
+      type: string
+      example: "1234567890"
+    OrderUid:
+      description: |-
+        Unique identifier for the order: the 32 byte intent hash encoded as
+        hex with `0x` prefix. Unlike the EVM uid it embeds no owner or validity.
+      type: string
+      example: "0x1111111111111111111111111111111111111111111111111111111111111111"
+    AppData:
+      description: 32 opaque bytes attached to the order, hex with `0x` prefix.
+      type: string
+      example: "0x0000000000000000000000000000000000000000000000000000000000000000"
+    Transaction:
+      description: A serialized Solana transaction, base64 encoded.
+      type: string
+    DateTime:
+      description: An ISO 8601 UTC date time string.
+      type: string
+      example: "2026-10-16T12:00:00.000Z"
+    OrderKind:
+      description: >-
+        - `sell`: `sellAmount` is exact, `buyAmount` is the minimum to receive
+        - `buy`: `buyAmount` is exact, `sellAmount` is the maximum to spend
+      type: string
+      enum:
+        - sell
+        - buy
+    QuoteRequest:
+      description: Request to the `/quote` endpoint.
+      type: object
+      properties:
+        sellToken:
+          $ref: "#/components/schemas/Address"
+        buyToken:
+          $ref: "#/components/schemas/Address"
+        amount:
+          description: The sell amount for a sell order, the buy amount for a buy order.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        kind:
+          $ref: "#/components/schemas/OrderKind"
+        deadline:
+          description: The time until which the caller expects a response.
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+      required:
+        - sellToken
+        - buyToken
+        - amount
+        - kind
+        - deadline
+    QuoteResponse:
+      description: Successful quote.
+      type: object
+      properties:
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        solver:
+          $ref: "#/components/schemas/Address"
+      required:
+        - sellAmount
+        - buyAmount
+        - solver
+    Order:
+      description: Order information like what is returned by the Orderbook apis.
+      type: object
+      properties:
+        uid:
+          $ref: "#/components/schemas/OrderUid"
+        owner:
+          $ref: "#/components/schemas/Address"
+        sellToken:
+          $ref: "#/components/schemas/Address"
+        buyToken:
+          $ref: "#/components/schemas/Address"
+        sellTokenAccount:
+          description: |-
+            The token account the settlement pulls from. It delegates to the
+            settlement state PDA, which authorizes the pull.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        buyTokenAccount:
+          description: |-
+            The token account the settlement pays out to. The settlement never
+            creates it.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        validTo:
+          description: The time until which the order is valid. Denominated in epoch seconds.
+          type: integer
+          example: 1792000000
+        kind:
+          $ref: "#/components/schemas/OrderKind"
+        partiallyFillable:
+          description: |-
+            Whether the order can be partially filled. If this is false then a
+            single settlement must fill it exactly.
+          type: boolean
+        orderPda:
+          description: |-
+            The order's account on chain. `BeginSettle` takes the orders of one
+            settlement strictly increasing by this address.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        appData:
+          $ref: "#/components/schemas/AppData"
+      required:
+        - uid
+        - owner
+        - sellToken
+        - buyToken
+        - sellTokenAccount
+        - buyTokenAccount
+        - sellAmount
+        - buyAmount
+        - validTo
+        - kind
+        - partiallyFillable
+        - orderPda
+        - appData
+    SolveRequest:
+      description: Request to the `/solve` endpoint.
+      type: object
+      properties:
+        id:
+          description: The auction id.
+          type: integer
+          example: 123
+        deadline:
+          description: The time until which the caller expects a response.
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+      required:
+        - id
+        - deadline
+        - orders
+    SolveResponse:
+      description: Response of the `/solve` endpoint.
+      type: object
+      properties:
+        solutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Solution"
+      required:
+        - solutions
+    Solution:
+      description: A solution to the auction.
+      type: object
+      properties:
+        solutionId:
+          description: Identifies the solution in a later `/settle`. Unique per auction.
+          type: integer
+          example: 7
+        score:
+          description: |-
+            The solution's surplus denominated in lamports. Autopilot
+            recomputes the score from the executed amounts and the auction's
+            native prices, so this value does not decide the ranking.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        solver:
+          description: |-
+            The on-chain identity the driver settles with. It must be
+            registered in the settlement program's solver list, and autopilot
+            attributes the observed settlement to it.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        orders:
+          description: The executed amounts per filled order, keyed by order uid.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TradedAmounts"
+      required:
+        - solutionId
+        - score
+        - solver
+        - orders
+    TradedAmounts:
+      description: What a solution executes for one order.
+      type: object
+      properties:
+        executedSell:
+          $ref: "#/components/schemas/TokenAmount"
+        executedBuy:
+          $ref: "#/components/schemas/TokenAmount"
+      required:
+        - executedSell
+        - executedBuy
+    SettleRequest:
+      description: Request to the `/settle` endpoint.
+      type: object
+      properties:
+        auctionId:
+          description: Auction ID in which the specified solution ID is competing.
+          type: integer
+          example: 123
+        solutionId:
+          description: Id of the solution that should be executed.
+          type: integer
+          example: 7
+        submissionDeadlineSlot:
+          description: The last slot in which the settlement TX can land.
+          type: integer
+          example: 375000000
+        creations:
+          description: |-
+            Sponsored order creations the settlement depends on, already signed
+            by their owners and countersigned by the funder. The driver lands
+            them before the settlement, which reads the order PDAs they create.
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+      required:
+        - auctionId
+        - solutionId
+        - submissionDeadlineSlot
+    SettleResponse:
+      description: Response of the `/settle` endpoint.
+      type: object
+      properties:
+        txSignature:
+          description: Signature of the confirmed settlement transaction.
+          allOf:
+            - $ref: "#/components/schemas/Signature"
+      required:
+        - txSignature
+    Error:
+      description: Response on API errors.
+      type: object
+      properties:
+        kind:
+          $ref: "#/components/schemas/ErrorKind"
+        description:
+          type: string
+      required:
+        - kind
+        - description
+    ErrorKind:
+      description: |-
+        The kind of error. Every kind but `DeadlineExceeded` and
+        `FailedToSubmit` precedes the send, so no transaction reached the
+        network.
+      type: string
+      enum:
+        - InvalidAuctionId
+        - SolverFailed
+        - SolutionNotAvailable
+        - DeadlineExceeded
+        - TooManyPendingSettlements
+        - FailedToSubmit
+        - InvalidCreation
+        - FailedToCreate
+        - QuoteSameTokens
+        - QuotingFailed
+        - SimulationFailed
+        - Unknown
+  responses:
+    BadRequest:
+      description: |-
+        There is something wrong with the request, or the driver cannot answer
+        it. The body names the kind.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalServerError:
+      description: |-
+        Something went wrong when handling the request.
+        Body potentially contains extra information.
+      content:
+        text/plain:
+          schema:
+            type: string
