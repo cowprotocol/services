@@ -37,10 +37,11 @@ paths:
       description: |-
         Solve the passed in auction.
 
-        The response contains the executed amounts and the score of each
-        solution but not the instructions that execute it. The driver keeps
-        those and only builds the transaction when the autopilot picks the
-        solution through `/settle`.
+        The response contains the executed amounts of each solution but not
+        the instructions that execute it. The driver keeps those and only
+        builds the transaction when the autopilot picks the solution through
+        `/settle`. Autopilot ranks solutions itself, from the executed amounts
+        and the auction's native prices.
 
         The driver should respond quickly enough so that the caller receives
         the response within the deadline indicated in the request. This
@@ -270,13 +271,6 @@ components:
           description: Identifies the solution in a later `/settle`. Unique per auction.
           type: integer
           example: 7
-        score:
-          description: |-
-            The solution's surplus denominated in lamports. Autopilot
-            recomputes the score from the executed amounts and the auction's
-            native prices, so this value does not decide the ranking.
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
         solver:
           description: |-
             The on-chain identity the driver settles with. It must be
@@ -291,7 +285,6 @@ components:
             $ref: "#/components/schemas/TradedAmounts"
       required:
         - solutionId
-        - score
         - solver
         - orders
     TradedAmounts:

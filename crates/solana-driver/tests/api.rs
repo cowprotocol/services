@@ -275,7 +275,6 @@ async fn solve_returns_converted_solutions() {
     let expected = serde_json::json!({
         "solutions": [{
             "solutionId": 42,
-            "score": "0",
             "solver": account.to_string(),
             "orders": {
                 (uid()): {
@@ -415,7 +414,6 @@ async fn solve_keeps_the_first_of_duplicate_solution_ids() {
     let expected = serde_json::json!({
         "solutions": [{
             "solutionId": 7,
-            "score": "0",
             "solver": account.to_string(),
             "orders": {
                 (uid()): {
