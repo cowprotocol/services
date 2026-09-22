@@ -210,16 +210,16 @@ fn validate(
     if keys.first() != Some(&sponsoring.funder) {
         return Err(PlacementError::WrongFeePayer);
     }
-    // Wallets add compute-budget instructions of their own, before and after
-    // ours, so they sit outside the template.
+    // Wallets wrap the bundle in instructions of their own, before and after
+    // ours, so those sit outside the template.
     let mut bundle = Vec::with_capacity(message.instructions().len());
     for instruction in message.instructions() {
-        if keys.get(usize::from(instruction.program_id_index))
-            == Some(&solana_compute_budget_interface::ID)
-        {
-            check_compute_unit_price(&instruction.data)?;
-        } else {
-            bundle.push(instruction);
+        match keys.get(usize::from(instruction.program_id_index)) {
+            Some(&solana_compute_budget_interface::ID) => {
+                check_compute_unit_price(&instruction.data)?
+            }
+            Some(&LIGHTHOUSE_PROGRAM) => check_lighthouse(&instruction.data)?,
+            _ => bundle.push(instruction),
         }
     }
     let Some((instruction, preparations)) = bundle.split_last() else {
@@ -388,6 +388,26 @@ const CREATE_DESTINATION: u8 = 5;
 /// The funder pays the priority fee, so the client-set price is bounded. At
 /// the network's 1.4M compute unit ceiling that is 0.0014 SOL per creation.
 const MAX_COMPUTE_UNIT_PRICE: u64 = 1_000_000;
+
+/// Lighthouse, the guard program wallets wrap a transaction in to assert the
+/// state it leaves behind.
+const LIGHTHOUSE_PROGRAM: Pubkey =
+    Pubkey::from_str_const("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
+
+/// Reject the two Lighthouse instructions that open or close a memory
+/// account. Both name a payer that funds the rent, and on a sponsored
+/// creation that payer can be the funder. Every other variant asserts over
+/// account state and aborts the transaction on a mismatch, which costs the
+/// funder nothing and is what wallets actually inject.
+fn check_lighthouse(data: &[u8]) -> Result<(), PlacementError> {
+    // `MemoryWrite` and `MemoryClose` lead the instruction enum.
+    match data.first() {
+        Some(0 | 1) => Err(PlacementError::InvalidTransaction(
+            "a lighthouse memory instruction can charge the funder rent",
+        )),
+        _ => Ok(()),
+    }
+}
 
 /// Reject a compute-budget instruction priced above the ceiling. The other
 /// variants pass, none of them spends the funder's lamports.
