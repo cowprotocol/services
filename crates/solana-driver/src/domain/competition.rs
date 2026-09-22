@@ -231,8 +231,7 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
-        observe_transaction(&transaction, cu_estimate);
-        if let Some(size) = encoded_size(&transaction)
+        if let Some(size) = observe_transaction(&transaction, cu_estimate)
             && size > MAX_TRANSACTION_BYTES
         {
             return Err(Error::TransactionTooLarge { size });
@@ -452,10 +451,14 @@ fn metrics() -> &'static Metrics {
 }
 
 /// Record the built transaction's footprint against the per-transaction bytes,
-/// account, and compute-unit ceilings.
-fn observe_transaction(transaction: &VersionedTransaction, cu_estimate: Option<u32>) {
+/// account, and compute-unit ceilings, and hand back the wire size it measured.
+fn observe_transaction(
+    transaction: &VersionedTransaction,
+    cu_estimate: Option<u32>,
+) -> Option<u64> {
     let metrics = metrics();
-    if let Some(bytes) = encoded_size(transaction) {
+    let bytes = encoded_size(transaction);
+    if let Some(bytes) = bytes {
         metrics.transaction_bytes.observe(bytes as f64);
     }
     metrics
@@ -464,6 +467,7 @@ fn observe_transaction(transaction: &VersionedTransaction, cu_estimate: Option<u
     if let Some(cu) = cu_estimate {
         metrics.compute_units.observe(f64::from(cu));
     }
+    bytes
 }
 
 /// The transaction's wire size, `None` when it does not serialize.
