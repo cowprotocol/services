@@ -133,6 +133,12 @@ pub fn trades_by_owner<'a>(
     // contract, not the user), and `jit_orders` uids never appear in `orders`
     // or `onchain_placed_orders`. `DISTINCT` in the page CTE is defense in
     // depth for edge cases where those assumptions might not hold.
+    //
+    // The `jit_uids` MATERIALIZED CTE in branch 3 forces the planner to first
+    // resolve the JIT uids owned by the user, then join to `trades` by uid.
+    // Without the fence, the planner may pick the opposite order (scan
+    // `trades`, filter by `jit_orders.owner`), which becomes catastrophic for
+    // owners with many JIT trades since it iterates the entire `trades` table.
     const QUERY: &str = const_format::concatcp!(
         r#"
 WITH candidates AS (
@@ -151,10 +157,12 @@ WITH candidates AS (
      ORDER BY t.block_number DESC, t.log_index DESC
      LIMIT $2 + $3)
     UNION ALL
-    (SELECT t.block_number, t.log_index
-     FROM jit_orders j
-     JOIN trades t ON t.order_uid = j.uid
-     WHERE j.owner = $1
+    (WITH jit_uids AS MATERIALIZED (
+        SELECT uid FROM jit_orders WHERE owner = $1
+     )
+     SELECT t.block_number, t.log_index
+     FROM jit_uids
+     JOIN trades t ON t.order_uid = jit_uids.uid
      ORDER BY t.block_number DESC, t.log_index DESC
      LIMIT $2 + $3)
 ),
