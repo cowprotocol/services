@@ -587,6 +587,19 @@ fn creation_tx(
     preparations: Vec<solana_sdk::instruction::Instruction>,
     sign: bool,
 ) -> String {
+    creation_tx_wrapped(funder, owner, intent, preparations, Vec::new(), sign)
+}
+
+/// A creation bundle carrying `trailing` instructions after `CreateOrder`,
+/// the shape a wallet produces when it appends its own compute budget.
+fn creation_tx_wrapped(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+    preparations: Vec<solana_sdk::instruction::Instruction>,
+    trailing: Vec<solana_sdk::instruction::Instruction>,
+    sign: bool,
+) -> String {
     let mut instructions = preparations;
     instructions.push(
         cow_settlement_client::instruction::CreateOrder {
@@ -597,6 +610,7 @@ fn creation_tx(
         }
         .into(),
     );
+    instructions.extend(trailing);
     let message = solana_sdk::message::Message::new_with_blockhash(
         &instructions,
         Some(&funder),
@@ -646,6 +660,27 @@ fn sponsored_creation_tx(
     creation_tx(funder, owner, &intent, vec![destination], sign)
 }
 
+/// A well-formed bundle priced above the sponsored ceiling.
+fn overpriced_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+) -> String {
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    creation_tx_wrapped(
+        funder,
+        owner,
+        &intent,
+        vec![destination],
+        vec![
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(
+                1_000_001,
+            ),
+        ],
+        true,
+    )
+}
+
 async fn post_order(addr: SocketAddr, transaction: String) -> (reqwest::StatusCode, String) {
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
@@ -690,6 +725,8 @@ async fn create_order_rejects_invalid_submissions() {
             sponsored_creation_tx(funder, &owner, false),
             "InvalidSignature",
         ),
+        // The funder pays the priority fee, so an outsized price is refused.
+        (overpriced_creation_tx(funder, &owner), "InvalidTransaction"),
     ] {
         let (status, kind) = post_order(addr, transaction).await;
         assert_eq!(
@@ -882,8 +919,24 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     // The full preparation prefix in front of `CreateOrder`, as the frontend
     // sends it for a first-time native-SOL sell.
     let intent = sponsored_intent(owner.pubkey(), true);
-    let preparations = full_preparations(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, preparations, true);
+    // Wrapped in the wallet's compute-budget instructions, one prepended and
+    // one appended.
+    let mut preparations = vec![
+        solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(10_000),
+    ];
+    preparations.extend(full_preparations(funder, owner.pubkey(), &intent));
+    let transaction = creation_tx_wrapped(
+        funder,
+        &owner,
+        &intent,
+        preparations,
+        vec![
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(
+                12_769,
+            ),
+        ],
+        true,
+    );
     let quote_id = db::save_quote(
         &pool,
         &db::Quote {

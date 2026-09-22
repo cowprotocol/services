@@ -126,7 +126,7 @@ impl SanitizedPriceEstimator {
                 solver: Default::default(),
                 verified: true,
                 supports_fast_path: false,
-                solution_id: None,
+                quote_id: None,
                 execution: Default::default(),
             };
             tracing::debug!(?query, ?estimation, "generate trivial price estimation");
@@ -142,7 +142,7 @@ impl SanitizedPriceEstimator {
                 solver: Default::default(),
                 verified: true,
                 supports_fast_path: false,
-                solution_id: None,
+                quote_id: None,
                 execution: Default::default(),
             };
             tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
@@ -158,7 +158,7 @@ impl SanitizedPriceEstimator {
                 solver: Default::default(),
                 verified: true,
                 supports_fast_path: false,
-                solution_id: None,
+                quote_id: None,
                 execution: Default::default(),
             };
             tracing::debug!(?query, ?estimation, "generate trivial wrap estimation");
@@ -219,7 +219,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
@@ -227,7 +226,7 @@ mod tests {
                     solver: Default::default(),
                     verified: false,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -244,7 +243,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
@@ -254,7 +252,7 @@ mod tests {
                     solver: Default::default(),
                     verified: false,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -269,7 +267,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
                     "cost of converting native asset would overflow gas price"
@@ -288,7 +285,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
@@ -298,7 +294,7 @@ mod tests {
                     solver: Default::default(),
                     verified: false,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -314,7 +310,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
@@ -322,7 +317,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -337,7 +332,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
@@ -345,7 +339,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -360,7 +354,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
@@ -369,7 +362,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -384,7 +377,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
@@ -393,7 +385,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -408,7 +400,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
                     token: BAD_TOKEN,
@@ -426,7 +417,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
                     token: BAD_TOKEN,
@@ -467,7 +457,7 @@ mod tests {
                         solver: Default::default(),
                         verified: false,
                         supports_fast_path: false,
-                        solution_id: None,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -485,7 +475,7 @@ mod tests {
                         solver: Default::default(),
                         verified: false,
                         supports_fast_path: false,
-                        solution_id: None,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -503,7 +493,7 @@ mod tests {
                         solver: Default::default(),
                         verified: false,
                         supports_fast_path: false,
-                        solution_id: None,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -521,7 +511,7 @@ mod tests {
                         solver: Default::default(),
                         verified: false,
                         supports_fast_path: false,
-                        solution_id: None,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -561,7 +551,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
@@ -569,7 +558,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -583,7 +572,6 @@ mod tests {
                     block_dependent: false,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    auction_id: None,
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
@@ -591,7 +579,7 @@ mod tests {
                     solver: Default::default(),
                     verified: true,
                     supports_fast_path: false,
-                    solution_id: None,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -618,7 +606,7 @@ mod tests {
                         solver: Default::default(),
                         verified: true,
                         supports_fast_path: false,
-                        solution_id: None,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -636,7 +624,7 @@ mod tests {
                         solver: Default::default(),
                         verified: true,
                         supports_fast_path: false,
-                        solution_id: None,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
