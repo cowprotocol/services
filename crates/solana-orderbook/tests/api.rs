@@ -695,8 +695,9 @@ fn lighthouse(
     )
 }
 
-/// A bundle carrying a Lighthouse memory instruction, which funds an account
-/// from a payer the template cannot vouch for.
+/// A bundle carrying a Lighthouse instruction outside the assertion range:
+/// `MemoryWrite`, which funds an account from a payer the template cannot
+/// vouch for.
 fn lighthouse_memory_creation_tx(
     funder: solana_sdk::pubkey::Pubkey,
     owner: &solana_sdk::signer::keypair::Keypair,
@@ -760,8 +761,7 @@ async fn create_order_rejects_invalid_submissions() {
         ),
         // The funder pays the priority fee, so an outsized price is refused.
         (overpriced_creation_tx(funder, &owner), "InvalidTransaction"),
-        // A lighthouse assertion is fine, but its memory instructions bill a
-        // payer the template cannot check.
+        // A lighthouse assertion is fine, anything outside that range is not.
         (
             lighthouse_memory_creation_tx(funder, &owner),
             "InvalidTransaction",

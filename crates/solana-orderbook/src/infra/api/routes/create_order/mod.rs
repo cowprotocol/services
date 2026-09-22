@@ -394,18 +394,23 @@ const MAX_COMPUTE_UNIT_PRICE: u64 = 1_000_000;
 const LIGHTHOUSE_PROGRAM: Pubkey =
     Pubkey::from_str_const("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
 
-/// Reject the two Lighthouse instructions that open or close a memory
-/// account. Both name a payer that funds the rent, and on a sponsored
-/// creation that payer can be the funder. Every other variant asserts over
-/// account state and aborts the transaction on a mismatch, which costs the
-/// funder nothing and is what wallets actually inject.
+/// Lighthouse's assertion instructions, `AssertAccountData` through
+/// `AssertBubblegumTreeConfigAccount`. Each reads account state and aborts the
+/// transaction on a mismatch, so none of them spends the funder's lamports.
+/// The two variants below the range, `MemoryWrite` and `MemoryClose`, name a
+/// payer that funds a memory account's rent, and on a sponsored creation that
+/// payer can be the funder.
+const LIGHTHOUSE_ASSERTIONS: std::ops::RangeInclusive<u8> = 2..=17;
+
+/// Accept only a Lighthouse assertion. The program is upgradeable at a fixed
+/// address, so an instruction this build does not know is refused rather than
+/// assumed harmless.
 fn check_lighthouse(data: &[u8]) -> Result<(), PlacementError> {
-    // `MemoryWrite` and `MemoryClose` lead the instruction enum.
     match data.first() {
-        Some(0 | 1) => Err(PlacementError::InvalidTransaction(
-            "a lighthouse memory instruction can charge the funder rent",
+        Some(discriminator) if LIGHTHOUSE_ASSERTIONS.contains(discriminator) => Ok(()),
+        _ => Err(PlacementError::InvalidTransaction(
+            "only lighthouse assertions are accepted on a sponsored creation",
         )),
-        _ => Ok(()),
     }
 }
 
