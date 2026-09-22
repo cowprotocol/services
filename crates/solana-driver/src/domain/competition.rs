@@ -1,7 +1,7 @@
 //! One `Competition` per solver engine, mounted on the API under `/{name}`.
 
 use {
-    super::{Auction, Order, auction::Id, solution::Solution},
+    super::{Auction, Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
     crate::infra::{blockchain::Solana, solver::Solver},
     cow_settlement_interface::SettlementError,
     itertools::Itertools,
@@ -13,6 +13,7 @@ use {
         transaction::{TransactionError, VersionedTransaction},
     },
     std::{
+        collections::HashMap,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -108,6 +109,28 @@ impl Competition {
                 "discarding solutions with duplicate ids"
             );
         }
+
+        let solutions = match self.solver.solver_fee() {
+            None => solutions,
+            Some(fee) => {
+                let orders: HashMap<_, _> = auction.orders.iter().map(|o| (o.uid, o)).collect();
+                solutions
+                    .into_iter()
+                    .filter_map(|mut solution| match fee.apply(&mut solution, &orders) {
+                        Ok(()) => Some(solution),
+                        Err(reason) => {
+                            tracing::warn!(
+                                solver = %self.solver.name(),
+                                solution_id = solution.id,
+                                %reason,
+                                "dropping solution the solver fee cannot be applied to"
+                            );
+                            None
+                        }
+                    })
+                    .collect()
+            }
+        };
         Ok(solutions)
     }
 
@@ -218,6 +241,10 @@ impl Competition {
             "settling orders"
         );
 
+        // Collected before the settlement consumes the solution, reported only
+        // once the transaction was sent.
+        let retained_fees = retained_solver_fees(&orders, &solution);
+
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
 
         // Land the creations only after the solution validated: an invalid
@@ -294,6 +321,15 @@ impl Competition {
                 .and_then(|err| settlement_error(program_id, &transaction, &err)),
             err,
         })?;
+
+        for fee in &retained_fees {
+            tracing::info!(
+                order_uid = %fee.order_uid,
+                mint = %fee.mint,
+                amount = fee.amount,
+                "settlement retained solver fee"
+            );
+        }
 
         Ok(signature)
     }
@@ -410,6 +446,34 @@ fn settlement_error(
     (*program == program_id)
         .then(|| SettlementError::try_from(*code).ok())
         .flatten()
+}
+
+struct RetainedFee {
+    order_uid: OrderUid,
+    mint: Pubkey,
+    amount: u64,
+}
+
+/// The nonzero solver fees the solution retains: in the buy mint for a sell
+/// order and the sell mint for a buy order.
+fn retained_solver_fees(orders: &[Order], solution: &Solution) -> Vec<RetainedFee> {
+    solution
+        .trades
+        .iter()
+        .filter(|trade| trade.solver_fee > 0)
+        .filter_map(|trade| {
+            let order = orders.iter().find(|order| order.uid == trade.order_uid)?;
+            let mint = match order.side {
+                Side::Sell => order.buy_token,
+                Side::Buy => order.sell_token,
+            };
+            Some(RetainedFee {
+                order_uid: trade.order_uid,
+                mint,
+                amount: trade.solver_fee,
+            })
+        })
+        .collect()
 }
 
 /// The program settles exactly the orders passed to `BeginSettle`, so the

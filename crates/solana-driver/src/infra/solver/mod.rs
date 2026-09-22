@@ -6,7 +6,7 @@
 
 use {
     crate::{
-        domain,
+        domain::{self, solver_fee::SolverFee},
         infra::{config, solver::dto::auction::Auction},
     },
     solana_sdk::{
@@ -27,6 +27,7 @@ pub struct Solver {
     client: reqwest::Client,
     base_url: reqwest::Url,
     solve_every_nth_auction: Option<NonZero<u64>>,
+    solver_fee: Option<SolverFee>,
 }
 
 impl Solver {
@@ -48,6 +49,11 @@ impl Solver {
     /// The auction-id stride this solver participates at, when throttled.
     pub fn solve_every_nth_auction(&self) -> Option<NonZero<u64>> {
         self.solve_every_nth_auction
+    }
+
+    /// The volume-based solver fee, `None` when no fee is configured.
+    pub fn solver_fee(&self) -> Option<SolverFee> {
+        self.solver_fee
     }
 
     /// Build a solver client from its configuration.
@@ -72,6 +78,7 @@ impl Solver {
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             solve_every_nth_auction: config.solve_every_nth_auction,
+            solver_fee: SolverFee::new(config.solver_fee_bps).filter(|fee| fee.bps() > 0),
         })
     }
 
@@ -176,6 +183,7 @@ mod tests {
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
             signer_keypair: keypair_path,
             solve_every_nth_auction: None,
+            solver_fee_bps: 0,
         })
         .expect("solver construction should succeed");
         let auction = domain::Auction {

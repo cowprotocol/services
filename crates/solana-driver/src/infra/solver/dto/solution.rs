@@ -97,6 +97,7 @@ impl Trade {
             order_uid: self.order_uid,
             executed_sell,
             executed_buy,
+            solver_fee: 0,
         })
     }
 

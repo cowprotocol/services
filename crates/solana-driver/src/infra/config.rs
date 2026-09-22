@@ -18,6 +18,20 @@ use {
     tokio::fs,
 };
 
+fn deserialize_solver_fee_bps<'de, D>(deserializer: D) -> Result<u16, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let bps = u16::deserialize(deserializer)?;
+    if bps >= crate::domain::solver_fee::MAX_BASE_POINT {
+        return Err(serde::de::Error::custom(format!(
+            "solver-fee-bps must be below {}",
+            crate::domain::solver_fee::MAX_BASE_POINT
+        )));
+    }
+    Ok(bps)
+}
+
 /// Load the driver configuration from a TOML file.
 ///
 /// # Panics
@@ -129,6 +143,13 @@ pub struct Solver {
     /// test against. Absent means every auction.
     #[serde(default)]
     pub solve_every_nth_auction: Option<NonZero<u64>>,
+    /// Volume-based solver fee in basis points, `0..10_000`. Sell orders
+    /// deliver `(1 − fee)` of the fill's buy leg; buy orders pull
+    /// `1 / (1 − fee)` of its sell leg. The difference stays in the buy-mint
+    /// buffer PDA (sell orders) or the solver's sell ATA (buy orders). Bids and
+    /// quotes shrink accordingly. Absent means no fee.
+    #[serde(default, deserialize_with = "deserialize_solver_fee_bps")]
+    pub solver_fee_bps: u16,
 }
 
 #[cfg(test)]
@@ -171,5 +192,50 @@ mod tests {
     fn chain_defaults_to_interface_program_id() {
         let chain: Chain = toml::de::from_str("").unwrap();
         assert_eq!(chain.settlement_program_id, cow_settlement_interface::ID);
+    }
+
+    #[test]
+    fn solver_fee_bps_defaults_to_zero() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer-keypair = "/path/to/keypair.json"
+        "#;
+        let solver: Solver = toml::de::from_str(solver_config).unwrap();
+        assert_eq!(solver.solver_fee_bps, 0);
+    }
+
+    #[test]
+    fn solver_fee_bps_parses() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer-keypair = "/path/to/keypair.json"
+            solver-fee-bps = 500
+        "#;
+        let solver: Solver = toml::de::from_str(solver_config).unwrap();
+        assert_eq!(solver.solver_fee_bps, 500);
+    }
+
+    #[test]
+    fn solver_fee_bps_at_max_is_rejected() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer-keypair = "/path/to/keypair.json"
+            solver-fee-bps = 10000
+        "#;
+        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
+    }
+
+    #[test]
+    fn solver_fee_bps_out_of_u16_range_is_rejected() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer-keypair = "/path/to/keypair.json"
+            solver-fee-bps = 65536
+        "#;
+        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
     }
 }

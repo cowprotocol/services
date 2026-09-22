@@ -91,6 +91,10 @@ async fn spawn_mock_solver_engine(response: serde_json::Value) -> SocketAddr {
 /// A solver client whose on-chain identity is a freshly generated keypair,
 /// so the test can register a matching settlement signer.
 fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
+    solver_with_fee(addr, 0)
+}
+
+fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubkey) {
     let keypair_file = temp_keypair();
     let keypair_path = keypair_file.path().to_path_buf();
     let solver = Solver::new(&config::Solver {
@@ -98,6 +102,7 @@ fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
         endpoint: format!("http://{addr}").parse().unwrap(),
         signer_keypair: keypair_path,
         solve_every_nth_auction: None,
+        solver_fee_bps,
     })
     .expect("solver construction should succeed");
     let account = solver.pubkey();
@@ -117,6 +122,7 @@ fn throttled_dead_solver(stride: u64) -> Solver {
         endpoint: "http://127.0.0.1:1".parse().unwrap(),
         signer_keypair: keypair_file.path().to_path_buf(),
         solve_every_nth_auction: NonZero::new(stride),
+        solver_fee_bps: 0,
     })
     .expect("solver construction should succeed")
 }
@@ -512,6 +518,84 @@ async fn buy_quote_returns_the_executed_amounts() {
         json,
         serde_json::json!({
             "sellAmount": "1000",
+            "buyAmount": "2000",
+            "solver": account.to_string(),
+        })
+    );
+}
+
+/// The auction order sells 1000 for at least 2000. A route paying 3000 is
+/// reported at 2850 after a 500 bps fee.
+#[tokio::test]
+async fn solve_reports_fee_adjusted_amounts() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 500);
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve(addr).await;
+    let amounts = &body["solutions"][0]["orders"][uid()];
+    assert_eq!(amounts["executedSell"], "1000");
+    assert_eq!(amounts["executedBuy"], "2850");
+}
+
+/// A route paying exactly the 2000 limit undercuts it once the fee applies
+/// and is dropped before the autopilot sees it. The other solution survives.
+#[tokio::test]
+async fn solve_drops_the_fill_the_fee_pushes_under_the_limit() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(1, "2000"), (2, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 500);
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve(addr).await;
+    assert_eq!(response_ids(&body), vec![2]);
+}
+
+#[tokio::test]
+async fn sell_quote_reports_the_fee_adjusted_buy_amount() {
+    let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
+    let (solver, account) = solver_with_fee(engine, 500);
+    let addr = spawn_server(vec![solver]).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("sell", "1000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "sellAmount": "1000",
+            "buyAmount": "1900",
+            "solver": account.to_string(),
+        })
+    );
+}
+
+/// A buy quote pulls `ceil(1000 / 0.95) = 1053` sell units after a 500 bps
+/// fee; the quote order's unbounded sell limit does not overflow the check.
+#[tokio::test]
+async fn buy_quote_reports_the_fee_adjusted_sell_amount() {
+    let engine = spawn_mock_solver_engine(quote_solution("2000")).await;
+    let (solver, account) = solver_with_fee(engine, 500);
+    let addr = spawn_server(vec![solver]).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("buy", "2000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "sellAmount": "1053",
             "buyAmount": "2000",
             "solver": account.to_string(),
         })
