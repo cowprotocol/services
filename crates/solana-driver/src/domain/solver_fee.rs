@@ -44,26 +44,16 @@ impl SolverFee {
         self.0
     }
 
-    /// The fee in the surplus token: the buy mint of a sell order, the sell
-    /// mint of a buy order. As in the EVM driver, the volume is the full buy
-    /// amount of a sell order and the full sell amount, fee included, of a buy
-    /// order, so a buy order's fee is `executed * f / (1 - f)`. Rounds up, in
-    /// the fee's favour.
-    fn fee_from_volume(self, side: Side, executed: u64) -> Option<u64> {
-        let bps = u128::from(self.0);
-        let denominator = u128::from(MAX_BASE_POINT);
+    /// The fee on one executed leg, `executed * f` rounded up in the fee's
+    /// favour. The same factor applies to both sides because the leg is the
+    /// engine's pre-fee figure, as in the EVM driver's `fee_from_volume`. The
+    /// autopilot's `f / (1 - f)` and `f / (1 + f)` back the fee out of
+    /// post-fee amounts and do not apply here.
+    fn fee_from_volume(self, executed: u64) -> Option<u64> {
         let scaled = u128::from(executed)
-            .checked_mul(bps)
+            .checked_mul(u128::from(self.0))
             .expect("the product of a 64-bit and a 16-bit number always fits in 128 bits");
-        let fee = match side {
-            Side::Sell => scaled.div_ceil(denominator),
-            Side::Buy => scaled.div_ceil(
-                denominator
-                    .checked_sub(bps)
-                    .expect("the constructor rejects a fee of 100% or more"),
-            ),
-        };
-        u64::try_from(fee).ok()
+        u64::try_from(scaled.div_ceil(u128::from(MAX_BASE_POINT))).ok()
     }
 
     /// Applies the solver fee to every trade of `solution`, in place.
@@ -84,7 +74,7 @@ impl SolverFee {
                 Side::Buy => trade.executed_sell,
             };
             let fee = self
-                .fee_from_volume(order.side, fee_leg)
+                .fee_from_volume(fee_leg)
                 .ok_or(Rejected::Overflow(trade.order_uid))?;
             match order.side {
                 Side::Sell => {
@@ -209,18 +199,17 @@ mod tests {
             .apply(&mut sol, &orders(&order))
             .unwrap();
         let trade = &sol.trades[0];
-        assert_eq!(trade.executed_sell, 1_053);
+        assert_eq!(trade.executed_sell, 1_050);
         assert_eq!(trade.executed_buy, 2_000);
-        assert_eq!(trade.solver_fee, 53);
+        assert_eq!(trade.solver_fee, 50);
     }
 
     #[test]
     fn fee_from_volume_rounds_up() {
         let fee = SolverFee::new(500).unwrap();
-        // 1000 * 0.05 / 0.95 = 52.6, so 53 pins the round-up.
-        assert_eq!(fee.fee_from_volume(Side::Sell, 1), Some(1));
-        assert_eq!(fee.fee_from_volume(Side::Sell, 1_000), Some(50));
-        assert_eq!(fee.fee_from_volume(Side::Buy, 1_000), Some(53));
+        assert_eq!(fee.fee_from_volume(1), Some(1));
+        assert_eq!(fee.fee_from_volume(999), Some(50));
+        assert_eq!(fee.fee_from_volume(1_000), Some(50));
     }
 
     #[test]
@@ -296,6 +285,6 @@ mod tests {
             .unwrap()
             .apply(&mut sol, &orders(&order))
             .unwrap();
-        assert_eq!(sol.trades[0].executed_sell, 1_053);
+        assert_eq!(sol.trades[0].executed_sell, 1_050);
     }
 }

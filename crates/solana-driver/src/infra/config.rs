@@ -144,10 +144,10 @@ pub struct Solver {
     #[serde(default)]
     pub solve_every_nth_auction: Option<NonZero<u64>>,
     /// Volume-based solver fee in basis points, `0..10_000`. Sell orders
-    /// deliver `(1 − fee)` of the fill's buy leg; buy orders pull
-    /// `1 / (1 − fee)` of its sell leg. The difference stays in the buy-mint
-    /// buffer PDA (sell orders) or the solver's sell ATA (buy orders). Bids and
-    /// quotes shrink accordingly. Absent means no fee.
+    /// deliver `(1 − fee)` of the fill's buy leg; buy orders pull `(1 + fee)`
+    /// of its sell leg. The difference stays in the buy-mint buffer PDA (sell
+    /// orders) or the solver's sell ATA (buy orders). Bids and quotes shrink
+    /// accordingly. Absent means no fee.
     #[serde(default, deserialize_with = "deserialize_solver_fee_bps")]
     pub solver_fee_bps: u16,
 }

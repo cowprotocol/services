@@ -575,8 +575,8 @@ async fn sell_quote_reports_the_fee_adjusted_buy_amount() {
     );
 }
 
-/// A buy quote pulls `ceil(1000 / 0.95) = 1053` sell units after a 500 bps
-/// fee; the quote order's unbounded sell limit does not overflow the check.
+/// A buy quote pulls `1000 * 1.05 = 1050` sell units after a 500 bps fee; the
+/// quote order's unbounded sell limit does not overflow the check.
 #[tokio::test]
 async fn buy_quote_reports_the_fee_adjusted_sell_amount() {
     let engine = spawn_mock_solver_engine(quote_solution("2000")).await;
@@ -595,7 +595,7 @@ async fn buy_quote_reports_the_fee_adjusted_sell_amount() {
     assert_eq!(
         json,
         serde_json::json!({
-            "sellAmount": "1053",
+            "sellAmount": "1050",
             "buyAmount": "2000",
             "solver": account.to_string(),
         })
