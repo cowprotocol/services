@@ -40,6 +40,7 @@ use {
         settle_call::SettleCall,
     },
     alloy::primitives::{Address, U256},
+    anyhow::Context,
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     database::byte_array::ByteArray,
@@ -127,9 +128,9 @@ impl FastPathHandler {
                         }
                     };
 
-                    let auction_id = pending.staged.as_ref().map(|s| s.data.auction_id);
+                    let quote_id = pending.staged.as_ref().map(|s| s.quote_id);
                     this.handle(pending, started_at)
-                        .instrument(tracing::info_span!("fast_path", ?order_uid, auction_id))
+                        .instrument(tracing::info_span!("fast_path", ?order_uid, quote_id))
                         .await
                 });
             }
@@ -247,13 +248,19 @@ impl FastPathHandler {
 
         let deadline = self.submission_deadline();
 
-        let auction_id = staged.data.auction_id;
-        let solution_id = staged.winner().solution_id;
+        // Every fast-path settlement gets a real auction id
+        let auction_id = self
+            .persistence
+            .get_next_auction_id()
+            .await
+            .context("failed to allocate fast-path auction id")?;
+        let quote_id = staged.quote_id;
         let solution_uid = staged.winner().solution_uid;
         let final_execution = self
             .compute_and_persist_final_execution(
                 pending.model_order,
                 staged,
+                auction_id,
                 volume_fee_policies,
                 &deadline,
             )
@@ -261,10 +268,11 @@ impl FastPathHandler {
 
         Ok(FastPathSettleAttempt {
             settle_request: settle::Request {
-                auction_id,
-                solution_id,
+                solution_id: None,
                 submission_deadline_latest_block: deadline.block,
+                auction_id,
                 fast_path: Some(settle::FastPath {
+                    quote_id,
                     order: dto::order::from_domain(&final_execution.order),
                     limit_prices: settle::LimitPrices {
                         sell: final_execution.limit_sell,
@@ -319,6 +327,7 @@ impl FastPathHandler {
         &self,
         order: model::order::Order,
         staged: StagedFastPathCompetition,
+        auction_id: database::auction::AuctionId,
         volume_fee_policies: Vec<domain::fee::Policy>,
         deadline: &SubmissionDeadline,
     ) -> Result<FinalOrderExecution, PreflightError> {
@@ -373,8 +382,14 @@ impl FastPathHandler {
                     // at
                     winning_adjusted = Some((adjusted_sell, adjusted_buy));
                 }
+                // The uid is the ranking index the public API derives the
+                // ranking from; the solution's id is the quote id its solver
+                // was asked with, which also identifies it towards the scoring
+                // logic.
                 let solution_uid = i64::try_from(solution.solution_uid)
                     .map_err(|_| PreflightError::SolutionIndexOverflow(solution.solution_uid))?;
+                let solution_id = u64::try_from(solution.quote_id)
+                    .map_err(|_| PreflightError::InvalidQuoteId(solution.quote_id))?;
                 let limit_sell = u256_to_big_decimal(&solution.quoted_sell);
                 let limit_buy = u256_to_big_decimal(&solution.quoted_buy);
 
@@ -384,7 +399,7 @@ impl FastPathHandler {
                 // reference-score comparison treats it as no-value-added.
                 let (filtered_out, score) = match winsel::arbitrator::score(
                     &winsel::Solution::new(
-                        solution.solution_id,
+                        solution_id,
                         solution.solver,
                         vec![winsel::Order {
                             uid: winsel::OrderUid(order_uid.0),
@@ -408,7 +423,7 @@ impl FastPathHandler {
 
                 Ok(database::solver_competition_v2::Solution {
                     uid: solution_uid,
-                    id: BigDecimal::from(solution.solution_id),
+                    id: BigDecimal::from(solution_id),
                     solver: ByteArray(solution.solver.0.0),
                     is_winner: solution.is_winner,
                     filtered_out,
@@ -433,12 +448,12 @@ impl FastPathHandler {
 
         let (limit_sell, limit_buy) = winning_adjusted.ok_or(PreflightError::MissingWinner)?;
 
-        let reference_score = compute_reference_score(staged.data.auction_id, &solution_rows)?;
+        let reference_score = compute_reference_score(auction_id, &solution_rows)?;
 
         self.persistence
             .finalize_fast_path(FastPathPromotion {
                 quote_id: staged.quote_id,
-                auction_id: staged.data.auction_id,
+                auction_id,
                 order_uid,
                 block: deadline.computed_at_block,
                 deadline: deadline.block,
@@ -536,6 +551,8 @@ enum PreflightError {
     DriverNotConfigured(Address),
     #[error("solution index {0} does not fit in i64")]
     SolutionIndexOverflow(usize),
+    #[error("quote id {0} is not a valid solution id")]
+    InvalidQuoteId(i64),
     #[error("staged competition has no solution flagged as winner")]
     MissingWinner,
     #[error("failed to finalize the fast path data in the DB")]
@@ -549,6 +566,7 @@ impl PreflightError {
             Self::LimitTooTight => "limit_too_tight",
             Self::DriverNotConfigured(_) => "driver_not_configured",
             Self::SolutionIndexOverflow(_) => "solution_index_overflow",
+            Self::InvalidQuoteId(_) => "invalid_quote_id",
             Self::MissingWinner => "missing_winner",
             Self::PersistFailed(_) => "persist_failed",
         }
