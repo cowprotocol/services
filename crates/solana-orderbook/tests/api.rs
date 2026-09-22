@@ -261,6 +261,7 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
             funder,
             settlement_program: cow_settlement_interface::id(),
             rpc: SolanaRPC::new_mock_with_mocks(Mocks::default()),
+            max_priority_fee_lamports: 100_000,
         }),
         ..mock_api()
     };
@@ -476,6 +477,7 @@ async fn spawn_sponsored_server(
             funder,
             settlement_program: cow_settlement_interface::id(),
             rpc: SolanaRPC::new_mock_with_mocks(mocks),
+            max_priority_fee_lamports: 100_000,
         }),
         ..mock_api()
     };
@@ -660,7 +662,9 @@ fn sponsored_creation_tx(
     creation_tx(funder, owner, &intent, vec![destination], sign)
 }
 
-/// A well-formed bundle priced above the sponsored ceiling.
+/// A well-formed bundle whose priority fee is above the sponsored ceiling.
+/// Neither factor is outlandish alone, the product is: 500000 micro-lamports
+/// over the compute ceiling comes to 700000 lamports.
 fn overpriced_creation_tx(
     funder: solana_sdk::pubkey::Pubkey,
     owner: &solana_sdk::signer::keypair::Keypair,
@@ -674,7 +678,10 @@ fn overpriced_creation_tx(
         vec![destination],
         vec![
             solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(
-                1_000_001,
+                500_000,
+            ),
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(
+                1_400_000,
             ),
         ],
         true,
