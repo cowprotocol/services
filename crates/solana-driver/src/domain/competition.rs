@@ -24,6 +24,10 @@ const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
 /// deadline slot into a wall-clock confirmation timeout. This is mainnet's
 /// target; other clusters can drift.
 const SLOT_DURATION_MS: u64 = 400;
+/// The network's per-transaction byte ceiling,
+/// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
+/// rejects a larger transaction before it simulates anything.
+const MAX_TRANSACTION_BYTES: u64 = 1232;
 
 /// Cache key for a proposed solution.
 ///
@@ -233,7 +237,11 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
-        observe_transaction(&transaction, cu_estimate);
+        if let Some(size) = observe_transaction(&transaction, cu_estimate)
+            && size > MAX_TRANSACTION_BYTES
+        {
+            return Err(Error::TransactionTooLarge { size });
+        }
 
         self.simulate_settlement(&transaction).await?;
 
@@ -452,6 +460,10 @@ pub(crate) enum Error {
         err: cow_solana_rpc::UiTransactionError,
         settlement_error: Option<SettlementError>,
     },
+    /// The encoded settlement exceeds the network's per-transaction ceiling.
+    /// Nothing was sent.
+    #[error("settlement transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
+    TransactionTooLarge { size: u64 },
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
@@ -490,10 +502,14 @@ fn metrics() -> &'static Metrics {
 }
 
 /// Record the built transaction's footprint against the per-transaction bytes,
-/// account, and compute-unit ceilings.
-fn observe_transaction(transaction: &VersionedTransaction, cu_estimate: Option<u32>) {
+/// account, and compute-unit ceilings, and hand back the wire size it measured.
+fn observe_transaction(
+    transaction: &VersionedTransaction,
+    cu_estimate: Option<u32>,
+) -> Option<u64> {
     let metrics = metrics();
-    if let Ok(bytes) = bincode::serialized_size(transaction) {
+    let bytes = encoded_size(transaction);
+    if let Some(bytes) = bytes {
         metrics.transaction_bytes.observe(bytes as f64);
     }
     metrics
@@ -502,6 +518,12 @@ fn observe_transaction(transaction: &VersionedTransaction, cu_estimate: Option<u
     if let Some(cu) = cu_estimate {
         metrics.compute_units.observe(f64::from(cu));
     }
+    bytes
+}
+
+/// The transaction's wire size, `None` when it does not serialize.
+fn encoded_size(transaction: &VersionedTransaction) -> Option<u64> {
+    bincode::serialized_size(transaction).ok()
 }
 
 /// Total accounts a transaction resolves to: its static keys plus every
@@ -535,6 +557,7 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",
+        Error::TransactionTooLarge { .. } => "transaction_too_large",
         Error::Resolve(_) => "resolve_failed",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",
