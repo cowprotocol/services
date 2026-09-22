@@ -210,7 +210,19 @@ fn validate(
     if keys.first() != Some(&sponsoring.funder) {
         return Err(PlacementError::WrongFeePayer);
     }
-    let Some((instruction, preparations)) = message.instructions().split_last() else {
+    // Wallets add compute-budget instructions of their own, before and after
+    // ours, so they sit outside the template.
+    let mut bundle = Vec::with_capacity(message.instructions().len());
+    for instruction in message.instructions() {
+        if keys.get(usize::from(instruction.program_id_index))
+            == Some(&solana_compute_budget_interface::ID)
+        {
+            check_compute_unit_price(&instruction.data)?;
+        } else {
+            bundle.push(instruction);
+        }
+    }
+    let Some((instruction, preparations)) = bundle.split_last() else {
         return Err(PlacementError::InvalidTransaction(
             "the transaction carries no instructions",
         ));
@@ -372,6 +384,29 @@ const WRAP_TRANSFER: u8 = 2;
 const WRAP_SYNC: u8 = 3;
 const APPROVE: u8 = 4;
 const CREATE_DESTINATION: u8 = 5;
+
+/// The funder pays the priority fee, so the client-set price is bounded. At
+/// the network's 1.4M compute unit ceiling that is 0.0014 SOL per creation.
+const MAX_COMPUTE_UNIT_PRICE: u64 = 1_000_000;
+
+/// Reject a compute-budget instruction priced above the ceiling. The other
+/// variants pass, none of them spends the funder's lamports.
+fn check_compute_unit_price(data: &[u8]) -> Result<(), PlacementError> {
+    // Discriminator 3 is `SetComputeUnitPrice`, then a little-endian u64.
+    let Some((3, price)) = data.split_first() else {
+        return Ok(());
+    };
+    let price = price
+        .try_into()
+        .map(u64::from_le_bytes)
+        .map_err(|_| PlacementError::InvalidTransaction("malformed compute unit price"))?;
+    if price > MAX_COMPUTE_UNIT_PRICE {
+        return Err(PlacementError::InvalidTransaction(
+            "the compute unit price is above the sponsored ceiling",
+        ));
+    }
+    Ok(())
+}
 
 /// Classify one preparation instruction against the sponsored template and
 /// pin every account it touches to the order. The funder pays for the whole
