@@ -704,6 +704,7 @@ components:
         The abstract auction to be solved by the searcher.
       type: object
       required:
+        - id
         - tokens
         - orders
         - liquidity

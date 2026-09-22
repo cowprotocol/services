@@ -7129,6 +7129,7 @@ dependencies = [
  "arc-swap",
  "async-stream",
  "async-trait",
+ "axum",
  "bad-tokens",
  "balance-overrides",
  "bigdecimal",

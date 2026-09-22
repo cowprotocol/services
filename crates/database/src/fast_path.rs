@@ -39,10 +39,7 @@ pub async fn save_competition(
     quote_id: QuoteId,
     competition: serde_json::Value,
 ) -> Result<(), sqlx::Error> {
-    // Quote requests that shared one solver response stage the same
-    // competition under the same id; the first one wins.
-    const QUERY: &str = "INSERT INTO quote_competitions (quote_id, competition) VALUES ($1, $2) \
-                         ON CONFLICT (quote_id) DO NOTHING";
+    const QUERY: &str = "INSERT INTO quote_competitions (quote_id, competition) VALUES ($1, $2)";
     sqlx::query(QUERY)
         .bind(quote_id)
         .bind(competition)

@@ -35,15 +35,17 @@ pub struct StagedQuoteCompetition {
     pub solutions: Vec<StagedSolution>,
 }
 
-/// One solver's quote in a staged competition. The solver's driver cached its
-/// solution under the quote id, which is what the fast path settles by.
+/// One solver's quote in a staged competition.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StagedSolution {
-    pub solution_uid: usize,
     pub solver: Address,
     pub is_winner: bool,
     pub quoted_sell: U256,
     pub quoted_buy: U256,
+    /// Id the solver was asked with; its driver cached the solution under it,
+    /// which is what the fast path settles by, and the promoted solution row
+    /// is identified by it.
+    pub quote_id: QuoteId,
 }
 
 /// Persists a quote row under the id its winning solver was asked with (see
@@ -69,20 +71,30 @@ async fn stage_competition(
     data: &QuoteCompetition,
 ) -> Result<()> {
     let quotes = data.quotes();
-    if quotes.is_empty() {
-        tracing::error!(quote_id, "fast path quote competition without any quotes");
+    // Only a quote a solver produced can be settled through the fast path: its
+    // driver cached the solution under the quote id. Trivial quotes (ETH/WETH
+    // wrapping) come from no solver and carry no id.
+    if quotes
+        .first()
+        .is_none_or(|winner| winner.quote_id.is_none())
+    {
+        tracing::warn!(
+            quote_id,
+            "fast path quote competition without a solver-produced winner; not staged"
+        );
         return Ok(());
     }
 
     let solutions = quotes
         .iter()
+        .filter_map(|quote| quote.quote_id.map(|quote_id| (quote, quote_id)))
         .enumerate()
-        .map(|(index, quote)| StagedSolution {
+        .map(|(index, (quote, quote_id))| StagedSolution {
             solver: quote.solver,
-            solution_uid: index,
             is_winner: index == 0,
             quoted_sell: quote.quoted_sell_amount,
             quoted_buy: quote.quoted_buy_amount,
+            quote_id,
         })
         .collect();
 

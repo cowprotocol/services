@@ -94,6 +94,15 @@ impl TradeKind {
         }
     }
 
+    /// Re-labels the trade with another quote id, for a caller that reused a
+    /// request sent under someone else's id.
+    pub fn set_quote_id(&mut self, quote_id: QuoteId) {
+        match self {
+            TradeKind::Legacy(trade) => trade.quote_id = quote_id,
+            TradeKind::Regular(trade) => trade.quote_id = quote_id,
+        }
+    }
+
     pub fn tx_origin(&self) -> Option<Address> {
         match self {
             TradeKind::Legacy(trade) => trade.tx_origin,

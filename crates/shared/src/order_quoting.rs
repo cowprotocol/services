@@ -280,6 +280,9 @@ pub struct QuoteResponse {
     pub gas_amount: f64,
     pub verified: bool,
     pub supports_fast_path: bool,
+    /// Id the solver was asked with, under which its driver caches a
+    /// fast-path solution. `None` for quotes no solver produced.
+    pub quote_id: Option<QuoteId>,
     pub metadata: QuoteMetadata,
 }
 
@@ -965,6 +968,7 @@ fn assemble_quote_data(
             gas_amount: estimate.gas as f64,
             verified: estimate.verified,
             supports_fast_path: estimate.supports_fast_path,
+            quote_id: estimate.quote_id,
             metadata: QuoteMetadataV1 {
                 interactions: estimate.execution.interactions,
                 pre_interactions: estimate.execution.pre_interactions,
@@ -1219,6 +1223,7 @@ mod tests {
                     gas_amount: 3.,
                     verified: false,
                     supports_fast_path: false,
+                    quote_id: Some(1337),
                     metadata: Default::default(),
                 },
                 [],
@@ -1379,6 +1384,7 @@ mod tests {
                     gas_amount: 3.,
                     verified: false,
                     supports_fast_path: false,
+                    quote_id: Some(1337),
                     metadata: Default::default(),
                 },
                 [],
@@ -1534,6 +1540,7 @@ mod tests {
                     gas_amount: 3.,
                     verified: false,
                     supports_fast_path: false,
+                    quote_id: Some(1337),
                     metadata: Default::default(),
                 },
                 [],
