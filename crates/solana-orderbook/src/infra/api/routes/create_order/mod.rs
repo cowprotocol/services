@@ -225,7 +225,7 @@ fn validate(
     }
     // The funder is fee payer, so the priority fee the client asked for comes
     // out of its balance.
-    let priority_fee = compute_budget.priority_fee_lamports(message.instructions().len());
+    let priority_fee = compute_budget.max_priority_fee_lamports();
     if priority_fee > u128::from(sponsoring.max_priority_fee_lamports) {
         return Err(PlacementError::InvalidTransaction(
             "the priority fee is above the sponsored ceiling",
@@ -394,9 +394,10 @@ const WRAP_SYNC: u8 = 3;
 const APPROVE: u8 = 4;
 const CREATE_DESTINATION: u8 = 5;
 
-/// Compute units the runtime grants each instruction that does not ask for a
-/// limit, and the ceiling it caps the total at.
-const DEFAULT_COMPUTE_UNITS_PER_INSTRUCTION: u32 = 200_000;
+/// The compute units a transaction can consume at most, whatever it declares.
+/// A transaction that names no limit is priced against this, since the units
+/// the runtime would otherwise grant depend on which programs each
+/// instruction calls.
 const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
 /// What the client asked the runtime to charge for priority.
@@ -441,19 +442,13 @@ impl ComputeBudget {
         malformed.map_err(PlacementError::InvalidTransaction)
     }
 
-    /// The priority fee the transaction would pay, in lamports, rounded up.
-    /// Without a declared limit the runtime grants the default per
-    /// instruction, so that is what the unpriced transaction would spend.
-    fn priority_fee_lamports(&self, instructions: usize) -> u128 {
+    /// The most the transaction could pay in priority fee, in lamports,
+    /// rounded up. An undeclared limit is priced at the network ceiling.
+    fn max_priority_fee_lamports(&self) -> u128 {
         let Some(price) = self.price else {
             return 0;
         };
-        let limit = self.limit.unwrap_or_else(|| {
-            u32::try_from(instructions)
-                .unwrap_or(u32::MAX)
-                .saturating_mul(DEFAULT_COMPUTE_UNITS_PER_INSTRUCTION)
-                .min(MAX_COMPUTE_UNIT_LIMIT)
-        });
+        let limit = self.limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT);
         // Micro-lamports per unit times units, rounded up to whole lamports.
         (u128::from(price) * u128::from(limit)).div_ceil(1_000_000)
     }
@@ -675,26 +670,23 @@ mod tests {
         let mut steep = ComputeBudget::default();
         steep.read(&set_price(1_000_000)).unwrap();
         steep.read(&set_limit(20_000)).unwrap();
-        assert_eq!(steep.priority_fee_lamports(4), 20_000);
+        assert_eq!(steep.max_priority_fee_lamports(), 20_000);
 
         let mut wide = ComputeBudget::default();
         wide.read(&set_price(1_000)).unwrap();
         wide.read(&set_limit(MAX_COMPUTE_UNIT_LIMIT)).unwrap();
-        assert_eq!(wide.priority_fee_lamports(4), 1_400);
+        assert_eq!(wide.max_priority_fee_lamports(), 1_400);
     }
 
-    /// Without a price there is no priority fee, and without a limit the fee
-    /// follows the units the runtime would grant.
+    /// No price means no priority fee. A price without a limit is priced at
+    /// the ceiling, since the transaction may consume up to it.
     #[test]
-    fn missing_instructions_fall_back_to_the_runtime_defaults() {
-        assert_eq!(ComputeBudget::default().priority_fee_lamports(4), 0);
+    fn an_undeclared_limit_is_priced_at_the_ceiling() {
+        assert_eq!(ComputeBudget::default().max_priority_fee_lamports(), 0);
 
         let mut priced = ComputeBudget::default();
         priced.read(&set_price(1_000_000)).unwrap();
-        // Four instructions at the per-instruction default.
-        assert_eq!(priced.priority_fee_lamports(4), 800_000);
-        // Capped at the ceiling once the count would exceed it.
-        assert_eq!(priced.priority_fee_lamports(100), 1_400_000);
+        assert_eq!(priced.max_priority_fee_lamports(), 1_400_000);
     }
 
     /// The runtime rejects a repeated compute-budget instruction, so pricing
