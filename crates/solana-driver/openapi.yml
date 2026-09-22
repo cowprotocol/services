@@ -365,6 +365,7 @@ components:
         - QuoteSameTokens
         - QuotingFailed
         - SimulationFailed
+        - TransactionTooLarge
         - Unknown
   responses:
     BadRequest:
