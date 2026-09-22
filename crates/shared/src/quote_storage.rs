@@ -38,6 +38,9 @@ pub struct StagedQuoteCompetition {
 /// One solver's quote in a staged competition.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StagedSolution {
+    /// Zero-based rank of the solution, best first: the `proposed_solutions`
+    /// uid the public ranking is derived from.
+    pub solution_uid: usize,
     pub solver: Address,
     pub is_winner: bool,
     pub quoted_sell: U256,
@@ -90,6 +93,7 @@ async fn stage_competition(
         .filter_map(|quote| quote.quote_id.map(|quote_id| (quote, quote_id)))
         .enumerate()
         .map(|(index, (quote, quote_id))| StagedSolution {
+            solution_uid: index,
             solver: quote.solver,
             is_winner: index == 0,
             quoted_sell: quote.quoted_sell_amount,

@@ -255,10 +255,7 @@ impl FastPathHandler {
             .await
             .context("failed to allocate fast-path auction id")?;
         let quote_id = staged.quote_id;
-        // Fast-path solutions are identified by their quote id, also in the
-        // settlement bookkeeping that regular auctions key by ranking index.
-        let solution_uid = usize::try_from(staged.winner().quote_id)
-            .map_err(|_| PreflightError::InvalidQuoteId(staged.winner().quote_id))?;
+        let solution_uid = staged.winner().solution_uid;
         let final_execution = self
             .compute_and_persist_final_execution(
                 pending.model_order,
@@ -385,9 +382,12 @@ impl FastPathHandler {
                     // at
                     winning_adjusted = Some((adjusted_sell, adjusted_buy));
                 }
-                // Each solution is identified by the quote id its solver was
-                // asked with: as the row's uid and id, and towards the scoring
+                // The uid is the ranking index the public API derives the
+                // ranking from; the solution's id is the quote id its solver
+                // was asked with, which also identifies it towards the scoring
                 // logic.
+                let solution_uid = i64::try_from(solution.solution_uid)
+                    .map_err(|_| PreflightError::SolutionIndexOverflow(solution.solution_uid))?;
                 let solution_id = u64::try_from(solution.quote_id)
                     .map_err(|_| PreflightError::InvalidQuoteId(solution.quote_id))?;
                 let limit_sell = u256_to_big_decimal(&solution.quoted_sell);
@@ -422,7 +422,7 @@ impl FastPathHandler {
                 };
 
                 Ok(database::solver_competition_v2::Solution {
-                    uid: solution.quote_id,
+                    uid: solution_uid,
                     id: BigDecimal::from(solution_id),
                     solver: ByteArray(solution.solver.0.0),
                     is_winner: solution.is_winner,
@@ -549,6 +549,8 @@ enum PreflightError {
     LimitTooTight,
     #[error("winning driver {0:?} is currently not configured")]
     DriverNotConfigured(Address),
+    #[error("solution index {0} does not fit in i64")]
+    SolutionIndexOverflow(usize),
     #[error("quote id {0} is not a valid solution id")]
     InvalidQuoteId(i64),
     #[error("staged competition has no solution flagged as winner")]
@@ -563,6 +565,7 @@ impl PreflightError {
             Self::NoStagedData => "no_staged_data",
             Self::LimitTooTight => "limit_too_tight",
             Self::DriverNotConfigured(_) => "driver_not_configured",
+            Self::SolutionIndexOverflow(_) => "solution_index_overflow",
             Self::InvalidQuoteId(_) => "invalid_quote_id",
             Self::MissingWinner => "missing_winner",
             Self::PersistFailed(_) => "persist_failed",
