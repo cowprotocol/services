@@ -46,7 +46,8 @@ async fn route(
                         order,
                         limit_prices,
                     )
-                    .await?
+                    .await
+                    .inspect_err(|err| tracing::debug!(?err, "couldn't reencode solution"))?
             }
             // The autopilot always sends a solution id when it is not
             // settling a cached quote.

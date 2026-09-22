@@ -15,12 +15,13 @@ use {
         db,
     },
     axum::{Json, http::StatusCode},
+    bigdecimal::ToPrimitive,
     cow_settlement_interface::{
         data::intent::{EncodedOrderIntent, OrderIntent, OrderKind as IntentOrderKind},
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
         pda::{order::find_order_pda, state::find_state_pda},
     },
-    database::solana::OrderKind,
+    database::{byte_array::ByteArray, solana::OrderKind},
     serde::Deserialize,
     serde_with::{base64::Base64, serde_as},
     solana_sdk::{
@@ -42,6 +43,9 @@ use {
 pub struct Params {
     #[serde_as(as = "Base64")]
     pub transaction: Vec<u8>,
+    /// The id the quote endpoint answered for this order, if any.
+    #[serde(default)]
+    pub quote_id: Option<i64>,
 }
 
 /// Rejections of a sponsored order placement. The names follow the EVM
@@ -156,15 +160,23 @@ pub async fn create_order(
     // Short-circuit replays with a cheap read before the insert. A replayed
     // transaction usually dies at the blockhash check already, and the
     // insert's unique violation stays as the race-safe backstop.
-    let duplicate = db::order_exists(state.pool(), &order.uid)
+    let duplicate = db::order_exists(state.pool(), &order.uid.0)
         .await
         .map_err(|err| internal_error_reply(err, "order existence check failed"))?;
     if duplicate {
         return Err(PlacementError::DuplicatedOrder.into());
     }
 
+    // The link is best-effort: a quote that is missing, expired, or not the
+    // one this order came from is dropped with a warning instead of
+    // rejecting an otherwise valid order.
+    let quote = match params.quote_id {
+        Some(id) => link_quote(state.pool(), id, &order).await,
+        None => None,
+    };
+
     let uid = order.uid;
-    if let Err(err) = db::insert_sponsored_order(state.pool(), &order).await {
+    if let Err(err) = db::insert_sponsored_order(state.pool(), &order, quote.as_ref()).await {
         let duplicate = err
             .downcast_ref::<sqlx::Error>()
             .and_then(|err| err.as_database_error())
@@ -174,7 +186,7 @@ pub async fn create_order(
         }
         return Err(internal_error_reply(err, "sponsored order insert failed"));
     }
-    Ok((StatusCode::CREATED, Json(const_hex::encode_prefixed(uid))))
+    Ok((StatusCode::CREATED, Json(const_hex::encode_prefixed(uid.0))))
 }
 
 /// Check the transaction is exactly the sponsored-creation shape and derive
@@ -285,6 +297,54 @@ fn validate(
     }
 
     Ok(build_order(intent, uid, order_pda))
+}
+
+/// The quote copy to store under the order: filled when the stored quote
+/// matches the order (same pair and side, same fixed amount, unexpired),
+/// `None` otherwise. The unfixed side carries the user's slippage and stays
+/// unchecked, like the EVM `find_quote` match, so the linked quote's
+/// promised price is not a trustworthy value.
+/// TODO: once fee policies consume the link, a miss must re-quote and link
+/// the fresh quote instead of dropping the link, like the EVM orderbook's
+/// `find_quote` fallback, and the match must tighten (the unfixed side
+/// within the order's slippage) so the consumed price cannot be shopped in.
+async fn link_quote(
+    pool: &sqlx::PgPool,
+    id: i64,
+    order: &db::SponsoredOrder,
+) -> Option<db::OrderQuote> {
+    let quote = match db::read_quote(pool, id).await {
+        Ok(Some(quote)) => quote,
+        Ok(None) => {
+            tracing::warn!(id, "quote link dropped, no such quote");
+            return None;
+        }
+        Err(err) => {
+            tracing::warn!(id, ?err, "quote link dropped, lookup failed");
+            return None;
+        }
+    };
+    // The unfixed side of the order carries the user's slippage, so only the
+    // fixed one is expected to equal the quote's.
+    let fixed_amount_matches = match order.kind {
+        OrderKind::Sell => quote.sell_amount.to_u64() == Some(order.sell_amount),
+        OrderKind::Buy => quote.buy_amount.to_u64() == Some(order.buy_amount),
+    };
+    let matches = quote.sell_token == order.sell_token
+        && quote.buy_token == order.buy_token
+        && quote.kind == order.kind
+        && fixed_amount_matches
+        && quote.expiration > chrono::Utc::now();
+    if !matches {
+        tracing::warn!(id, "quote link dropped, the quote does not match the order");
+        return None;
+    }
+    Some(db::OrderQuote {
+        quote_id: id,
+        sell_amount: quote.sell_amount,
+        buy_amount: quote.buy_amount,
+        solver: quote.solver,
+    })
 }
 
 /// Resolve an instruction's account indexes into the transaction's keys.
@@ -485,12 +545,12 @@ fn build_order(
     order_pda: Pubkey,
 ) -> db::SponsoredOrder {
     db::SponsoredOrder {
-        uid: uid.to_bytes(),
-        owner: intent.owner.to_bytes(),
-        sell_token: intent.sell_mint.to_bytes(),
-        buy_token: intent.buy_mint.to_bytes(),
-        sell_token_account: intent.sell_token_account.to_bytes(),
-        buy_token_account: intent.buy_token_account.to_bytes(),
+        uid: ByteArray(uid.to_bytes()),
+        owner: ByteArray(intent.owner.to_bytes()),
+        sell_token: ByteArray(intent.sell_mint.to_bytes()),
+        buy_token: ByteArray(intent.buy_mint.to_bytes()),
+        sell_token_account: ByteArray(intent.sell_token_account.to_bytes()),
+        buy_token_account: ByteArray(intent.buy_token_account.to_bytes()),
         sell_amount: intent.sell_amount,
         buy_amount: intent.buy_amount,
         valid_to: intent.valid_to,
@@ -499,8 +559,8 @@ fn build_order(
             IntentOrderKind::Buy => OrderKind::Buy,
         },
         partially_fillable: intent.flags.partially_fillable,
-        app_data: intent.app_data,
-        order_pda: order_pda.to_bytes(),
+        app_data: ByteArray(intent.app_data),
+        order_pda: ByteArray(order_pda.to_bytes()),
         presigned_transaction: Vec::new(),
         last_valid_block_height: 0,
     }

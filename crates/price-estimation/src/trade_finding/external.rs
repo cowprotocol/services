@@ -72,7 +72,7 @@ impl ExternalTradeFinder {
                 amount: query.in_amount.get(),
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
-                fast_path: query.fast_path,
+                enable_fast_path: query.fast_path,
                 quote_id: query.quote_id,
             };
             let block_dependent = query.block_dependent;
@@ -122,9 +122,10 @@ impl ExternalTradeFinder {
                                 })
                         });
 
-                    if result
-                        .as_ref()
-                        .is_ok_and(|quote| order.fast_path && !quote.supports_fast_path())
+                    if order.enable_fast_path
+                        && result
+                            .as_ref()
+                            .is_ok_and(|quote| !quote.supports_fast_path())
                     {
                         Err(PriceEstimationError::UnsupportedOrderType(
                             "solver does not support fast path".to_string(),
@@ -403,13 +404,8 @@ pub mod dto {
         pub amount: U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
-        // Renamed to match the driver's `enableFastPath` field name.
-        #[serde(
-            rename = "enableFastPath",
-            default,
-            skip_serializing_if = "std::ops::Not::not"
-        )]
-        pub fast_path: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pub enable_fast_path: bool,
         /// Id of the quote being computed, allocated by the orderbook. Lets
         /// the solver match its quote to the order eventually placed with it
         /// and keys a cached fast-path solution in the driver.

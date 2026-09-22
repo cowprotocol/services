@@ -1042,6 +1042,7 @@ impl Persistence {
     /// for the solvable-orders cache — either immediately (`now`, when
     /// fast-path settle isn't going to fire) or delayed by the
     /// exclusivity window.
+    #[instrument(skip_all)]
     pub async fn set_order_valid_from(
         &self,
         uid: domain::OrderUid,
@@ -1083,6 +1084,7 @@ impl Persistence {
     /// through the quoter return `None` there, meaning no
     /// out-of-competition settle is possible and the caller should just
     /// mark the order eligible for the regular auction.
+    #[instrument(skip_all)]
     pub async fn pending_fast_path_order(
         &self,
         uid: domain::OrderUid,
@@ -1148,7 +1150,7 @@ impl Persistence {
             price_tokens,
             price_values,
             surplus_capturing_jit_order_owners: Vec::new(),
-            penalty_caps_native: Some(Vec::new()),
+            penalty_caps_native: Some(vec![promotion.penalty_cap_native]),
         };
 
         let policy_rows: Vec<_> = promotion
@@ -1164,6 +1166,9 @@ impl Persistence {
         database::solver_competition_v2::save(&mut tx, promotion.auction_id, &promotion.solutions)
             .await
             .context("save proposed_solutions / proposed_trade_executions")?;
+        database::reference_scores::insert(&mut tx, &[promotion.reference_score])
+            .await
+            .context("insert fast-path reference_scores")?;
         database::fee_policies::insert_batch(tx.deref_mut(), policy_rows)
             .await
             .context("insert fast-path fee policies")?;
@@ -1244,6 +1249,10 @@ pub struct FastPathPromotion {
     /// handler rather than here.
     pub solutions: Vec<database::solver_competition_v2::Solution>,
     pub fee_policies: Vec<domain::fee::Policy>,
+    pub reference_score: database::reference_scores::Score,
+    /// Cap of the penalty the solver will get for not executing the order.
+    /// Denominated in the native token.
+    pub penalty_cap_native: BigDecimal,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

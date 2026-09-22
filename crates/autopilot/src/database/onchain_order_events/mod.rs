@@ -10,7 +10,7 @@ use {
         rpc::types::Log,
     },
     anyhow::{Context, Result, anyhow, bail},
-    app_data::{AppDataHash, ProtocolAppData},
+    app_data::{AppDataHash, ExecutionMode, ProtocolAppData},
     chrono::{TimeZone, Utc},
     contracts::{
         CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
@@ -710,17 +710,27 @@ async fn handle_app_data(
             continue;
         };
         let Ok(parsed) = app_data::parse(&appdata_json) else {
-            tracing::debug!(appdata = %String::from_utf8_lossy(&appdata_json), "could not parse appdata");
+            // Unparseable app-data can't be settled correctly, and an on-chain
+            // order can't be rejected at placement, so mark it invalid to keep
+            // it out of auctions.
+            tracing::debug!(order = ?order.uid, "marking order invalid: unparseable appdata");
+            database::onchain_broadcasted_orders::set_placement_error(
+                db,
+                &order.uid,
+                OnchainOrderPlacementError::InvalidOrderData,
+            )
+            .await
+            .context("failed to mark order invalid")?;
             continue;
         };
 
         store_hooks(db, order, &parsed, trampoline).await?;
-        order.fast_path = parsed.enable_fast_path;
-        // Only honour an explicit user-set `validFrom` for non-fast-path
-        // orders; fast-path orders are handled by the autopilot's
-        // fast-path handler.
-        if !parsed.enable_fast_path {
-            order.valid_from = parsed.valid_from.map(i64::from);
+        // `validFrom` is only honoured for non-fast-path orders; fast-path
+        // orders get their `valid_from` from the autopilot's fast-path handler.
+        match parsed.execution_mode {
+            ExecutionMode::FastPath => order.fast_path = true,
+            ExecutionMode::ValidFrom(valid_from) => order.valid_from = Some(i64::from(valid_from)),
+            ExecutionMode::RegularAuction => {}
         }
     }
     Ok(())
