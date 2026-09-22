@@ -158,7 +158,7 @@ WITH candidates AS (
      LIMIT $2 + $3)
     UNION ALL
     (WITH jit_uids AS MATERIALIZED (
-        SELECT DISCINCT uid FROM jit_orders WHERE owner = $1
+        SELECT DISTINCT uid FROM jit_orders WHERE owner = $1
      )
      SELECT t.block_number, t.log_index
      FROM jit_uids
