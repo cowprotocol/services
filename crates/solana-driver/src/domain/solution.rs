@@ -29,6 +29,13 @@ pub struct Solution {
     pub address_lookup_tables: Vec<Pubkey>,
     /// Optional solver estimate of total settlement compute units.
     pub cu_estimate: Option<u32>,
+    pub transaction_version: TransactionVersion,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransactionVersion {
+    V0,
+    V1,
 }
 
 /// A fulfillment of one auction order.

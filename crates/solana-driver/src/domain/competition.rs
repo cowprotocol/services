@@ -442,7 +442,7 @@ fn metrics() -> &'static Metrics {
 /// account, and compute-unit ceilings.
 fn observe_transaction(transaction: &VersionedTransaction, cu_estimate: Option<u32>) {
     let metrics = metrics();
-    if let Ok(bytes) = bincode::serialized_size(transaction) {
+    if let Ok(bytes) = wincode::serialized_size(transaction) {
         metrics.transaction_bytes.observe(bytes as f64);
     }
     metrics

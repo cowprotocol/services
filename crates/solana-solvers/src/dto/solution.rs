@@ -29,6 +29,9 @@ pub struct Solution {
     /// Optional solver estimate of total settlement compute units.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cu_estimate: Option<u32>,
+    /// Settlement transaction format: omitted or 0 selects v0; 1 selects v1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_version: Option<u8>,
     /// The address lookup tables the interactions assume, carried through so
     /// the driver can build the v0 transaction around them.
     #[serde_as(as = "Vec<serde_with::DisplayFromStr>")]
@@ -119,6 +122,7 @@ impl Solution {
                 .map(Instruction::from_sdk)
                 .collect(),
             cu_estimate: None,
+            transaction_version: None,
             address_lookup_tables: swap.address_lookup_tables,
         })
     }
