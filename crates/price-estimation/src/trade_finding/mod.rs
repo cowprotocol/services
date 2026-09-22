@@ -10,7 +10,7 @@ use {
     anyhow::{Context, Result},
     derive_more::Debug,
     external::dto,
-    model::{interaction::InteractionData, order::OrderKind},
+    model::{interaction::InteractionData, order::OrderKind, quote::QuoteId},
     num::CheckedDiv,
     number::{conversions::big_rational_to_u256, u256_ext::U256Ext},
     serde::{Deserialize, Serialize},
@@ -37,7 +37,9 @@ pub struct Quote {
     pub solver: Address,
     /// Whether the quoting solver supports fast-path execution.
     pub supports_fast_path: bool,
-    pub solution_id: Option<u64>,
+    /// Id of the quote: the id its request was sent with, and the id it is
+    /// stored under if it wins the competition.
+    pub quote_id: QuoteId,
     #[debug(ignore)]
     pub execution: QuoteExecution,
 }
@@ -84,17 +86,27 @@ impl TradeKind {
         }
     }
 
+    /// The quote id the request producing this trade was sent with.
+    pub fn quote_id(&self) -> QuoteId {
+        match self {
+            TradeKind::Legacy(trade) => trade.quote_id,
+            TradeKind::Regular(trade) => trade.quote_id,
+        }
+    }
+
+    /// Re-labels the trade with another quote id, for a caller that reused a
+    /// request sent under someone else's id.
+    pub fn set_quote_id(&mut self, quote_id: QuoteId) {
+        match self {
+            TradeKind::Legacy(trade) => trade.quote_id = quote_id,
+            TradeKind::Regular(trade) => trade.quote_id = quote_id,
+        }
+    }
+
     pub fn tx_origin(&self) -> Option<Address> {
         match self {
             TradeKind::Legacy(trade) => trade.tx_origin,
             TradeKind::Regular(trade) => trade.tx_origin,
-        }
-    }
-
-    pub fn solution_id(&self) -> Option<u64> {
-        match self {
-            TradeKind::Legacy(trade) => trade.solution_id,
-            TradeKind::Regular(trade) => trade.solution_id,
         }
     }
 
@@ -156,7 +168,8 @@ pub struct LegacyTrade {
     pub tx_origin: Option<Address>,
     /// Whether the quoting solver supports fast-path execution.
     pub supports_fast_path: bool,
-    pub solution_id: Option<u64>,
+    /// Id of the quote this trade computes: the id the request was sent with.
+    pub quote_id: QuoteId,
 }
 
 /// A trade with JIT orders.
@@ -178,7 +191,8 @@ pub struct Trade {
     pub jit_orders: Vec<dto::JitOrder>,
     /// Whether the quoting solver supports fast-path execution.
     pub supports_fast_path: bool,
-    pub solution_id: Option<u64>,
+    /// Id of the quote this trade computes: the id the request was sent with.
+    pub quote_id: QuoteId,
 }
 
 impl Trade {

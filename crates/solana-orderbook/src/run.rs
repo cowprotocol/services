@@ -99,6 +99,7 @@ pub async fn run(args: Args) {
                 rpc.request_timeout,
                 CommitmentConfig::confirmed(),
             ),
+            max_priority_fee_lamports: sponsoring.max_priority_fee_lamports,
         }
     });
     let api = Api {
