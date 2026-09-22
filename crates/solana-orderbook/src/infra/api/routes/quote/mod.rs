@@ -101,6 +101,7 @@ pub async fn quote(
         expiration,
         id,
         verified: false,
+        funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
 }
 

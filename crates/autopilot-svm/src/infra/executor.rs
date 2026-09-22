@@ -105,6 +105,9 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                 tracing::error!(auction_id, ?err, "failed to open the settlement window");
             }
             let inflight = self.inflight.clone();
+            let windows = self.windows.clone();
+            let solver = winner.solver();
+            let solution_uid = winner.id();
             tokio::spawn(async move {
                 match driver.settle(&request).await {
                     Ok(response) => tracing::info!(
@@ -115,7 +118,8 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                         "settlement submitted"
                     ),
                     // No transaction went out, so the orders can re-enter
-                    // the next cut instead of waiting out the hold.
+                    // the next cut instead of waiting out the hold, and the
+                    // window has nothing left to observe.
                     Err(err) if err.settlement_provably_unsent() => {
                         tracing::warn!(
                             driver = %driver.name,
@@ -124,6 +128,16 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                             "settlement rejected before submission"
                         );
                         inflight.release(uids);
+                        if let Err(err) = windows
+                            .close_rejected(auction_id, solver, solution_uid)
+                            .await
+                        {
+                            tracing::error!(
+                                auction_id,
+                                ?err,
+                                "failed to close the settlement window"
+                            );
+                        }
                     }
                     Err(err) => tracing::error!(
                         driver = %driver.name,

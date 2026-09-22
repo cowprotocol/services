@@ -143,6 +143,30 @@ ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
     Ok(())
 }
 
+/// Close a window whose settlement provably never reached the chain. The
+/// window spans no slots, so it ends where it started. Only an open window
+/// closes: an observed settlement outranks a driver's report.
+pub async fn reject_settlement_window(
+    ex: impl PgExecutor<'_>,
+    auction_id: i64,
+    solver: Pubkey,
+    solution_uid: i64,
+) -> Result<()> {
+    const QUERY: &str = r#"
+UPDATE solana.settlement_executions
+SET outcome = 'rejected', end_timestamp = now(), end_slot = start_slot
+WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3 AND outcome IS NULL
+    "#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(solver.0)
+        .bind(solution_uid)
+        .execute(ex)
+        .await
+        .context("reject settlement execution window")?;
+    Ok(())
+}
+
 /// Close the auction's windows against the settlements the indexer recorded,
 /// matching each window to its solver's settlement. A window already closed
 /// as timed out upgrades to landed: the settlement executed, just late, and
@@ -205,7 +229,11 @@ pub async fn cut(
     block_height: Option<i64>,
 ) -> Result<Auction> {
     let orders = orders_from_rows(open_orders(ex, now_unix, block_height).await?);
-    Ok(Auction { id, orders })
+    Ok(Auction {
+        id,
+        orders,
+        native_prices: Default::default(),
+    })
 }
 
 /// A row the indexer wrote always converts (on-chain values fit the domain

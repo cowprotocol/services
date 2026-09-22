@@ -8,10 +8,7 @@ use {
         },
         run_loop::WinnerSelection,
     },
-    chain_types::{
-        ChainTypes,
-        solana::{Pubkey, Solana},
-    },
+    chain_types::solana::{Pubkey, Solana},
     winner_selection::{Arbitrator, AuctionContext},
 };
 
@@ -54,16 +51,9 @@ impl WinnerSelection<SolanaCycle> for SolanaArbitrator {
             .iter()
             .map(|order| (order.uid, Vec::new()))
             .collect();
-        // Every auction token is priced at the native denominator, i.e. 1:1
-        // to lamports, so scores compare raw surplus. Ranking within one
-        // token pair is exact, comparisons across pairs are not.
-        // TODO: replace with native price estimation.
-        let native_prices = auction
-            .orders
-            .iter()
-            .flat_map(|order| [order.sell_token, order.buy_token])
-            .map(|token| (token, Solana::NATIVE_PRICE_DENOMINATOR))
-            .collect();
+        // A solution trading a token the auction carries no price for gets
+        // no score and loses to scored ones.
+        let native_prices = auction.native_prices.clone();
         let context = AuctionContext::<Solana> {
             fee_policies,
             surplus_capturing_jit_order_owners: Default::default(),
