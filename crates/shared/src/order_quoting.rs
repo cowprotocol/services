@@ -70,7 +70,6 @@ impl QuoteParameters {
             block_dependent: true,
             fast_path: self.fast_path,
             timeout,
-            quote_id: None,
         }
     }
 }
@@ -1163,7 +1162,6 @@ mod tests {
                     block_dependent: true,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    quote_id: None,
                 }
             })
             .returning(|_| {
@@ -1324,7 +1322,6 @@ mod tests {
                     block_dependent: true,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    quote_id: None,
                 }
             })
             .returning(|_| {
@@ -1480,7 +1477,6 @@ mod tests {
                     block_dependent: true,
                     fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                    quote_id: None,
                 }
             })
             .returning(|_| {

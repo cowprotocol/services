@@ -1,12 +1,12 @@
 use {
     super::{QuoteVerificationMode, native::NativePriceEstimating},
-    crate::{PriceEstimationError, QuoteIdGenerating},
+    crate::PriceEstimationError,
     futures::{
         future::{BoxFuture, FutureExt},
         stream::{FuturesUnordered, StreamExt},
     },
     gas_price_estimation::GasPriceEstimating,
-    model::{order::OrderKind, quote::QuoteId},
+    model::order::OrderKind,
     std::{
         cmp::Ordering,
         fmt::Debug,
@@ -39,9 +39,6 @@ pub struct CompetitionEstimator<T> {
     usable_results_for_early_return: NonZeroUsize,
     ranking: PriceRanking,
     verification_mode: QuoteVerificationMode,
-    /// Where the ids quotes are stored under come from, when the estimators
-    /// compute quotes rather than plain price estimates.
-    quote_id_generator: Option<Arc<dyn QuoteIdGenerating>>,
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
@@ -53,7 +50,6 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
             usable_results_for_early_return: NonZeroUsize::MAX,
             ranking,
             verification_mode: QuoteVerificationMode::Unverified,
-            quote_id_generator: None,
         }
     }
 
@@ -75,28 +71,6 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
             usable_results_for_early_return,
             ..self
         }
-    }
-
-    /// Configures where the ids quotes are stored under come from. Every
-    /// estimator is then asked with its own id.
-    pub fn with_quote_id_generator(self, quote_id_generator: Arc<dyn QuoteIdGenerating>) -> Self {
-        Self {
-            quote_id_generator: Some(quote_id_generator),
-            ..self
-        }
-    }
-
-    /// Allocates one quote id per estimator (indexed by the estimator's
-    /// position across all stages), or none when no allocator is configured.
-    async fn generate_quote_ids(&self) -> Result<Vec<QuoteId>, PriceEstimationError> {
-        let Some(generator) = &self.quote_id_generator else {
-            return Ok(vec![]);
-        };
-        let count = self.stages.iter().map(Vec::len).sum();
-        generator
-            .generate(count)
-            .await
-            .map_err(PriceEstimationError::ProtocolInternal)
     }
 
     /// Produce results for the given `input` until the caller does not expect
@@ -134,14 +108,12 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
 
             while stage_index < self.stages.len() && requests.len() < requests_for_batch {
                 let stage = &self.stages.get(stage_index).expect("index checked by loop");
-                let offset: usize = self.stages[..stage_index].iter().map(Vec::len).sum();
                 let futures = stage.iter().enumerate().map(|(index, (name, estimator))| {
                     get_single_result(Context {
                         estimator,
                         name,
                         query: query.clone(),
                         remaining_stages: Arc::clone(&remaining_stages),
-                        position: offset + index,
                     })
                     .map(move |result| (EstimatorIndex(stage_index, index), result))
                     .boxed()
@@ -205,8 +177,6 @@ struct Context<'a, ESTIMATOR, QUERY> {
     remaining_stages: Arc<OnceLock<usize>>,
     /// Name of the estimator
     name: &'a str,
-    /// Position of the estimator across all stages.
-    position: usize,
 }
 
 impl<'a, E, Q> Context<'a, E, Q> {
@@ -308,7 +278,6 @@ mod tests {
                 block_dependent: false,
                 fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                quote_id: None,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -319,7 +288,6 @@ mod tests {
                 block_dependent: false,
                 fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                quote_id: None,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -330,7 +298,6 @@ mod tests {
                 block_dependent: false,
                 fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                quote_id: None,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -341,7 +308,6 @@ mod tests {
                 block_dependent: false,
                 fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                quote_id: None,
             }),
             Arc::new(Query {
                 verification: Default::default(),
@@ -352,7 +318,6 @@ mod tests {
                 block_dependent: false,
                 fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                quote_id: None,
             }),
         ];
         let estimates = [
@@ -453,7 +418,6 @@ mod tests {
             block_dependent: false,
             fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-            quote_id: None,
         });
 
         fn estimate(amount: u64) -> Estimate {
@@ -519,7 +483,6 @@ mod tests {
             block_dependent: false,
             fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-            quote_id: None,
         });
 
         fn estimate(amount: u64) -> Estimate {
@@ -601,7 +564,6 @@ mod tests {
             block_dependent: false,
             fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-            quote_id: None,
         });
 
         fn estimate(amount: u64) -> Estimate {
@@ -656,7 +618,6 @@ mod tests {
             usable_results_for_early_return: NonZeroUsize::new(2).unwrap(),
             ranking: PriceRanking::MaxOutAmount,
             verification_mode: QuoteVerificationMode::Unverified,
-            quote_id_generator: None,
         };
 
         let result = racing.estimates(query).await.unwrap().into_vec();
@@ -673,7 +634,6 @@ mod tests {
             block_dependent: false,
             fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-            quote_id: None,
         })
     }
 

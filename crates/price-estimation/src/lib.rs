@@ -29,6 +29,7 @@ pub mod gas;
 pub mod instrumented;
 pub mod native;
 pub mod native_price_cache;
+pub mod quote_id;
 pub mod sanitized;
 pub mod trade_finding;
 pub mod trade_verifier;
@@ -163,9 +164,6 @@ pub struct Query {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
     pub timeout: Duration,
-    /// Id the quote is stored under if it wins
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub quote_id: Option<model::quote::QuoteId>,
 }
 
 /// Conditions under which a given price estimate needs to work in order to be
@@ -288,8 +286,9 @@ pub trait CompetitionPriceEstimating: Send + Sync + 'static {
     ) -> BoxFuture<'_, Result<RankedEstimates, PriceEstimationError>>;
 }
 
-/// Generates the ids quotes get stored under, one per solver asked, so that
-/// every solver can be sent the id its quote will have if it wins.
+/// Draws the ids quotes get stored under from the database. Every solver asked
+/// for a quote is sent its own id, the one its quote is stored under if it
+/// wins; see [`quote_id::QuoteIdAllocator`] for how ids are handed out.
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 pub trait QuoteIdGenerating: Send + Sync + 'static {
     fn generate(&self, n: usize) -> BoxFuture<'_, anyhow::Result<Vec<model::quote::QuoteId>>>;

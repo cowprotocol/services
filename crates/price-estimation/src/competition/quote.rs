@@ -21,7 +21,7 @@ use {
         future::{BoxFuture, FutureExt, TryFutureExt},
         stream::{BoxStream, FuturesUnordered, StreamExt},
     },
-    model::{order::OrderKind, quote::QuoteId},
+    model::order::OrderKind,
     std::{
         cmp::Ordering,
         sync::Arc,
@@ -40,7 +40,6 @@ impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating
 
         async move {
             let get_context = self.ranking.provide_context(&query);
-            let quote_ids = Arc::new(self.generate_quote_ids().await?);
 
             let get_results = self
                 .produce_results(query.clone(), is_reasonable, move |context| {
@@ -48,19 +47,13 @@ impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating
                     // when an early-return drops the future before it's polled.
                     let start = Instant::now();
                     let estimator_name = context.name;
-                    let inner_query =
-                        with_quote_id(&context.query, quote_ids.get(context.position).copied());
+                    let query = context.query.clone();
                     context
                         .estimator
-                        .estimate(inner_query.clone())
+                        .estimate(query.clone())
                         .map(move |res| {
                             if res.is_ok() {
-                                emit_quote_event(
-                                    estimator_name,
-                                    &inner_query,
-                                    &res,
-                                    start.elapsed(),
-                                );
+                                emit_quote_event(estimator_name, &query, &res, start.elapsed());
                             }
                             res
                         })
@@ -118,21 +111,11 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
     /// out_amount.
     fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
         async_stream::stream! {
-            let quote_ids = match self.generate_quote_ids().await {
-                Ok(quote_ids) => quote_ids,
-                Err(err) => {
-                    yield Err(err);
-                    return;
-                }
-            };
             let mut estimates = self
                 .stages
                 .iter()
                 .flatten()
-                .enumerate()
-                .map(|(position, (_name, estimator))| {
-                    estimator.estimate(with_quote_id(&query, quote_ids.get(position).copied()))
-                })
+                .map(|(_name, estimator)| estimator.estimate(query.clone()))
                 .collect::<FuturesUnordered<_>>()
                 // Only errors and reasonable estimates can be ranked
                 .filter(|r| std::future::ready(r.is_err() || is_reasonable(r)));
@@ -356,18 +339,6 @@ fn emit_quote_event(
         },
     };
     observe::event_bus::publish_event(event);
-}
-
-/// The query an individual estimator is asked with: the shared query, carrying
-/// the id the estimator's quote is stored under if it wins.
-fn with_quote_id(query: &Arc<Query>, quote_id: Option<QuoteId>) -> Arc<Query> {
-    match quote_id {
-        Some(quote_id) => Arc::new(Query {
-            quote_id: Some(quote_id),
-            ..(**query).clone()
-        }),
-        None => query.clone(),
-    }
 }
 
 #[cfg(test)]

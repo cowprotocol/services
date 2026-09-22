@@ -97,7 +97,6 @@ impl NativePriceEstimator {
             block_dependent: false,
             fast_path: false,
             timeout,
-            quote_id: None,
         }
     }
 }

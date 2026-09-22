@@ -19,7 +19,6 @@ use {
         DomainSeparator,
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
-        quote::QuoteId,
         signature::{Signature, SigningScheme},
     },
     num::BigRational,
@@ -131,7 +130,7 @@ impl TradeVerifier {
                     solver: trade.solver(),
                     verified: false,
                     supports_fast_path: trade.supports_fast_path(),
-                    quote_id: query.quote_id,
+                    quote_id: Some(trade.quote_id()),
                     execution: QuoteExecution {
                         interactions: map_interactions_data(trade.interactions()),
                         pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -839,7 +838,7 @@ fn ensure_quote_accuracy(
         solver: trade.solver(),
         verified: true,
         supports_fast_path: trade.supports_fast_path(),
-        quote_id: query.quote_id,
+        quote_id: Some(trade.quote_id()),
         execution: QuoteExecution {
             interactions: map_interactions_data(trade.interactions()),
             pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -855,9 +854,6 @@ pub struct PriceQuery {
     pub buy_token: Address,
     pub kind: OrderKind,
     pub in_amount: NonZeroU256,
-    /// Id of the quote being computed: the id this estimator was asked with,
-    /// and the one its quote is stored under if it wins.
-    pub quote_id: Option<QuoteId>,
 }
 
 fn encode_jit_orders(
@@ -991,7 +987,6 @@ mod tests {
             kind: OrderKind::Sell,
             sell_token,
             buy_token,
-            quote_id: None,
         };
 
         // buy token is lost
@@ -1174,7 +1169,6 @@ mod tests {
             kind: OrderKind::Buy,
             sell_token: token_a,
             buy_token: token_a,
-            quote_id: None,
         };
         let out = TradeVerifier::post_process_summary(
             settlement,
@@ -1193,7 +1187,6 @@ mod tests {
             kind: OrderKind::Sell,
             sell_token: token_a,
             buy_token: token_a,
-            quote_id: None,
         };
         let out = TradeVerifier::post_process_summary(
             settlement,
@@ -1212,7 +1205,6 @@ mod tests {
             kind: OrderKind::Buy,
             sell_token: token_a,
             buy_token: token_b,
-            quote_id: None,
         };
         let err = TradeVerifier::post_process_summary(
             settlement,

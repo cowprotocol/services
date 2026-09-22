@@ -54,11 +54,10 @@ paths:
         - in: query
           name: quoteId
           description: >-
-            Id of the quote, allocated by the orderbook and sent with every
-            quote request. Passed on to the solver as the id of the quote
-            auction; the order eventually placed with the quote references the
-            same id. For fast-path quotes the driver caches the solution under
-            it for a later `/settle`.
+            Id of the quote being computed, allocated by the orderbook for
+            every quote request it sends to a solver. The order eventually 
+            placed with the quote references the same id. For fast-path quotes
+            the driver caches the solution under it for a later `/settle`.
           schema:
             type: integer
           required: true

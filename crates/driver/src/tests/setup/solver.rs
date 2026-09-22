@@ -516,11 +516,10 @@ impl Solver {
                     let effective_gas_price = eth.gas_price().await.unwrap().effective(base_fee).to_string();
                     let expected = json!({
                         // Regular auctions use a fixed id; quote auctions carry
-                        // the quote id when the request had one, and null when
-                        // it did not (native-price estimation).
+                        // the quote id.
                         "id": match config.quote {
-                            false => Some("1".to_owned()),
-                            true => config.quote_id.map(|id| id.to_string()),
+                            false => "1".to_owned(),
+                            true => config.quote_id.expect("quotes carry a quote id").to_string(),
                         },
                         "tokens": tokens_json,
                         "orders": orders_json,

@@ -37,10 +37,8 @@ pub enum Kind {
     /// A round of the official solver competition, which can end in an
     /// on-chain settlement.
     Competition(Id),
-    /// A quote. Carries the orderbook's quote id when the request had one; a
-    /// native-price probe is a quote without one, since it prices a token
-    /// rather than computing a quote anyone can trade on.
-    Quote(Option<crate::domain::quote::Id>),
+    /// The quote this auction was built to compute.
+    Quote(crate::domain::quote::Id),
 }
 
 impl Auction {
@@ -91,12 +89,11 @@ impl Auction {
     }
 
     /// The id this auction is known by, as the solver engine sees it: the
-    /// competition auction's id, or the id of the quote it computes. [`None`]
-    /// for a native-price probe, which has no identity of its own.
-    pub fn id(&self) -> Option<i64> {
+    /// competition auction's id, or the id of the quote it computes.
+    pub fn id(&self) -> i64 {
         match self.id {
-            Kind::Competition(id) => Some(id.0),
-            Kind::Quote(id) => id.map(|id| id.0),
+            Kind::Competition(id) => id.0,
+            Kind::Quote(id) => id.0,
         }
     }
 

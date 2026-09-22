@@ -63,7 +63,9 @@ FROM generate_series(1, $1);
 }
 
 /// Stores the quote under its `id` (allocated with [`next_id`] or
-/// [`next_ids`]) and returns it.
+/// [`next_ids`]) and returns it. A quote already stored under that id is left
+/// untouched: quote requests that shared one solver response carry the same
+/// id, and it is the same quote.
 #[instrument(skip_all)]
 pub async fn save(ex: &mut PgConnection, quote: &Quote) -> Result<QuoteId, sqlx::Error> {
     const QUERY: &str = r#"
@@ -84,9 +86,9 @@ INSERT INTO quotes (
     metadata
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-RETURNING id
+ON CONFLICT (id) DO NOTHING
     "#;
-    let (id,) = sqlx::query_as(QUERY)
+    sqlx::query(QUERY)
         .bind(quote.id)
         .bind(quote.sell_token)
         .bind(quote.buy_token)
@@ -101,9 +103,9 @@ RETURNING id
         .bind(quote.solver)
         .bind(quote.verified)
         .bind(&quote.metadata)
-        .fetch_one(ex)
+        .execute(ex)
         .await?;
-    Ok(id)
+    Ok(quote.id)
 }
 
 #[instrument(skip_all)]
@@ -248,6 +250,40 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(get(&mut db, id).await.unwrap(), None);
+    }
+
+    /// Quote requests that shared one solver response store the same quote
+    /// under the same id: the second save is a no-op rather than an error.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_save_same_id_twice_keeps_the_first_quote() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let now = low_precision_now();
+        let quote = |id: QuoteId, gas_amount: f64| Quote {
+            id,
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 3.into(),
+            buy_amount: 4.into(),
+            gas_amount,
+            gas_price: 6.,
+            sell_token_price: 7.,
+            order_kind: OrderKind::Sell,
+            expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: Default::default(),
+        };
+        let id = next_id(&mut db).await.unwrap();
+        let first = quote(id, 5.);
+        assert_eq!(save(&mut db, &first).await.unwrap(), id);
+
+        assert_eq!(save(&mut db, &quote(id, 8.)).await.unwrap(), id);
+        assert_eq!(get(&mut db, id).await.unwrap().unwrap(), first);
     }
 
     #[tokio::test]

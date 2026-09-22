@@ -714,9 +714,9 @@ components:
         id:
           description: |
             An opaque identifier for the auction or, for requests that are not
-            part of an auction (when quoting token prices), of the quote being
-            computed. The order eventually placed with a quote references the
-            same quote id, so a solver can match the two.
+            part of an auction, of the quote being computed. The order
+            eventually placed with a quote references the same quote id, so a
+            solver can match the two.
           type: string
         tokens:
           description: |

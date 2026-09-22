@@ -4,6 +4,7 @@ use {
     crate::{
         PriceEstimationError,
         Query,
+        quote_id::QuoteIdAllocator,
         trade_finding::{
             Interaction,
             LegacyTrade,
@@ -20,9 +21,11 @@ use {
     anyhow::{Context, anyhow},
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::FutureExt,
+    model::quote::QuoteId,
     observe::tracing::distributed::headers::tracing_headers,
     request_sharing::{BoxRequestSharing, RequestSharing},
     reqwest::{Client, StatusCode, header},
+    std::sync::Arc,
     tracing::instrument,
     url::Url,
 };
@@ -42,7 +45,8 @@ pub struct ExternalTradeFinder {
 
     /// Utility to make sure no 2 identical requests are in-flight at the same
     /// time. Instead of issuing a duplicated request this awaits the
-    /// response of the in-flight request.
+    /// response of the in-flight request. Callers sharing a request also
+    /// share the quote id it was sent with, see [`Self::shared_query`].
     sharing: BoxRequestSharing<Query, SharedTradeResponse>,
 
     /// Client to issue http requests with.
@@ -50,58 +54,79 @@ pub struct ExternalTradeFinder {
 
     /// Stream to retrieve latest block information for block-dependent queries.
     block_stream: CurrentBlockWatcher,
+
+    /// Where the ids quote requests are sent with come from.
+    quote_ids: Arc<QuoteIdAllocator>,
 }
 
 impl ExternalTradeFinder {
-    pub fn new(driver: Url, client: Client, block_stream: CurrentBlockWatcher) -> Self {
+    pub fn new(
+        driver: Url,
+        client: Client,
+        block_stream: CurrentBlockWatcher,
+        quote_ids: Arc<QuoteIdAllocator>,
+    ) -> Self {
         Self {
             quote_endpoint: crate::utils::join_url(&driver, "quote"),
             sharing: RequestSharing::labelled(format!("tradefinder_{driver}")),
             client,
             block_stream,
+            quote_ids,
         }
     }
 
     /// Queries the `/quote` endpoint of the configured driver and deserializes
     /// the result into a Quote or Trade.
+    ///
+    /// Identical in-flight queries share one driver request and, with it, the
+    /// quote id that request is sent with: both callers asked for the same
+    /// quote, so both get the same one (stored once, see
+    /// `database::quotes::save`). Fast-path queries are never shared: the
+    /// driver caches one settleable solution per quote id and every order
+    /// needs its own.
     async fn shared_query(&self, query: &Query) -> Result<TradeKind, TradeError> {
         let fut = move |query: &Query| {
-            let order = dto::Order {
-                sell_token: query.sell_token,
-                buy_token: query.buy_token,
-                amount: query.in_amount.get(),
-                kind: query.kind,
-                deadline: chrono::Utc::now() + query.timeout,
-                enable_fast_path: query.fast_path,
-                quote_id: query.quote_id,
-            };
-            let block_dependent = query.block_dependent;
+            let query = query.clone();
             let id = observe::tracing::distributed::request_id::from_current_span();
             let client = self.client.clone();
             let quote_endpoint = self.quote_endpoint.clone();
+            let quote_ids = self.quote_ids.clone();
             let block_hash = self.block_stream.borrow().hash;
-            let timeout = query.timeout;
 
             async move {
-                let mut request = client
-                    .get(quote_endpoint)
-                    .timeout(timeout)
-                    .query(&order)
-                    .headers(tracing_headers())
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .header(header::ACCEPT, "application/json");
-
-                if block_dependent {
-                    request = request.header("X-Current-Block-Hash", block_hash.to_string())
-                }
-
-                if let Some(ref id) = id {
-                    request = request.header("X-REQUEST-ID", id.clone());
-                }
-
                 let result = async {
+                    // Allocated inside the shared future so that only the
+                    // request which actually goes out consumes an id.
+                    let quote_id = quote_ids.next().await.map_err(|err| {
+                        PriceEstimationError::ProtocolInternal(
+                            err.context("failed to allocate quote id"),
+                        )
+                    })?;
+                    let order = dto::Order {
+                        sell_token: query.sell_token,
+                        buy_token: query.buy_token,
+                        amount: query.in_amount.get(),
+                        kind: query.kind,
+                        deadline: chrono::Utc::now() + query.timeout,
+                        enable_fast_path: query.fast_path,
+                        quote_id,
+                    };
+
+                    let mut request = client
+                        .get(quote_endpoint)
+                        .timeout(query.timeout)
+                        .query(&order)
+                        .headers(tracing_headers())
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .header(header::ACCEPT, "application/json");
+                    if query.block_dependent {
+                        request = request.header("X-Current-Block-Hash", block_hash.to_string())
+                    }
+                    if let Some(ref id) = id {
+                        request = request.header("X-REQUEST-ID", id.clone());
+                    }
+
                     let response = request
-                        .timeout(timeout)
                         .send()
                         .await
                         .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
@@ -113,7 +138,7 @@ impl ExternalTradeFinder {
                         .await
                         .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
                     let result = serde_json::from_str::<dto::QuoteKind>(&text)
-                        .map(TradeKind::from)
+                        .map(|quote| TradeKind::from_dto(quote, quote_id))
                         .map_err(|err| {
                             serde_json::from_str::<dto::Error>(&text)
                                 .map(PriceEstimationError::from)
@@ -144,78 +169,62 @@ impl ExternalTradeFinder {
             .boxed()
         };
 
-        let shared = self.sharing.shared_or_else(query.clone(), fut);
-        let is_shared = shared.is_shared;
-        let response = shared.await;
-
-        if is_shared {
-            tracing::debug!(
-                original_request_id = ?response.request_id,
-                "reusing in-flight quote request"
-            );
-        }
+        let response = if query.fast_path {
+            fut(query).await
+        } else {
+            let shared = self.sharing.shared_or_else(query.clone(), fut);
+            let is_shared = shared.is_shared;
+            let response = shared.await;
+            if is_shared {
+                tracing::debug!(
+                    original_request_id = ?response.request_id,
+                    "reusing in-flight quote request"
+                );
+            }
+            response
+        };
 
         response.result.map_err(TradeError::from)
     }
 }
 
-impl From<dto::QuoteKind> for TradeKind {
-    fn from(quote: dto::QuoteKind) -> Self {
+impl TradeKind {
+    /// The driver's response as a trade, carrying the quote id the request
+    /// was sent with.
+    fn from_dto(quote: dto::QuoteKind, quote_id: QuoteId) -> Self {
         match quote {
-            dto::QuoteKind::Legacy(quote) => TradeKind::Legacy(quote.into()),
-            dto::QuoteKind::Regular(quote) => TradeKind::Regular(quote.into()),
+            dto::QuoteKind::Legacy(quote) => Self::Legacy(LegacyTrade::from_dto(quote, quote_id)),
+            dto::QuoteKind::Regular(quote) => Self::Regular(Trade::from_dto(quote, quote_id)),
         }
     }
 }
 
-impl From<dto::LegacyQuote> for LegacyTrade {
-    fn from(quote: dto::LegacyQuote) -> Self {
+impl LegacyTrade {
+    fn from_dto(quote: dto::LegacyQuote, quote_id: QuoteId) -> Self {
         Self {
             out_amount: quote.amount,
             gas_estimate: quote.gas,
-            interactions: quote
-                .interactions
-                .into_iter()
-                .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
-                    data: interaction.call_data,
-                })
-                .collect(),
+            interactions: quote.interactions.into_iter().map(Into::into).collect(),
             solver: quote.solver,
             tx_origin: quote.tx_origin,
             supports_fast_path: quote.supports_fast_path,
+            quote_id,
         }
     }
 }
 
-impl From<dto::Quote> for Trade {
-    fn from(quote: dto::Quote) -> Self {
+impl Trade {
+    fn from_dto(quote: dto::Quote, quote_id: QuoteId) -> Self {
         Self {
             clearing_prices: quote.clearing_prices,
             gas_estimate: quote.gas,
-            pre_interactions: quote
-                .pre_interactions
-                .into_iter()
-                .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
-                    data: interaction.call_data,
-                })
-                .collect(),
-            interactions: quote
-                .interactions
-                .into_iter()
-                .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
-                    data: interaction.call_data,
-                })
-                .collect(),
+            pre_interactions: quote.pre_interactions.into_iter().map(Into::into).collect(),
+            interactions: quote.interactions.into_iter().map(Into::into).collect(),
             solver: quote.solver,
             tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders,
             supports_fast_path: quote.supports_fast_path,
+            quote_id,
         }
     }
 }
@@ -359,12 +368,12 @@ impl TradeFinding for ExternalTradeFinder {
                     buy_token: query.buy_token,
                     kind: query.kind,
                     in_amount: query.in_amount,
-                    quote_id: query.quote_id,
                 })
                 .map_err(TradeError::Other)?,
             gas_estimate,
             solver: trade.solver(),
             supports_fast_path: trade.supports_fast_path(),
+            quote_id: trade.quote_id(),
             execution: QuoteExecution {
                 interactions: map_interactions_data(trade.interactions()),
                 pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -406,11 +415,7 @@ pub mod dto {
         pub deadline: chrono::DateTime<chrono::Utc>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         pub enable_fast_path: bool,
-        /// Id of the quote being computed, allocated by the orderbook. Lets
-        /// the solver match its quote to the order eventually placed with it
-        /// and keys a cached fast-path solution in the driver.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub quote_id: Option<i64>,
+        pub quote_id: i64,
     }
 
     #[serde_as]
