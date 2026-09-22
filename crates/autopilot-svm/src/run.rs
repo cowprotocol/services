@@ -9,9 +9,11 @@ use {
             db,
             driver::Driver,
             executor::DriverExecutor,
+            inflight::InFlightOrders,
             listen::ListenSession,
             observation::SettlementWindows,
             observer::CompetitionObserver,
+            prices::NativePrices,
             provider::DbAuctionProvider,
             sponsor::Sponsor,
             trigger::SlotTrigger,
@@ -120,6 +122,7 @@ async fn run(config: Config) {
         )
     });
 
+    let inflight = InFlightOrders::default();
     let auction_loop = AuctionLoop::new(
         Box::new(SlotTrigger::new(rpc, config.min_auction_interval)),
         Box::new(DbAuctionProvider::new(
@@ -130,6 +133,16 @@ async fn run(config: Config) {
                 CommitmentConfig::confirmed(),
             ),
             config.max_indexer_lag_slots,
+            inflight.clone(),
+            NativePrices::new(
+                &config.native_prices,
+                SolanaRPC::new_with_timeout_and_commitment(
+                    &config.rpc.endpoint,
+                    config.rpc.request_timeout,
+                    CommitmentConfig::confirmed(),
+                ),
+                config.contracts.wrapped_native_mint,
+            ),
         )),
         Box::new(DriverCompetition::new(
             drivers.clone(),
@@ -139,7 +152,12 @@ async fn run(config: Config) {
             config.competition.max_winners.get(),
             Pubkey(config.contracts.wrapped_native_mint.to_bytes()),
         )),
-        Box::new(DriverExecutor::new(drivers, windows.clone(), sponsor)),
+        Box::new(DriverExecutor::new(
+            drivers,
+            windows.clone(),
+            sponsor,
+            inflight,
+        )),
         Box::new(CompetitionObserver::new(pool, windows)),
         config.competition.submission_deadline_slots.get(),
     );
