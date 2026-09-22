@@ -210,17 +210,15 @@ fn validate(
     if keys.first() != Some(&sponsoring.funder) {
         return Err(PlacementError::WrongFeePayer);
     }
-    // Wallets add compute-budget instructions of their own, before and after
-    // ours, so they sit outside the template.
+    // Wallets wrap the bundle in instructions of their own, before and after
+    // ours, so those sit outside the template.
     let mut bundle = Vec::with_capacity(message.instructions().len());
     let mut compute_budget = ComputeBudget::default();
     for instruction in message.instructions() {
-        if keys.get(usize::from(instruction.program_id_index))
-            == Some(&solana_compute_budget_interface::ID)
-        {
-            compute_budget.read(&instruction.data)?;
-        } else {
-            bundle.push(instruction);
+        match keys.get(usize::from(instruction.program_id_index)) {
+            Some(&solana_compute_budget_interface::ID) => compute_budget.read(&instruction.data)?,
+            Some(&LIGHTHOUSE_PROGRAM) => check_lighthouse(&instruction.data)?,
+            _ => bundle.push(instruction),
         }
     }
     // The funder is fee payer, so the priority fee the client asked for comes
@@ -399,6 +397,31 @@ const CREATE_DESTINATION: u8 = 5;
 /// the runtime would otherwise grant depend on which programs each
 /// instruction calls.
 const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+
+/// Lighthouse, the guard program wallets wrap a transaction in to assert the
+/// state it leaves behind.
+const LIGHTHOUSE_PROGRAM: Pubkey =
+    Pubkey::from_str_const("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
+
+/// Lighthouse's assertion instructions, `AssertAccountData` through
+/// `AssertBubblegumTreeConfigAccount`. Each reads account state and aborts the
+/// transaction on a mismatch, so none of them spends the funder's lamports.
+/// The two variants below the range, `MemoryWrite` and `MemoryClose`, name a
+/// payer that funds a memory account's rent, and on a sponsored creation that
+/// payer can be the funder.
+const LIGHTHOUSE_ASSERTIONS: std::ops::RangeInclusive<u8> = 2..=17;
+
+/// Accept only a Lighthouse assertion. The program is upgradeable at a fixed
+/// address, so an instruction this build does not know is refused rather than
+/// assumed harmless.
+fn check_lighthouse(data: &[u8]) -> Result<(), PlacementError> {
+    match data.first() {
+        Some(discriminator) if LIGHTHOUSE_ASSERTIONS.contains(discriminator) => Ok(()),
+        _ => Err(PlacementError::InvalidTransaction(
+            "only lighthouse assertions are accepted on a sponsored creation",
+        )),
+    }
+}
 
 /// What the client asked the runtime to charge for priority.
 #[derive(Default)]

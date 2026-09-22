@@ -688,6 +688,40 @@ fn overpriced_creation_tx(
     )
 }
 
+/// A Lighthouse instruction over one account, the shape Phantom injects.
+fn lighthouse(
+    discriminator: u8,
+    account: solana_sdk::pubkey::Pubkey,
+) -> solana_sdk::instruction::Instruction {
+    solana_sdk::instruction::Instruction::new_with_bytes(
+        solana_sdk::pubkey::Pubkey::from_str_const("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95"),
+        &[discriminator],
+        vec![solana_sdk::instruction::AccountMeta::new_readonly(
+            account, false,
+        )],
+    )
+}
+
+/// A bundle carrying a Lighthouse instruction outside the assertion range:
+/// `MemoryWrite`, which funds an account from a payer the template cannot
+/// vouch for.
+fn lighthouse_memory_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+) -> String {
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    creation_tx_wrapped(
+        funder,
+        owner,
+        &intent,
+        vec![destination],
+        // Discriminator 0 is `MemoryWrite`.
+        vec![lighthouse(0, owner.pubkey())],
+        true,
+    )
+}
+
 async fn post_order(addr: SocketAddr, transaction: String) -> (reqwest::StatusCode, String) {
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
@@ -734,6 +768,11 @@ async fn create_order_rejects_invalid_submissions() {
         ),
         // The funder pays the priority fee, so an outsized price is refused.
         (overpriced_creation_tx(funder, &owner), "InvalidTransaction"),
+        // A lighthouse assertion is fine, anything outside that range is not.
+        (
+            lighthouse_memory_creation_tx(funder, &owner),
+            "InvalidTransaction",
+        ),
     ] {
         let (status, kind) = post_order(addr, transaction).await;
         assert_eq!(
@@ -926,10 +965,13 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     // The full preparation prefix in front of `CreateOrder`, as the frontend
     // sends it for a first-time native-SOL sell.
     let intent = sponsored_intent(owner.pubkey(), true);
-    // Wrapped in the wallet's compute-budget instructions, one prepended and
-    // one appended.
+    // Wrapped the way Phantom sends it: compute budget and Lighthouse
+    // assertions before our instructions, and another assertion after.
     let mut preparations = vec![
         solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(10_000),
+        // Discriminator 6 is `AssertAccountInfoMulti`.
+        lighthouse(6, owner.pubkey()),
+        lighthouse(6, funder),
     ];
     preparations.extend(full_preparations(funder, owner.pubkey(), &intent));
     let transaction = creation_tx_wrapped(
@@ -941,6 +983,8 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
             solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(
                 12_769,
             ),
+            // Discriminator 10 is `AssertTokenAccountMulti`.
+            lighthouse(10, owner.pubkey()),
         ],
         true,
     );
