@@ -210,7 +210,20 @@ fn validate(
     if keys.first() != Some(&sponsoring.funder) {
         return Err(PlacementError::WrongFeePayer);
     }
-    let Some((instruction, preparations)) = message.instructions().split_last() else {
+    // Wallets wrap the bundle in compute-budget instructions of their own,
+    // before and after ours, so they are set aside before the template is
+    // matched. The funder pays the priority fee they set, hence the ceiling.
+    let mut bundle = Vec::with_capacity(message.instructions().len());
+    for instruction in message.instructions() {
+        if keys.get(usize::from(instruction.program_id_index))
+            == Some(&solana_compute_budget_interface::ID)
+        {
+            check_compute_unit_price(&instruction.data)?;
+        } else {
+            bundle.push(instruction);
+        }
+    }
+    let Some((instruction, preparations)) = bundle.split_last() else {
         return Err(PlacementError::InvalidTransaction(
             "the transaction carries no instructions",
         ));
@@ -372,6 +385,32 @@ const WRAP_TRANSFER: u8 = 2;
 const WRAP_SYNC: u8 = 3;
 const APPROVE: u8 = 4;
 const CREATE_DESTINATION: u8 = 5;
+
+/// The funder pays the transaction fee, so a client-set compute unit price
+/// spends the funder's lamports. Bounded here: at the network's 1.4M compute
+/// unit ceiling this caps one creation's priority fee at 0.0014 SOL, a
+/// hundredfold over what wallets currently set.
+const MAX_COMPUTE_UNIT_PRICE: u64 = 1_000_000;
+
+/// Reject a compute-budget instruction that prices the transaction above the
+/// ceiling. Anything that is not `SetComputeUnitPrice` passes: the remaining
+/// variants cost the funder nothing beyond the price already bounded here.
+fn check_compute_unit_price(data: &[u8]) -> Result<(), PlacementError> {
+    // Discriminator 3 is `SetComputeUnitPrice`, carrying a little-endian u64.
+    let Some((3, price)) = data.split_first() else {
+        return Ok(());
+    };
+    let price = price
+        .try_into()
+        .map(u64::from_le_bytes)
+        .map_err(|_| PlacementError::InvalidTransaction("malformed compute unit price"))?;
+    if price > MAX_COMPUTE_UNIT_PRICE {
+        return Err(PlacementError::InvalidTransaction(
+            "the compute unit price is above the sponsored ceiling",
+        ));
+    }
+    Ok(())
+}
 
 /// Classify one preparation instruction against the sponsored template and
 /// pin every account it touches to the order. The funder pays for the whole

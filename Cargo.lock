@@ -9666,6 +9666,7 @@ dependencies = [
  "serde-ext",
  "serde_json",
  "serde_with",
+ "solana-compute-budget-interface",
  "solana-sdk",
  "solana-system-interface 3.2.0",
  "spl-associated-token-account-interface",
