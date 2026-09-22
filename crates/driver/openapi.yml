@@ -609,7 +609,7 @@ components:
           example: 12345
         auctionId:
           description: >-
-            Auction ID in which the specified solution ID is competing. For
+            Auction in which the specified solution ID is competing. For
             fast-path settlements the quote was solved outside of any auction,
             but its settlement is still attributed to one.
           type: integer

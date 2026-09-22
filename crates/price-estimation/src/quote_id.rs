@@ -36,10 +36,7 @@ impl QuoteIdAllocator {
         Self::with_chunk_size(generator, DEFAULT_CHUNK_SIZE)
     }
 
-    pub fn with_chunk_size(
-        generator: Arc<dyn QuoteIdGenerating>,
-        chunk_size: NonZeroUsize,
-    ) -> Self {
+    fn with_chunk_size(generator: Arc<dyn QuoteIdGenerating>, chunk_size: NonZeroUsize) -> Self {
         Self {
             generator,
             chunk_size,

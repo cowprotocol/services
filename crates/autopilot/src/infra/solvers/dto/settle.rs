@@ -17,7 +17,7 @@ pub struct Request {
     pub solution_id: Option<u64>,
     /// The last block number in which the solution TX can be included
     pub submission_deadline_latest_block: u64,
-    /// Auction ID in which the specified solution ID is competing. For
+    /// Auction in which the specified solution ID is competing. For
     /// fast-path settlements the quote was computed outside of any auction,
     /// but its settlement is still attributed to one.
     #[serde_as(as = "serde_with::DisplayFromStr")]
