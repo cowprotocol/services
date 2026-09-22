@@ -250,4 +250,28 @@ VALUES (10, $1, 0, $2, $3, NULL)
         windows.expire_past_deadline(150).await.unwrap();
         assert_eq!(outcome(&pool, 1).await.as_deref(), Some("rejected"));
     }
+
+    /// An observed settlement outranks a driver's rejection: a rejection
+    /// arriving after the window landed leaves the verdict alone.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_rejection_does_not_overwrite_a_landed_window() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+
+        let windows = SettlementWindows::new(pool.clone());
+        windows
+            .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
+            .await
+            .unwrap();
+
+        insert_settlement(&pool, 1).await;
+        crate::infra::db::close_landed_windows(&pool, 1)
+            .await
+            .unwrap();
+        assert_eq!(outcome(&pool, 1).await.as_deref(), Some("landed"));
+
+        windows.close_rejected(1, Pubkey([7; 32]), 1).await.unwrap();
+        assert_eq!(outcome(&pool, 1).await.as_deref(), Some("landed"));
+    }
 }
