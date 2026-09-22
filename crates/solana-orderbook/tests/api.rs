@@ -660,8 +660,7 @@ fn sponsored_creation_tx(
     creation_tx(funder, owner, &intent, vec![destination], sign)
 }
 
-/// A well-formed bundle whose compute unit price is above the sponsored
-/// ceiling.
+/// A well-formed bundle priced above the sponsored ceiling.
 fn overpriced_creation_tx(
     funder: solana_sdk::pubkey::Pubkey,
     owner: &solana_sdk::signer::keypair::Keypair,
@@ -726,8 +725,7 @@ async fn create_order_rejects_invalid_submissions() {
             sponsored_creation_tx(funder, &owner, false),
             "InvalidSignature",
         ),
-        // The funder pays the priority fee, so an outsized compute unit
-        // price is refused rather than countersigned.
+        // The funder pays the priority fee, so an outsized price is refused.
         (overpriced_creation_tx(funder, &owner), "InvalidTransaction"),
     ] {
         let (status, kind) = post_order(addr, transaction).await;
@@ -921,8 +919,8 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     // The full preparation prefix in front of `CreateOrder`, as the frontend
     // sends it for a first-time native-SOL sell.
     let intent = sponsored_intent(owner.pubkey(), true);
-    // Wrapped in the wallet's own compute-budget instructions, one prepended
-    // and one appended, as Phantom sends it.
+    // Wrapped in the wallet's compute-budget instructions, one prepended and
+    // one appended.
     let mut preparations = vec![
         solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(10_000),
     ];
