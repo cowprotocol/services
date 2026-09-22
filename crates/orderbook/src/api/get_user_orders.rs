@@ -24,7 +24,7 @@ pub async fn get_user_orders_handler(
     const DEFAULT_OFFSET: u64 = 0;
     const DEFAULT_LIMIT: u64 = 10;
     const MIN_LIMIT: u64 = 1;
-    const MAX_LIMIT: u64 = 1000;
+    const MAX_LIMIT: u64 = 100;
 
     let offset = query.offset.unwrap_or(DEFAULT_OFFSET);
     let limit = query.limit.unwrap_or(DEFAULT_LIMIT);

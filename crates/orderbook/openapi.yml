@@ -356,11 +356,11 @@ paths:
         - name: limit
           in: query
           description: |
-            The maximum number of trades to return. Defaults to 10. Must be between 1 and 1000.
+            The maximum number of trades to return. Defaults to 10. Must be between 1 and 100.
           schema:
             type: integer
             minimum: 1
-            maximum: 1000
+            maximum: 100
           required: false
       responses:
         "200":
@@ -428,9 +428,11 @@ paths:
         - name: limit
           in: query
           description: |
-            The pagination limit. Defaults to 10. Maximum 1000. Minimum 1.
+            The pagination limit. Defaults to 10. Maximum 100. Minimum 1.
           schema:
             type: integer
+            minimum: 1
+            maximum: 100
           required: false
       responses:
         "200":

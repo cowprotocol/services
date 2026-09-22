@@ -27,7 +27,7 @@ pub(crate) struct QueryParams {
 const DEFAULT_OFFSET: u64 = 0;
 const DEFAULT_LIMIT: u64 = 10;
 const MIN_LIMIT: u64 = 1;
-const MAX_LIMIT: u64 = 1000;
+const MAX_LIMIT: u64 = 100;
 
 #[derive(Debug, Eq, PartialEq)]
 enum TradeFilterError {
