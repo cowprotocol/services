@@ -127,6 +127,16 @@ pub struct Sponsoring {
         deserialize_with = "deserialize_solana_pubkey_b58"
     )]
     pub settlement_program: Pubkey,
+    /// The most the funder will pay in priority fee for one creation, in
+    /// lamports. The client sets the compute unit price and limit whose
+    /// product this bounds, so it caps what a placement can spend.
+    #[serde(default = "default_max_priority_fee_lamports")]
+    pub max_priority_fee_lamports: u64,
+}
+
+/// A sponsored creation pays around 100 lamports of priority fee today.
+fn default_max_priority_fee_lamports() -> u64 {
+    100_000
 }
 
 fn default_settlement_program_id() -> Pubkey {
