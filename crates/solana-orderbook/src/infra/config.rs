@@ -134,8 +134,7 @@ pub struct Sponsoring {
     pub max_priority_fee_lamports: u64,
 }
 
-/// Two cents at 200 dollars per SOL, and close to a thousand times the
-/// priority fee a sponsored creation pays on chain today.
+/// A sponsored creation pays around 100 lamports of priority fee today.
 fn default_max_priority_fee_lamports() -> u64 {
     100_000
 }
