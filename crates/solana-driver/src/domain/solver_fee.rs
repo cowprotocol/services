@@ -49,11 +49,12 @@ impl SolverFee {
     /// engine's pre-fee figure, as in the EVM driver's `fee_from_volume`. The
     /// autopilot's `f / (1 - f)` and `f / (1 + f)` back the fee out of
     /// post-fee amounts and do not apply here.
-    fn fee_from_volume(self, executed: u64) -> Option<u64> {
+    fn fee_from_volume(self, executed: u64) -> u64 {
         let scaled = u128::from(executed)
             .checked_mul(u128::from(self.0))
             .expect("the product of a 64-bit and a 16-bit number always fits in 128 bits");
-        u64::try_from(scaled.div_ceil(u128::from(MAX_BASE_POINT))).ok()
+        u64::try_from(scaled.div_ceil(u128::from(MAX_BASE_POINT)))
+            .expect("a fee below 100% of a u64 leg fits in u64")
     }
 
     /// Applies the solver fee to every trade of `solution`, in place.
@@ -73,9 +74,7 @@ impl SolverFee {
                 Side::Sell => trade.executed_buy,
                 Side::Buy => trade.executed_sell,
             };
-            let fee = self
-                .fee_from_volume(fee_leg)
-                .ok_or(Rejected::Overflow(trade.order_uid))?;
+            let fee = self.fee_from_volume(fee_leg);
             match order.side {
                 Side::Sell => {
                     // The user receives the leg minus the fee.
@@ -207,9 +206,9 @@ mod tests {
     #[test]
     fn fee_from_volume_rounds_up() {
         let fee = SolverFee::new(500).unwrap();
-        assert_eq!(fee.fee_from_volume(1), Some(1));
-        assert_eq!(fee.fee_from_volume(999), Some(50));
-        assert_eq!(fee.fee_from_volume(1_000), Some(50));
+        assert_eq!(fee.fee_from_volume(1), 1);
+        assert_eq!(fee.fee_from_volume(999), 50);
+        assert_eq!(fee.fee_from_volume(1_000), 50);
     }
 
     #[test]
