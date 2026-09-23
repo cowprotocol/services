@@ -7,6 +7,8 @@ metrics-port = 9586
 max-auction-age = "5m"
 # Minimum time between auction cycles. Zero runs a cycle every new slot.
 min-auction-interval = "2s"
+# Slots the indexer may lag behind the tip before auction cuts are skipped.
+max-indexer-lag-slots = 150
 
 [database]
 # The Postgres database the indexer writes to. A value like "%DB_WRITE_URL"
@@ -30,12 +32,27 @@ submission-deadline-slots = 25
 name = "baseline"
 url = "http://localhost:11088"
 
-# Native price lookups for auction tokens. The key is optional: without one
-# the public CoinGecko API and its rate limits apply.
+# Native price lookups for auction tokens. Sources are asked in order: a
+# token the first one does not price is asked from the next.
 [native-prices]
+ttl = "30s"
+# Lamports a driver source buys per probe quote, a tenth of a SOL.
+driver-probe-lamports = 100000000
+
+# The CoinGecko key is optional: without one the public API and its rate
+# limits apply.
+[[native-prices.estimators]]
+type = "coin-gecko"
 endpoint = "https://api.coingecko.com/api/v3/"
 # api-key = "..."
-ttl = "30s"
+
+# A solver driver quoted through its regular /quote route. The url includes
+# the solver path, like the [[drivers]] entries. The driver's solver must
+# answer buy orders, the probe buys a fixed amount of wSOL.
+[[native-prices.estimators]]
+type = "driver"
+name = "baseline"
+url = "http://localhost:11088/baseline/"
 
 [logging]
 filter = "info,autopilot_svm=debug"

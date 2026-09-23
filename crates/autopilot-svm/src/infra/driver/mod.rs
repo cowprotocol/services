@@ -40,6 +40,59 @@ pub enum Error {
     },
 }
 
+/// The driver's wire error body, reduced to the routed field.
+#[derive(serde::Deserialize)]
+struct ErrorBody {
+    kind: Kind,
+}
+
+/// Mirror of the driver API's wire error kinds. The kind strings are the
+/// wire contract, kept in sync by hand. A kind this mirror does not know
+/// fails the body parse, which reads as not provably unsent, the direction
+/// that only over-holds.
+#[derive(Debug, serde::Deserialize)]
+enum Kind {
+    InvalidAuctionId,
+    SolverFailed,
+    SolutionNotAvailable,
+    DeadlineExceeded,
+    TooManyPendingSettlements,
+    FailedToSubmit,
+    InvalidCreation,
+    FailedToCreate,
+    QuoteSameTokens,
+    QuotingFailed,
+    SimulationFailed,
+    TransactionTooLarge,
+    Unknown,
+}
+
+impl Error {
+    /// Whether a failed `/settle` provably never sent the settlement
+    /// transaction, so the orders can re-enter auctions immediately. Every
+    /// listed kind rejects before the send. `DeadlineExceeded` stays out: the
+    /// driver also answers it when the confirmation wait expired with the
+    /// transaction already on the wire. Transport failures reveal nothing.
+    pub fn settlement_provably_unsent(&self) -> bool {
+        let Error::Status { body, .. } = self else {
+            return false;
+        };
+        let Ok(body) = serde_json::from_str::<ErrorBody>(body) else {
+            return false;
+        };
+        matches!(
+            body.kind,
+            Kind::InvalidAuctionId
+                | Kind::SolutionNotAvailable
+                | Kind::TooManyPendingSettlements
+                | Kind::InvalidCreation
+                | Kind::FailedToCreate
+                | Kind::SimulationFailed
+                | Kind::TransactionTooLarge
+        )
+    }
+}
+
 /// Append a path segment to the base URL. `Url::join` is RFC 3986 relative
 /// resolution, which drops the base's last path segment unless it ends in a
 /// slash, so a base like `http://driver/svm` would lose its prefix.
@@ -90,6 +143,27 @@ impl Driver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_pre_send_rejections_count_as_provably_unsent() {
+        let status = |kind: &str| Error::Status {
+            status: StatusCode::BAD_REQUEST,
+            body: format!(r#"{{"kind":"{kind}","description":""}}"#),
+        };
+        assert!(status("SimulationFailed").settlement_provably_unsent());
+        assert!(status("SolutionNotAvailable").settlement_provably_unsent());
+        assert!(status("TransactionTooLarge").settlement_provably_unsent());
+        // The driver answers this both before and after the send.
+        assert!(!status("DeadlineExceeded").settlement_provably_unsent());
+        assert!(!status("FailedToSubmit").settlement_provably_unsent());
+        // A kind newer than this mirror must read as ambiguous.
+        assert!(!status("SomeFutureKind").settlement_provably_unsent());
+        let garbage = Error::Status {
+            status: StatusCode::BAD_GATEWAY,
+            body: "not json".to_string(),
+        };
+        assert!(!garbage.settlement_provably_unsent());
+    }
 
     /// A base URL with a path and no trailing slash keeps its prefix,
     /// the case `Url::join` gets wrong.

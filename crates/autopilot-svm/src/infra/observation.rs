@@ -11,7 +11,7 @@
 //! window.
 
 use {
-    crate::infra::{db, listen::NotifyHandler},
+    crate::infra::{db, inflight::InFlightOrders, listen::NotifyHandler},
     anyhow::Result,
     async_trait::async_trait,
     chain_types::solana::{Pubkey, Signature},
@@ -24,18 +24,20 @@ use {
 /// `solana_settlement_finalized` notifications close the ones the indexer
 /// saw land.
 ///
-/// `outcome` records what the indexer observed on chain, never a driver's
-/// report, which is why a landing observed after the deadline overwrites a
-/// timeout. The schema also allows `rejected`, unused until typed `/settle`
-/// errors are consumed.
+/// `outcome` records what the indexer observed on chain, which is why a
+/// landing observed after the deadline overwrites a timeout. The one
+/// exception is `rejected`, written from a driver error that proves no
+/// transaction went out, leaving nothing for the indexer to observe.
 #[derive(Clone)]
 pub struct SettlementWindows {
     pool: PgPool,
+    /// A settlement observed on chain releases its orders from the hold-out.
+    inflight: InFlightOrders,
 }
 
 impl SettlementWindows {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, inflight: InFlightOrders) -> Self {
+        Self { pool, inflight }
     }
 
     /// Open a window for a dispatched settlement. `solution_uid` is the
@@ -59,6 +61,19 @@ impl SettlementWindows {
         .await
     }
 
+    /// Close the window of a settlement that provably never left the driver,
+    /// so it does not sit open until the deadline sweep mislabels it a
+    /// timeout. An ambiguous failure keeps its window: the transaction may
+    /// still land, and only an open window is re-checked against the indexer.
+    pub async fn close_rejected(
+        &self,
+        auction_id: i64,
+        solver: Pubkey,
+        solution_uid: i64,
+    ) -> Result<()> {
+        db::reject_settlement_window(&self.pool, auction_id, solver, solution_uid).await
+    }
+
     /// Close every open window whose deadline is at or before the slot as
     /// timed out, logging each. Driven by the competition cycle, so on a
     /// chain with no active auctions a timeout surfaces with the next
@@ -74,13 +89,15 @@ impl SettlementWindows {
     /// Close the auction's windows against its observed settlements.
     async fn close_landed(&self, auction_id: i64) -> Result<()> {
         for landed in db::close_landed_windows(&self.pool, auction_id).await? {
+            let solver = Pubkey(landed.solver.0);
             tracing::info!(
                 auction_id,
                 slot = landed.end_slot,
-                solver = %Pubkey(landed.solver.0),
+                %solver,
                 tx_signature = %Signature(landed.submitted_signature.0),
                 "settlement observed on chain"
             );
+            self.inflight.release_landed(auction_id, solver);
         }
         Ok(())
     }
@@ -115,8 +132,8 @@ impl NotifyHandler for SettlementWindows {
 mod tests {
     use {
         super::SettlementWindows,
-        crate::infra::{db, listen::ListenSession},
-        chain_types::solana::Pubkey,
+        crate::infra::{db, inflight::InFlightOrders, listen::ListenSession},
+        chain_types::solana::{IntentHash, Pubkey},
         sqlx::PgPool,
         std::time::Duration,
     };
@@ -153,9 +170,13 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        let windows = SettlementWindows::new(pool.clone());
+        let solver = Pubkey([7; 32]);
+        let uid = IntentHash([1; 32]);
+        let inflight = InFlightOrders::default();
+        inflight.hold(4242, solver, [uid], 100);
+        let windows = SettlementWindows::new(pool.clone(), inflight.clone());
         windows
-            .open_dispatched(4242, Pubkey([7; 32]), 1, 90, 100)
+            .open_dispatched(4242, solver, 1, 90, 100)
             .await
             .unwrap();
 
@@ -175,6 +196,8 @@ VALUES (10, $1, 0, $2, $3, NULL)
         }
         task.abort();
         assert_eq!(outcome(&pool, 4242).await.as_deref(), Some("landed"));
+        // The observed landing released the held order.
+        assert!(inflight.held_at(90).is_empty());
         let signature: Vec<u8> = sqlx::query_scalar(
             "SELECT submitted_signature FROM solana.settlement_executions WHERE auction_id = 4242",
         )
@@ -192,7 +215,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        let windows = SettlementWindows::new(pool.clone());
+        let windows = SettlementWindows::new(pool.clone(), InFlightOrders::default());
         windows
             .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
             .await
@@ -212,6 +235,51 @@ VALUES (10, $1, 0, $2, $3, NULL)
         crate::infra::db::close_landed_windows(&pool, 1)
             .await
             .unwrap();
+        assert_eq!(outcome(&pool, 1).await.as_deref(), Some("landed"));
+    }
+
+    /// A rejected window is closed before its deadline, so the expiry sweep
+    /// leaves it alone instead of relabelling it a timeout.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_rejection_closes_the_window_before_the_deadline() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+
+        let windows = SettlementWindows::new(pool.clone(), InFlightOrders::default());
+        windows
+            .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
+            .await
+            .unwrap();
+
+        windows.close_rejected(1, Pubkey([7; 32]), 1).await.unwrap();
+        assert_eq!(outcome(&pool, 1).await.as_deref(), Some("rejected"));
+
+        windows.expire_past_deadline(150).await.unwrap();
+        assert_eq!(outcome(&pool, 1).await.as_deref(), Some("rejected"));
+    }
+
+    /// An observed settlement outranks a driver's rejection: a rejection
+    /// arriving after the window landed leaves the verdict alone.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_rejection_does_not_overwrite_a_landed_window() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+
+        let windows = SettlementWindows::new(pool.clone(), InFlightOrders::default());
+        windows
+            .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
+            .await
+            .unwrap();
+
+        insert_settlement(&pool, 1).await;
+        crate::infra::db::close_landed_windows(&pool, 1)
+            .await
+            .unwrap();
+        assert_eq!(outcome(&pool, 1).await.as_deref(), Some("landed"));
+
+        windows.close_rejected(1, Pubkey([7; 32]), 1).await.unwrap();
         assert_eq!(outcome(&pool, 1).await.as_deref(), Some("landed"));
     }
 }

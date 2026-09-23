@@ -331,6 +331,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
+            quote_id_generator: Arc::new(db_write.clone()),
         },
     )
     .instrument(info_span!("price_estimator_factory"))
@@ -677,8 +678,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         protocol_fees,
         surplus_capturing_jit_order_owners,
         settle_coordinator.clone(),
-        run_loop_config.submission_deadline,
-        config.fast_path_enabled,
+        config.fast_path_submission_deadline,
     );
     fast_path_handler.spawn(fast_path_receiver).await;
 

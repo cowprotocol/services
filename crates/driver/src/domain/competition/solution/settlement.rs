@@ -133,7 +133,7 @@ impl Settlement {
             )?,
             may_revert: solution.revertable(),
         };
-        Self::new(auction.id().unwrap(), solution, tx, eth, simulator).await
+        Self::new(auction.auction_id().unwrap(), solution, tx, eth, simulator).await
     }
 
     /// Create a new settlement and ensure that it is valid.

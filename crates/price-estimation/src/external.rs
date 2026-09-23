@@ -3,6 +3,7 @@ use {
         PriceEstimateResult,
         PriceEstimating,
         Query,
+        quote_id::QuoteIdAllocator,
         trade_finding::{external::ExternalTradeFinder, trade_estimator::TradeEstimator},
         trade_verifier::TradeVerifying,
     },
@@ -20,12 +21,14 @@ impl ExternalPriceEstimator {
         client: Client,
         rate_limiter: Arc<RateLimiter>,
         block_stream: CurrentBlockWatcher,
+        quote_ids: Arc<QuoteIdAllocator>,
     ) -> Self {
         Self(TradeEstimator::new(
             Arc::new(ExternalTradeFinder::new(
                 driver.clone(),
                 client,
                 block_stream,
+                quote_ids,
             )),
             rate_limiter,
         ))

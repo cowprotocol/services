@@ -179,7 +179,7 @@ pub struct FastPathLimitTooTight;
 /// needed: any bid that gives the trader a worse price than signed fails
 /// it. The multiplication widens to `U512` so wei-scale amounts cannot
 /// overflow.
-pub fn satisfies_limit_price(
+fn satisfies_limit_price(
     signed_sell: U256,
     signed_buy: U256,
     executed_sell: U256,
