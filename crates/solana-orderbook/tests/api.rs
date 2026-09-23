@@ -945,6 +945,27 @@ async fn create_order_checks_the_preparation_template() {
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
     );
+
+    // A wrapped sell account owned by a stranger is rejected even when the
+    // intent names it. Only the buy account may belong to someone else.
+    let stranger = solana_sdk::pubkey::Pubkey::new_unique();
+    let mut foreign_sell = sponsored_intent(owner, true);
+    foreign_sell.sell_token_account = ata(stranger, foreign_sell.sell_mint);
+    let preparations = vec![
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+            &funder,
+            &stranger,
+            &foreign_sell.sell_mint,
+            &spl_token_interface::ID,
+        ),
+        destination_creation(funder, owner, &foreign_sell),
+    ];
+    let transaction = creation_tx(funder, &owner_keypair, &foreign_sell, preparations, true);
+    let (status, kind) = post_order(addr, transaction).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
+    );
 }
 
 /// The happy path lands the order and the duplicate is rejected.
@@ -1106,4 +1127,35 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         .await
         .unwrap();
     assert_eq!(copies, 1, "the expired quote must not be copied");
+}
+
+/// The buy account may belong to a wallet other than the owner: the bundle
+/// creates it for the receiver and the order stores that account.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_accepts_a_custom_receiver() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let receiver = solana_sdk::pubkey::Pubkey::new_unique();
+    let mut intent = sponsored_intent(owner.pubkey(), false);
+    intent.buy_token_account = ata(receiver, intent.buy_mint);
+    let destination = destination_creation(funder, receiver, &intent);
+    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+
+    let (status, _) = post_order(addr, transaction).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+    let stored: Vec<u8> = sqlx::query_scalar("SELECT buy_token_account FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, intent.buy_token_account.to_bytes().to_vec());
 }

@@ -484,6 +484,7 @@ Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
 - trade\_order\_uid: btree (`order_uid`, `block_number`, `log_index`)
 - trades_covering: btree(`order_uid`) INCLUDE (`buy_amount`, `sell_amount`, `fee_amount`)
+- trades_owner_covering: btree(`substring(order_uid, 33, 20)`, `block_number` DESC, `log_index` DESC) INCLUDE (`order_uid`)
 
 ### jit\_orders
 

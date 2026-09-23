@@ -157,13 +157,24 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
     ) {
         let EstimatorIndex(stage_index, estimator_index) = index;
         let (name, _estimator) = &self.stages[*stage_index][*estimator_index];
-        tracing::debug!(?query, ?result, estimator = name, "winning price estimate");
-        if result.is_ok() {
-            metrics()
-                .queries_won
-                .with_label_values(&[name.as_str(), kind.label()])
-                .inc();
-        }
+        report_winner_by_name(query, kind, name, result);
+    }
+}
+
+/// Logs the winning estimate and, if it is a quote, counts the win for its
+/// estimator.
+fn report_winner_by_name<Q: Debug, R: Debug>(
+    query: &Q,
+    kind: OrderKind,
+    name: &str,
+    result: &Result<R, PriceEstimationError>,
+) {
+    tracing::debug!(?query, ?result, estimator = name, "winning price estimate");
+    if result.is_ok() {
+        metrics()
+            .queries_won
+            .with_label_values(&[name, kind.label()])
+            .inc();
     }
 }
 
@@ -635,6 +646,64 @@ mod tests {
             fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         })
+    }
+
+    /// The stream reports the competition like the one-shot path: the final
+    /// best estimate wins, no matter how many improvements were forwarded
+    /// before it.
+    #[tokio::test]
+    async fn estimate_stream_counts_the_final_best_as_the_winner() {
+        let wins = |name: &str| {
+            metrics()
+                .queries_won
+                .with_label_values(&[name, OrderKind::Sell.label()])
+                .get()
+        };
+        let (fast_before, slow_before) = (wins("stream-fast"), wins("stream-slow"));
+
+        let fast = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async {
+                    Ok(Estimate {
+                        out_amount: U256::from(1u64),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            m
+        };
+        let slow = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async {
+                    sleep(Duration::from_millis(10)).await;
+                    Ok(Estimate {
+                        out_amount: U256::from(2u64),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            m
+        };
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![vec![
+                ("stream-fast".to_owned(), Arc::new(fast)),
+                ("stream-slow".to_owned(), Arc::new(slow)),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
+
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
+
+        // Both quotes were forwarded, the slow one improved on the fast one.
+        assert_eq!(results.len(), 2);
+        assert_eq!(wins("stream-slow") - slow_before, 1);
+        assert_eq!(wins("stream-fast"), fast_before);
     }
 
     #[tokio::test]
