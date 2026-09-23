@@ -59,7 +59,7 @@ impl Postgres {
         let proposed_solutions =
             solver_competition_v2::find_solutions_for_order(&mut conn, &db_uid).await?;
         let executions = order_execution::read_by_order_uid(&mut conn, &db_uid).await?;
-        let trades: Vec<DbTradesQueryRow> = trades::trades(&mut conn, None, Some(&db_uid), 0, 100)
+        let trades: Vec<DbTradesQueryRow> = trades::trades_by_order_uid(&mut conn, &db_uid, 0, 100)
             .into_inner()
             .await
             .context("failed to fetch trades")?;
