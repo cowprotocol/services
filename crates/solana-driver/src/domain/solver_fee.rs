@@ -12,6 +12,11 @@
 //! trades cannot absorb the fee within the order's signed limit is dropped
 //! whole: its interactions were built for those trades, so dropping a single
 //! trade would leave them inconsistent.
+//!
+//! As in the EVM driver, the fee is enforced at two points: the limit leg sent
+//! to the engine is tightened by the fee, so the engine only returns fills that
+//! survive it, and the post-fee check in [`SolverFee::apply`] catches what
+//! slips through.
 
 use {
     super::{
@@ -48,6 +53,22 @@ impl SolverFee {
 
     pub fn bps(self) -> u16 {
         self.0
+    }
+
+    /// The limit leg the engine has to beat for its fill to still respect the
+    /// signed limit once the fee is applied: a sell order's minimum buy rises
+    /// to `buy / (1 - f)`, a buy order's maximum sell falls to `sell / (1 +
+    /// f)`. Rounds against the engine. A minimum buy past `u64::MAX`
+    /// saturates: no fill can meet it.
+    pub fn tighten_limit(self, side: Side, limit: u64) -> u64 {
+        let limit = u128::from(limit);
+        let base = u128::from(MAX_BASE_POINT);
+        let bps = u128::from(self.0);
+        match side {
+            Side::Sell => u64::try_from((limit * base).div_ceil(base - bps)).unwrap_or(u64::MAX),
+            Side::Buy => u64::try_from(limit * base / (base + bps))
+                .expect("dividing by more than the multiplier never exceeds the input"),
+        }
     }
 
     /// The fee on one executed leg, `executed * f` rounded up in the fee's
@@ -221,6 +242,52 @@ mod tests {
         assert_eq!(fee.fee_from_volume(1), 1);
         assert_eq!(fee.fee_from_volume(999), 50);
         assert_eq!(fee.fee_from_volume(1_000), 50);
+    }
+
+    #[test]
+    fn tighten_limit_rounds_against_the_engine() {
+        let fee = SolverFee::new(500).unwrap();
+        // 1000 / 0.95 = 1052.6 and 1000 / 1.05 = 952.4.
+        assert_eq!(fee.tighten_limit(Side::Sell, 1_000), 1_053);
+        assert_eq!(fee.tighten_limit(Side::Buy, 1_000), 952);
+        assert_eq!(fee.tighten_limit(Side::Sell, 0), 0);
+    }
+
+    #[test]
+    fn buy_quote_placeholder_maximum_sell_fits_u64() {
+        let fee = SolverFee::new(500).unwrap();
+        assert_eq!(
+            fee.tighten_limit(Side::Buy, u64::MAX),
+            17_568_327_689_247_192_014
+        );
+    }
+
+    #[test]
+    fn zero_fee_leaves_the_limit_unchanged() {
+        let fee = SolverFee::new(0).unwrap();
+        assert_eq!(fee.tighten_limit(Side::Sell, 1_000), 1_000);
+        assert_eq!(fee.tighten_limit(Side::Buy, 1_000), 1_000);
+    }
+
+    #[test]
+    fn unrepresentable_minimum_buy_saturates() {
+        let fee = SolverFee::new(1).unwrap();
+        assert_eq!(fee.tighten_limit(Side::Sell, u64::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn fill_at_tightened_limit_survives_the_fee() {
+        let fee = SolverFee::new(500).unwrap();
+
+        let sell = order(Side::Sell, 1_000, 1_000);
+        let mut sol = solution(1_000, fee.tighten_limit(Side::Sell, sell.buy_amount));
+        fee.apply(&mut sol, &orders(&sell)).unwrap();
+        assert_eq!(sol.trades[0].executed_buy, 1_000);
+
+        let buy = order(Side::Buy, 1_000, 1_000);
+        let mut sol = solution(fee.tighten_limit(Side::Buy, buy.sell_amount), 1_000);
+        fee.apply(&mut sol, &orders(&buy)).unwrap();
+        assert_eq!(sol.trades[0].executed_sell, 1_000);
     }
 
     #[test]

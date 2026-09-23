@@ -93,7 +93,7 @@ impl Solver {
         auction: &domain::Auction,
         program_id: Pubkey,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(auction, self.pubkey(), program_id);
+        let auction_dto = Auction::new(auction, self.pubkey(), program_id, self.solver_fee);
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");

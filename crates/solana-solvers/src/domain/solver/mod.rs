@@ -84,7 +84,8 @@ mod tests {
             sell_mint,
             buy_mint: pubkey(2),
             buy_destination: pubkey(3),
-            amount: 1_000,
+            sell_amount: 1_000,
+            buy_amount: 0,
             side,
         }
     }

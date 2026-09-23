@@ -1,8 +1,7 @@
 //! Inbound `/solve` auction: the orders the driver asks the solver to fill.
 //!
-//! Proposed shape. The driver spec pins the solution response, not the auction
-//! request, so these are the fields the solve loop needs and will be reconciled
-//! with the driver's request DTO.
+//! The wire format matches `solana-driver/src/infra/solver/dto/auction.rs`,
+//! whose `wire_format_is_stable` test pins it.
 
 use {
     super::order::OrderUid,
@@ -41,10 +40,12 @@ pub struct Order {
     /// The buy-mint buffer the swap output lands in.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_destination: Pubkey,
-    /// Sell amount for a sell, buy amount for a buy. Decimal string on the
-    /// wire.
+    /// The side's leg is the amount to fill; the other leg is the limit the
+    /// fill must respect. Decimal strings on the wire.
     #[serde_as(as = "serde_with::DisplayFromStr")]
-    pub amount: u64,
+    pub sell_amount: u64,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub buy_amount: u64,
     pub side: dex::Side,
 }
 
@@ -55,7 +56,10 @@ impl Order {
             sell_mint: self.sell_mint,
             buy_mint: self.buy_mint,
             buy_destination: self.buy_destination,
-            amount: self.amount,
+            amount: match self.side {
+                dex::Side::Sell => self.sell_amount,
+                dex::Side::Buy => self.buy_amount,
+            },
             side: self.side,
         }
     }

@@ -71,11 +71,11 @@ impl Trade {
         price_sell: NonZero<u64>,
         price_buy: NonZero<u64>,
     ) -> Result<domain::Trade, Error> {
-        if self.executed_amount > order.amount {
+        if self.executed_amount > order.target_amount() {
             return Err(Error::ExecutedAmountExceedsOrderAmount(
                 self.order_uid,
                 self.executed_amount,
-                order.amount,
+                order.target_amount(),
             ));
         }
 
@@ -256,7 +256,8 @@ mod tests {
                 sell_mint: pubkey(1),
                 buy_mint: pubkey(2),
                 buy_destination: associated_token_address(&pubkey(3), &pubkey(2)),
-                amount: 1_000,
+                sell_amount: 1_000,
+                buy_amount: 0,
                 side: Side::Sell,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
@@ -377,7 +378,8 @@ mod tests {
                 sell_mint: pubkey(1),
                 buy_mint: pubkey(2),
                 buy_destination: associated_token_address(&pubkey(3), &pubkey(2)),
-                amount: u64::MAX,
+                sell_amount: u64::MAX,
+                buy_amount: 0,
                 side: Side::Sell,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
