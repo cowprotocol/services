@@ -599,6 +599,10 @@ mod tests {
 
     /// `trades_by_owner` must surface trades whose order metadata lives only
     /// in `jit_orders` and not in `orders`.
+    ///
+    /// Also asserts that a JIT order re-observed at a different
+    /// `(block_number, log_index)` does not duplicate the trade in the
+    /// result: the JIT branch's `SELECT DISTINCT uid` collapses the two rows.
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_by_owner_finds_jit_orders() {
@@ -609,13 +613,26 @@ mod tests {
         let users_and_orders = generate_owners_and_order_ids(&[1]).await;
         let (owner, uid) = (users_and_orders[0].0, users_and_orders[0].1[0]);
 
+        // Two `jit_orders` rows for the same uid/owner at different event
+        // indices (PK is `(block_number, log_index)`, so both inserts land).
         crate::jit_orders::insert(
             &mut db,
-            std::slice::from_ref(&crate::jit_orders::JitOrder {
-                uid,
-                owner,
-                ..Default::default()
-            }),
+            &[
+                crate::jit_orders::JitOrder {
+                    block_number: 0,
+                    log_index: 0,
+                    uid,
+                    owner,
+                    ..Default::default()
+                },
+                crate::jit_orders::JitOrder {
+                    block_number: 1,
+                    log_index: 0,
+                    uid,
+                    owner,
+                    ..Default::default()
+                },
+            ],
         )
         .await
         .unwrap();
