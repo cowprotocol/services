@@ -678,8 +678,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         protocol_fees,
         surplus_capturing_jit_order_owners,
         settle_coordinator.clone(),
-        run_loop_config.submission_deadline,
-        config.fast_path_enabled,
+        config.fast_path_submission_deadline,
     );
     fast_path_handler.spawn(fast_path_receiver).await;
 

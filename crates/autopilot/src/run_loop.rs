@@ -17,7 +17,7 @@ use {
         leader_lock_tracker::LeaderLockTracker,
         maintenance::{MaintenanceSync, SyncTarget},
         run::Liveness,
-        settle_call::{SettleCall, SettleError},
+        settle_call::{self, SettleCall, SettleError},
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
@@ -492,12 +492,11 @@ impl RunLoop {
             tracing::info!(driver = %driver_.name, solution = %solution_id, "settling");
             let submission_start = Instant::now();
 
-            let request = settle::Request {
-                solution_id: Some(solution_id),
+            let request = settle_call::Request::Auction(settle::Request {
+                solution_id,
                 submission_deadline_latest_block: block_deadline,
                 auction_id,
-                fast_path: None,
-            };
+            });
 
             match self_
                 .settle_coordinator
