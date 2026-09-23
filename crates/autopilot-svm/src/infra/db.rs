@@ -281,6 +281,7 @@ pub struct ProposedSolution {
     pub id: i64,
     pub solver: ByteArray<32>,
     pub is_winner: bool,
+    pub filtered_out: bool,
     pub score: BigDecimal,
     pub trades: Vec<ProposedTrade>,
 }
@@ -316,13 +317,14 @@ pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition)
     for solution in &competition.solutions {
         sqlx::query(
             "INSERT INTO solana.proposed_solutions (auction_id, uid, id, solver, is_winner, \
-             score) VALUES ($1, $2, $3, $4, $5, $6)",
+             filtered_out, score) VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(competition.auction_id)
         .bind(solution.uid)
         .bind(solution.id)
         .bind(solution.solver)
         .bind(solution.is_winner)
+        .bind(solution.filtered_out)
         .bind(&solution.score)
         .execute(&mut *tx)
         .await

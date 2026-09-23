@@ -101,6 +101,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
                     id: i64::try_from(solution.id()).unwrap_or(i64::MAX),
                     solver: ByteArray(solution.solver().0),
                     is_winner: solution.is_winner(),
+                    filtered_out: solution.is_filtered_out(),
                     score: BigDecimal::from(solution.score()),
                     trades: solution
                         .orders()

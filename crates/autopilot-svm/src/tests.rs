@@ -276,12 +276,15 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         .await
         .unwrap();
     assert_eq!(snapshots, 1);
-    let (solution_uid, solver_id, is_winner): (i64, i64, bool) =
-        sqlx::query_as("SELECT uid, id, is_winner FROM solana.proposed_solutions")
+    let (solution_uid, solver_id, is_winner, filtered_out): (i64, i64, bool, bool) =
+        sqlx::query_as("SELECT uid, id, is_winner, filtered_out FROM solana.proposed_solutions")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!((solution_uid, solver_id, is_winner), (0, 7, true));
+    assert_eq!(
+        (solution_uid, solver_id, is_winner, filtered_out),
+        (0, 7, true, false)
+    );
     let (executed_sell, executed_buy): (String, String) = sqlx::query_as(
         "SELECT executed_sell::text, executed_buy::text FROM solana.proposed_trade_executions \
          WHERE solution_uid = 0",
