@@ -331,6 +331,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
+            quote_id_generator: Arc::new(db_write.clone()),
         },
     )
     .instrument(info_span!("price_estimator_factory"))

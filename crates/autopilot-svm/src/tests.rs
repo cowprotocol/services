@@ -192,7 +192,6 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     // the solution scores its 100 surplus and wins.
     let solution = dto::Solution {
         solution_id: 7,
-        score: 100,
         solver: Pubkey([0xCC; 32]),
         orders: HashMap::from([(
             IntentHash(uid),

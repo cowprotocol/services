@@ -228,6 +228,7 @@ async fn quote_answers_in_the_evm_shape() {
             "expiration": json["expiration"],
             "id": null,
             "verified": false,
+            "funder": null,
         })
     );
     // The amounts are honored for about a minute from now.
@@ -238,6 +239,47 @@ async fn quote_answers_in_the_evm_shape() {
         (50..=60).contains(&honored_for),
         "expiration {honored_for}s away"
     );
+}
+
+/// A sponsoring deployment names its funder, so a client can pin the fee payer
+/// of the creation transaction it signs next without carrying the address.
+#[tokio::test]
+async fn quote_names_the_funder_when_sponsoring_is_on() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let funder = solana_sdk::pubkey::Pubkey::new_from_array([0x77; 32]);
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
+            funder,
+            settlement_program: cow_settlement_interface::id(),
+            rpc: SolanaRPC::new_mock_with_mocks(Mocks::default()),
+            max_priority_fee_lamports: 100_000,
+        }),
+        ..mock_api()
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let valid_to = chrono::Utc::now().timestamp() + 600;
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&quote_body(serde_json::json!({"validTo": valid_to})))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["funder"], serde_json::json!(funder.to_string()));
 }
 
 /// With several drivers configured, the best answer wins: the largest buy
@@ -435,6 +477,7 @@ async fn spawn_sponsored_server(
             funder,
             settlement_program: cow_settlement_interface::id(),
             rpc: SolanaRPC::new_mock_with_mocks(mocks),
+            max_priority_fee_lamports: 100_000,
         }),
         ..mock_api()
     };
@@ -546,6 +589,19 @@ fn creation_tx(
     preparations: Vec<solana_sdk::instruction::Instruction>,
     sign: bool,
 ) -> String {
+    creation_tx_wrapped(funder, owner, intent, preparations, Vec::new(), sign)
+}
+
+/// A creation bundle carrying `trailing` instructions after `CreateOrder`,
+/// the shape a wallet produces when it appends its own compute budget.
+fn creation_tx_wrapped(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+    preparations: Vec<solana_sdk::instruction::Instruction>,
+    trailing: Vec<solana_sdk::instruction::Instruction>,
+    sign: bool,
+) -> String {
     let mut instructions = preparations;
     instructions.push(
         cow_settlement_client::instruction::CreateOrder {
@@ -556,6 +612,7 @@ fn creation_tx(
         }
         .into(),
     );
+    instructions.extend(trailing);
     let message = solana_sdk::message::Message::new_with_blockhash(
         &instructions,
         Some(&funder),
@@ -605,6 +662,66 @@ fn sponsored_creation_tx(
     creation_tx(funder, owner, &intent, vec![destination], sign)
 }
 
+/// A well-formed bundle whose priority fee is above the sponsored ceiling.
+/// Neither factor is outlandish alone, the product is: 500000 micro-lamports
+/// over the compute ceiling comes to 700000 lamports.
+fn overpriced_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+) -> String {
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    creation_tx_wrapped(
+        funder,
+        owner,
+        &intent,
+        vec![destination],
+        vec![
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(
+                500_000,
+            ),
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(
+                1_400_000,
+            ),
+        ],
+        true,
+    )
+}
+
+/// A Lighthouse instruction over one account, the shape Phantom injects.
+fn lighthouse(
+    discriminator: u8,
+    account: solana_sdk::pubkey::Pubkey,
+) -> solana_sdk::instruction::Instruction {
+    solana_sdk::instruction::Instruction::new_with_bytes(
+        solana_sdk::pubkey::Pubkey::from_str_const("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95"),
+        &[discriminator],
+        vec![solana_sdk::instruction::AccountMeta::new_readonly(
+            account, false,
+        )],
+    )
+}
+
+/// A bundle carrying a Lighthouse instruction outside the assertion range:
+/// `MemoryWrite`, which funds an account from a payer the template cannot
+/// vouch for.
+fn lighthouse_memory_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+) -> String {
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    creation_tx_wrapped(
+        funder,
+        owner,
+        &intent,
+        vec![destination],
+        // Discriminator 0 is `MemoryWrite`.
+        vec![lighthouse(0, owner.pubkey())],
+        true,
+    )
+}
+
 async fn post_order(addr: SocketAddr, transaction: String) -> (reqwest::StatusCode, String) {
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
@@ -648,6 +765,13 @@ async fn create_order_rejects_invalid_submissions() {
         (
             sponsored_creation_tx(funder, &owner, false),
             "InvalidSignature",
+        ),
+        // The funder pays the priority fee, so an outsized price is refused.
+        (overpriced_creation_tx(funder, &owner), "InvalidTransaction"),
+        // A lighthouse assertion is fine, anything outside that range is not.
+        (
+            lighthouse_memory_creation_tx(funder, &owner),
+            "InvalidTransaction",
         ),
     ] {
         let (status, kind) = post_order(addr, transaction).await;
@@ -841,8 +965,29 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     // The full preparation prefix in front of `CreateOrder`, as the frontend
     // sends it for a first-time native-SOL sell.
     let intent = sponsored_intent(owner.pubkey(), true);
-    let preparations = full_preparations(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, preparations, true);
+    // Wrapped the way Phantom sends it: compute budget and Lighthouse
+    // assertions before our instructions, and another assertion after.
+    let mut preparations = vec![
+        solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(10_000),
+        // Discriminator 6 is `AssertAccountInfoMulti`.
+        lighthouse(6, owner.pubkey()),
+        lighthouse(6, funder),
+    ];
+    preparations.extend(full_preparations(funder, owner.pubkey(), &intent));
+    let transaction = creation_tx_wrapped(
+        funder,
+        &owner,
+        &intent,
+        preparations,
+        vec![
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(
+                12_769,
+            ),
+            // Discriminator 10 is `AssertTokenAccountMulti`.
+            lighthouse(10, owner.pubkey()),
+        ],
+        true,
+    );
     let quote_id = db::save_quote(
         &pool,
         &db::Quote {

@@ -50,7 +50,7 @@ impl SolveRequest {
         );
 
         competition::Auction::new(
-            Some(self.id.try_into()?),
+            auction::Kind::Competition(self.id.try_into()?),
             self.orders
                 .into_iter()
                 .map(|order| {

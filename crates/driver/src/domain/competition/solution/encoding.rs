@@ -223,7 +223,12 @@ pub fn tx(
         .to_vec();
 
     // Append auction ID to settlement calldata
-    settle_calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
+    settle_calldata.extend(
+        auction
+            .auction_id()
+            .ok_or(Error::MissingAuctionId)?
+            .to_be_bytes(),
+    );
     let has_flashloans = !solution.flashloans.is_empty();
     let has_wrappers = !solution.wrappers.is_empty();
 
