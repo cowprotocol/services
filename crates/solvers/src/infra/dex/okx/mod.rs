@@ -393,6 +393,7 @@ impl Okx {
             | 82000 // Insufficient liquidity
             | 82104 // Token not supported
             | 82112 // Internal OKX risk validation failed
+            | 51006 // Input value is too low
             => Error::NotFound,
             50011 => Error::RateLimited,
             _ => Error::Api {
