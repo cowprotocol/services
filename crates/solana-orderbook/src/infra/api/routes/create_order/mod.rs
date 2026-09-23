@@ -596,14 +596,17 @@ fn preparation_step(
                 "the account creation must be paid by the funder or the owner",
             ));
         }
-        if owner != intent.owner {
-            return Err(PlacementError::InvalidTransaction(
-                "the created account must belong to the order owner",
-            ));
-        }
         if wrapped_sell && account == intent.sell_token_account && mint == intent.sell_mint {
+            // An order sells its owner's funds, so the wSOL account is theirs.
+            if owner != intent.owner {
+                return Err(PlacementError::InvalidTransaction(
+                    "the created sell token account must belong to the order owner",
+                ));
+            }
             Ok(WRAP_CREATE)
         } else if account == intent.buy_token_account && mint == intent.buy_mint {
+            // Any wallet may receive the proceeds: settlement pays out to the
+            // account the intent names, whoever owns it.
             Ok(CREATE_DESTINATION)
         } else {
             Err(PlacementError::InvalidTransaction(

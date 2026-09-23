@@ -227,8 +227,8 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }
 
-    let windows = SettlementWindows::new(pool.clone());
     let inflight = InFlightOrders::default();
+    let windows = SettlementWindows::new(pool.clone(), inflight.clone());
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
         Box::new(DbAuctionProvider::new(
