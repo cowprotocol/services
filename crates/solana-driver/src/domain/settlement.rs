@@ -465,18 +465,11 @@ fn validate_orders(
     Ok(())
 }
 
-/// Whether the executed legs respect the order's signed limit price. Both sides
-/// reduce to the same comparison: the executed price must not be worse than the
-/// limit. We use cross-multiplication into `u128` so there is no division to
-/// round.
+/// Whether the executed legs respect the order's signed limit price: the
+/// executed price must not be worse than the limit. The same
+/// cross-multiplication as the program's `validate_limit_price`, so nothing the
+/// chain would accept is rejected here, and there is no division to round.
 pub(crate) fn respects_limit(order: &Order, executed_sell: u64, executed_buy: u64) -> bool {
-    let target = match order.side {
-        Side::Sell => order.sell_amount,
-        Side::Buy => order.buy_amount,
-    };
-    if target == 0 {
-        return false;
-    }
     u128::from(executed_buy) * u128::from(order.sell_amount)
         >= u128::from(executed_sell) * u128::from(order.buy_amount)
 }
@@ -909,22 +902,6 @@ mod tests {
 
         let buy_order = test_order_with(&program_id, |order| order.side = Side::Buy);
         assert!(respects_limit(&buy_order, 500, 1_000));
-    }
-
-    /// A zero target has no meaningful limit price and fails the check.
-    #[test]
-    fn a_zero_target_fails_the_limit_check() {
-        let program_id = pubkey(0xaa);
-        let sell_order = test_order_with(&program_id, |order| order.sell_amount = 0);
-        assert!(!respects_limit(&sell_order, 0, 0));
-        assert!(!respects_limit(&sell_order, 100, 1_000));
-
-        let buy_order = test_order_with(&program_id, |order| {
-            order.side = Side::Buy;
-            order.buy_amount = 0;
-        });
-        assert!(!respects_limit(&buy_order, 0, 0));
-        assert!(!respects_limit(&buy_order, 100, 1_000));
     }
 
     /// A zero signed amount on the non-target side: a sell order demanding
