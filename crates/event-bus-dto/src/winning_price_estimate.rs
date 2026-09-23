@@ -1,5 +1,6 @@
 use {
     crate::{Event, query::QueryFields},
+    alloy_primitives::Address,
     schemars::JsonSchema,
     serde::Serialize,
 };
@@ -18,6 +19,13 @@ pub struct WinningPriceEstimateEvent {
     pub query: QueryFields,
     /// Name of the estimator whose price estimate won the competition.
     pub estimator: String,
+    /// Settlement address of the solver behind `estimator`.
+    #[schemars(with = "String")]
+    pub solver: Address,
+    /// Absent for quotes no solver produced (trivial ETH/WETH quotes), which
+    /// are stored under a freshly allocated id instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote_id: Option<i64>,
 }
 
 impl Event for WinningPriceEstimateEvent {
@@ -26,7 +34,7 @@ impl Event for WinningPriceEstimateEvent {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::query::OrderKind, serde_json::json};
+    use {super::*, crate::query::OrderKind, alloy_primitives::address, serde_json::json};
 
     #[test]
     fn matches_wire_format() {
@@ -38,6 +46,8 @@ mod tests {
                 kind: OrderKind::Sell,
             },
             estimator: "baseline".into(),
+            solver: address!("0x0000000000000000000000000000000000000003"),
+            quote_id: Some(42),
         };
         assert_eq!(
             serde_json::to_value(&event).unwrap(),
@@ -49,6 +59,8 @@ mod tests {
                     "kind": "sell",
                 },
                 "estimator": "baseline",
+                "solver": "0x0000000000000000000000000000000000000003",
+                "quoteId": 42,
             }),
         );
     }

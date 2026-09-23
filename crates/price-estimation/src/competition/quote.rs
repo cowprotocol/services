@@ -88,7 +88,7 @@ impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating
                 (_, Err(err)) => Err(err),
                 (EstimatorIndex(stage_index, estimator_index), Ok(quote)) => {
                     let (name, _) = &self.stages[stage_index][estimator_index];
-                    emit_winning_price_estimate_event(name, &query);
+                    emit_winning_price_estimate_event(name, &query, &quote);
                     let rest = results.filter_map(|(_, r)| r.ok());
                     Ok(RankedEstimates::new(quote, rest))
                 }
@@ -188,9 +188,9 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
 
             if let Some((name, estimate)) = best {
                 // The last improvement forwarded is the winner of the competition.
+                emit_winning_price_estimate_event(name, &query, &estimate);
                 let winner: PriceEstimateResult = Ok(estimate);
                 report_winner_by_name(&query, query.kind, name, &winner);
-                emit_winning_price_estimate_event(name, &query);
             } else {
                 // Nothing was forwarded, so the stream ends with the terminal
                 // error the one-shot path would return.
@@ -342,10 +342,12 @@ fn query_fields(query: &Query) -> QueryFields {
     }
 }
 
-fn emit_winning_price_estimate_event(estimator_name: &str, query: &Query) {
+fn emit_winning_price_estimate_event(estimator_name: &str, query: &Query, winner: &Estimate) {
     observe::event_bus::publish_event(WinningPriceEstimateEvent {
         query: query_fields(query),
         estimator: estimator_name.to_owned(),
+        solver: winner.solver,
+        quote_id: winner.quote_id,
     });
 }
 
@@ -364,6 +366,8 @@ fn emit_quote_event(
         timeout: query.timeout.as_millis() as u64,
         elapsed: elapsed.as_millis() as u64,
         estimator: estimator_name.to_owned(),
+        solver: result.as_ref().ok().map(|estimate| estimate.solver),
+        quote_id: result.as_ref().ok().and_then(|estimate| estimate.quote_id),
         result: match result {
             Ok(estimate) => EstimateResult::Ok {
                 out_amount: estimate.out_amount.to_string(),

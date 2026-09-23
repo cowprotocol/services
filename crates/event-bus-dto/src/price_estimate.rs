@@ -1,5 +1,6 @@
 use {
     crate::{Event, query::QueryFields},
+    alloy_primitives::Address,
     schemars::JsonSchema,
     serde::Serialize,
 };
@@ -15,6 +16,14 @@ pub struct PriceEstimateEvent {
     /// Wall-clock time the estimator actually spent, in milliseconds.
     pub elapsed: u64,
     pub estimator: String,
+    /// Settlement address of the solver behind `estimator`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub solver: Option<Address>,
+    /// Absent when the estimator failed, and for estimates no solver produced
+    /// (trivial ETH/WETH quotes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote_id: Option<i64>,
     pub result: EstimateResult,
 }
 
@@ -40,7 +49,7 @@ pub enum EstimateResult {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::query::OrderKind, serde_json::json};
+    use {super::*, crate::query::OrderKind, alloy_primitives::address, serde_json::json};
 
     #[test]
     fn matches_wire_format() {
@@ -55,6 +64,8 @@ mod tests {
             timeout: 5000,
             elapsed: 12,
             estimator: "baseline".into(),
+            solver: Some(address!("0x0000000000000000000000000000000000000003")),
+            quote_id: Some(42),
             result: EstimateResult::Ok {
                 out_amount: "99".into(),
                 gas: "21000".into(),
@@ -74,6 +85,8 @@ mod tests {
                 "timeout": 5000,
                 "elapsed": 12,
                 "estimator": "baseline",
+                "solver": "0x0000000000000000000000000000000000000003",
+                "quoteId": 42,
                 "result": {
                     "outAmount": "99",
                     "gas": "21000",
