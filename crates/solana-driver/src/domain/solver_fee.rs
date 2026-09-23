@@ -14,7 +14,13 @@
 //! trade would leave them inconsistent.
 
 use {
-    super::{Order, Side, order_uid::OrderUid, settlement::respects_limit, solution::Solution},
+    super::{
+        Order,
+        Side,
+        order_uid::OrderUid,
+        settlement::respects_limit,
+        solution::{Solution, Trade},
+    },
     std::collections::HashMap,
 };
 
@@ -57,59 +63,65 @@ impl SolverFee {
             .expect("a fee below 100% of a u64 leg fits in u64")
     }
 
-    /// Applies the solver fee to every trade of `solution`, in place.
+    /// Applies the solver fee to every trade of `solution`.
     ///
-    /// If one trade fails a step, the whole solution is rejected.
+    /// If one trade fails a step, the whole solution is rejected and left
+    /// untouched.
     pub fn apply(
         self,
         solution: &mut Solution,
         orders: &HashMap<OrderUid, &Order>,
     ) -> Result<(), Rejected> {
-        for trade in &mut solution.trades {
-            let order = orders
-                .get(&trade.order_uid)
-                .copied()
-                .ok_or(Rejected::UnknownOrder(trade.order_uid))?;
-            let fee_leg = match order.side {
-                Side::Sell => trade.executed_buy,
-                Side::Buy => trade.executed_sell,
-            };
-            let fee = self.fee_from_volume(fee_leg);
-            match order.side {
-                Side::Sell => {
-                    // The user receives the leg minus the fee.
-                    let delivered = fee_leg
-                        .checked_sub(fee)
-                        .expect("a fee below 100% never exceeds the amount it is taken from");
-                    if delivered == 0 {
-                        return Err(Rejected::ZeroPayout(trade.order_uid));
-                    }
-                    trade.executed_buy = delivered;
+        let trades = solution
+            .trades
+            .iter()
+            .map(|trade| {
+                let order = orders
+                    .get(&trade.order_uid)
+                    .copied()
+                    .ok_or(Rejected::UnknownOrder(trade.order_uid))?;
+                self.apply_to_trade(trade, order)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        solution.trades = trades;
+        Ok(())
+    }
+
+    fn apply_to_trade(self, trade: &Trade, order: &Order) -> Result<Trade, Rejected> {
+        let mut trade = trade.clone();
+        let fee_leg = match order.side {
+            Side::Sell => trade.executed_buy,
+            Side::Buy => trade.executed_sell,
+        };
+        let fee = self.fee_from_volume(fee_leg);
+        match order.side {
+            Side::Sell => {
+                let delivered = fee_leg
+                    .checked_sub(fee)
+                    .expect("a fee below 100% never exceeds the amount it is taken from");
+                if delivered == 0 {
+                    return Err(Rejected::ZeroPayout(trade.order_uid));
                 }
-                Side::Buy => {
-                    // The user pays the leg plus the fee.
-                    trade.executed_sell = fee_leg
-                        .checked_add(fee)
-                        .ok_or(Rejected::Overflow(trade.order_uid))?;
-                }
+                trade.executed_buy = delivered;
             }
-            // The legs alone no longer show the fee. The settle path logs it.
-            trade.solver_fee = fee;
-            if !respects_limit(order, trade.executed_sell, trade.executed_buy) {
-                return Err(Rejected::LimitPrice(trade.order_uid));
+            Side::Buy => {
+                trade.executed_sell = fee_leg
+                    .checked_add(fee)
+                    .ok_or(Rejected::Overflow(trade.order_uid))?;
             }
         }
-        Ok(())
+        trade.solver_fee = fee;
+        if !respects_limit(order, trade.executed_sell, trade.executed_buy) {
+            return Err(Rejected::LimitPrice(trade.order_uid));
+        }
+        Ok(trade)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use {
-        super::{
-            super::{auction::Order, solution::Trade},
-            *,
-        },
+        super::{super::auction::Order, *},
         solana_sdk::pubkey::Pubkey,
         std::num::NonZero,
     };
@@ -274,6 +286,9 @@ mod tests {
             .apply(&mut sol, &m)
             .unwrap_err();
         assert_eq!(err, Rejected::LimitPrice(OrderUid([9; 32])));
+        // The first trade passed on its own; the rejection leaves it untouched.
+        assert_eq!(sol.trades[0].executed_buy, 2_000);
+        assert_eq!(sol.trades[0].solver_fee, 0);
     }
 
     #[test]
