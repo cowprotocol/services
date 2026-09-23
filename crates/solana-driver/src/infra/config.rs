@@ -1,6 +1,7 @@
 //! Configuration of infrastructural components.
 
 use {
+    crate::domain::solver_fee::SolverFee,
     configs::shared::LoggingConfig,
     serde::Deserialize,
     serde_ext::{
@@ -17,20 +18,6 @@ use {
     },
     tokio::fs,
 };
-
-fn deserialize_solver_fee_bps<'de, D>(deserializer: D) -> Result<u16, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let bps = u16::deserialize(deserializer)?;
-    if bps >= crate::domain::solver_fee::MAX_BASE_POINT {
-        return Err(serde::de::Error::custom(format!(
-            "solver-fee-bps must be below {}",
-            crate::domain::solver_fee::MAX_BASE_POINT
-        )));
-    }
-    Ok(bps)
-}
 
 /// Load the driver configuration from a TOML file.
 ///
@@ -148,8 +135,8 @@ pub struct Solver {
     /// of its sell leg. The difference stays in the buy-mint buffer PDA (sell
     /// orders) or the solver's sell ATA (buy orders). Bids and quotes shrink
     /// accordingly. Absent means no fee.
-    #[serde(default, deserialize_with = "deserialize_solver_fee_bps")]
-    pub solver_fee_bps: u16,
+    #[serde(default)]
+    pub solver_fee_bps: Option<SolverFee>,
 }
 
 #[cfg(test)]
@@ -195,14 +182,14 @@ mod tests {
     }
 
     #[test]
-    fn solver_fee_bps_defaults_to_zero() {
+    fn solver_fee_bps_defaults_to_none() {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
             signer-keypair = "/path/to/keypair.json"
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
-        assert_eq!(solver.solver_fee_bps, 0);
+        assert!(solver.solver_fee_bps.is_none());
     }
 
     #[test]
@@ -214,7 +201,10 @@ mod tests {
             solver-fee-bps = 500
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
-        assert_eq!(solver.solver_fee_bps, 500);
+        assert_eq!(
+            solver.solver_fee_bps,
+            Some(SolverFee::try_from(500).unwrap())
+        );
     }
 
     #[test]

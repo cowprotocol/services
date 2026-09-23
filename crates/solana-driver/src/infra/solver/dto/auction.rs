@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn the_fee_tightens_the_limit_leg() {
-        let fee = SolverFee::new(500);
+        let fee = Some(SolverFee::try_from(500).unwrap());
         let sell = Order::new(&domain_order(Side::Sell), pubkey(0xaa), fee);
         assert_eq!((sell.sell_amount, sell.buy_amount), (1_000, 1_053));
         assert_eq!(

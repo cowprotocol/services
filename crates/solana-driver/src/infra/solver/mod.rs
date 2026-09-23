@@ -78,7 +78,7 @@ impl Solver {
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             solve_every_nth_auction: config.solve_every_nth_auction,
-            solver_fee: SolverFee::new(config.solver_fee_bps).filter(|fee| fee.bps() > 0),
+            solver_fee: config.solver_fee_bps,
         })
     }
 
@@ -183,7 +183,7 @@ mod tests {
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
             signer_keypair: keypair_path,
             solve_every_nth_auction: None,
-            solver_fee_bps: 0,
+            solver_fee_bps: None,
         })
         .expect("solver construction should succeed");
         let auction = domain::Auction {

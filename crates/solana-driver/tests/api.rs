@@ -6,7 +6,10 @@ use {
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-    solana_driver::infra::{api::Api, blockchain::Solana, config, solver::Solver},
+    solana_driver::{
+        domain::solver_fee::SolverFee,
+        infra::{api::Api, blockchain::Solana, config, solver::Solver},
+    },
     solana_sdk::pubkey::Pubkey,
     solana_testlib::temp_keypair,
     std::{net::SocketAddr, num::NonZero, sync::Arc},
@@ -102,7 +105,7 @@ fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubkey) {
         endpoint: format!("http://{addr}").parse().unwrap(),
         signer_keypair: keypair_path,
         solve_every_nth_auction: None,
-        solver_fee_bps,
+        solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
     })
     .expect("solver construction should succeed");
     let account = solver.pubkey();
@@ -122,7 +125,7 @@ fn throttled_dead_solver(stride: u64) -> Solver {
         endpoint: "http://127.0.0.1:1".parse().unwrap(),
         signer_keypair: keypair_file.path().to_path_buf(),
         solve_every_nth_auction: NonZero::new(stride),
-        solver_fee_bps: 0,
+        solver_fee_bps: None,
     })
     .expect("solver construction should succeed")
 }

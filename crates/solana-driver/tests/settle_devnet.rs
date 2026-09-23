@@ -371,7 +371,7 @@ async fn spawn_driver(
                 endpoint,
                 signer_keypair: s.signer_keypair,
                 solve_every_nth_auction: None,
-                solver_fee_bps: 0,
+                solver_fee_bps: None,
             })
         })
         .collect::<Result<_, _>>()

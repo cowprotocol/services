@@ -30,10 +30,28 @@ use {
     std::collections::HashMap,
 };
 
-pub const MAX_BASE_POINT: u16 = 10_000;
+const BPS_DENOMINATOR: u16 = 10_000;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A fee in basis points, below 100%.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "u16")]
 pub struct SolverFee(u16);
+
+#[derive(Debug, thiserror::Error)]
+#[error("solver fee must be below {} bps, got {0}", BPS_DENOMINATOR)]
+pub struct OutOfRange(u16);
+
+impl TryFrom<u16> for SolverFee {
+    type Error = OutOfRange;
+
+    fn try_from(bps: u16) -> Result<Self, Self::Error> {
+        // A fee of 100% or more leaves a sell order nothing to deliver and
+        // makes `tighten_limit` divide by zero.
+        (bps < BPS_DENOMINATOR)
+            .then_some(Self(bps))
+            .ok_or(OutOfRange(bps))
+    }
+}
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Rejected {
@@ -48,14 +66,6 @@ pub enum Rejected {
 }
 
 impl SolverFee {
-    pub fn new(bps: u16) -> Option<Self> {
-        (bps < MAX_BASE_POINT).then_some(Self(bps))
-    }
-
-    pub fn bps(self) -> u16 {
-        self.0
-    }
-
     /// The limit leg the engine has to beat for its fill to still respect the
     /// signed limit once the fee is applied: a sell order's minimum buy rises
     /// to `buy / (1 - f)`, a buy order's maximum sell falls to `sell / (1 +
@@ -63,7 +73,7 @@ impl SolverFee {
     /// saturates: no fill can meet it.
     pub fn tighten_limit(self, side: Side, limit: u64) -> u64 {
         let limit = u128::from(limit);
-        let base = u128::from(MAX_BASE_POINT);
+        let base = u128::from(BPS_DENOMINATOR);
         let bps = u128::from(self.0);
         match side {
             Side::Sell => u64::try_from((limit * base).div_ceil(base - bps)).unwrap_or(u64::MAX),
@@ -81,7 +91,7 @@ impl SolverFee {
         let scaled = u128::from(executed)
             .checked_mul(u128::from(self.0))
             .expect("the product of a 64-bit and a 16-bit number always fits in 128 bits");
-        u64::try_from(scaled.div_ceil(u128::from(MAX_BASE_POINT)))
+        u64::try_from(scaled.div_ceil(u128::from(BPS_DENOMINATOR)))
             .expect("a fee below 100% of a u64 leg fits in u64")
     }
 
@@ -199,7 +209,7 @@ mod tests {
     fn zero_fee_is_identity() {
         let order = order(Side::Sell, 1_000, 2_000);
         let mut sol = solution(1_000, 2_000);
-        SolverFee::new(0)
+        SolverFee::try_from(0)
             .unwrap()
             .apply(&mut sol, &orders(&order))
             .unwrap();
@@ -213,7 +223,7 @@ mod tests {
     fn sell_order_fee_reduces_buy_amount() {
         let order = order(Side::Sell, 1_000, 1_000);
         let mut sol = solution(1_000, 2_000);
-        SolverFee::new(500)
+        SolverFee::try_from(500)
             .unwrap()
             .apply(&mut sol, &orders(&order))
             .unwrap();
@@ -227,7 +237,7 @@ mod tests {
     fn buy_order_fee_increases_sell_amount() {
         let order = order(Side::Buy, 2_000, 2_000);
         let mut sol = solution(1_000, 2_000);
-        SolverFee::new(500)
+        SolverFee::try_from(500)
             .unwrap()
             .apply(&mut sol, &orders(&order))
             .unwrap();
@@ -239,7 +249,7 @@ mod tests {
 
     #[test]
     fn fee_from_volume_rounds_up() {
-        let fee = SolverFee::new(500).unwrap();
+        let fee = SolverFee::try_from(500).unwrap();
         assert_eq!(fee.fee_from_volume(1), 1);
         assert_eq!(fee.fee_from_volume(999), 50);
         assert_eq!(fee.fee_from_volume(1_000), 50);
@@ -247,7 +257,7 @@ mod tests {
 
     #[test]
     fn tighten_limit_rounds_against_the_engine() {
-        let fee = SolverFee::new(500).unwrap();
+        let fee = SolverFee::try_from(500).unwrap();
         // 1000 / 0.95 = 1052.6 and 1000 / 1.05 = 952.4.
         assert_eq!(fee.tighten_limit(Side::Sell, 1_000), 1_053);
         assert_eq!(fee.tighten_limit(Side::Buy, 1_000), 952);
@@ -256,7 +266,7 @@ mod tests {
 
     #[test]
     fn buy_quote_placeholder_maximum_sell_fits_u64() {
-        let fee = SolverFee::new(500).unwrap();
+        let fee = SolverFee::try_from(500).unwrap();
         assert_eq!(
             fee.tighten_limit(Side::Buy, u64::MAX),
             17_568_327_689_247_192_014
@@ -265,20 +275,20 @@ mod tests {
 
     #[test]
     fn zero_fee_leaves_the_limit_unchanged() {
-        let fee = SolverFee::new(0).unwrap();
+        let fee = SolverFee::try_from(0).unwrap();
         assert_eq!(fee.tighten_limit(Side::Sell, 1_000), 1_000);
         assert_eq!(fee.tighten_limit(Side::Buy, 1_000), 1_000);
     }
 
     #[test]
     fn unrepresentable_minimum_buy_saturates() {
-        let fee = SolverFee::new(1).unwrap();
+        let fee = SolverFee::try_from(1).unwrap();
         assert_eq!(fee.tighten_limit(Side::Sell, u64::MAX), u64::MAX);
     }
 
     #[test]
     fn fill_at_tightened_limit_survives_the_fee() {
-        let fee = SolverFee::new(500).unwrap();
+        let fee = SolverFee::try_from(500).unwrap();
 
         let sell = order(Side::Sell, 1_000, 1_000);
         let mut sol = solution(1_000, fee.tighten_limit(Side::Sell, sell.buy_amount));
@@ -295,7 +305,7 @@ mod tests {
     fn buy_order_fee_overflow_rejects_solution() {
         let order = order(Side::Buy, u64::MAX, 2_000);
         let mut sol = solution(u64::MAX, 2_000);
-        let err = SolverFee::new(1)
+        let err = SolverFee::try_from(1)
             .unwrap()
             .apply(&mut sol, &orders(&order))
             .unwrap_err();
@@ -306,7 +316,7 @@ mod tests {
     fn sell_order_fee_zeroing_payout_rejects_solution() {
         let order = order(Side::Sell, 1_000, 1);
         let mut sol = solution(1_000, 1);
-        let err = SolverFee::new(500)
+        let err = SolverFee::try_from(500)
             .unwrap()
             .apply(&mut sol, &orders(&order))
             .unwrap_err();
@@ -317,7 +327,7 @@ mod tests {
     fn filters_fill_at_limit() {
         let order = order(Side::Sell, 1_000, 1_000);
         let mut sol = solution(1_000, 1_000);
-        let err = SolverFee::new(500)
+        let err = SolverFee::try_from(500)
             .unwrap()
             .apply(&mut sol, &orders(&order))
             .unwrap_err();
@@ -328,7 +338,7 @@ mod tests {
     fn keeps_fill_that_respects_limit_after_fee() {
         let order = order(Side::Sell, 1_000, 1_000);
         let mut sol = solution(1_000, 2_000);
-        SolverFee::new(500)
+        SolverFee::try_from(500)
             .unwrap()
             .apply(&mut sol, &orders(&order))
             .unwrap();
@@ -349,7 +359,7 @@ mod tests {
         let mut order2 = order.clone();
         order2.uid = OrderUid([9; 32]);
         m.insert(order2.uid, &order2);
-        let err = SolverFee::new(500)
+        let err = SolverFee::try_from(500)
             .unwrap()
             .apply(&mut sol, &m)
             .unwrap_err();
@@ -363,7 +373,7 @@ mod tests {
     fn quote_buy_order_with_max_sell_limit_passes() {
         let order = order(Side::Buy, u64::MAX, 1_000);
         let mut sol = solution(1_000, 1_000);
-        SolverFee::new(500)
+        SolverFee::try_from(500)
             .unwrap()
             .apply(&mut sol, &orders(&order))
             .unwrap();
