@@ -10,16 +10,17 @@
 //! the timestamp.
 //!
 //! Three cases:
-//! - `fast_path_enabled = false` at runtime: write `valid_from = now()` so the
-//!   order flows straight into the next regular auction.
+//! - `fast_path_submission_deadline` unset (`None`): write `valid_from = now()`
+//!   so the order flows straight into the next regular auction.
 //! - No staged quote competition (e.g. an ethflow fast-path order that never
 //!   went through the quoter) or the fee-adjusted limit check fails: same,
 //!   `valid_from = now()`. The caller still opted into fast-path treatment, but
 //!   the autopilot can't honour it.
 //! - Otherwise: initiate the fast-path settlement and write `valid_from = now +
-//!   submission_deadline × chain block time`, so the order is barred from a
-//!   regular auction for exactly as long as the settle attempt runs — no
-//!   separate wall-clock knob to drift out of sync with the block deadline.
+//!   fast_path_submission_deadline × chain block time`. The order is barred
+//!   from a regular auction for exactly as long as the settle attempt runs: the
+//!   same `fast_path_submission_deadline` block count sets both the `/settle`
+//!   deadline block and `valid_from`, so the two can't drift apart.
 //!
 //! [`FastPathHandler::spawn`] wires the handler up to an
 //! `mpsc::UnboundedReceiver<OrderUid>` fed by the DB order notifier
@@ -59,17 +60,12 @@ pub struct FastPathHandler {
     protocol_fees: Arc<domain::ProtocolFees>,
     surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
     settle_coordinator: Arc<SettleCall>,
-    /// Block-count deadline for the fast-path settle attempt. Doubles
-    /// as the exclusivity window in wall clock: `valid_from` is set to
-    /// `now + submission_deadline × chain.block_time`, so the order
-    /// isn't picked up by the regular auction until the settle attempt
-    /// has definitely elapsed. Reusing the same knob for both keeps
-    /// them from drifting out of sync.
-    submission_deadline: u64,
-    /// Runtime toggle: when `false`, the handler skips the driver
-    /// `/settle` call entirely and just writes `valid_from = now()` so
-    /// the order flows into the next regular auction.
-    fast_path_enabled: bool,
+    /// Number of blocks a fast-path order stays exclusive to the winning
+    /// solver, from the `fast_path_submission_deadline` config. Also caps
+    /// the `/settle` attempt, so `valid_from` and the settle deadline come
+    /// from one block count and can't drift apart. `None` disables the fast
+    /// path: orders drop straight into the next regular auction.
+    exclusivity_period_blocks: Option<u64>,
 }
 
 impl FastPathHandler {
@@ -81,8 +77,7 @@ impl FastPathHandler {
         protocol_fees: Arc<domain::ProtocolFees>,
         surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
         settle_coordinator: Arc<SettleCall>,
-        submission_deadline: u64,
-        fast_path_enabled: bool,
+        exclusivity_period_blocks: Option<u64>,
     ) -> Arc<Self> {
         Arc::new(Self {
             eth,
@@ -91,8 +86,7 @@ impl FastPathHandler {
             protocol_fees,
             surplus_capturing_jit_order_owners,
             settle_coordinator,
-            submission_deadline,
-            fast_path_enabled,
+            exclusivity_period_blocks,
         })
     }
 
@@ -163,8 +157,8 @@ impl FastPathHandler {
         let creation_date = pending.model_order.metadata.creation_date;
         let uid = pending.model_order.metadata.uid.into();
 
-        let settle_attempt = match self.fast_path_enabled {
-            true => match self.try_build_settle_request(pending).await {
+        let settle_attempt = match self.exclusivity_period_blocks {
+            Some(blocks) => match self.try_build_settle_request(pending, blocks).await {
                 Ok(attempt) => Some(attempt),
                 Err(err) => {
                     Metrics::settlement_not_initiated(err.reason());
@@ -172,7 +166,7 @@ impl FastPathHandler {
                     None
                 }
             },
-            false => {
+            None => {
                 Metrics::settlement_not_initiated("disabled");
                 None
             }
@@ -206,6 +200,7 @@ impl FastPathHandler {
     async fn try_build_settle_request(
         &self,
         pending: FastPathOrder,
+        exclusivity_period_blocks: u64,
     ) -> Result<FastPathSettleAttempt, PreflightError> {
         let staged = pending.staged.ok_or(PreflightError::NoStagedData)?;
 
@@ -246,7 +241,7 @@ impl FastPathHandler {
             .find(|driver| driver.submission_address == winner.solver)
             .ok_or(PreflightError::DriverNotConfigured(winner.solver))?;
 
-        let deadline = self.submission_deadline();
+        let deadline = self.compute_submission_deadline(exclusivity_period_blocks);
 
         // Every fast-path settlement gets a real auction id
         let auction_id = self
@@ -477,32 +472,22 @@ impl FastPathHandler {
 
     /// Computes timestamp and number of the last block the order may be
     /// executed in.
-    fn submission_deadline(&self) -> SubmissionDeadline {
-        // TODO: for the initial version we just use the same submission
-        // deadline as the main auction uses which likely extends beyond
-        // the valid_from period. It's still not possible for the same
-        // order to be part of the fast path and a regular auction at the
-        // same time because the SettleCallCoordinator populates tables
-        // which feed the filter of the inflight order detection.
-        //
-        // The final implementation should take the order's valid_from
-        // and the expected end of the current auction into account.
+    fn compute_submission_deadline(&self, exclusivity_period_blocks: u64) -> SubmissionDeadline {
         let block_time_ms = self.eth.chain().block_time_in_ms().as_millis() as u64;
-        let window_secs = self
-            .submission_deadline
+        let window_secs = exclusivity_period_blocks
             .saturating_mul(block_time_ms)
             .div_ceil(1000);
         let current_block = self.eth.current_block().borrow();
         // Anchor to the current block's on-chain timestamp — the
         // deadline block will arrive at approximately `current +
-        // submission_deadline × block_time` seconds after this one.
+        // exclusivity_period_blocks × block_time` seconds after this one.
         // Using wall-clock `now` instead would overestimate mid-block
         // (an order placed 6s into a 12s slot would push `valid_from`
         // out by a whole block's worth).
         SubmissionDeadline {
             computed_at_block: current_block.number,
             timestamp: (current_block.timestamp + window_secs) as u32,
-            block: current_block.number + self.submission_deadline,
+            block: current_block.number + exclusivity_period_blocks,
         }
     }
 }
