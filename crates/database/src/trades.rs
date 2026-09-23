@@ -1277,4 +1277,87 @@ mod tests {
         assert_eq!(result.len(), 5);
         assert_eq!(result, expected_trades);
     }
+
+    /// A JIT uid re-observed in `jit_orders` must not fill the per-branch
+    /// `LIMIT offset+limit` with duplicates and drop a distinct trade of the
+    /// same owner. Fails without the branch's `SELECT DISTINCT uid`.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_trades_by_owner_jit_distinct_survives_pagination() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let users_and_orders = generate_owners_and_order_ids(&[2]).await;
+        let owner = users_and_orders[0].0;
+        let uid_dup = users_and_orders[0].1[0]; // re-observed twice
+        let uid_single = users_and_orders[0].1[1];
+
+        crate::jit_orders::insert(
+            &mut db,
+            &[
+                crate::jit_orders::JitOrder {
+                    block_number: 10,
+                    log_index: 0,
+                    uid: uid_dup,
+                    owner,
+                    ..Default::default()
+                },
+                crate::jit_orders::JitOrder {
+                    block_number: 11,
+                    log_index: 0,
+                    uid: uid_dup,
+                    owner,
+                    ..Default::default()
+                },
+                crate::jit_orders::JitOrder {
+                    block_number: 5,
+                    log_index: 0,
+                    uid: uid_single,
+                    owner,
+                    ..Default::default()
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        add_trade(
+            &mut db,
+            owner,
+            uid_dup,
+            EventIndex {
+                block_number: 10,
+                log_index: 0,
+            },
+            None,
+            None,
+        )
+        .await;
+        add_trade(
+            &mut db,
+            owner,
+            uid_single,
+            EventIndex {
+                block_number: 5,
+                log_index: 0,
+            },
+            None,
+            None,
+        )
+        .await;
+
+        // Page of 2 must hold both trades. Without the `DISTINCT` the
+        // duplicated uid yields [10, 10], fills `LIMIT 2`, and drops
+        // block 5.
+        let mut rows = trades_by_owner(&mut db, &owner, 0, 2)
+            .into_inner()
+            .await
+            .unwrap();
+        rows.sort_by_key(|t| (t.block_number, t.log_index));
+        assert_eq!(
+            rows.iter().map(|t| t.block_number).collect::<Vec<_>>(),
+            vec![5, 10]
+        );
+    }
 }
