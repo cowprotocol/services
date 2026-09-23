@@ -186,26 +186,25 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                 results.push((name, result));
             }
 
-            match best {
+            if let Some((name, estimate)) = best {
                 // The last improvement forwarded is the winner of the competition.
-                Some((name, estimate)) => {
-                    let winner: PriceEstimateResult = Ok(estimate);
-                    report_winner_by_name(&query, query.kind, name, &winner);
-                    emit_winning_price_estimate_event(name, &query);
-                }
-                None => {
-                    let terminal = results
-                        .into_iter()
-                        .max_by(|(_, a), (_, b)| {
-                            compare_quote_result(&query, a, b, &context, self.verification_mode)
-                        });
-                    match terminal {
-                        Some((name, result)) => {
-                            report_winner_by_name(&query, query.kind, name, &result);
-                            yield result;
-                        }
-                        None => yield Err(unreasonable_estimates_error()),
-                    }
+                let winner: PriceEstimateResult = Ok(estimate);
+                report_winner_by_name(&query, query.kind, name, &winner);
+                emit_winning_price_estimate_event(name, &query);
+            } else {
+                // Nothing was forwarded, so the stream ends with the terminal
+                // error the one-shot path would return.
+                let terminal = results
+                    .into_iter()
+                    .max_by(|(_, a), (_, b)| {
+                        compare_quote_result(&query, a, b, &context, self.verification_mode)
+                    });
+
+                if let Some((name, result)) = terminal {
+                    report_winner_by_name(&query, query.kind, name, &result);
+                    yield result;
+                } else {
+                    yield Err(unreasonable_estimates_error());
                 }
             }
         }

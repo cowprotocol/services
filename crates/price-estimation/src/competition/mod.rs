@@ -703,7 +703,7 @@ mod tests {
         // Both quotes were forwarded, the slow one improved on the fast one.
         assert_eq!(results.len(), 2);
         assert_eq!(wins("stream-slow") - slow_before, 1);
-        assert_eq!(wins("stream-fast") - fast_before, 0);
+        assert_eq!(wins("stream-fast"), fast_before);
     }
 
     #[tokio::test]
