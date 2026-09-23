@@ -241,9 +241,7 @@ impl Competition {
             "settling orders"
         );
 
-        // Collected before the settlement consumes the solution, reported only
-        // once the transaction was sent.
-        let retained_fees = retained_solver_fees(&orders, &solution);
+        let volume_fees = solver_volume_fees(&orders, &solution);
 
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
 
@@ -323,12 +321,12 @@ impl Competition {
         })?;
 
         // TODO: drop this log once protocol fees are implemented.
-        for fee in &retained_fees {
+        for fee in &volume_fees {
             tracing::info!(
                 order_uid = %fee.order_uid,
                 mint = %fee.mint,
-                amount = fee.amount,
-                "settlement retained solver fee"
+                fee_from_volume = fee.amount,
+                "calculated solver fee"
             );
         }
 
@@ -449,7 +447,7 @@ fn settlement_error(
         .flatten()
 }
 
-struct RetainedFee {
+struct VolumeFee {
     order_uid: OrderUid,
     mint: Pubkey,
     amount: u64,
@@ -459,9 +457,12 @@ fn orders_by_uid(orders: &[Order]) -> HashMap<OrderUid, &Order> {
     orders.iter().map(|order| (order.uid, order)).collect()
 }
 
-/// The nonzero solver fees the solution retains: in the buy mint for a sell
-/// order and the sell mint for a buy order.
-fn retained_solver_fees(orders: &[Order], solution: &Solution) -> Vec<RetainedFee> {
+/// The nonzero volume-based solver fees the solution's fills carry: in the buy
+/// mint for a sell order and the sell mint for a buy order.
+///
+/// Not what the settlement retains: these come off the engine's quoted legs,
+/// and the route's real cost is only known once it lands.
+fn solver_volume_fees(orders: &[Order], solution: &Solution) -> Vec<VolumeFee> {
     let orders = orders_by_uid(orders);
     solution
         .trades
@@ -473,7 +474,7 @@ fn retained_solver_fees(orders: &[Order], solution: &Solution) -> Vec<RetainedFe
                 Side::Sell => order.buy_token,
                 Side::Buy => order.sell_token,
             };
-            Some(RetainedFee {
+            Some(VolumeFee {
                 order_uid: trade.order_uid,
                 mint,
                 amount: trade.solver_fee,
