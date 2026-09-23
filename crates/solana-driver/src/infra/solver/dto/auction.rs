@@ -42,6 +42,12 @@ pub struct Order {
     pub sell_amount: u64,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_amount: u64,
+    /// The signed sell amount, untouched by the solver fee.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub full_sell_amount: u64,
+    /// The signed buy amount, untouched by the solver fee.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub full_buy_amount: u64,
     pub side: Side,
 }
 
@@ -76,6 +82,8 @@ impl Order {
             buy_destination: find_buffer_pda(&program_id, &order.buy_token).0,
             sell_amount,
             buy_amount,
+            full_sell_amount: order.sell_amount,
+            full_buy_amount: order.buy_amount,
             side: order.side,
         }
     }
@@ -132,6 +140,8 @@ mod tests {
                 "buyDestination": find_buffer_pda(&program_id, &buy_mint).0.to_string(),
                 "sellAmount": "1000",
                 "buyAmount": "2000",
+                "fullSellAmount": "1000",
+                "fullBuyAmount": "2000",
                 "side": "sell",
             }],
             "deadline": "2026-01-01T00:00:00Z",
@@ -147,6 +157,8 @@ mod tests {
                 buy_destination: find_buffer_pda(&program_id, &buy_mint).0,
                 sell_amount: 1_000,
                 buy_amount: 2_000,
+                full_sell_amount: 1_000,
+                full_buy_amount: 2_000,
                 side: Side::Sell,
             }],
             deadline: chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
@@ -180,6 +192,10 @@ mod tests {
     fn without_a_fee_both_legs_are_the_signed_amounts() {
         let order = Order::new(&domain_order(Side::Sell), pubkey(0xaa), None);
         assert_eq!((order.sell_amount, order.buy_amount), (1_000, 1_000));
+        assert_eq!(
+            (order.full_sell_amount, order.full_buy_amount),
+            (1_000, 1_000)
+        );
     }
 
     #[test]
@@ -187,8 +203,13 @@ mod tests {
         let fee = SolverFee::new(500);
         let sell = Order::new(&domain_order(Side::Sell), pubkey(0xaa), fee);
         assert_eq!((sell.sell_amount, sell.buy_amount), (1_000, 1_053));
+        assert_eq!(
+            (sell.full_sell_amount, sell.full_buy_amount),
+            (1_000, 1_000)
+        );
 
         let buy = Order::new(&domain_order(Side::Buy), pubkey(0xaa), fee);
         assert_eq!((buy.sell_amount, buy.buy_amount), (952, 1_000));
+        assert_eq!((buy.full_sell_amount, buy.full_buy_amount), (1_000, 1_000));
     }
 }
