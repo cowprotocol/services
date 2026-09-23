@@ -1,7 +1,7 @@
 use {serde::Serialize, serde_with::serde_as};
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
     /// Unique ID of the solution (per driver competition), to settle.
