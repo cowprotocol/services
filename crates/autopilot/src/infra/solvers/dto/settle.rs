@@ -1,50 +1,14 @@
-use {
-    crate::infra::persistence::dto::order::Order,
-    alloy::primitives::U256,
-    number::serialization::HexOrDecimalU256,
-    serde::Serialize,
-    serde_with::{serde_as, skip_serializing_none},
-};
+use {serde::Serialize, serde_with::serde_as};
 
 #[serde_as]
-#[skip_serializing_none]
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
-    /// Unique ID of the solution (per driver competition), to settle. Not set
-    /// for fast-path settlements, where the solution to settle only comes into
-    /// existence when the driver re-encodes the cached quote solution.
-    pub solution_id: Option<u64>,
+    /// Unique ID of the solution (per driver competition), to settle.
+    pub solution_id: u64,
     /// The last block number in which the solution TX can be included
     pub submission_deadline_latest_block: u64,
-    /// Auction in which the specified solution ID is competing. For
-    /// fast-path settlements the quote was computed outside of any auction,
-    /// but its settlement is still attributed to one.
+    /// Auction ID in which the specified solution ID is competing.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub auction_id: i64,
-    /// Fast-path (out-of-competition) inputs. Present only when settling a
-    /// cached quote solution against the real signed order.
-    pub fast_path: Option<FastPath>,
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FastPath {
-    /// Id of the quote whose cached solution the driver should settle.
-    pub quote_id: i64,
-    /// The real signed order the cached solution is re-encoded against.
-    pub order: Order,
-    /// The sell/buy amounts the order must fill at exactly.
-    pub limit_prices: LimitPrices,
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LimitPrices {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy: U256,
 }
