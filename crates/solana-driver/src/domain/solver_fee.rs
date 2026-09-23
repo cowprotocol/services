@@ -14,9 +14,10 @@
 //! trade would leave them inconsistent.
 //!
 //! As in the EVM driver, the fee is enforced at two points: the limit leg sent
-//! to the engine is tightened by the fee, so the engine only returns fills that
-//! survive it, and the post-fee check in [`SolverFee::apply`] catches what
-//! slips through.
+//! to the engine is tightened by the fee, so an engine that checks its fills
+//! against both legs only returns fills that survive it, and the post-fee check
+//! in [`SolverFee::apply`] re-validates every fill so an engine that ignores
+//! the limit leg still cannot undercut the user.
 
 use {
     super::{

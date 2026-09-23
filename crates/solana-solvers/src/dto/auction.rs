@@ -56,10 +56,8 @@ impl Order {
             sell_mint: self.sell_mint,
             buy_mint: self.buy_mint,
             buy_destination: self.buy_destination,
-            amount: match self.side {
-                dex::Side::Sell => self.sell_amount,
-                dex::Side::Buy => self.buy_amount,
-            },
+            sell_amount: self.sell_amount,
+            buy_amount: self.buy_amount,
             side: self.side,
         }
     }
