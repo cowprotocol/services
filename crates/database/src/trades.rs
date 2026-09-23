@@ -33,9 +33,11 @@ pub struct TradesQueryRow {
     pub gas_cost: Option<BigDecimal>,
 }
 
-/// SELECT clause producing a [`TradesQueryRow`]. Pair with [`HYDRATION_JOINS`]
-/// in a query that exposes `trades`.
-const SELECT_TRADE_COLS: &str = r#"
+/// `trades_by_owner` and `trades_by_order_uid` build a `page` CTE with
+/// all the relevant trades to return. This expression then takes that
+/// `page` and gathers all the data for each row to build a full
+/// [`TradesQueryRow`].
+const HYDRATE_TRADES_PAGE: &str = r#"
 SELECT
     trades.block_number,
     trades.log_index,
@@ -49,12 +51,8 @@ SELECT
     trades.gas_cost,
     settlement.tx_hash,
     settlement.auction_id
-"#;
-
-/// LEFT JOINs that hydrate order metadata and settlement info for the
-/// enclosing query's `trades` row. Exposes `orders`, `jit`, and `settlement`
-/// as referenced by [`SELECT_TRADE_COLS`].
-const HYDRATION_JOINS: &str = r#"
+FROM page
+JOIN trades ON trades.block_number = page.block_number AND trades.log_index = page.log_index
 LEFT JOIN orders ON orders.uid = trades.order_uid
 LEFT JOIN LATERAL (
     SELECT owner, buy_token, sell_token
@@ -69,6 +67,7 @@ LEFT JOIN LATERAL (
     ORDER BY settlements.log_index ASC
     LIMIT 1
 ) AS settlement ON true
+ORDER BY trades.block_number DESC, trades.log_index DESC
 "#;
 
 /// Trades filtered by `order_uid`.
@@ -96,13 +95,7 @@ WITH page AS (
     LIMIT $2 OFFSET $3
 )
 "#,
-        SELECT_TRADE_COLS,
-        r#"
-FROM page
-JOIN trades ON trades.block_number = page.block_number AND trades.log_index = page.log_index
-"#,
-        HYDRATION_JOINS,
-        "ORDER BY trades.block_number DESC, trades.log_index DESC",
+        HYDRATE_TRADES_PAGE,
     );
 
     sqlx::query_as(QUERY)
@@ -173,13 +166,7 @@ page AS (
     LIMIT $2 OFFSET $3
 )
 "#,
-        SELECT_TRADE_COLS,
-        r#"
-FROM page
-JOIN trades ON trades.block_number = page.block_number AND trades.log_index = page.log_index
-"#,
-        HYDRATION_JOINS,
-        "ORDER BY trades.block_number DESC, trades.log_index DESC",
+        HYDRATE_TRADES_PAGE,
     );
 
     sqlx::query_as(QUERY)
