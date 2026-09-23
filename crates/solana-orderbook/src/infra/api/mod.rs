@@ -138,6 +138,8 @@ pub struct Sponsoring {
     pub funder: solana_sdk::pubkey::Pubkey,
     pub settlement_program: solana_sdk::pubkey::Pubkey,
     pub rpc: cow_solana_rpc::SolanaRPC,
+    /// The most the funder will pay in priority fee for one creation.
+    pub max_priority_fee_lamports: u64,
 }
 
 impl State {
