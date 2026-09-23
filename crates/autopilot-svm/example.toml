@@ -40,11 +40,12 @@ ttl = "30s"
 driver-probe-lamports = 100000000
 
 # The CoinGecko key is optional: without one the public API and its rate
-# limits apply.
+# limits apply. A value like "%COIN_GECKO_API_KEY" reads the key from that
+# environment variable and fails the load when it is unset.
 [[native-prices.estimators]]
 type = "coin-gecko"
-endpoint = "https://api.coingecko.com/api/v3/"
-# api-key = "..."
+endpoint = "https://api.coingecko.com/api/v3/simple/token_price"
+# api-key = "%COIN_GECKO_API_KEY"
 
 # A solver driver quoted through its regular /quote route. The url includes
 # the solver path, like the [[drivers]] entries. The driver's solver must
