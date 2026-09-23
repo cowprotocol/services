@@ -532,7 +532,7 @@ async fn store_filtered_solutions(web3: Web3) {
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
                 executed_amount: order_ab.sell_amount,
-                fee: Some(::alloy::primitives::U256::ZERO),
+                fee: ::alloy::primitives::U256::ZERO,
                 order: solvers_dto::solution::OrderUid(order_ab_id.0),
             },
         )],
@@ -558,12 +558,12 @@ async fn store_filtered_solutions(web3: Web3) {
         trades: vec![
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order_ab.sell_amount,
-                fee: Some(::alloy::primitives::U256::ZERO),
+                fee: ::alloy::primitives::U256::ZERO,
                 order: solvers_dto::solution::OrderUid(order_ab_id.0),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order_ac.sell_amount,
-                fee: Some(::alloy::primitives::U256::ZERO),
+                fee: ::alloy::primitives::U256::ZERO,
                 order: solvers_dto::solution::OrderUid(order_ac_id.0),
             }),
         ],
@@ -809,7 +809,7 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
         trades: vec![solvers_dto::solution::Trade::Fulfillment(
             solvers_dto::solution::Fulfillment {
                 executed_amount: order_win.sell_amount,
-                fee: Some(U256::ZERO),
+                fee: U256::ZERO,
                 order: solvers_dto::solution::OrderUid(order_win_id.0),
             },
         )],
@@ -835,12 +835,12 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
         trades: vec![
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order_win.sell_amount,
-                fee: Some(U256::ZERO),
+                fee: U256::ZERO,
                 order: solvers_dto::solution::OrderUid(order_win_id.0),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order_loser.sell_amount,
-                fee: Some(U256::ZERO),
+                fee: U256::ZERO,
                 order: solvers_dto::solution::OrderUid(order_loser_id.0),
             }),
         ],
