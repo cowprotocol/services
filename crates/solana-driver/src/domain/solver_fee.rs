@@ -83,10 +83,8 @@ impl SolverFee {
     }
 
     /// The fee on one executed leg, `executed * f` rounded up in the fee's
-    /// favour. The same factor applies to both sides because the leg is the
-    /// engine's pre-fee figure, as in the EVM driver's `fee_from_volume`. The
-    /// autopilot's `f / (1 - f)` and `f / (1 + f)` back the fee out of
-    /// post-fee amounts and do not apply here.
+    /// favour. The leg is the engine's pre-fee figure, so the same factor
+    /// applies on both sides, like the EVM driver's `fee_from_volume`.
     fn fee_from_volume(self, executed: u64) -> u64 {
         let scaled = u128::from(executed)
             .checked_mul(u128::from(self.0))
@@ -299,6 +297,43 @@ mod tests {
         let mut sol = solution(fee.tighten_limit(Side::Buy, buy.sell_amount), 1_000);
         fee.apply(&mut sol, &orders(&buy)).unwrap();
         assert_eq!(sol.trades[0].executed_sell, 1_000);
+    }
+
+    /// `tighten_limit` and `apply` round independently. A fill at exactly the
+    /// tightened limit survives the fee and one unit worse does not, on both
+    /// sides, across fee sizes and limit magnitudes.
+    #[test]
+    fn tightened_limit_is_the_exact_boundary_of_apply() {
+        for bps in [1u16, 7, 500, 2_500, 9_999] {
+            let fee = SolverFee::try_from(bps).unwrap();
+            for limit in [1u64, 3, 1_000, 12_345, 1_000_000_000_000] {
+                let sell = order(Side::Sell, 1_000, limit);
+                let min_buy = fee.tighten_limit(Side::Sell, limit);
+                assert!(
+                    fee.apply(&mut solution(1_000, min_buy), &orders(&sell))
+                        .is_ok(),
+                    "sell bps={bps} limit={limit}"
+                );
+                assert!(
+                    fee.apply(&mut solution(1_000, min_buy - 1), &orders(&sell))
+                        .is_err(),
+                    "sell bps={bps} limit={limit}"
+                );
+
+                let buy = order(Side::Buy, limit, 1_000);
+                let max_sell = fee.tighten_limit(Side::Buy, limit);
+                assert!(
+                    fee.apply(&mut solution(max_sell, 1_000), &orders(&buy))
+                        .is_ok(),
+                    "buy bps={bps} limit={limit}"
+                );
+                assert!(
+                    fee.apply(&mut solution(max_sell + 1, 1_000), &orders(&buy))
+                        .is_err(),
+                    "buy bps={bps} limit={limit}"
+                );
+            }
+        }
     }
 
     #[test]
