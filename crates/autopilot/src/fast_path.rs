@@ -36,9 +36,9 @@ use {
         infra::{
             self,
             persistence::{FastPathOrder, FastPathPromotion, StagedFastPathCompetition, dto},
-            solvers::dto::settle,
+            solvers::dto::settle_fast_path,
         },
-        settle_call::SettleCall,
+        settle_call::{self, SettleCall},
     },
     alloy::primitives::{Address, U256},
     anyhow::Context,
@@ -262,19 +262,16 @@ impl FastPathHandler {
             .await?;
 
         Ok(FastPathSettleAttempt {
-            settle_request: settle::Request {
-                solution_id: None,
+            settle_request: settle_call::Request::FastPath(Box::new(settle_fast_path::Request {
+                quote_id,
+                order: dto::order::from_domain(&final_execution.order),
+                limit_prices: settle_fast_path::LimitPrices {
+                    sell: final_execution.limit_sell,
+                    buy: final_execution.limit_buy,
+                },
                 submission_deadline_latest_block: deadline.block,
                 auction_id,
-                fast_path: Some(settle::FastPath {
-                    quote_id,
-                    order: dto::order::from_domain(&final_execution.order),
-                    limit_prices: settle::LimitPrices {
-                        sell: final_execution.limit_sell,
-                        buy: final_execution.limit_buy,
-                    },
-                }),
-            },
+            })),
             winner: winner.clone(),
             solution_uid,
         })
@@ -501,7 +498,7 @@ impl FastPathHandler {
 struct FastPathSettleAttempt {
     winner: Arc<infra::Driver>,
     solution_uid: usize,
-    settle_request: settle::Request,
+    settle_request: settle_call::Request,
 }
 
 /// Output of the fee-policy computation and bid-adjustment step of the
