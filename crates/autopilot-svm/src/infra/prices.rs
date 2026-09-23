@@ -456,7 +456,8 @@ async fn coingecko(
             .join(",");
         url.query_pairs_mut()
             .append_pair("contract_addresses", &addresses)
-            .append_pair("vs_currencies", "sol");
+            .append_pair("vs_currencies", "sol")
+            .append_pair("precision", "full");
         let mut request = client.get(url);
         if let Some(key) = api_key {
             request = request.header(API_KEY_HEADER, key);
