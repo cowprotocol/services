@@ -3,7 +3,7 @@
 use {
     configs::{
         database::DatabasePoolConfig,
-        deserialize_env::deserialize_optional_string_from_env,
+        deserialize_env::deserialize_string_from_env,
         shared::LoggingConfig,
     },
     serde::Deserialize,
@@ -118,10 +118,11 @@ pub enum NativePriceEstimator {
         /// The CoinGecko `simple/token_price` route. The chain is appended.
         endpoint: url::Url,
         /// API key sent with every price request as the CoinGecko Pro plan
-        /// header. A value like `%COIN_GECKO_API_KEY` reads the key from that
-        /// environment variable, keeping the literal out of the config file.
-        #[serde(default, deserialize_with = "deserialize_optional_string_from_env")]
-        api_key: Option<String>,
+        /// header. Empty sends none. A value like `%COIN_GECKO_API_KEY` reads
+        /// the key from that environment variable, keeping the literal out of
+        /// the config file, and fails the load when the variable is unset.
+        #[serde(default, deserialize_with = "deserialize_string_from_env")]
+        api_key: String,
     },
     /// A solver driver, quoted through its regular `/quote` route. The url
     /// includes the solver path, like the `[[drivers]]` entries.
@@ -253,9 +254,10 @@ mod tests {
         assert!(matches!(
             &config.native_prices.estimators[..],
             [
-                NativePriceEstimator::CoinGecko { endpoint, api_key: None },
+                NativePriceEstimator::CoinGecko { endpoint, api_key },
                 NativePriceEstimator::Driver { name, .. },
             ] if endpoint.as_str() == "https://api.coingecko.com/api/v3/simple/token_price"
+                && api_key.is_empty()
                 && name == "baseline"
         ));
         assert_eq!(config.drivers.len(), 1);
@@ -280,7 +282,20 @@ mod tests {
         unsafe { std::env::remove_var(var) };
         assert!(matches!(
             &prices.estimators[..],
-            [NativePriceEstimator::CoinGecko { api_key: Some(key), .. }] if key == "secret"
+            [NativePriceEstimator::CoinGecko { api_key, .. }] if api_key == "secret"
         ));
+    }
+
+    #[test]
+    fn coin_gecko_api_key_missing_from_the_environment_fails_the_load() {
+        let prices = toml::de::from_str::<NativePrices>(
+            r#"
+            [[estimators]]
+            type = "coin-gecko"
+            endpoint = "https://api.coingecko.com/api/v3/simple/token_price"
+            api-key = "%TEST_SVM_COIN_GECKO_API_KEY_UNSET"
+            "#,
+        );
+        assert!(prices.is_err());
     }
 }

@@ -140,7 +140,7 @@ impl NativePrices {
                     Source::CoinGecko {
                         client: client.clone(),
                         endpoint: endpoint.clone(),
-                        api_key: api_key.clone(),
+                        api_key: Some(api_key.clone()).filter(|key| !key.is_empty()),
                     }
                 }
                 config::NativePriceEstimator::Driver { name, url } => Source::Driver {
@@ -589,7 +589,7 @@ mod tests {
         config::NativePrices {
             estimators: vec![config::NativePriceEstimator::CoinGecko {
                 endpoint,
-                api_key: None,
+                api_key: String::new(),
             }],
             ttl: Duration::from_secs(60),
             driver_probe_lamports: PROBE_LAMPORTS,
@@ -811,7 +811,7 @@ mod tests {
             &config::NativePrices {
                 estimators: vec![config::NativePriceEstimator::CoinGecko {
                     endpoint,
-                    api_key: None,
+                    api_key: String::new(),
                 }],
                 ttl: Duration::from_millis(600),
                 driver_probe_lamports: PROBE_LAMPORTS,
@@ -849,7 +849,7 @@ mod tests {
             estimators: vec![
                 config::NativePriceEstimator::CoinGecko {
                     endpoint: coingecko,
-                    api_key: None,
+                    api_key: String::new(),
                 },
                 config::NativePriceEstimator::Driver {
                     name: "baseline".to_owned(),
@@ -876,7 +876,7 @@ mod tests {
         let token = Pubkey::new_unique();
         let dead = config::NativePriceEstimator::CoinGecko {
             endpoint: "http://127.0.0.1:1/".parse().unwrap(),
-            api_key: None,
+            api_key: String::new(),
         };
         let prices = NativePrices::new(
             &config::NativePrices {

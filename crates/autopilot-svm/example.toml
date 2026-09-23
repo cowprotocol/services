@@ -41,7 +41,7 @@ driver-probe-lamports = 100000000
 
 # The CoinGecko key is optional: without one the public API and its rate
 # limits apply. A value like "%COIN_GECKO_API_KEY" reads the key from that
-# environment variable.
+# environment variable and fails the load when it is unset.
 [[native-prices.estimators]]
 type = "coin-gecko"
 endpoint = "https://api.coingecko.com/api/v3/simple/token_price"
