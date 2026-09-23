@@ -440,8 +440,12 @@ async fn coingecko(
     decimals: &HashMap<Pubkey, u8>,
 ) -> Result<HashMap<Pubkey, u64>> {
     let base = route(endpoint, "simple/token_price/solana")?;
+    // A caching proxy in front of the API keys on the URL, so the mint order
+    // must not vary between lookups of the same token set.
+    let mut sorted = tokens.to_vec();
+    sorted.sort();
     let mut quoted: HashMap<String, Entry> = HashMap::new();
-    for chunk in tokens.chunks(PRICES_CHUNK) {
+    for chunk in sorted.chunks(PRICES_CHUNK) {
         let mut url = base.clone();
         let addresses = chunk
             .iter()

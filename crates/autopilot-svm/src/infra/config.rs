@@ -1,7 +1,11 @@
 //! Configuration of the autopilot's endpoints and competition parameters.
 
 use {
-    configs::{database::DatabasePoolConfig, shared::LoggingConfig},
+    configs::{
+        database::DatabasePoolConfig,
+        deserialize_env::deserialize_optional_string_from_env,
+        shared::LoggingConfig,
+    },
     serde::Deserialize,
     serde_ext::{deserialize_nonempty_vec, deserialize_solana_pubkey_b58},
     solana_sdk::pubkey::Pubkey,
@@ -102,15 +106,21 @@ const fn default_driver_probe_lamports() -> u64 {
 
 /// One native price source.
 #[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "kebab-case",
+    deny_unknown_fields
+)]
 pub enum NativePriceEstimator {
     /// The CoinGecko `simple/token_price` API.
     CoinGecko {
         /// Base URL of the CoinGecko API.
         endpoint: url::Url,
         /// API key sent with every price request as the CoinGecko Pro plan
-        /// header.
-        #[serde(default)]
+        /// header. A value like `%COIN_GECKO_API_KEY` reads the key from that
+        /// environment variable, keeping the literal out of the config file.
+        #[serde(default, deserialize_with = "deserialize_optional_string_from_env")]
         api_key: Option<String>,
     },
     /// A solver driver, quoted through its regular `/quote` route. The url
@@ -250,5 +260,26 @@ mod tests {
         assert_eq!(config.drivers.len(), 1);
         assert_eq!(config.drivers[0].name, "baseline");
         assert_eq!(config.logging.filter, "info,autopilot_svm=debug");
+    }
+
+    #[test]
+    fn coin_gecko_api_key_reads_the_environment() {
+        let var = "TEST_SVM_COIN_GECKO_API_KEY";
+        // Safety: test-only, and the name is unique to this test.
+        unsafe { std::env::set_var(var, "secret") };
+        let prices: NativePrices = toml::de::from_str(&format!(
+            r#"
+            [[estimators]]
+            type = "coin-gecko"
+            endpoint = "https://api.coingecko.com/api/v3/"
+            api-key = "%{var}"
+            "#
+        ))
+        .unwrap();
+        unsafe { std::env::remove_var(var) };
+        assert!(matches!(
+            &prices.estimators[..],
+            [NativePriceEstimator::CoinGecko { api_key: Some(key), .. }] if key == "secret"
+        ));
     }
 }
