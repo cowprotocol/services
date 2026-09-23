@@ -89,7 +89,10 @@ async fn run(config: Config) {
         .await
         .expect("database connection");
 
-    let windows = SettlementWindows::new(pool.clone());
+    // One shared hold-out: the executor holds into it, the auction cut reads
+    // it, and the settlement observer releases from it.
+    let inflight = InFlightOrders::default();
+    let windows = SettlementWindows::new(pool.clone(), inflight.clone());
     let listen = ListenSession::spawn(
         pool.clone(),
         db::SETTLEMENT_FINALIZED_CHANNEL,
@@ -122,7 +125,6 @@ async fn run(config: Config) {
         )
     });
 
-    let inflight = InFlightOrders::default();
     let auction_loop = AuctionLoop::new(
         Box::new(SlotTrigger::new(rpc, config.min_auction_interval)),
         Box::new(DbAuctionProvider::new(
