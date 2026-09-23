@@ -23,7 +23,7 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::SolverResponse {
                         solution::Trade::Fulfillment(trade) => Trade::Fulfillment(Fulfillment {
                             order: OrderUid(trade.order().uid.0),
                             executed_amount: trade.executed().amount,
-                            fee: Some(trade.fee().amount),
+                            fee: trade.fee().amount,
                         }),
                         solution::Trade::Jit(trade) => {
                             let (signing_scheme, signature) = match &trade.order.signature {
@@ -59,7 +59,7 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::SolverResponse {
                                     signature,
                                 },
                                 executed_amount: trade.executed,
-                                fee: Some(trade.fee.0),
+                                fee: trade.fee.0,
                             })
                         }
                     })
