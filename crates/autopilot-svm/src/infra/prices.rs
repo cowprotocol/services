@@ -37,9 +37,10 @@ const DRIVER_CONCURRENCY: usize = 10;
 /// Mints per `getMultipleAccounts` request, the RPC method's cap.
 const ACCOUNTS_CHUNK: usize = 100;
 
-/// Mints per CoinGecko request, keeping the `contract_addresses` parameter
-/// and the URL bounded.
-const PRICES_CHUNK: usize = 100;
+/// Mints per CoinGecko request, the most `simple/token_price` prices in one
+/// answer. The denominator needs no slot: wSOL prices at the denominator
+/// without being asked.
+const PRICES_CHUNK: usize = 20;
 
 /// Native price lookups for auction tokens, cached per token. The configured
 /// estimators are asked in order: a token the first one does not price is
@@ -432,6 +433,7 @@ fn route(base: &Url, path: &str) -> Result<Url> {
 }
 
 /// The `simple/token_price` prices for the given mints, requested in chunks.
+/// The configured endpoint addresses the route, so only the chain is appended.
 async fn coingecko(
     client: &reqwest::Client,
     endpoint: &Url,
@@ -439,7 +441,7 @@ async fn coingecko(
     tokens: &[Pubkey],
     decimals: &HashMap<Pubkey, u8>,
 ) -> Result<HashMap<Pubkey, u64>> {
-    let base = route(endpoint, "simple/token_price/solana")?;
+    let base = route(endpoint, "solana")?;
     // A caching proxy in front of the API keys on the URL, so the mint order
     // must not vary between lookups of the same token set.
     let mut sorted = tokens.to_vec();
@@ -628,7 +630,11 @@ mod tests {
     }
 
     async fn coingecko_server(response: serde_json::Value) -> (Url, Arc<AtomicUsize>) {
-        coingecko_server_at("/simple/token_price/solana", response).await
+        let (root, requests) = coingecko_server_at("/simple/token_price/solana", response).await;
+        (
+            format!("{root}simple/token_price").parse().unwrap(),
+            requests,
+        )
     }
 
     /// Serve one fixed driver quote: `sell_amount` token atoms buy the
@@ -742,7 +748,9 @@ mod tests {
             serde_json::json!({ listed.to_string(): { "sol": 0.005 } }),
         )
         .await;
-        let endpoint = format!("{}api/v3", endpoint.as_str()).parse().unwrap();
+        let endpoint = format!("{}api/v3/simple/token_price", endpoint.as_str())
+            .parse()
+            .unwrap();
         let prices = NativePrices::new(
             &coingecko_config(endpoint),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),

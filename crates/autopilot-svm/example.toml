@@ -44,7 +44,7 @@ driver-probe-lamports = 100000000
 # environment variable.
 [[native-prices.estimators]]
 type = "coin-gecko"
-endpoint = "https://api.coingecko.com/api/v3/"
+endpoint = "https://api.coingecko.com/api/v3/simple/token_price"
 # api-key = "%COIN_GECKO_API_KEY"
 
 # A solver driver quoted through its regular /quote route. The url includes

@@ -115,7 +115,7 @@ const fn default_driver_probe_lamports() -> u64 {
 pub enum NativePriceEstimator {
     /// The CoinGecko `simple/token_price` API.
     CoinGecko {
-        /// Base URL of the CoinGecko API.
+        /// The CoinGecko `simple/token_price` route. The chain is appended.
         endpoint: url::Url,
         /// API key sent with every price request as the CoinGecko Pro plan
         /// header. A value like `%COIN_GECKO_API_KEY` reads the key from that
@@ -255,7 +255,8 @@ mod tests {
             [
                 NativePriceEstimator::CoinGecko { endpoint, api_key: None },
                 NativePriceEstimator::Driver { name, .. },
-            ] if endpoint.as_str() == "https://api.coingecko.com/api/v3/" && name == "baseline"
+            ] if endpoint.as_str() == "https://api.coingecko.com/api/v3/simple/token_price"
+                && name == "baseline"
         ));
         assert_eq!(config.drivers.len(), 1);
         assert_eq!(config.drivers[0].name, "baseline");
