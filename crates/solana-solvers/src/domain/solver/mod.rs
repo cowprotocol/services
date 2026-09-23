@@ -95,6 +95,10 @@ mod tests {
             buy_destination: pubkey(3),
             sell_amount: 1_000,
             buy_amount: 0,
+            amount: match side {
+                dex::Side::Sell => 1_000,
+                dex::Side::Buy => 0,
+            },
             full_sell_amount: 1_000,
             full_buy_amount: 0,
             side,

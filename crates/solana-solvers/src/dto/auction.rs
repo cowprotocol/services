@@ -55,6 +55,12 @@ pub struct Order {
     /// the least the fill must deliver. Decimal string on the wire.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_amount: u64,
+    /// Sell amount for a sell, buy amount for a buy. Decimal string on the
+    /// wire.
+    ///
+    /// TODO: remove once external engines read `sellAmount`/`buyAmount`.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub amount: u64,
     /// The signed sell amount, before any solver-fee tightening. Decimal
     /// string on the wire.
     #[serde_as(as = "serde_with::DisplayFromStr")]
@@ -101,6 +107,7 @@ mod tests {
                 "buyDestination": pubkey(4).to_string(),
                 "sellAmount": "1000",
                 "buyAmount": "2000",
+                "amount": "1000",
                 "fullSellAmount": "1000",
                 "fullBuyAmount": "2000",
                 "side": "sell",
@@ -117,6 +124,7 @@ mod tests {
         assert_eq!((order.sell_mint, order.buy_mint), (pubkey(1), pubkey(2)));
         assert_eq!(order.buy_destination, pubkey(4));
         assert_eq!((order.sell_amount, order.buy_amount), (1_000, 2_000));
+        assert_eq!(order.amount, 1_000);
         assert_eq!(
             (order.full_sell_amount, order.full_buy_amount),
             (1_000, 2_000)

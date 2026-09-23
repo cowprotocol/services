@@ -42,6 +42,11 @@ pub struct Order {
     pub sell_amount: u64,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_amount: u64,
+    /// Sell amount for a sell, buy amount for a buy.
+    ///
+    /// TODO: remove once external solvers read `sellAmount`/`buyAmount`.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub amount: u64,
     /// The signed sell amount, untouched by the solver fee.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub full_sell_amount: u64,
@@ -82,6 +87,10 @@ impl Order {
             buy_destination: find_buffer_pda(&program_id, &order.buy_token).0,
             sell_amount,
             buy_amount,
+            amount: match order.side {
+                Side::Sell => sell_amount,
+                Side::Buy => buy_amount,
+            },
             full_sell_amount: order.sell_amount,
             full_buy_amount: order.buy_amount,
             side: order.side,
@@ -140,6 +149,7 @@ mod tests {
                 "buyDestination": find_buffer_pda(&program_id, &buy_mint).0.to_string(),
                 "sellAmount": "1000",
                 "buyAmount": "2000",
+                "amount": "1000",
                 "fullSellAmount": "1000",
                 "fullBuyAmount": "2000",
                 "side": "sell",
@@ -157,6 +167,7 @@ mod tests {
                 buy_destination: find_buffer_pda(&program_id, &buy_mint).0,
                 sell_amount: 1_000,
                 buy_amount: 2_000,
+                amount: 1_000,
                 full_sell_amount: 1_000,
                 full_buy_amount: 2_000,
                 side: Side::Sell,
