@@ -597,6 +597,45 @@ mod tests {
         .await;
     }
 
+    /// `trades_by_owner` must surface trades whose order metadata lives only
+    /// in `jit_orders` and not in `orders`.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_trades_by_owner_finds_jit_orders() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let users_and_orders = generate_owners_and_order_ids(&[1]).await;
+        let (owner, uid) = (users_and_orders[0].0, users_and_orders[0].1[0]);
+
+        crate::jit_orders::insert(
+            &mut db,
+            std::slice::from_ref(&crate::jit_orders::JitOrder {
+                uid,
+                owner,
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
+
+        let trade = add_trade(
+            &mut db,
+            owner,
+            uid,
+            EventIndex {
+                block_number: 0,
+                log_index: 0,
+            },
+            None,
+            None,
+        )
+        .await;
+
+        assert_trades(&mut db, Some(&owner), None, std::slice::from_ref(&trade)).await;
+    }
+
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_order_uid_filter() {
