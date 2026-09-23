@@ -175,7 +175,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let solver = Pubkey([7; 32]);
         let uid = IntentHash([1; 32]);
         let inflight = InFlightOrders::default();
-        inflight.hold(4242, solver, vec![uid], 100);
+        inflight.hold(4242, solver, [uid], 100);
         let windows = SettlementWindows::new(pool.clone(), inflight.clone());
         windows
             .open_dispatched(4242, solver, 1, 90, 100)

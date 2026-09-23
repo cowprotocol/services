@@ -23,66 +23,79 @@ use {
     },
 };
 
-#[derive(Default)]
-struct State {
-    /// Held order uids and the slot their hold expires at.
-    held: HashMap<IntentHash, u64>,
-    /// The orders of each dispatched settlement, keyed the way the indexer
-    /// identifies a landed settlement, with the dispatch's expiry slot.
-    settlements: HashMap<(i64, Pubkey), (Vec<IntentHash>, u64)>,
+/// A dispatched settlement, keyed the way the indexer identifies a landed
+/// one.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Settlement {
+    auction_id: i64,
+    solver: Pubkey,
+}
+
+/// Why an order is held, and until when.
+#[derive(Clone, Copy)]
+struct Hold {
+    settlement: Settlement,
+    /// The last slot the settlement's transaction could still land.
+    expires_at: u64,
 }
 
 /// Order uids held out of auction cuts until their settlement transaction
 /// cannot land any more.
 #[derive(Clone, Default)]
-pub struct InFlightOrders(Arc<Mutex<State>>);
+pub struct InFlightOrders(Arc<Mutex<HashMap<IntentHash, Hold>>>);
 
 impl InFlightOrders {
     /// Hold the settlement's orders until the deadline slot plus the
     /// blockhash lifetime, the last slot its transaction could still land.
-    /// An order already held keeps the later expiry.
-    pub fn hold(&self, auction_id: i64, solver: Pubkey, uids: Vec<IntentHash>, deadline_slot: u64) {
-        let expiry = deadline_slot.saturating_add(MAX_PROCESSING_AGE as u64);
-        let mut state = self.0.lock().expect("mutex poisoned");
-        for uid in &uids {
-            state
-                .held
-                .entry(*uid)
-                .and_modify(|held_until| *held_until = (*held_until).max(expiry))
-                .or_insert(expiry);
+    /// An order already held keeps the hold that expires last.
+    pub fn hold(
+        &self,
+        auction_id: i64,
+        solver: Pubkey,
+        uids: impl IntoIterator<Item = IntentHash>,
+        deadline_slot: u64,
+    ) {
+        let hold = Hold {
+            settlement: Settlement { auction_id, solver },
+            expires_at: deadline_slot.saturating_add(MAX_PROCESSING_AGE as u64),
+        };
+        let mut held = self.0.lock().expect("mutex poisoned");
+        for uid in uids {
+            held.entry(uid)
+                .and_modify(|current| {
+                    if hold.expires_at > current.expires_at {
+                        *current = hold;
+                    }
+                })
+                .or_insert(hold);
         }
-        state
-            .settlements
-            .insert((auction_id, solver), (uids, expiry));
     }
 
     /// Release the orders: their settlement provably never went out, so no
     /// second settlement can collide.
     pub fn release(&self, uids: impl IntoIterator<Item = IntentHash>) {
-        let mut state = self.0.lock().expect("mutex poisoned");
+        let mut held = self.0.lock().expect("mutex poisoned");
         for uid in uids {
-            state.held.remove(&uid);
+            held.remove(&uid);
         }
     }
 
     /// Release the orders of a settlement observed on chain. The auction is
     /// settled for this solver, nothing else can execute these orders.
     pub fn release_landed(&self, auction_id: i64, solver: Pubkey) {
-        let mut state = self.0.lock().expect("mutex poisoned");
-        if let Some((uids, _)) = state.settlements.remove(&(auction_id, solver)) {
-            for uid in uids {
-                state.held.remove(&uid);
-            }
-        }
+        let settlement = Settlement { auction_id, solver };
+        self.0
+            .lock()
+            .expect("mutex poisoned")
+            .retain(|_, hold| hold.settlement != settlement);
     }
 
     /// The orders still held at the tip. Expired entries are pruned on the
     /// way.
     pub fn held_at(&self, tip: u64) -> HashSet<IntentHash> {
-        let mut state = self.0.lock().expect("mutex poisoned");
-        state.held.retain(|_, held_until| *held_until >= tip);
-        state.settlements.retain(|_, (_, expiry)| *expiry >= tip);
-        state.held.keys().copied().collect()
+        let mut held = self.0.lock().expect("mutex poisoned");
+        held.retain(|_, hold| hold.expires_at >= tip);
+        held.keys().copied().collect()
     }
 }
 
@@ -96,7 +109,7 @@ mod tests {
     fn holds_through_the_blockhash_lifetime_past_the_deadline() {
         let inflight = InFlightOrders::default();
         let uid = IntentHash([7; 32]);
-        inflight.hold(1, SOLVER, vec![uid], 100);
+        inflight.hold(1, SOLVER, [uid], 100);
         let expiry = 100 + MAX_PROCESSING_AGE as u64;
 
         assert!(inflight.held_at(100).contains(&uid));
@@ -109,7 +122,7 @@ mod tests {
         let inflight = InFlightOrders::default();
         let uid = IntentHash([7; 32]);
         let other = IntentHash([8; 32]);
-        inflight.hold(1, SOLVER, vec![uid, other], 100);
+        inflight.hold(1, SOLVER, [uid, other], 100);
         inflight.release([uid]);
 
         let held = inflight.held_at(50);
@@ -122,8 +135,8 @@ mod tests {
         let inflight = InFlightOrders::default();
         let uid = IntentHash([7; 32]);
         let unrelated = IntentHash([8; 32]);
-        inflight.hold(1, SOLVER, vec![uid], 100);
-        inflight.hold(2, SOLVER, vec![unrelated], 100);
+        inflight.hold(1, SOLVER, [uid], 100);
+        inflight.hold(2, SOLVER, [unrelated], 100);
 
         inflight.release_landed(1, SOLVER);
         let held = inflight.held_at(50);
@@ -139,13 +152,24 @@ mod tests {
     fn a_second_dispatch_keeps_the_later_expiry() {
         let inflight = InFlightOrders::default();
         let uid = IntentHash([7; 32]);
-        inflight.hold(1, SOLVER, vec![uid], 100);
-        inflight.hold(2, SOLVER, vec![uid], 90);
+        inflight.hold(1, SOLVER, [uid], 100);
+        inflight.hold(2, SOLVER, [uid], 90);
 
         assert!(
             inflight
                 .held_at(100 + MAX_PROCESSING_AGE as u64)
                 .contains(&uid)
         );
+    }
+
+    #[test]
+    fn a_landing_keeps_an_order_the_later_dispatch_still_holds() {
+        let inflight = InFlightOrders::default();
+        let uid = IntentHash([7; 32]);
+        inflight.hold(1, SOLVER, [uid], 100);
+        inflight.hold(2, SOLVER, [uid], 200);
+
+        inflight.release_landed(1, SOLVER);
+        assert!(inflight.held_at(50).contains(&uid));
     }
 }
