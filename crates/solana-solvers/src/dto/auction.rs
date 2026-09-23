@@ -28,12 +28,10 @@ pub struct Auction {
 
 /// One order to quote.
 ///
-/// The limit leg may arrive tightened by the driver's solver fee; fills are
-/// checked against that tightened leg, not the signed amounts.
-///
-/// TODO: nothing reads the signed amounts yet. They stay on the DTO because
-/// it doubles as the wire reference for external engines. Checking fills
-/// against them would pass fills the fee then pushes under the limit.
+/// The limit leg may arrive tightened by the driver's solver fee. Fills are
+/// checked against the tightened legs. The signed amounts are carried for
+/// external engines; a fill checked against them can be pushed under the
+/// limit by the fee.
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

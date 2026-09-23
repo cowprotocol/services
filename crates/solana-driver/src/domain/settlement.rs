@@ -904,11 +904,10 @@ mod tests {
         assert!(respects_limit(&buy_order, 500, 1_000));
     }
 
-    /// A zero signed amount on the non-target side: a sell order demanding
-    /// nothing accepts any fill, a buy order offering nothing accepts only a
-    /// free fill.
+    /// A zero limit leg: a sell order demanding nothing accepts any fill, a
+    /// buy order offering nothing accepts only a free fill.
     #[test]
-    fn a_zero_non_target_amount_is_handled() {
+    fn a_zero_limit_leg_is_handled() {
         let program_id = pubkey(0xaa);
         let sell_order = test_order_with(&program_id, |order| order.buy_amount = 0);
         assert!(respects_limit(&sell_order, 1_000, 0));
