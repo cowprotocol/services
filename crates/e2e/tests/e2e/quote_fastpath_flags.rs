@@ -17,7 +17,7 @@ async fn local_node_fast_path_flags_fall_through_when_disabled() {
     run_test(fast_path_flags_fall_through_when_disabled).await;
 }
 
-/// When the fast-path handler is disabled (`fast_path_enabled = false`),
+/// When the fast path is disabled (`fast_path_submission_deadline` unset),
 /// the orderbook still accepts an `enableFastPath` order — but the
 /// autopilot classifies it into the regular auction immediately by
 /// writing `valid_from = now()`, so it settles like any other order.
@@ -54,7 +54,7 @@ async fn fast_path_flags_fall_through_when_disabled(web3: Web3) {
 
     tracing::info!("Starting services with the fast-path handler disabled.");
     let services = Services::new(&onchain).await;
-    // `fast_path_enabled` is false (the test config default), so the
+    // `fast_path_submission_deadline` is None (the test config default), so the
     // fast-path handler still runs but skips the settle and writes
     // `valid_from = now()`, letting the regular auction pick the order
     // up on the very next cycle.

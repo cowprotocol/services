@@ -56,10 +56,6 @@ const fn default_max_auction_age() -> Duration {
     Duration::from_mins(5)
 }
 
-const fn default_fast_path_submission_deadline() -> u64 {
-    2
-}
-
 // Does not implement Default because `native_price_estimation` *cannot* have
 // empty `estimators`, as such, we cannot provide a proper default value for
 // this structure.
@@ -171,19 +167,14 @@ pub struct Configuration {
     /// Configurations for the order creation process.
     pub order_quoting: OrderQuoting,
 
-    /// Runtime toggle for the autopilot's fast-path handler. When
-    /// `false`, fast-path orders are still accepted at placement but
-    /// the handler skips the out-of-competition settle and drops them
-    /// into the next regular auction.
-    #[serde(default)]
-    pub fast_path_enabled: bool,
-
     /// Number of blocks a fast-path order stays exclusive to the winning
     /// quote's solver: it may settle out of competition within this many
     /// blocks before the order falls back to the regular auction. Also
-    /// caps the `/settle` attempt. Defaults to 2 blocks.
-    #[serde(default = "default_fast_path_submission_deadline")]
-    pub fast_path_submission_deadline: u64,
+    /// caps the `/settle` attempt. `None` disables the fast path: orders
+    /// are still accepted at placement but drop straight into the next
+    /// regular auction.
+    #[serde(default)]
+    pub fast_path_submission_deadline: Option<u64>,
 
     /// Configurations for price estimation (tenderly, rate limiting, CoinGecko,
     /// 1inch, quote verification, balance overrides, etc.).
@@ -258,8 +249,7 @@ impl Configuration {
             max_auction_age: default_max_auction_age(),
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
-            fast_path_enabled: false,
-            fast_path_submission_deadline: default_fast_path_submission_deadline(),
+            fast_path_submission_deadline: None,
             price_estimation: TestDefault::test_default(),
             balance_cache: TestDefault::test_default(),
         }
@@ -293,8 +283,7 @@ impl Configuration {
             max_auction_age: default_max_auction_age(),
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
-            fast_path_enabled: false,
-            fast_path_submission_deadline: default_fast_path_submission_deadline(),
+            fast_path_submission_deadline: None,
             price_estimation: TestDefault::test_default(),
             balance_cache: TestDefault::test_default(),
         }
@@ -498,7 +487,7 @@ mod tests {
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
         assert_eq!(config.max_auction_age, Duration::from_secs(600));
         assert_eq!(config.native_price_timeout, Duration::from_secs(3));
-        assert_eq!(config.fast_path_submission_deadline, 3);
+        assert_eq!(config.fast_path_submission_deadline, Some(3));
 
         assert_eq!(config.balance_cache.eviction_time, Duration::from_secs(10));
         assert_eq!(
@@ -568,7 +557,7 @@ mod tests {
         assert_eq!(config.min_order_validity_period, Duration::from_secs(60));
         assert_eq!(config.max_auction_age, Duration::from_secs(300));
         assert_eq!(config.native_price_timeout, Duration::ZERO);
-        assert_eq!(config.fast_path_submission_deadline, 2);
+        assert_eq!(config.fast_path_submission_deadline, None);
     }
 
     #[test]
