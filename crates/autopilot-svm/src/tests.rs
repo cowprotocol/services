@@ -8,6 +8,7 @@ use {
             competition::DriverCompetition,
             driver::{Driver, dto},
             executor::DriverExecutor,
+            inflight::InFlightOrders,
             observation::SettlementWindows,
             observer::CompetitionObserver,
             prices::NativePrices,
@@ -191,7 +192,6 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     // the solution scores its 100 surplus and wins.
     let solution = dto::Solution {
         solution_id: 7,
-        score: 100,
         solver: Pubkey([0xCC; 32]),
         orders: HashMap::from([(
             IntentHash(uid),
@@ -214,6 +214,8 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         let provider = DbAuctionProvider::new(
             pool.clone(),
             mock_rpc(),
+            150,
+            InFlightOrders::default(),
             NativePrices::seeded(test_prices()),
         );
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
@@ -225,12 +227,15 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }
 
-    let windows = SettlementWindows::new(pool.clone());
+    let inflight = InFlightOrders::default();
+    let windows = SettlementWindows::new(pool.clone(), inflight.clone());
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
         Box::new(DbAuctionProvider::new(
             pool.clone(),
             mock_rpc(),
+            150,
+            inflight.clone(),
             NativePrices::seeded(test_prices()),
         )),
         Box::new(DriverCompetition::new(
@@ -238,7 +243,12 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             Duration::from_secs(6),
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
-        Box::new(DriverExecutor::new(vec![driver], windows.clone(), None)),
+        Box::new(DriverExecutor::new(
+            vec![driver],
+            windows.clone(),
+            None,
+            inflight.clone(),
+        )),
         Box::new(CompetitionObserver::new(pool.clone(), windows.clone())),
         25,
     );
@@ -289,6 +299,34 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             .await
             .unwrap();
     assert_eq!(window_uid, 0);
+    // The dispatched order is held out of the next cut while its window is
+    // open, and past the window until its settlement transaction cannot land
+    // any more: the deadline plus the blockhash lifetime.
+    let expired = tip + 25 + solana_sdk::clock::MAX_PROCESSING_AGE as u64 + 1;
+    // The lag gate stays out of the way: this provider tests the hold, and
+    // the watermark is still at the dispatch tip.
+    let held_provider = DbAuctionProvider::new(
+        pool.clone(),
+        mock_rpc(),
+        u64::MAX,
+        inflight.clone(),
+        NativePrices::seeded(test_prices()),
+    );
+    assert!(
+        held_provider.cut_auction(&(expired - 1)).await.is_none(),
+        "in-flight order excluded from the cut"
+    );
+    // The deadline sweep closes the window as timed out. The hold outlasts
+    // it by the blockhash lifetime.
+    windows.expire_past_deadline(tip + 25).await.unwrap();
+    assert!(
+        held_provider.cut_auction(&(expired - 1)).await.is_none(),
+        "order stays held while its transaction can still land"
+    );
+    assert!(
+        held_provider.cut_auction(&expired).await.is_some(),
+        "order returns once the transaction cannot land"
+    );
     // The cycle reported the order's auction progress. The writes are detached
     // from the cycle, so they can land after `run_cycle` returns.
     let events = tokio::time::timeout(Duration::from_secs(5), async {

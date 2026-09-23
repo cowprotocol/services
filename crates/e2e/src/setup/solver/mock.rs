@@ -110,7 +110,7 @@ async fn solve(
     state: axum::extract::State<State>,
     Json(auction): Json<Auction>,
 ) -> (axum::http::StatusCode, Json<SolverResponse>) {
-    let auction_id = auction.id.unwrap_or_default();
+    let auction_id = auction.id;
     state.auctions.lock().unwrap().push(auction);
     let response = {
         let response_generator = state.response.lock().unwrap().clone();

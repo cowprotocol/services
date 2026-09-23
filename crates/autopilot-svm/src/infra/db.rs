@@ -89,10 +89,6 @@ ORDER BY o.uid
 
 /// Latest slot the indexer fully processed. `None` before the indexer's first
 /// write. `solana.indexer_state` is a single-row table.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the freshness gating")
-)]
 pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
     const QUERY: &str = r#"SELECT slot FROM solana.indexer_state"#;
     sqlx::query_scalar(QUERY)
@@ -157,11 +153,34 @@ ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
     Ok(())
 }
 
+/// Close a window whose settlement provably never reached the chain. The
+/// window spans no slots, so it ends where it started. Only an open window
+/// closes: an observed settlement outranks a driver's report.
+pub async fn reject_settlement_window(
+    ex: impl PgExecutor<'_>,
+    auction_id: i64,
+    solver: Pubkey,
+    solution_uid: i64,
+) -> Result<()> {
+    const QUERY: &str = r#"
+UPDATE solana.settlement_executions
+SET outcome = 'rejected', end_timestamp = now(), end_slot = start_slot
+WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3 AND outcome IS NULL
+    "#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(solver.0)
+        .bind(solution_uid)
+        .execute(ex)
+        .await
+        .context("reject settlement execution window")?;
+    Ok(())
+}
+
 /// Close the auction's windows against the settlements the indexer recorded,
 /// matching each window to its solver's settlement. A window already closed
-/// as timed out or rejected upgrades to landed: the settlement executed
-/// despite the earlier verdict (late, or reported failed by a driver whose
-/// confirmation budget ran out), and the landed evidence wins.
+/// as timed out upgrades to landed: the settlement executed, just late, and
+/// lateness stays visible as `end_slot` past `deadline_slot`.
 ///
 /// A settlement carries no solution uid, so a solver holding several windows
 /// of one auction closes all of them on its first settlement. Correct while
@@ -178,7 +197,7 @@ FROM solana.settlements s
 WHERE e.auction_id = $1
   AND s.auction_id = e.auction_id
   AND s.solver = e.solver
-  AND (e.outcome IS NULL OR e.outcome IN ('timeout', 'rejected'))
+  AND (e.outcome IS NULL OR e.outcome = 'timeout')
 RETURNING e.solver, e.end_slot, e.submitted_signature
     "#;
     sqlx::query_as(QUERY)
@@ -186,31 +205,6 @@ RETURNING e.solver, e.end_slot, e.submitted_signature
         .fetch_all(ex)
         .await
         .context("close landed settlement execution windows")
-}
-
-/// Close an open window as rejected: its driver reported the settlement
-/// failed. The indexer's landed evidence still upgrades the verdict, a
-/// driver that gave up after submitting reports failure for a settlement
-/// that lands.
-pub async fn close_rejected_window(
-    ex: impl PgExecutor<'_>,
-    auction_id: i64,
-    solver: Pubkey,
-    solution_uid: i64,
-) -> Result<()> {
-    const QUERY: &str = r#"
-UPDATE solana.settlement_executions
-SET outcome = 'rejected', end_timestamp = now()
-WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3 AND outcome IS NULL
-    "#;
-    sqlx::query(QUERY)
-        .bind(auction_id)
-        .bind(solver.0)
-        .bind(solution_uid)
-        .execute(ex)
-        .await
-        .context("close rejected settlement execution window")?;
-    Ok(())
 }
 
 /// Close every open window whose deadline is at or before the slot as timed
