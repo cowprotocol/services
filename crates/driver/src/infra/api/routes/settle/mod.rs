@@ -2,7 +2,10 @@ mod dto;
 
 use {
     crate::{
-        domain::competition::{auction, solution},
+        domain::{
+            competition::{self, auction, solution},
+            quote,
+        },
         infra::{
             api::{self, Error, State, extract::LoggingJson},
             observe,
@@ -25,23 +28,38 @@ async fn route(
 
     async move {
         observe::settling();
-        if let Some(fast_path) = req.fast_path {
-            let order = fast_path.order.into_domain(None);
-            let limit_prices = solution::LimitPrices {
-                sell: fast_path.limit_prices.sell,
-                buy: fast_path.limit_prices.buy,
-            };
-            state
-                .competition()
-                .reencode_quote_solution(auction_id, req.solution_id, order, limit_prices)
-                .await
-                .inspect_err(|err| tracing::debug!(?err, "couldn't reencode solution"))?;
-        }
+        let solution_id = match req.fast_path {
+            // A fast-path settlement references the quote cached by `/quote`;
+            // re-encoding it against the real order yields the solution to
+            // settle.
+            Some(fast_path) => {
+                let order = fast_path.order.into_domain(None);
+                let limit_prices = solution::LimitPrices {
+                    sell: fast_path.limit_prices.sell,
+                    buy: fast_path.limit_prices.buy,
+                };
+                state
+                    .competition()
+                    .reencode_quote_solution(
+                        auction_id,
+                        quote::Id(fast_path.quote_id),
+                        order,
+                        limit_prices,
+                    )
+                    .await
+                    .inspect_err(|err| tracing::debug!(?err, "couldn't reencode solution"))?
+            }
+            // The autopilot always sends a solution id when it is not
+            // settling a cached quote.
+            None => req
+                .solution_id
+                .ok_or(competition::Error::MalformedRequest)?,
+        };
         let result = state
             .competition()
             .settle(
                 auction_id,
-                req.solution_id,
+                solution_id,
                 req.submission_deadline_latest_block.into(),
             )
             .await;

@@ -6,9 +6,14 @@ use {
     bigdecimal::BigDecimal,
     bytes::Bytes,
     chrono::{DateTime, Utc},
-    futures::{StreamExt, TryStreamExt},
+    futures::{
+        StreamExt,
+        TryStreamExt,
+        future::{BoxFuture, FutureExt},
+    },
     model::{order::Order, quote::QuoteId},
     num::ToPrimitive,
+    price_estimation::QuoteIdGenerating,
     shared::{
         db_order_conversions::full_order_into_model_order,
         order_quoting::{QuoteCompetition, QuoteData, QuoteSearchParameters, QuoteStoring},
@@ -50,10 +55,15 @@ impl QuoteStoring for Postgres {
         find_quote(&self.pool, params, expiration).await
     }
 
-    async fn get_next_auction_id(&self) -> Result<i64> {
-        // explicitly DON'T call the trait method to protect against
-        // endless recursion after a botched function rename
-        Postgres::get_next_auction_id(self).await
+    async fn next_quote_id(&self) -> Result<QuoteId> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["next_quote_id"])
+            .start_timer();
+        let mut ex = self.pool.acquire().await?;
+        database::quotes::next_id(&mut ex)
+            .await
+            .context("failed to allocate next quote id")
     }
 }
 
@@ -140,5 +150,21 @@ impl Postgres {
             .into_iter()
             .map(|auction_price| (Address::new(auction_price.token.0), auction_price.price))
             .collect::<HashMap<_, _>>())
+    }
+}
+
+impl QuoteIdGenerating for Postgres {
+    fn generate(&self, n: usize) -> BoxFuture<'_, Result<Vec<QuoteId>>> {
+        async move {
+            let _timer = super::Metrics::get()
+                .database_queries
+                .with_label_values(&["next_quote_id_generator"])
+                .start_timer();
+            let mut ex = self.pool.acquire().await?;
+            database::quotes::next_ids(&mut ex, n)
+                .await
+                .context("failed to allocate quote ids")
+        }
+        .boxed()
     }
 }

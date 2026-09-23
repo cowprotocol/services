@@ -42,23 +42,18 @@ impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating
             let get_context = self.ranking.provide_context(&query);
 
             let get_results = self
-                .produce_results(query.clone(), is_reasonable, |context| {
+                .produce_results(query.clone(), is_reasonable, move |context| {
                     // Call estimate() eagerly so its side-effects still happen
                     // when an early-return drops the future before it's polled.
                     let start = Instant::now();
                     let estimator_name = context.name;
-                    let inner_query = context.query.clone();
+                    let query = context.query.clone();
                     context
                         .estimator
-                        .estimate(context.query.clone())
+                        .estimate(query.clone())
                         .map(move |res| {
                             if res.is_ok() {
-                                emit_quote_event(
-                                    estimator_name,
-                                    &inner_query,
-                                    &res,
-                                    start.elapsed(),
-                                );
+                                emit_quote_event(estimator_name, &query, &res, start.elapsed());
                             }
                             res
                         })

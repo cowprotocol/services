@@ -15,8 +15,11 @@ use {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    #[serde_as(as = "Option<DisplayFromStr>")]
-    pub id: Option<i64>,
+    /// Id of the auction or, for quote requests, of the quote being computed.
+    /// The order eventually placed with a quote references the same quote
+    /// id, so a solver can match the two.
+    #[serde_as(as = "DisplayFromStr")]
+    pub id: i64,
     pub tokens: HashMap<Address, Token>,
     pub orders: Vec<Order>,
     pub liquidity: Vec<Liquidity>,
