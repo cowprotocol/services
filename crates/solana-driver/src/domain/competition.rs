@@ -113,7 +113,7 @@ impl Competition {
         let solutions = match self.solver.solver_fee() {
             None => solutions,
             Some(fee) => {
-                let orders: HashMap<_, _> = auction.orders.iter().map(|o| (o.uid, o)).collect();
+                let orders = orders_by_uid(&auction.orders);
                 solutions
                     .into_iter()
                     .filter_map(|mut solution| match fee.apply(&mut solution, &orders) {
@@ -454,15 +454,20 @@ struct RetainedFee {
     amount: u64,
 }
 
+fn orders_by_uid(orders: &[Order]) -> HashMap<OrderUid, &Order> {
+    orders.iter().map(|order| (order.uid, order)).collect()
+}
+
 /// The nonzero solver fees the solution retains: in the buy mint for a sell
 /// order and the sell mint for a buy order.
 fn retained_solver_fees(orders: &[Order], solution: &Solution) -> Vec<RetainedFee> {
+    let orders = orders_by_uid(orders);
     solution
         .trades
         .iter()
         .filter(|trade| trade.solver_fee > 0)
         .filter_map(|trade| {
-            let order = orders.iter().find(|order| order.uid == trade.order_uid)?;
+            let order = orders.get(&trade.order_uid)?;
             let mint = match order.side {
                 Side::Sell => order.buy_token,
                 Side::Buy => order.sell_token,
