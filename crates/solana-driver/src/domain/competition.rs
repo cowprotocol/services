@@ -322,6 +322,7 @@ impl Competition {
             err,
         })?;
 
+        // TODO: drop this log once protocol fees are implemented.
         for fee in &retained_fees {
             tracing::info!(
                 order_uid = %fee.order_uid,
