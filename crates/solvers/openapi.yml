@@ -818,6 +818,7 @@ components:
         - kind
         - order
         - executedAmount
+        - fee
       properties:
         kind:
           type: string
@@ -832,8 +833,9 @@ components:
         fee:
           description: |
             The sell token amount that should be taken as a fee for this
-            trade. This only gets returned for limit orders and only refers
-            to the actual amount filled by the trade.
+            trade. Only refers to the actual amount filled by the trade.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         executedAmount:
           description: |
             The amount of the order that was executed. This is denoted in
