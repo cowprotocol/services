@@ -102,10 +102,9 @@ jobs:
             -p autopilot-svm \
             ${{ steps.features.outputs.cargo_features }}
 
-      # Proposed public CI action. Replace @v1 with its reviewed commit SHA
-      # after cowprotocol/ci is published; this draft demonstrates the interface.
+      # Package the locally compiled binaries using the shared CI action.
       - name: Package services image and export digest
-        uses: cowprotocol/ci/actions/build-image@v1
+        uses: cowprotocol/cow-gh-workflow-tests/actions/build-image@ac1c1d7fd2f008a706d86300ce9f8b4f251462bb
         with:
           image: ghcr.io/${{ github.repository }}
           platform: linux/${{ matrix.arch }}
@@ -124,7 +123,7 @@ jobs:
   # downloads this run's digest artifacts and applies tags to the image index.
   publish:
     needs: build
-    uses: cowprotocol/ci/.github/workflows/publish-image.yml@v1
+    uses: cowprotocol/cow-gh-workflow-tests/.github/workflows/publish-image.yml@ac1c1d7fd2f008a706d86300ce9f8b4f251462bb
     with:
       image: ghcr.io/${{ github.repository }}
       digest-artifact-pattern: services-digest-*
@@ -139,7 +138,7 @@ jobs:
   # build workflow. Preserve the existing services -> migrations publish order.
   migrations:
     needs: publish
-    uses: cowprotocol/ci/.github/workflows/build-image.yml@v1
+    uses: cowprotocol/cow-gh-workflow-tests/.github/workflows/build-image.yml@ac1c1d7fd2f008a706d86300ce9f8b4f251462bb
     with:
       image: ghcr.io/${{ github.repository }}-migration
       context: .
