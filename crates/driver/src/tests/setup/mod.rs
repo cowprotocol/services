@@ -1230,8 +1230,8 @@ impl Test {
         )
     }
 
-    /// Call `/settle_fast_path` for the cached quote, with the real `order`, its
-    /// `limit_prices`, and optional `native_prices`.
+    /// Call `/settle_fast_path` for the cached quote, with the real `order`,
+    /// its `limit_prices`, and optional `native_prices`.
     pub async fn settle_with_order(
         &self,
         quote_id: i64,
