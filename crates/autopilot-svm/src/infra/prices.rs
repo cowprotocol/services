@@ -6,6 +6,7 @@ use {
     chain_types::{ChainTypes, solana::Solana},
     cow_solana_rpc::SolanaRPC,
     futures::{StreamExt, stream},
+    moka::sync::Cache,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::{program_pack::Pack, pubkey::Pubkey},
@@ -37,9 +38,19 @@ const DRIVER_CONCURRENCY: usize = 10;
 /// Mints per `getMultipleAccounts` request, the RPC method's cap.
 const ACCOUNTS_CHUNK: usize = 100;
 
-/// Mints per CoinGecko request, keeping the `contract_addresses` parameter
-/// and the URL bounded.
-const PRICES_CHUNK: usize = 100;
+/// Mints per CoinGecko request, the most `simple/token_price` prices in one
+/// answer. The denominator needs no slot: wSOL prices at the denominator
+/// without being asked.
+const PRICES_CHUNK: usize = 20;
+
+/// Cap on entries per cache. Past it the least used are evicted, so memory
+/// stays bounded however many distinct mints the auctions see.
+const MAX_CACHE_SIZE: u64 = 20_000;
+
+/// A cache capped at [`MAX_CACHE_SIZE`] entries.
+fn bounded<V: Clone + Send + Sync + 'static>() -> Cache<Pubkey, V> {
+    Cache::builder().max_capacity(MAX_CACHE_SIZE).build()
+}
 
 /// Native price lookups for auction tokens, cached per token. The configured
 /// estimators are asked in order: a token the first one does not price is
@@ -60,9 +71,9 @@ pub struct Inner {
     ttl: Duration,
     /// Fetched prices by mint. `None` records a mint no estimator prices, so
     /// unpriced mints are not refetched every cut.
-    prices: Mutex<HashMap<Pubkey, (Instant, Option<u64>)>>,
-    /// Mint decimals never change, so they are cached forever.
-    decimals: Mutex<HashMap<Pubkey, u8>>,
+    prices: Cache<Pubkey, (Instant, Option<u64>)>,
+    /// Mint decimals never change, so an entry stays until evicted.
+    decimals: Cache<Pubkey, u8>,
     /// The tokens of the latest lookup, the set the refresher keeps fresh.
     maintained: Mutex<HashSet<Pubkey>>,
 }
@@ -139,7 +150,7 @@ impl NativePrices {
                     Source::CoinGecko {
                         client: client.clone(),
                         endpoint: endpoint.clone(),
-                        api_key: api_key.clone(),
+                        api_key: Some(api_key.clone()).filter(|key| !key.is_empty()),
                     }
                 }
                 config::NativePriceEstimator::Driver { name, url } => Source::Driver {
@@ -155,8 +166,8 @@ impl NativePrices {
             rpc,
             wrapped_native,
             ttl: config.ttl,
-            prices: Mutex::new(HashMap::new()),
-            decimals: Mutex::new(HashMap::new()),
+            prices: bounded(),
+            decimals: bounded(),
             maintained: Mutex::new(HashSet::new()),
         });
         let refresher = Arc::clone(&inner);
@@ -192,18 +203,17 @@ impl NativePrices {
     /// is fetched, and no refresher runs.
     #[cfg(test)]
     pub(crate) fn seeded(entries: impl IntoIterator<Item = (Pubkey, u64)>) -> Self {
+        let prices = bounded();
+        for (token, price) in entries {
+            prices.insert(token, (Instant::now(), Some(price)));
+        }
         Self::Configured(Arc::new(Inner {
             sources: Vec::new(),
             rpc: SolanaRPC::new_mock_with_mocks(Default::default()),
             wrapped_native: Pubkey::default(),
             ttl: Duration::from_secs(u64::MAX),
-            prices: Mutex::new(
-                entries
-                    .into_iter()
-                    .map(|(token, price)| (token, (Instant::now(), Some(price))))
-                    .collect(),
-            ),
-            decimals: Mutex::new(HashMap::new()),
+            prices,
+            decimals: bounded(),
             maintained: Mutex::new(HashSet::new()),
         }))
     }
@@ -218,13 +228,12 @@ impl Inner {
         let now = Instant::now();
         let expiring: Vec<Pubkey> = {
             let maintained = self.maintained.lock().expect("maintained set poisoned");
-            let cache = self.prices.lock().expect("price cache poisoned");
             maintained
                 .iter()
                 .filter(|token| {
-                    cache.get(token).is_none_or(|(fetched, _)| {
-                        now.duration_since(*fetched) + margin >= self.ttl
-                    })
+                    self.prices
+                        .get(*token)
+                        .is_none_or(|(fetched, _)| now.duration_since(fetched) + margin >= self.ttl)
                 })
                 .copied()
                 .collect()
@@ -241,21 +250,18 @@ impl Inner {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
         let now = Instant::now();
-        {
-            let cache = self.prices.lock().expect("price cache poisoned");
-            for token in &tokens {
-                if *token == self.wrapped_native {
-                    result.insert(*token, Solana::NATIVE_PRICE_DENOMINATOR);
-                    continue;
-                }
-                match cache.get(token) {
-                    Some((fetched, price)) if now.duration_since(*fetched) < self.ttl => {
-                        if let Some(price) = price {
-                            result.insert(*token, *price);
-                        }
+        for token in &tokens {
+            if *token == self.wrapped_native {
+                result.insert(*token, Solana::NATIVE_PRICE_DENOMINATOR);
+                continue;
+            }
+            match self.prices.get(token) {
+                Some((fetched, price)) if now.duration_since(fetched) < self.ttl => {
+                    if let Some(price) = price {
+                        result.insert(*token, price);
                     }
-                    _ => fetch.push(*token),
                 }
+                _ => fetch.push(*token),
             }
         }
         {
@@ -271,10 +277,9 @@ impl Inner {
         }
 
         self.fetch_into_cache(&fetch).await?;
-        let cache = self.prices.lock().expect("price cache poisoned");
         for token in fetch {
-            if let Some((_, Some(price))) = cache.get(&token) {
-                result.insert(token, *price);
+            if let Some((_, Some(price))) = self.prices.get(&token) {
+                result.insert(token, price);
             }
         }
         Ok(result)
@@ -291,11 +296,8 @@ impl Inner {
             .copied()
             .partition(|token| decimals.contains_key(token));
         let now = Instant::now();
-        {
-            let mut cache = self.prices.lock().expect("price cache poisoned");
-            for token in unpriceable {
-                cache.insert(token, (now, None));
-            }
+        for token in unpriceable {
+            self.prices.insert(token, (now, None));
         }
         if remaining.is_empty() {
             return Ok(());
@@ -311,10 +313,9 @@ impl Inner {
                 .await
             {
                 Ok(priced) => {
-                    let mut cache = self.prices.lock().expect("price cache poisoned");
                     remaining.retain(|token| match priced.get(token) {
                         Some(price) => {
-                            cache.insert(*token, (now, Some(*price)));
+                            self.prices.insert(*token, (now, Some(*price)));
                             false
                         }
                         None => true,
@@ -333,9 +334,8 @@ impl Inner {
         // refetched every cut, but only when every source answered: a failed
         // source might know them, so its cycle retries instead.
         if failures == 0 {
-            let mut cache = self.prices.lock().expect("price cache poisoned");
             for token in remaining {
-                cache.insert(token, (now, None));
+                self.prices.insert(token, (now, None));
             }
         }
         Ok(())
@@ -348,15 +348,12 @@ impl Inner {
     async fn decimals(&self, tokens: &[Pubkey]) -> Result<HashMap<Pubkey, u8>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
-        {
-            let cache = self.decimals.lock().expect("decimals cache poisoned");
-            for token in tokens {
-                match cache.get(token) {
-                    Some(decimals) => {
-                        result.insert(*token, *decimals);
-                    }
-                    None => fetch.push(*token),
+        for token in tokens {
+            match self.decimals.get(token) {
+                Some(decimals) => {
+                    result.insert(*token, decimals);
                 }
+                None => fetch.push(*token),
             }
         }
         if fetch.is_empty() {
@@ -371,7 +368,6 @@ impl Inner {
                     .context("fetch mint accounts")?,
             );
         }
-        let mut cache = self.decimals.lock().expect("decimals cache poisoned");
         for token in fetch {
             let Some(account) = accounts.get(&token) else {
                 tracing::warn!(%token, "mint account not found, token unpriced");
@@ -379,7 +375,7 @@ impl Inner {
             };
             match Mint::unpack(&account.data) {
                 Ok(mint) => {
-                    cache.insert(token, mint.decimals);
+                    self.decimals.insert(token, mint.decimals);
                     result.insert(token, mint.decimals);
                 }
                 Err(err) => {
@@ -432,6 +428,7 @@ fn route(base: &Url, path: &str) -> Result<Url> {
 }
 
 /// The `simple/token_price` prices for the given mints, requested in chunks.
+/// The configured endpoint addresses the route, so only the chain is appended.
 async fn coingecko(
     client: &reqwest::Client,
     endpoint: &Url,
@@ -439,9 +436,13 @@ async fn coingecko(
     tokens: &[Pubkey],
     decimals: &HashMap<Pubkey, u8>,
 ) -> Result<HashMap<Pubkey, u64>> {
-    let base = route(endpoint, "simple/token_price/solana")?;
+    let base = route(endpoint, "solana")?;
+    // A caching proxy in front of the API keys on the URL, so the mint order
+    // must not vary between lookups of the same token set.
+    let mut sorted = tokens.to_vec();
+    sorted.sort();
     let mut quoted: HashMap<String, Entry> = HashMap::new();
-    for chunk in tokens.chunks(PRICES_CHUNK) {
+    for chunk in sorted.chunks(PRICES_CHUNK) {
         let mut url = base.clone();
         let addresses = chunk
             .iter()
@@ -450,7 +451,8 @@ async fn coingecko(
             .join(",");
         url.query_pairs_mut()
             .append_pair("contract_addresses", &addresses)
-            .append_pair("vs_currencies", "sol");
+            .append_pair("vs_currencies", "sol")
+            .append_pair("precision", "full");
         let mut request = client.get(url);
         if let Some(key) = api_key {
             request = request.header(API_KEY_HEADER, key);
@@ -582,7 +584,7 @@ mod tests {
         config::NativePrices {
             estimators: vec![config::NativePriceEstimator::CoinGecko {
                 endpoint,
-                api_key: None,
+                api_key: String::new(),
             }],
             ttl: Duration::from_secs(60),
             driver_probe_lamports: PROBE_LAMPORTS,
@@ -624,7 +626,11 @@ mod tests {
     }
 
     async fn coingecko_server(response: serde_json::Value) -> (Url, Arc<AtomicUsize>) {
-        coingecko_server_at("/simple/token_price/solana", response).await
+        let (root, requests) = coingecko_server_at("/simple/token_price/solana", response).await;
+        (
+            format!("{root}simple/token_price").parse().unwrap(),
+            requests,
+        )
     }
 
     /// Serve one fixed driver quote: `sell_amount` token atoms buy the
@@ -738,7 +744,9 @@ mod tests {
             serde_json::json!({ listed.to_string(): { "sol": 0.005 } }),
         )
         .await;
-        let endpoint = format!("{}api/v3", endpoint.as_str()).parse().unwrap();
+        let endpoint = format!("{}api/v3/simple/token_price", endpoint.as_str())
+            .parse()
+            .unwrap();
         let prices = NativePrices::new(
             &coingecko_config(endpoint),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
@@ -798,7 +806,7 @@ mod tests {
             &config::NativePrices {
                 estimators: vec![config::NativePriceEstimator::CoinGecko {
                     endpoint,
-                    api_key: None,
+                    api_key: String::new(),
                 }],
                 ttl: Duration::from_millis(600),
                 driver_probe_lamports: PROBE_LAMPORTS,
@@ -823,6 +831,18 @@ mod tests {
         assert_eq!(result.get(&listed), Some(&5_000_000_000));
     }
 
+    /// The price cache evicts down to its cap, so a long-running autopilot
+    /// cannot grow it with every mint it ever saw.
+    #[tokio::test]
+    async fn price_cache_stays_bounded() {
+        let entries = (0..=MAX_CACHE_SIZE).map(|_| (Pubkey::new_unique(), 1));
+        let NativePrices::Configured(inner) = NativePrices::seeded(entries) else {
+            unreachable!("seeded lookups are configured");
+        };
+        inner.prices.run_pending_tasks();
+        assert!(inner.prices.entry_count() <= MAX_CACHE_SIZE);
+    }
+
     /// A token CoinGecko does not list falls through to the driver, which
     /// prices it by quoting one whole token into wSOL.
     #[tokio::test]
@@ -836,7 +856,7 @@ mod tests {
             estimators: vec![
                 config::NativePriceEstimator::CoinGecko {
                     endpoint: coingecko,
-                    api_key: None,
+                    api_key: String::new(),
                 },
                 config::NativePriceEstimator::Driver {
                     name: "baseline".to_owned(),
@@ -863,7 +883,7 @@ mod tests {
         let token = Pubkey::new_unique();
         let dead = config::NativePriceEstimator::CoinGecko {
             endpoint: "http://127.0.0.1:1/".parse().unwrap(),
-            api_key: None,
+            api_key: String::new(),
         };
         let prices = NativePrices::new(
             &config::NativePrices {
