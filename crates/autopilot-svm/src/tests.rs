@@ -306,8 +306,24 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     // open, and past the window until its settlement transaction cannot land
     // any more: the deadline plus the blockhash lifetime.
     let expired = tip + 25 + solana_sdk::clock::MAX_PROCESSING_AGE as u64 + 1;
-    // The lag gate stays out of the way: this provider tests the hold, and
-    // the watermark is still at the dispatch tip.
+    // The competition rows alone hold the order through the deadline slot: a
+    // provider without the in-memory hold stands in for a restart. The lag
+    // gate stays out of the way, the watermark is still at the dispatch tip.
+    let restarted_provider = DbAuctionProvider::new(
+        pool.clone(),
+        mock_rpc(),
+        u64::MAX,
+        InFlightOrders::default(),
+        NativePrices::seeded(test_prices()),
+    );
+    assert!(
+        restarted_provider.cut_auction(&(tip + 25)).await.is_none(),
+        "in-flight order excluded by the persisted competition"
+    );
+    assert!(
+        restarted_provider.cut_auction(&(tip + 26)).await.is_some(),
+        "persisted hold ends past the deadline"
+    );
     let held_provider = DbAuctionProvider::new(
         pool.clone(),
         mock_rpc(),
@@ -330,8 +346,9 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         held_provider.cut_auction(&expired).await.is_some(),
         "order returns once the transaction cannot land"
     );
-    // The cycle reported the order's auction progress. The writes are detached
-    // from the cycle, so they can land after `run_cycle` returns.
+    // The cycle reported the order's auction progress and the later cuts its
+    // hold-out. The writes are detached, so they can land after the cuts
+    // return.
     let events = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let mut events: Vec<String> =
@@ -339,7 +356,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
                     .fetch_all(&pool)
                     .await
                     .unwrap();
-            if events.len() == 2 {
+            if events.len() == 3 {
                 events.sort();
                 return events;
             }
@@ -348,5 +365,5 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     })
     .await
     .expect("order events written before the timeout");
-    assert_eq!(events, ["executing", "ready"]);
+    assert_eq!(events, ["executing", "filtered", "ready"]);
 }

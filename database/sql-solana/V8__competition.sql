@@ -17,6 +17,10 @@ CREATE TABLE solana.competition_auctions (
     price_values  numeric(20,0)[] NOT NULL
 );
 
+-- The in-flight hold-out scans the auctions whose deadline has not passed.
+CREATE INDEX solana_competition_auctions_deadline_slot
+    ON solana.competition_auctions (deadline_slot);
+
 -- Every solution proposed during a competition. The autopilot generates
 -- `uid` per auction, disambiguating the solver-assigned `id` across drivers.
 -- The EVM twin also stores uniform clearing prices, the Solana solve wire
