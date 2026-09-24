@@ -1,5 +1,5 @@
 use {
-    super::competition::{Competition, FastPathQuoteCache, auction, solution},
+    super::competition::{Competition, auction, solution},
     crate::{
         boundary,
         domain::{
@@ -137,7 +137,6 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
         competition: &Competition,
-        quote_cache: &FastPathQuoteCache,
     ) -> Result<Quote, Error> {
         if self.enable_fast_path && !solver.fast_path_enabled() {
             return Err(Error::QuotingFailed(QuotingFailed::FastPathNotSupported));
@@ -169,11 +168,11 @@ impl Order {
             .ok_or(QuotingFailed::NoSolutions)?;
         let quote = Quote::try_new(eth, &solution)?;
 
-        // Cache the fast-path solution under the id the orderbook minted for
-        // this request, so we can later settle it by referencing that id.
+        // Cache the fast-path solution so it can be settled later by its quote
+        // id.
         if self.enable_fast_path {
-            quote_cache
-                .store(self.quote_id, auction.clone(), solution)
+            competition
+                .cache_quote_solution(self.quote_id, auction.clone(), solution)
                 .await;
         }
         Ok(quote)

@@ -276,6 +276,9 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
+    /// Fast-path quote solutions cached at quote time, keyed per solver
+    /// account.
+    quote_cache: FastPathQuoteCache,
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
@@ -295,6 +298,7 @@ impl Competition {
         risk_detector: Arc<risk_detector::Detector>,
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
+        quote_cache: FastPathQuoteCache,
     ) -> Arc<Self> {
         let submission_accounts = solver.submission_accounts().to_vec();
         if !submission_accounts.is_empty() {
@@ -315,6 +319,7 @@ impl Competition {
             simulator,
             mempools,
             settlements: Default::default(),
+            quote_cache,
             risk_detector,
             fetcher,
             order_sorting_strategies,
@@ -535,9 +540,23 @@ impl Competition {
         Ok(scored.into_iter().map(|(solved, _)| solved).collect())
     }
 
-    /// Re-encode the given cached quote solution against the real
-    /// signed `order` and promote it into the regular settle queue. Returns the
-    /// id of the queued solution, which [`Competition::settle`] settles by.
+    /// Cache a fast-path quote's solution under this solver's account, to be
+    /// settled later via [`Competition::reencode_quote_solution`].
+    pub async fn cache_quote_solution(
+        &self,
+        quote_id: crate::domain::quote::Id,
+        auction: Auction,
+        solution: Solution,
+    ) {
+        self.quote_cache
+            .store(self.solver.address(), quote_id, auction, solution)
+            .await;
+    }
+
+    /// Take the fast-path quote solution cached under `quote_id`, re-encode it
+    /// against the real signed `order`, and promote it into the regular settle
+    /// queue. Returns the id of the queued solution, which
+    /// [`Competition::settle`] settles by.
     ///
     /// TODO: The slippage of AMM interactions will only be capped at a
     /// fraction of the traded tokens but not at a total ETH value which means
@@ -547,10 +566,15 @@ impl Competition {
     pub async fn reencode_quote_solution(
         &self,
         auction_id: auction::Id,
-        cached: CachedQuoteSolution,
+        quote_id: crate::domain::quote::Id,
         mut order: Order,
         limit_prices: solution::LimitPrices,
     ) -> Result<u64, Error> {
+        let cached = self
+            .quote_cache
+            .take(self.solver.address(), &quote_id)
+            .await
+            .ok_or(Error::SolutionNotAvailable)?;
         self.fetcher.resolve_app_data(&mut order).await;
         let solution = cached
             .solution

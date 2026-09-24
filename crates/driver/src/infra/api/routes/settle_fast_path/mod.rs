@@ -38,14 +38,9 @@ async fn route(
             sell: req.limit_prices.sell,
             buy: req.limit_prices.buy,
         };
-        let cached = state
-            .quote_cache()
-            .take(&quote::Id(quote_id))
-            .await
-            .ok_or(crate::domain::competition::Error::SolutionNotAvailable)?;
         let solution_id = state
             .competition()
-            .reencode_quote_solution(auction_id, cached, order, limit_prices)
+            .reencode_quote_solution(auction_id, quote::Id(quote_id), order, limit_prices)
             .await?;
         let result = state
             .competition()

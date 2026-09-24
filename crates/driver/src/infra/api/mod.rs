@@ -23,7 +23,7 @@ use {
     futures::Future,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     simulator::Simulator,
-    std::{collections::HashMap, net::SocketAddr, sync::Arc},
+    std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
 
@@ -77,10 +77,9 @@ impl Api {
             Self::build_order_sorting_strategies(&order_priority_strategies);
 
         // One fast-path quote cache per solver account.
-        let mut quote_caches: HashMap<
-            eth_domain_types::Address,
-            domain::competition::FastPathQuoteCache,
-        > = HashMap::new();
+        let quote_cache = domain::competition::FastPathQuoteCache::new(
+            self.solvers.iter().map(|solver| solver.address()),
+        );
 
         // Add the metrics, healthz, and gasprice endpoints.
         app = routes::metrics(app);
@@ -96,7 +95,6 @@ impl Api {
         // expensive for the Ethereum node.
         for solver in self.solvers {
             let name = solver.name().clone();
-            let quote_cache = quote_caches.entry(solver.address()).or_default().clone();
             let router = axum::Router::new();
             let router = routes::info(router);
             let router = routes::quote(router);
@@ -137,10 +135,10 @@ impl Api {
                     Arc::new(bad_tokens),
                     fetcher.clone(),
                     order_sorting_strategies.clone(),
+                    quote_cache.clone(),
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
-                quote_cache,
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -220,10 +218,6 @@ impl State {
     fn tokens(&self) -> &tokens::Fetcher {
         &self.0.tokens
     }
-
-    fn quote_cache(&self) -> &domain::competition::FastPathQuoteCache {
-        &self.0.quote_cache
-    }
 }
 
 struct Inner {
@@ -232,5 +226,4 @@ struct Inner {
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
-    quote_cache: domain::competition::FastPathQuoteCache,
 }
