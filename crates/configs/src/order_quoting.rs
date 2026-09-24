@@ -17,10 +17,6 @@ const fn default_standard_offchain_quote_validity() -> Duration {
 pub struct ExternalSolver {
     pub name: String,
     pub url: Url,
-    /// Solve driver to route fast-path quotes to, so the winning solution is
-    /// cached by the config that later settles it.
-    #[serde(default)]
-    pub fast_path_url: Option<Url>,
 }
 
 /// Configuration for the order quoting / creation process.
@@ -65,7 +61,6 @@ impl ExternalSolver {
         Self {
             name: name.to_string(),
             url: url.parse().unwrap(),
-            fast_path_url: None,
         }
     }
 }
@@ -183,7 +178,6 @@ mod tests {
             price_estimation_drivers: vec![ExternalSolver {
                 name: "test".to_string(),
                 url: "http://localhost:1234".parse().unwrap(),
-                fast_path_url: None,
             }],
             eip1271_onchain_quote_validity: Duration::from_secs(300),
             presign_onchain_quote_validity: Duration::from_secs(600),

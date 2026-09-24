@@ -314,7 +314,6 @@ pub async fn run(config: Configuration) {
         .map(|driver| configs::native_price_estimators::ExternalSolver {
             name: driver.name.clone(),
             url: driver.url.clone(),
-            fast_path_url: driver.fast_path_url.clone(),
         })
         .collect();
     let price_estimator = price_estimator_factory

@@ -43,11 +43,6 @@ pub struct ExternalTradeFinder {
     /// URL to call to in the driver to get a quote with call data for a trade.
     quote_endpoint: Url,
 
-    /// URL to call for fast-path quotes, so the solution is cached by the
-    /// solver config that later settles it. Falls back to the `quote_endpoint`
-    /// driver when a solver has no dedicated solve endpoint.
-    fast_path_quote_endpoint: Url,
-
     /// Utility to make sure no 2 identical requests are in-flight at the same
     /// time. Instead of issuing a duplicated request this awaits the
     /// response of the in-flight request. See [`Self::shared_query`] for how
@@ -67,15 +62,12 @@ pub struct ExternalTradeFinder {
 impl ExternalTradeFinder {
     pub fn new(
         driver: Url,
-        fast_path_driver: Option<Url>,
         client: Client,
         block_stream: CurrentBlockWatcher,
         quote_ids: Arc<QuoteIdAllocator>,
     ) -> Self {
-        let fast_path_driver = fast_path_driver.unwrap_or_else(|| driver.clone());
         Self {
             quote_endpoint: crate::utils::join_url(&driver, "quote"),
-            fast_path_quote_endpoint: crate::utils::join_url(&fast_path_driver, "quote"),
             sharing: RequestSharing::labelled(format!("tradefinder_{driver}")),
             client,
             block_stream,
@@ -98,11 +90,7 @@ impl ExternalTradeFinder {
             let query = query.clone();
             let id = observe::tracing::distributed::request_id::from_current_span();
             let client = self.client.clone();
-            let quote_endpoint = if query.fast_path {
-                self.fast_path_quote_endpoint.clone()
-            } else {
-                self.quote_endpoint.clone()
-            };
+            let quote_endpoint = self.quote_endpoint.clone();
             let quote_ids = self.quote_ids.clone();
             let block_hash = self.block_stream.borrow().hash;
 
@@ -383,14 +371,13 @@ mod tests {
     }
 
     /// A finder whose ids are 1, 2, 3, ... in allocation order.
-    fn finder(driver: Url, fast_path_driver: Option<Url>) -> ExternalTradeFinder {
+    fn finder(driver: Url) -> ExternalTradeFinder {
         let mut generator = crate::MockQuoteIdGenerating::new();
         generator
             .expect_generate()
             .returning(|n| async move { Ok((1..=i64::try_from(n).unwrap()).collect()) }.boxed());
         ExternalTradeFinder::new(
             driver,
-            fast_path_driver,
             Client::new(),
             ethrpc::block_stream::mock_single_block(Default::default()),
             Arc::new(QuoteIdAllocator::new(Arc::new(generator))),
@@ -430,7 +417,7 @@ mod tests {
     #[tokio::test]
     async fn shared_request_hands_the_joining_caller_its_own_quote_id() {
         let hits = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let finder = finder(spawn_mock_driver(hits.clone()).await, None);
+        let finder = finder(spawn_mock_driver(hits.clone()).await);
         let query = query(false);
 
         let (first, second) = tokio::join!(finder.get_trade(&query), finder.get_trade(&query));
@@ -447,7 +434,7 @@ mod tests {
     #[tokio::test]
     async fn fast_path_requests_are_not_shared() {
         let hits = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let finder = finder(spawn_mock_driver(hits.clone()).await, None);
+        let finder = finder(spawn_mock_driver(hits.clone()).await);
         let query = query(true);
 
         let (first, second) = tokio::join!(finder.get_trade(&query), finder.get_trade(&query));
@@ -459,25 +446,6 @@ mod tests {
         let mut ids = [first.quote_id(), second.quote_id()];
         ids.sort();
         assert_eq!(ids, [1, 2]);
-    }
-
-    /// A fast-path query is dispatched to the fast-path (solve) driver; a
-    /// normal query goes to the default quote driver.
-    #[tokio::test]
-    async fn fast_path_query_uses_the_fast_path_endpoint() {
-        let quote_hits = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let solve_hits = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let quote_driver = spawn_mock_driver(quote_hits.clone()).await;
-        let solve_driver = spawn_mock_driver(solve_hits.clone()).await;
-        let finder = finder(quote_driver, Some(solve_driver));
-
-        finder.get_trade(&query(true)).await.unwrap();
-        assert_eq!(solve_hits.lock().unwrap().len(), 1);
-        assert!(quote_hits.lock().unwrap().is_empty());
-
-        finder.get_trade(&query(false)).await.unwrap();
-        assert_eq!(quote_hits.lock().unwrap().len(), 1);
-        assert_eq!(solve_hits.lock().unwrap().len(), 1);
     }
 
     #[test]

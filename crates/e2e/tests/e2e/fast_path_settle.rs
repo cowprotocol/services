@@ -114,8 +114,8 @@ async fn local_node_fast_path_records_filtered_out_solutions() {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_fast_path_routes_split_quoter_to_solver() {
-    run_test(fast_path_routes_split_quoter_to_solver).await;
+async fn local_node_fast_path_settles_across_split_configs() {
+    run_test(fast_path_settles_across_split_configs).await;
 }
 
 async fn fast_path_settle(web3: Web3) {
@@ -224,17 +224,14 @@ async fn fast_path_settle(web3: Web3) {
 
 /// Regression test for the quoter/solver fast-path cache split.
 ///
-/// A quoter config and a solve config share one submission address on a single
-/// driver. The fast-path solution cache is per config, so a quote served by the
-/// quoter caches under it, while the autopilot settles against the solve config
-/// (matched by submission address). That is a different, empty cache, so the
-/// driver returns `SolutionNotAvailable`.
-///
-/// Setting `fast_path_url` on the quoter routes its fast-path quotes to the
-/// solve driver, so the solution caches where settle looks and the order
-/// settles fast. With `fast_path_url: None` the order misses the cache and this
-/// test fails.
-async fn fast_path_routes_split_quoter_to_solver(web3: Web3) {
+/// A quoter config (`test_quote`) and a solve config (`test_solver`) share one
+/// submission address on a single driver. A fast-path quote is served by the
+/// quoter, but the autopilot settles against the solve config (matched by
+/// submission address). The driver keeps fast-path solutions in one store
+/// shared across configs, so `test_solver` finds the quote `test_quote` cached
+/// and the order settles fast. If the cache were per config (the bug), the
+/// settle would miss and the driver would return `SolutionNotAvailable`.
+async fn fast_path_settles_across_split_configs(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
@@ -298,13 +295,9 @@ async fn fast_path_routes_split_quoter_to_solver(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
     );
 
-    // Route `test_quote`'s fast-path quotes to the `test_solver` solve driver
-    // so the solution caches where settle looks.
-    let quoter = ExternalSolver {
-        name: "test_quote".to_string(),
-        url: "http://localhost:11088/test_quote".parse().unwrap(),
-        fast_path_url: Some("http://localhost:11088/test_solver".parse().unwrap()),
-    };
+    // The quote runs on `test_quote`; the driver's shared fast-path cache lets
+    // `test_solver` settle it.
+    let quoter = ExternalSolver::new("test_quote", "http://localhost:11088/test_quote");
 
     let autopilot_config = AutopilotConfiguration {
         // Only the solve config settles. The autopilot matches by submission

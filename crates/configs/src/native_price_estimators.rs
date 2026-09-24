@@ -81,10 +81,6 @@ impl Display for NativePriceEstimators {
 pub struct ExternalSolver {
     pub name: String,
     pub url: Url,
-    /// Solve driver to route fast-path quotes to (order-quote estimators only;
-    /// always `None` for native-price estimators).
-    #[serde(default)]
-    pub fast_path_url: Option<Url>,
 }
 
 /// A single native-price estimation backend.
@@ -104,11 +100,7 @@ pub enum NativePriceEstimator {
 
 impl NativePriceEstimator {
     pub const fn driver(name: String, url: Url) -> Self {
-        Self::Driver(ExternalSolver {
-            name,
-            url,
-            fast_path_url: None,
-        })
+        Self::Driver(ExternalSolver { name, url })
     }
 
     pub const fn forwarder(url: Url) -> Self {

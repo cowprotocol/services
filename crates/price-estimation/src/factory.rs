@@ -320,7 +320,6 @@ impl<'a> PriceEstimatorFactory<'a> {
     fn get_estimator(&mut self, solver: &ExternalSolver) -> Result<&EstimatorEntry> {
         let params = ExternalEstimatorParams {
             driver: solver.url.clone(),
-            fast_path_driver: solver.fast_path_url.clone(),
         };
         if !self.estimators.contains_key(&solver.name) {
             let estimator =
@@ -573,7 +572,6 @@ trait PriceEstimatorCreating: Sized {
 #[derive(Debug, Clone)]
 struct ExternalEstimatorParams {
     driver: Url,
-    fast_path_driver: Option<Url>,
 }
 
 impl PriceEstimatorCreating for ExternalPriceEstimator {
@@ -582,7 +580,6 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
     fn init(factory: &PriceEstimatorFactory, name: &str, params: Self::Params) -> Result<Self> {
         Ok(Self::new(
             params.driver,
-            params.fast_path_driver,
             factory.components.http_factory.create(),
             factory.rate_limiter(name),
             factory.network.block_stream.clone(),

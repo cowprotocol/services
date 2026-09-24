@@ -29,6 +29,7 @@ async fn route(
                 state.liquidity(),
                 state.tokens(),
                 state.competition(),
+                state.quote_cache(),
             )
             .await;
         observe::quoted(state.solver().name(), &order, &result);

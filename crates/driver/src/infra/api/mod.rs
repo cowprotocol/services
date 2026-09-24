@@ -76,6 +76,10 @@ impl Api {
         let order_sorting_strategies =
             Self::build_order_sorting_strategies(&order_priority_strategies);
 
+        // One fast-path quote cache shared by every solver config, so a quote
+        // cached by a team's quoter config is settleable by its solver config.
+        let quote_cache = domain::competition::FastPathQuoteCache::new();
+
         // Add the metrics, healthz, and gasprice endpoints.
         app = routes::metrics(app);
         app = routes::healthz(app);
@@ -133,6 +137,7 @@ impl Api {
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
+                quote_cache: quote_cache.clone(),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -212,6 +217,10 @@ impl State {
     fn tokens(&self) -> &tokens::Fetcher {
         &self.0.tokens
     }
+
+    fn quote_cache(&self) -> &domain::competition::FastPathQuoteCache {
+        &self.0.quote_cache
+    }
 }
 
 struct Inner {
@@ -220,4 +229,5 @@ struct Inner {
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
+    quote_cache: domain::competition::FastPathQuoteCache,
 }

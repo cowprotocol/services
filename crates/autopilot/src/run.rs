@@ -390,7 +390,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                     |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
                         name: price_estimator_driver.name.clone(),
                         url: price_estimator_driver.url.clone(),
-                        fast_path_url: price_estimator_driver.fast_path_url.clone(),
                     },
                 )
                 .collect::<Vec<_>>(),
