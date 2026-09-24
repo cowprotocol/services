@@ -11,6 +11,7 @@ use {
                 FeePolicyKind as ConfigFeePolicyKind,
                 FeePolicyOrderClass as ConfigFeePolicyOrderClass,
             },
+            penalty_cap::PenaltyCapConfig,
             solver::Solver,
         },
         order_quoting::{ExternalSolver, OrderQuoting},
@@ -110,6 +111,12 @@ async fn local_node_fast_path_limit_too_tight_rejected() {
 #[ignore]
 async fn local_node_fast_path_records_filtered_out_solutions() {
     run_test(fast_path_records_filtered_out_solutions).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_fast_path_penalty_cap() {
+    run_test(fast_path_penalty_cap).await;
 }
 
 async fn fast_path_settle(web3: Web3) {
@@ -214,6 +221,135 @@ async fn fast_path_settle(web3: Web3) {
         "settled after {elapsed:?} — regular auction fallback would have taken at least \
          {exclusivity:?}, so this can't be attributed to the fast path",
     );
+}
+
+/// A fast-path order settled out of competition gets its CIP-87 penalty cap
+/// persisted on the promoted `competition_auctions` row, like a regular
+/// auction.
+async fn fast_path_penalty_cap(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    let sell_amount = 1u64.eth();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, sell_amount)
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(sell_amount)
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    let exclusivity = Duration::from_secs(300);
+    // Enable penalty caps alongside the fast path. `with_fast_path_exclusivity`
+    // preserves this via its `..autopilot` spread.
+    let base = AutopilotConfiguration {
+        penalty_cap: Some(PenaltyCapConfig {
+            default_factor: 0.0004.try_into().unwrap(),
+            absolute_cap_usd: 20.,
+            // WETH as the USD reference: its native price is 1 by definition, so
+            // the bound is 20 ETH. The test only cares about the plumbing.
+            usd_reference_token: *onchain.contracts().weth.address(),
+            overrides: vec![],
+        }),
+        ..AutopilotConfiguration::test("test_solver", solver.address())
+    };
+    let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
+        base,
+        configs::orderbook::Configuration::test_default(),
+        exclusivity,
+    );
+    services
+        .start_protocol_with_args(autopilot_config, orderbook_config, solver)
+        .await;
+
+    let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
+
+    tracing::info!("Quoting with enableFastPath.");
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(sell_amount).unwrap(),
+            },
+        },
+        app_data: OrderCreationAppData::Full {
+            full: app_data.clone(),
+        },
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+    let quote_id = quote.id.expect("fast-path quote should carry an id");
+
+    tracing::info!("Placing the fast-path order.");
+    let order = OrderCreation {
+        quote_id: Some(quote_id),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount,
+        buy_token: *token.address(),
+        buy_amount: quote.quote.buy_amount,
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full { full: app_data },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let placed_at = std::time::Instant::now();
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for the fast-path settlement.");
+    wait_for_condition(TIMEOUT, || async {
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
+    })
+    .await
+    .unwrap();
+
+    // Fulfilled well within the exclusivity window ⇒ the fast-path handler
+    // settled it (and therefore wrote the promoted competition row), not the
+    // regular-auction fallback.
+    let elapsed = placed_at.elapsed();
+    assert!(
+        elapsed < exclusivity / 2,
+        "settled after {elapsed:?}; regular fallback would have waited out {exclusivity:?}",
+    );
+
+    let caps = crate::database::penalty_caps_of_order(services.db(), &uid).await;
+    assert!(
+        caps.iter().any(bigdecimal::Signed::is_positive),
+        "fast-path competition row should carry a positive penalty cap, got {caps:?}",
+    );
+
+    // The settled trade exposes that same cap for accounting.
+    let trade = services.get_trades(&uid).await.unwrap().remove(0);
+    let cap = trade
+        .penalty_cap_native
+        .expect("settled fast-path trade carries the auction's penalty cap");
+    assert!(!cap.is_zero());
 }
 
 /// Tests fast-path → regular-auction fallback with two solvers competing
