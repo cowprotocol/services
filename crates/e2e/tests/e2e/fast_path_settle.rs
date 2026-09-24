@@ -112,6 +112,12 @@ async fn local_node_fast_path_records_filtered_out_solutions() {
     run_test(fast_path_records_filtered_out_solutions).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_fast_path_routes_split_quoter_to_solver() {
+    run_test(fast_path_routes_split_quoter_to_solver).await;
+}
+
 async fn fast_path_settle(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -213,6 +219,165 @@ async fn fast_path_settle(web3: Web3) {
         elapsed < exclusivity / 2,
         "settled after {elapsed:?} — regular auction fallback would have taken at least \
          {exclusivity:?}, so this can't be attributed to the fast path",
+    );
+}
+
+/// Regression test for the quoter/solver fast-path cache split.
+///
+/// A quoter config and a solve config share one submission address on a single
+/// driver. The fast-path solution cache is per config, so a quote served by the
+/// quoter caches under it, while the autopilot settles against the solve config
+/// (matched by submission address). That is a different, empty cache, so the
+/// driver returns `SolutionNotAvailable`.
+///
+/// Setting `fast_path_url` on the quoter routes its fast-path quotes to the
+/// solve driver, so the solution caches where settle looks and the order
+/// settles fast. With `fast_path_url: None` the order misses the cache and this
+/// test fails.
+async fn fast_path_routes_split_quoter_to_solver(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    let sell_amount = 1u64.eth();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, sell_amount)
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(sell_amount)
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    // Long exclusivity so only the fast path can settle within the test window.
+    let exclusivity = Duration::from_secs(300);
+
+    // Two configs on one driver, both using `solver`'s account: the quoter
+    // (`test_quote`) and the solve config (`test_solver` They share a 
+    // submission address, so the autopilot settles against `test_solver`
+    // no matter which config quoted.
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver_with_haircut(
+                "test_solver".into(),
+                solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                0,
+            )
+            .await,
+            colocation::start_baseline_solver_with_haircut(
+                "test_quote".into(),
+                solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                0,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
+
+    // Route `test_quote`'s fast-path quotes to the `test_solver` solve driver
+    // so the solution caches where settle looks.
+    let quoter = ExternalSolver {
+        name: "test_quote".to_string(),
+        url: "http://localhost:11088/test_quote".parse().unwrap(),
+        fast_path_url: Some("http://localhost:11088/test_solver".parse().unwrap()),
+    };
+
+    let autopilot_config = AutopilotConfiguration {
+        // Only the solve config settles. The autopilot matches by submission
+        // address, which the two configs share.
+        drivers: vec![Solver::test("test_solver", solver.address())],
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter.clone()]),
+        ..AutopilotConfiguration::test_no_drivers()
+    };
+    let orderbook_config = configs::orderbook::Configuration {
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter]),
+        ..configs::orderbook::Configuration::test_default()
+    };
+    let (autopilot_config, orderbook_config) =
+        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+
+    services.start_autopilot(None, autopilot_config).await;
+    services.start_api(orderbook_config).await;
+
+    let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
+
+    tracing::info!("Quoting with enableFastPath.");
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(sell_amount).unwrap(),
+            },
+        },
+        app_data: OrderCreationAppData::Full {
+            full: app_data.clone(),
+        },
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+    let quote_id = quote.id.expect("fast-path quote should carry an id");
+
+    tracing::info!("Placing the fast-path order.");
+    let order = OrderCreation {
+        quote_id: Some(quote_id),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount,
+        buy_token: *token.address(),
+        buy_amount: quote.quote.buy_amount,
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full { full: app_data },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let placed_at = std::time::Instant::now();
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for the fast-path settlement.");
+    wait_for_condition(TIMEOUT, || async {
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
+    })
+    .await
+    .unwrap();
+
+    let elapsed = placed_at.elapsed();
+    assert!(
+        elapsed < exclusivity / 2,
+        "settled after {elapsed:?}, but the regular-auction fallback needs at least \
+         {exclusivity:?}, so the fast path must have settled it",
     );
 }
 

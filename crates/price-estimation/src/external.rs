@@ -18,6 +18,7 @@ pub struct ExternalPriceEstimator(TradeEstimator);
 impl ExternalPriceEstimator {
     pub fn new(
         driver: Url,
+        fast_path_driver: Option<Url>,
         client: Client,
         rate_limiter: Arc<RateLimiter>,
         block_stream: CurrentBlockWatcher,
@@ -26,6 +27,7 @@ impl ExternalPriceEstimator {
         Self(TradeEstimator::new(
             Arc::new(ExternalTradeFinder::new(
                 driver.clone(),
+                fast_path_driver,
                 client,
                 block_stream,
                 quote_ids,

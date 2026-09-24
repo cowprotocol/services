@@ -467,6 +467,7 @@ mod tests {
                 vec![NativePriceEstimator::Driver(ExternalSolver {
                     name: "solver1".to_string(),
                     url: "http://localhost:8080".parse().unwrap(),
+                    fast_path_url: None,
                 })],
                 vec![NativePriceEstimator::Forwarder {
                     url: "http://localhost:12088".parse().unwrap(),
