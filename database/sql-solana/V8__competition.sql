@@ -23,8 +23,8 @@ CREATE INDEX solana_competition_auctions_deadline_slot
 
 -- Every solution proposed during a competition. The autopilot generates
 -- `uid` per auction, disambiguating the solver-assigned `id` across drivers.
--- The EVM twin also stores uniform clearing prices, the Solana solve wire
--- carries none.
+-- No clearing price columns: the EVM twin writes its own empty, and the
+-- Solana solve wire carries none.
 CREATE TABLE solana.proposed_solutions (
     auction_id   bigint NOT NULL,
     uid          bigint NOT NULL,
