@@ -1,7 +1,7 @@
 //! One `Competition` per solver engine, mounted on the API under `/{name}`.
 
 use {
-    super::{Auction, Order, auction::Id, solution::Solution},
+    super::{Auction, Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
     crate::infra::{blockchain::Solana, solver::Solver},
     cow_settlement_interface::SettlementError,
     itertools::Itertools,
@@ -13,6 +13,7 @@ use {
         transaction::{TransactionError, VersionedTransaction},
     },
     std::{
+        collections::HashMap,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -108,6 +109,28 @@ impl Competition {
                 "discarding solutions with duplicate ids"
             );
         }
+
+        let solutions = match self.solver.solver_fee() {
+            None => solutions,
+            Some(fee) => {
+                let orders = orders_by_uid(&auction.orders);
+                solutions
+                    .into_iter()
+                    .filter_map(|mut solution| match fee.apply(&mut solution, &orders) {
+                        Ok(()) => Some(solution),
+                        Err(reason) => {
+                            tracing::warn!(
+                                solver = %self.solver.name(),
+                                solution_id = solution.id,
+                                %reason,
+                                "dropping solution the solver fee cannot be applied to"
+                            );
+                            None
+                        }
+                    })
+                    .collect()
+            }
+        };
         Ok(solutions)
     }
 
@@ -218,6 +241,8 @@ impl Competition {
             "settling orders"
         );
 
+        let volume_fees = solver_volume_fees(&orders, &solution);
+
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
 
         // Land the creations only after the solution validated: an invalid
@@ -294,6 +319,16 @@ impl Competition {
                 .and_then(|err| settlement_error(program_id, &transaction, &err)),
             err,
         })?;
+
+        // TODO: drop this log once protocol fees are implemented.
+        for fee in &volume_fees {
+            tracing::info!(
+                order_uid = %fee.order_uid,
+                mint = %fee.mint,
+                fee_from_volume = fee.amount,
+                "calculated solver fee"
+            );
+        }
 
         Ok(signature)
     }
@@ -410,6 +445,42 @@ fn settlement_error(
     (*program == program_id)
         .then(|| SettlementError::try_from(*code).ok())
         .flatten()
+}
+
+struct VolumeFee {
+    order_uid: OrderUid,
+    mint: Pubkey,
+    amount: u64,
+}
+
+fn orders_by_uid(orders: &[Order]) -> HashMap<OrderUid, &Order> {
+    orders.iter().map(|order| (order.uid, order)).collect()
+}
+
+/// The nonzero volume-based solver fees the solution's fills carry: in the buy
+/// mint for a sell order and the sell mint for a buy order.
+///
+/// Not what the settlement retains: these come off the engine's quoted legs,
+/// and the route's real cost is only known once it lands.
+fn solver_volume_fees(orders: &[Order], solution: &Solution) -> Vec<VolumeFee> {
+    let orders = orders_by_uid(orders);
+    solution
+        .trades
+        .iter()
+        .filter(|trade| trade.solver_fee > 0)
+        .filter_map(|trade| {
+            let order = orders.get(&trade.order_uid)?;
+            let mint = match order.side {
+                Side::Sell => order.buy_token,
+                Side::Buy => order.sell_token,
+            };
+            Some(VolumeFee {
+                order_uid: trade.order_uid,
+                mint,
+                amount: trade.solver_fee,
+            })
+        })
+        .collect()
 }
 
 /// The program settles exactly the orders passed to `BeginSettle`, so the
