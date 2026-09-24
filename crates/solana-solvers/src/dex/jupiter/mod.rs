@@ -76,7 +76,7 @@ impl Jupiter {
         url.query_pairs_mut()
             .append_pair("inputMint", &order.sell_mint.to_string())
             .append_pair("outputMint", &order.buy_mint.to_string())
-            .append_pair("amount", &order.amount.to_string())
+            .append_pair("amount", &order.amount().to_string())
             .append_pair("swapMode", swap_mode.as_str())
             // Jupiter bakes the resulting bounds into the returned instruction
             // data; nothing downstream re-applies slippage.
@@ -181,11 +181,17 @@ mod tests {
     }
 
     fn order(side: Side) -> Order {
+        // Open limit legs: the adapter never checks them.
+        let (sell_amount, buy_amount) = match side {
+            Side::Sell => (1_000_000, 0),
+            Side::Buy => (u64::MAX, 1_000_000),
+        };
         Order {
             sell_mint: Pubkey::from_str(USDC).unwrap(),
             buy_mint: Pubkey::from_str(WSOL).unwrap(),
             buy_destination: Pubkey::from_str(WSOL).unwrap(),
-            amount: 1_000_000,
+            sell_amount,
+            buy_amount,
             side,
         }
     }
