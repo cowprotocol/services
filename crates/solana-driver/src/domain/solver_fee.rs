@@ -152,6 +152,7 @@ impl SolverFee {
 mod tests {
     use {
         super::{super::auction::Order, *},
+        crate::domain::solution::TransactionVersion,
         solana_sdk::pubkey::Pubkey,
         std::num::NonZero,
     };
@@ -196,6 +197,7 @@ mod tests {
             interactions: vec![],
             address_lookup_tables: vec![],
             cu_estimate: None,
+            transaction_version: TransactionVersion::V0,
         }
     }
 
