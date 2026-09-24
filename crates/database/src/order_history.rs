@@ -26,12 +26,19 @@ pub fn user_orders<'a>(
         // Because we `UNION` the sub-query results before determining the
         // window requested by the user we need to fetch LIMIT + OFFSET results
         // in each sub-query.
+        // Each branch tags its rows with `in_orders_table`: TRUE for rows that live
+        // in `orders`, FALSE for `jit_orders`. `bool_or` after the GROUP BY
+        // resolves the rare uid-in-both-tables case to `orders`. Phase 2
+        // then only hits the table where the row actually is.
         "WITH page_uids AS (",
-            " SELECT uid, min(creation_timestamp) as creation_timestamp FROM (",
+            " SELECT uid,",
+            "        min(creation_timestamp)  AS creation_timestamp,",
+            "        bool_or(in_orders_table) AS in_orders_table",
+            " FROM (",
                 // regular orders with that owner (relies on the
                 // `user_order_creation_timestamp` index)
                 " (",
-                "  SELECT o.uid, o.creation_timestamp",
+                "  SELECT o.uid, o.creation_timestamp, TRUE AS in_orders_table",
                 "  FROM orders o",
                 "  WHERE o.owner = $1",
                 "  ORDER BY creation_timestamp DESC",
@@ -45,7 +52,7 @@ pub fn user_orders<'a>(
                 //
                 // relies on the `order_sender` index
                 " (",
-                "  SELECT o.uid, o.creation_timestamp",
+                "  SELECT o.uid, o.creation_timestamp, TRUE AS in_orders_table",
                 "  FROM onchain_placed_orders opo",
                 "  JOIN orders o ON opo.uid = o.uid",
                 "  WHERE opo.sender = $1 AND o.owner != $1",
@@ -56,7 +63,7 @@ pub fn user_orders<'a>(
                 // JIT orders with that owner (relies on the
                 // `jit_order_creation_timestamp` index)
                 " (",
-                "  SELECT jit_o.uid, jit_o.creation_timestamp",
+                "  SELECT jit_o.uid, jit_o.creation_timestamp, FALSE AS in_orders_table",
                 "  FROM jit_orders jit_o",
                 "  WHERE jit_o.owner = $1",
                 "  ORDER BY creation_timestamp DESC",
@@ -67,22 +74,18 @@ pub fn user_orders<'a>(
             " ORDER BY creation_timestamp DESC",
             " LIMIT $2 OFFSET $3",
         ") ",
-        // Phase 2: fetch full rows for the relevant UIDs only
+        // Phase 2: fetch full rows only from the table that actually holds
+        // each uid, using the `in_orders_table` tag from phase 1.
         " (",
         "  SELECT ", orders::ORDER_DETAILS_SELECT,
         "  FROM ", orders::ORDER_DETAILS_FROM,
-        "  WHERE o.uid IN (SELECT uid FROM page_uids)",
+        "  WHERE o.uid IN (SELECT uid FROM page_uids WHERE in_orders_table)",
         " )",
         " UNION ALL",
         " (",
         "  SELECT ", jit_orders::ORDER_DETAILS_SELECT,
         "  FROM ", jit_orders::ORDER_DETAILS_FROM,
-        "  WHERE o.uid IN (SELECT uid FROM page_uids)",
-        // despite already handling duplicates in phase 1 we need to handle
-        // them here again. Because JIT orders are very rare we check that
-        // the order does not exist in the regular orders table instead of the
-        // other way around.
-        "    AND NOT EXISTS (SELECT 1 FROM orders ord WHERE o.uid = ord.uid)",
+        "  WHERE o.uid IN (SELECT uid FROM page_uids WHERE NOT in_orders_table)",
         " )",
         " ORDER BY creation_timestamp DESC",
     );
