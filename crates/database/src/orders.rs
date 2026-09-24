@@ -678,8 +678,8 @@ t_agg.sum_sell,
 t_agg.sum_fee,
 t_agg.gas_cost,
 (o.cancellation_timestamp IS NOT NULL OR
-    EXISTS (SELECT 1 FROM invalidations WHERE invalidations.order_uid = o.uid) OR
-    EXISTS (SELECT 1 FROM onchain_order_invalidations onchain_c WHERE onchain_c.uid = o.uid)
+    (SELECT COUNT(*) FROM invalidations WHERE invalidations.order_uid = o.uid) > 0 OR
+    (SELECT COUNT(*) FROM onchain_order_invalidations onchain_c where onchain_c.uid = o.uid limit 1) > 0
 ) AS invalidated,
 (o.signing_scheme = 'presign' AND COALESCE((
     SELECT (NOT p.signed) as unsigned
