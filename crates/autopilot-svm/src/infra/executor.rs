@@ -5,7 +5,6 @@ use {
         domain::cycle::{Ranking, SolanaCycle},
         infra::{
             driver::{Driver, dto},
-            inflight::InFlightOrders,
             observation::SettlementWindows,
             sponsor::Sponsor,
         },
@@ -26,9 +25,6 @@ pub struct DriverExecutor {
     /// without creations, and one containing a pending sponsored order fails
     /// at the driver.
     sponsor: Option<Sponsor>,
-    /// Orders dispatched here are held out of auction cuts until their
-    /// submission deadline passes.
-    inflight: InFlightOrders,
 }
 
 impl DriverExecutor {
@@ -36,13 +32,11 @@ impl DriverExecutor {
         drivers: Vec<Arc<Driver>>,
         windows: SettlementWindows,
         sponsor: Option<Sponsor>,
-        inflight: InFlightOrders,
     ) -> Self {
         Self {
             drivers,
             windows,
             sponsor,
-            inflight,
         }
     }
 }
@@ -90,11 +84,6 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                 submission_deadline_slot: deadline,
                 creations,
             };
-            // Held before the dispatch: the next cut must not re-auction
-            // these orders while the settlement can still land.
-            let uids: Vec<_> = winner.orders().iter().map(|order| order.uid).collect();
-            self.inflight
-                .hold(auction_id, winner.solver(), uids.iter().copied(), deadline);
             // A window that cannot be opened must not block the settlement,
             // the dispatch is the priority. The window carries the generated
             // solution uid, the driver request keeps the driver-local id its
@@ -110,7 +99,6 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             {
                 tracing::error!(auction_id, ?err, "failed to open the settlement window");
             }
-            let inflight = self.inflight.clone();
             let windows = self.windows.clone();
             let solver = winner.solver();
             tokio::spawn(async move {
@@ -122,9 +110,9 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                         tx_signature = %response.tx_signature,
                         "settlement submitted"
                     ),
-                    // No transaction went out, so the orders can re-enter
-                    // the next cut instead of waiting out the hold, and the
-                    // window has nothing left to observe.
+                    // No transaction went out, so the window closes as
+                    // rejected: the orders re-enter the next cut and nothing
+                    // is left to observe.
                     Err(err) if err.settlement_provably_unsent() => {
                         tracing::warn!(
                             driver = %driver.name,
@@ -132,7 +120,6 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                             ?err,
                             "settlement rejected before submission"
                         );
-                        inflight.release(uids);
                         if let Err(err) = windows.close_rejected(auction_id, solver, uid).await {
                             tracing::error!(
                                 auction_id,

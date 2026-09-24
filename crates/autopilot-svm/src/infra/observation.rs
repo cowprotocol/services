@@ -11,7 +11,7 @@
 //! window.
 
 use {
-    crate::infra::{db, inflight::InFlightOrders, listen::NotifyHandler},
+    crate::infra::{db, listen::NotifyHandler},
     anyhow::Result,
     async_trait::async_trait,
     chain_types::solana::{Pubkey, Signature},
@@ -31,13 +31,11 @@ use {
 #[derive(Clone)]
 pub struct SettlementWindows {
     pool: PgPool,
-    /// A settlement observed on chain releases its orders from the hold-out.
-    inflight: InFlightOrders,
 }
 
 impl SettlementWindows {
-    pub fn new(pool: PgPool, inflight: InFlightOrders) -> Self {
-        Self { pool, inflight }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
     /// Open a window for a dispatched settlement. `solution_uid` is the
@@ -96,7 +94,6 @@ impl SettlementWindows {
                 tx_signature = %Signature(landed.submitted_signature.0),
                 "settlement observed on chain"
             );
-            self.inflight.release_landed(auction_id, solver);
         }
         Ok(())
     }
@@ -131,8 +128,8 @@ impl NotifyHandler for SettlementWindows {
 mod tests {
     use {
         super::SettlementWindows,
-        crate::infra::{db, inflight::InFlightOrders, listen::ListenSession},
-        chain_types::solana::{IntentHash, Pubkey},
+        crate::infra::{db, listen::ListenSession},
+        chain_types::solana::Pubkey,
         sqlx::PgPool,
         std::time::Duration,
     };
@@ -170,10 +167,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         crate::test_db::wipe(&pool).await;
 
         let solver = Pubkey([7; 32]);
-        let uid = IntentHash([1; 32]);
-        let inflight = InFlightOrders::default();
-        inflight.hold(4242, solver, [uid], 100);
-        let windows = SettlementWindows::new(pool.clone(), inflight.clone());
+        let windows = SettlementWindows::new(pool.clone());
         windows
             .open_dispatched(4242, solver, 1, 90, 100)
             .await
@@ -195,8 +189,6 @@ VALUES (10, $1, 0, $2, $3, NULL)
         }
         task.abort();
         assert_eq!(outcome(&pool, 4242).await.as_deref(), Some("landed"));
-        // The observed landing released the held order.
-        assert!(inflight.held_at(90).is_empty());
         let signature: Vec<u8> = sqlx::query_scalar(
             "SELECT submitted_signature FROM solana.settlement_executions WHERE auction_id = 4242",
         )
@@ -214,7 +206,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        let windows = SettlementWindows::new(pool.clone(), InFlightOrders::default());
+        let windows = SettlementWindows::new(pool.clone());
         windows
             .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
             .await
@@ -245,7 +237,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        let windows = SettlementWindows::new(pool.clone(), InFlightOrders::default());
+        let windows = SettlementWindows::new(pool.clone());
         windows
             .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
             .await
@@ -266,7 +258,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        let windows = SettlementWindows::new(pool.clone(), InFlightOrders::default());
+        let windows = SettlementWindows::new(pool.clone());
         windows
             .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
             .await

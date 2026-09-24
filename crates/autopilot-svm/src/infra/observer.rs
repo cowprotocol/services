@@ -38,12 +38,7 @@ impl CompetitionObserver {
     /// Store the events without blocking the cycle: a lost event degrades the
     /// status endpoint, never the competition.
     fn store_events(&self, uids: Vec<IntentHash>, label: OrderEventLabel) {
-        let pool = self.pool.clone();
-        tokio::spawn(async move {
-            if let Err(err) = order_events::store(&pool, uids, label).await {
-                tracing::error!(?err, ?label, "failed to store order events");
-            }
-        });
+        order_events::store_detached(self.pool.clone(), uids, label);
     }
 }
 
@@ -101,6 +96,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
                     id: i64::try_from(solution.id()).unwrap_or(i64::MAX),
                     solver: ByteArray(solution.solver().0),
                     is_winner: solution.is_winner(),
+                    filtered_out: solution.is_filtered_out(),
                     score: BigDecimal::from(solution.score()),
                     trades: solution
                         .orders()

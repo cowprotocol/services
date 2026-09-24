@@ -3,16 +3,20 @@
 use {
     crate::{
         domain::{auction::Order, cycle::SolanaCycle},
-        infra::{db, inflight::InFlightOrders, prices::NativePrices},
+        infra::{db, order_events, prices::NativePrices},
         run_loop::AuctionProvider,
     },
     async_trait::async_trait,
-    chain_types::solana::Pubkey as ChainPubkey,
+    chain_types::solana::{IntentHash, Pubkey as ChainPubkey},
     cow_solana_rpc::SolanaRPC,
+    database::solana::OrderEventLabel,
     solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey},
     spl_token_interface::state::{Account as TokenAccount, AccountState},
     sqlx::PgPool,
-    std::time::{SystemTime, UNIX_EPOCH},
+    std::{
+        collections::HashSet,
+        time::{SystemTime, UNIX_EPOCH},
+    },
 };
 
 /// Cuts auctions from the open orders the indexer persisted.
@@ -21,25 +25,15 @@ pub struct DbAuctionProvider {
     rpc: SolanaRPC,
     /// Slots the indexer may lag behind the tip before cuts are skipped.
     max_indexer_lag: u64,
-    /// Orders with a settlement in flight, excluded from cuts until their
-    /// submission deadline passes.
-    inflight: InFlightOrders,
     prices: NativePrices,
 }
 
 impl DbAuctionProvider {
-    pub fn new(
-        pool: PgPool,
-        rpc: SolanaRPC,
-        max_indexer_lag: u64,
-        inflight: InFlightOrders,
-        prices: NativePrices,
-    ) -> Self {
+    pub fn new(pool: PgPool, rpc: SolanaRPC, max_indexer_lag: u64, prices: NativePrices) -> Self {
         Self {
             pool,
             rpc,
             max_indexer_lag,
-            inflight,
             prices,
         }
     }
@@ -134,22 +128,38 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                 None
             }
         };
-        let mut orders = db::cut(&self.pool, now, block_height)
+        let orders = db::cut(&self.pool, now, block_height)
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
         // An order with a settlement in flight stays out until the
         // settlement cannot land any more: a second winner could
-        // double-settle it.
-        let held = self.inflight.held_at(*tip);
-        let before = orders.len();
-        orders.retain(|order| !held.contains(&order.uid));
-        let held_out = before - orders.len();
-        if held_out > 0 {
+        // double-settle it. A failed read skips the cut rather than cutting
+        // without the hold.
+        let tip_slot = i64::try_from(*tip).unwrap_or(i64::MAX);
+        let held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, tip_slot).await {
+            Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
+            Err(err) => {
+                tracing::warn!(?err, "in-flight order lookup failed, skipping the cut");
+                return None;
+            }
+        };
+        let (orders, held_out): (Vec<_>, Vec<_>) = orders
+            .into_iter()
+            .partition(|order| !held.contains(&order.uid));
+        if !held_out.is_empty() {
             metrics()
                 .held_out_orders
-                .inc_by(u64::try_from(held_out).unwrap_or(u64::MAX));
-            tracing::debug!(held_out, "orders held out with settlements in flight");
+                .inc_by(u64::try_from(held_out.len()).unwrap_or(u64::MAX));
+            tracing::debug!(
+                held_out = held_out.len(),
+                "orders held out with settlements in flight"
+            );
+            order_events::store_detached(
+                self.pool.clone(),
+                held_out.into_iter().map(|order| order.uid).collect(),
+                OrderEventLabel::Filtered,
+            );
         }
         let orders = self.receivable_orders(orders).await;
         if orders.is_empty() {
@@ -180,7 +190,6 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         // The id must be durable before anything references it: windows and
         // the competition snapshot key on it, so a failed write skips the
         // cycle.
-        let tip_slot = i64::try_from(*tip).unwrap_or(i64::MAX);
         let snapshot = auction_snapshot(*tip, &auction);
         auction.id = match db::replace_current_auction(&self.pool, tip_slot, &snapshot).await {
             Ok(id) => id,
@@ -289,7 +298,6 @@ mod tests {
             sqlx::PgPool::connect_lazy("postgresql://").unwrap(),
             SolanaRPC::new_mock_with_mocks(mocks),
             150,
-            InFlightOrders::default(),
             NativePrices::seeded([]),
         )
     }
