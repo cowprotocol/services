@@ -1,9 +1,10 @@
 use {
     crate::infra::persistence::dto::order::Order,
-    alloy::primitives::U256,
+    alloy::primitives::{Address, U256},
     number::serialization::HexOrDecimalU256,
     serde::Serialize,
     serde_with::serde_as,
+    std::collections::HashMap,
 };
 
 /// Request to the driver's `/settle_fast_path` endpoint: settle the quote
@@ -25,6 +26,10 @@ pub struct Request {
     /// outside of any auction, but its settlement is still attributed to one.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub auction_id: i64,
+    /// Native prices (wei per 10**18) for the order's tokens, so the driver can
+    /// bound AMM-interaction slippage at its configured absolute cap.
+    #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
+    pub native_prices: HashMap<Address, U256>,
 }
 
 #[serde_as]

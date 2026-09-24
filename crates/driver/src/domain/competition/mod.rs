@@ -558,10 +558,9 @@ impl Competition {
     /// queue. Returns the id of the queued solution, which
     /// [`Competition::settle`] settles by.
     ///
-    /// TODO: The slippage of AMM interactions will only be capped at a
-    /// fraction of the traded tokens but not at a total ETH value which means
-    /// very large trades can still incur big amounts of slippage. This should
-    /// be fixed.
+    /// `native_prices` (wei per 1e18 of each token) supply the token prices the
+    /// encoder needs to bound AMM-interaction slippage at the solver's
+    /// configured absolute cap.
     #[instrument(skip_all)]
     pub async fn reencode_quote_solution(
         &self,
@@ -569,6 +568,7 @@ impl Competition {
         quote_id: crate::domain::quote::Id,
         mut order: Order,
         limit_prices: solution::LimitPrices,
+        native_prices: HashMap<eth::Address, eth::U256>,
     ) -> Result<u64, Error> {
         let cached = self
             .quote_cache
@@ -585,10 +585,21 @@ impl Competition {
                 other => Error::FastPathInvalidOrder(other),
             })?;
         // The quote was solved outside of any auction; its settlement runs
-        // under the auction the autopilot allocated for it.
+        // under the auction the autopilot allocated for it. The autopilot's
+        // native prices are overlaid onto the tokens so the encoder can bound
+        // absolute slippage.
+        let prices: auction::Prices = native_prices
+            .into_iter()
+            .filter_map(|(token, price)| {
+                auction::Price::try_new(price.into())
+                    .ok()
+                    .map(|price| (token.into(), price))
+            })
+            .collect();
         let auction = Auction {
             id: auction::Kind::Competition(auction_id),
             orders: vec![order],
+            tokens: Arc::new(cached.auction.tokens.with_native_prices(&prices)),
             ..cached.auction
         };
         let settlement = solution

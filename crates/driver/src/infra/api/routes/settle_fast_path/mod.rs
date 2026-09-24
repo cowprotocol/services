@@ -40,7 +40,13 @@ async fn route(
         };
         let solution_id = state
             .competition()
-            .reencode_quote_solution(auction_id, quote::Id(quote_id), order, limit_prices)
+            .reencode_quote_solution(
+                auction_id,
+                quote::Id(quote_id),
+                order,
+                limit_prices,
+                req.native_prices,
+            )
             .await?;
         let result = state
             .competition()

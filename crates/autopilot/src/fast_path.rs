@@ -251,6 +251,7 @@ impl FastPathHandler {
             .context("failed to allocate fast-path auction id")?;
         let quote_id = staged.quote_id;
         let solution_uid = staged.winner().solution_uid;
+        let native_prices = staged.data.native_prices.clone();
         let final_execution = self
             .compute_and_persist_final_execution(
                 pending.model_order,
@@ -271,6 +272,7 @@ impl FastPathHandler {
                 },
                 submission_deadline_latest_block: deadline.block,
                 auction_id,
+                native_prices,
             })),
             winner: winner.clone(),
             solution_uid,
