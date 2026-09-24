@@ -92,7 +92,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-all-crates: true
-          cache-workspace-crates: true
+          cache-workspace-crates: false
           # A constant key, so tag builds read the cache that main writes
           shared-key: deploy
           # Only write to the cache if running on main
