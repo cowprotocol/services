@@ -23,7 +23,7 @@ use {
     futures::Future,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     simulator::Simulator,
-    std::{net::SocketAddr, sync::Arc},
+    std::{collections::HashMap, net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
 
@@ -76,9 +76,11 @@ impl Api {
         let order_sorting_strategies =
             Self::build_order_sorting_strategies(&order_priority_strategies);
 
-        // One fast-path quote cache shared by every solver config, so a quote
-        // cached by a team's quoter config is settleable by its solver config.
-        let quote_cache = domain::competition::FastPathQuoteCache::new();
+        // One fast-path quote cache per solver account.
+        let mut quote_caches: HashMap<
+            eth_domain_types::Address,
+            domain::competition::FastPathQuoteCache,
+        > = HashMap::new();
 
         // Add the metrics, healthz, and gasprice endpoints.
         app = routes::metrics(app);
@@ -94,6 +96,7 @@ impl Api {
         // expensive for the Ethereum node.
         for solver in self.solvers {
             let name = solver.name().clone();
+            let quote_cache = quote_caches.entry(solver.address()).or_default().clone();
             let router = axum::Router::new();
             let router = routes::info(router);
             let router = routes::quote(router);
@@ -137,7 +140,7 @@ impl Api {
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
-                quote_cache: quote_cache.clone(),
+                quote_cache,
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);

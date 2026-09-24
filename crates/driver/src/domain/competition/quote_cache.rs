@@ -5,10 +5,11 @@
 //! settlement until the real order exists at settle time; `/settle_fast_path`
 //! re-encodes it against that order. The solution is cached here at quote time.
 //!
-//! The cache is shared across every solver config on the driver (keyed by the
-//! globally-unique quote id), not held per `Competition`. A team may run its
-//! quoter and solver as separate configs, so a quote cached by one config must
-//! be settleable by another.
+//! There is one cache per solver account (keyed by the globally-unique quote
+//! id), not one per `Competition`. A team may run its quoter and solver as
+//! separate configs that share an account, so a quote cached by one config must
+//! be settleable by another; caches are isolated between accounts so no team
+//! can evict another's cached solutions.
 
 use {
     super::{Auction, Solution},
@@ -32,10 +33,9 @@ pub struct CachedQuoteSolution {
     pub solution: Solution,
 }
 
-/// Fast-path quote solutions, written by `/quote` and consumed by
-/// `/settle_fast_path`. Cloning shares one underlying store (moka is
-/// `Arc`-backed), so every solver config on the driver reads and writes the
-/// same cache.
+/// Fast-path quote solutions for one solver account, written by `/quote` and
+/// consumed by `/settle_fast_path`. Cloning shares one underlying store (moka
+/// is `Arc`-backed), so that account's configs read and write the same cache.
 #[derive(Debug, Clone)]
 pub struct FastPathQuoteCache(Cache<quote::Id, CachedQuoteSolution>);
 
