@@ -3,7 +3,8 @@
 use {
     base64::Engine,
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-    solana_orderbook::infra::{api::Api, quoter::Quoter},
+    database::{byte_array::ByteArray, solana::OrderKind},
+    solana_orderbook::infra::{api::Api, db, quoter::Quoter},
     solana_sdk::signer::Signer,
     sqlx::PgPool,
     std::{net::SocketAddr, time::Duration},
@@ -13,9 +14,9 @@ use {
 fn mock_api() -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
-        // A lazy pool never connects unless queried, and `/healthz` does not
-        // query, so the tests run without a database.
-        pool: PgPool::connect_lazy("postgresql://").unwrap(),
+        // A lazy pool at a dead endpoint keeps these tests database-free: a
+        // quote insert degrades to an id-less answer, nothing else queries.
+        pool: PgPool::connect_lazy("postgresql://127.0.0.1:1/").unwrap(),
         quoter: dead_quoter(),
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
@@ -227,6 +228,7 @@ async fn quote_answers_in_the_evm_shape() {
             "expiration": json["expiration"],
             "id": null,
             "verified": false,
+            "funder": null,
         })
     );
     // The amounts are honored for about a minute from now.
@@ -237,6 +239,47 @@ async fn quote_answers_in_the_evm_shape() {
         (50..=60).contains(&honored_for),
         "expiration {honored_for}s away"
     );
+}
+
+/// A sponsoring deployment names its funder, so a client can pin the fee payer
+/// of the creation transaction it signs next without carrying the address.
+#[tokio::test]
+async fn quote_names_the_funder_when_sponsoring_is_on() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let funder = solana_sdk::pubkey::Pubkey::new_from_array([0x77; 32]);
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
+            funder,
+            settlement_program: cow_settlement_interface::id(),
+            rpc: SolanaRPC::new_mock_with_mocks(Mocks::default()),
+            max_priority_fee_lamports: 100_000,
+        }),
+        ..mock_api()
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let valid_to = chrono::Utc::now().timestamp() + 600;
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&quote_body(serde_json::json!({"validTo": valid_to})))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["funder"], serde_json::json!(funder.to_string()));
 }
 
 /// With several drivers configured, the best answer wins: the largest buy
@@ -286,6 +329,80 @@ async fn quote_without_a_route_is_no_liquidity() {
         (status, kind.as_str()),
         (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
     );
+}
+
+/// The answered quote lands in `solana.quotes` and its id comes back.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_quote_is_persisted() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query("TRUNCATE solana.quotes")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": solver.to_string(),
+    }))
+    .await;
+    let api = Api {
+        pool: pool.clone(),
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        ..mock_api()
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&quote_body(serde_json::json!({"validFor": 1800})))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    let id = json["id"].as_i64().unwrap();
+
+    type Row = (
+        i64,
+        Vec<u8>,
+        Vec<u8>,
+        String,
+        String,
+        String,
+        Vec<u8>,
+        chrono::DateTime<chrono::Utc>,
+    );
+    let row: Row = sqlx::query_as(
+        "SELECT id, sell_token, buy_token, sell_amount::text, buy_amount::text, kind::text, \
+         solver, expiration_timestamp FROM solana.quotes",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let sell: solana_sdk::pubkey::Pubkey = "So11111111111111111111111111111111111111112"
+        .parse()
+        .unwrap();
+    let buy: solana_sdk::pubkey::Pubkey = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        .parse()
+        .unwrap();
+    assert_eq!(row.0, id);
+    assert_eq!(row.1, sell.to_bytes());
+    assert_eq!(row.2, buy.to_bytes());
+    assert_eq!(row.3, "10000000");
+    assert_eq!(row.4, "1234567");
+    assert_eq!(row.5, "sell");
+    assert_eq!(row.6, solver.to_bytes());
+    // The stored expiry is the answered one, up to timestamptz rounding.
+    let answered: chrono::DateTime<chrono::Utc> =
+        json["expiration"].as_str().unwrap().parse().unwrap();
+    assert!((row.7 - answered).num_milliseconds().abs() <= 1);
 }
 
 /// Parameter validation of the trades endpoint short-circuits before any
@@ -360,6 +477,7 @@ async fn spawn_sponsored_server(
             funder,
             settlement_program: cow_settlement_interface::id(),
             rpc: SolanaRPC::new_mock_with_mocks(mocks),
+            max_priority_fee_lamports: 100_000,
         }),
         ..mock_api()
     };
@@ -471,6 +589,19 @@ fn creation_tx(
     preparations: Vec<solana_sdk::instruction::Instruction>,
     sign: bool,
 ) -> String {
+    creation_tx_wrapped(funder, owner, intent, preparations, Vec::new(), sign)
+}
+
+/// A creation bundle carrying `trailing` instructions after `CreateOrder`,
+/// the shape a wallet produces when it appends its own compute budget.
+fn creation_tx_wrapped(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+    preparations: Vec<solana_sdk::instruction::Instruction>,
+    trailing: Vec<solana_sdk::instruction::Instruction>,
+    sign: bool,
+) -> String {
     let mut instructions = preparations;
     instructions.push(
         cow_settlement_client::instruction::CreateOrder {
@@ -481,6 +612,7 @@ fn creation_tx(
         }
         .into(),
     );
+    instructions.extend(trailing);
     let message = solana_sdk::message::Message::new_with_blockhash(
         &instructions,
         Some(&funder),
@@ -530,6 +662,66 @@ fn sponsored_creation_tx(
     creation_tx(funder, owner, &intent, vec![destination], sign)
 }
 
+/// A well-formed bundle whose priority fee is above the sponsored ceiling.
+/// Neither factor is outlandish alone, the product is: 500000 micro-lamports
+/// over the compute ceiling comes to 700000 lamports.
+fn overpriced_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+) -> String {
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    creation_tx_wrapped(
+        funder,
+        owner,
+        &intent,
+        vec![destination],
+        vec![
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(
+                500_000,
+            ),
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(
+                1_400_000,
+            ),
+        ],
+        true,
+    )
+}
+
+/// A Lighthouse instruction over one account, the shape Phantom injects.
+fn lighthouse(
+    discriminator: u8,
+    account: solana_sdk::pubkey::Pubkey,
+) -> solana_sdk::instruction::Instruction {
+    solana_sdk::instruction::Instruction::new_with_bytes(
+        solana_sdk::pubkey::Pubkey::from_str_const("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95"),
+        &[discriminator],
+        vec![solana_sdk::instruction::AccountMeta::new_readonly(
+            account, false,
+        )],
+    )
+}
+
+/// A bundle carrying a Lighthouse instruction outside the assertion range:
+/// `MemoryWrite`, which funds an account from a payer the template cannot
+/// vouch for.
+fn lighthouse_memory_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+) -> String {
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    creation_tx_wrapped(
+        funder,
+        owner,
+        &intent,
+        vec![destination],
+        // Discriminator 0 is `MemoryWrite`.
+        vec![lighthouse(0, owner.pubkey())],
+        true,
+    )
+}
+
 async fn post_order(addr: SocketAddr, transaction: String) -> (reqwest::StatusCode, String) {
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
@@ -573,6 +765,13 @@ async fn create_order_rejects_invalid_submissions() {
         (
             sponsored_creation_tx(funder, &owner, false),
             "InvalidSignature",
+        ),
+        // The funder pays the priority fee, so an outsized price is refused.
+        (overpriced_creation_tx(funder, &owner), "InvalidTransaction"),
+        // A lighthouse assertion is fine, anything outside that range is not.
+        (
+            lighthouse_memory_creation_tx(funder, &owner),
+            "InvalidTransaction",
         ),
     ] {
         let (status, kind) = post_order(addr, transaction).await;
@@ -746,6 +945,27 @@ async fn create_order_checks_the_preparation_template() {
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
     );
+
+    // A wrapped sell account owned by a stranger is rejected even when the
+    // intent names it. Only the buy account may belong to someone else.
+    let stranger = solana_sdk::pubkey::Pubkey::new_unique();
+    let mut foreign_sell = sponsored_intent(owner, true);
+    foreign_sell.sell_token_account = ata(stranger, foreign_sell.sell_mint);
+    let preparations = vec![
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+            &funder,
+            &stranger,
+            &foreign_sell.sell_mint,
+            &spl_token_interface::ID,
+        ),
+        destination_creation(funder, owner, &foreign_sell),
+    ];
+    let transaction = creation_tx(funder, &owner_keypair, &foreign_sell, preparations, true);
+    let (status, kind) = post_order(addr, transaction).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
+    );
 }
 
 /// The happy path lands the order and the duplicate is rejected.
@@ -753,22 +973,60 @@ async fn create_order_checks_the_preparation_template() {
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_persists_a_sponsored_order() {
     let pool = PgPool::connect("postgresql://").await.unwrap();
-    sqlx::query("TRUNCATE solana.order_pda, solana.orders, solana.order_events CASCADE")
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     // The full preparation prefix in front of `CreateOrder`, as the frontend
     // sends it for a first-time native-SOL sell.
     let intent = sponsored_intent(owner.pubkey(), true);
-    let preparations = full_preparations(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, preparations, true);
+    // Wrapped the way Phantom sends it: compute budget and Lighthouse
+    // assertions before our instructions, and another assertion after.
+    let mut preparations = vec![
+        solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(10_000),
+        // Discriminator 6 is `AssertAccountInfoMulti`.
+        lighthouse(6, owner.pubkey()),
+        lighthouse(6, funder),
+    ];
+    preparations.extend(full_preparations(funder, owner.pubkey(), &intent));
+    let transaction = creation_tx_wrapped(
+        funder,
+        &owner,
+        &intent,
+        preparations,
+        vec![
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(
+                12_769,
+            ),
+            // Discriminator 10 is `AssertTokenAccountMulti`.
+            lighthouse(10, owner.pubkey()),
+        ],
+        true,
+    );
+    let quote_id = db::save_quote(
+        &pool,
+        &db::Quote {
+            sell_token: ByteArray(intent.sell_mint.to_bytes()),
+            buy_token: ByteArray(intent.buy_mint.to_bytes()),
+            sell_amount: intent.sell_amount,
+            buy_amount: intent.buy_amount,
+            kind: OrderKind::Sell,
+            solver: ByteArray([0xDD; 32]),
+            expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
+        },
+    )
+    .await
+    .unwrap();
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "transaction": transaction.clone() }))
+        .json(&serde_json::json!({ "transaction": transaction.clone(), "quoteId": quote_id }))
         .send()
         .await
         .unwrap();
@@ -784,6 +1042,14 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     assert!(!stored.is_empty());
     // Mocked height 100 plus the maximum blockhash age.
     assert_eq!(expiry, 250);
+    let linked: (Vec<u8>, Option<i64>, String) =
+        sqlx::query_as("SELECT order_uid, quote_id, sell_amount::text FROM solana.order_quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(linked.0, const_hex::decode(&uid[2..]).unwrap());
+    assert_eq!(linked.1, Some(quote_id));
+    assert_eq!(linked.2, intent.sell_amount.to_string());
 
     // The duplicate check runs after the RPC probes and the mock answers
     // each probe once, so the duplicate goes through a fresh server over the
@@ -794,4 +1060,102 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "DuplicatedOrder")
     );
+
+    // A named quote that does not match the order (wrong pair here) is
+    // dropped: the order lands unlinked.
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let other_owner = solana_sdk::signer::keypair::Keypair::new();
+    let other = sponsored_intent(other_owner.pubkey(), false);
+    let mismatched = db::save_quote(
+        &pool,
+        &db::Quote {
+            sell_token: ByteArray([0x99; 32]),
+            buy_token: ByteArray(other.buy_mint.to_bytes()),
+            sell_amount: other.sell_amount,
+            buy_amount: other.buy_amount,
+            kind: OrderKind::Sell,
+            solver: ByteArray([0xDD; 32]),
+            expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
+        },
+    )
+    .await
+    .unwrap();
+    let destination = destination_creation(funder, other_owner.pubkey(), &other);
+    let transaction = creation_tx(funder, &other_owner, &other, vec![destination], true);
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({ "transaction": transaction, "quoteId": mismatched }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let copies: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_quotes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(copies, 1, "the mismatched quote must not be copied");
+
+    // An expired quote is dropped even when everything else matches.
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let late_owner = solana_sdk::signer::keypair::Keypair::new();
+    let late = sponsored_intent(late_owner.pubkey(), false);
+    let expired = db::save_quote(
+        &pool,
+        &db::Quote {
+            sell_token: ByteArray(late.sell_mint.to_bytes()),
+            buy_token: ByteArray(late.buy_mint.to_bytes()),
+            sell_amount: late.sell_amount,
+            buy_amount: late.buy_amount,
+            kind: OrderKind::Sell,
+            solver: ByteArray([0xDD; 32]),
+            expiration: chrono::Utc::now() - chrono::Duration::seconds(1),
+        },
+    )
+    .await
+    .unwrap();
+    let destination = destination_creation(funder, late_owner.pubkey(), &late);
+    let transaction = creation_tx(funder, &late_owner, &late, vec![destination], true);
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({ "transaction": transaction, "quoteId": expired }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let copies: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_quotes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(copies, 1, "the expired quote must not be copied");
+}
+
+/// The buy account may belong to a wallet other than the owner: the bundle
+/// creates it for the receiver and the order stores that account.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_accepts_a_custom_receiver() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let receiver = solana_sdk::pubkey::Pubkey::new_unique();
+    let mut intent = sponsored_intent(owner.pubkey(), false);
+    intent.buy_token_account = ata(receiver, intent.buy_mint);
+    let destination = destination_creation(funder, receiver, &intent);
+    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+
+    let (status, _) = post_order(addr, transaction).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+    let stored: Vec<u8> = sqlx::query_scalar("SELECT buy_token_account FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, intent.buy_token_account.to_bytes().to_vec());
 }

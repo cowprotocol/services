@@ -57,12 +57,14 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+axum = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 hex-literal = { workspace = true }
 maplit = { workspace = true }
 mockall = { workspace = true }
 testlib = { workspace = true }
 token-info = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
 toml = { workspace = true }
 
 [features]

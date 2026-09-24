@@ -368,6 +368,7 @@ async fn spawn_driver(
             endpoint,
             signer: s.signer,
             solve_every_nth_auction: None,
+            solver_fee_bps: None,
         })
         .await
     });

@@ -27,3 +27,9 @@ signer = { keypair = "/path/to/keypair.json" }
 # value, sitting the rest out so other solvers win settlements to test
 # against. Omit to participate in every auction.
 # solve-every-nth-auction = 5
+# Volume-based solver fee in basis points, 0..10000. Sell orders deliver
+# (1 - fee) of the fill's buy leg; buy orders pull (1 + fee) of its sell leg.
+# The difference stays in the buy-mint buffer PDA (sell orders) or the
+# solver's sell ATA (buy orders). Bids and quotes shrink accordingly. Omit for
+# no fee.
+# solver-fee-bps = 500

@@ -4,6 +4,7 @@
 use {
     crate::run_loop::AuctionInfo,
     chain_types::solana::{AppData, IntentHash, Pubkey},
+    std::collections::HashMap,
 };
 
 /// Whether the order sells an exact amount or buys an exact amount.
@@ -45,6 +46,10 @@ pub struct Auction {
     /// cuts by content, and the id is allocated only for a fresh cut.
     pub id: i64,
     pub orders: Vec<Order>,
+    /// The lamport value of one atom of each auction token, scaled by 10^9.
+    /// Tokens without a listing are absent. Excluded from equality like the
+    /// id: prices refresh between cuts without making the auction new.
+    pub native_prices: HashMap<Pubkey, u64>,
 }
 
 impl PartialEq for Auction {
@@ -62,7 +67,7 @@ impl AuctionInfo for Auction {
 #[cfg(test)]
 mod tests {
     use {
-        super::{Auction, Order, OrderKind},
+        super::{Auction, HashMap, Order, OrderKind, Pubkey},
         chain_types::solana::AppData,
     };
 
@@ -86,19 +91,25 @@ mod tests {
     }
 
     #[test]
-    fn auction_equality_ignores_id() {
+    fn auction_equality_ignores_id_and_prices() {
         let orders = vec![order(10)];
         let a = Auction {
             id: 1,
             orders: orders.clone(),
+            native_prices: HashMap::new(),
         };
-        let b = Auction { id: 2, orders };
+        let b = Auction {
+            id: 2,
+            orders,
+            native_prices: HashMap::from([(Pubkey([0x11; 32]), 7)]),
+        };
         assert_eq!(a, b);
         assert_ne!(
             a,
             Auction {
                 id: 1,
                 orders: vec![],
+                native_prices: HashMap::new(),
             }
         );
     }

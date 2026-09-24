@@ -6,7 +6,7 @@
 
 use {
     crate::{
-        domain,
+        domain::{self, solver_fee::SolverFee},
         infra::{config, signer, solver::dto::auction::Auction},
     },
     solana_sdk::pubkey::Pubkey,
@@ -24,6 +24,7 @@ pub struct Solver {
     client: reqwest::Client,
     base_url: reqwest::Url,
     solve_every_nth_auction: Option<NonZero<u64>>,
+    solver_fee: Option<SolverFee>,
 }
 
 impl Solver {
@@ -45,6 +46,11 @@ impl Solver {
     /// The auction-id stride this solver participates at, when throttled.
     pub fn solve_every_nth_auction(&self) -> Option<NonZero<u64>> {
         self.solve_every_nth_auction
+    }
+
+    /// The volume-based solver fee, `None` when no fee is configured.
+    pub fn solver_fee(&self) -> Option<SolverFee> {
+        self.solver_fee
     }
 
     /// Build a solver client from its configuration, loading the signer the
@@ -82,6 +88,7 @@ impl Solver {
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             solve_every_nth_auction: config.solve_every_nth_auction,
+            solver_fee: config.solver_fee_bps,
         })
     }
 
@@ -96,7 +103,7 @@ impl Solver {
         auction: &domain::Auction,
         program_id: Pubkey,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(auction, self.pubkey(), program_id);
+        let auction_dto = Auction::new(auction, self.pubkey(), program_id, self.solver_fee);
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
@@ -193,6 +200,7 @@ mod tests {
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
             signer: config::SettlementSigner::Keypair(keypair_path),
             solve_every_nth_auction: None,
+            solver_fee_bps: None,
         })
         .await
         .expect("solver construction should succeed");

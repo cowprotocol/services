@@ -192,6 +192,14 @@ paths:
                 transaction:
                   description: The partially signed transaction, base64.
                   type: string
+                quoteId:
+                  description: |
+                    The id the quote endpoint answered for this order. Stored
+                    with the order when the quote matches it, dropped
+                    otherwise.
+                  type: integer
+                  format: int64
+                  nullable: true
       responses:
         "201":
           description: The order uid.
@@ -522,13 +530,21 @@ components:
           type: string
           format: date-time
         id:
-          description: The quote's database id. Null until quotes are persisted.
+          description: The stored quote's id. Null when storing the quote failed.
           type: integer
           format: int64
           nullable: true
         verified:
           description: Whether the amounts were confirmed by simulation. Always false.
           type: boolean
+        funder:
+          description: >-
+            The account a sponsored creation transaction must name as its fee
+            payer. Null when the deployment does not sponsor placements, in
+            which case `POST /api/v1/orders` refuses a creation transaction.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+          nullable: true
     Quote:
       description: The quoted order.
       type: object

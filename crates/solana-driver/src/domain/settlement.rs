@@ -466,13 +466,20 @@ fn validate_orders(
         }
 
         // The executed price must not be worse than the order's limit price.
-        if u128::from(amounts.buy) * u128::from(order.sell_amount)
-            < u128::from(amounts.sell) * u128::from(order.buy_amount)
-        {
+        if !respects_limit(order, amounts.sell, amounts.buy) {
             return Err(Error::LimitPriceViolated(order.uid));
         }
     }
     Ok(())
+}
+
+/// Whether the executed legs respect the order's signed limit price: the
+/// executed price must not be worse than the limit. The same
+/// cross-multiplication as the program's `validate_limit_price`, so nothing the
+/// chain would accept is rejected here, and there is no division to round.
+pub(crate) fn respects_limit(order: &Order, executed_sell: u64, executed_buy: u64) -> bool {
+    u128::from(executed_buy) * u128::from(order.sell_amount)
+        >= u128::from(executed_sell) * u128::from(order.buy_amount)
 }
 
 /// The total executed amounts for one order, summed across the trades that fill
@@ -618,6 +625,7 @@ mod tests {
             order_uid,
             executed_sell,
             executed_buy,
+            solver_fee: 0,
         }
     }
 
@@ -724,6 +732,43 @@ mod tests {
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
         let destination = begin_input.orders.iter().next().unwrap().destinations[0];
         assert_eq!(destination, associated_token_address(&payer, &sell_token),);
+    }
+
+    /// Pin: a fill that respects the user's limit still validates after the
+    /// solver fee shrinks the delivered buy amount. The solve-time filter
+    /// in `compute_solutions` is the real guard; this settle-time check
+    /// only re-validates against state drift.
+    #[test]
+    fn fee_adjusted_fill_that_still_respects_limit_passes_validation() {
+        let program_id = pubkey(0xaa);
+        // Sell 1000, user accepts as little as 1000 buy (limit 1:1). The route
+        // delivers 2000 buy and the solver fee shrinks it to 1900, still above
+        // the 1000 limit.
+        let order = test_order_with(&program_id, |order| order.buy_amount = 1_000);
+        test_settlement(
+            std::slice::from_ref(&order),
+            &[trade(order.uid, 1_000, 1_900)],
+        )
+        .expect("a fee-adjusted fill above the limit must validate");
+    }
+
+    /// Pin: a route that only fills at the user's limit is pushed below it once
+    /// the solver fee is applied, and the fee-adjusted payout undercuts the
+    /// signed limit. The solve-time filter drops such solutions first; this
+    /// settle-time check re-validates against state drift before paying for a
+    /// reverting tx.
+    #[test]
+    fn fee_adjusted_fill_below_limit_is_rejected() {
+        let program_id = pubkey(0xaa);
+        // Sell 1000, user demands at least 1900 buy. The route delivers 1900,
+        // which the solver fee shrinks to 1805 — below the signed limit.
+        let order = test_order_with(&program_id, |order| order.buy_amount = 1_900);
+        let err = test_settlement(
+            std::slice::from_ref(&order),
+            &[trade(order.uid, 1_000, 1_805)],
+        )
+        .expect_err("a fee-adjusted fill below the limit must be rejected");
+        assert_eq!(err, Error::LimitPriceViolated(order.uid));
     }
 
     /// An order whose `valid_to` has passed is rejected.
@@ -842,6 +887,82 @@ mod tests {
         let err = test_settlement(&[order], &[trade(uid, 1_000, 1_500)])
             .expect_err("an order that violates its limit price must be rejected");
         assert_eq!(err, Error::LimitPriceViolated(uid));
+    }
+
+    /// A buy order whose executed price is worse than its limit is rejected.
+    #[test]
+    fn rejects_a_buy_order_that_violates_its_limit_price() {
+        let program_id = pubkey(0xaa);
+        // sell_amount: 1_000, buy_amount: 2_000. Executed: 600 sold / 1_000
+        // bought. 1_000 * 1_000 < 600 * 2_000, so the limit price is
+        // violated.
+        let order = test_order_with(&program_id, |order| order.side = Side::Buy);
+        assert!(!respects_limit(&order, 600, 1_000));
+    }
+
+    /// The comparison is inclusive: a fill at exactly the limit price passes
+    /// on both sides.
+    #[test]
+    fn a_fill_at_exactly_the_limit_price_passes() {
+        let program_id = pubkey(0xaa);
+        let sell_order = test_order(&program_id);
+        assert!(respects_limit(&sell_order, 1_000, 2_000));
+
+        let buy_order = test_order_with(&program_id, |order| order.side = Side::Buy);
+        assert!(respects_limit(&buy_order, 500, 1_000));
+    }
+
+    /// A zero limit leg: a sell order demanding nothing accepts any fill, a
+    /// buy order offering nothing accepts only a free fill.
+    #[test]
+    fn a_zero_limit_leg_is_handled() {
+        let program_id = pubkey(0xaa);
+        let sell_order = test_order_with(&program_id, |order| order.buy_amount = 0);
+        assert!(respects_limit(&sell_order, 1_000, 0));
+
+        let buy_order = test_order_with(&program_id, |order| {
+            order.side = Side::Buy;
+            order.sell_amount = 0;
+        });
+        assert!(respects_limit(&buy_order, 0, 1_000));
+        assert!(!respects_limit(&buy_order, 1, 1_000));
+    }
+
+    /// The comparison is exact for non-integer limit prices: one unit below
+    /// the fair price fails, one unit at it passes.
+    #[test]
+    fn non_integer_limit_prices_have_an_exact_boundary() {
+        let program_id = pubkey(0xaa);
+        // Sell 3 for at least 2. Selling 1_000 must yield at least
+        // ceil(2000/3) = 667.
+        let sell_order = test_order_with(&program_id, |order| {
+            order.sell_amount = 3;
+            order.buy_amount = 2;
+        });
+        assert!(!respects_limit(&sell_order, 1_000, 666));
+        assert!(respects_limit(&sell_order, 1_000, 667));
+
+        // Buy 3 paying at most 2. Buying 1_000 may cost at most
+        // floor(2000/3) = 666.
+        let buy_order = test_order_with(&program_id, |order| {
+            order.side = Side::Buy;
+            order.sell_amount = 2;
+            order.buy_amount = 3;
+        });
+        assert!(respects_limit(&buy_order, 666, 1_000));
+        assert!(!respects_limit(&buy_order, 667, 1_000));
+    }
+
+    /// `u64::MAX` legs stay within `u128` and do not overflow.
+    #[test]
+    fn max_amounts_do_not_overflow() {
+        let program_id = pubkey(0xaa);
+        let order = test_order_with(&program_id, |order| {
+            order.sell_amount = u64::MAX;
+            order.buy_amount = u64::MAX;
+        });
+        assert!(respects_limit(&order, u64::MAX, u64::MAX));
+        assert!(!respects_limit(&order, u64::MAX, u64::MAX - 1));
     }
 
     /// More than one trade for the same order: the pull is the total

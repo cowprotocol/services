@@ -1511,6 +1511,7 @@ dependencies = [
  "database",
  "futures",
  "humantime-serde",
+ "moka",
  "observe",
  "prometheus",
  "prometheus-metric-storage",
@@ -3757,8 +3758,7 @@ dependencies = [
 [[package]]
 name = "cow-settlement-interface"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b5255643c7f8d3fb23c39bab5092c23ffa213939d69a03ca6e76a94286c4e03"
+source = "git+https://github.com/cowprotocol/solana-programs?rev=d20b482ff981f7e993ae76977f4c568c72316052#d20b482ff981f7e993ae76977f4c568c72316052"
 dependencies = [
  "arrayref",
  "derive_more 1.0.0",
@@ -7129,6 +7129,7 @@ dependencies = [
  "arc-swap",
  "async-stream",
  "async-trait",
+ "axum",
  "bad-tokens",
  "balance-overrides",
  "bigdecimal",
@@ -9237,6 +9238,8 @@ dependencies = [
  "itertools 0.14.0",
  "moka",
  "observe",
+ "prometheus",
+ "prometheus-metric-storage",
  "reqwest 0.13.4",
  "serde",
  "serde-ext",
@@ -9667,6 +9670,7 @@ dependencies = [
  "serde-ext",
  "serde_json",
  "serde_with",
+ "solana-compute-budget-interface",
  "solana-sdk",
  "solana-system-interface 3.2.0",
  "spl-associated-token-account-interface",

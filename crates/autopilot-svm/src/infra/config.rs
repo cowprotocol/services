@@ -1,7 +1,11 @@
 //! Configuration of the autopilot's endpoints and competition parameters.
 
 use {
-    configs::{database::DatabasePoolConfig, shared::LoggingConfig},
+    configs::{
+        database::DatabasePoolConfig,
+        deserialize_env::deserialize_string_from_env,
+        shared::LoggingConfig,
+    },
     serde::Deserialize,
     serde_ext::{deserialize_nonempty_vec, deserialize_solana_pubkey_b58},
     solana_sdk::pubkey::Pubkey,
@@ -55,6 +59,10 @@ pub struct Config {
     /// Minimum time between auction cycles. Zero runs a cycle every new slot.
     #[serde(with = "humantime_serde", default = "default_min_auction_interval")]
     pub min_auction_interval: Duration,
+    /// Slots the indexer may lag behind the tip before auction cuts are
+    /// skipped, so a stalled indexer stops feeding stale orders to solvers.
+    #[serde(default = "default_max_indexer_lag_slots")]
+    pub max_indexer_lag_slots: u64,
     /// The driver endpoints participating in every auction.
     #[serde(deserialize_with = "deserialize_nonempty_vec")]
     pub drivers: Vec<Driver>,
@@ -62,9 +70,67 @@ pub struct Config {
     /// sponsored orders: without it their winning solutions dispatch without
     /// creations and fail at the driver.
     pub sponsoring: Option<Sponsoring>,
+    /// Native price lookups for auction tokens. Required with no default
+    /// source: pricing through a third party is a deployment decision,
+    /// never a silent fallback.
+    pub native_prices: NativePrices,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
+}
+
+/// Native price lookups.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct NativePrices {
+    /// Price sources in fallback order: a token the first one does not price
+    /// is asked from the next. Empty, the autopilot prices every token at the
+    /// native denominator, so scores compare raw surplus. Pricing through a
+    /// third party stays a deployment decision, there is no default source.
+    #[serde(default)]
+    pub estimators: Vec<NativePriceEstimator>,
+    /// How long a fetched price serves auctions before it is refetched.
+    #[serde(with = "humantime_serde", default = "default_prices_ttl")]
+    pub ttl: Duration,
+    /// Lamports a driver source buys per probe quote. The probe is
+    /// denominated in the native token so its economic size does not depend
+    /// on what one whole unit of the priced token is worth.
+    #[serde(default = "default_driver_probe_lamports")]
+    pub driver_probe_lamports: u64,
+}
+
+/// A tenth of a SOL, the fraction the EVM chains probe with.
+const fn default_driver_probe_lamports() -> u64 {
+    100_000_000
+}
+
+/// One native price source.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "kebab-case",
+    deny_unknown_fields
+)]
+pub enum NativePriceEstimator {
+    /// The CoinGecko `simple/token_price` API.
+    CoinGecko {
+        /// The CoinGecko `simple/token_price` route. The chain is appended.
+        endpoint: url::Url,
+        /// API key sent with every price request as the CoinGecko Pro plan
+        /// header. Empty sends none. A value like `%COIN_GECKO_API_KEY` reads
+        /// the key from that environment variable, keeping the literal out of
+        /// the config file, and fails the load when the variable is unset.
+        #[serde(default, deserialize_with = "deserialize_string_from_env")]
+        api_key: String,
+    },
+    /// A solver driver, quoted through its regular `/quote` route. The url
+    /// includes the solver path, like the `[[drivers]]` entries.
+    Driver { name: String, url: url::Url },
+}
+
+const fn default_prices_ttl() -> Duration {
+    Duration::from_secs(30)
 }
 
 impl Config {
@@ -90,6 +156,12 @@ const fn default_max_auction_age() -> Duration {
 
 const fn default_min_auction_interval() -> Duration {
     Duration::ZERO
+}
+
+/// One blockhash lifetime: beyond it the freshest pending creations in the
+/// stale data would already be dying.
+const fn default_max_indexer_lag_slots() -> u64 {
+    150
 }
 
 /// JSON-RPC client configuration.
@@ -176,8 +248,54 @@ mod tests {
         assert_eq!(config.competition.submission_deadline_slots.get(), 25);
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
+        assert_eq!(config.max_indexer_lag_slots, 150);
+        assert_eq!(config.native_prices.ttl, Duration::from_secs(30));
+        assert_eq!(config.native_prices.driver_probe_lamports, 100_000_000);
+        assert!(matches!(
+            &config.native_prices.estimators[..],
+            [
+                NativePriceEstimator::CoinGecko { endpoint, api_key },
+                NativePriceEstimator::Driver { name, .. },
+            ] if endpoint.as_str() == "https://api.coingecko.com/api/v3/simple/token_price"
+                && api_key.is_empty()
+                && name == "baseline"
+        ));
         assert_eq!(config.drivers.len(), 1);
         assert_eq!(config.drivers[0].name, "baseline");
         assert_eq!(config.logging.filter, "info,autopilot_svm=debug");
+    }
+
+    #[test]
+    fn coin_gecko_api_key_reads_the_environment() {
+        let var = "TEST_SVM_COIN_GECKO_API_KEY";
+        // Safety: test-only, and the name is unique to this test.
+        unsafe { std::env::set_var(var, "secret") };
+        let prices: NativePrices = toml::de::from_str(&format!(
+            r#"
+            [[estimators]]
+            type = "coin-gecko"
+            endpoint = "https://api.coingecko.com/api/v3/"
+            api-key = "%{var}"
+            "#
+        ))
+        .unwrap();
+        unsafe { std::env::remove_var(var) };
+        assert!(matches!(
+            &prices.estimators[..],
+            [NativePriceEstimator::CoinGecko { api_key, .. }] if api_key == "secret"
+        ));
+    }
+
+    #[test]
+    fn coin_gecko_api_key_missing_from_the_environment_fails_the_load() {
+        let prices = toml::de::from_str::<NativePrices>(
+            r#"
+            [[estimators]]
+            type = "coin-gecko"
+            endpoint = "https://api.coingecko.com/api/v3/simple/token_price"
+            api-key = "%TEST_SVM_COIN_GECKO_API_KEY_UNSET"
+            "#,
+        );
+        assert!(prices.is_err());
     }
 }
