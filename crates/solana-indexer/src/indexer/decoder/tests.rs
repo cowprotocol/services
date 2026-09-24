@@ -351,11 +351,9 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     (tx_from_instructions(pubkey(9), &[instruction]), expected)
 }
 
-/// The `CreateOrder` instruction and the event its decode must produce.
-fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) {
-    let settlement = pubkey(1);
-    let created_by = pubkey(12);
-    let intent = OrderIntent {
+/// The intent behind [`create_order_parts`] and the cancellation test.
+fn sample_intent() -> OrderIntent {
+    OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
         sell: TokenAsset {
             mint: InterfacePubkey::new_from_array([0x66; 32]),
@@ -374,7 +372,14 @@ fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) 
             partially_fillable: false,
         },
         app_data: [0x44; 32],
-    };
+    }
+}
+
+/// The `CreateOrder` instruction and the event its decode must produce.
+fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) {
+    let settlement = pubkey(1);
+    let created_by = pubkey(12);
+    let intent = sample_intent();
     let instruction = cow_settlement_client::instruction::CreateOrder {
         program_id: settlement,
         owner: pubkey(11),
@@ -400,6 +405,57 @@ fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) 
         app_data: [0x44; 32],
     };
     (instruction, expected)
+}
+
+/// `CancelOrder` carrying intent bytes created the order cancelled, so it
+/// decodes to the creation followed by the cancellation. Without them only
+/// the cancellation is emitted.
+#[test]
+fn cancel_order_decodes_to_the_cancellation() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (_, created) = create_order_parts();
+    let intent = sample_intent();
+    let cancelled = SettlementEvent::OrderCancelled {
+        signature: signature(6),
+        order_pda: find_order_pda(&settlement, &intent.uid()).0,
+    };
+    let creating: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instruction::CancelOrder {
+            program_id: settlement,
+            owner: pubkey(11),
+            created_by: pubkey(12),
+            intent: &intent,
+        }
+        .into();
+    let existing: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instruction::cancel_order::CancelOutstandingOrder {
+            program_id: settlement,
+            owner: pubkey(11),
+            created_by: pubkey(12),
+            intent: &intent,
+        }
+        .into();
+
+    for (instruction, expected) in [
+        (
+            creating,
+            vec![
+                SettlementEvent::OrderCreated(Box::new(created.clone())),
+                cancelled.clone(),
+            ],
+        ),
+        (existing, vec![cancelled.clone()]),
+    ] {
+        let tx = tx_from_instructions(pubkey(9), &[instruction]);
+        let ctx = TxContext {
+            slot: Slot(5),
+            signature: signature(6),
+            account_keys: build_account_keys(&tx),
+            post_token_balances: vec![],
+        };
+        let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
+        assert_eq!(decode_settlement(&instructions, &ctx), Ok(expected));
+    }
 }
 
 /// The RPC wire form of a signed transaction, as `getTransaction` returns it
