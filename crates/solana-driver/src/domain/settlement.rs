@@ -19,7 +19,7 @@ use {
         Pull,
     },
     cow_settlement_interface::{
-        data::intent::{Flags, OrderIntent, OrderKind},
+        data::intent::{Asset, Flags, OrderIntent, OrderKind, TokenAsset},
         pda::{buffer::find_buffer_pda, order::find_order_pda},
         token_program::TokenProgram,
     },
@@ -348,10 +348,11 @@ impl From<&Order> for OrderIntent {
     fn from(order: &Order) -> Self {
         OrderIntent {
             owner: order.owner,
-            buy_token_account: order.buy_token_account,
-            buy_mint: order.buy_token,
-            sell_token_account: order.sell_token_account,
-            sell_mint: order.sell_token,
+            sell: TokenAsset {
+                mint: order.sell_token,
+                token_account: order.sell_token_account,
+            },
+            buy: Asset::decode(order.buy_token, order.buy_token_account),
             sell_amount: order.sell_amount,
             buy_amount: order.buy_amount,
             valid_to: order.valid_to,

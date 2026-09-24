@@ -507,10 +507,16 @@ fn sponsored_intent(
     };
     cow_settlement_interface::data::intent::OrderIntent {
         owner,
-        buy_token_account,
-        sell_token_account,
-        buy_mint,
-        sell_mint,
+        sell: cow_settlement_interface::data::intent::TokenAsset {
+            mint: sell_mint,
+            token_account: sell_token_account,
+        },
+        buy: cow_settlement_interface::data::intent::Asset::TokenProgram(
+            cow_settlement_interface::data::intent::TokenAsset {
+                mint: buy_mint,
+                token_account: buy_token_account,
+            },
+        ),
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: u32::MAX,
@@ -552,18 +558,18 @@ fn full_preparations(
         spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &funder,
             &owner,
-            &intent.sell_mint,
+            &intent.sell.mint,
             &spl_token_interface::ID,
         ),
-        solana_system_interface::instruction::transfer(&owner, &intent.sell_token_account, 1_000),
+        solana_system_interface::instruction::transfer(&owner, &intent.sell.token_account, 1_000),
         spl_token_interface::instruction::sync_native(
             &spl_token_interface::ID,
-            &intent.sell_token_account,
+            &intent.sell.token_account,
         )
         .unwrap(),
         spl_token_interface::instruction::approve(
             &spl_token_interface::ID,
-            &intent.sell_token_account,
+            &intent.sell.token_account,
             &state_pda(),
             &owner,
             &[],
@@ -573,7 +579,7 @@ fn full_preparations(
         spl_associated_token_account_interface::instruction::create_associated_token_account(
             &funder,
             &owner,
-            &intent.buy_mint,
+            &intent.buy.encode().0,
             &spl_token_interface::ID,
         ),
     ]
@@ -645,7 +651,7 @@ fn destination_creation(
     spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
         &funder,
         &owner,
-        &intent.buy_mint,
+        &intent.buy.encode().0,
         &spl_token_interface::ID,
     )
 }
@@ -786,7 +792,12 @@ async fn create_order_rejects_invalid_submissions() {
     let mut funder_owned = sponsored_intent(owner.pubkey(), false);
     funder_owned.owner = funder;
     let mut same_token = sponsored_intent(owner.pubkey(), false);
-    same_token.buy_mint = same_token.sell_mint;
+    same_token.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+        cow_settlement_interface::data::intent::TokenAsset {
+            mint: same_token.sell.mint,
+            token_account: same_token.buy.encode().1,
+        },
+    );
     let mut zero_amount = sponsored_intent(owner.pubkey(), false);
     zero_amount.sell_amount = 0;
     let mut expiring = sponsored_intent(owner.pubkey(), false);
@@ -871,12 +882,12 @@ async fn create_order_checks_the_preparation_template() {
         spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
 
     let transfer = |from: solana_sdk::pubkey::Pubkey| {
-        solana_system_interface::instruction::transfer(&from, &intent.sell_token_account, 1_000)
+        solana_system_interface::instruction::transfer(&from, &intent.sell.token_account, 1_000)
     };
     let approve = |delegate: solana_sdk::pubkey::Pubkey| {
         spl_token_interface::instruction::approve(
             &spl_token_interface::ID,
-            &intent.sell_token_account,
+            &intent.sell.token_account,
             &delegate,
             &owner,
             &[],
@@ -938,7 +949,7 @@ async fn create_order_checks_the_preparation_template() {
     // Wrap steps on an order that does not sell native SOL.
     let plain = sponsored_intent(owner, false);
     let wrap =
-        solana_system_interface::instruction::transfer(&owner, &plain.sell_token_account, 1_000);
+        solana_system_interface::instruction::transfer(&owner, &plain.sell.token_account, 1_000);
     let transaction = creation_tx(funder, &owner_keypair, &plain, vec![wrap], true);
     let (status, kind) = post_order(addr, transaction).await;
     assert_eq!(
@@ -950,12 +961,12 @@ async fn create_order_checks_the_preparation_template() {
     // intent names it. Only the buy account may belong to someone else.
     let stranger = solana_sdk::pubkey::Pubkey::new_unique();
     let mut foreign_sell = sponsored_intent(owner, true);
-    foreign_sell.sell_token_account = ata(stranger, foreign_sell.sell_mint);
+    foreign_sell.sell.token_account = ata(stranger, foreign_sell.sell.mint);
     let preparations = vec![
         spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &funder,
             &stranger,
-            &foreign_sell.sell_mint,
+            &foreign_sell.sell.mint,
             &spl_token_interface::ID,
         ),
         destination_creation(funder, owner, &foreign_sell),
@@ -1012,8 +1023,8 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     let quote_id = db::save_quote(
         &pool,
         &db::Quote {
-            sell_token: ByteArray(intent.sell_mint.to_bytes()),
-            buy_token: ByteArray(intent.buy_mint.to_bytes()),
+            sell_token: ByteArray(intent.sell.mint.to_bytes()),
+            buy_token: ByteArray(intent.buy.encode().0.to_bytes()),
             sell_amount: intent.sell_amount,
             buy_amount: intent.buy_amount,
             kind: OrderKind::Sell,
@@ -1070,7 +1081,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         &pool,
         &db::Quote {
             sell_token: ByteArray([0x99; 32]),
-            buy_token: ByteArray(other.buy_mint.to_bytes()),
+            buy_token: ByteArray(other.buy.encode().0.to_bytes()),
             sell_amount: other.sell_amount,
             buy_amount: other.buy_amount,
             kind: OrderKind::Sell,
@@ -1102,8 +1113,8 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     let expired = db::save_quote(
         &pool,
         &db::Quote {
-            sell_token: ByteArray(late.sell_mint.to_bytes()),
-            buy_token: ByteArray(late.buy_mint.to_bytes()),
+            sell_token: ByteArray(late.sell.mint.to_bytes()),
+            buy_token: ByteArray(late.buy.encode().0.to_bytes()),
             sell_amount: late.sell_amount,
             buy_amount: late.buy_amount,
             kind: OrderKind::Sell,
@@ -1146,7 +1157,13 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
     let owner = solana_sdk::signer::keypair::Keypair::new();
     let receiver = solana_sdk::pubkey::Pubkey::new_unique();
     let mut intent = sponsored_intent(owner.pubkey(), false);
-    intent.buy_token_account = ata(receiver, intent.buy_mint);
+    let buy_mint = intent.buy.encode().0;
+    intent.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+        cow_settlement_interface::data::intent::TokenAsset {
+            mint: buy_mint,
+            token_account: ata(receiver, buy_mint),
+        },
+    );
     let destination = destination_creation(funder, receiver, &intent);
     let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
@@ -1157,5 +1174,5 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(stored, intent.buy_token_account.to_bytes().to_vec());
+    assert_eq!(stored, intent.buy.encode().1.to_bytes().to_vec());
 }

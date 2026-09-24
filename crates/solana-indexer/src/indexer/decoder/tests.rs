@@ -38,7 +38,7 @@ use {
     cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{Flags, OrderIntent, OrderKind as IntentOrderKind},
+        data::intent::{Asset, Flags, OrderIntent, OrderKind as IntentOrderKind, TokenAsset},
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
@@ -357,10 +357,14 @@ fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) 
     let created_by = pubkey(12);
     let intent = OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
-        buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
-        sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
-        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
-        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
+        sell: TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x66; 32]),
+            token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        },
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x55; 32]),
+            token_account: InterfacePubkey::new_from_array([0x22; 32]),
+        }),
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
@@ -728,10 +732,14 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let fee_payer = pubkey(9);
     let intent = OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
-        buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
-        sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
-        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
-        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
+        sell: TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x66; 32]),
+            token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        },
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x55; 32]),
+            token_account: InterfacePubkey::new_from_array([0x22; 32]),
+        }),
         sell_amount: 1_000,
         buy_amount: 1_234,
         valid_to: 42,

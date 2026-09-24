@@ -30,7 +30,7 @@ use {
     cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{EncodedOrderIntent, OrderKind as InterfaceOrderKind},
+        data::intent::{OrderIntent, OrderKind as InterfaceOrderKind, hash_bytes},
         instruction::{
             InstructionInputParsing,
             create_buffer::CreateBufferInput,
@@ -426,7 +426,8 @@ fn decode_settlement(
             | SettlementInstruction::TransferAuthority
             | SettlementInstruction::AddSolver
             | SettlementInstruction::RemoveSolver
-            | SettlementInstruction::CreateSelfOrder => Ok(Vec::new()),
+            | SettlementInstruction::CreateSelfOrder
+            | SettlementInstruction::CancelOrder => Ok(Vec::new()),
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
@@ -465,18 +466,20 @@ fn decode_order_created(
     let accounts = instruction_account_keys(instruction, &ctx.account_keys)?;
     let input = CreateOrderInput::parse(&instruction.data, &accounts)
         .map_err(|_| DecodeError::SchemaMismatch)?;
-    let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
-        .map_err(|_| DecodeError::SchemaMismatch)?;
+    let intent =
+        OrderIntent::try_from(&input.intent_bytes).map_err(|_| DecodeError::SchemaMismatch)?;
+    let uid = hash_bytes(&input.intent_bytes);
+    let (buy_mint, buy_token_account) = intent.buy.encode();
     Ok(SettlementEvent::OrderCreated(Box::new(CreatedOrder {
         signature: ctx.signature,
         order_uid: OrderUid(uid.to_bytes()),
         owner: to_sdk_pubkey(intent.owner),
         created_by: *input.created_by,
         order_pda: *input.order_pda,
-        sell_token_account: to_sdk_pubkey(intent.sell_token_account),
-        sell_mint: to_sdk_pubkey(intent.sell_mint),
-        buy_token_account: to_sdk_pubkey(intent.buy_token_account),
-        buy_mint: to_sdk_pubkey(intent.buy_mint),
+        sell_token_account: to_sdk_pubkey(intent.sell.token_account),
+        sell_mint: to_sdk_pubkey(intent.sell.mint),
+        buy_token_account: to_sdk_pubkey(buy_token_account),
+        buy_mint: to_sdk_pubkey(buy_mint),
         sell_amount: intent.sell_amount,
         buy_amount: intent.buy_amount,
         valid_to: intent.valid_to,

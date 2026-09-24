@@ -21,7 +21,7 @@ use {
         cow_settlement_interface::{
             ID as PROGRAM_ID,
             Pubkey,
-            data::intent::{Flags, OrderIntent, OrderKind},
+            data::intent::{Asset, Flags, OrderIntent, OrderKind, TokenAsset},
             pda::{buffer::find_buffer_pda, order::find_order_pda, state::find_state_pda},
         },
         instruction::CreateOrder,
@@ -203,10 +203,14 @@ async fn create_order_on_chain(
 
     let intent = OrderIntent {
         owner: payer_pk,
-        sell_token_account: sell_ata,
-        sell_mint,
-        buy_token_account: buy_ata,
-        buy_mint,
+        sell: TokenAsset {
+            mint: sell_mint,
+            token_account: sell_ata,
+        },
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: buy_mint,
+            token_account: buy_ata,
+        }),
         sell_amount: SELL_AMOUNT,
         buy_amount: SELL_AMOUNT, // 1:1 swap.
         valid_to,
