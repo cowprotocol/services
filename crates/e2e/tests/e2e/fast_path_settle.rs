@@ -268,7 +268,7 @@ async fn fast_path_routes_split_quoter_to_solver(web3: Web3) {
     let exclusivity = Duration::from_secs(300);
 
     // Two configs on one driver, both using `solver`'s account: the quoter
-    // (`test_quote`) and the solve config (`test_solver` They share a 
+    // (`test_quote`) and the solve config (`test_solver`). They share a
     // submission address, so the autopilot settles against `test_solver`
     // no matter which config quoted.
     colocation::start_driver(
