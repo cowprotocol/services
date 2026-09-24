@@ -478,9 +478,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/JitOrder"
-        supportsFastPath:
-          type: boolean
-          description: Whether the quoting solver supports fast-path (out-of-competition) execution.
       required:
         - clearingPrices
         - solver

@@ -35,8 +35,6 @@ pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub solver: Address,
-    /// Whether the quoting solver supports fast-path execution.
-    pub supports_fast_path: bool,
     /// Id of the quote: the id its request was sent with, and the id it is
     /// stored under if it wins the competition.
     pub quote_id: QuoteId,
@@ -76,13 +74,6 @@ impl TradeKind {
         match self {
             TradeKind::Legacy(trade) => trade.solver,
             TradeKind::Regular(trade) => trade.solver,
-        }
-    }
-
-    pub fn supports_fast_path(&self) -> bool {
-        match self {
-            TradeKind::Legacy(trade) => trade.supports_fast_path,
-            TradeKind::Regular(trade) => trade.supports_fast_path,
         }
     }
 
@@ -166,8 +157,6 @@ pub struct LegacyTrade {
     /// If this is set the quote verification need to use this as the
     /// `tx.origin` to make the quote pass the simulation.
     pub tx_origin: Option<Address>,
-    /// Whether the quoting solver supports fast-path execution.
-    pub supports_fast_path: bool,
     /// Id of the quote this trade computes: the id the request was sent with.
     pub quote_id: QuoteId,
 }
@@ -189,8 +178,6 @@ pub struct Trade {
     /// `tx.origin` to make the quote pass the simulation.
     pub tx_origin: Option<Address>,
     pub jit_orders: Vec<dto::JitOrder>,
-    /// Whether the quoting solver supports fast-path execution.
-    pub supports_fast_path: bool,
     /// Id of the quote this trade computes: the id the request was sent with.
     pub quote_id: QuoteId,
 }
