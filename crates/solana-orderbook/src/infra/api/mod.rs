@@ -111,7 +111,10 @@ impl Api {
                 "/api/v1/account/{owner}/orders",
                 get(routes::account_orders),
             )
-            .route("/api/v1/orders/{uid}", get(routes::order))
+            .route(
+                "/api/v1/orders/{uid}",
+                get(routes::order).delete(routes::cancel_order),
+            )
             .route("/api/v1/orders/{uid}/status", get(routes::order_status))
             .route("/api/v2/trades", get(routes::trades))
             .route("/api/v1/orders", post(routes::create_order))

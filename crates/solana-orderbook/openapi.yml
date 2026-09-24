@@ -83,6 +83,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    delete:
+      operationId: cancelOrder
+      description: |
+        Cancel a pending sponsored order off-chain: one placed through this
+        API whose creation has not landed on chain. The orderbook stops
+        auctioning and countersigning it and reports it cancelled. Nothing is
+        broadcast. Once a creation landed, only the settlement program's
+        `CancelOrder` instruction cancels the order.
+
+        The body carries the owner's Ed25519 signature over the UTF-8 text
+        `cancel order <uid>`, with the uid as 0x-prefixed lowercase hex, the
+        bytes a wallet's plain `signMessage` produces.
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          description: The order's 32-byte intent hash as hex.
+          schema:
+            $ref: "#/components/schemas/OrderUid"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signature]
+              properties:
+                signature:
+                  description: The owner's 64-byte Ed25519 signature, base64.
+                  type: string
+      responses:
+        "200":
+          description: The order is cancelled, also when it was before.
+          content:
+            application/json:
+              schema:
+                type: string
+                enum: [Cancelled]
+        "400":
+          description: |
+            A signature that does not verify against the order owner
+            (`InvalidSignature`), an order with a PDA on chain
+            (`OnChainOrder`), a uid that is not 32 bytes of hex, or an
+            unparsable body (`InvalidRequestBody`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No order with this uid (`OrderNotFound`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/orders/{uid}/status:
     get:
       operationId: getOrderStatus

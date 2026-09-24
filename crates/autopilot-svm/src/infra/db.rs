@@ -57,6 +57,7 @@ WHERE o.valid_to >= $1
        OR o.presigned_transaction IS NOT NULL
        OR p.order_uid IS NOT NULL)
   AND p.cancellation_timestamp IS NULL
+  AND o.cancelled_at IS NULL
   AND ($2::bigint IS NULL
        OR o.presigned_transaction IS NULL
        OR p.order_uid IS NOT NULL
@@ -96,7 +97,7 @@ pub struct LandedWindow {
 }
 
 /// The stored creation transactions of the given orders that do not exist on
-/// chain yet.
+/// chain and were not cancelled off-chain.
 pub async fn pending_creations(
     ex: impl PgExecutor<'_>,
     uids: &[Vec<u8>],
@@ -107,6 +108,7 @@ FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.uid = ANY($1)
   AND o.presigned_transaction IS NOT NULL
+  AND o.cancelled_at IS NULL
   AND p.order_uid IS NULL
     "#;
     sqlx::query_as(QUERY)
@@ -289,7 +291,7 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use {
-        super::{last_indexed_slot, open_orders},
+        super::{last_indexed_slot, open_orders, pending_creations},
         bigdecimal::BigDecimal,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
@@ -405,6 +407,13 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         // Dropped: cancelled on chain.
         insert_order(&mut tx, 4, 2_000, true, database::solana::OrderKind::Sell).await;
         insert_pda(&mut tx, 4, true, 0, 0).await;
+        // Dropped: cancelled off-chain.
+        insert_order(&mut tx, 11, 2_000, true, database::solana::OrderKind::Sell).await;
+        sqlx::query(r#"UPDATE solana.orders SET cancelled_at = now() WHERE uid = $1"#)
+            .bind(database::byte_array::ByteArray([11u8; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         // Dropped: not yet valid.
         insert_order(&mut tx, 9, 2_000, true, database::solana::OrderKind::Sell).await;
         sqlx::query(r#"UPDATE solana.orders SET valid_from = 1_500 WHERE uid = $1"#)
@@ -452,6 +461,45 @@ WHERE uid = $1
         assert_eq!(uids(orders), vec![1, 5, 6, 10]);
         let orders = open_orders(&mut *tx, 1_000, Some(151)).await.unwrap();
         assert_eq!(uids(orders), vec![1, 5, 6]);
+    }
+
+    /// A creation stays pending until it lands or the order is cancelled
+    /// off-chain.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_pending_creations_skip_cancelled_orders() {
+        let pool = crate::test_db::pool().await;
+        let mut tx = pool.begin().await.unwrap();
+        for table in ["trades", "order_pda", "orders"] {
+            sqlx::query(&format!("DELETE FROM solana.{table}"))
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        for n in [1u8, 2] {
+            insert_order(&mut tx, n, 2_000, false, database::solana::OrderKind::Sell).await;
+            sqlx::query(
+                r#"
+UPDATE solana.orders
+SET presigned_transaction = '\x01', last_valid_block_height = 150
+WHERE uid = $1
+                "#,
+            )
+            .bind(database::byte_array::ByteArray([n; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        }
+        sqlx::query(r#"UPDATE solana.orders SET cancelled_at = now() WHERE uid = $1"#)
+            .bind(database::byte_array::ByteArray([2u8; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
+        let pending = pending_creations(&mut *tx, &[vec![1; 32], vec![2; 32]])
+            .await
+            .unwrap();
+        assert_eq!(pending, vec![(vec![1; 32], vec![1])]);
     }
 
     #[tokio::test]
