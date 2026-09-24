@@ -17,14 +17,15 @@ use {
     tracing::instrument,
 };
 
-pub const SELECT: &str = r#"
+pub const ORDER_DETAILS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, NULL AS valid_from, FALSE AS fast_path, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, '\x9008d19f58aabd9ed0d60971565aa8510560ab41'::bytea AS settlement_contract, o.sell_token_balance, o.buy_token_balance,
 TRUE AS is_liquidity_order,
-(SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
-(SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
-(SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
+t_agg.sum_buy,
+t_agg.sum_sell,
+t_agg.sum_fee,
+t_agg.gas_cost,
 FALSE AS invalidated,
 FALSE AS presignature_pending,
 ARRAY[]::record[] AS pre_interactions,
@@ -32,13 +33,32 @@ ARRAY[]::record[] AS post_interactions,
 NULL AS ethflow_data,
 NULL AS onchain_user,
 NULL AS onchain_placement_error,
-COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
-COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
-NULL AS full_app_data,
-(SELECT CASE WHEN COUNT(*) = COUNT(t.gas_cost) THEN SUM(t.gas_cost) END FROM trades t WHERE t.order_uid = o.uid) as gas_cost
+COALESCE(oe.executed_fee_sum, 0) AS executed_fee,
+COALESCE(oe.executed_fee_token, o.sell_token) AS executed_fee_token, -- TODO surplus token
+NULL AS full_app_data
 "#;
 
-pub const FROM: &str = "jit_orders o";
+/// `FROM` clause plus various `JOIN`s that provide all the necessary data for
+/// [`ORDER_DETAILS_SELECT`]. Because [`ORDER_DETAILS_SELECT`] returns multiple
+/// aggregate values over the same associated table (e.g. sum of buy/sell/fee
+/// amounts over the trades table) we scan the table once and aggregate all
+/// values at once instead of doing 1 sub-query for each aggregate field in
+/// [`ORDER_DETAILS_SELECT`].
+pub const ORDER_DETAILS_FROM: &str = r#"jit_orders o
+LEFT JOIN LATERAL (
+    SELECT
+        COALESCE(SUM(buy_amount), 0)  AS sum_buy,
+        COALESCE(SUM(sell_amount), 0) AS sum_sell,
+        COALESCE(SUM(fee_amount), 0)  AS sum_fee,
+        CASE WHEN COUNT(*) = COUNT(gas_cost) THEN SUM(gas_cost) END AS gas_cost
+    FROM trades WHERE order_uid = o.uid
+) t_agg ON TRUE
+LEFT JOIN LATERAL (
+    SELECT
+        SUM(executed_fee)                  AS executed_fee_sum,
+        (array_agg(executed_fee_token))[1] AS executed_fee_token
+    FROM order_execution WHERE order_uid = o.uid
+) oe ON TRUE"#;
 
 #[instrument(skip_all)]
 pub async fn get_by_id(
@@ -48,8 +68,8 @@ pub async fn get_by_id(
     #[rustfmt::skip]
         const QUERY: &str = const_format::concatcp!(
 "SELECT ",
-SELECT,
-" FROM ", FROM,
+ORDER_DETAILS_SELECT,
+" FROM ", ORDER_DETAILS_FROM,
 " WHERE o.uid = $1 ",
         );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
@@ -60,8 +80,13 @@ pub async fn get_many_by_uid<'a>(
     ex: &'a mut PgConnection,
     order_uids: &'a [OrderUid],
 ) -> Result<Vec<orders::FullOrder>, sqlx::Error> {
-    const QUERY: &str =
-        const_format::concatcp!("SELECT ", SELECT, " FROM ", FROM, " WHERE o.uid = ANY($1)");
+    const QUERY: &str = const_format::concatcp!(
+        "SELECT ",
+        ORDER_DETAILS_SELECT,
+        " FROM ",
+        ORDER_DETAILS_FROM,
+        " WHERE o.uid = ANY($1)"
+    );
     sqlx::query_as(QUERY).bind(order_uids).fetch_all(ex).await
 }
 
@@ -73,9 +98,9 @@ pub async fn get_by_tx(
     const QUERY: &str = const_format::concatcp!(
         orders::SETTLEMENT_LOG_INDICES,
         "SELECT ",
-        SELECT,
+        ORDER_DETAILS_SELECT,
         " FROM ",
-        FROM,
+        ORDER_DETAILS_FROM,
         " JOIN trades t ON t.order_uid = o.uid",
         " WHERE
         t.block_number = (SELECT block_number FROM settlement) AND

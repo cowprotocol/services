@@ -668,17 +668,18 @@ impl FullOrderWithQuote {
 // SET enable_nestloop = false;
 // to get a better idea of what indexes postgres *could* use even if it decides
 // that with the current amount of data this wouldn't be better.
-pub const SELECT: &str = r#"
+pub const ORDER_DETAILS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.valid_from, o.fast_path, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 FALSE AS is_liquidity_order,
-(SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
-(SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
-(SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
+t_agg.sum_buy,
+t_agg.sum_sell,
+t_agg.sum_fee,
+t_agg.gas_cost,
 (o.cancellation_timestamp IS NOT NULL OR
-    (SELECT COUNT(*) FROM invalidations WHERE invalidations.order_uid = o.uid) > 0 OR
-    (SELECT COUNT(*) FROM onchain_order_invalidations onchain_c where onchain_c.uid = o.uid limit 1) > 0
+    EXISTS (SELECT 1 FROM invalidations WHERE invalidations.order_uid = o.uid) OR
+    EXISTS (SELECT 1 FROM onchain_order_invalidations onchain_c WHERE onchain_c.uid = o.uid)
 ) AS invalidated,
 (o.signing_scheme = 'presign' AND COALESCE((
     SELECT (NOT p.signed) as unsigned
@@ -687,23 +688,59 @@ FALSE AS is_liquidity_order,
     ORDER BY p.block_number DESC, p.log_index DESC
     LIMIT 1
 ), true)) AS presignature_pending,
-array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid and p.execution = 'pre' order by p.index) as pre_interactions,
-array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid and p.execution = 'post' order by p.index) as post_interactions,
+ix.pre_interactions,
+ix.post_interactions,
 (SELECT (tx_hash, eth_o.valid_to) from ethflow_orders eth_o
     left join ethflow_refunds on ethflow_refunds.order_uid=eth_o.uid
     where eth_o.uid = o.uid limit 1) as ethflow_data,
-(SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
-(SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
-COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
-COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
-(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data,
-(SELECT CASE WHEN COUNT(*) = COUNT(t.gas_cost) THEN SUM(t.gas_cost) END FROM trades t WHERE t.order_uid = o.uid) as gas_cost
+onchain.sender AS onchain_user,
+onchain.placement_error AS onchain_placement_error,
+COALESCE(oe.executed_fee_sum, 0) AS executed_fee,
+COALESCE(oe.executed_fee_token, o.sell_token) AS executed_fee_token, -- TODO surplus token
+(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
-pub const FROM: &str = "orders o";
+/// `FROM` clause plus various `JOIN`s that provide all the necessary data for
+/// [`ORDER_DETAILS_SELECT`]. Because [`ORDER_DETAILS_SELECT`] returns multiple
+/// aggregate values over the same associated table (e.g. sum of buy/sell/fee
+/// amounts over the trades table) we scan the table once and aggregate all
+/// values at once instead of doing 1 sub-query for each aggregate field in
+/// [`ORDER_DETAILS_SELECT`].
+pub const ORDER_DETAILS_FROM: &str = r#"orders o
+LEFT JOIN LATERAL (
+    SELECT
+        COALESCE(SUM(buy_amount), 0)  AS sum_buy,
+        COALESCE(SUM(sell_amount), 0) AS sum_sell,
+        COALESCE(SUM(fee_amount), 0)  AS sum_fee,
+        CASE WHEN COUNT(*) = COUNT(gas_cost) THEN SUM(gas_cost) END AS gas_cost
+    FROM trades WHERE order_uid = o.uid
+) t_agg ON TRUE
+LEFT JOIN LATERAL (
+    SELECT
+        SUM(executed_fee)                  AS executed_fee_sum,
+        (array_agg(executed_fee_token))[1] AS executed_fee_token
+    FROM order_execution WHERE order_uid = o.uid
+) oe ON TRUE
+LEFT JOIN LATERAL (
+    SELECT sender, placement_error
+    FROM onchain_placed_orders WHERE uid = o.uid
+) onchain ON TRUE
+LEFT JOIN LATERAL (
+    SELECT
+        COALESCE(
+            array_agg((target, value, data) ORDER BY index) FILTER (WHERE execution = 'pre'),
+            '{}'::record[]
+        ) AS pre_interactions,
+        COALESCE(
+            array_agg((target, value, data) ORDER BY index) FILTER (WHERE execution = 'post'),
+            '{}'::record[]
+        ) AS post_interactions
+    FROM interactions WHERE order_uid = o.uid
+) ix ON TRUE"#;
+
 const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
     "SELECT ",
-    SELECT,
+    ORDER_DETAILS_SELECT,
     ", o_quotes.sell_amount as quote_sell_amount",
     ", o_quotes.buy_amount as quote_buy_amount",
     ", o_quotes.gas_amount as quote_gas_amount",
@@ -714,7 +751,7 @@ const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
     ", o_quotes.solver as solver",
     ", o_quotes.quote_id as quote_id",
     " FROM ",
-    FROM,
+    ORDER_DETAILS_FROM,
     " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
 );
 
@@ -773,8 +810,8 @@ pub fn full_orders_in_tx<'a>(
     const QUERY: &str = const_format::formatcp!(
         r#"
 {SETTLEMENT_LOG_INDICES}
-SELECT {SELECT}
-FROM {FROM}
+SELECT {ORDER_DETAILS_SELECT}
+FROM {ORDER_DETAILS_FROM}
 JOIN trades t ON t.order_uid = o.uid
 WHERE
     t.block_number = (SELECT block_number FROM settlement) AND
