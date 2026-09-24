@@ -226,7 +226,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     }
 
     let (slots, slot_watch) = watch::channel(tip);
-    let windows = SettlementWindows::new(pool.clone(), slot_watch);
+    let windows = SettlementWindows::new(pool.clone(), slot_watch, 150);
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
         Box::new(DbAuctionProvider::new(
@@ -321,7 +321,13 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         "in-flight order excluded from the cut"
     );
     // The dispatch task times the window out once the tip reaches the
-    // deadline. The hold outlasts it by the blockhash lifetime.
+    // deadline and the indexer has processed it. The hold outlasts it by the
+    // blockhash lifetime.
+    sqlx::query("UPDATE solana.indexer_state SET slot = $1")
+        .bind(i64::try_from(tip + 25).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
     slots.send(tip + 25).unwrap();
     let outcome = tokio::time::timeout(Duration::from_secs(5), async {
         loop {

@@ -7,9 +7,11 @@
 //! NOTIFY (trigger in the schema), a [`ListenSession`] delivers it here, and
 //! the window closes as `landed`. The task that dispatched the settlement
 //! waits out the submission deadline and closes the window as `timeout` if
-//! nothing landed by then. Windows live in the database, so a restart
-//! mid-window loses nothing: the listen seed re-checks every open window and
-//! the startup sweep times out the overdue ones.
+//! nothing landed by then. A landing is only visible once the indexer wrote
+//! it, so deadlines are judged against the indexer's watermark, not the raw
+//! tip, until the indexer lags beyond its allowance. Windows live in the
+//! database, so a restart mid-window loses nothing: the listen seed re-checks
+//! every open window and the startup sweep times out the overdue ones.
 
 use {
     crate::infra::{db, listen::NotifyHandler},
@@ -34,11 +36,33 @@ pub struct SettlementWindows {
     pool: PgPool,
     /// The chain tip, advanced by the slot poller.
     tip: watch::Receiver<u64>,
+    /// Slots the indexer may trail the tip before its silence about a
+    /// settlement stops counting as evidence.
+    max_indexer_lag: u64,
 }
 
 impl SettlementWindows {
-    pub fn new(pool: PgPool, tip: watch::Receiver<u64>) -> Self {
-        Self { pool, tip }
+    pub fn new(pool: PgPool, tip: watch::Receiver<u64>, max_indexer_lag: u64) -> Self {
+        Self {
+            pool,
+            tip,
+            max_indexer_lag,
+        }
+    }
+
+    /// The slot up to which a settlement can be ruled out: the indexer's
+    /// watermark, or the tip itself once the indexer lags beyond its
+    /// allowance or never wrote.
+    async fn observed_slot(&self, tip: u64) -> Result<u64> {
+        let indexed = db::last_indexed_slot(&self.pool)
+            .await?
+            .and_then(|slot| u64::try_from(slot).ok());
+        Ok(match indexed {
+            Some(indexed) if tip.saturating_sub(indexed) <= self.max_indexer_lag => {
+                indexed.min(tip)
+            }
+            _ => tip,
+        })
     }
 
     /// Open a window for a dispatched settlement. `solution_uid` is the
@@ -75,21 +99,23 @@ impl SettlementWindows {
         db::reject_settlement_window(&self.pool, auction_id, solver, solution_uid).await
     }
 
-    /// Close every open window whose deadline is at or before the slot as
-    /// timed out, logging each. Runs at startup for the windows a previous
-    /// process left behind and inside every competition cycle. A live
-    /// dispatch times its own window out through [`Self::expire_when_due`].
-    pub async fn expire_past_deadline(&self, slot: u64) -> Result<()> {
-        let slot = to_db_integer(slot);
+    /// Close every open window whose deadline the indexer has processed
+    /// without a settlement as timed out, logging each. Runs at startup for
+    /// the windows a previous process left behind and inside every
+    /// competition cycle. A live dispatch times its own window out through
+    /// [`Self::expire_when_due`].
+    pub async fn expire_past_deadline(&self, tip: u64) -> Result<()> {
+        let slot = to_db_integer(self.observed_slot(tip).await?);
         for auction_id in db::expire_settlement_windows(&self.pool, slot).await? {
             tracing::error!(auction_id, slot, "settlement missed its deadline");
         }
         Ok(())
     }
 
-    /// Wait for the tip to reach the window's deadline, then close the window
-    /// as timed out if the indexer has not closed it by then. Returns once the
-    /// window is resolved either way, or when the slot poller is gone.
+    /// Wait for the tip to reach the window's deadline and for the indexer to
+    /// have processed it, then close the window as timed out if the indexer
+    /// has not closed it by then. Returns once the window is resolved either
+    /// way, or when the slot poller is gone.
     pub async fn expire_when_due(
         &self,
         auction_id: i64,
@@ -98,9 +124,19 @@ impl SettlementWindows {
         deadline_slot: u64,
     ) -> Result<()> {
         let mut tip = self.tip.clone();
-        let slot = match tip.wait_for(|slot| *slot >= deadline_slot).await {
-            Ok(slot) => to_db_integer(*slot),
+        let mut current = match tip.wait_for(|slot| *slot >= deadline_slot).await {
+            Ok(slot) => *slot,
             Err(_) => return Ok(()),
+        };
+        let slot = loop {
+            let observed = self.observed_slot(current).await?;
+            if observed >= deadline_slot {
+                break to_db_integer(observed);
+            }
+            current = match tip.wait_for(|slot| *slot > current).await {
+                Ok(slot) => *slot,
+                Err(_) => return Ok(()),
+            };
         };
         let expired =
             db::expire_settlement_window(&self.pool, auction_id, solver, solution_uid, slot)
@@ -165,7 +201,19 @@ mod tests {
 
     /// Windows over a tip that never moves.
     fn windows(pool: &PgPool) -> SettlementWindows {
-        SettlementWindows::new(pool.clone(), watch::channel(0).1)
+        SettlementWindows::new(pool.clone(), watch::channel(0).1, 150)
+    }
+
+    async fn set_indexed_slot(pool: &PgPool, slot: i64) {
+        sqlx::query("DELETE FROM solana.indexer_state")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO solana.indexer_state (slot) VALUES ($1)")
+            .bind(slot)
+            .execute(pool)
+            .await
+            .unwrap();
     }
 
     /// A persisted execution of order `[order; 32]` inside solution `uid` of
@@ -400,8 +448,9 @@ VALUES (10, $1, 0, $2, $3, NULL)
         );
     }
 
-    /// The dispatching task waits for the tip to reach the deadline, then
-    /// times out the window still open and leaves the one the indexer closed.
+    /// The dispatching task waits for the tip to reach the deadline and for
+    /// the indexer to have processed it, then times out the window still open
+    /// and leaves the one the indexer closed.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
     async fn solana_db_dispatch_task_times_out_its_window_at_the_deadline() {
@@ -410,7 +459,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
 
         let solver = Pubkey([7; 32]);
         let (tip, receiver) = watch::channel(90);
-        let windows = SettlementWindows::new(pool.clone(), receiver);
+        let windows = SettlementWindows::new(pool.clone(), receiver, 150);
         for uid in [1, 2] {
             windows
                 .open_dispatched(1, solver, uid, 90, 100)
@@ -422,6 +471,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         crate::infra::db::close_landed_windows(&pool, 1)
             .await
             .unwrap();
+        set_indexed_slot(&pool, 95).await;
 
         let waiters = tokio::spawn({
             let windows = windows.clone();
@@ -436,7 +486,17 @@ VALUES (10, $1, 0, $2, $3, NULL)
             "nothing expires before the deadline"
         );
 
+        // The tip reached the deadline but the indexer has not: a landing at
+        // the deadline could still be unwritten.
         tip.send(100).unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !waiters.is_finished(),
+            "nothing expires before the indexer processed the deadline"
+        );
+
+        set_indexed_slot(&pool, 100).await;
+        tip.send(101).unwrap();
         waiters.await.unwrap();
         assert_eq!(
             windows_of(&pool, 1).await,
@@ -445,5 +505,36 @@ VALUES (10, $1, 0, $2, $3, NULL)
                 (2, Some("landed".to_string()), Some(vec![9u8; 64])),
             ]
         );
+    }
+
+    /// An indexer stalled beyond its allowance stops gating: the window times
+    /// out on the tip alone.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_dispatch_task_times_out_past_the_indexer_lag_allowance() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+
+        let solver = Pubkey([7; 32]);
+        let (tip, receiver) = watch::channel(90);
+        let windows = SettlementWindows::new(pool.clone(), receiver, 150);
+        windows
+            .open_dispatched(1, solver, 1, 90, 100)
+            .await
+            .unwrap();
+        set_indexed_slot(&pool, 95).await;
+
+        let waiter = tokio::spawn({
+            let windows = windows.clone();
+            async move { windows.expire_when_due(1, solver, 1, 100).await.unwrap() }
+        });
+        // Indexed 95, allowance 150: the indexer still counts up to tip 245.
+        tip.send(245).unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!waiter.is_finished(), "the indexer is within its allowance");
+
+        tip.send(246).unwrap();
+        waiter.await.unwrap();
+        assert_eq!(outcome(&pool, 1).await.as_deref(), Some("timeout"));
     }
 }

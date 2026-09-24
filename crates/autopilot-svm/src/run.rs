@@ -99,7 +99,7 @@ async fn run(config: Config) {
     );
     let trigger = SlotTrigger::new(rpc, config.min_auction_interval);
 
-    let windows = SettlementWindows::new(pool.clone(), trigger.tip());
+    let windows = SettlementWindows::new(pool.clone(), trigger.tip(), config.max_indexer_lag_slots);
     let listen = ListenSession::spawn(
         pool.clone(),
         db::SETTLEMENT_FINALIZED_CHANNEL,
