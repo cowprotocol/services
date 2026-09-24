@@ -12,6 +12,7 @@ use {
     },
     async_trait::async_trait,
     std::sync::Arc,
+    winner_selection::state::RankedItem,
 };
 
 /// Sends `/settle` to each winner's driver. Submission runs detached, the
@@ -44,7 +45,10 @@ impl DriverExecutor {
 #[async_trait]
 impl SettlementExecutor<SolanaCycle> for DriverExecutor {
     async fn execute(&self, auction_id: i64, ranking: &Ranking, tip: &u64, deadline: u64) {
-        for winner in ranking.inner.winners() {
+        for (uid, winner) in ranking
+            .enumerated()
+            .filter(|(_, winner)| winner.is_winner())
+        {
             let key = (winner.solver(), winner.id());
             let Some(driver) = ranking
                 .drivers
@@ -88,10 +92,6 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             // the dispatch is the priority. The window carries the generated
             // solution uid, the driver request keeps the driver-local id its
             // solution cache is keyed by.
-            let uid = ranking.uids.get(&key).copied().unwrap_or_else(|| {
-                tracing::error!(solution_id = winner.id(), "winner without a uid");
-                i64::MAX
-            });
             if let Err(err) = self
                 .windows
                 .open_dispatched(auction_id, winner.solver(), uid, *tip, deadline)

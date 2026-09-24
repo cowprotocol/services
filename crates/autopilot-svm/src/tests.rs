@@ -276,6 +276,16 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         (solution_uid, solver_id, is_winner, filtered_out),
         (0, 7, true, false)
     );
+    // The sole winner's reference score: the winners' total without it, zero.
+    let (reference_solver, reference_score): (Vec<u8>, String) =
+        sqlx::query_as("SELECT solver, reference_score::text FROM solana.reference_scores")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        (reference_solver.as_slice(), reference_score.as_str()),
+        (&[0xCC; 32][..], "0")
+    );
     let (executed_sell, executed_buy): (String, String) = sqlx::query_as(
         "SELECT executed_sell::text, executed_buy::text FROM solana.proposed_trade_executions \
          WHERE solution_uid = 0",

@@ -46,3 +46,12 @@ CREATE TABLE solana.proposed_trade_executions (
     executed_buy  numeric(20,0) NOT NULL,
     PRIMARY KEY (auction_id, solution_uid, order_uid)
 );
+
+-- Per winning solver, the winners' total score with that solver's solutions
+-- removed: the rewards baseline.
+CREATE TABLE solana.reference_scores (
+    auction_id      bigint NOT NULL,
+    solver          bytea NOT NULL CHECK (length(solver) = 32),
+    reference_score numeric(20,0) NOT NULL,
+    PRIMARY KEY (auction_id, solver)
+);
