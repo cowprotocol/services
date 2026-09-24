@@ -9222,7 +9222,6 @@ name = "solana-driver"
 version = "0.1.0"
 dependencies = [
  "axum",
- "base64 0.22.1",
  "bincode",
  "chrono",
  "clap",
