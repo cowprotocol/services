@@ -350,6 +350,13 @@ pub struct ProposedSolution {
     pub trades: Vec<ProposedTrade>,
 }
 
+/// A winning solver's reference score: the winners' total score with that
+/// solver's solutions removed.
+pub struct ReferenceScore {
+    pub solver: ByteArray<32>,
+    pub score: BigDecimal,
+}
+
 /// A competition outcome as persisted after ranking.
 pub struct Competition {
     pub auction_id: i64,
@@ -359,6 +366,7 @@ pub struct Competition {
     pub price_tokens: Vec<Vec<u8>>,
     pub price_values: Vec<BigDecimal>,
     pub solutions: Vec<ProposedSolution>,
+    pub reference_scores: Vec<ReferenceScore>,
 }
 
 /// Persist a competition: the auction snapshot and every proposed solution
@@ -425,6 +433,21 @@ pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition)
             .execute(&mut *tx)
             .await
             .context("insert proposed trade executions")?;
+    }
+    if !competition.reference_scores.is_empty() {
+        let mut insert = QueryBuilder::<Postgres>::new(
+            "INSERT INTO solana.reference_scores (auction_id, solver, reference_score) ",
+        );
+        insert.push_values(&competition.reference_scores, |mut row, reference| {
+            row.push_bind(competition.auction_id)
+                .push_bind(reference.solver)
+                .push_bind(&reference.score);
+        });
+        insert
+            .build()
+            .execute(&mut *tx)
+            .await
+            .context("insert reference scores")?;
     }
     tx.commit().await.context("commit competition persist")
 }

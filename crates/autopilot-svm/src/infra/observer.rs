@@ -85,29 +85,23 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
             tracing::error!(?err, "failed to flag expired settlement windows");
         }
         let solutions = ranking
-            .inner
-            .ranked
-            .iter()
-            .chain(ranking.inner.filtered_out.iter())
-            .map(|solution| {
-                let key = (solution.solver(), solution.id());
-                db::ProposedSolution {
-                    uid: ranking.uids.get(&key).copied().unwrap_or(i64::MAX),
-                    id: i64::try_from(solution.id()).unwrap_or(i64::MAX),
-                    solver: ByteArray(solution.solver().0),
-                    is_winner: solution.is_winner(),
-                    filtered_out: solution.is_filtered_out(),
-                    score: BigDecimal::from(solution.score()),
-                    trades: solution
-                        .orders()
-                        .iter()
-                        .map(|order| db::ProposedTrade {
-                            order_uid: ByteArray(order.uid.0),
-                            executed_sell: BigDecimal::from(order.executed_sell),
-                            executed_buy: BigDecimal::from(order.executed_buy),
-                        })
-                        .collect(),
-                }
+            .enumerated()
+            .map(|(uid, solution)| db::ProposedSolution {
+                uid,
+                id: i64::try_from(solution.id()).unwrap_or(i64::MAX),
+                solver: ByteArray(solution.solver().0),
+                is_winner: solution.is_winner(),
+                filtered_out: solution.is_filtered_out(),
+                score: BigDecimal::from(solution.score()),
+                trades: solution
+                    .orders()
+                    .iter()
+                    .map(|order| db::ProposedTrade {
+                        order_uid: ByteArray(order.uid.0),
+                        executed_sell: BigDecimal::from(order.executed_sell),
+                        executed_buy: BigDecimal::from(order.executed_buy),
+                    })
+                    .collect(),
             })
             .collect();
         let (price_tokens, price_values) = auction
@@ -127,6 +121,14 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
             price_tokens,
             price_values,
             solutions,
+            reference_scores: ranking
+                .reference_scores
+                .iter()
+                .map(|(solver, score)| db::ReferenceScore {
+                    solver: ByteArray(solver.0),
+                    score: BigDecimal::from(*score),
+                })
+                .collect(),
         };
         db::persist_competition(&self.pool, &competition).await?;
         tracing::info!(
