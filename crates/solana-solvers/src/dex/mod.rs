@@ -59,6 +59,14 @@ impl Swap {
         u128::from(self.out_amount) * u128::from(order.sell_amount)
             >= u128::from(self.in_amount) * u128::from(order.buy_amount)
     }
+
+    /// Output-unit gap to `order`'s limit, zero when [`Swap::satisfies`] —
+    /// same cross-multiplication, so the two can't disagree.
+    pub fn shortfall(&self, order: &Order) -> u128 {
+        let demanded = u128::from(self.in_amount) * u128::from(order.buy_amount);
+        let offered = u128::from(self.out_amount) * u128::from(order.sell_amount);
+        demanded.saturating_sub(offered) / u128::from(order.sell_amount).max(1)
+    }
 }
 
 /// The configured DEX backend.
@@ -127,6 +135,35 @@ mod tests {
     fn an_open_limit_accepts_any_fill() {
         assert!(swap(1_000, 1).satisfies(&order(Side::Sell, 1_000, 0)));
         assert!(swap(u64::MAX, 1_000).satisfies(&order(Side::Buy, u64::MAX, 1_000)));
+    }
+
+    #[test]
+    fn shortfall_is_the_output_gap_at_the_limit() {
+        let sell = order(Side::Sell, 1_000, 2_000);
+        assert_eq!(swap(1_000, 2_000).shortfall(&sell), 0);
+        assert_eq!(swap(1_000, 1_999).shortfall(&sell), 1);
+        assert_eq!(swap(1_000, 1_900).shortfall(&sell), 100);
+
+        let buy = order(Side::Buy, 1_000, 2_000);
+        assert_eq!(swap(1_000, 2_000).shortfall(&buy), 0);
+        assert_eq!(swap(1_001, 2_000).shortfall(&buy), 2);
+        assert_eq!(swap(1_100, 2_000).shortfall(&buy), 200);
+    }
+
+    #[test]
+    fn shortfall_agrees_with_satisfies() {
+        for side in [Side::Sell, Side::Buy] {
+            for (in_amount, out_amount) in [(1_000, 2_000), (1_000, 1_999), (1_001, 2_000)] {
+                let order = order(side, 1_000, 2_000);
+                let swap = swap(in_amount, out_amount);
+                assert_eq!(swap.satisfies(&order), swap.shortfall(&order) == 0);
+            }
+        }
+    }
+
+    #[test]
+    fn shortfall_survives_a_zero_sell_leg() {
+        swap(1_000, 2_000).shortfall(&order(Side::Sell, 0, 2_000));
     }
 
     #[test]

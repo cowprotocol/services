@@ -60,7 +60,14 @@ pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
                 })
                 .ok()?;
             if !swap.satisfies(&dex_order) {
-                tracing::debug!("swap does not satisfy order");
+                tracing::debug!(
+                    in_amount = swap.in_amount,
+                    out_amount = swap.out_amount,
+                    limit_sell = dex_order.sell_amount,
+                    limit_buy = dex_order.buy_amount,
+                    shortfall = %swap.shortfall(&dex_order),
+                    "swap does not satisfy order"
+                );
                 return None;
             }
             let solution = Solution::new(index as u64, order.uid, &dex_order, swap).ok()?;
