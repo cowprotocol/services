@@ -6,6 +6,7 @@ use {
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
     database::byte_array::ByteArray,
+    solana_sdk::clock::MAX_PROCESSING_AGE,
     sqlx::{PgExecutor, Postgres, QueryBuilder},
 };
 
@@ -221,11 +222,14 @@ pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>
         .context("read open settlement execution windows")
 }
 
-/// Orders inside a winning solution whose settlement may still land: the
-/// deadline slot has not passed, the indexer recorded no settlement by that
-/// solver for the auction, and the execution window did not close early. A
-/// settlement is matched by solver because `settlements.solution_uid` is
-/// unattributed, and one solver wins at most one solution per auction.
+/// Orders inside a winning solution whose settlement transaction may still
+/// land: a blockhash lifetime past the deadline slot has not run out, the
+/// indexer recorded no settlement by that solver for the auction, and the
+/// driver did not reject the settlement before sending it. A timed-out
+/// window keeps the hold, its transaction may land until the blockhash
+/// expires. A settlement is matched by solver because
+/// `settlements.solution_uid` is unattributed, and one solver wins at most
+/// one solution per auction.
 pub async fn in_flight_orders(
     ex: impl PgExecutor<'_>,
     tip_slot: i64,
@@ -243,11 +247,14 @@ WHERE ca.deadline_slot >= $1
   )
   AND NOT EXISTS (
       SELECT 1 FROM solana.settlement_executions se
-      WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid AND se.outcome IS NOT NULL
+      WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid AND se.outcome = 'rejected'
   )
     "#;
+    // The oldest deadline whose transaction can still land at the tip.
+    let lifetime = i64::try_from(MAX_PROCESSING_AGE).expect("blockhash lifetime fits i64");
+    let landable_deadline = tip_slot.saturating_sub(lifetime);
     sqlx::query_scalar(QUERY)
-        .bind(tip_slot)
+        .bind(landable_deadline)
         .fetch_all(ex)
         .await
         .context("read in-flight orders")
@@ -605,10 +612,11 @@ WHERE uid = $1
         assert_eq!(uids(orders), vec![1, 5, 6]);
     }
 
-    /// Held: an order of a winning solution through its deadline slot.
-    /// Released: past the deadline, on a settlement by the winner's solver,
-    /// or on an execution window closed early. Orders of non-winning
-    /// solutions are never held.
+    /// Held: an order of a winning solution through its deadline slot plus
+    /// the blockhash lifetime, a timed-out window included. Released: after
+    /// that, on a settlement by the winner's solver, or on a window the
+    /// driver rejected before sending. Orders of non-winning solutions are
+    /// never held.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_in_flight_orders_follow_the_winning_settlement() {
@@ -668,7 +676,8 @@ WHERE uid = $1
         }
 
         assert_eq!(held(&mut tx, 100).await, vec![1]);
-        assert_eq!(held(&mut tx, 101).await, Vec::<u8>::new());
+        assert_eq!(held(&mut tx, 250).await, vec![1]);
+        assert_eq!(held(&mut tx, 251).await, Vec::<u8>::new());
 
         sqlx::query(
             "INSERT INTO solana.settlement_executions (auction_id, solver, solution_uid, \
@@ -692,6 +701,14 @@ WHERE uid = $1
             .await
             .unwrap();
         assert_eq!(held(&mut tx, 50).await, vec![1]);
+        sqlx::query(
+            "UPDATE solana.settlement_executions SET outcome = 'timeout', end_slot = 100, \
+             end_timestamp = now() WHERE auction_id = 77",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(held(&mut tx, 150).await, vec![1]);
 
         sqlx::query(
             "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \

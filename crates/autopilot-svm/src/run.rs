@@ -9,7 +9,6 @@ use {
             db,
             driver::Driver,
             executor::DriverExecutor,
-            inflight::InFlightOrders,
             listen::ListenSession,
             observation::SettlementWindows,
             observer::CompetitionObserver,
@@ -89,10 +88,7 @@ async fn run(config: Config) {
         .await
         .expect("database connection");
 
-    // One shared hold-out: the executor holds into it, the auction cut reads
-    // it, and the settlement observer releases from it.
-    let inflight = InFlightOrders::default();
-    let windows = SettlementWindows::new(pool.clone(), inflight.clone());
+    let windows = SettlementWindows::new(pool.clone());
     let listen = ListenSession::spawn(
         pool.clone(),
         db::SETTLEMENT_FINALIZED_CHANNEL,
@@ -135,7 +131,6 @@ async fn run(config: Config) {
                 CommitmentConfig::confirmed(),
             ),
             config.max_indexer_lag_slots,
-            inflight.clone(),
             NativePrices::new(
                 &config.native_prices,
                 SolanaRPC::new_with_timeout_and_commitment(
@@ -154,12 +149,7 @@ async fn run(config: Config) {
             config.competition.max_winners.get(),
             Pubkey(config.contracts.wrapped_native_mint.to_bytes()),
         )),
-        Box::new(DriverExecutor::new(
-            drivers,
-            windows.clone(),
-            sponsor,
-            inflight,
-        )),
+        Box::new(DriverExecutor::new(drivers, windows.clone(), sponsor)),
         Box::new(CompetitionObserver::new(pool, windows)),
         config.competition.submission_deadline_slots.get(),
     );

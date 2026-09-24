@@ -3,7 +3,7 @@
 use {
     crate::{
         domain::{auction::Order, cycle::SolanaCycle},
-        infra::{db, inflight::InFlightOrders, order_events, prices::NativePrices},
+        infra::{db, order_events, prices::NativePrices},
         run_loop::AuctionProvider,
     },
     async_trait::async_trait,
@@ -25,25 +25,15 @@ pub struct DbAuctionProvider {
     rpc: SolanaRPC,
     /// Slots the indexer may lag behind the tip before cuts are skipped.
     max_indexer_lag: u64,
-    /// Orders with a settlement in flight, excluded from cuts until their
-    /// settlement transaction cannot land any more.
-    inflight: InFlightOrders,
     prices: NativePrices,
 }
 
 impl DbAuctionProvider {
-    pub fn new(
-        pool: PgPool,
-        rpc: SolanaRPC,
-        max_indexer_lag: u64,
-        inflight: InFlightOrders,
-        prices: NativePrices,
-    ) -> Self {
+    pub fn new(pool: PgPool, rpc: SolanaRPC, max_indexer_lag: u64, prices: NativePrices) -> Self {
         Self {
             pool,
             rpc,
             max_indexer_lag,
-            inflight,
             prices,
         }
     }
@@ -144,19 +134,16 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             .ok()?;
         // An order with a settlement in flight stays out until the
         // settlement cannot land any more: a second winner could
-        // double-settle it. The competition tables hold it through the
-        // deadline and survive a restart, the in-memory hold covers the
-        // blockhash lifetime past it. A failed read skips the cut rather
-        // than cutting without the hold.
+        // double-settle it. A failed read skips the cut rather than cutting
+        // without the hold.
         let tip_slot = i64::try_from(*tip).unwrap_or(i64::MAX);
-        let mut held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, tip_slot).await {
+        let held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, tip_slot).await {
             Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
             Err(err) => {
                 tracing::warn!(?err, "in-flight order lookup failed, skipping the cut");
                 return None;
             }
         };
-        held.extend(self.inflight.held_at(*tip));
         let (orders, held_out): (Vec<_>, Vec<_>) = orders
             .into_iter()
             .partition(|order| !held.contains(&order.uid));
@@ -311,7 +298,6 @@ mod tests {
             sqlx::PgPool::connect_lazy("postgresql://").unwrap(),
             SolanaRPC::new_mock_with_mocks(mocks),
             150,
-            InFlightOrders::default(),
             NativePrices::seeded([]),
         )
     }
