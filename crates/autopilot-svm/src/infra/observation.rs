@@ -134,14 +134,44 @@ mod tests {
         std::time::Duration,
     };
 
-    async fn insert_settlement(pool: &PgPool, auction_id: i64) {
+    /// A persisted execution of order `[order; 32]` inside solution `uid` of
+    /// the auction.
+    async fn insert_execution(pool: &PgPool, auction_id: i64, uid: i64, order: u8) {
+        sqlx::query(
+            "INSERT INTO solana.proposed_trade_executions (auction_id, solution_uid, order_uid, \
+             executed_sell, executed_buy) VALUES ($1, $2, $3, 10, 20)",
+        )
+        .bind(auction_id)
+        .bind(uid)
+        .bind([order; 32])
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// A landed settlement of the auction by solver 7 under signature
+    /// `[signature; 64]`, trading the given orders. The trades go in first:
+    /// the indexer commits both together, so the NOTIFY the settlement fires
+    /// never sees a settlement without its trades.
+    async fn insert_settlement(pool: &PgPool, auction_id: i64, signature: u8, orders: &[u8]) {
+        for order in orders {
+            sqlx::query(
+                "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, \
+                 sell_amount, buy_amount, fee_amount) VALUES ($1, 0, $2, 10, 20, 0)",
+            )
+            .bind([signature; 64])
+            .bind([*order; 32])
+            .execute(pool)
+            .await
+            .unwrap();
+        }
         sqlx::query(
             r#"
 INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, auction_id, solution_uid)
 VALUES (10, $1, 0, $2, $3, NULL)
             "#,
         )
-        .bind([9u8; 64])
+        .bind([signature; 64])
         .bind([7u8; 32])
         .bind(auction_id)
         .execute(pool)
@@ -155,6 +185,21 @@ VALUES (10, $1, 0, $2, $3, NULL)
             .fetch_one(pool)
             .await
             .unwrap()
+    }
+
+    /// Outcome and signature of every window of the auction, by solution uid.
+    async fn windows_of(
+        pool: &PgPool,
+        auction_id: i64,
+    ) -> Vec<(i64, Option<String>, Option<Vec<u8>>)> {
+        sqlx::query_as(
+            "SELECT solution_uid, outcome, submitted_signature FROM solana.settlement_executions \
+             WHERE auction_id = $1 ORDER BY solution_uid",
+        )
+        .bind(auction_id)
+        .fetch_all(pool)
+        .await
+        .unwrap()
     }
 
     /// The full path: a dispatched settlement opens a window, the trigger's
@@ -172,6 +217,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
             .open_dispatched(4242, solver, 1, 90, 100)
             .await
             .unwrap();
+        insert_execution(&pool, 4242, 1, 1).await;
 
         let task = ListenSession::spawn(
             pool.clone(),
@@ -179,7 +225,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
             windows.clone(),
         );
 
-        insert_settlement(&pool, 4242).await;
+        insert_settlement(&pool, 4242, 9, &[1]).await;
 
         for _ in 0..200 {
             if outcome(&pool, 4242).await.is_some() {
@@ -222,7 +268,8 @@ VALUES (10, $1, 0, $2, $3, NULL)
 
         // A settlement observed after the timeout upgrades the verdict: it
         // executed, just late.
-        insert_settlement(&pool, 1).await;
+        insert_execution(&pool, 1, 1, 1).await;
+        insert_settlement(&pool, 1, 9, &[1]).await;
         crate::infra::db::close_landed_windows(&pool, 1)
             .await
             .unwrap();
@@ -264,7 +311,8 @@ VALUES (10, $1, 0, $2, $3, NULL)
             .await
             .unwrap();
 
-        insert_settlement(&pool, 1).await;
+        insert_execution(&pool, 1, 1, 1).await;
+        insert_settlement(&pool, 1, 9, &[1]).await;
         crate::infra::db::close_landed_windows(&pool, 1)
             .await
             .unwrap();
@@ -272,5 +320,49 @@ VALUES (10, $1, 0, $2, $3, NULL)
 
         windows.close_rejected(1, Pubkey([7; 32]), 1).await.unwrap();
         assert_eq!(outcome(&pool, 1).await.as_deref(), Some("landed"));
+    }
+
+    /// A solver holding two windows of one auction: the settlement that
+    /// traded the first solution's order closes only that window, the second
+    /// window closes on its own settlement with its own signature.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_a_landing_closes_only_the_window_it_executed() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+
+        let solver = Pubkey([7; 32]);
+        let windows = SettlementWindows::new(pool.clone());
+        for (uid, order) in [(1, 1u8), (2, 2)] {
+            windows
+                .open_dispatched(1, solver, uid, 90, 100)
+                .await
+                .unwrap();
+            insert_execution(&pool, 1, uid, order).await;
+        }
+
+        insert_settlement(&pool, 1, 9, &[1]).await;
+        crate::infra::db::close_landed_windows(&pool, 1)
+            .await
+            .unwrap();
+        assert_eq!(
+            windows_of(&pool, 1).await,
+            vec![
+                (1, Some("landed".to_string()), Some(vec![9u8; 64])),
+                (2, None, None),
+            ]
+        );
+
+        insert_settlement(&pool, 1, 8, &[2]).await;
+        crate::infra::db::close_landed_windows(&pool, 1)
+            .await
+            .unwrap();
+        assert_eq!(
+            windows_of(&pool, 1).await,
+            vec![
+                (1, Some("landed".to_string()), Some(vec![9u8; 64])),
+                (2, Some("landed".to_string()), Some(vec![8u8; 64])),
+            ]
+        );
     }
 }
