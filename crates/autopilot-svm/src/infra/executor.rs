@@ -127,6 +127,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                                 "failed to close the settlement window"
                             );
                         }
+                        return;
                     }
                     Err(err) => tracing::error!(
                         driver = %driver.name,
@@ -134,6 +135,15 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                         ?err,
                         "settlement failed"
                     ),
+                }
+                // The window stays with this task until it resolves: the
+                // indexer closes it as landed, or the deadline passes and it
+                // times out here.
+                if let Err(err) = windows
+                    .expire_when_due(auction_id, solver, uid, deadline)
+                    .await
+                {
+                    tracing::error!(auction_id, ?err, "failed to time out the settlement window");
                 }
             });
         }

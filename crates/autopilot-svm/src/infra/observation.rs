@@ -5,10 +5,11 @@
 //! The executor opens a window per dispatched settlement. The indexer's
 //! insert into `solana.settlements` fires the `solana_settlement_finalized`
 //! NOTIFY (trigger in the schema), a [`ListenSession`] delivers it here, and
-//! the window closes as `landed`. Windows whose submission deadline passes
-//! without a settlement close as `timeout`. Windows live in the database, so
-//! a restart mid-window loses nothing: the listen seed re-checks every open
-//! window.
+//! the window closes as `landed`. The task that dispatched the settlement
+//! waits out the submission deadline and closes the window as `timeout` if
+//! nothing landed by then. Windows live in the database, so a restart
+//! mid-window loses nothing: the listen seed re-checks every open window and
+//! the startup sweep times out the overdue ones.
 
 use {
     crate::infra::{db, listen::NotifyHandler},
@@ -16,13 +17,13 @@ use {
     async_trait::async_trait,
     chain_types::solana::{Pubkey, Signature},
     sqlx::PgPool,
+    tokio::sync::watch,
 };
 
 /// The settlement-execution windows in `solana.settlement_executions`: the
-/// executor opens one per dispatched settlement, the competition cycle
-/// expires the ones past their deadline, and the
-/// `solana_settlement_finalized` notifications close the ones the indexer
-/// saw land.
+/// executor opens one per dispatched settlement and times it out at its
+/// deadline, and the `solana_settlement_finalized` notifications close the
+/// ones the indexer saw land.
 ///
 /// `outcome` records what the indexer observed on chain, which is why a
 /// landing observed after the deadline overwrites a timeout. The one
@@ -31,11 +32,13 @@ use {
 #[derive(Clone)]
 pub struct SettlementWindows {
     pool: PgPool,
+    /// The chain tip, advanced by the slot poller.
+    tip: watch::Receiver<u64>,
 }
 
 impl SettlementWindows {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, tip: watch::Receiver<u64>) -> Self {
+        Self { pool, tip }
     }
 
     /// Open a window for a dispatched settlement. `solution_uid` is the
@@ -73,12 +76,37 @@ impl SettlementWindows {
     }
 
     /// Close every open window whose deadline is at or before the slot as
-    /// timed out, logging each. Driven by the competition cycle and by the
-    /// idle sweep, so a timeout surfaces even when no auction is running.
+    /// timed out, logging each. Runs at startup for the windows a previous
+    /// process left behind and inside every competition cycle. A live
+    /// dispatch times its own window out through [`Self::expire_when_due`].
     pub async fn expire_past_deadline(&self, slot: u64) -> Result<()> {
         let slot = to_db_integer(slot);
         for auction_id in db::expire_settlement_windows(&self.pool, slot).await? {
             tracing::error!(auction_id, slot, "settlement missed its deadline");
+        }
+        Ok(())
+    }
+
+    /// Wait for the tip to reach the window's deadline, then close the window
+    /// as timed out if the indexer has not closed it by then. Returns once the
+    /// window is resolved either way, or when the slot poller is gone.
+    pub async fn expire_when_due(
+        &self,
+        auction_id: i64,
+        solver: Pubkey,
+        solution_uid: i64,
+        deadline_slot: u64,
+    ) -> Result<()> {
+        let mut tip = self.tip.clone();
+        let slot = match tip.wait_for(|slot| *slot >= deadline_slot).await {
+            Ok(slot) => to_db_integer(*slot),
+            Err(_) => return Ok(()),
+        };
+        let expired =
+            db::expire_settlement_window(&self.pool, auction_id, solver, solution_uid, slot)
+                .await?;
+        if expired {
+            tracing::error!(auction_id, %solver, solution_uid, slot, "settlement missed its deadline");
         }
         Ok(())
     }
@@ -132,7 +160,13 @@ mod tests {
         chain_types::solana::Pubkey,
         sqlx::PgPool,
         std::time::Duration,
+        tokio::sync::watch,
     };
+
+    /// Windows over a tip that never moves.
+    fn windows(pool: &PgPool) -> SettlementWindows {
+        SettlementWindows::new(pool.clone(), watch::channel(0).1)
+    }
 
     /// A persisted execution of order `[order; 32]` inside solution `uid` of
     /// the auction.
@@ -212,7 +246,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         crate::test_db::wipe(&pool).await;
 
         let solver = Pubkey([7; 32]);
-        let windows = SettlementWindows::new(pool.clone());
+        let windows = windows(&pool);
         windows
             .open_dispatched(4242, solver, 1, 90, 100)
             .await
@@ -252,7 +286,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        let windows = SettlementWindows::new(pool.clone());
+        let windows = windows(&pool);
         windows
             .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
             .await
@@ -284,7 +318,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        let windows = SettlementWindows::new(pool.clone());
+        let windows = windows(&pool);
         windows
             .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
             .await
@@ -305,7 +339,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        let windows = SettlementWindows::new(pool.clone());
+        let windows = windows(&pool);
         windows
             .open_dispatched(1, Pubkey([7; 32]), 1, 90, 100)
             .await
@@ -332,7 +366,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
         crate::test_db::wipe(&pool).await;
 
         let solver = Pubkey([7; 32]);
-        let windows = SettlementWindows::new(pool.clone());
+        let windows = windows(&pool);
         for (uid, order) in [(1, 1u8), (2, 2)] {
             windows
                 .open_dispatched(1, solver, uid, 90, 100)
@@ -362,6 +396,53 @@ VALUES (10, $1, 0, $2, $3, NULL)
             vec![
                 (1, Some("landed".to_string()), Some(vec![9u8; 64])),
                 (2, Some("landed".to_string()), Some(vec![8u8; 64])),
+            ]
+        );
+    }
+
+    /// The dispatching task waits for the tip to reach the deadline, then
+    /// times out the window still open and leaves the one the indexer closed.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_dispatch_task_times_out_its_window_at_the_deadline() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+
+        let solver = Pubkey([7; 32]);
+        let (tip, receiver) = watch::channel(90);
+        let windows = SettlementWindows::new(pool.clone(), receiver);
+        for uid in [1, 2] {
+            windows
+                .open_dispatched(1, solver, uid, 90, 100)
+                .await
+                .unwrap();
+        }
+        insert_execution(&pool, 1, 2, 2).await;
+        insert_settlement(&pool, 1, 9, &[2]).await;
+        crate::infra::db::close_landed_windows(&pool, 1)
+            .await
+            .unwrap();
+
+        let waiters = tokio::spawn({
+            let windows = windows.clone();
+            async move {
+                windows.expire_when_due(1, solver, 1, 100).await.unwrap();
+                windows.expire_when_due(1, solver, 2, 100).await.unwrap();
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !waiters.is_finished(),
+            "nothing expires before the deadline"
+        );
+
+        tip.send(100).unwrap();
+        waiters.await.unwrap();
+        assert_eq!(
+            windows_of(&pool, 1).await,
+            vec![
+                (1, Some("timeout".to_string()), None),
+                (2, Some("landed".to_string()), Some(vec![9u8; 64])),
             ]
         );
     }

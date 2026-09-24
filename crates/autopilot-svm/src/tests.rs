@@ -30,7 +30,7 @@ use {
     database::byte_array::ByteArray,
     sqlx::PgPool,
     std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration},
-    tokio::sync::mpsc,
+    tokio::sync::{mpsc, watch},
     url::Url,
 };
 
@@ -225,7 +225,8 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }
 
-    let windows = SettlementWindows::new(pool.clone());
+    let (slots, slot_watch) = watch::channel(tip);
+    let windows = SettlementWindows::new(pool.clone(), slot_watch);
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
         Box::new(DbAuctionProvider::new(
@@ -309,9 +310,25 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         held_provider.cut_auction(&(tip + 25)).await.is_none(),
         "in-flight order excluded from the cut"
     );
-    // The deadline sweep closes the window as timed out. The hold outlasts
-    // it by the blockhash lifetime.
-    windows.expire_past_deadline(tip + 25).await.unwrap();
+    // The dispatch task times the window out once the tip reaches the
+    // deadline. The hold outlasts it by the blockhash lifetime.
+    slots.send(tip + 25).unwrap();
+    let outcome = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let outcome: Option<String> =
+                sqlx::query_scalar("SELECT outcome FROM solana.settlement_executions")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            if let Some(outcome) = outcome {
+                return outcome;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("window timed out before the timeout");
+    assert_eq!(outcome, "timeout");
     assert!(
         held_provider.cut_auction(&(expired - 1)).await.is_none(),
         "order stays held while its transaction can still land"
