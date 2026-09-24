@@ -17,10 +17,12 @@ pub struct Solution {
     /// The on-chain identity of the solver that produced this solution.
     pub solver: Pubkey,
     /// Uniform clearing prices by mint: the sell mint maps to the amount
-    /// bought and the buy mint to the amount sold, so for every trade
-    /// `executed_sell * price_sell == executed_buy * price_buy`. The engine
-    /// currently only produces single-order solutions, so the pair is the
-    /// executed swap's ratio.
+    /// bought and the buy mint to the amount sold, describing the engine's fill
+    /// before the solver fee. For every trade the engine reported
+    /// `executed_sell * price_sell == executed_buy * price_buy`. Once the
+    /// solver fee is applied (in `compute_solutions`), the trade legs are
+    /// post-fee and no longer satisfy that identity. Nothing reads `prices`
+    /// after conversion.
     pub prices: HashMap<Pubkey, NonZero<u64>>,
     pub trades: Vec<Trade>,
     /// Solana instructions to execute as part of the settlement.
@@ -46,4 +48,7 @@ pub struct Trade {
     pub executed_sell: u64,
     /// Buy-token units executed.
     pub executed_buy: u64,
+    /// Solver fee units retained, in the buy mint for a sell order and the
+    /// sell mint for a buy order. Zero when the solver charges no fee.
+    pub solver_fee: u64,
 }

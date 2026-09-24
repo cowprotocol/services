@@ -6,6 +6,7 @@ pub mod order_uid;
 pub mod settlement;
 pub mod slot;
 pub mod solution;
+pub mod solver_fee;
 
 pub use self::{
     auction::{Auction, Id, Order, Side},
