@@ -168,14 +168,12 @@ WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3 AND outcome IS NULL
     Ok(())
 }
 
-/// Close the auction's windows against the settlements the indexer recorded,
-/// matching each window to its solver's settlement. A window already closed
-/// as timed out upgrades to landed: the settlement executed, just late, and
-/// lateness stays visible as `end_slot` past `deadline_slot`.
-///
-/// A settlement carries no solution uid, so a solver holding several windows
-/// of one auction closes all of them on its first settlement. Correct while
-/// one solver wins at most one solution per auction.
+/// Close the auction's windows against the settlements the indexer recorded.
+/// A settlement carries no solution uid, so a window is matched through its
+/// solution's trade executions: the solver's settlement that traded one of
+/// them is the one that executed it. A window already closed as timed out
+/// upgrades to landed: the settlement executed, just late, and lateness stays
+/// visible as `end_slot` past `deadline_slot`.
 pub async fn close_landed_windows(
     ex: impl PgExecutor<'_>,
     auction_id: i64,
@@ -189,6 +187,15 @@ WHERE e.auction_id = $1
   AND s.auction_id = e.auction_id
   AND s.solver = e.solver
   AND (e.outcome IS NULL OR e.outcome = 'timeout')
+  AND EXISTS (
+      SELECT 1
+      FROM solana.proposed_trade_executions pte
+      JOIN solana.trades t
+        ON t.tx_signature = s.tx_signature
+       AND t.instruction_index = s.instruction_index
+       AND t.order_uid = pte.order_uid
+      WHERE pte.auction_id = e.auction_id AND pte.solution_uid = e.solution_uid
+  )
 RETURNING e.solver, e.end_slot, e.submitted_signature
     "#;
     sqlx::query_as(QUERY)
