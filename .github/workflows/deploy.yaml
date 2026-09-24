@@ -104,7 +104,7 @@ jobs:
 
       # Package the locally compiled binaries using the shared CI action.
       - name: Package services image and export digest
-        uses: cowprotocol/cow-gh-workflow-tests/actions/build-image@ac1c1d7fd2f008a706d86300ce9f8b4f251462bb
+        uses: cowprotocol/cow-gh-workflow-tests/actions/build-image@d0c0cd20fa1f5f8cbaf926d0f45752907749ccd6
         with:
           image: ghcr.io/${{ github.repository }}
           platform: linux/${{ matrix.arch }}
@@ -123,7 +123,7 @@ jobs:
   # downloads this run's digest artifacts and applies tags to the image index.
   publish:
     needs: build
-    uses: cowprotocol/cow-gh-workflow-tests/.github/workflows/publish-image.yml@ac1c1d7fd2f008a706d86300ce9f8b4f251462bb
+    uses: cowprotocol/cow-gh-workflow-tests/.github/workflows/publish-image.yml@d0c0cd20fa1f5f8cbaf926d0f45752907749ccd6
     with:
       image: ghcr.io/${{ github.repository }}
       digest-artifact-pattern: services-digest-*
@@ -138,7 +138,7 @@ jobs:
   # build workflow. Preserve the existing services -> migrations publish order.
   migrations:
     needs: publish
-    uses: cowprotocol/cow-gh-workflow-tests/.github/workflows/build-image.yml@ac1c1d7fd2f008a706d86300ce9f8b4f251462bb
+    uses: cowprotocol/cow-gh-workflow-tests/.github/workflows/build-image.yml@d0c0cd20fa1f5f8cbaf926d0f45752907749ccd6
     with:
       image: ghcr.io/${{ github.repository }}-migration
       context: .
