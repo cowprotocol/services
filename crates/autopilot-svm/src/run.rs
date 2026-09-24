@@ -33,8 +33,8 @@ use {
 };
 
 /// How often the idle sweep closes overdue settlement windows. Coarser than
-/// a submission deadline, fine enough that stale windows never hold orders
-/// out of auctions for long.
+/// a submission deadline, fine enough that a missed deadline is flagged
+/// within seconds of passing.
 const IDLE_SWEEP_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Fails the liveness probe when the auction loop stops completing cycles.
