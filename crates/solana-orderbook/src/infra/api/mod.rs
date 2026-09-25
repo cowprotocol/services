@@ -184,6 +184,24 @@ impl State {
     pub fn sponsoring(&self) -> Option<&Sponsoring> {
         self.0.sponsoring.as_ref()
     }
+
+    /// The chain's block height, which decides whether a pending sponsored
+    /// creation can still land. `None` without sponsoring, which stores no
+    /// creation deadlines, or when the read fails: the deadline check is
+    /// skipped rather than the request failed.
+    pub async fn block_height(&self) -> Option<i64> {
+        let sponsoring = self.sponsoring()?;
+        match sponsoring.rpc.block_height().await {
+            Ok(height) => i64::try_from(u64::from(height)).ok(),
+            Err(err) => {
+                tracing::warn!(
+                    ?err,
+                    "block height read failed, creation deadlines unchecked"
+                );
+                None
+            }
+        }
+    }
 }
 
 struct Inner {
