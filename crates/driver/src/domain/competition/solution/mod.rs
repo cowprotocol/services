@@ -334,7 +334,7 @@ impl Solution {
                 !matches!(
                     policy,
                     order::FeePolicy::Volume {
-                        excluded_from_score: true,
+                        contributes_to_score: false,
                         ..
                     }
                 )

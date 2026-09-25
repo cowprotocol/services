@@ -122,9 +122,9 @@ impl Auction {
     /// fee machinery makes the delivered price correspondingly worse.
     pub fn with_solver_fee(mut self, policy: &competition::order::FeePolicy) -> Self {
         for order in &mut self.orders {
-            let mut data = (*order.data).clone();
-            data.protocol_fees.push(policy.clone());
-            order.data = Arc::new(data);
+            Arc::make_mut(&mut order.data)
+                .protocol_fees
+                .push(policy.clone());
         }
         self
     }

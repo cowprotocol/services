@@ -355,7 +355,11 @@ impl Solver {
     pub fn solver_fee(&self) -> Option<order::FeePolicy> {
         (self.config.solver_fee_bps > 0).then(|| order::FeePolicy::Volume {
             factor: f64::from(self.config.solver_fee_bps) / f64::from(dto::MAX_BASE_POINT),
-            excluded_from_score: true,
+            // A protocol fee counts towards the score because the protocol
+            // captures it on top of the surplus the solution delivers. This
+            // one the solver keeps for itself, so counting it would let a
+            // solver bid with money it never passes on.
+            contributes_to_score: false,
         })
     }
 

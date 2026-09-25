@@ -274,7 +274,7 @@ impl Order {
                         },
                         FeePolicy::Volume { factor } => competition::order::FeePolicy::Volume {
                             factor,
-                            excluded_from_score: false,
+                            contributes_to_score: true,
                         },
                     })
                     .collect(),

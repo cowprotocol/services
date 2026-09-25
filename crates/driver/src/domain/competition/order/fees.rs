@@ -43,7 +43,9 @@ pub enum FeePolicy {
         /// Percentage of the order's volume should be taken as a protocol
         /// fee.
         factor: f64,
-        /// Whether this policy is excluded from the score computation.
-        excluded_from_score: bool,
+        /// Whether the fee this policy takes counts towards the solution's
+        /// score. True for protocol fees, which the protocol captures, and
+        /// false for a fee the solver charges for itself.
+        contributes_to_score: bool,
     },
 }
