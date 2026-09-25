@@ -80,7 +80,13 @@ fn with_fast_path_exclusivity(
 #[tokio::test]
 #[ignore]
 async fn local_node_fast_path_settle() {
-    run_test(fast_path_settle).await;
+    run_test(|web3| fast_path_settle(web3, OrderKind::Sell)).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_fast_path_settle_buy_order() {
+    run_test(|web3| fast_path_settle(web3, OrderKind::Buy)).await;
 }
 
 #[tokio::test]
@@ -129,7 +135,9 @@ async fn local_node_fast_path_penalty_cap() {
 /// fee, at exactly the quote and with no slippage of the user's own. The fee is
 /// what made that quote conservative, so the settlement has to land on the
 /// signed limit and the fast path itself has to be what settles it.
-async fn fast_path_settle(web3: Web3) {
+/// Run for both sides, because the fee narrows what a sell order receives but
+/// widens what a buy order pays.
+async fn fast_path_settle(web3: Web3, side: OrderKind) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
@@ -138,11 +146,14 @@ async fn fast_path_settle(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
-    let sell_amount = 1u64.eth();
+    // The traded amount is the sell amount of a sell order and the buy amount
+    // of a buy order, which pays the fee on top, so fund more than that.
+    let amount = 1u64.eth();
+    let funded = amount * U256::from(2u8);
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance, sell_amount)
+        .approve(onchain.contracts().allowance, funded)
         .from(trader.address())
         .send_and_watch()
         .await
@@ -152,7 +163,7 @@ async fn fast_path_settle(web3: Web3) {
         .weth
         .deposit()
         .from(trader.address())
-        .value(sell_amount)
+        .value(funded)
         .send_and_watch()
         .await
         .unwrap();
@@ -182,9 +193,14 @@ async fn fast_path_settle(web3: Web3) {
         from: trader.address(),
         sell_token: *onchain.contracts().weth.address(),
         buy_token: *token.address(),
-        side: OrderQuoteSide::Sell {
-            sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(sell_amount).unwrap(),
+        side: match side {
+            OrderKind::Sell => OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(amount).unwrap(),
+                },
+            },
+            OrderKind::Buy => OrderQuoteSide::Buy {
+                buy_amount_after_fee: NonZeroU256::try_from(amount).unwrap(),
             },
         },
         app_data: OrderCreationAppData::Full {
@@ -195,15 +211,23 @@ async fn fast_path_settle(web3: Web3) {
     let quote = services.submit_quote(&quote_request).await.unwrap();
     let quote_id = quote.id.expect("fast-path quote should carry an id");
 
+    // Signed at the quote with no slippage of the user's own: a sell order
+    // receives exactly what it was quoted, a buy order pays exactly what it was
+    // quoted, fee included.
+    let (signed_sell, signed_buy) = match side {
+        OrderKind::Sell => (amount, quote.quote.buy_amount),
+        OrderKind::Buy => (quote.quote.sell_amount + quote.quote.fee_amount, amount),
+    };
+
     tracing::info!("Placing the fast-path order.");
     let order = OrderCreation {
         quote_id: Some(quote_id),
         sell_token: *onchain.contracts().weth.address(),
-        sell_amount,
+        sell_amount: signed_sell,
         buy_token: *token.address(),
-        buy_amount: quote.quote.buy_amount,
+        buy_amount: signed_buy,
         valid_to: model::time::now_in_epoch_seconds() + 3600,
-        kind: OrderKind::Sell,
+        kind: side,
         app_data: OrderCreationAppData::Full { full: app_data },
         ..Default::default()
     }
@@ -264,11 +288,15 @@ async fn fast_path_settle(web3: Web3) {
     );
 
     // And the fill respects what the user signed, solver fee included.
+    let filled_sell: U256 = trade.sell_amount.to_string().parse().unwrap();
     let filled_buy: U256 = trade.buy_amount.to_string().parse().unwrap();
     assert!(
-        filled_buy >= quote.quote.buy_amount,
-        "filled at {filled_buy} but the user signed for {}",
-        quote.quote.buy_amount,
+        filled_buy >= signed_buy,
+        "received {filled_buy} but signed for at least {signed_buy}",
+    );
+    assert!(
+        filled_sell <= signed_sell,
+        "paid {filled_sell} but signed for at most {signed_sell}",
     );
 }
 
