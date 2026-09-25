@@ -77,7 +77,7 @@ impl Fulfillment {
             ),
         };
 
-        Fulfillment::new(order, executed, fee, self.haircut_fee()).map_err(Into::into)
+        Fulfillment::new(order, executed, fee).map_err(Into::into)
     }
 
     /// Computed protocol fee in surplus token.
@@ -118,7 +118,7 @@ impl Fulfillment {
                 )?;
                 self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
             }
-            FeePolicy::Volume { factor } => {
+            FeePolicy::Volume { factor, .. } => {
                 let fee_from_volume = self.fee_from_volume(prices, *factor)?;
                 tracing::debug!(
                     uid = ?self.order().uid,

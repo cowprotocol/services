@@ -180,9 +180,6 @@ impl Solution {
                     },
                     jit.executed(),
                     jit.fee(),
-                    // JIT orders don't get haircut because they supply private
-                    // liquidity which should not prone to negative slippage.
-                    eth::U256::ZERO,
                 )
                 .map_err(error::Solution::InvalidJitTrade)?,
             );
@@ -337,6 +334,9 @@ impl Solution {
                 trade.side(),
                 executed,
                 trade.custom_prices(&uniform_prices)?,
+                // Every policy is passed on, including the ones that do not
+                // count towards the score: scoring needs them to reconstruct
+                // the prices the earlier policies were applied at.
                 trade.protocol_fees(),
             ))
         }
@@ -615,17 +615,25 @@ impl Solution {
             return Err(error::Error::FastPathLimitNotMet);
         }
 
-        let (flashloans, wrappers) = recover_flashloans_and_wrappers(&order);
-        *user = user.with_order(order)?;
-        solution.flashloans = flashloans;
-        solution.wrappers = wrappers;
+        // Fast-path orders are fill-or-kill and shouldn't contain any fees. In
+        // the case the solver charges a solver fee this should have been
+        // reflected in the quote and thus in the signed limit prices already.
+        let executed = order.target();
+        *user = Fulfillment::new(order, executed, Default::default())?;
 
-        // Pin the fill to the signed limit so it settles at exactly
-        // the price the autopilot expects.
+        // However, limit prices may be different than the ones found in the
+        // quote, because the orderbook adds room for network and
+        // protocol fees. Update the solution accordingly.
         let sell = user.order().sell.token.as_erc20(self.weth);
         let buy = user.order().buy.token.as_erc20(self.weth);
         solution.prices.insert(sell, limit_prices.buy);
         solution.prices.insert(buy, limit_prices.sell);
+
+        // Add other parts the quote might not have known about
+        let (flashloans, wrappers) = recover_flashloans_and_wrappers(user.order());
+        solution.flashloans = flashloans;
+        solution.wrappers = wrappers;
+
         Ok(solution)
     }
 
@@ -691,16 +699,6 @@ impl Solution {
                     order::signature::Scheme::Eip1271
                 )
             })
-    }
-
-    /// Returns true if any trade in this solution has a non-zero haircut fee.
-    /// Used to determine if simulation failures should suppress solver
-    /// notifications.
-    pub fn has_haircut(&self) -> bool {
-        self.trades.iter().any(|trade| match trade {
-            Trade::Fulfillment(fulfillment) => !fulfillment.haircut_fee().is_zero(),
-            Trade::Jit(_) => false, // JIT orders don't have haircut
-        })
     }
 }
 
