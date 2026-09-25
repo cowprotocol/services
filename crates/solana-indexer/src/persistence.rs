@@ -47,7 +47,8 @@ fn from_db_uid(uid: Vec<u8>) -> [u8; 32] {
 enum DeadLetterReason {
     /// The transaction failed to decode.
     DecoderError,
-    /// A settlement trade named an order PDA with no orders row.
+    /// A settlement trade or a cancellation named an order PDA whose
+    /// creation is not indexed.
     UnresolvedOrders,
 }
 
@@ -95,7 +96,7 @@ impl Postgres {
             DecodedEvent::Settlement(SettlementEvent::OrderCancelled {
                 signature,
                 order_pda,
-            }) => Self::apply_order_cancelled(tx, signature, order_pda).await,
+            }) => Self::apply_order_cancelled(tx, signature, order_pda, slot).await,
             DecodedEvent::Settlement(other) => {
                 tracing::debug!(event = ?other, "settlement event without a persistence mapping");
                 Ok(())
@@ -163,38 +164,64 @@ ON CONFLICT (uid) DO NOTHING
         Ok(())
     }
 
-    /// Stamp the cancellation on the live order the PDA names and record the
-    /// event. A replay or a repeated cancel finds the order stamped already
-    /// and changes nothing. A PDA without a live row is only reachable
-    /// through a manually repaired database.
+    /// Stamp the cancellation on the order the PDA names and record the
+    /// event, unless the order is already fully filled: reclaiming a filled
+    /// order cancels it on chain, and that cleanup is no `cancelled` event.
+    /// A replay or a repeated cancel finds the order stamped and changes
+    /// nothing. A PDA whose creation is not indexed dead-letters the
+    /// transaction, so the cancel runs again once the creation lands.
     async fn apply_order_cancelled(
         tx: &mut PgTransaction<'_>,
         signature: Signature,
         order_pda: Pubkey,
+        slot: Slot,
     ) -> Result<(), PersistenceError> {
         let order_uid: Option<[u8; 32]> = sqlx::query_scalar(
+            r#"
+SELECT pda.order_uid
+FROM solana.order_pda AS pda
+JOIN solana.orders AS o ON o.uid = pda.order_uid
+WHERE o.order_pda = $1
+            "#,
+        )
+        .bind(order_pda.to_bytes())
+        .fetch_optional(&mut **tx)
+        .await?
+        .map(from_db_uid);
+        let Some(order_uid) = order_uid else {
+            tracing::warn!(
+                order_pda = %order_pda,
+                "cancellation of an order PDA without an indexed creation, transaction dead-lettered"
+            );
+            Self::insert_dead_letter(
+                &mut **tx,
+                signature,
+                slot,
+                DeadLetterReason::UnresolvedOrders,
+            )
+            .await?;
+            return Ok(());
+        };
+        let filled: Option<bool> = sqlx::query_scalar(
             r#"
 UPDATE solana.order_pda AS pda
 SET cancellation_timestamp = now(), cancelled_by_tx = $2
 FROM solana.orders AS o
-WHERE o.order_pda = $1 AND pda.order_uid = o.uid AND pda.cancellation_timestamp IS NULL
-RETURNING pda.order_uid
+WHERE pda.order_uid = $1 AND o.uid = pda.order_uid AND pda.cancellation_timestamp IS NULL
+RETURNING CASE o.kind
+    WHEN 'sell' THEN pda.amount_withdrawn >= o.sell_amount
+    ELSE pda.amount_received >= o.buy_amount
+END
             "#,
         )
-        .bind(order_pda.to_bytes())
+        .bind(order_uid)
         .bind(signature.as_ref())
         .fetch_optional(&mut **tx)
-        .await?
-        .map(from_db_uid);
-        match order_uid {
-            Some(order_uid) => {
-                Self::insert_order_event(tx, order_uid, OrderEventLabel::Cancelled).await
-            }
-            None => {
-                tracing::debug!(order_pda = %order_pda, "cancellation without a live order to stamp");
-                Ok(())
-            }
+        .await?;
+        if filled == Some(false) {
+            Self::insert_order_event(tx, order_uid, OrderEventLabel::Cancelled).await?;
         }
+        Ok(())
     }
 
     /// Append one auction-progress event, in the caller's transaction so the
@@ -1097,6 +1124,89 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
             .unwrap();
         assert_eq!(cancellation(&pool, uid).await, Some(vec![3; 64]));
         assert_eq!(cancelled_events(&pool, uid).await, 1);
+    }
+
+    /// A cancellation ahead of its order's creation parks the transaction as
+    /// a dead letter, and the replay after the creation stamps the order.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_cancellation_without_the_creation_dead_letters_and_replays() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+        let uid = [0x03; 32];
+        let created = created_order(uid);
+        let order_pda = created.order_pda;
+        let cancel = Signature::from([4; 64]);
+        let cancelled = || {
+            DecodedEvent::Settlement(SettlementEvent::OrderCancelled {
+                signature: cancel,
+                order_pda,
+            })
+        };
+
+        postgres
+            .persist_events(vec![cancelled()], Slot(40))
+            .await
+            .unwrap();
+        let reason: Option<String> = sqlx::query_scalar(
+            "SELECT reason::text FROM solana.dead_letter WHERE tx_signature = $1",
+        )
+        .bind(cancel.as_ref())
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        assert_eq!(reason.as_deref(), Some("unresolved_orders"));
+
+        postgres
+            .persist_events(
+                vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+                    Box::new(created),
+                ))],
+                Slot(41),
+            )
+            .await
+            .unwrap();
+        assert_eq!(cancellation(&pool, uid).await, None);
+        postgres
+            .replay_events(cancel, vec![cancelled()], Slot(42))
+            .await
+            .unwrap();
+        assert_eq!(cancellation(&pool, uid).await, Some(vec![4; 64]));
+        assert_eq!(cancelled_events(&pool, uid).await, 1);
+    }
+
+    /// Cancelling a fully filled order stamps it without a `cancelled` event:
+    /// the fill is what the order's history ends on.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_cancelling_a_filled_order_records_no_event() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+        let uid = [0x05; 32];
+        SeedOrder::new(uid).insert(&pool).await;
+        sqlx::query(
+            "INSERT INTO solana.order_pda (order_uid, created_by, amount_withdrawn) VALUES ($1, \
+             $1, 1000)",
+        )
+        .bind(uid)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        postgres
+            .persist_events(
+                vec![DecodedEvent::Settlement(SettlementEvent::OrderCancelled {
+                    signature: Signature::from([6; 64]),
+                    order_pda: Pubkey::new_from_array(uid),
+                })],
+                Slot(41),
+            )
+            .await
+            .unwrap();
+        assert_eq!(cancellation(&pool, uid).await, Some(vec![6; 64]));
+        assert_eq!(cancelled_events(&pool, uid).await, 0);
     }
 
     /// The transaction that cancelled the order, `None` while it is live.
