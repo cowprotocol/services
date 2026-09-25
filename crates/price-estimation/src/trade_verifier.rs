@@ -129,7 +129,6 @@ impl TradeVerifier {
                     gas,
                     solver: trade.solver(),
                     verified: false,
-                    supports_fast_path: trade.supports_fast_path(),
                     quote_id: Some(trade.quote_id()),
                     execution: QuoteExecution {
                         interactions: map_interactions_data(trade.interactions()),
@@ -837,7 +836,6 @@ fn ensure_quote_accuracy(
         gas: summary.gas_used.saturating_to(),
         solver: trade.solver(),
         verified: true,
-        supports_fast_path: trade.supports_fast_path(),
         quote_id: Some(trade.quote_id()),
         execution: QuoteExecution {
             interactions: map_interactions_data(trade.interactions()),
