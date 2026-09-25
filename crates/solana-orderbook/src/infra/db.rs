@@ -30,6 +30,8 @@ pub struct OrderRow {
     pub order_pda: ByteArray<32>,
     pub amount_withdrawn: BigDecimal,
     pub amount_received: BigDecimal,
+    /// When the order was cancelled: on chain through its PDA, or through the
+    /// orderbook while no PDA exists. A PDA landing later takes over.
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     /// The height the stored creation transaction dies at, while the order
     /// still awaits its on-chain creation. `None` once created, and for
@@ -46,7 +48,8 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
-       p.cancellation_timestamp,
+       COALESCE(p.cancellation_timestamp,
+                CASE WHEN p.order_uid IS NULL THEN o.cancelled_at END) AS cancellation_timestamp,
        CASE WHEN o.presigned_transaction IS NOT NULL AND p.order_uid IS NULL
             THEN o.last_valid_block_height END AS last_valid_block_height
 FROM solana.orders o
@@ -74,7 +77,8 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
-       p.cancellation_timestamp,
+       COALESCE(p.cancellation_timestamp,
+                CASE WHEN p.order_uid IS NULL THEN o.cancelled_at END) AS cancellation_timestamp,
        CASE WHEN o.presigned_transaction IS NOT NULL AND p.order_uid IS NULL
             THEN o.last_valid_block_height END AS last_valid_block_height
 FROM solana.orders o
@@ -280,6 +284,55 @@ pub async fn find_sponsored_creation(
     .context("read sponsored creation")
 }
 
+/// What an off-chain cancellation attempt found.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Cancellation {
+    /// The order was live and is cancelled, with a `cancelled` event.
+    Cancelled,
+    /// The order was cancelled off-chain before.
+    AlreadyCancelled,
+    /// The order has a PDA on chain, which only the settlement program's
+    /// `CancelOrder` instruction cancels.
+    OnChain,
+}
+
+/// Cancel a pending order off-chain: stamp `cancelled_at` on its row and append
+/// the `cancelled` event, unless a PDA exists for it.
+pub async fn cancel_order(pool: &PgPool, uid: [u8; 32]) -> Result<Cancellation> {
+    let mut tx = pool.begin().await.context("begin cancellation")?;
+    let on_chain: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM solana.order_pda WHERE order_uid = $1)")
+            .bind(ByteArray(uid))
+            .fetch_one(&mut *tx)
+            .await
+            .context("check the order PDA")?;
+    if on_chain {
+        return Ok(Cancellation::OnChain);
+    }
+    let cancelled = sqlx::query(
+        "UPDATE solana.orders SET cancelled_at = now() WHERE uid = $1 AND cancelled_at IS NULL",
+    )
+    .bind(ByteArray(uid))
+    .execute(&mut *tx)
+    .await
+    .context("cancel the order")?
+    .rows_affected()
+        == 1;
+    if !cancelled {
+        return Ok(Cancellation::AlreadyCancelled);
+    }
+    sqlx::query(
+        "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
+    )
+    .bind(ByteArray(uid))
+    .bind(OrderEventLabel::Cancelled)
+    .execute(&mut *tx)
+    .await
+    .context("insert cancelled event")?;
+    tx.commit().await.context("commit cancellation")?;
+    Ok(Cancellation::Cancelled)
+}
+
 /// The label of the order's most recent auction-progress event.
 pub async fn find_latest_order_event(
     ex: impl PgExecutor<'_>,
@@ -398,6 +451,53 @@ VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
         .execute(pool)
         .await
         .unwrap();
+    }
+
+    /// An off-chain cancellation stamps a pending order once and shows in its
+    /// row until a PDA lands, and an order with a PDA is left to the chain.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_cancel_order_stamps_a_pending_order_once() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+        sqlx::query("TRUNCATE solana.order_events")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // The seed lands a PDA row: this order is on chain.
+        assert_eq!(
+            cancel_order(&pool, uid).await.unwrap(),
+            Cancellation::OnChain
+        );
+
+        sqlx::query("DELETE FROM solana.order_pda")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            cancel_order(&pool, uid).await.unwrap(),
+            Cancellation::Cancelled
+        );
+        assert_eq!(
+            cancel_order(&pool, uid).await.unwrap(),
+            Cancellation::AlreadyCancelled
+        );
+        let row = find_order_by_uid(&pool, uid).await.unwrap().unwrap();
+        assert!(row.cancellation_timestamp.is_some());
+        assert!(matches!(
+            find_latest_order_event(&pool, uid).await.unwrap(),
+            Some(OrderEventLabel::Cancelled)
+        ));
+
+        // A creation landing afterwards makes the PDA's state the truth.
+        sqlx::query("INSERT INTO solana.order_pda (order_uid, created_by) VALUES ($1, $1)")
+            .bind(ByteArray(uid))
+            .execute(&pool)
+            .await
+            .unwrap();
+        let row = find_order_by_uid(&pool, uid).await.unwrap().unwrap();
+        assert!(row.cancellation_timestamp.is_none());
     }
 
     /// Pagination walks one owner's orders newest first, other owners are
