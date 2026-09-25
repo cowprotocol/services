@@ -37,6 +37,7 @@ serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solana-sdk = { workspace = true }
+spl-associated-token-account-interface = { workspace = true }
 spl-token-interface = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
