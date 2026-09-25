@@ -60,6 +60,11 @@ impl SlotTrigger {
             last_yielded: 0,
         }
     }
+
+    /// The poller's tip, for components that wait on slots outside the cycle.
+    pub fn tip(&self) -> watch::Receiver<u64> {
+        self.tip.clone()
+    }
 }
 
 #[async_trait]

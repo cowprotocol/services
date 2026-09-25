@@ -32,6 +32,10 @@ use {
     },
 };
 
+/// How long startup waits for the first slot before skipping the sweep of
+/// windows a previous process left behind.
+const STARTUP_SWEEP_WAIT: Duration = Duration::from_secs(10);
+
 /// Fails the liveness probe when the auction loop stops completing cycles.
 struct Liveness {
     max_auction_age: Duration,
@@ -88,18 +92,30 @@ async fn run(config: Config) {
         .await
         .expect("database connection");
 
-    let windows = SettlementWindows::new(pool.clone());
-    let listen = ListenSession::spawn(
-        pool.clone(),
-        db::SETTLEMENT_FINALIZED_CHANNEL,
-        windows.clone(),
-    );
-
     let rpc = SolanaRPC::new_with_timeout_and_commitment(
         &config.rpc.endpoint,
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
     );
+    let trigger = SlotTrigger::new(rpc, config.min_auction_interval);
+
+    let windows = SettlementWindows::new(pool.clone(), trigger.tip(), config.max_indexer_lag_slots);
+    let listen = ListenSession::spawn(
+        pool.clone(),
+        db::SETTLEMENT_FINALIZED_CHANNEL,
+        windows.clone(),
+    );
+    // Windows a previous process dispatched lost their timeout waiters with
+    // it. Sweep the overdue ones once the poller reports a slot.
+    match tokio::time::timeout(STARTUP_SWEEP_WAIT, trigger.tip().wait_for(|slot| *slot > 0)).await {
+        Ok(Ok(slot)) => {
+            let slot = *slot;
+            if let Err(err) = windows.expire_past_deadline(slot).await {
+                tracing::warn!(?err, "the startup window sweep failed");
+            }
+        }
+        _ => tracing::warn!("no slot observed at startup, skipping the window sweep"),
+    }
 
     let drivers: Vec<Arc<Driver>> = config
         .drivers
@@ -122,7 +138,7 @@ async fn run(config: Config) {
     });
 
     let auction_loop = AuctionLoop::new(
-        Box::new(SlotTrigger::new(rpc, config.min_auction_interval)),
+        Box::new(trigger),
         Box::new(DbAuctionProvider::new(
             pool.clone(),
             SolanaRPC::new_with_timeout_and_commitment(

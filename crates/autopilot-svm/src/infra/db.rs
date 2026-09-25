@@ -205,6 +205,32 @@ RETURNING e.solver, e.end_slot, e.submitted_signature
         .context("close landed settlement execution windows")
 }
 
+/// Close one open window whose deadline is at or before the slot as timed
+/// out. Answers whether it did.
+pub async fn expire_settlement_window(
+    ex: impl PgExecutor<'_>,
+    auction_id: i64,
+    solver: Pubkey,
+    solution_uid: i64,
+    slot: i64,
+) -> Result<bool> {
+    const QUERY: &str = r#"
+UPDATE solana.settlement_executions
+SET outcome = 'timeout', end_timestamp = now(), end_slot = $4
+WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3
+  AND outcome IS NULL AND deadline_slot <= $4
+    "#;
+    let result = sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(solver.0)
+        .bind(solution_uid)
+        .bind(slot)
+        .execute(ex)
+        .await
+        .context("expire the settlement execution window")?;
+    Ok(result.rows_affected() > 0)
+}
+
 /// Close every open window whose deadline is at or before the slot as timed
 /// out, returning their auction ids.
 pub async fn expire_settlement_windows(ex: impl PgExecutor<'_>, slot: i64) -> Result<Vec<i64>> {
