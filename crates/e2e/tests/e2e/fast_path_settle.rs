@@ -125,6 +125,12 @@ async fn local_node_fast_path_penalty_cap() {
     run_test(fast_path_penalty_cap).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_fast_path_executed_price_matches_quote() {
+    run_test(fast_path_executed_price_matches_quote).await;
+}
+
 async fn fast_path_settle(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -193,7 +199,10 @@ async fn fast_path_settle(web3: Web3) {
         sell_token: *onchain.contracts().weth.address(),
         sell_amount,
         buy_token: *token.address(),
-        buy_amount: quote.quote.buy_amount,
+        // Sign below the quote: the bid is the quoted buy net of gas, so an
+        // order signed at the exact quote would sit on the limit and the
+        // on-chain fill would round below it.
+        buy_amount: quote.quote.buy_amount * U256::from(90u8) / U256::from(100u8),
         valid_to: model::time::now_in_epoch_seconds() + 3600,
         kind: OrderKind::Sell,
         app_data: OrderCreationAppData::Full { full: app_data },
@@ -226,6 +235,154 @@ async fn fast_path_settle(web3: Web3) {
         elapsed < exclusivity / 2,
         "settled after {elapsed:?} — regular auction fallback would have taken at least \
          {exclusivity:?}, so this can't be attributed to the fast path",
+    );
+}
+
+/// The on-chain fill of a fast-path order matches the quote the UI showed.
+///
+/// The solver runs with a 1% haircut, which used to be applied twice — once in
+/// the quote and again at settle — pushing the on-chain fill ~1% below the
+/// recorded bid (the circuit-breaker mismatch Tamir reported). With the driver
+/// executing the autopilot's bid verbatim, the fill tracks the quote to within
+/// normal quote-vs-AMM-execution variance. (The gas-fee half of the fix is
+/// covered by the `apply_quote_fee` unit tests; local gas is too small to
+/// exercise it meaningfully here.)
+async fn fast_path_executed_price_matches_quote(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    let sell_amount = 1u64.eth();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, sell_amount)
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(sell_amount)
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    // Long exclusivity so only the fast path can settle within the test window.
+    let exclusivity = Duration::from_secs(300);
+
+    // A 1% haircut: before the fix it was applied once in the quote and again
+    // at settle, so the on-chain fill fell below the recorded bid.
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver_with_haircut(
+                "test_solver".into(),
+                solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                100,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
+
+    let quoter = ExternalSolver::new("test_solver", "http://localhost:11088/test_solver");
+    let autopilot_config = AutopilotConfiguration {
+        drivers: vec![Solver::test("test_solver", solver.address())],
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter.clone()]),
+        ..AutopilotConfiguration::test_no_drivers()
+    };
+    let orderbook_config = configs::orderbook::Configuration {
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter]),
+        ..configs::orderbook::Configuration::test_default()
+    };
+    let (autopilot_config, orderbook_config) =
+        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+    services.start_autopilot(None, autopilot_config).await;
+    services.start_api(orderbook_config).await;
+
+    let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
+
+    tracing::info!("Quoting with enableFastPath.");
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(sell_amount).unwrap(),
+            },
+        },
+        app_data: OrderCreationAppData::Full {
+            full: app_data.clone(),
+        },
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+    let quote_id = quote.id.expect("fast-path quote should carry an id");
+
+    // Sign below the quote so the bid clears the signed floor; the fast path
+    // still settles at the full quoted bid.
+    let signed_buy = quote.quote.buy_amount * U256::from(90u8) / U256::from(100u8);
+    tracing::info!("Placing the fast-path order.");
+    let order = OrderCreation {
+        quote_id: Some(quote_id),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount,
+        buy_token: *token.address(),
+        buy_amount: signed_buy,
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full { full: app_data },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for the fast-path settlement.");
+    wait_for_condition(TIMEOUT, || async {
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
+    })
+    .await
+    .unwrap();
+
+    let trade = services
+        .get_trades(&uid)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("settled order should have a trade");
+    let executed_buy = number::conversions::big_uint_to_u256(&trade.buy_amount)
+        .expect("trade buy amount fits in U256");
+    // The fill tracks the quote within 0.5%. Before the fix the haircut was
+    // re-applied at settle, so the fill landed ~1% (the haircut) below the
+    // quote — outside this band.
+    let quoted_buy = quote.quote.buy_amount;
+    assert!(
+        executed_buy > quoted_buy * U256::from(995u64) / U256::from(1000u64)
+            && executed_buy <= quoted_buy * U256::from(1005u64) / U256::from(1000u64),
+        "executed buy {executed_buy} should be within 0.5% of the quote {quoted_buy}",
     );
 }
 
@@ -313,7 +470,10 @@ async fn fast_path_penalty_cap(web3: Web3) {
         sell_token: *onchain.contracts().weth.address(),
         sell_amount,
         buy_token: *token.address(),
-        buy_amount: quote.quote.buy_amount,
+        // Sign below the quote: the bid is the quoted buy net of gas, so an
+        // order signed at the exact quote would sit on the limit and the
+        // on-chain fill would round below it.
+        buy_amount: quote.quote.buy_amount * U256::from(90u8) / U256::from(100u8),
         valid_to: model::time::now_in_epoch_seconds() + 3600,
         kind: OrderKind::Sell,
         app_data: OrderCreationAppData::Full { full: app_data },
@@ -480,7 +640,10 @@ async fn fast_path_settles_across_split_configs(web3: Web3) {
         sell_token: *onchain.contracts().weth.address(),
         sell_amount,
         buy_token: *token.address(),
-        buy_amount: quote.quote.buy_amount,
+        // Sign below the quote: the bid is the quoted buy net of gas, so an
+        // order signed at the exact quote would sit on the limit and the
+        // on-chain fill would round below it.
+        buy_amount: quote.quote.buy_amount * U256::from(90u8) / U256::from(100u8),
         valid_to: model::time::now_in_epoch_seconds() + 3600,
         kind: OrderKind::Sell,
         app_data: OrderCreationAppData::Full { full: app_data },

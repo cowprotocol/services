@@ -236,12 +236,21 @@ impl FastPathHandler {
             });
 
         let winner = staged.winner();
+        // Net the quote's gas fee out of the bid before checking the limit, the
+        // same way the settled bid is computed, so the fallback decision
+        // matches what the driver would actually execute.
+        let (quoted_sell, quoted_buy) = shared::fee::apply_quote_fee(
+            winner.quoted_sell,
+            winner.quoted_buy,
+            pending.model_order.data.kind,
+            winner.fee,
+        );
         shared::fee::check_fast_path_limit_fits(
             pending.model_order.data.kind,
             pending.model_order.data.sell_amount,
             pending.model_order.data.buy_amount,
-            winner.quoted_sell,
-            winner.quoted_buy,
+            quoted_sell,
+            quoted_buy,
             volume_fee_factors,
         )
         .map_err(|_| PreflightError::LimitTooTight)?;
@@ -373,9 +382,18 @@ impl FastPathHandler {
             .solutions
             .iter()
             .map(|solution| {
-                let (adjusted_sell, adjusted_buy) = apply_volume_fees(
+                // Net the quote's gas fee out first (as the user-facing quote
+                // does), then apply volume fees, so the recorded bid matches
+                // what the driver settles and what the UI quoted.
+                let (gas_adjusted_sell, gas_adjusted_buy) = shared::fee::apply_quote_fee(
                     solution.quoted_sell,
                     solution.quoted_buy,
+                    order_kind,
+                    solution.fee,
+                );
+                let (adjusted_sell, adjusted_buy) = apply_volume_fees(
+                    gas_adjusted_sell,
+                    gas_adjusted_buy,
                     order_kind,
                     &volume_fee_policies,
                 );

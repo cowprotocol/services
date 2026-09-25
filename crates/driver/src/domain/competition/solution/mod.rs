@@ -617,7 +617,7 @@ impl Solution {
         }
 
         let (flashloans, wrappers) = recover_flashloans_and_wrappers(&order);
-        *user = user.with_order(order)?;
+        *user = Fulfillment::new(order, user.executed(), user.fee(), eth::U256::ZERO)?;
         solution.flashloans = flashloans;
         solution.wrappers = wrappers;
 
