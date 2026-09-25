@@ -75,7 +75,7 @@ impl Arbitrator {
         // Compute reference scores while we still have ws_ranking
         let reference_scores: HashMap<eth::Address, Score> = self
             .0
-            .compute_reference_scores(&ws_ranking)
+            .compute_reference_scores(&ws_ranking, &context)
             .into_iter()
             .map(|(solver, score)| (solver, Score(eth::Ether(score))))
             .collect();
