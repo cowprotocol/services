@@ -88,6 +88,7 @@ fn quote_auction(request: &dto::QuoteRequest, side: auction::Side) -> Auction {
             partially_fillable: false,
             order_pda: Pubkey::default(),
             app_data: [0; 32],
+            missing_buy_token_account: false,
         }],
         deadline_slot: Slot(0),
         deadline: request.deadline,

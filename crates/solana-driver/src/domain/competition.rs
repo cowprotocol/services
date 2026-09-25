@@ -68,10 +68,17 @@ impl Competition {
     }
 
     /// Solve the auction and cache each solution for a later `settle`.
-    pub async fn solve(&self, auction_id: Id, auction: &Auction) -> Result<Vec<Solution>, Error> {
-        let solutions = self.compute_solutions(auction).await?;
+    pub async fn solve(
+        &self,
+        auction_id: Id,
+        mut auction: Auction,
+    ) -> Result<Vec<Solution>, Error> {
+        auction
+            .flag_missing_buy_token_accounts(&self.blockchain)
+            .await;
+        let solutions = self.compute_solutions(&auction).await?;
 
-        let auction = Arc::new(auction.clone());
+        let auction = Arc::new(auction);
         for solution in &solutions {
             self.solutions.insert(
                 Key {

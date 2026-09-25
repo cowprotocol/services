@@ -54,6 +54,15 @@ pub struct Order {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub full_buy_amount: u64,
     pub side: Side,
+    /// True when the order's buy token account does not exist on chain
+    /// yet. The settlement creates it and the solver keypair pays its rent,
+    /// so the solution should price that rent in.
+    ///
+    /// TODO(token-2022): a token-2022 account rents more bytes, so once
+    /// those mints are supported this boolean becomes the missing account's
+    /// token program.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub missing_buy_token_account: bool,
 }
 
 impl Order {
@@ -94,6 +103,7 @@ impl Order {
             full_sell_amount: order.sell_amount,
             full_buy_amount: order.buy_amount,
             side: order.side,
+            missing_buy_token_account: order.missing_buy_token_account,
         }
     }
 }
@@ -171,6 +181,7 @@ mod tests {
                 full_sell_amount: 1_000,
                 full_buy_amount: 2_000,
                 side: Side::Sell,
+                missing_buy_token_account: false,
             }],
             deadline: chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
                 .unwrap()
@@ -196,6 +207,7 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x67),
             app_data: [0x77; 32],
+            missing_buy_token_account: false,
         }
     }
 
@@ -222,5 +234,32 @@ mod tests {
         let buy = Order::new(&domain_order(Side::Buy), pubkey(0xaa), fee);
         assert_eq!((buy.sell_amount, buy.buy_amount), (952, 1_000));
         assert_eq!((buy.full_sell_amount, buy.full_buy_amount), (1_000, 1_000));
+    }
+
+    #[test]
+    fn missing_buy_token_account_is_on_the_wire_only_when_flagged() {
+        let program_id = pubkey(0xaa);
+        let order = |missing: bool| domain::Order {
+            uid: OrderUid([8; 32]),
+            owner: pubkey(0x22),
+            sell_token: pubkey(0x33),
+            buy_token: pubkey(0x44),
+            sell_token_account: pubkey(0x55),
+            buy_token_account: pubkey(0x66),
+            sell_amount: 1_000,
+            buy_amount: 2_000,
+            valid_to: u32::MAX,
+            side: Side::Sell,
+            partially_fillable: false,
+            order_pda: pubkey(0x77),
+            app_data: [0; 32],
+            missing_buy_token_account: missing,
+        };
+
+        let flagged = serde_json::to_value(Order::new(&order(true), program_id, None)).unwrap();
+        assert_eq!(flagged["missingBuyTokenAccount"], json!(true));
+
+        let unflagged = serde_json::to_value(Order::new(&order(false), program_id, None)).unwrap();
+        assert!(unflagged.get("missingBuyTokenAccount").is_none());
     }
 }
