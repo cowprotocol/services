@@ -97,28 +97,21 @@ impl Mempools {
         Ok(res?.tx_hash)
     }
 
-    /// A mempool is disabled if all of the following are true:
-    /// * the settlement may revert (see [`Settlement::may_revert`])
-    /// * the pool has revert protection enabled (see
-    ///   [`Self::revert_protection`])
-    /// * reverts can get mined (see [`infra::Mempool::reverts_can_get_mined`])
+    /// A settlement that may revert (see [`Settlement::may_revert`]) only
+    /// races the best configured [`Tier`], so a mempool of a worse tier is
+    /// disabled. Settlements that cannot revert race every mempool.
     fn is_disabled(&self, mempool: &infra::Mempool, settlement: &Settlement) -> bool {
-        settlement.may_revert()
-            && matches!(self.revert_protection(), RevertProtection::Enabled)
-            && mempool.reverts_can_get_mined()
+        settlement.may_revert() && Tier::of(mempool) > self.best_tier()
     }
 
-    /// Defines if the mempools are configured in a way that guarantees that
-    /// settled solution will not revert.
-    pub fn revert_protection(&self) -> RevertProtection {
-        match self
-            .mempools
+    /// The best tier among the configured mempools.
+    fn best_tier(&self) -> Tier {
+        self.mempools
             .iter()
-            .all(|mempool| mempool.reverts_can_get_mined())
-        {
-            true => RevertProtection::Disabled,
-            false => RevertProtection::Enabled,
-        }
+            .map(Tier::of)
+            .min()
+            // `try_new` rejects an empty list of mempools.
+            .expect("no mempools configured")
     }
 
     async fn submit(
@@ -600,12 +593,31 @@ impl SubmissionSuccess {
 #[error("no mempools configured, cannot execute settlements")]
 pub struct NoMempools;
 
-/// Defines if the mempools are configured in a way that guarantees that
-/// /settle'd solution will not revert.
-#[derive(Debug, Clone, Copy)]
-pub enum RevertProtection {
-    Enabled,
-    Disabled,
+/// Where a settlement that may revert can go, best tier first. Only the best
+/// configured tier races: the builders if there are any, else the revert
+/// protected mempools, else the public ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Tier {
+    /// Handed straight to block builders. They mine reverting txs but offer
+    /// the best inclusion.
+    Builders,
+    /// An RPC that drops reverting txs instead of mining them, e.g. MEV
+    /// Blocker.
+    RevertProtected,
+    /// A public mempool, which mines reverting txs.
+    Public,
+}
+
+impl Tier {
+    fn of(mempool: &infra::Mempool) -> Self {
+        if mempool.submits_to_builders() {
+            Self::Builders
+        } else if mempool.reverts_can_get_mined() {
+            Self::Public
+        } else {
+            Self::RevertProtected
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
