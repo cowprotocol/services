@@ -70,7 +70,7 @@ pub fn new(
     }
 
     solvers_dto::auction::Auction {
-        id: auction.id().as_ref().map(|id| id.0),
+        id: auction.id(),
         orders: auction
             .orders()
             .iter()

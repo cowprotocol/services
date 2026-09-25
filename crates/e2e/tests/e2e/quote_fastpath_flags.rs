@@ -1,114 +1,114 @@
 use {
-    configs::{
-        order_quoting::{ExternalSolver, OrderQuoting},
-        shared::SharedConfig,
-        test_util::TestDefault,
-    },
-    e2e::setup::{OnchainComponents, Services, run_test},
-    eth_domain_types::Address,
+    ::alloy::primitives::U256,
+    configs::{autopilot::Configuration as AutopilotConfiguration, test_util::TestDefault},
+    e2e::setup::*,
+    ethrpc::alloy::CallBuilderExt,
     model::{
-        order::{OrderCreation, OrderCreationAppData, OrderKind},
-        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
+        order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    reqwest::StatusCode,
     shared::web3::Web3,
 };
 
 #[tokio::test]
 #[ignore]
-async fn local_node_fast_path_flags_rejected() {
-    run_test(fast_path_flags_rejected).await;
+async fn local_node_fast_path_flags_fall_through_when_disabled() {
+    run_test(fast_path_flags_fall_through_when_disabled).await;
 }
 
-/// Verifies the orderbook rejects the not-yet-supported `fast_path` quote flag
-/// and `enableFastPath` app-data field.
-async fn fast_path_flags_rejected(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3).await;
-    let [trader] = onchain.make_accounts(1u64.eth()).await;
-    let services = Services::new(&onchain).await;
-    services
-        .start_api(configs::orderbook::Configuration {
-            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                "test_quoter",
-                "http://localhost:11088/test_solver",
-            )]),
-            shared: SharedConfig {
-                gas_estimators: vec![TestDefault::test_default()],
-                ..Default::default()
-            },
-            ..configs::orderbook::Configuration::test_default()
-        })
+/// When the fast path is disabled (`fast_path_submission_deadline` unset),
+/// the orderbook still accepts an `enableFastPath` order — but the
+/// autopilot classifies it into the regular auction immediately by
+/// writing `valid_from = now()`, so it settles like any other order.
+///
+/// This guards against a regression where turning the fast-path feature
+/// off at runtime would silently start rejecting integrator orders.
+async fn fast_path_flags_fall_through_when_disabled(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
-    // Distinct, non-native addresses so partial_validate passes before the
-    // fast-path check fires.
-    let sell_token = Address::with_last_byte(2);
-    let buy_token = Address::with_last_byte(3);
-
-    let base_quote = || OrderQuoteRequest {
-        from: trader.address(),
-        sell_token,
-        buy_token,
-        side: OrderQuoteSide::Sell {
-            sell_amount: SellAmount::BeforeFee {
-                value: 1u64.eth().try_into().unwrap(),
-            },
-        },
-        ..Default::default()
-    };
-
-    // --- quote: enableFastPath in app data ---
-    let err = services
-        .submit_quote(&OrderQuoteRequest {
-            app_data: OrderCreationAppData::Full {
-                full: r#"{"metadata":{"enableFastPath":true}}"#.to_string(),
-            },
-            ..base_quote()
-        })
+    let sell_amount = 1u64.eth();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, sell_amount)
+        .from(trader.address())
+        .send_and_watch()
         .await
-        .unwrap_err();
-    assert_eq!(err.0, StatusCode::BAD_REQUEST);
-    assert!(
-        err.1.contains("enableFastPath"),
-        "error body should mention enableFastPath, got: {}",
-        err.1
-    );
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(sell_amount)
+        .send_and_watch()
+        .await
+        .unwrap();
 
-    // For order tests, validate_app_data fires before signature verification so
-    // we just need structurally valid (but cryptographically incorrect) orders.
-    let valid_to = model::time::now_in_epoch_seconds() + 300;
-
-    let make_order = |app_data_str: &str| -> OrderCreation {
-        OrderCreation {
-            sell_token,
-            sell_amount: 1u64.eth(),
-            buy_token,
-            buy_amount: 1u64.eth(),
-            valid_to,
-            kind: OrderKind::Sell,
-            app_data: OrderCreationAppData::Full {
-                full: app_data_str.to_string(),
-            },
-            ..Default::default()
-        }
-        .sign(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            &trader.signer,
+    tracing::info!("Starting services with the fast-path handler disabled.");
+    let services = Services::new(&onchain).await;
+    // `fast_path_submission_deadline` is None (the test config default), so the
+    // fast-path handler still runs but skips the settle and writes
+    // `valid_from = now()`, letting the regular auction pick the order
+    // up on the very next cycle.
+    services
+        .start_protocol_with_args(
+            AutopilotConfiguration::test("test_solver", solver.address()),
+            configs::orderbook::Configuration::test_default(),
+            solver.clone(),
         )
-    };
+        .await;
 
-    // --- order: enableFastPath in app data ---
-    let err = services
-        .create_order(&make_order(r#"{"metadata":{"enableFastPath":true}}"#))
-        .await
-        .unwrap_err();
-    assert_eq!(err.0, StatusCode::BAD_REQUEST);
+    tracing::info!("Placing an order with enableFastPath.");
+    let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
+    let order = OrderCreation {
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount,
+        buy_token: *token.address(),
+        // Loose limit so the market can fill it easily.
+        buy_amount: U256::from(1u64),
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full { full: app_data },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    // Placement must succeed — the orderbook no longer rejects
+    // fast-path orders on missing runtime config.
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for the regular-auction settlement.");
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
+    })
+    .await
+    .unwrap();
+
+    // The autopilot's fast-path handler classified the order for the
+    // regular auction by writing `valid_from = now()`, not a delayed
+    // exclusivity window.
+    let placed = services.get_order(&uid).await.unwrap();
+    let valid_from = placed
+        .metadata
+        .valid_from
+        .expect("autopilot handler should have written valid_from");
     assert!(
-        err.1.contains("enableFastPath"),
-        "error body should mention enableFastPath, got: {}",
-        err.1
+        valid_from <= model::time::now_in_epoch_seconds(),
+        "fast-path fallthrough should not delay `valid_from`, got {valid_from}",
     );
 }

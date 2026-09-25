@@ -19,11 +19,15 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
+base64 = { workspace = true }
 bigdecimal = { workspace = true }
+bincode = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
 configs = { workspace = true }
 const-hex = { workspace = true }
+cow-settlement-interface = { workspace = true }
+cow-solana-rpc = { workspace = true }
 database = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
@@ -33,7 +37,11 @@ serde = { workspace = true }
 serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+solana-compute-budget-interface = { workspace = true }
 solana-sdk = { workspace = true }
+solana-system-interface = { workspace = true, features = ["bincode", "serde"] }
+spl-associated-token-account-interface = { workspace = true }
+spl-token-interface = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
@@ -44,6 +52,10 @@ tower = { workspace = true }
 tower-http = { workspace = true, features = ["cors", "decompression-br", "trace"] }
 tracing = { workspace = true }
 url = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+cow-settlement-client = { workspace = true }
+cow-solana-rpc = { workspace = true, features = ["test-util"] }
 
 [features]
 default = []

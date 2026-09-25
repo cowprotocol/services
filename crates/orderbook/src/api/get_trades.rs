@@ -28,16 +28,10 @@ enum TradeFilterError {
 }
 
 impl QueryParams {
-    fn trade_filter(&self) -> TradeFilter {
-        TradeFilter {
-            order_uid: self.order_uid,
-            owner: self.owner,
-        }
-    }
-
     fn validate(&self) -> Result<TradeFilter, TradeFilterError> {
-        match (self.order_uid.as_ref(), self.owner.as_ref()) {
-            (Some(_), None) | (None, Some(_)) => Ok(self.trade_filter()),
+        match (self.owner, self.order_uid) {
+            (Some(owner), None) => Ok(TradeFilter::Owner(owner)),
+            (None, Some(uid)) => Ok(TradeFilter::OrderUid(uid)),
             _ => Err(TradeFilterError::InvalidFilter(
                 "Must specify exactly one of owner or orderUid.".to_owned(),
             )),
@@ -82,18 +76,14 @@ mod tests {
             owner: Some(owner),
             order_uid: None,
         };
-        let result = query.validate().unwrap();
-        assert_eq!(result.owner, Some(owner));
-        assert_eq!(result.order_uid, None);
+        assert_eq!(query.validate().unwrap(), TradeFilter::Owner(owner));
 
         let uid = OrderUid([1u8; 56]);
         let query = QueryParams {
             owner: None,
             order_uid: Some(uid),
         };
-        let result = query.validate().unwrap();
-        assert_eq!(result.owner, None);
-        assert_eq!(result.order_uid, Some(uid));
+        assert_eq!(query.validate().unwrap(), TradeFilter::OrderUid(uid));
     }
 
     #[test]

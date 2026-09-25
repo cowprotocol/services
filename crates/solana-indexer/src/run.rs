@@ -29,6 +29,9 @@ use {
 /// Wait between attempts to bring the stream back up.
 const STREAM_RETRY: Duration = Duration::from_secs(5);
 
+/// Wait between replay passes.
+const REPLAY_INTERVAL: Duration = Duration::from_secs(60);
+
 /// The Solana indexer command line arguments.
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
@@ -87,6 +90,18 @@ async fn run(config: Config, start_slot: Option<u64>) {
     let latest_chain_slot = Arc::new(AtomicU64::default());
 
     let backfiller = Decoder::rpc_driven(&config, persistence.clone());
+    let replayer = Decoder::rpc_driven(&config, persistence.clone());
+
+    // Heals parked work in the background. A failed pass only logs: every
+    // piece stays parked and the next pass retries it.
+    let replay_loop = async {
+        loop {
+            tokio::time::sleep(REPLAY_INTERVAL).await;
+            if let Err(err) = replayer.replay().await {
+                tracing::warn!(?err, "replay pass failed");
+            }
+        }
+    };
 
     let stream_loop = async {
         let mut resume = start_slot.map_or(Resume::Watermark, Resume::From);
@@ -135,6 +150,7 @@ async fn run(config: Config, start_slot: Option<u64>) {
             tracing::error!(?result, "decoder stopped");
         }
         result = &mut decoder_task => tracing::error!(?result, "decoder stopped"),
+        () = replay_loop => unreachable!("the replay loop never returns"),
         result = &mut metrics => tracing::error!(?result, "metrics server stopped"),
         _ = observe::shutdown::shutdown_signal() => tracing::info!("shutdown signal received"),
     }

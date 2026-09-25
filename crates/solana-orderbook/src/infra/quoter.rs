@@ -46,6 +46,8 @@ pub enum Kind {
 pub struct Quote {
     pub sell_amount: u64,
     pub buy_amount: u64,
+    /// The solver that produced the quote.
+    pub solver: Pubkey,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -76,6 +78,8 @@ struct ResponseBody {
     sell_amount: u64,
     #[serde_as(as = "DisplayFromStr")]
     buy_amount: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    solver: Pubkey,
 }
 
 impl Quoter {
@@ -143,6 +147,7 @@ impl Quoter {
         Some(Quote {
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
+            solver: quoted.solver,
         })
     }
 }

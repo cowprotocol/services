@@ -32,14 +32,19 @@ impl Quote for Dex {
 }
 
 /// Quote every order concurrently and return one single-order solution per
-/// routable order. Buys (when disabled) and orders the aggregator cannot route
-/// yield no candidate, the rest of the auction still proceeds.
+/// routable order. Buys (when disabled), orders the aggregator cannot route,
+/// and swaps that undercut the order's limit yield no candidate; the rest of
+/// the auction still proceeds.
 ///
 /// Order counts are small (bounded by the settlement account budget), so every
 /// order is quoted at once.
 ///
 /// TODO: Enforce `auction.deadline` with a timeout, like the EVM dex solver
 /// does (`crates/solvers/src/domain/solver/dex/mod.rs`).
+///
+/// TODO(BE-308): retry partially fillable orders at smaller amounts when the
+/// swap undercuts the limit, like the EVM engine's `Fills`; the wire carries
+/// no `partiallyFillable` yet.
 pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
     let candidates = auction.orders.iter().enumerate().map(|(index, order)| {
         let dex_order = order.to_dex_order();
@@ -54,6 +59,17 @@ pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
                     _ => tracing::warn!(%err, "quote failed"),
                 })
                 .ok()?;
+            if !swap.satisfies(&dex_order) {
+                tracing::debug!(
+                    in_amount = swap.in_amount,
+                    out_amount = swap.out_amount,
+                    limit_sell = dex_order.sell_amount,
+                    limit_buy = dex_order.buy_amount,
+                    shortfall = %swap.shortfall(&dex_order),
+                    "swap does not satisfy order"
+                );
+                return None;
+            }
             let solution = Solution::new(index as u64, order.uid, &dex_order, swap).ok()?;
             tracing::debug!("solved");
             Some(solution)
@@ -84,7 +100,14 @@ mod tests {
             sell_mint,
             buy_mint: pubkey(2),
             buy_destination: pubkey(3),
-            amount: 1_000,
+            sell_amount: 1_000,
+            buy_amount: 0,
+            amount: match side {
+                dex::Side::Sell => 1_000,
+                dex::Side::Buy => 0,
+            },
+            full_sell_amount: 1_000,
+            full_buy_amount: 0,
             side,
         }
     }
@@ -131,6 +154,28 @@ mod tests {
 
         assert_eq!(solutions.len(), 1);
         assert_eq!(solutions[0].trades[0].order_uid, OrderUid([0x01; 32]));
+    }
+
+    /// A 2000 buy tightened by a 500 bps solver fee is 2106; the mock route
+    /// fills 2000, so that order yields nothing while the untightened one
+    /// still solves.
+    #[tokio::test]
+    async fn drops_a_swap_that_undercuts_the_limit() {
+        let mut tightened = order(0x01, dex::Side::Sell, pubkey(0x10));
+        tightened.buy_amount = 2_106;
+        let mut at_limit = order(0x02, dex::Side::Sell, pubkey(0x10));
+        at_limit.buy_amount = 2_000;
+        let auction = Auction {
+            id: Some(1),
+            taker: pubkey(1),
+            orders: vec![tightened, at_limit],
+            deadline: deadline(),
+        };
+
+        let solutions = solve(&MockQuote, &auction).await;
+
+        assert_eq!(solutions.len(), 1);
+        assert_eq!(solutions[0].trades[0].order_uid, OrderUid([0x02; 32]));
     }
 
     #[tokio::test]

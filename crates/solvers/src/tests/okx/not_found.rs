@@ -36,7 +36,10 @@ async fn sell() {
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("okx", super::config(&api.address)).await;
+    // No swap is found, so the node is never queried.
+    let node = mock::http::setup(vec![]).await;
+
+    let engine = tests::SolverEngine::new("okx", super::config(&api.address, &node.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -70,7 +73,7 @@ async fn sell() {
                     "fullBuyAmount": "200000000000000000000",
                     "kind": "sell",
                     "partiallyFillable": false,
-                    "class": "market",
+                    "class": "limit",
                     "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
                     "preInteractions": [],
@@ -230,7 +233,10 @@ async fn sell_no_approve_transaction() {
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("okx", super::config(&api.address)).await;
+    // No swap is found, so the node is never queried.
+    let node = mock::http::setup(vec![]).await;
+
+    let engine = tests::SolverEngine::new("okx", super::config(&api.address, &node.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -264,7 +270,7 @@ async fn sell_no_approve_transaction() {
                     "fullBuyAmount": "200000000000000000000",
                     "kind": "sell",
                     "partiallyFillable": false,
-                    "class": "market",
+                    "class": "limit",
                     "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
                     "preInteractions": [],

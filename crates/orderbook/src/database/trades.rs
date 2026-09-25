@@ -19,18 +19,18 @@ pub trait TradeRetrievingPaginated: Send + Sync {
     async fn trades_paginated(&self, filter: &PaginatedTradeFilter) -> Result<Vec<Trade>>;
 }
 
-/// Any default value means that this field is unfiltered.
-#[derive(Debug, Default, Eq, PartialEq)]
-pub struct TradeFilter {
-    pub owner: Option<Address>,
-    pub order_uid: Option<OrderUid>,
+/// Exactly one of the two filters is set. Enforced at the type level so the DB
+/// layer never has to consider "both" or "neither" cases.
+#[derive(Debug, Eq, PartialEq)]
+pub enum TradeFilter {
+    Owner(Address),
+    OrderUid(OrderUid),
 }
 
 /// Trade filter with pagination support (for v2 API).
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct PaginatedTradeFilter {
-    pub owner: Option<Address>,
-    pub order_uid: Option<OrderUid>,
+    pub filter: TradeFilter,
     pub offset: u64,
     pub limit: u64,
 }
@@ -45,17 +45,15 @@ impl TradeRetrieving for Postgres {
 
         let mut ex = self.pool.acquire().await?;
         // For v1 API, return all results without pagination (use large default
-        // values)
-        let trades = database::trades::trades(
-            &mut ex,
-            filter.owner.map(|owner| ByteArray(owner.0.0)).as_ref(),
-            filter.order_uid.map(|uid| ByteArray(uid.0)).as_ref(),
-            0,
-            i64::MAX,
-        )
-        .into_inner()
-        .await
-        .map_err(anyhow::Error::from)?;
+        // values).
+        let trades = match filter {
+            TradeFilter::Owner(owner) => {
+                database::trades::trades_by_owner(&mut ex, &ByteArray(owner.0.0), 0, i64::MAX).await
+            }
+            TradeFilter::OrderUid(uid) => {
+                database::trades::trades_by_order_uid(&mut ex, &ByteArray(uid.0), 0, i64::MAX).await
+            }
+        }?;
         timer.stop_and_record();
 
         let auction_order_uids = trades
@@ -106,22 +104,24 @@ impl TradeRetrievingPaginated for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let trades = database::trades::trades(
-            &mut ex,
-            filter.owner.map(|owner| ByteArray(owner.0.0)).as_ref(),
-            filter.order_uid.map(|uid| ByteArray(uid.0)).as_ref(),
-            filter
-                .offset
-                .try_into()
-                .context("offset too large for database")?,
-            filter
-                .limit
-                .try_into()
-                .context("limit too large for database")?,
-        )
-        .into_inner()
-        .await
-        .map_err(anyhow::Error::from)?;
+        let offset = filter
+            .offset
+            .try_into()
+            .context("offset too large for database")?;
+        let limit = filter
+            .limit
+            .try_into()
+            .context("limit too large for database")?;
+        let trades = match &filter.filter {
+            TradeFilter::Owner(owner) => {
+                database::trades::trades_by_owner(&mut ex, &ByteArray(owner.0.0), offset, limit)
+                    .await
+            }
+            TradeFilter::OrderUid(uid) => {
+                database::trades::trades_by_order_uid(&mut ex, &ByteArray(uid.0), offset, limit)
+                    .await
+            }
+        }?;
         timer.stop_and_record();
 
         let auction_order_uids = trades

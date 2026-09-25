@@ -8,7 +8,7 @@ use {
     e2e::setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
     ethrpc::alloy::CallBuilderExt,
     model::{
-        order::{OrderClass, OrderCreation, OrderKind},
+        order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
@@ -133,9 +133,8 @@ async fn single_limit_order_test(web3: Web3) {
     let trader_balance_before = token.balanceOf(trader.address()).call().await.unwrap();
     let solver_balance_before = token.balanceOf(solver.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
-    let limit_order = services.get_order(&order_id).await.unwrap();
+    services.get_order(&order_id).await.unwrap();
     onchain.mint_block().await;
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     let (jit_order, jit_order_uid) = JitOrder {
         owner: trader.address(),

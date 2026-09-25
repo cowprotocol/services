@@ -6,7 +6,7 @@
 
 use {
     crate::{
-        domain,
+        domain::{self, solver_fee::SolverFee},
         infra::{config, solver::dto::auction::Auction},
     },
     solana_sdk::{
@@ -15,7 +15,6 @@ use {
     },
     std::{num::NonZero, sync::Arc},
     thiserror::Error,
-    tokio::sync::Semaphore,
 };
 
 pub mod dto;
@@ -27,8 +26,8 @@ pub struct Solver {
     keypair: Arc<Keypair>,
     client: reqwest::Client,
     base_url: reqwest::Url,
-    in_flight: Arc<Semaphore>,
     solve_every_nth_auction: Option<NonZero<u64>>,
+    solver_fee: Option<SolverFee>,
 }
 
 impl Solver {
@@ -52,6 +51,11 @@ impl Solver {
         self.solve_every_nth_auction
     }
 
+    /// The volume-based solver fee, `None` when no fee is configured.
+    pub fn solver_fee(&self) -> Option<SolverFee> {
+        self.solver_fee
+    }
+
     /// Build a solver client from its configuration.
     ///
     /// Loads the signer keypair from `config.signer_keypair`.
@@ -73,8 +77,8 @@ impl Solver {
             keypair,
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
-            in_flight: Arc::new(Semaphore::new(config.max_in_flight.get())),
             solve_every_nth_auction: config.solve_every_nth_auction,
+            solver_fee: config.solver_fee_bps,
         })
     }
 
@@ -89,21 +93,12 @@ impl Solver {
         auction: &domain::Auction,
         program_id: Pubkey,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(auction, self.pubkey(), program_id);
+        let auction_dto = Auction::new(auction, self.pubkey(), program_id, self.solver_fee);
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
 
-        let _permit = self
-            .in_flight
-            .acquire()
-            .await
-            .expect("semaphore is never closed");
-
-        // Calculate the time remaining until the auction's deadline. Do this
-        // after acquiring the permit. Otherwise the wait for the permit could
-        // use part of the time budget and the solve could run past the
-        // deadline.
+        // Calculate the time remaining until the auction's deadline.
         //
         // TODO: Split the deadline budget between solver time and driver
         // processing time. Give the solver a configurable fraction of the
@@ -174,7 +169,7 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, solana_testlib::temp_keypair, std::num::NonZero};
+    use {super::*, solana_testlib::temp_keypair};
 
     #[tokio::test]
     async fn solve_with_past_deadline_returns_empty() {
@@ -187,8 +182,8 @@ mod tests {
             name: "test".to_owned(),
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
             signer_keypair: keypair_path,
-            max_in_flight: NonZero::new(1).unwrap(),
             solve_every_nth_auction: None,
+            solver_fee_bps: None,
         })
         .expect("solver construction should succeed");
         let auction = domain::Auction {

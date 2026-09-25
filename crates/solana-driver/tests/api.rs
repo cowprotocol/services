@@ -6,7 +6,10 @@ use {
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-    solana_driver::infra::{api::Api, blockchain::Solana, config, solver::Solver},
+    solana_driver::{
+        domain::solver_fee::SolverFee,
+        infra::{api::Api, blockchain::Solana, config, solver::Solver},
+    },
     solana_sdk::pubkey::Pubkey,
     solana_testlib::temp_keypair,
     std::{net::SocketAddr, num::NonZero, sync::Arc},
@@ -91,14 +94,18 @@ async fn spawn_mock_solver_engine(response: serde_json::Value) -> SocketAddr {
 /// A solver client whose on-chain identity is a freshly generated keypair,
 /// so the test can register a matching settlement signer.
 fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
+    solver_with_fee(addr, 0)
+}
+
+fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubkey) {
     let keypair_file = temp_keypair();
     let keypair_path = keypair_file.path().to_path_buf();
     let solver = Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: format!("http://{addr}").parse().unwrap(),
         signer_keypair: keypair_path,
-        max_in_flight: NonZero::new(1).unwrap(),
         solve_every_nth_auction: None,
+        solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
     })
     .expect("solver construction should succeed");
     let account = solver.pubkey();
@@ -110,15 +117,15 @@ fn dead_solver() -> (Solver, Pubkey) {
     solver_with_keypair("127.0.0.1:1".parse().unwrap())
 }
 
-/// A dead-endpoint solver throttled to the given auction-id stride.
+/// A dead-endpoint solver throttled to one solve in the given stride.
 fn throttled_dead_solver(stride: u64) -> Solver {
     let keypair_file = temp_keypair();
     Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: "http://127.0.0.1:1".parse().unwrap(),
         signer_keypair: keypair_file.path().to_path_buf(),
-        max_in_flight: NonZero::new(1).unwrap(),
         solve_every_nth_auction: NonZero::new(stride),
+        solver_fee_bps: None,
     })
     .expect("solver construction should succeed")
 }
@@ -188,6 +195,17 @@ async fn call_solve(addr: SocketAddr) -> serde_json::Value {
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     response.json().await.unwrap()
+}
+
+/// Post a `/solve` and return the HTTP status, without asserting on it.
+async fn solve_status(addr: SocketAddr) -> reqwest::StatusCode {
+    reqwest::Client::new()
+        .post(format!("http://{addr}/mock/solve"))
+        .json(&solve_request())
+        .send()
+        .await
+        .unwrap()
+        .status()
 }
 
 /// The solution ids in a `/solve` response body, in response order.
@@ -266,7 +284,6 @@ async fn solve_returns_converted_solutions() {
     let expected = serde_json::json!({
         "solutions": [{
             "solutionId": 42,
-            "score": "0",
             "solver": account.to_string(),
             "orders": {
                 (uid()): {
@@ -406,7 +423,6 @@ async fn solve_keeps_the_first_of_duplicate_solution_ids() {
     let expected = serde_json::json!({
         "solutions": [{
             "solutionId": 7,
-            "score": "0",
             "solver": account.to_string(),
             "orders": {
                 (uid()): {
@@ -511,6 +527,84 @@ async fn buy_quote_returns_the_executed_amounts() {
     );
 }
 
+/// The auction order sells 1000 for at least 2000. A route paying 3000 is
+/// reported at 2850 after a 500 bps fee.
+#[tokio::test]
+async fn solve_reports_fee_adjusted_amounts() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 500);
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve(addr).await;
+    let amounts = &body["solutions"][0]["orders"][uid()];
+    assert_eq!(amounts["executedSell"], "1000");
+    assert_eq!(amounts["executedBuy"], "2850");
+}
+
+/// A route paying exactly the 2000 limit undercuts it once the fee applies
+/// and is dropped before the autopilot sees it. The other solution survives.
+#[tokio::test]
+async fn solve_drops_the_fill_the_fee_pushes_under_the_limit() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(1, "2000"), (2, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 500);
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve(addr).await;
+    assert_eq!(response_ids(&body), vec![2]);
+}
+
+#[tokio::test]
+async fn sell_quote_reports_the_fee_adjusted_buy_amount() {
+    let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
+    let (solver, account) = solver_with_fee(engine, 500);
+    let addr = spawn_server(vec![solver]).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("sell", "1000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "sellAmount": "1000",
+            "buyAmount": "1900",
+            "solver": account.to_string(),
+        })
+    );
+}
+
+/// A buy quote pulls `1000 * 1.05 = 1050` sell units after a 500 bps fee; the
+/// quote order's unbounded sell limit does not overflow the check.
+#[tokio::test]
+async fn buy_quote_reports_the_fee_adjusted_sell_amount() {
+    let engine = spawn_mock_solver_engine(quote_solution("2000")).await;
+    let (solver, account) = solver_with_fee(engine, 500);
+    let addr = spawn_server(vec![solver]).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("buy", "2000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "sellAmount": "1050",
+            "buyAmount": "2000",
+            "solver": account.to_string(),
+        })
+    );
+}
+
 #[tokio::test]
 async fn quote_with_identical_tokens_is_rejected() {
     // Validation short-circuits before the engine is called.
@@ -580,26 +674,21 @@ async fn quoting_does_not_populate_the_settle_cache() {
     assert_eq!(json["kind"], "SolutionNotAvailable");
 }
 
-/// A throttled solver only participates in auctions on its id stride: off
-/// the stride the driver answers an empty solution set without asking the
-/// engine, on the stride the request reaches the (dead) engine.
+/// A throttled solver takes part in one solve out of every N, counting the
+/// solves it receives rather than the auction id. Off the stride the driver
+/// answers an empty solution set without asking the engine, on the stride the
+/// request reaches the (dead) engine and fails.
 #[tokio::test]
-async fn solve_sits_out_auctions_off_the_participation_stride() {
-    // Auction id 7 with stride 2: sat out, the dead engine is never asked.
+async fn solve_takes_part_every_nth_solve() {
     let addr = spawn_server(vec![throttled_dead_solver(2)]).await;
+
+    // First solve (seq 0) takes part: it reaches the dead engine and fails.
+    assert_eq!(solve_status(addr).await, reqwest::StatusCode::BAD_REQUEST);
+
+    // Second solve (seq 1) sits out with an empty solution set.
     let body = call_solve(addr).await;
     assert_eq!(body["solutions"].as_array().unwrap().len(), 0);
 
-    // Stride 7 matches auction id 7: the request reaches the dead engine
-    // and fails, proving participation.
-    let addr = spawn_server(vec![throttled_dead_solver(7)]).await;
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/mock/solve"))
-        .json(&solve_request())
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
-    let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["kind"], "SolverFailed");
+    // Third solve (seq 2) takes part again, one full stride later.
+    assert_eq!(solve_status(addr).await, reqwest::StatusCode::BAD_REQUEST);
 }

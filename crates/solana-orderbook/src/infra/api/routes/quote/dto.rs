@@ -107,11 +107,15 @@ pub struct Response {
     pub from: Pubkey,
     /// When the quoted amounts stop being honored.
     pub expiration: DateTime<Utc>,
-    /// The quote's database id. Always absent: quotes are not persisted.
+    /// The stored quote's id, absent when the store was unavailable.
     pub id: Option<i64>,
     /// Whether the amounts were confirmed by simulating the settlement. No
     /// component simulates, so a quote is indicative.
     pub verified: bool,
+    /// The account a sponsored creation transaction must name as its fee payer.
+    /// Absent when the deployment does not sponsor placements.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub funder: Option<Pubkey>,
 }
 
 /// The quoted order.

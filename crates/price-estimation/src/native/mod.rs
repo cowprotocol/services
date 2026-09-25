@@ -97,7 +97,6 @@ impl NativePriceEstimator {
             block_dependent: false,
             fast_path: false,
             timeout,
-            auction_id: None,
         }
     }
 }
@@ -157,6 +156,7 @@ mod tests {
                     solver: Address::repeat_byte(1),
                     verified: false,
                     supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 })
             }

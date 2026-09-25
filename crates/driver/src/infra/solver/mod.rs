@@ -401,7 +401,7 @@ impl Solver {
         let archive_id = self
             .persistence
             .archives_enabled()
-            .then(|| auction.id())
+            .then(|| auction.auction_id())
             .flatten();
         let (body, measurements) = match archive_id {
             // Stream the request body while capturing a gzipped copy for S3, so
@@ -418,7 +418,7 @@ impl Solver {
         // through the same streaming path but would skew the metric. The stream
         // reports the timing once serialization finishes, independently of
         // whether the auction was archived.
-        if auction.id().is_some() {
+        if auction.auction_id().is_some() {
             let solver = self.config.name.clone();
             tokio::spawn(async move {
                 if let Ok(measurements) = measurements.await {
@@ -455,7 +455,7 @@ impl Solver {
         super::observe::sending_solve_request(
             self.config.name.as_str(),
             timeout,
-            auction.id().is_none(),
+            auction.is_quote(),
         );
         let started_at = std::time::Instant::now();
         let res = util::http::send(self.config.response_size_limit_max_bytes, req).await;
@@ -464,14 +464,14 @@ impl Solver {
             res.as_deref(),
             self.config.name.as_str(),
             started_at.elapsed(),
-            auction.id().is_none(),
+            auction.is_quote(),
         );
         let res = res?;
         let res: solvers_dto::solution::SolverResponse =
             serde_json::from_str(&res).inspect_err(|err| {
                 tracing::warn!(res, ?err, "failed to parse solver response");
                 self.notify(
-                    auction.id(),
+                    auction.auction_id(),
                     None,
                     notify::Kind::DeserializationError(format!("Request format invalid: {err}")),
                 );

@@ -8,8 +8,10 @@ use {
             competition::DriverCompetition,
             driver::{Driver, dto},
             executor::DriverExecutor,
+            inflight::InFlightOrders,
             observation::SettlementWindows,
             observer::CompetitionObserver,
+            prices::NativePrices,
             provider::DbAuctionProvider,
         },
         run_loop::{
@@ -23,7 +25,9 @@ use {
     },
     async_trait::async_trait,
     axum::{Json, Router, extract::State, routing::post},
+    base64::{Engine, prelude::BASE64_STANDARD},
     chain_types::solana::{IntentHash, Pubkey, Signature},
+    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     database::byte_array::ByteArray,
     sqlx::PgPool,
     std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration},
@@ -85,6 +89,66 @@ async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
     addr
 }
 
+/// A canned `getMultipleAccounts` entry: an initialized mint of the classic
+/// SPL token program with the given decimals.
+pub(crate) fn mint_account_json(decimals: u8) -> serde_json::Value {
+    let mut data = [0u8; 82];
+    data[44] = decimals;
+    // The initialized flag.
+    data[45] = 1;
+    serde_json::json!({
+        "lamports": 1_461_600u64,
+        "data": [BASE64_STANDARD.encode(data), "base64"],
+        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "executable": false,
+        "rentEpoch": 0u64,
+        "space": 82u64,
+    })
+}
+
+/// A canned `getMultipleAccounts` entry: an initialized account of the
+/// classic SPL token program holding `mint`.
+pub(crate) fn token_account_json(mint: [u8; 32]) -> serde_json::Value {
+    let mut data = [0u8; 165];
+    data[..32].copy_from_slice(&mint);
+    // The account state byte: 1 is Initialized.
+    data[108] = 1;
+    serde_json::json!({
+        "lamports": 2_039_280u64,
+        "data": [BASE64_STANDARD.encode(data), "base64"],
+        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "executable": false,
+        "rentEpoch": 0u64,
+        "space": 165u64,
+    })
+}
+
+/// A mock RPC answering one buy-account lookup with an initialized token
+/// account of the seeded order's buy mint. Each canned response serves once,
+/// later cuts fail open and keep the orders.
+fn mock_rpc() -> SolanaRPC {
+    let response = serde_json::json!({
+        "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+        "value": [token_account_json([0xAB; 32])],
+    });
+    SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]))
+}
+
+/// Native prices for the seeded order's pair, at the denominator so scores
+/// stay raw surplus.
+fn test_prices() -> [(solana_sdk::pubkey::Pubkey, u64); 2] {
+    [
+        (
+            solana_sdk::pubkey::Pubkey::new_from_array([0xAA; 32]),
+            1_000_000_000,
+        ),
+        (
+            solana_sdk::pubkey::Pubkey::new_from_array([0xAB; 32]),
+            1_000_000_000,
+        ),
+    ]
+}
+
 async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
     crate::test_db::wipe(pool).await;
     sqlx::query("INSERT INTO solana.indexer_state (slot) VALUES ($1)")
@@ -128,7 +192,6 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     // the solution scores its 100 surplus and wins.
     let solution = dto::Solution {
         solution_id: 7,
-        score: 100,
         solver: Pubkey([0xCC; 32]),
         orders: HashMap::from([(
             IntentHash(uid),
@@ -148,7 +211,13 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
 
     // Stage probes: pinpoint the failing phase before driving the loop.
     {
-        let provider = DbAuctionProvider::new(pool.clone());
+        let provider = DbAuctionProvider::new(
+            pool.clone(),
+            mock_rpc(),
+            150,
+            InFlightOrders::default(),
+            NativePrices::seeded(test_prices()),
+        );
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
         let competition = DriverCompetition::new(vec![Arc::clone(&driver)], Duration::from_secs(6));
@@ -158,16 +227,28 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }
 
-    let windows = SettlementWindows::new(pool.clone());
+    let inflight = InFlightOrders::default();
+    let windows = SettlementWindows::new(pool.clone(), inflight.clone());
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
-        Box::new(DbAuctionProvider::new(pool.clone())),
+        Box::new(DbAuctionProvider::new(
+            pool.clone(),
+            mock_rpc(),
+            150,
+            inflight.clone(),
+            NativePrices::seeded(test_prices()),
+        )),
         Box::new(DriverCompetition::new(
             vec![Arc::clone(&driver)],
             Duration::from_secs(6),
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
-        Box::new(DriverExecutor::new(vec![driver], windows.clone())),
+        Box::new(DriverExecutor::new(
+            vec![driver],
+            windows.clone(),
+            None,
+            inflight.clone(),
+        )),
         Box::new(CompetitionObserver::new(pool.clone(), windows.clone())),
         25,
     );
@@ -179,6 +260,27 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         .expect("settle channel open");
     assert_eq!(settle.solution_id, 7);
     assert!(settle.auction_id > 0);
+    // The dispatched order is held out of the next cut until its settlement
+    // transaction cannot land any more: the deadline plus the blockhash
+    // lifetime.
+    let expired = tip + 25 + solana_sdk::clock::MAX_PROCESSING_AGE as u64 + 1;
+    // The lag gate stays out of the way: this provider tests the hold, and
+    // the watermark is still at the dispatch tip.
+    let held_provider = DbAuctionProvider::new(
+        pool.clone(),
+        mock_rpc(),
+        u64::MAX,
+        inflight.clone(),
+        NativePrices::seeded(test_prices()),
+    );
+    assert!(
+        held_provider.cut_auction(&(expired - 1)).await.is_none(),
+        "in-flight order excluded from the cut"
+    );
+    assert!(
+        held_provider.cut_auction(&expired).await.is_some(),
+        "order returns once the transaction cannot land"
+    );
     // The dispatch opened a settlement-execution window.
     let open_windows: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM solana.settlement_executions WHERE outcome IS NULL",

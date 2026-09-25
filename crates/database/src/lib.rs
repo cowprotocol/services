@@ -3,6 +3,7 @@ pub mod auction;
 pub mod byte_array;
 pub mod ethflow_orders;
 pub mod events;
+pub mod fast_path;
 pub mod fee_policies;
 pub mod jit_orders;
 pub mod last_indexed_blocks;
@@ -21,10 +22,7 @@ pub mod solana;
 pub mod solver_competition_v2;
 pub mod trades;
 
-use {
-    byte_array::ByteArray,
-    sqlx::{Executor, PgPool},
-};
+use {byte_array::ByteArray, sqlx::Executor};
 
 // Design:
 //
@@ -45,6 +43,7 @@ use {
 // test obsolete.
 
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
+pub type PgPool = sqlx::PgPool;
 
 /// The names of tables we use in the db.
 pub const TABLES: &[&str] = &[
@@ -60,6 +59,7 @@ pub const TABLES: &[&str] = &[
     "onchain_placed_orders",
     "presignature_events",
     "proposed_jit_orders",
+    "quote_competitions",
     "quotes",
     "reference_scores",
     "settlement_executions",
