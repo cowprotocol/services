@@ -55,11 +55,12 @@ pub struct Order {
     pub full_buy_amount: u64,
     pub side: Side,
     /// True when the order's buy token account does not exist on chain
-    /// yet. The settlement creates it and the taker pays its rent, so the
-    /// solution should price that rent in.
+    /// yet. The settlement creates it and the solver keypair pays its rent,
+    /// so the solution should price that rent in.
     ///
-    /// TODO: when Token-2022 mints are supported, this boolean needs to
-    /// change to a type representing `Option<{SplToken, Token2022}>`.
+    /// TODO(token-2022): a token-2022 account rents more bytes, so once
+    /// those mints are supported this boolean becomes the missing account's
+    /// token program.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub missing_buy_token_account: bool,
 }
@@ -102,7 +103,7 @@ impl Order {
             full_sell_amount: order.sell_amount,
             full_buy_amount: order.buy_amount,
             side: order.side,
-            missing_buy_token_account: order.buy_token_account_missing(),
+            missing_buy_token_account: order.missing_buy_token_account,
         }
     }
 }
@@ -135,11 +136,7 @@ impl Auction {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::{domain::Side, infra::blockchain::BuyTokenAccountState},
-        serde_json::json,
-    };
+    use {super::*, crate::domain::Side, serde_json::json};
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -210,7 +207,7 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x67),
             app_data: [0x77; 32],
-            buy_token_account_state: None,
+            missing_buy_token_account: false,
         }
     }
 
@@ -256,7 +253,7 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x77),
             app_data: [0; 32],
-            buy_token_account_state: missing.then_some(BuyTokenAccountState::MissingAta),
+            missing_buy_token_account: missing,
         };
 
         let flagged = serde_json::to_value(Order::new(&order(true), program_id, None)).unwrap();

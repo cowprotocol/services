@@ -119,24 +119,15 @@ impl AccountsSnapshot {
         }
     }
 
-    /// Classify the order's buy token account, the settlement's payout
-    /// destination: whether it can receive the payout as-is, and when it is
-    /// missing, whether it is the owner's associated token account, which an
-    /// idempotent create can produce.
-    pub fn buy_token_account_state(&self, order: &Order) -> BuyTokenAccountState {
-        match self.token_account_state(&order.buy_token_account) {
-            TokenAccountState::Initialized => BuyTokenAccountState::Exists,
+    /// Whether the order's buy token account, the settlement's payout
+    /// destination, is missing on chain and is the owner's associated token
+    /// account: the one destination an idempotent create can produce. Any
+    /// other absent destination stays the owner's to create.
+    pub fn buy_token_account_missing(&self, order: &Order) -> bool {
+        matches!(
+            self.token_account_state(&order.buy_token_account),
             TokenAccountState::NeedsCreation
-                if order.buy_token_account
-                    == associated_token_address(&order.owner, &order.buy_token) =>
-            {
-                BuyTokenAccountState::MissingAta
-            }
-            TokenAccountState::NeedsCreation => BuyTokenAccountState::Uncreatable,
-            TokenAccountState::Unexpected { owner, data_len } => {
-                BuyTokenAccountState::Unexpected { owner, data_len }
-            }
-        }
+        ) && order.buy_token_account == associated_token_address(&order.owner, &order.buy_token)
     }
 }
 
@@ -155,32 +146,6 @@ pub enum TokenAccountState {
     /// caller cannot use this account, and an idempotent create cannot
     /// replace it.
     Unexpected { owner: Pubkey, data_len: usize },
-}
-
-/// The on-chain state of an order's buy token account, where `FinalizeSettle`
-/// pays out.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum BuyTokenAccountState {
-    /// An initialized token account that can receive the payout.
-    Exists,
-    /// Not on chain, and the owner's associated token account for the buy
-    /// mint: anyone can create it with an idempotent create, paying its rent.
-    MissingAta,
-    /// Not on chain and not the owner's associated token account. The order
-    /// names no one else who could receive the payout, so nobody but its
-    /// owner can create the account and the order cannot settle until then.
-    Uncreatable,
-    /// On chain in a state that cannot receive the payout: a frozen or
-    /// uninitialized token account, or an account of another program.
-    Unexpected { owner: Pubkey, data_len: usize },
-}
-
-impl BuyTokenAccountState {
-    /// Whether the account can receive the payout, creating it first if
-    /// needed.
-    pub fn receivable(self) -> bool {
-        matches!(self, Self::Exists | Self::MissingAta)
-    }
 }
 
 /// Why the snapshot rejected an account as an address lookup table.

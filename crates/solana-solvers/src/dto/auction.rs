@@ -69,11 +69,12 @@ pub struct Order {
     pub full_buy_amount: u64,
     pub side: dex::Side,
     /// True when the order's buy token account does not exist on chain
-    /// yet. The driver's settlement creates it and the taker pays its rent,
-    /// a cost the solution should price in.
+    /// yet. The driver's settlement creates it and the solver keypair pays
+    /// its rent, a cost the solution should price in.
     ///
-    /// TODO: when Token-2022 mints are supported, this boolean needs to
-    /// change to a type representing `Option<{SplToken, Token2022}>`.
+    /// TODO(token-2022): a token-2022 account rents more bytes, so once
+    /// those mints are supported this boolean becomes the missing account's
+    /// token program.
     #[serde(default)]
     pub missing_buy_token_account: bool,
 }

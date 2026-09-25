@@ -108,7 +108,8 @@ impl Settlement {
             .iter()
             .copied()
             .chain(buffers.iter().map(|token| token.address))
-            .chain(sell_atas.iter().map(|token| token.address));
+            .chain(sell_atas.iter().map(|token| token.address))
+            .chain(self.orders.iter().map(|order| order.buy_token_account));
 
         let snapshot = blockchain
             .accounts_snapshot(addresses)
@@ -283,8 +284,8 @@ impl SetupAccount {
 
 /// The setup accounts the settlement must create before `BeginSettle`, each
 /// list sorted and deduplicated: the mints whose buffer PDA is missing on
-/// chain, and the ATAs either missing on chain (the payer's sell ATAs) or
-/// flagged missing at solve time (the orders' buy ATAs).
+/// chain, and the missing ATAs, the payer's sell ATAs and the orders' buy
+/// ATAs.
 fn accounts_to_create(
     orders: &[Order],
     buffers: &[SetupAccount],
@@ -300,12 +301,11 @@ fn accounts_to_create(
         .into_iter()
         .map(|mint| Ata { owner: payer, mint });
 
-    // The orders' buy ATAs come from the solve-time flag, not the snapshot:
-    // the engine priced the rent for exactly those, and creating one that
-    // appeared since is a no-op.
+    // Checked against the chain again rather than taken from the solve-time
+    // flag: an account closed since would revert the payout.
     let missing_user_atas = orders
         .iter()
-        .filter(|order| order.buy_token_account_missing())
+        .filter(|order| snapshot.buy_token_account_missing(order))
         .map(|order| Ata {
             owner: order.owner,
             mint: order.buy_token,
@@ -600,7 +600,7 @@ pub enum Error {
 mod tests {
     use {
         super::*,
-        crate::{domain::Trade, infra::blockchain::BuyTokenAccountState},
+        crate::domain::Trade,
         cow_settlement_interface::instruction::{
             InstructionInputParsing,
             settle::{BeginSettleInput, FinalizeSettleInput},
@@ -633,7 +633,7 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey::default(), // re-derived below
             app_data: [0x77; 32],
-            buy_token_account_state: None,
+            missing_buy_token_account: false,
         };
         customize(&mut order);
         let uid = OrderIntent::from(&order).uid();
@@ -684,7 +684,8 @@ mod tests {
     }
 
     /// Answers `getMultipleAccounts` with `accounts` in the settlement's
-    /// request order: lookup tables, buffer PDAs, payer sell ATAs.
+    /// request order: lookup tables, buffer PDAs, payer sell ATAs, the
+    /// orders' buy token accounts.
     fn blockchain(accounts: impl IntoIterator<Item = Value>) -> Solana {
         let mocks = Mocks::from([(
             RpcRequest::GetMultipleAccounts,
@@ -1137,18 +1138,21 @@ mod tests {
         assert_eq!(finalize_input.begin_ix_index, 3);
     }
 
+    /// The lookup answers in order: buffer PDA, payer sell ATA and the
+    /// order's buy account, all absent. The buy account is the owner's
+    /// associated token account, so it joins the accounts to create.
     #[tokio::test]
     async fn resolves_a_missing_buy_ata_as_an_account_to_create() {
         let program_id = pubkey(0xaa);
         let payer = pubkey(0xbb);
         let order = test_order_with(&program_id, |order| {
-            order.buy_token_account_state = Some(BuyTokenAccountState::MissingAta);
+            order.buy_token_account = associated_token_address(&order.owner, &order.buy_token);
         });
         let settlement =
             test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
 
         let resolved = settlement
-            .resolve_accounts(&blockchain([Value::Null, Value::Null]), payer)
+            .resolve_accounts(&blockchain([Value::Null, Value::Null, Value::Null]), payer)
             .await
             .unwrap();
 

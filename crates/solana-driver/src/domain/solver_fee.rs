@@ -179,7 +179,7 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x67),
             app_data: [0x77; 32],
-            buy_token_account_state: None,
+            missing_buy_token_account: false,
         }
     }
 

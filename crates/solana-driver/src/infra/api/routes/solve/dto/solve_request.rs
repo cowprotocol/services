@@ -97,7 +97,7 @@ impl From<Order> for domain::Order {
             partially_fillable: order.partially_fillable,
             order_pda: order.order_pda,
             app_data: order.app_data.0,
-            buy_token_account_state: None,
+            missing_buy_token_account: false,
         }
     }
 }

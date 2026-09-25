@@ -30,8 +30,8 @@ fn pubkey(byte: u8) -> Pubkey {
 }
 
 /// Order intent used by the literal `/solve` request and the settle test.
-/// The buy token account is the owner's associated token account, so an
-/// order whose account is absent on chain stays solvable.
+/// The buy token account is the owner's associated token account, the one
+/// the settlement creates when the mock RPC answers "absent".
 fn test_order_intent() -> OrderIntent {
     OrderIntent {
         owner: pubkey(0x22),
@@ -349,11 +349,11 @@ async fn solve_flags_a_missing_buy_token_account_to_the_engine() {
 }
 
 /// An absent buy token account that is not the owner's associated token
-/// account cannot be created by the settlement: the driver drops the order
-/// and, with none left, answers empty without calling the engine, like the
-/// EVM driver.
+/// account is nothing the settlement can create, so the engine is not told
+/// to price its rent. The order still reaches the engine: dropping
+/// unreceivable orders is the autopilot's cut.
 #[tokio::test]
-async fn solve_skips_the_engine_when_no_order_is_receivable() {
+async fn solve_does_not_flag_an_absent_account_it_cannot_create() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "2000")])).await;
     let (solver, _) = solver_with_keypair(engine);
     let addr = spawn_server(vec![solver]).await;
@@ -361,9 +361,10 @@ async fn solve_skips_the_engine_when_no_order_is_receivable() {
     request["orders"][0]["buyTokenAccount"] = serde_json::json!(pubkey(0x66).to_string());
 
     let body = call_solve_with(addr, request).await;
+    assert_eq!(response_ids(&body), vec![1]);
 
-    assert_eq!(response_ids(&body), Vec::<u64>::new());
-    assert!(requests.lock().unwrap().is_none());
+    let request = requests.lock().unwrap().take().unwrap();
+    assert!(request["orders"][0].get("missingBuyTokenAccount").is_none());
 }
 
 /// Two solutions with the same id: the driver keeps only the last occurrence

@@ -74,13 +74,8 @@ impl Competition {
         mut auction: Auction,
     ) -> Result<Vec<Solution>, Error> {
         auction
-            .resolve_buy_token_accounts(&self.blockchain)
-            .await
-            .map_err(Error::Rpc)?;
-        if auction.orders.is_empty() {
-            tracing::info!("no receivable order left; skipping solving");
-            return Ok(Vec::new());
-        }
+            .flag_missing_buy_token_accounts(&self.blockchain)
+            .await;
         let solutions = self.compute_solutions(&auction).await?;
 
         let auction = Arc::new(auction);
