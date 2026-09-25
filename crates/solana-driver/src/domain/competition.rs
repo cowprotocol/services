@@ -68,10 +68,15 @@ impl Competition {
     }
 
     /// Solve the auction and cache each solution for a later `settle`.
-    pub async fn solve(&self, auction_id: Id, auction: &Auction) -> Result<Vec<Solution>, Error> {
-        let solutions = self.compute_solutions(auction).await?;
+    pub async fn solve(
+        &self,
+        auction_id: Id,
+        mut auction: Auction,
+    ) -> Result<Vec<Solution>, Error> {
+        auction.resolve_buy_token_accounts(&self.blockchain).await?;
+        let solutions = self.compute_solutions(&auction).await?;
 
-        let auction = Arc::new(auction.clone());
+        let auction = Arc::new(auction);
         for solution in &solutions {
             self.solutions.insert(
                 Key {
@@ -537,6 +542,8 @@ pub(crate) enum Error {
     TransactionTooLarge { size: u64 },
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
+    #[error("failed to resolve buy token accounts: {0}")]
+    ResolveBuyTokenAccounts(#[from] super::auction::ResolveBuyTokenAccountsError),
     #[error("failed to encode settlement: {0}")]
     Settlement(#[from] super::settlement::Error),
     /// The driver does not know whether the transaction reached the network.
@@ -630,6 +637,7 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
         Error::SimulationFailed { .. } => "simulation_failed",
         Error::TransactionTooLarge { .. } => "transaction_too_large",
         Error::Resolve(_) => "resolve_failed",
+        Error::ResolveBuyTokenAccounts(_) => "resolve_buy_token_accounts_failed",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",
     }

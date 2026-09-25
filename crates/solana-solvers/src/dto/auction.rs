@@ -68,6 +68,14 @@ pub struct Order {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub full_buy_amount: u64,
     pub side: dex::Side,
+    /// True when the order's buy token account does not exist on chain
+    /// yet. The driver's settlement creates it and the taker pays its rent,
+    /// a cost the solution should price in.
+    ///
+    /// TODO: when Token-2022 mints are supported, this boolean needs to
+    /// change to an type representing `Option<{SplToken, Token2022}>`.
+    #[serde(default)]
+    pub missing_buy_token_account: bool,
 }
 
 impl Order {
