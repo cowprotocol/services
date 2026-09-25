@@ -1,7 +1,7 @@
 use {
     crate::{
         api::{AppState, error},
-        database::trades::{PaginatedTradeFilter, TradeRetrievingPaginated},
+        database::trades::{PaginatedTradeFilter, TradeFilter, TradeRetrievingPaginated},
     },
     alloy::primitives::Address,
     anyhow::Context,
@@ -36,31 +36,28 @@ enum TradeFilterError {
 }
 
 impl QueryParams {
-    fn trade_filter(&self, offset: u64, limit: u64) -> PaginatedTradeFilter {
-        PaginatedTradeFilter {
-            order_uid: self.order_uid,
-            owner: self.owner,
+    fn validate(&self) -> Result<PaginatedTradeFilter, TradeFilterError> {
+        let filter = match (self.owner, self.order_uid) {
+            (Some(owner), None) => TradeFilter::Owner(owner),
+            (None, Some(uid)) => TradeFilter::OrderUid(uid),
+            _ => {
+                return Err(TradeFilterError::InvalidFilter(
+                    "Must specify exactly one of owner or orderUid.".to_owned(),
+                ));
+            }
+        };
+
+        let offset = self.offset.unwrap_or(DEFAULT_OFFSET);
+        let limit = self.limit.unwrap_or(DEFAULT_LIMIT);
+        if !(MIN_LIMIT..=MAX_LIMIT).contains(&limit) {
+            return Err(TradeFilterError::InvalidLimit(MIN_LIMIT, MAX_LIMIT));
+        }
+
+        Ok(PaginatedTradeFilter {
+            filter,
             offset,
             limit,
-        }
-    }
-
-    fn validate(&self) -> Result<PaginatedTradeFilter, TradeFilterError> {
-        match (self.order_uid.as_ref(), self.owner.as_ref()) {
-            (Some(_), None) | (None, Some(_)) => {
-                let offset = self.offset.unwrap_or(DEFAULT_OFFSET);
-                let limit = self.limit.unwrap_or(DEFAULT_LIMIT);
-
-                if !(MIN_LIMIT..=MAX_LIMIT).contains(&limit) {
-                    return Err(TradeFilterError::InvalidLimit(MIN_LIMIT, MAX_LIMIT));
-                }
-
-                Ok(self.trade_filter(offset, limit))
-            }
-            _ => Err(TradeFilterError::InvalidFilter(
-                "Must specify exactly one of owner or orderUid.".to_owned(),
-            )),
-        }
+        })
     }
 }
 
@@ -111,8 +108,7 @@ mod tests {
             limit: None,
         };
         let result = query.validate().unwrap();
-        assert_eq!(result.owner, Some(owner));
-        assert_eq!(result.order_uid, None);
+        assert_eq!(result.filter, TradeFilter::Owner(owner));
         assert_eq!(result.offset, DEFAULT_OFFSET);
         assert_eq!(result.limit, DEFAULT_LIMIT);
 
@@ -124,8 +120,7 @@ mod tests {
             limit: None,
         };
         let result = query.validate().unwrap();
-        assert_eq!(result.owner, None);
-        assert_eq!(result.order_uid, Some(uid));
+        assert_eq!(result.filter, TradeFilter::OrderUid(uid));
         assert_eq!(result.offset, DEFAULT_OFFSET);
         assert_eq!(result.limit, DEFAULT_LIMIT);
 
@@ -137,7 +132,7 @@ mod tests {
             limit: Some(50),
         };
         let result = query.validate().unwrap();
-        assert_eq!(result.owner, Some(owner));
+        assert_eq!(result.filter, TradeFilter::Owner(owner));
         assert_eq!(result.offset, 10);
         assert_eq!(result.limit, 50);
     }

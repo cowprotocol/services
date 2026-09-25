@@ -62,6 +62,9 @@ pub struct Order {
     pub post_interactions: Vec<InteractionData>,
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
+    /// Deprecated: every order is a limit order. Solvers should not rely on
+    /// this field, it is kept for backwards compatibility and will be removed.
+    #[serde(default)]
     pub class: Class,
     pub app_data: AppDataHash,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -135,10 +138,12 @@ pub enum Kind {
     Buy,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+/// Deprecated: every order is a limit order.
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Class {
     Market,
+    #[default]
     Limit,
 }
 

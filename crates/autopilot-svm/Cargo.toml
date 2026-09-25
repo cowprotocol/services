@@ -27,6 +27,7 @@ cow-solana-rpc = { workspace = true }
 database = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
+moka = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }

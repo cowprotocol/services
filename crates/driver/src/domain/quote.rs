@@ -168,8 +168,8 @@ impl Order {
             .ok_or(QuotingFailed::NoSolutions)?;
         let quote = Quote::try_new(eth, &solution)?;
 
-        // Cache the fast-path solution under the id the orderbook minted for
-        // this request, so we can later settle it by referencing that id.
+        // Cache the fast-path solution so it can be settled later by its quote
+        // id.
         if self.enable_fast_path {
             competition
                 .cache_quote_solution(self.quote_id, auction.clone(), solution)
@@ -203,9 +203,6 @@ impl Order {
                     buy: self.buy(),
                     sell: self.sell(),
                     side: self.side,
-                    // Quotes always use limit orders so that the engine
-                    // determines the fee (see `Order::solver_determines_fee`).
-                    kind: competition::order::Kind::Limit,
                     pre_interactions: Default::default(),
                     post_interactions: Default::default(),
                     sell_token_balance: competition::order::SellTokenBalance::Erc20,
