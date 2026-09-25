@@ -332,11 +332,6 @@ impl Settlement {
             .map(|(token, amount)| (token, amount.into()))
             .collect()
     }
-
-    /// Returns true if this settlement's solution has any trades with haircut.
-    pub fn has_haircut(&self) -> bool {
-        self.solution.has_haircut()
-    }
 }
 
 /// Access lists that are required when the order buys native ETH and the

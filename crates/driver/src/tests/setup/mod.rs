@@ -341,8 +341,8 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
-    /// Haircut in basis points (0-10000) for conservative bidding.
-    haircut_bps: u32,
+    /// Solver fee in basis points (0-10000) for conservative bidding.
+    solver_fee_bps: u32,
     /// Maximum number of solutions the driver proposes per auction.
     max_solutions_to_propose: usize,
     /// Additional submission accounts for EIP-7702 parallel settlement.
@@ -375,7 +375,7 @@ pub fn test_solver() -> Solver {
         },
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
-        haircut_bps: 0,
+        solver_fee_bps: 0,
         max_solutions_to_propose: 1,
         submission_accounts: vec![],
         fast_path_enabled: false,
@@ -418,9 +418,9 @@ impl Solver {
         self
     }
 
-    pub fn haircut_bps(self, haircut_bps: u32) -> Self {
+    pub fn solver_fee_bps(self, solver_fee_bps: u32) -> Self {
         Self {
-            haircut_bps,
+            solver_fee_bps,
             ..self
         }
     }
@@ -1007,7 +1007,7 @@ impl Setup {
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
-                haircut_bps: solver.haircut_bps,
+                solver_fee_bps: solver.solver_fee_bps,
             })
             .await;
 

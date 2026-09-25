@@ -272,9 +272,10 @@ impl Order {
                             max_volume_factor,
                             quote: quote.into_domain(self.sell_token, self.buy_token),
                         },
-                        FeePolicy::Volume { factor } => {
-                            competition::order::FeePolicy::Volume { factor }
-                        }
+                        FeePolicy::Volume { factor } => competition::order::FeePolicy::Volume {
+                            factor,
+                            contributes_to_score: true,
+                        },
                     })
                     .collect(),
                 quote: self

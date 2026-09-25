@@ -55,7 +55,7 @@ pub struct Config<'a> {
     pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
     pub allow_multiple_solve_requests: bool,
-    pub haircut_bps: u32,
+    pub solver_fee_bps: u32,
 }
 
 impl Solver {
@@ -100,12 +100,12 @@ impl Solver {
                             _ => {}
                         }
                     }
-                    // Make-room for the haircut: the driver subtracts a haircut
-                    // post-hoc from buy_amount() (sell orders) / adds it to
-                    // sell_amount() (buy orders). Tightening the auction limits
-                    // here ensures solvers bid with enough headroom.
-                    if config.haircut_bps > 0 {
-                        let factor = f64::from(config.haircut_bps) / 10_000.0;
+                    // The driver injects the solver fee as an additional volume
+                    // fee policy, so in driver fee-handling mode it tightens
+                    // the limits for it exactly like for
+                    // the volume policies above.
+                    if config.solver_fee_bps > 0 && config.fee_handler == FeeHandler::Driver {
+                        let factor = f64::from(config.solver_fee_bps) / 10_000.0;
                         current_sell_amount = eth::TokenAmount(current_sell_amount)
                             .apply_factor(1.0 / (1.0 + factor))
                             .unwrap()
@@ -137,10 +137,10 @@ impl Solver {
                             _ => {}
                         }
                     }
-                    // Make-room for the haircut (see comment in the buy-side
-                    // branch above).
-                    if config.haircut_bps > 0 {
-                        let factor = f64::from(config.haircut_bps) / 10_000.0;
+                    // Solver fee make-room (see comment in the buy-side branch
+                    // above).
+                    if config.solver_fee_bps > 0 && config.fee_handler == FeeHandler::Driver {
+                        let factor = f64::from(config.solver_fee_bps) / 10_000.0;
                         current_buy_amount = eth::TokenAmount(current_buy_amount)
                             .apply_factor(1.0 / (1.0 - factor))
                             .unwrap()
@@ -188,20 +188,29 @@ impl Solver {
                 });
             }
             if config.fee_handler == FeeHandler::Solver {
-                order.as_object_mut().unwrap().insert(
-                    "feePolicies".to_owned(),
-                    if config.quote {
-                        json!([])
-                    } else {
-                        let fee_policies_json: Vec<serde_json::Value> = quote
-                            .order
-                            .fee_policy
-                            .iter()
-                            .map(|policy| policy.to_json_value())
-                            .collect();
-                        json!(fee_policies_json)
-                    },
-                );
+                let mut fee_policies_json: Vec<serde_json::Value> = if config.quote {
+                    vec![]
+                } else {
+                    quote
+                        .order
+                        .fee_policy
+                        .iter()
+                        .map(|policy| policy.to_json_value())
+                        .collect()
+                };
+                // In solver fee-handling mode the injected solver fee is
+                // forwarded to the solver as a regular volume fee policy.
+                if config.solver_fee_bps > 0 {
+                    fee_policies_json.push(json!({
+                        "volume": {
+                            "factor": f64::from(config.solver_fee_bps) / 10_000.0,
+                        }
+                    }));
+                }
+                order
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("feePolicies".to_owned(), json!(fee_policies_json));
             }
             orders_json.push(order);
         }

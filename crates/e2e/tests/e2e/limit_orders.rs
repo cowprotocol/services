@@ -79,25 +79,25 @@ async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
 }
 
-/// Test that sell orders with haircut configured execute on-chain with
-/// haircutted amounts. The haircut reduces both the reported buy_amount and
-/// the on-chain buy_amount (they should match). User receives less than
-/// without haircut, with the difference going to the settlement contract.
+/// Test that sell orders with solver fee configured execute on-chain with
+/// fee-adjusted amounts. The solver fee reduces both the reported buy_amount
+/// and the on-chain buy_amount (they should match). User receives less than
+/// without solver fee, with the difference going to the settlement contract.
 #[tokio::test]
 #[ignore]
-async fn local_node_limit_order_with_haircut() {
-    run_test(sell_order_with_haircut_test).await;
+async fn local_node_limit_order_with_solver_fee() {
+    run_test(sell_order_with_solver_fee_test).await;
 }
 
-/// Test that buy orders with haircut configured execute on-chain with
-/// haircutted amounts. The haircut increases both the reported sell_amount and
-/// the on-chain sell_amount (they should match). Verifies that:
+/// Test that buy orders with solver fee configured execute on-chain with
+/// fee-adjusted amounts. The solver fee increases both the reported sell_amount
+/// and the on-chain sell_amount (they should match). Verifies that:
 /// - executedBuy == signedBuyAmount (user gets exactly what they signed for)
-/// - executedSell includes haircut (but still <= sellLimit)
+/// - executedSell includes solver fee (but still <= sellLimit)
 #[tokio::test]
 #[ignore]
-async fn local_node_buy_order_with_haircut() {
-    run_test(buy_order_with_haircut_test).await;
+async fn local_node_buy_order_with_solver_fee() {
+    run_test(buy_order_with_solver_fee_test).await;
 }
 
 /// The block number from which we will fetch state for the forked tests.
@@ -1283,11 +1283,11 @@ async fn no_liquidity_limit_order(web3: Web3) {
     assert!(balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth());
 }
 
-/// Test that a limit order with haircut configured executes on-chain with
-/// haircutted amounts. The haircut reduces the buy_amount the user receives,
-/// both in reported amounts and on-chain execution (they should match).
-/// The haircut difference goes to the settlement contract.
-async fn sell_order_with_haircut_test(web3: Web3) {
+/// Test that a limit order with solver fee configured executes on-chain with
+/// fee-adjusted amounts. The solver fee reduces the buy_amount the user
+/// receives, both in reported amounts and on-chain execution (they should
+/// match). The solver fee difference goes to the settlement contract.
+async fn sell_order_with_solver_fee_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
@@ -1359,9 +1359,9 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     // Place Orders
     let services = Services::new(&onchain).await;
 
-    // Start protocol with 500 bps (5%) haircut
+    // Start protocol with 500 bps (5%) solver fee
     services
-        .start_protocol_with_args_and_haircut(
+        .start_protocol_with_args_and_solver_fee(
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration::test_default(),
             solver,
@@ -1369,14 +1369,14 @@ async fn sell_order_with_haircut_test(web3: Web3) {
         )
         .await;
 
-    // Create order with generous limit to ensure there's slack for haircut
+    // Create order with generous limit to ensure there's slack for solver fee
     // Sell 10 A for at least 5 B (pool has 1:1 ratio so we'd get ~9.9 B without
     // fees)
     let order = OrderCreation {
         sell_token: *token_a.address(),
         sell_amount: 10u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: 5u64.eth(), // Generous limit creates slack for haircut
+        buy_amount: 5u64.eth(), // Generous limit creates slack for solver fee
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -1397,8 +1397,8 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     onchain.mint_block().await;
     services.get_order(&order_id).await.unwrap();
 
-    // Drive solution - order should execute even with haircut applied
-    tracing::info!("Waiting for trade with haircut.");
+    // Drive solution - order should execute even with solver fee applied
+    tracing::info!("Waiting for trade with solver fee.");
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
         balance_after.checked_sub(trader_balance_before).unwrap() >= 5u64.eth()
@@ -1406,9 +1406,9 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     .await
     .unwrap();
 
-    // Verify that haircut DOES affect on-chain execution.
-    // The haircut reduces the buy_amount the user receives, with the difference
-    // going to the settlement contract.
+    // Verify that solver fee DOES affect on-chain execution.
+    // The solver fee reduces the buy_amount the user receives, with the
+    // difference going to the settlement contract.
     let trader_balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let settlement_balance_after = token_b
         .balanceOf(*onchain.contracts().gp_settlement.address())
@@ -1423,19 +1423,19 @@ async fn sell_order_with_haircut_test(web3: Web3) {
         .checked_sub(settlement_balance_before)
         .unwrap();
 
-    // With 500 bps (5%) haircut on ~9.87 ETH buy amount, settlement should
+    // With 500 bps (5%) solver fee on ~9.87 ETH buy amount, settlement should
     // receive ~0.49 ETH. Allow some tolerance for AMM fees and rounding.
     assert!(
         settlement_received >= 0.4.eth() && settlement_received <= 0.6.eth(),
-        "Settlement contract should have received haircut (~0.49 ETH), but got {}",
+        "Settlement contract should have received solver fee (~0.49 ETH), but got {}",
         settlement_received
     );
 
-    // Expected trader amount: AMM output minus haircut (~9.87 - 0.49 = ~9.38
-    // ETH). Haircut reduces what trader receives on-chain.
+    // Expected trader amount: AMM output minus solver fee (~9.87 - 0.49 = ~9.38
+    // ETH). Solver fee reduces what trader receives on-chain.
     assert!(
         trader_received >= 9u64.eth() && trader_received <= 9.5.eth(),
-        "Trader should have received AMM output minus haircut (~9.38 ETH), but got {}",
+        "Trader should have received AMM output minus solver fee (~9.38 ETH), but got {}",
         trader_received
     );
 
@@ -1475,19 +1475,19 @@ async fn sell_order_with_haircut_test(web3: Web3) {
 
     assert!(
         reported_sell_amount <= signed_sell_amount,
-        "Driver reported sell_amount {} exceeds signed sell_amount {}. Haircut should reduce \
+        "Driver reported sell_amount {} exceeds signed sell_amount {}. Solver fee should reduce \
          surplus/score, not inflate the reported sell amount!",
         reported_sell_amount,
         signed_sell_amount
     );
 }
 
-/// Test that a buy order with haircut configured executes correctly.
+/// Test that a buy order with solver fee configured executes correctly.
 /// For buy orders, the user signs for a specific buy_amount they want to
 /// receive, and sell_amount is the maximum they're willing to pay.
-/// Haircut increases the sell_amount on-chain (user pays more).
+/// Solver fee increases the sell_amount on-chain (user pays more).
 /// Verifies that reported amounts match on-chain execution.
-async fn buy_order_with_haircut_test(web3: Web3) {
+async fn buy_order_with_solver_fee_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
@@ -1555,12 +1555,12 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         .await
         .unwrap();
 
-    // Start protocol with 500 bps (5%) haircut
+    // Start protocol with 500 bps (5%) solver fee
     let services = Services::new(&onchain).await;
 
-    // Start protocol with 500 bps (5%) haircut
+    // Start protocol with 500 bps (5%) solver fee
     services
-        .start_protocol_with_args_and_haircut(
+        .start_protocol_with_args_and_solver_fee(
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration::test_default(),
             solver,
@@ -1594,7 +1594,7 @@ async fn buy_order_with_haircut_test(web3: Web3) {
     services.get_order(&order_id).await.unwrap();
 
     // Wait for trade to execute
-    tracing::info!("Waiting for buy order trade with haircut.");
+    tracing::info!("Waiting for buy order trade with solver fee.");
     let trader_b_balance_before = token_b.balanceOf(trader.address()).call().await.unwrap();
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_b.balanceOf(trader.address()).call().await.unwrap();
@@ -1656,15 +1656,15 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         sell_limit_u256
     );
 
-    // 3. For buy orders, haircut INCREASES sell_amount (user pays more). Base
-    //    needed is ~5.04 ETH, with 5% haircut on 5 ETH buy amount = 0.25 ETH.
-    //    So sell_amount should be ~5.04 + 0.25 = ~5.29 ETH. We allow up to 5.5
-    //    ETH to account for variance.
+    // 3. For buy orders, solver fee INCREASES sell_amount (user pays more).
+    //    Base needed is ~5.04 ETH, with 5% solver fee on 5 ETH buy amount =
+    //    0.25 ETH. So sell_amount should be ~5.04 + 0.25 = ~5.29 ETH. We allow
+    //    up to 5.5 ETH to account for variance.
     let reasonable_max_sell = 5.5.eth();
     assert!(
         reported_sell_amount <= reasonable_max_sell,
-        "Driver reported sell_amount {} exceeds expected max {} (actual needed + haircut is ~5.29 \
-         ETH)",
+        "Driver reported sell_amount {} exceeds expected max {} (actual needed + solver fee is \
+         ~5.29 ETH)",
         reported_sell_amount,
         reasonable_max_sell
     );
