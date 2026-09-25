@@ -108,18 +108,10 @@ pub(crate) fn mint_account_json(decimals: u8) -> serde_json::Value {
 /// A canned `getMultipleAccounts` entry: an initialized account of the
 /// classic SPL token program holding `mint`.
 pub(crate) fn token_account_json(mint: [u8; 32]) -> serde_json::Value {
-    let mut data = [0u8; 165];
-    data[..32].copy_from_slice(&mint);
-    // The account state byte: 1 is Initialized.
-    data[108] = 1;
-    serde_json::json!({
-        "lamports": 2_039_280u64,
-        "data": [BASE64_STANDARD.encode(data), "base64"],
-        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "executable": false,
-        "rentEpoch": 0u64,
-        "space": 165u64,
-    })
+    solana_testlib::token_account_json(
+        &solana_sdk::pubkey::Pubkey::new_from_array(mint),
+        &solana_sdk::pubkey::Pubkey::default(),
+    )
 }
 
 /// A mock RPC answering one buy-account lookup with an initialized token

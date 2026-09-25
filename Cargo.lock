@@ -1521,6 +1521,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "solana-sdk",
+ "solana-testlib",
  "spl-associated-token-account-interface",
  "spl-token-interface",
  "sqlx",
