@@ -192,8 +192,9 @@ components:
             - $ref: "#/components/schemas/Address"
         buyTokenAccount:
           description: |-
-            The token account the settlement pays out to. The settlement never
-            creates it.
+            The token account the settlement pays out to. When it does not
+            exist yet and is the owner's associated token account, the
+            settlement creates it and the solver pays its rent.
           allOf:
             - $ref: "#/components/schemas/Address"
         sellAmount:
