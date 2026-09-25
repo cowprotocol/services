@@ -98,7 +98,11 @@ impl SettlementSimulator {
     /// since we last saw a block; otherwise nodes reject the call for
     /// having a fee cap below the base fee.
     pub fn simulation_gas_price(&self) -> u128 {
-        u128::from(self.0.current_block.borrow().base_fee) * 2
+        // on some networks (e.g. BNB) the block reports a base fee of 0 which
+        // effectively disables this security measure. That's why we always
+        // at least set it to 1 here.
+        let base_fee = self.0.current_block.borrow().base_fee.max(1);
+        u128::from(base_fee) * 2
     }
 
     pub fn settlement_address(&self) -> Address {
