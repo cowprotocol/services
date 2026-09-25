@@ -43,5 +43,24 @@ pub enum FeePolicy {
         /// Percentage of the order's volume should be taken as a protocol
         /// fee.
         factor: f64,
+        /// Whether the fee this policy takes counts towards the solution's
+        /// score. True for protocol fees, which the protocol captures, and
+        /// false for a fee the solver charges for itself.
+        contributes_to_score: bool,
     },
+}
+
+impl FeePolicy {
+    /// Whether the fee this policy takes counts towards the solution's score.
+    /// Policies that do not still have to be unwound when reconstructing the
+    /// prices earlier policies were applied at.
+    pub fn contributes_to_score(&self) -> bool {
+        match self {
+            Self::Volume {
+                contributes_to_score,
+                ..
+            } => *contributes_to_score,
+            Self::Surplus { .. } | Self::PriceImprovement { .. } => true,
+        }
+    }
 }

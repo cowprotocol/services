@@ -1,16 +1,17 @@
-//! Parameterized end-to-end tests for the haircut "make-room" pre-processing.
+//! Parameterized tests for the "make-room" pre-processing of the solver fee.
 //!
-//! The driver tightens each order's limits before sending the auction to the
-//! solver, so that any bid the solver returns at the tightened limit still
-//! respects the user's signed limit price after the post-hoc haircut is
-//! applied. These tests prove that round-trip closes: solver bids exactly at
-//! the tightened limit it sees, driver applies the haircut, and the reported
-//! amounts land on the user's signed limit.
+//! The solver fee is injected as a volume fee policy, so in
+//! `FeeHandler::Driver` mode the driver tightens each order's limits before
+//! sending the auction to the solver exactly like it does for protocol volume
+//! fees: any bid the solver returns at the tightened limit still respects the
+//! user's signed limit price after the fee is taken. These tests prove that
+//! round-trip closes: the solver bids exactly at the tightened limit it sees,
+//! the driver takes the fee, and the reported amounts land on the user's signed
+//! limit.
 //!
 //! Modelled on the `volume_protocol_fee_*_at_limit_price` cases in
-//! [`super::protocol_fees`], which are the closest existing precedent — there
-//! too, the driver post-processes the solver's bid and the test asserts that
-//! the user lands on the signed limit.
+//! [`super::protocol_fees`], which exercise the same code path for protocol
+//! fee policies.
 
 use {
     crate::{
@@ -40,7 +41,7 @@ struct Amounts {
 struct Execution {
     // What the solver bids against the tightened limit it sees.
     solver: Amounts,
-    // What the driver reports after applying the haircut.
+    // What the driver reports after applying the solver fee.
     driver: Amounts,
 }
 
@@ -52,7 +53,7 @@ struct Order {
 
 struct TestCase {
     order: Order,
-    haircut_bps: u32,
+    solver_fee_bps: u32,
     execution: Execution,
     expected_score: eth::U256,
     partial: bool,
@@ -60,19 +61,20 @@ struct TestCase {
 
 async fn run(test_case: TestCase) {
     let test_name = format!(
-        "Haircut make-room: {:?} {} bps{}",
+        "Solver fee make-room: {:?} {} bps{}",
         test_case.order.side,
-        test_case.haircut_bps,
+        test_case.solver_fee_bps,
         if test_case.partial { " partial" } else { "" },
     );
     let quote = ab_liquidity_quote()
         .sell_amount(test_case.execution.solver.sell)
         .buy_amount(test_case.execution.solver.buy);
     let pool = ab_adjusted_pool(quote);
-    // Use a tiny constant network fee. The at-limit haircut math is sensitive
-    // to a percent-based `solver_fee` (the haircut conversion through clearing
-    // prices doesn't absorb it the way the volume-fee path does), and we still
-    // need a non-zero fee to keep these orders out of the StaticFee path.
+    // Use a tiny constant network fee. The at-limit solver fee math is
+    // sensitive to a percent-based `solver_fee` (the solver fee conversion
+    // through clearing prices doesn't absorb it the way the volume-fee path
+    // does), and we still need a non-zero fee to keep these orders out of
+    // the StaticFee path.
     let solver_fee = eth::U256::from(100);
     let executed = match test_case.order.side {
         order::Side::Buy => (test_case.order.buy_amount > test_case.execution.solver.buy)
@@ -102,7 +104,7 @@ async fn run(test_case: TestCase) {
         .pool(pool)
         .order(order.clone())
         .solution(ab_solution())
-        .solvers(vec![test_solver().haircut_bps(test_case.haircut_bps)])
+        .solvers(vec![test_solver().solver_fee_bps(test_case.solver_fee_bps)])
         .done()
         .await;
 
@@ -128,7 +130,7 @@ async fn run(test_case: TestCase) {
 }
 
 /// Sell order: solver bids at the tightened buy limit (40 / (1 - 0.2) = 50)
-/// and the driver's 2000 bps haircut brings the reported buy back to the
+/// and the driver's 2000 bps solver fee brings the reported buy back to the
 /// user's signed limit of 40 ETH. Mirrors
 /// [`super::protocol_fees::volume_protocol_fee_sell_order_at_limit_price`].
 #[tokio::test]
@@ -140,14 +142,14 @@ async fn sell_order_at_limit_price() {
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
         },
-        haircut_bps: 2000,
+        solver_fee_bps: 2000,
         execution: Execution {
             // Solver clears at the tightened limit (40 / (1 - 0.2) = 50 buy).
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 50.ether().into_wei(),
             },
-            // Driver subtracts the 20% haircut, landing exactly on the signed limit.
+            // Driver subtracts the 20% solver fee, landing exactly on the signed limit.
             driver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -160,7 +162,7 @@ async fn sell_order_at_limit_price() {
 }
 
 /// Buy order: solver bids at the tightened sell limit (50 / (1 + 0.25) = 40)
-/// and the driver's 2500 bps haircut adds back exactly the amount needed for
+/// and the driver's 2500 bps solver fee adds back exactly the amount needed for
 /// the reported sell to equal the user's signed limit of 50 ETH. Mirrors
 /// [`super::protocol_fees::volume_protocol_fee_buy_order_at_limit_price`].
 #[tokio::test]
@@ -172,14 +174,14 @@ async fn buy_order_at_limit_price() {
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
         },
-        haircut_bps: 2500,
+        solver_fee_bps: 2500,
         execution: Execution {
             // Solver clears at the tightened limit (50 / (1 + 0.25) = 40 sell).
             solver: Amounts {
                 sell: 40.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
-            // Driver adds the 25% haircut, landing exactly on the signed limit.
+            // Driver adds the 25% solver fee, landing exactly on the signed limit.
             driver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -202,14 +204,14 @@ async fn partial_sell_order_at_limit_price() {
             buy_amount: 50.ether().into_wei(),
             side: order::Side::Sell,
         },
-        haircut_bps: 2000,
+        solver_fee_bps: 2000,
         execution: Execution {
             // 40% partial fill at the tightened limit (20 / (1 - 0.2) = 25 buy).
             solver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 25.ether().into_wei(),
             },
-            // 20% haircut on the partial buy lands on the partial signed limit.
+            // 20% solver fee on the partial buy lands on the partial signed limit.
             driver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 20.ether().into_wei(),
@@ -232,14 +234,14 @@ async fn partial_buy_order_at_limit_price() {
             buy_amount: 50.ether().into_wei(),
             side: order::Side::Buy,
         },
-        haircut_bps: 2500,
+        solver_fee_bps: 2500,
         execution: Execution {
             // 40% partial fill at the tightened limit (20 / (1 + 0.25) = 16 sell).
             solver: Amounts {
                 sell: 16.ether().into_wei(),
                 buy: 20.ether().into_wei(),
             },
-            // 25% haircut on the partial sell lands on the partial signed limit.
+            // 25% solver fee on the partial sell lands on the partial signed limit.
             driver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 20.ether().into_wei(),

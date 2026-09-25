@@ -80,7 +80,13 @@ fn with_fast_path_exclusivity(
 #[tokio::test]
 #[ignore]
 async fn local_node_fast_path_settle() {
-    run_test(fast_path_settle).await;
+    run_test(|web3| fast_path_settle(web3, OrderKind::Sell)).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_fast_path_settle_buy_order() {
+    run_test(|web3| fast_path_settle(web3, OrderKind::Buy)).await;
 }
 
 #[tokio::test]
@@ -125,7 +131,13 @@ async fn local_node_fast_path_penalty_cap() {
     run_test(fast_path_penalty_cap).await;
 }
 
-async fn fast_path_settle(web3: Web3) {
+/// A fast-path order signed against a quoting solver that charges a solver
+/// fee, at exactly the quote and with no slippage of the user's own. The fee is
+/// what made that quote conservative, so the settlement has to land on the
+/// signed limit and the fast path itself has to be what settles it.
+/// Run for both sides, because the fee narrows what a sell order receives but
+/// widens what a buy order pays.
+async fn fast_path_settle(web3: Web3, side: OrderKind) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
@@ -134,11 +146,14 @@ async fn fast_path_settle(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
-    let sell_amount = 1u64.eth();
+    // The traded amount is the sell amount of a sell order and the buy amount
+    // of a buy order, which pays the fee on top, so fund more than that.
+    let amount = 1u64.eth();
+    let funded = amount * U256::from(2u8);
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance, sell_amount)
+        .approve(onchain.contracts().allowance, funded)
         .from(trader.address())
         .send_and_watch()
         .await
@@ -148,7 +163,7 @@ async fn fast_path_settle(web3: Web3) {
         .weth
         .deposit()
         .from(trader.address())
-        .value(sell_amount)
+        .value(funded)
         .send_and_watch()
         .await
         .unwrap();
@@ -163,8 +178,12 @@ async fn fast_path_settle(web3: Web3) {
         configs::orderbook::Configuration::test_default(),
         exclusivity,
     );
+    // The solver charges a solver fee, which is what makes the quote it
+    // publishes conservative. The user signs against that quote below without
+    // adding any slippage of their own, so the settlement has no room to take
+    // the fee a second time.
     services
-        .start_protocol_with_args(autopilot_config, orderbook_config, solver)
+        .start_protocol_with_args_and_solver_fee(autopilot_config, orderbook_config, solver, 100)
         .await;
 
     let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
@@ -174,9 +193,14 @@ async fn fast_path_settle(web3: Web3) {
         from: trader.address(),
         sell_token: *onchain.contracts().weth.address(),
         buy_token: *token.address(),
-        side: OrderQuoteSide::Sell {
-            sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(sell_amount).unwrap(),
+        side: match side {
+            OrderKind::Sell => OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(amount).unwrap(),
+                },
+            },
+            OrderKind::Buy => OrderQuoteSide::Buy {
+                buy_amount_after_fee: NonZeroU256::try_from(amount).unwrap(),
             },
         },
         app_data: OrderCreationAppData::Full {
@@ -187,15 +211,23 @@ async fn fast_path_settle(web3: Web3) {
     let quote = services.submit_quote(&quote_request).await.unwrap();
     let quote_id = quote.id.expect("fast-path quote should carry an id");
 
+    // Signed at the quote with no slippage of the user's own: a sell order
+    // receives exactly what it was quoted, a buy order pays exactly what it was
+    // quoted, fee included.
+    let (signed_sell, signed_buy) = match side {
+        OrderKind::Sell => (amount, quote.quote.buy_amount),
+        OrderKind::Buy => (quote.quote.sell_amount + quote.quote.fee_amount, amount),
+    };
+
     tracing::info!("Placing the fast-path order.");
     let order = OrderCreation {
         quote_id: Some(quote_id),
         sell_token: *onchain.contracts().weth.address(),
-        sell_amount,
+        sell_amount: signed_sell,
         buy_token: *token.address(),
-        buy_amount: quote.quote.buy_amount,
+        buy_amount: signed_buy,
         valid_to: model::time::now_in_epoch_seconds() + 3600,
-        kind: OrderKind::Sell,
+        kind: side,
         app_data: OrderCreationAppData::Full { full: app_data },
         ..Default::default()
     }
@@ -204,11 +236,35 @@ async fn fast_path_settle(web3: Web3) {
         &onchain.contracts().domain_separator,
         &trader.signer,
     );
-    let placed_at = std::time::Instant::now();
     let uid = services.create_order(&order).await.unwrap();
+
+    // The fast-path handler stages its competition as soon as the order lands.
+    // Holding on to its auction id is what tells a fast-path settlement apart
+    // from the regular auction, which the autopilot releases the order to as
+    // soon as a fast-path settle fails.
+    tracing::info!("Waiting for the fast-path competition.");
+    wait_for_condition(TIMEOUT, || async {
+        services
+            .get_latest_solver_competition()
+            .await
+            .is_ok_and(|competition| {
+                competition
+                    .solutions
+                    .iter()
+                    .any(|solution| solution.orders.iter().any(|order| order.id == uid))
+            })
+    })
+    .await
+    .unwrap();
+    let fast_path_auction = services
+        .get_latest_solver_competition()
+        .await
+        .unwrap()
+        .auction_id;
 
     tracing::info!("Waiting for the fast-path settlement.");
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         services
             .get_order(&uid)
             .await
@@ -217,15 +273,30 @@ async fn fast_path_settle(web3: Web3) {
     .await
     .unwrap();
 
-    // Regular-auction fallback would need to wait for the whole
-    // `exclusivity` window to elapse before touching the order. If it
-    // Fulfilled well within that window, only the fast path can be
-    // responsible.
-    let elapsed = placed_at.elapsed();
+    // A settlement under any later auction means the fast-path attempt
+    // reverted and the regular auction picked the order up instead.
+    let trade = services.get_trades(&uid).await.unwrap().pop().unwrap();
+    let tx_hash = trade.tx_hash.expect("settled trade has a transaction");
+    let settled_in = services
+        .get_solver_competition(tx_hash)
+        .await
+        .expect("settlement has a competition")
+        .auction_id;
+    assert_eq!(
+        settled_in, fast_path_auction,
+        "order settled under auction {settled_in} but the fast path staged {fast_path_auction}",
+    );
+
+    // And the fill respects what the user signed, solver fee included.
+    let filled_sell: U256 = trade.sell_amount.to_string().parse().unwrap();
+    let filled_buy: U256 = trade.buy_amount.to_string().parse().unwrap();
     assert!(
-        elapsed < exclusivity / 2,
-        "settled after {elapsed:?} — regular auction fallback would have taken at least \
-         {exclusivity:?}, so this can't be attributed to the fast path",
+        filled_buy >= signed_buy,
+        "received {filled_buy} but signed for at least {signed_buy}",
+    );
+    assert!(
+        filled_sell <= signed_sell,
+        "paid {filled_sell} but signed for at most {signed_sell}",
     );
 }
 
@@ -409,7 +480,7 @@ async fn fast_path_settles_across_split_configs(web3: Web3) {
     colocation::start_driver(
         onchain.contracts(),
         vec![
-            colocation::start_baseline_solver_with_haircut(
+            colocation::start_baseline_solver_with_solver_fee(
                 "test_solver".into(),
                 solver.clone(),
                 *onchain.contracts().weth.address(),
@@ -419,7 +490,7 @@ async fn fast_path_settles_across_split_configs(web3: Web3) {
                 0,
             )
             .await,
-            colocation::start_baseline_solver_with_haircut(
+            colocation::start_baseline_solver_with_solver_fee(
                 "test_quote".into(),
                 solver.clone(),
                 *onchain.contracts().weth.address(),
@@ -515,9 +586,9 @@ async fn fast_path_settles_across_split_configs(web3: Web3) {
 /// Tests fast-path → regular-auction fallback with two solvers competing
 /// for the same order.
 ///
-/// * `solver_a` is unfunded and runs with `haircut_bps = 0`, so it wins the
+/// * `solver_a` is unfunded and runs with `solver_fee_bps = 0`, so it wins the
 ///   quote (best price) but cannot pay for a settlement tx.
-/// * `solver_b` is funded and runs with `haircut_bps = 100`, so it loses the
+/// * `solver_b` is funded and runs with `solver_fee_bps = 100`, so it loses the
 ///   quote but can actually submit.
 ///
 /// The fast-path handler routes to `solver_a` (the quote winner) and its tx
@@ -572,7 +643,7 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
     // after it elapses, within the test timeout.
     let exclusivity = Duration::from_secs(5);
 
-    // Both baseline solvers share the same UniV2 pool; `haircut_bps` is
+    // Both baseline solvers share the same UniV2 pool; `solver_fee_bps` is
     // what makes `solver_a` strictly beat `solver_b` during quoting.
     // `solver_a` is named `test_solver` so the default native-price
     // estimator wiring (`http://localhost:11088/test_solver`) works
@@ -580,7 +651,7 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
     colocation::start_driver(
         onchain.contracts(),
         vec![
-            colocation::start_baseline_solver_with_haircut(
+            colocation::start_baseline_solver_with_solver_fee(
                 "test_solver".into(),
                 solver_a.clone(),
                 *onchain.contracts().weth.address(),
@@ -590,7 +661,7 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
                 0,
             )
             .await,
-            colocation::start_baseline_solver_with_haircut(
+            colocation::start_baseline_solver_with_solver_fee(
                 "solver_b".into(),
                 solver_b.clone(),
                 *onchain.contracts().weth.address(),
@@ -646,10 +717,10 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
     let quote_id = quote.id.expect("fast-path quote should carry an id");
 
     // Sign at ~90% of the market quote so that `solver_b`'s
-    // haircut-tightened solve request (buy × ~1.01) still fits under the
+    // fee-tightened solve request (buy × ~1.01) still fits under the
     // pool's actual output. Otherwise the tightened requirement would sit
     // above market and `solver_b`'s baseline would return no solutions.
-    // `solver_a` still wins the quote (haircut = 0), and the fast-path
+    // `solver_a` still wins the quote (no solver fee), and the fast-path
     // limit check compares the cached solver_a clearing prices — which are
     // at market rate — against `limit_prices.buy` (also market rate), so
     // that check still passes.
@@ -781,15 +852,15 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
 /// * 2% protocol volume fee (configured on both the orderbook and the
 ///   autopilot) — already baked into the quote returned to the user.
 /// * 1% partner volume fee declared in app-data.
-/// * 2% haircut on the bad solver.
+/// * 2% solver fee on the bad solver.
 /// * user signs at 2% below the (protocol-fee-adjusted) quote. This accounts
-///   for the 1% partner fee AND gives 1% slippage on top. The 2% haircut will
-///   not have an issue with the 1% partner fee because the user accounted for
-///   that but the 1% slippage is not enough for the 2% haircut solution to
-///   still clear the bar.
+///   for the 1% partner fee AND gives 1% slippage on top. The 2% solver fee
+///   will not have an issue with the 1% partner fee because the user accounted
+///   for that but the 1% slippage is not enough for the 2% solver-fee solution
+///   to still clear the bar.
 ///
 /// After the fast-path handler runs, `/solver_competition` must expose the
-/// bad solver's solution as `filtered_out = true` (its 2%-haircut bid
+/// bad solver's solution as `filtered_out = true` (its 2% solver-fee bid
 /// compounded with the volume fees no longer clears the signed limit)
 /// while the winning solver's solution remains `filtered_out = false`.
 async fn fast_path_records_filtered_out_solutions(web3: Web3) {
@@ -797,7 +868,7 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
 
     // Both solvers get funded — only the good one will actually submit, but
     // this keeps the setup symmetric so the only real difference between the
-    // two is the haircut.
+    // two is the solver fee.
     let [good_solver, bad_solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
@@ -831,12 +902,12 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
 
     // `good_solver` is named `test_solver` so the default native-price
     // estimator wiring resolves without an override; `bad_solver` runs the
-    // same baseline with a 2% haircut so its reported bid is 2% below the
+    // same baseline with a 2% solver fee so its reported bid is 2% below the
     // market rate.
     colocation::start_driver(
         onchain.contracts(),
         vec![
-            colocation::start_baseline_solver_with_haircut(
+            colocation::start_baseline_solver_with_solver_fee(
                 "test_solver".into(),
                 good_solver.clone(),
                 *onchain.contracts().weth.address(),
@@ -846,14 +917,14 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
                 0,
             )
             .await,
-            colocation::start_baseline_solver_with_haircut(
+            colocation::start_baseline_solver_with_solver_fee(
                 "bad_solver".into(),
                 bad_solver.clone(),
                 *onchain.contracts().weth.address(),
                 vec![],
                 1,
                 true,
-                200, // 2% haircut
+                200, // 2% solver fee
             )
             .await,
         ],
@@ -940,7 +1011,7 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
     // still need to leave room for the 1% partner fee and ~1% price
     // slippage between quote and settle time, so sign 2% below the quote.
     // At those numbers the winner's fee-adjusted bid (~= quote * 0.99) still
-    // clears the signed floor, while the bad solver's 2%-haircut bid
+    // clears the signed floor, while the bad solver's 2% solver-fee bid
     // (~= quote * 0.98 * 0.99) falls just below it.
     let signed_buy = quote.quote.buy_amount * U256::from(98u8) / U256::from(100u8);
     tracing::info!("Placing the fast-path order.");
@@ -1000,8 +1071,8 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
     );
     assert!(
         bad.filtered_out,
-        "2%-haircut solver's bid compounded with volume fees can't clear the signed limit and \
-         must be filtered out"
+        "the 2% solver-fee bid compounded with volume fees can't clear the signed limit and must \
+         be filtered out"
     );
     assert!(!bad.is_winner, "bad solver must not have won the quote");
 }
