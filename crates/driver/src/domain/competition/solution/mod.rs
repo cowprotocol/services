@@ -615,27 +615,25 @@ impl Solution {
             return Err(error::Error::FastPathLimitNotMet);
         }
 
-        let (flashloans, wrappers) = recover_flashloans_and_wrappers(&order);
-        *user = user.with_order(order)?;
-        solution.flashloans = flashloans;
-        solution.wrappers = wrappers;
+        // Fast-path orders are fill-or-kill and shouldn't contain any fees. In
+        // the case the solver charges a solver fee this should have been
+        // reflected in the quote and thus in the signed limit prices already.
+        let executed = order.target();
+        *user = Fulfillment::new(order, executed, Default::default())?;
 
-        // The quote this solution was cached from was computed with the solver
-        // fee applied, which carved that fee out of the execution. The limit
-        // the user signed against already reflects it, so the fill is rebuilt
-        // without the carve-out; keeping it would take the fee a second time
-        // and leave the user short of their limit. The solver is still paid
-        // the same way it is on the rest of the fast path, out of the gap
-        // between its cached price and the signed limit. Without a fee this
-        // is a no-op.
-        *user = user.without_fee()?;
-
-        // Pin the fill to the signed limit so it settles at exactly
-        // the price the autopilot expects.
+        // However, limit prices may be different than the ones found in the
+        // quote, because the orderbook adds room for network and
+        // protocol fees. Update the solution accordingly.
         let sell = user.order().sell.token.as_erc20(self.weth);
         let buy = user.order().buy.token.as_erc20(self.weth);
         solution.prices.insert(sell, limit_prices.buy);
         solution.prices.insert(buy, limit_prices.sell);
+
+        // Add other parts the quote might not have known about
+        let (flashloans, wrappers) = recover_flashloans_and_wrappers(user.order());
+        solution.flashloans = flashloans;
+        solution.wrappers = wrappers;
+
         Ok(solution)
     }
 

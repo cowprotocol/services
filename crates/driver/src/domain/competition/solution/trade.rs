@@ -162,29 +162,6 @@ impl Fulfillment {
         &self.order
     }
 
-    /// Rebuild this fulfillment for a different `order`, keeping the executed
-    /// amount and fee.
-    pub fn with_order(&self, order: competition::Order) -> Result<Self, error::Trade> {
-        Self::new(order, self.executed, self.fee)
-    }
-
-    /// Rebuild this fulfillment with the fee folded back into what gets
-    /// converted, i.e. as if nothing had been carved out of the execution. The
-    /// amounts the user trades are unchanged; only the split between the
-    /// converted amount and what the solver keeps is.
-    pub fn without_fee(&self) -> Result<Self, error::Trade> {
-        let executed = match self.order.side {
-            order::Side::Sell => order::TargetAmount(
-                self.executed
-                    .0
-                    .checked_add(self.fee.0)
-                    .ok_or(error::Trade::InvalidExecutedAmount)?,
-            ),
-            order::Side::Buy => self.executed,
-        };
-        Self::new(self.order.clone(), executed, order::SellAmount::default())
-    }
-
     pub fn executed(&self) -> order::TargetAmount {
         self.executed
     }
