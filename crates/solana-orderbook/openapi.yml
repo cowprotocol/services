@@ -125,8 +125,8 @@ paths:
           description: |
             A signature that does not verify against the order owner
             (`InvalidSignature`), an order with a PDA on chain
-            (`OnChainOrder`), a uid that is not 32 bytes of hex, or an
-            unparsable body (`InvalidRequestBody`).
+            (`OnChainOrder`), a uid that is not 32 bytes of hex
+            (`InvalidOrderUid`), or an unparsable body (`InvalidRequestBody`).
           content:
             application/json:
               schema:

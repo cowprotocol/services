@@ -32,12 +32,14 @@ pub struct OrderRow {
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
-/// and not fully filled. A pending sponsored order whose stored creation
-/// transaction died at `block_height` is excluded, and a `None` height skips
-/// that check rather than excluding everything. Settleable means the driver can
-/// produce the order PDA: it already exists on chain (an order placed via
-/// `CreateOrder` directly), or the driver can create it at settlement time from
-/// a signed intent or a presigned transaction.
+/// and not fully filled. An off-chain cancellation counts only while no PDA
+/// exists: a creation that lands anyway makes the PDA's state the truth, the
+/// same rule the orderbook reads by. A pending sponsored order whose stored
+/// creation transaction died at `block_height` is excluded, and a `None` height
+/// skips that check rather than excluding everything. Settleable means the
+/// driver can produce the order PDA: it already exists on chain (an order
+/// placed via `CreateOrder` directly), or the driver can create it at
+/// settlement time from a signed intent or a presigned transaction.
 pub async fn open_orders(
     ex: impl PgExecutor<'_>,
     now_unix: i64,
@@ -57,7 +59,7 @@ WHERE o.valid_to >= $1
        OR o.presigned_transaction IS NOT NULL
        OR p.order_uid IS NOT NULL)
   AND p.cancellation_timestamp IS NULL
-  AND o.cancelled_at IS NULL
+  AND (o.cancelled_at IS NULL OR p.order_uid IS NOT NULL)
   AND ($2::bigint IS NULL
        OR o.presigned_transaction IS NULL
        OR p.order_uid IS NOT NULL
@@ -414,6 +416,15 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
             .execute(&mut *tx)
             .await
             .unwrap();
+        // Kept: cancelled off-chain, but the creation landed anyway, so the
+        // PDA's state is what counts.
+        insert_order(&mut tx, 12, 2_000, true, database::solana::OrderKind::Sell).await;
+        sqlx::query(r#"UPDATE solana.orders SET cancelled_at = now() WHERE uid = $1"#)
+            .bind(database::byte_array::ByteArray([12u8; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        insert_pda(&mut tx, 12, false, 0, 0).await;
         // Dropped: not yet valid.
         insert_order(&mut tx, 9, 2_000, true, database::solana::OrderKind::Sell).await;
         sqlx::query(r#"UPDATE solana.orders SET valid_from = 1_500 WHERE uid = $1"#)
@@ -453,14 +464,14 @@ WHERE uid = $1
             orders.iter().map(|order| order.uid.0[0]).collect()
         };
         let orders = open_orders(&mut *tx, 1_000, Some(100)).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 12]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 12]);
         // Boundary: still alive when the chain height equals the stored height.
         let orders = open_orders(&mut *tx, 1_000, Some(150)).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 12]);
         let orders = open_orders(&mut *tx, 1_000, Some(151)).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 12]);
     }
 
     /// A creation stays pending until it lands or the order is cancelled
