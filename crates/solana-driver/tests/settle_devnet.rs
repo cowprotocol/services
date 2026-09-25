@@ -24,7 +24,7 @@ use {
             data::intent::{Flags, OrderIntent, OrderKind},
             pda::{buffer::find_buffer_pda, order::find_order_pda, state::find_state_pda},
         },
-        instructions::CreateOrder,
+        instruction::CreateOrder,
     },
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     observe::tracing::init::initialize_reentrant,
@@ -371,6 +371,7 @@ async fn spawn_driver(
                 endpoint,
                 signer_keypair: s.signer_keypair,
                 solve_every_nth_auction: None,
+                solver_fee_bps: None,
             })
         })
         .collect::<Result<_, _>>()

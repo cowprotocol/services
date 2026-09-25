@@ -124,6 +124,7 @@ async fn driver_solves_against_live_jupiter_engine() {
         endpoint: format!("http://{addr}").parse().unwrap(),
         signer_keypair: keypair_path,
         solve_every_nth_auction: None,
+        solver_fee_bps: None,
     })
     .expect("solver construction should succeed");
 

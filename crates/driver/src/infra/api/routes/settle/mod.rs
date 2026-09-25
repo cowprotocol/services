@@ -2,7 +2,7 @@ mod dto;
 
 use {
     crate::{
-        domain::competition::{auction, solution},
+        domain::competition::auction,
         infra::{
             api::{self, Error, State, extract::LoggingJson},
             observe,
@@ -25,17 +25,6 @@ async fn route(
 
     async move {
         observe::settling();
-        if let Some(fast_path) = req.fast_path {
-            let order = fast_path.order.into_domain(None);
-            let limit_prices = solution::LimitPrices {
-                sell: fast_path.limit_prices.sell,
-                buy: fast_path.limit_prices.buy,
-            };
-            state
-                .competition()
-                .reencode_quote_solution(auction_id, req.solution_id, order, limit_prices)
-                .await?;
-        }
         let result = state
             .competition()
             .settle(

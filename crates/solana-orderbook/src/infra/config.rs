@@ -4,6 +4,8 @@ use {
     crate::infra::api::ValidationParameters,
     configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
+    serde_ext::deserialize_solana_pubkey_b58,
+    solana_sdk::pubkey::Pubkey,
     std::{net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
     url::Url,
@@ -43,6 +45,10 @@ pub struct Config {
     pub http: Http,
     /// Quote endpoint configuration.
     pub quoting: Quoting,
+    /// The Solana JSON-RPC node. Required by sponsored order placement.
+    pub rpc: Option<Rpc>,
+    /// Sponsored order placement. Absent disables `POST /api/v1/orders`.
+    pub sponsoring: Option<Sponsoring>,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -73,7 +79,8 @@ pub struct Quoting {
     /// How long the driver has to answer before the quote fails.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
     pub timeout: Duration,
-    /// Least far in the future a quoted order's `validTo` may lie.
+    /// Least far in the future an order's `validTo` may lie, for quotes and
+    /// sponsored placement alike.
     #[serde(with = "humantime_serde", default = "default_min_validity")]
     pub min_validity: Duration,
     /// Furthest in the future a quoted order's `validTo` may lie.
@@ -92,6 +99,52 @@ impl Quoting {
             max_validity: self.max_validity,
         }
     }
+}
+
+/// Solana JSON-RPC node configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Rpc {
+    /// HTTP endpoint of the Solana JSON-RPC node.
+    pub endpoint: Url,
+    /// Ceiling on one RPC request.
+    #[serde(with = "humantime_serde", default = "default_rpc_timeout")]
+    pub request_timeout: Duration,
+}
+
+/// Sponsored order placement configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Sponsoring {
+    /// The funding account a sponsored creation transaction must name as its
+    /// fee payer and rent payer. The autopilot countersigns with its key.
+    #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
+    pub funder: Pubkey,
+    /// The settlement program a creation transaction must target. Defaults
+    /// to the official deployment the interface crate exports.
+    #[serde(
+        default = "default_settlement_program_id",
+        deserialize_with = "deserialize_solana_pubkey_b58"
+    )]
+    pub settlement_program: Pubkey,
+    /// The most the funder will pay in priority fee for one creation, in
+    /// lamports. The client sets the compute unit price and limit whose
+    /// product this bounds, so it caps what a placement can spend.
+    #[serde(default = "default_max_priority_fee_lamports")]
+    pub max_priority_fee_lamports: u64,
+}
+
+/// A sponsored creation pays around 100 lamports of priority fee today.
+fn default_max_priority_fee_lamports() -> u64 {
+    100_000
+}
+
+fn default_settlement_program_id() -> Pubkey {
+    cow_settlement_interface::ID
+}
+
+fn default_rpc_timeout() -> Duration {
+    Duration::from_secs(5)
 }
 
 /// Appends the trailing slash `Url::join` needs to every URL in the list.

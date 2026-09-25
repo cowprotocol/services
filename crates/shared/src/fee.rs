@@ -172,6 +172,24 @@ pub fn apply_volume_fee(sell: U256, buy: U256, kind: OrderKind, factor: FeeFacto
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct FastPathLimitTooTight;
 
+/// Mirrors the on-chain settlement contract's limit-price constraint:
+/// `executed_sell * signed_buy <= executed_buy * signed_sell`
+///
+/// The same check works for sell and buy orders, so `OrderKind` is not
+/// needed: any bid that gives the trader a worse price than signed fails
+/// it. The multiplication widens to `U512` so wei-scale amounts cannot
+/// overflow.
+fn satisfies_limit_price(
+    signed_sell: U256,
+    signed_buy: U256,
+    executed_sell: U256,
+    executed_buy: U256,
+) -> bool {
+    let lhs: U512 = executed_sell.widening_mul(signed_buy);
+    let rhs: U512 = executed_buy.widening_mul(signed_sell);
+    lhs <= rhs
+}
+
 /// Verifies that the signed sell/buy amounts leave enough room for the
 /// compounded volume fees that would be applied at fast-path settlement
 /// time.
@@ -179,15 +197,9 @@ pub struct FastPathLimitTooTight;
 /// `factors` are compounded in order — callers assemble the sequence
 /// they expect the autopilot to actually charge (protocol volume fee
 /// first, then capped partner fees). The check compares the resulting
-/// `(adjusted_sell, adjusted_buy)` against the signed limit price:
-/// - Sell orders: the signed minimum `buy_amount` must not exceed the
-///   fee-adjusted buy (fees reduce what the trader receives).
-/// - Buy orders: the signed maximum `sell_amount` must not be smaller than the
-///   fee-adjusted sell (fees inflate what the trader pays).
-///
-/// Kept in this crate so both the orderbook (placement-time rejection)
-/// and the autopilot (fast-path handler classification) go through
-/// identical math.
+/// `(adjusted_sell, adjusted_buy)` against the signed limit via
+/// [`satisfies_limit_price`], the same primitive the autopilot's
+/// per-solution `filtered_out` classification uses.
 pub fn check_fast_path_limit_fits(
     kind: OrderKind,
     signed_sell: U256,
@@ -202,11 +214,7 @@ pub fn check_fast_path_limit_fits(
             apply_volume_fee(sell, buy, kind, factor)
         });
 
-    let fits = match kind {
-        OrderKind::Sell => signed_buy <= adjusted_buy,
-        OrderKind::Buy => signed_sell >= adjusted_sell,
-    };
-    if fits {
+    if satisfies_limit_price(signed_sell, signed_buy, adjusted_sell, adjusted_buy) {
         Ok(())
     } else {
         Err(FastPathLimitTooTight)
@@ -416,6 +424,89 @@ mod tests {
         // 0.3 BPS = 0.00003 must not round to zero.
         let fee = compute_volume_fee(U256::from(1_000_000u64), factor(0.00003));
         assert_eq!(fee, U256::from(30u64));
+    }
+
+    #[test]
+    fn satisfies_limit_price_output_at_signed_ratio() {
+        let signed_sell = U256::from(1_000u64);
+        let signed_buy = U256::from(900u64);
+        // Full fill at the signed ratio — accepted.
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_000u64),
+            U256::from(900u64),
+        ));
+        // 1 wei more output at the same input — better than signed, accepted.
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_000u64),
+            U256::from(901u64),
+        ));
+        // 1 wei less output at the same input — trader shortchanged.
+        assert!(!satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_000u64),
+            U256::from(899u64),
+        ));
+    }
+
+    #[test]
+    fn satisfies_limit_price_input_at_signed_ratio() {
+        let signed_sell = U256::from(1_100u64);
+        let signed_buy = U256::from(1_000u64);
+        // Full buy fill at the signed ratio — accepted.
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_100u64),
+            U256::from(1_000u64),
+        ));
+        // 1 wei less input for the same output — trader pays less, accepted.
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_099u64),
+            U256::from(1_000u64),
+        ));
+        // 1 wei more input for the same output — trader overcharged.
+        assert!(!satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(1_101u64),
+            U256::from(1_000u64),
+        ));
+    }
+
+    #[test]
+    fn satisfies_limit_price_partial_fill_at_signed_ratio() {
+        // A partial fill that keeps the effective price identical to the
+        // signed ratio must still be accepted (100 tokens sold for 90 buy
+        // matches the same 1000-for-900 rate the trader signed).
+        let signed_sell = U256::from(1_000u64);
+        let signed_buy = U256::from(900u64);
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(100u64),
+            U256::from(90u64),
+        ));
+        // Partial fill slightly better than the signed ratio — accepted.
+        assert!(satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(100u64),
+            U256::from(91u64),
+        ));
+        // Partial fill slightly worse than the signed ratio — rejected.
+        assert!(!satisfies_limit_price(
+            signed_sell,
+            signed_buy,
+            U256::from(100u64),
+            U256::from(89u64),
+        ));
     }
 
     #[test]

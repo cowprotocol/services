@@ -22,9 +22,8 @@ use {
         },
     },
     futures::FutureExt,
-    itertools::Itertools,
     model::{
-        order::{Order, OrderClass, OrderUid},
+        order::{Order, OrderUid},
         signature::Signature,
         time::now_in_epoch_seconds,
     },
@@ -37,7 +36,6 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    strum::VariantNames,
     tokio::sync::Mutex,
     tracing::instrument,
 };
@@ -65,20 +63,12 @@ pub struct Metrics {
     /// Auction creations.
     auction_creations: IntCounter,
 
-    /// Auction candidate orders grouped by class.
-    #[metric(labels("class"))]
-    auction_candidate_orders: IntGaugeVec,
-
-    /// Auction solvable orders grouped by class.
-    #[metric(labels("class"))]
-    auction_solvable_orders: IntGaugeVec,
+    /// Number of orders in the final auction.
+    auction_solvable_orders: IntGauge,
 
     /// Auction filtered orders grouped by class.
     #[metric(labels("reason"))]
     auction_filtered_orders: IntGaugeVec,
-
-    /// Auction filtered market orders due to missing native token price.
-    auction_market_order_missing_price: IntGauge,
 }
 
 impl Metrics {
@@ -109,16 +99,9 @@ impl Metrics {
         let metrics = Metrics::get();
         metrics.auction_creations.inc();
 
-        let remaining_counts = orders
-            .iter()
-            .counts_by(|order| order.metadata.class.as_ref());
-        for class in OrderClass::VARIANTS {
-            let count = remaining_counts.get(class).copied().unwrap_or_default();
-            metrics
-                .auction_solvable_orders
-                .with_label_values(&[class])
-                .set(i64::try_from(count).unwrap_or(i64::MAX));
-        }
+        metrics
+            .auction_solvable_orders
+            .set(i64::try_from(orders.len()).unwrap_or(i64::MAX));
     }
 }
 
@@ -696,7 +679,6 @@ async fn get_orders_with_native_prices<'a>(
     let prices = get_native_prices(traded_tokens, native_price_estimator, timeout).await;
 
     // Filter orders so that we only return orders that have prices
-    let mut removed_market_orders = 0_i64;
     let mut removed_orders = vec![];
     let mut orders = orders;
     orders.retain(|order| {
@@ -706,14 +688,9 @@ async fn get_orders_with_native_prices<'a>(
             true
         } else {
             removed_orders.push(order.metadata.uid);
-            removed_market_orders += i64::from(order.metadata.class == OrderClass::Market);
             false
         }
     });
-
-    Metrics::get()
-        .auction_market_order_missing_price
-        .set(removed_market_orders);
 
     (orders, removed_orders, prices)
 }

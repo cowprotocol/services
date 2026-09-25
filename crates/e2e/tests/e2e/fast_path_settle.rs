@@ -11,7 +11,6 @@ use {
                 FeePolicyKind as ConfigFeePolicyKind,
                 FeePolicyOrderClass as ConfigFeePolicyOrderClass,
             },
-            run_loop::RunLoopConfig,
             solver::Solver,
         },
         order_quoting::{ExternalSolver, OrderQuoting},
@@ -38,13 +37,10 @@ use {
     std::time::Duration,
 };
 
-/// Enables the fast path on the autopilot and pins
-/// `run_loop.submission_deadline` to the block count that produces the
-/// requested exclusivity given the network's block time. The
-/// autopilot's fast-path handler uses `submission_deadline × block time`
-/// as the wall-clock exclusivity window — the two are the same knob,
-/// so tests dial in the wall-clock value they need and let the handler
-/// derive the rest.
+/// Enables the fast path on the autopilot and sets
+/// `fast_path_submission_deadline` to the block count that produces the
+/// requested wall-clock window on the local Hardhat chain (12s blocks), so a
+/// test can dial in the exclusivity it needs.
 ///
 /// `max_partner_fee` is still mirrored onto the orderbook because its
 /// placement-time limit-price check needs to size partner fees the same
@@ -59,19 +55,14 @@ fn with_fast_path_exclusivity(
         .max_partner_fee
         .or(orderbook.order_quoting.max_partner_fee)
         .or(Some(autopilot.fee_policies.max_partner_fee));
-    // Local anvil advertises the Hardhat chain-id, so the handler
-    // computes with `Chain::Hardhat::block_time_in_ms()` (12s).
+    // Local anvil advertises the Hardhat chain-id (12s blocks).
     const HARDHAT_BLOCK_SECS: u64 = 12;
-    let submission_deadline = exclusivity.as_secs().div_ceil(HARDHAT_BLOCK_SECS).max(1);
+    let fast_path_submission_deadline = exclusivity.as_secs().div_ceil(HARDHAT_BLOCK_SECS).max(1);
     let autopilot = AutopilotConfiguration {
-        fast_path_enabled: true,
+        fast_path_submission_deadline: Some(fast_path_submission_deadline),
         order_quoting: OrderQuoting {
             max_partner_fee,
             ..autopilot.order_quoting
-        },
-        run_loop: RunLoopConfig {
-            submission_deadline,
-            ..autopilot.run_loop
         },
         ..autopilot
     };
@@ -113,6 +104,18 @@ async fn local_node_fast_path_ethflow_settle() {
 #[ignore]
 async fn local_node_fast_path_limit_too_tight_rejected() {
     run_test(fast_path_limit_too_tight_rejected).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_fast_path_records_filtered_out_solutions() {
+    run_test(fast_path_records_filtered_out_solutions).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_fast_path_settles_across_split_configs() {
+    run_test(fast_path_settles_across_split_configs).await;
 }
 
 async fn fast_path_settle(web3: Web3) {
@@ -216,6 +219,158 @@ async fn fast_path_settle(web3: Web3) {
         elapsed < exclusivity / 2,
         "settled after {elapsed:?} — regular auction fallback would have taken at least \
          {exclusivity:?}, so this can't be attributed to the fast path",
+    );
+}
+
+/// Regression test for the quoter/solver fast-path cache split.
+///
+/// A quoter config (`test_quote`) and a solve config (`test_solver`) share one
+/// submission address on a single driver. A fast-path quote is served by the
+/// quoter, but the autopilot settles against the solve config (matched by
+/// submission address). The driver keeps fast-path solutions in one store
+/// shared across configs, so `test_solver` finds the quote `test_quote` cached
+/// and the order settles fast. If the cache were per config (the bug), the
+/// settle would miss and the driver would return `SolutionNotAvailable`.
+async fn fast_path_settles_across_split_configs(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    let sell_amount = 1u64.eth();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, sell_amount)
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(sell_amount)
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    // Long exclusivity so only the fast path can settle within the test window.
+    let exclusivity = Duration::from_secs(300);
+
+    // Two configs on one driver, both using `solver`'s account: the quoter
+    // (`test_quote`) and the solve config (`test_solver`). They share a
+    // submission address, so the autopilot settles against `test_solver`
+    // no matter which config quoted.
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver_with_haircut(
+                "test_solver".into(),
+                solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                0,
+            )
+            .await,
+            colocation::start_baseline_solver_with_haircut(
+                "test_quote".into(),
+                solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                0,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
+
+    // The quote runs on `test_quote`; the driver's shared fast-path cache lets
+    // `test_solver` settle it.
+    let quoter = ExternalSolver::new("test_quote", "http://localhost:11088/test_quote");
+
+    let autopilot_config = AutopilotConfiguration {
+        // Only the solve config settles. The autopilot matches by submission
+        // address, which the two configs share.
+        drivers: vec![Solver::test("test_solver", solver.address())],
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter.clone()]),
+        ..AutopilotConfiguration::test_no_drivers()
+    };
+    let orderbook_config = configs::orderbook::Configuration {
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter]),
+        ..configs::orderbook::Configuration::test_default()
+    };
+    let (autopilot_config, orderbook_config) =
+        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+
+    services.start_autopilot(None, autopilot_config).await;
+    services.start_api(orderbook_config).await;
+
+    let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
+
+    tracing::info!("Quoting with enableFastPath.");
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(sell_amount).unwrap(),
+            },
+        },
+        app_data: OrderCreationAppData::Full {
+            full: app_data.clone(),
+        },
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+    let quote_id = quote.id.expect("fast-path quote should carry an id");
+
+    tracing::info!("Placing the fast-path order.");
+    let order = OrderCreation {
+        quote_id: Some(quote_id),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount,
+        buy_token: *token.address(),
+        buy_amount: quote.quote.buy_amount,
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full { full: app_data },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let placed_at = std::time::Instant::now();
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for the fast-path settlement.");
+    wait_for_condition(TIMEOUT, || async {
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
+    })
+    .await
+    .unwrap();
+
+    let elapsed = placed_at.elapsed();
+    assert!(
+        elapsed < exclusivity / 2,
+        "settled after {elapsed:?}, but the regular-auction fallback needs at least \
+         {exclusivity:?}, so the fast path must have settled it",
     );
 }
 
@@ -406,6 +561,45 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
         "order settled during the exclusivity window; fast path was expected to fail to submit"
     );
 
+    // Both bids clear the signed limit price so we can assert things about the
+    // solution scores and reference scores.
+    let fast_path_competition = services.get_latest_solver_competition().await.unwrap();
+    assert!(
+        fast_path_competition
+            .solutions
+            .iter()
+            .any(|s| s.orders.iter().any(|o| o.id == uid)),
+        "latest competition should still be the fast-path one before valid_from",
+    );
+    let winner_sol = fast_path_competition
+        .solutions
+        .iter()
+        .find(|s| s.is_winner)
+        .expect("fast-path competition should have a winner");
+    let runner_up = fast_path_competition
+        .solutions
+        .iter()
+        .find(|s| !s.is_winner && !s.filtered_out)
+        .expect("fast-path competition should have a non-filtered runner-up");
+    assert!(
+        !winner_sol.filtered_out,
+        "the fast-path winner must not be filtered out"
+    );
+    assert_eq!(
+        winner_sol.reference_score,
+        Some(runner_up.score),
+        "with two non-filtered bids, the winner's reference score is the runner-up's score \
+         (winner={winner_sol:?}, runner_up={runner_up:?})",
+    );
+    assert!(
+        winner_sol.score >= runner_up.score,
+        "winner score is at least as big as runner up"
+    );
+    assert!(
+        winner_sol.score > 0 && runner_up.score > 0,
+        "both solutions have a non-zero score"
+    );
+
     // (2) The order ends up `Fulfilled` after `valid_from`.
     tracing::info!("Waiting for the regular-auction settlement.");
     wait_for_condition(TIMEOUT, || async {
@@ -441,6 +635,237 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
         solver_b.address(),
         "fallback settlement should be submitted by solver_b (funded)"
     );
+}
+
+/// Two otherwise identical baseline solvers compete on a fast-path order,
+/// with realistic volume-fee and slippage settings layered on top:
+///
+/// * 2% protocol volume fee (configured on both the orderbook and the
+///   autopilot) — already baked into the quote returned to the user.
+/// * 1% partner volume fee declared in app-data.
+/// * 2% haircut on the bad solver.
+/// * user signs at 2% below the (protocol-fee-adjusted) quote. This accounts
+///   for the 1% partner fee AND gives 1% slippage on top. The 2% haircut will
+///   not have an issue with the 1% partner fee because the user accounted for
+///   that but the 1% slippage is not enough for the 2% haircut solution to
+///   still clear the bar.
+///
+/// After the fast-path handler runs, `/solver_competition` must expose the
+/// bad solver's solution as `filtered_out = true` (its 2%-haircut bid
+/// compounded with the volume fees no longer clears the signed limit)
+/// while the winning solver's solution remains `filtered_out = false`.
+async fn fast_path_records_filtered_out_solutions(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    // Both solvers get funded — only the good one will actually submit, but
+    // this keeps the setup symmetric so the only real difference between the
+    // two is the haircut.
+    let [good_solver, bad_solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    let sell_amount = 1u64.eth();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, sell_amount)
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(sell_amount)
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    // Long exclusivity so the fast path is the only viable path within the
+    // test window — the settlement we observe *must* be the fast-path one.
+    let exclusivity = Duration::from_secs(300);
+
+    // `good_solver` is named `test_solver` so the default native-price
+    // estimator wiring resolves without an override; `bad_solver` runs the
+    // same baseline with a 2% haircut so its reported bid is 2% below the
+    // market rate.
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver_with_haircut(
+                "test_solver".into(),
+                good_solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                0,
+            )
+            .await,
+            colocation::start_baseline_solver_with_haircut(
+                "bad_solver".into(),
+                bad_solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+                200, // 2% haircut
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
+
+    // 2% protocol volume fee, configured symmetrically on both sides so the
+    // orderbook's placement check and the autopilot's fast-path handler
+    // apply the same math. 1% partner volume fee will be declared in
+    // app-data further down.
+    let protocol_volume_factor: f64 = 0.02;
+    let partner_volume_bps: u64 = 100;
+    let partner_recipient = Address::repeat_byte(0xb0);
+
+    let quoter_good = ExternalSolver::new("test_solver", "http://localhost:11088/test_solver");
+    let quoter_bad = ExternalSolver::new("bad_solver", "http://localhost:11088/bad_solver");
+    let autopilot_config = AutopilotConfiguration {
+        drivers: vec![
+            Solver::test("test_solver", good_solver.address()),
+            Solver::test("bad_solver", bad_solver.address()),
+        ],
+        order_quoting: OrderQuoting::test_with_drivers(vec![
+            quoter_good.clone(),
+            quoter_bad.clone(),
+        ]),
+        fee_policies: FeePoliciesConfig {
+            policies: vec![ConfigFeePolicy {
+                kind: ConfigFeePolicyKind::Volume {
+                    factor: protocol_volume_factor.try_into().unwrap(),
+                },
+                order_class: ConfigFeePolicyOrderClass::Any,
+            }],
+            // Room for the 1% partner factor.
+            max_partner_fee: 0.05.try_into().unwrap(),
+            ..Default::default()
+        },
+        ..AutopilotConfiguration::test_no_drivers()
+    };
+    let orderbook_config = configs::orderbook::Configuration {
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter_good, quoter_bad]),
+        volume_fee: Some(configs::orderbook::VolumeFeeConfig {
+            factor: Some(protocol_volume_factor.try_into().unwrap()),
+            effective_from_timestamp: None,
+        }),
+        ..configs::orderbook::Configuration::test_default()
+    };
+    let (autopilot_config, orderbook_config) =
+        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+
+    services.start_autopilot(None, autopilot_config).await;
+    services.start_api(orderbook_config).await;
+
+    let app_data = json!({
+        "version": "1.1.0",
+        "metadata": {
+            "enableFastPath": true,
+            "partnerFee": {
+                "volumeBps": partner_volume_bps,
+                "recipient": partner_recipient,
+            }
+        }
+    })
+    .to_string();
+
+    tracing::info!("Quoting with enableFastPath and a partner fee.");
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(sell_amount).unwrap(),
+            },
+        },
+        app_data: OrderCreationAppData::Full {
+            full: app_data.clone(),
+        },
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+    let quote_id = quote.id.expect("fast-path quote should carry an id");
+
+    // The API's `quote.buy_amount` already reflects the 2% protocol fee. We
+    // still need to leave room for the 1% partner fee and ~1% price
+    // slippage between quote and settle time, so sign 2% below the quote.
+    // At those numbers the winner's fee-adjusted bid (~= quote * 0.99) still
+    // clears the signed floor, while the bad solver's 2%-haircut bid
+    // (~= quote * 0.98 * 0.99) falls just below it.
+    let signed_buy = quote.quote.buy_amount * U256::from(98u8) / U256::from(100u8);
+    tracing::info!("Placing the fast-path order.");
+    let order = OrderCreation {
+        quote_id: Some(quote_id),
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount,
+        buy_token: *token.address(),
+        buy_amount: signed_buy,
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full { full: app_data },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for the fast-path settlement.");
+    wait_for_condition(TIMEOUT, || async {
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
+    })
+    .await
+    .unwrap();
+
+    let trade = services
+        .get_trades(&uid)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("settled order should have a trade");
+    let tx_hash = trade.tx_hash.expect("settled trade should have a tx hash");
+    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+
+    let good = competition
+        .solutions
+        .iter()
+        .find(|solution| solution.solver_address == good_solver.address())
+        .expect("good solver's solution must appear in the competition");
+    let bad = competition
+        .solutions
+        .iter()
+        .find(|solution| solution.solver_address == bad_solver.address())
+        .expect("bad solver's solution must appear in the competition");
+
+    assert!(good.is_winner, "good solver should win the fast-path quote");
+    assert!(
+        !good.filtered_out,
+        "winning solver's bid respects the signed limit and must not be filtered out"
+    );
+    assert!(
+        bad.filtered_out,
+        "2%-haircut solver's bid compounded with volume fees can't clear the signed limit and \
+         must be filtered out"
+    );
+    assert!(!bad.is_winner, "bad solver must not have won the quote");
 }
 
 /// Configures a protocol volume fee via the autopilot config and a partner
@@ -683,8 +1108,8 @@ async fn fast_path_ethflow_settle(web3: Web3) {
     // ethflow contract only emits its hash, so the orderbook needs the full
     // payload to reconstruct the metadata. The autopilot's on-chain event
     // ingestion sees `enableFastPath: true` and derives
-    // `valid_from = now + default_fast_path_exclusivity` itself (same behaviour
-    // as the orderbook applies to API-placed orders).
+    // `valid_from = now + fast_path_submission_deadline × block time` itself
+    // (same behaviour as the orderbook applies to API-placed orders).
     tracing::info!("Registering fast-path app data.");
     let fast_path_app_data = r#"{"metadata":{"enableFastPath":true}}"#;
     let app_data_hex = services

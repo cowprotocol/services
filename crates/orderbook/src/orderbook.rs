@@ -40,7 +40,6 @@ use {
     },
     simulator::simulation_builder::{self, SettlementSimulator},
     std::{borrow::Cow, sync::Arc},
-    strum::Display,
     thiserror::Error,
     tracing::instrument,
 };
@@ -53,18 +52,34 @@ struct Metrics {
     orders: prometheus::IntCounterVec,
 }
 
-#[derive(Display)]
-#[strum(serialize_all = "snake_case")]
 enum OrderOperation {
     Created,
     Cancelled,
 }
 
-#[derive(Display)]
-#[strum(serialize_all = "snake_case")]
-enum OrderClass {
-    Market,
-    Limit,
+impl OrderOperation {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+/// Whether an order's limit price was within the quote when it was submitted.
+enum MarketPosition {
+    InMarket,
+    OutOfMarket,
+}
+
+impl MarketPosition {
+    /// The metric label values keep the historic `market`/`limit` naming.
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::InMarket => "market",
+            Self::OutOfMarket => "limit",
+        }
+    }
 }
 
 impl Metrics {
@@ -74,7 +89,7 @@ impl Metrics {
     }
 
     fn on_order_operation(order: &Order, operation: OrderOperation) {
-        let class = if order.metadata.quote.as_ref().is_some_and(|quote| {
+        let position = if order.metadata.quote.as_ref().is_some_and(|quote| {
             // Check if the order at the submission time was "in market"
             !is_order_outside_market_price(
                 &Amounts {
@@ -96,13 +111,13 @@ impl Metrics {
                 order.data.kind,
             )
         }) {
-            OrderClass::Market
+            MarketPosition::InMarket
         } else {
-            OrderClass::Limit
+            MarketPosition::OutOfMarket
         };
         Self::get()
             .orders
-            .with_label_values(&[&class.to_string(), &operation.to_string()])
+            .with_label_values(&[position.as_str(), operation.as_str()])
             .inc();
     }
 
@@ -111,10 +126,10 @@ impl Metrics {
     fn initialize() {
         let metrics = Self::get();
         for op in &[OrderOperation::Created, OrderOperation::Cancelled] {
-            for class in &[OrderClass::Market, OrderClass::Limit] {
+            for position in &[MarketPosition::InMarket, MarketPosition::OutOfMarket] {
                 metrics
                     .orders
-                    .with_label_values(&[&class.to_string(), &op.to_string()])
+                    .with_label_values(&[position.as_str(), op.as_str()])
                     .reset();
             }
         }
@@ -556,13 +571,7 @@ impl Orderbook {
         // latest state of an already executed order is not `Traded`. To
         // detect that we first check the trades table and return the
         // appropriate competition data.
-        let trades = self
-            .database
-            .trades(&TradeFilter {
-                owner: None,
-                order_uid: Some(*uid),
-            })
-            .await?;
+        let trades = self.database.trades(&TradeFilter::OrderUid(*uid)).await?;
 
         match trades.first().map(|trade| trade.tx_hash) {
             Some(Some(tx_hash)) => {

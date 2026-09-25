@@ -9,10 +9,13 @@ use {
             db,
             driver::Driver,
             executor::DriverExecutor,
+            inflight::InFlightOrders,
             listen::ListenSession,
             observation::SettlementWindows,
             observer::CompetitionObserver,
+            prices::NativePrices,
             provider::DbAuctionProvider,
+            sponsor::Sponsor,
             trigger::SlotTrigger,
         },
         run_loop::AuctionLoop,
@@ -86,7 +89,10 @@ async fn run(config: Config) {
         .await
         .expect("database connection");
 
-    let windows = SettlementWindows::new(pool.clone());
+    // One shared hold-out: the executor holds into it, the auction cut reads
+    // it, and the settlement observer releases from it.
+    let inflight = InFlightOrders::default();
+    let windows = SettlementWindows::new(pool.clone(), inflight.clone());
     let listen = ListenSession::spawn(
         pool.clone(),
         db::SETTLEMENT_FINALIZED_CHANNEL,
@@ -105,9 +111,41 @@ async fn run(config: Config) {
         .map(|driver| Arc::new(Driver::new(driver.name.clone(), &driver.url)))
         .collect();
 
+    let sponsor = config.sponsoring.as_ref().map(|sponsoring| {
+        let keypair = solana_sdk::signer::keypair::read_keypair_file(&sponsoring.funder_keypair)
+            .expect("read the funder keypair");
+        Sponsor::new(
+            keypair,
+            SolanaRPC::new_with_timeout_and_commitment(
+                &config.rpc.endpoint,
+                config.rpc.request_timeout,
+                CommitmentConfig::confirmed(),
+            ),
+            pool.clone(),
+        )
+    });
+
     let auction_loop = AuctionLoop::new(
         Box::new(SlotTrigger::new(rpc, config.min_auction_interval)),
-        Box::new(DbAuctionProvider::new(pool.clone())),
+        Box::new(DbAuctionProvider::new(
+            pool.clone(),
+            SolanaRPC::new_with_timeout_and_commitment(
+                &config.rpc.endpoint,
+                config.rpc.request_timeout,
+                CommitmentConfig::confirmed(),
+            ),
+            config.max_indexer_lag_slots,
+            inflight.clone(),
+            NativePrices::new(
+                &config.native_prices,
+                SolanaRPC::new_with_timeout_and_commitment(
+                    &config.rpc.endpoint,
+                    config.rpc.request_timeout,
+                    CommitmentConfig::confirmed(),
+                ),
+                config.contracts.wrapped_native_mint,
+            ),
+        )),
         Box::new(DriverCompetition::new(
             drivers.clone(),
             config.competition.solve_deadline,
@@ -116,7 +154,12 @@ async fn run(config: Config) {
             config.competition.max_winners.get(),
             Pubkey(config.contracts.wrapped_native_mint.to_bytes()),
         )),
-        Box::new(DriverExecutor::new(drivers, windows.clone())),
+        Box::new(DriverExecutor::new(
+            drivers,
+            windows.clone(),
+            sponsor,
+            inflight,
+        )),
         Box::new(CompetitionObserver::new(pool, windows)),
         config.competition.submission_deadline_slots.get(),
     );

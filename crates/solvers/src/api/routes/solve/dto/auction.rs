@@ -12,10 +12,7 @@ use {
 /// Converts a data transfer object into its domain object representation.
 pub fn into_domain(auction: Auction) -> Result<auction::Auction, Error> {
     Ok(auction::Auction {
-        id: match auction.id {
-            Some(id) => auction::Id::Solve(id),
-            None => auction::Id::Quote,
-        },
+        id: auction::Id(auction.id),
         tokens: auction::Tokens(
             auction
                 .tokens
@@ -53,10 +50,6 @@ pub fn into_domain(auction: Auction) -> Result<auction::Auction, Error> {
                 side: match order.kind {
                     Kind::Buy => order::Side::Buy,
                     Kind::Sell => order::Side::Sell,
-                },
-                class: match order.class {
-                    Class::Market => order::Class::Market,
-                    Class::Limit => order::Class::Limit,
                 },
                 partially_fillable: order.partially_fillable,
                 flashloan_hint: order
