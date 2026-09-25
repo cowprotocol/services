@@ -17,7 +17,7 @@ use {
     axum::{Json, http::StatusCode},
     bigdecimal::ToPrimitive,
     cow_settlement_interface::{
-        data::intent::{EncodedOrderIntent, OrderIntent, OrderKind as IntentOrderKind},
+        data::intent::{Asset, OrderIntent, OrderKind as IntentOrderKind, hash_bytes},
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
         pda::{order::find_order_pda, state::find_state_pda},
     },
@@ -245,8 +245,9 @@ fn validate(
     if *input.created_by != sponsoring.funder {
         return Err(PlacementError::WrongRentPayer);
     }
-    let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
+    let intent = OrderIntent::try_from(&input.intent_bytes)
         .map_err(|_| PlacementError::InvalidTransaction("the intent bytes do not decode"))?;
+    let uid = hash_bytes(&input.intent_bytes);
     if !intent.flags.created_on_chain {
         return Err(PlacementError::InvalidIntentFlags);
     }
@@ -263,7 +264,12 @@ fn validate(
     if !keys.iter().take(signers).any(|key| *key == intent.owner) {
         return Err(PlacementError::InvalidSignature);
     }
-    if intent.sell_mint == intent.buy_mint {
+    let Asset::TokenProgram(buy) = &intent.buy else {
+        return Err(PlacementError::InvalidTransaction(
+            "buying native SOL is not supported",
+        ));
+    };
+    if intent.sell.mint == buy.mint {
         return Err(PlacementError::SameBuyAndSellToken);
     }
     if intent.sell_amount == 0 || intent.buy_amount == 0 {
@@ -495,7 +501,8 @@ fn preparation_step(
     let accounts = resolve_accounts(instruction, keys)?;
     // Wrap steps only make sense when the order sells native SOL through the
     // wSOL mint.
-    let wrapped_sell = intent.sell_mint == spl_token_interface::native_mint::ID;
+    let wrapped_sell = intent.sell.mint == spl_token_interface::native_mint::ID;
+    let (buy_mint, buy_token_account) = intent.buy.encode();
 
     if *program == solana_system_interface::program::ID {
         if !matches!(
@@ -521,7 +528,7 @@ fn preparation_step(
                 "the wrap transfer must come from the order owner",
             ));
         }
-        if to != intent.sell_token_account {
+        if to != intent.sell.token_account {
             return Err(PlacementError::InvalidTransaction(
                 "the wrap transfer must fund the sell token account",
             ));
@@ -540,7 +547,7 @@ fn preparation_step(
                         "wrap steps apply only to orders selling native SOL",
                     ));
                 }
-                if account != intent.sell_token_account {
+                if account != intent.sell.token_account {
                     return Err(PlacementError::InvalidTransaction(
                         "the sync must target the sell token account",
                     ));
@@ -561,7 +568,7 @@ fn preparation_step(
                         "a checked approve names a source, a mint, a delegate, and an owner",
                     ));
                 };
-                if mint != intent.sell_mint {
+                if mint != intent.sell.mint {
                     return Err(PlacementError::InvalidTransaction(
                         "the approve must cover the sell mint",
                     ));
@@ -596,7 +603,7 @@ fn preparation_step(
                 "the account creation must be paid by the funder or the owner",
             ));
         }
-        if wrapped_sell && account == intent.sell_token_account && mint == intent.sell_mint {
+        if wrapped_sell && account == intent.sell.token_account && mint == intent.sell.mint {
             // An order sells its owner's funds, so the wSOL account is theirs.
             if owner != intent.owner {
                 return Err(PlacementError::InvalidTransaction(
@@ -604,7 +611,7 @@ fn preparation_step(
                 ));
             }
             Ok(WRAP_CREATE)
-        } else if account == intent.buy_token_account && mint == intent.buy_mint {
+        } else if account == buy_token_account && mint == buy_mint {
             // Any wallet may receive the proceeds: settlement pays out to the
             // account the intent names, whoever owns it.
             Ok(CREATE_DESTINATION)
@@ -629,7 +636,7 @@ fn approve_step(
     delegate: Pubkey,
     owner: Pubkey,
 ) -> Result<u8, PlacementError> {
-    if source != intent.sell_token_account {
+    if source != intent.sell.token_account {
         return Err(PlacementError::InvalidTransaction(
             "the approve must cover the sell token account",
         ));
@@ -651,13 +658,14 @@ fn build_order(
     uid: solana_sdk::hash::Hash,
     order_pda: Pubkey,
 ) -> db::SponsoredOrder {
+    let (buy_mint, buy_token_account) = intent.buy.encode();
     db::SponsoredOrder {
         uid: ByteArray(uid.to_bytes()),
         owner: ByteArray(intent.owner.to_bytes()),
-        sell_token: ByteArray(intent.sell_mint.to_bytes()),
-        buy_token: ByteArray(intent.buy_mint.to_bytes()),
-        sell_token_account: ByteArray(intent.sell_token_account.to_bytes()),
-        buy_token_account: ByteArray(intent.buy_token_account.to_bytes()),
+        sell_token: ByteArray(intent.sell.mint.to_bytes()),
+        buy_token: ByteArray(buy_mint.to_bytes()),
+        sell_token_account: ByteArray(intent.sell.token_account.to_bytes()),
+        buy_token_account: ByteArray(buy_token_account.to_bytes()),
         sell_amount: intent.sell_amount,
         buy_amount: intent.buy_amount,
         valid_to: intent.valid_to,
