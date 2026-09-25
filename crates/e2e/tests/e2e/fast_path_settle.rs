@@ -90,6 +90,12 @@ async fn local_node_fast_path_regular_auction_fallback() {
 
 #[tokio::test]
 #[ignore]
+async fn local_node_fast_path_absolute_slippage_cap_binds() {
+    run_test(fast_path_absolute_slippage_cap_binds).await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn local_node_fast_path_volume_fees_captured() {
     run_test(fast_path_volume_fees_captured).await;
 }
@@ -635,6 +641,180 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
         solver_b.address(),
         "fallback settlement should be submitted by solver_b (funded)"
     );
+}
+
+/// The absolute AMM-slippage cap binds on the fast path, which only works
+/// because the autopilot forwards native prices into the re-encode.
+///
+/// A token->WETH order is quoted and its solution cached. The pool is then
+/// moved adversely (minting token in makes the token cheaper), so re-executing
+/// the cached swap needs more token input than quoted, i.e. some slippage. The
+/// solver's absolute slippage is set far below that need while its relative
+/// slippage (10%) would comfortably cover it. With native prices present the
+/// encoder clamps to the tiny absolute cap, the fast-path settle can't cover
+/// the move and reverts, so the order stays open until the regular auction
+/// re-solves against the moved pool and settles it. If native-price forwarding
+/// regressed, `apply_to` would fall back to the 10% relative buffer, the
+/// fast-path settle would go through, and the order would fill during the
+/// exclusivity window - failing this test.
+async fn fast_path_absolute_slippage_cap_binds(web3: Web3) {
+    // 0.00001 ETH. Far below the slippage the pool move needs (so the cap binds
+    // and the stale fast-path swap reverts), far above the ~zero slippage a
+    // fresh regular-auction solve needs (so the fallback settles) and above any
+    // rounding.
+    const ABSOLUTE_SLIPPAGE_WEI: u128 = 10_000_000_000_000;
+
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // The trader sells the token for WETH, so the settlement swaps token->WETH.
+    let sell_amount = 10u64.eth();
+    token.mint(trader.address(), sell_amount).await;
+    token
+        .approve(onchain.contracts().allowance, sell_amount)
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Give the settlement contract a token buffer so the AMM swap can draw the
+    // extra input the slippage allowance permits. Without it the swap is capped
+    // at the trader's fixed sell amount and the move reverts regardless of
+    // slippage - here the absolute cap alone must decide whether it settles.
+    token
+        .mint(*onchain.contracts().gp_settlement.address(), 100u64.eth())
+        .await;
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    // Short exclusivity so the regular-auction fallback lands within the test
+    // timeout after the fast-path settle fails.
+    let exclusivity = Duration::from_secs(5);
+
+    colocation::start_driver_with_absolute_slippage(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver.clone(),
+                *onchain.contracts().weth.address(),
+                vec![],
+                1,
+                true,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+        ABSOLUTE_SLIPPAGE_WEI,
+    );
+
+    let quoter = ExternalSolver::new("test_solver", "http://localhost:11088/test_solver");
+    let autopilot_config = AutopilotConfiguration {
+        drivers: vec![Solver::test("test_solver", solver.address())],
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter.clone()]),
+        ..AutopilotConfiguration::test_no_drivers()
+    };
+    let orderbook_config = configs::orderbook::Configuration {
+        order_quoting: OrderQuoting::test_with_drivers(vec![quoter]),
+        ..configs::orderbook::Configuration::test_default()
+    };
+    let (autopilot_config, orderbook_config) =
+        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+    services.start_autopilot(None, autopilot_config).await;
+    services.start_api(orderbook_config).await;
+
+    let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
+
+    tracing::info!("Quoting with enableFastPath.");
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *token.address(),
+        buy_token: *onchain.contracts().weth.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(sell_amount).unwrap(),
+            },
+        },
+        app_data: OrderCreationAppData::Full {
+            full: app_data.clone(),
+        },
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+    let quote_id = quote.id.expect("fast-path quote should carry an id");
+
+    // Move the pool against the cached swap: adding token makes it cheaper, so
+    // the cached token->WETH route needs more token input than quoted.
+    tracing::info!("Moving the pool reserves after caching the quote.");
+    onchain
+        .mint_token_to_weth_uni_v2_pool(&token, 5u64.eth())
+        .await;
+
+    // Sign well below the quote so the (worse) post-move price still clears the
+    // limit when the regular auction settles.
+    let signed_buy = quote.quote.buy_amount * U256::from(80u64) / U256::from(100u64);
+    tracing::info!("Placing the fast-path order.");
+    let order = OrderCreation {
+        quote_id: Some(quote_id),
+        sell_token: *token.address(),
+        sell_amount,
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: signed_buy,
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full { full: app_data },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let uid = services.create_order(&order).await.unwrap();
+    let valid_from = model::time::now_in_epoch_seconds() + exclusivity.as_secs() as u32;
+
+    // The fast-path competition is persisted before the driver settles, so its
+    // appearance proves the fast path fired; the order is still `Open` because
+    // the settle reverted on the bound absolute cap.
+    tracing::info!("Waiting for the fast-path competition to appear.");
+    wait_for_condition(TIMEOUT, || async {
+        services
+            .get_latest_solver_competition()
+            .await
+            .is_ok_and(|competition| {
+                competition
+                    .solutions
+                    .iter()
+                    .any(|solution| solution.orders.iter().any(|order| order.id == uid))
+            })
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        services.get_order(&uid).await.unwrap().metadata.status,
+        OrderStatus::Open,
+        "fast path settled despite the bound absolute slippage cap; native prices let the cap \
+         clamp the swap below what the moved pool needs, so the settle must revert"
+    );
+
+    // The regular auction re-solves against the moved pool (needing ~no
+    // slippage) and settles after `valid_from`.
+    tracing::info!("Waiting for the regular-auction fallback.");
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
+            && model::time::now_in_epoch_seconds() >= valid_from
+    })
+    .await
+    .unwrap();
 }
 
 /// Two otherwise identical baseline solvers compete on a fast-path order,

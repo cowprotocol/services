@@ -131,33 +131,6 @@ async fn fast_path_settle() {
     .await;
 }
 
-/// A fast-path settle carrying native prices re-encodes and executes on-chain.
-#[tokio::test]
-#[ignore]
-async fn fast_path_settle_forwards_native_prices() {
-    let test = fast_path_test().await;
-    test.quote().await.ok();
-    let order = test.order_json();
-    let mut native_prices = serde_json::Map::new();
-    for token in ["sellToken", "buyToken"] {
-        native_prices.insert(
-            order[token].as_str().unwrap().to_owned(),
-            serde_json::json!("1000000000000000000"),
-        );
-    }
-    test.settle_with_order(
-        test.quote_id(),
-        order,
-        test.limit_prices_json(),
-        Some(serde_json::Value::Object(native_prices)),
-    )
-    .await
-    .ok()
-    .await
-    .ab_order_executed(&test)
-    .await;
-}
-
 /// The re-encoded settlement fills the order at exactly the signed limit, not
 /// the surplus the cached route would otherwise deliver.
 #[tokio::test]
