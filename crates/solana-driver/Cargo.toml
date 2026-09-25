@@ -16,6 +16,8 @@ name = "solana-driver"
 path = "src/main.rs"
 
 [dependencies]
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-kms = { workspace = true, features = ["default-https-client", "rt-tokio"] }
 axum = { workspace = true }
 bincode = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["clock"] }

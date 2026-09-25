@@ -252,25 +252,24 @@ async fn spawn_driver(
 ) -> (std::net::SocketAddr, CancellationToken) {
     // Override the solver endpoint to the in-process engine. Keep the
     // keypair from the config file.
-    let solvers: Vec<Solver> = config
-        .solvers
-        .into_iter()
-        .map(|s| {
-            let endpoint = if s.name == "jupiter-live" {
-                format!("http://{solver_addr}/").parse().unwrap()
-            } else {
-                s.endpoint
-            };
-            Solver::new(&config::Solver {
-                name: s.name,
-                endpoint,
-                signer_keypair: s.signer_keypair,
-                solve_every_nth_auction: None,
-                solver_fee_bps: None,
-            })
+    let solvers = config.solvers.into_iter().map(|s| async move {
+        let endpoint = if s.name == "jupiter-live" {
+            format!("http://{solver_addr}/").parse().unwrap()
+        } else {
+            s.endpoint
+        };
+        Solver::new(&config::Solver {
+            name: s.name,
+            endpoint,
+            signer: s.signer,
+            solve_every_nth_auction: None,
+            solver_fee_bps: None,
         })
-        .collect::<Result<_, _>>()
-        .expect("failed to load solver signer keypairs");
+        .await
+    });
+    let solvers: Vec<Solver> = futures::future::try_join_all(solvers)
+        .await
+        .expect("failed to load solver signers");
 
     let blockchain = Arc::new(Solana::new(
         SolanaRPC::new_with_timeout_and_commitment(
@@ -472,7 +471,9 @@ async fn settle_on_mainnet() {
     // The solver keypair doubles as the user. The test needs exactly one
     // funded keypair — it creates the order, approves the delegate, and the
     // driver signs the settlement tx with the same keypair.
-    let keypair_path = &config.solvers[0].signer_keypair;
+    let config::SettlementSigner::Keypair(keypair_path) = &config.solvers[0].signer else {
+        panic!("the mainnet test needs a keypair-file solver");
+    };
     let user = read_keypair_file(keypair_path).expect("failed to read solver/user keypair");
 
     // --- nonblocking RPC client for order creation and confirmation ---

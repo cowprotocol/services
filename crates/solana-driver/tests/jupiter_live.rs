@@ -122,10 +122,11 @@ async fn driver_solves_against_live_jupiter_engine() {
     let solver = Solver::new(&config::Solver {
         name: "jupiter-live".to_string(),
         endpoint: format!("http://{addr}").parse().unwrap(),
-        signer_keypair: keypair_path,
+        signer: config::SettlementSigner::Keypair(keypair_path),
         solve_every_nth_auction: None,
         solver_fee_bps: None,
     })
+    .await
     .expect("solver construction should succeed");
 
     // `Solver::solve` posts the auction and deserializes the JSON response

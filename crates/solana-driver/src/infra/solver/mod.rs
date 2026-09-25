@@ -7,12 +7,9 @@
 use {
     crate::{
         domain::{self, solver_fee::SolverFee},
-        infra::{config, solver::dto::auction::Auction},
+        infra::{config, signer, solver::dto::auction::Auction},
     },
-    solana_sdk::{
-        pubkey::Pubkey,
-        signer::{Signer, keypair::Keypair},
-    },
+    solana_sdk::pubkey::Pubkey,
     std::{num::NonZero, sync::Arc},
     thiserror::Error,
 };
@@ -23,7 +20,7 @@ pub mod dto;
 #[derive(Clone)]
 pub struct Solver {
     name: String,
-    keypair: Arc<Keypair>,
+    signer: Arc<signer::Signer>,
     client: reqwest::Client,
     base_url: reqwest::Url,
     solve_every_nth_auction: Option<NonZero<u64>>,
@@ -36,14 +33,14 @@ impl Solver {
         &self.name
     }
 
-    /// The solver's on-chain identity, derived from its signer keypair.
+    /// The solver's on-chain identity, derived from its signer.
     pub fn pubkey(&self) -> Pubkey {
-        self.keypair.pubkey()
+        self.signer.pubkey()
     }
 
-    /// The solver's settlement signer keypair.
-    pub(crate) fn keypair(&self) -> &Keypair {
-        &self.keypair
+    /// The solver's settlement signer.
+    pub(crate) fn signer(&self) -> &signer::Signer {
+        &self.signer
     }
 
     /// The auction-id stride this solver participates at, when throttled.
@@ -56,25 +53,38 @@ impl Solver {
         self.solver_fee
     }
 
-    /// Build a solver client from its configuration.
-    ///
-    /// Loads the signer keypair from `config.signer_keypair`.
-    pub fn new(config: &config::Solver) -> Result<Self, Error> {
-        let keypair = solana_sdk::signer::keypair::read_keypair_file(&config.signer_keypair)
-            .map_err(|error| Error::SignerKeypair {
-                solver: config.name.clone(),
-                path: config.signer_keypair.clone(),
-                error: error.to_string().into(),
-            })?;
-        let keypair = Arc::new(keypair);
+    /// Build a solver client from its configuration, loading the signer the
+    /// config names: a local keypair file or an AWS KMS key.
+    pub async fn new(config: &config::Solver) -> Result<Self, Error> {
+        let signer = match &config.signer {
+            config::SettlementSigner::Keypair(path) => {
+                let keypair =
+                    solana_sdk::signer::keypair::read_keypair_file(path).map_err(|error| {
+                        Error::SignerKeypair {
+                            solver: config.name.clone(),
+                            path: path.clone(),
+                            error: error.to_string().into(),
+                        }
+                    })?;
+                signer::Signer::Keypair(Arc::new(keypair))
+            }
+            config::SettlementSigner::KmsKey(key_id) => {
+                signer::Signer::Kms(signer::KmsSigner::new(key_id.clone()).await.map_err(
+                    |error| Error::Signer {
+                        solver: config.name.clone(),
+                        error,
+                    },
+                )?)
+            }
+        };
         tracing::info!(
             solver = %config.name,
-            pubkey = %keypair.pubkey(),
-            "loaded solver keypair"
+            pubkey = %signer.pubkey(),
+            "loaded solver signer"
         );
         Ok(Self {
             name: config.name.clone(),
-            keypair,
+            signer: Arc::new(signer),
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             solve_every_nth_auction: config.solve_every_nth_auction,
@@ -165,6 +175,13 @@ pub enum Error {
         #[source]
         error: Box<dyn std::error::Error + Send + Sync>,
     },
+    /// The KMS signer could not be set up.
+    #[error("failed to load the KMS signer for solver {solver}: {error}")]
+    Signer {
+        solver: String,
+        #[source]
+        error: signer::Error,
+    },
 }
 
 #[cfg(test)]
@@ -181,10 +198,11 @@ mod tests {
         let solver = Solver::new(&config::Solver {
             name: "test".to_owned(),
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
-            signer_keypair: keypair_path,
+            signer: config::SettlementSigner::Keypair(keypair_path),
             solve_every_nth_auction: None,
             solver_fee_bps: None,
         })
+        .await
         .expect("solver construction should succeed");
         let auction = domain::Auction {
             id: Some(domain::Id::new(1).unwrap()),

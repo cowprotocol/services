@@ -93,40 +93,42 @@ async fn spawn_mock_solver_engine(response: serde_json::Value) -> SocketAddr {
 
 /// A solver client whose on-chain identity is a freshly generated keypair,
 /// so the test can register a matching settlement signer.
-fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
-    solver_with_fee(addr, 0)
+async fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
+    solver_with_fee(addr, 0).await
 }
 
-fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubkey) {
+async fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubkey) {
     let keypair_file = temp_keypair();
     let keypair_path = keypair_file.path().to_path_buf();
     let solver = Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: format!("http://{addr}").parse().unwrap(),
-        signer_keypair: keypair_path,
+        signer: config::SettlementSigner::Keypair(keypair_path),
         solve_every_nth_auction: None,
         solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
     })
+    .await
     .expect("solver construction should succeed");
     let account = solver.pubkey();
     (solver, account)
 }
 
 /// A solver client pointing at a dead endpoint (no listener).
-fn dead_solver() -> (Solver, Pubkey) {
-    solver_with_keypair("127.0.0.1:1".parse().unwrap())
+async fn dead_solver() -> (Solver, Pubkey) {
+    solver_with_keypair("127.0.0.1:1".parse().unwrap()).await
 }
 
 /// A dead-endpoint solver throttled to one solve in the given stride.
-fn throttled_dead_solver(stride: u64) -> Solver {
+async fn throttled_dead_solver(stride: u64) -> Solver {
     let keypair_file = temp_keypair();
     Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: "http://127.0.0.1:1".parse().unwrap(),
-        signer_keypair: keypair_file.path().to_path_buf(),
+        signer: config::SettlementSigner::Keypair(keypair_file.path().to_path_buf()),
         solve_every_nth_auction: NonZero::new(stride),
         solver_fee_bps: None,
     })
+    .await
     .expect("solver construction should succeed")
 }
 
@@ -267,7 +269,7 @@ async fn solve_returns_converted_solutions() {
         }]
     }))
     .await;
-    let (solver, account) = solver_with_keypair(engine);
+    let (solver, account) = solver_with_keypair(engine).await;
     let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()
@@ -317,7 +319,7 @@ async fn solve_discards_duplicate_solution_ids() {
         "solutions": [solution.clone(), solution],
     }))
     .await;
-    let (solver, _) = solver_with_keypair(engine);
+    let (solver, _) = solver_with_keypair(engine).await;
     let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()
@@ -335,7 +337,7 @@ async fn solve_discards_duplicate_solution_ids() {
 #[tokio::test]
 async fn solve_with_engine_down_returns_solver_failed() {
     // Point the solver at a port with no listener.
-    let (dead, _) = dead_solver();
+    let (dead, _) = dead_solver().await;
     let addr = spawn_server(vec![dead]).await;
 
     let response = reqwest::Client::new()
@@ -352,7 +354,7 @@ async fn solve_with_engine_down_returns_solver_failed() {
 
 #[tokio::test]
 async fn settle_rejects_non_positive_auction_id() {
-    let (dead, _) = dead_solver();
+    let (dead, _) = dead_solver().await;
     let addr = spawn_server(vec![dead]).await;
 
     let response = reqwest::Client::new()
@@ -372,7 +374,7 @@ async fn settle_rejects_non_positive_auction_id() {
 #[tokio::test]
 async fn settle_rejects_a_passed_submission_deadline() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
-    let (solver, _) = solver_with_keypair(engine);
+    let (solver, _) = solver_with_keypair(engine).await;
 
     // The mock RPC reports slot 1000, so a deadline of 500 is already past.
     let mut mocks = Mocks::new();
@@ -416,7 +418,7 @@ async fn solve_keeps_the_first_of_duplicate_solution_ids() {
     // Both solutions use id 7 but different sell prices. `executedBuy`
     // identifies the survivor: 1000 * 2000 / 1000 = 2000 for the first one.
     let engine = spawn_mock_solver_engine(engine_response(&[(7, "2000"), (7, "4000")])).await;
-    let (solver, account) = solver_with_keypair(engine);
+    let (solver, account) = solver_with_keypair(engine).await;
     let addr = spawn_server(vec![solver]).await;
 
     let body = call_solve(addr).await;
@@ -439,7 +441,7 @@ async fn solve_keeps_the_first_of_duplicate_solution_ids() {
 async fn solve_preserves_the_solvers_ordering() {
     let engine =
         spawn_mock_solver_engine(engine_response(&[(3, "2000"), (1, "2000"), (2, "2000")])).await;
-    let (solver, _) = solver_with_keypair(engine);
+    let (solver, _) = solver_with_keypair(engine).await;
     let addr = spawn_server(vec![solver]).await;
 
     let body = call_solve(addr).await;
@@ -480,7 +482,7 @@ fn quote_solution(executed_amount: &str) -> serde_json::Value {
 #[tokio::test]
 async fn quote_returns_the_executed_amounts() {
     let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
-    let (solver, account) = solver_with_keypair(engine);
+    let (solver, account) = solver_with_keypair(engine).await;
     let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()
@@ -505,7 +507,7 @@ async fn quote_returns_the_executed_amounts() {
 #[tokio::test]
 async fn buy_quote_returns_the_executed_amounts() {
     let engine = spawn_mock_solver_engine(quote_solution("2000")).await;
-    let (solver, account) = solver_with_keypair(engine);
+    let (solver, account) = solver_with_keypair(engine).await;
     let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()
@@ -532,7 +534,7 @@ async fn buy_quote_returns_the_executed_amounts() {
 #[tokio::test]
 async fn solve_reports_fee_adjusted_amounts() {
     let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;
-    let (solver, _) = solver_with_fee(engine, 500);
+    let (solver, _) = solver_with_fee(engine, 500).await;
     let addr = spawn_server(vec![solver]).await;
 
     let body = call_solve(addr).await;
@@ -546,7 +548,7 @@ async fn solve_reports_fee_adjusted_amounts() {
 #[tokio::test]
 async fn solve_drops_the_fill_the_fee_pushes_under_the_limit() {
     let engine = spawn_mock_solver_engine(engine_response(&[(1, "2000"), (2, "3000")])).await;
-    let (solver, _) = solver_with_fee(engine, 500);
+    let (solver, _) = solver_with_fee(engine, 500).await;
     let addr = spawn_server(vec![solver]).await;
 
     let body = call_solve(addr).await;
@@ -556,7 +558,7 @@ async fn solve_drops_the_fill_the_fee_pushes_under_the_limit() {
 #[tokio::test]
 async fn sell_quote_reports_the_fee_adjusted_buy_amount() {
     let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
-    let (solver, account) = solver_with_fee(engine, 500);
+    let (solver, account) = solver_with_fee(engine, 500).await;
     let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()
@@ -583,7 +585,7 @@ async fn sell_quote_reports_the_fee_adjusted_buy_amount() {
 #[tokio::test]
 async fn buy_quote_reports_the_fee_adjusted_sell_amount() {
     let engine = spawn_mock_solver_engine(quote_solution("2000")).await;
-    let (solver, account) = solver_with_fee(engine, 500);
+    let (solver, account) = solver_with_fee(engine, 500).await;
     let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()
@@ -608,7 +610,7 @@ async fn buy_quote_reports_the_fee_adjusted_sell_amount() {
 #[tokio::test]
 async fn quote_with_identical_tokens_is_rejected() {
     // Validation short-circuits before the engine is called.
-    let (solver, _) = dead_solver();
+    let (solver, _) = dead_solver().await;
     let addr = spawn_server(vec![solver]).await;
 
     let mut body = quote_request("sell", "1000");
@@ -628,7 +630,7 @@ async fn quote_with_identical_tokens_is_rejected() {
 async fn quote_without_a_solution_is_quoting_failed() {
     // An engine that routes nothing answers with an empty solution list.
     let engine = spawn_mock_solver_engine(serde_json::json!({"solutions": []})).await;
-    let (solver, _) = solver_with_keypair(engine);
+    let (solver, _) = solver_with_keypair(engine).await;
     let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()
@@ -647,7 +649,7 @@ async fn quote_without_a_solution_is_quoting_failed() {
 #[tokio::test]
 async fn quoting_does_not_populate_the_settle_cache() {
     let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
-    let (solver, _) = solver_with_keypair(engine);
+    let (solver, _) = solver_with_keypair(engine).await;
     let addr = spawn_server(vec![solver]).await;
 
     let client = reqwest::Client::new();
@@ -680,7 +682,7 @@ async fn quoting_does_not_populate_the_settle_cache() {
 /// request reaches the (dead) engine and fails.
 #[tokio::test]
 async fn solve_takes_part_every_nth_solve() {
-    let addr = spawn_server(vec![throttled_dead_solver(2)]).await;
+    let addr = spawn_server(vec![throttled_dead_solver(2).await]).await;
 
     // First solve (seq 0) takes part: it reaches the dead engine and fails.
     assert_eq!(solve_status(addr).await, reqwest::StatusCode::BAD_REQUEST);

@@ -9221,6 +9221,8 @@ dependencies = [
 name = "solana-driver"
 version = "0.1.0"
 dependencies = [
+ "aws-config",
+ "aws-sdk-kms",
  "axum",
  "base64 0.22.1",
  "bincode",
