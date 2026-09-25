@@ -1176,3 +1176,75 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
         .unwrap();
     assert_eq!(stored, intent.buy.encode().1.to_bytes().to_vec());
 }
+
+async fn get_order(addr: SocketAddr, uid: &str) -> serde_json::Value {
+    let response = reqwest::get(format!("http://{addr}/api/v1/orders/{uid}"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    response.json().await.unwrap()
+}
+
+/// A pending sponsored creation reads as expired once the chain passes its
+/// block height. The sponsored server's mock answers `getBlockHeight` with
+/// 100, once, so every read goes through a fresh server.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_orders_report_a_dead_creation_as_expired() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let owner = solana_sdk::pubkey::Pubkey::new_unique();
+    let order = db::SponsoredOrder {
+        uid: ByteArray([0x11; 32]),
+        owner: ByteArray(owner.to_bytes()),
+        sell_token: ByteArray([0x66; 32]),
+        buy_token: ByteArray([0x55; 32]),
+        sell_token_account: ByteArray([0x33; 32]),
+        buy_token_account: ByteArray([0x22; 32]),
+        sell_amount: 1_000,
+        buy_amount: 2_000,
+        valid_to: u32::MAX,
+        kind: OrderKind::Sell,
+        partially_fillable: false,
+        app_data: ByteArray([0x44; 32]),
+        order_pda: ByteArray([0xB0; 32]),
+        presigned_transaction: vec![0xC0; 128],
+        last_valid_block_height: 100,
+    };
+    db::insert_sponsored_order(&pool, &order, None)
+        .await
+        .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let uid = format!("0x{}", "11".repeat(32));
+
+    // Alive at the deadline.
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let json = get_order(addr, &uid).await;
+    assert_eq!(json["status"], "open");
+    assert_eq!(json["lastValidBlockHeight"], 100);
+
+    sqlx::query("UPDATE solana.orders SET last_valid_block_height = 99")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let json = get_order(addr, &uid).await;
+    assert_eq!(json["status"], "expired");
+
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let listed: Vec<serde_json::Value> =
+        reqwest::get(format!("http://{addr}/api/v1/account/{owner}/orders"))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["status"], "expired");
+}

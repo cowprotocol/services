@@ -79,9 +79,10 @@ pub enum Status {
 }
 
 impl Order {
-    /// Assemble the wire order from its row at the given time.
-    pub fn new(row: OrderRow, now_unix: i64) -> Self {
-        let status = status(&row, now_unix);
+    /// Assemble the wire order from its row at the given time and chain
+    /// block height. A `None` height skips the creation deadline check.
+    pub fn new(row: OrderRow, now_unix: i64, block_height: Option<i64>) -> Self {
+        let status = status(&row, now_unix, block_height);
         let kind = kind(&row);
         Self {
             uid: const_hex::encode_prefixed(row.uid.0),
@@ -111,8 +112,9 @@ impl Order {
 /// A full fill on the order's own side wins, then cancellation, then expiry.
 /// Fulfilled must beat cancelled: reclaiming a filled order's PDA to recover
 /// rent stamps a cancellation timestamp, and that cleanup does not undo the
-/// fill.
-fn status(row: &OrderRow, now_unix: i64) -> Status {
+/// fill. Expiry is the intent's `valid_to` passing, or a pending creation
+/// whose transaction died: past its block height it can no longer land.
+fn status(row: &OrderRow, now_unix: i64, block_height: Option<i64>) -> Status {
     let filled = match kind(row) {
         Kind::Sell => row.amount_withdrawn >= row.sell_amount,
         Kind::Buy => row.amount_received >= row.buy_amount,
@@ -124,6 +126,13 @@ fn status(row: &OrderRow, now_unix: i64) -> Status {
         return Status::Cancelled;
     }
     if row.valid_to < now_unix {
+        return Status::Expired;
+    }
+    let creation_died = row
+        .last_valid_block_height
+        .zip(block_height)
+        .is_some_and(|(last_valid, height)| last_valid < height);
+    if creation_died {
         return Status::Expired;
     }
     Status::Open
@@ -158,22 +167,22 @@ mod tests {
 
     #[test]
     fn status_precedence() {
-        assert_eq!(status(&row(), 1_500), Status::Open);
-        assert_eq!(status(&row(), 2_001), Status::Expired);
+        assert_eq!(status(&row(), 1_500, None), Status::Open);
+        assert_eq!(status(&row(), 2_001, None), Status::Expired);
 
         let filled = OrderRow {
             amount_withdrawn: 1_000.into(),
             ..row()
         };
         // A full fill outranks expiry.
-        assert_eq!(status(&filled, 2_001), Status::Fulfilled);
+        assert_eq!(status(&filled, 2_001, None), Status::Fulfilled);
 
         let filled_buy = OrderRow {
             kind: OrderKind::Buy,
             amount_received: 500.into(),
             ..row()
         };
-        assert_eq!(status(&filled_buy, 1_500), Status::Fulfilled);
+        assert_eq!(status(&filled_buy, 1_500, None), Status::Fulfilled);
 
         let reclaimed_after_fill = OrderRow {
             cancellation_timestamp: Some(DateTime::from_timestamp(1_100, 0).unwrap()),
@@ -181,18 +190,41 @@ mod tests {
             ..row()
         };
         // Reclaiming a filled order's PDA is cleanup, not a cancellation.
-        assert_eq!(status(&reclaimed_after_fill, 1_500), Status::Fulfilled);
+        assert_eq!(
+            status(&reclaimed_after_fill, 1_500, None),
+            Status::Fulfilled
+        );
 
         let cancelled = OrderRow {
             cancellation_timestamp: Some(DateTime::from_timestamp(1_100, 0).unwrap()),
             ..row()
         };
-        assert_eq!(status(&cancelled, 1_500), Status::Cancelled);
+        assert_eq!(status(&cancelled, 1_500, None), Status::Cancelled);
+    }
+
+    #[test]
+    fn a_dead_creation_is_expired() {
+        let pending = OrderRow {
+            last_valid_block_height: Some(250),
+            ..row()
+        };
+        // Alive while the chain is at or below the deadline, or unknown.
+        assert_eq!(status(&pending, 1_500, Some(250)), Status::Open);
+        assert_eq!(status(&pending, 1_500, None), Status::Open);
+        assert_eq!(status(&pending, 1_500, Some(251)), Status::Expired);
+        // A landed creation carries no deadline, whatever the chain height.
+        assert_eq!(status(&row(), 1_500, Some(1_000)), Status::Open);
+
+        let cancelled = OrderRow {
+            cancellation_timestamp: Some(DateTime::from_timestamp(1_100, 0).unwrap()),
+            ..pending
+        };
+        assert_eq!(status(&cancelled, 1_500, Some(251)), Status::Cancelled);
     }
 
     #[test]
     fn wire_format_is_stable() {
-        let order = Order::new(row(), 1_500);
+        let order = Order::new(row(), 1_500, None);
         let json = serde_json::to_value(&order).unwrap();
         assert_eq!(json["uid"], format!("0x{}", "11".repeat(32)));
         assert_eq!(json["sellAmount"], "1000");
@@ -208,7 +240,7 @@ mod tests {
             last_valid_block_height: Some(250),
             ..row()
         };
-        let json = serde_json::to_value(Order::new(pending, 1_500)).unwrap();
+        let json = serde_json::to_value(Order::new(pending, 1_500, None)).unwrap();
         assert_eq!(json["lastValidBlockHeight"], 250);
     }
 }
