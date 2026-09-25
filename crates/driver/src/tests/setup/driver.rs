@@ -188,14 +188,20 @@ pub fn settle_fast_path_req(
     auction_id: &str,
     order: serde_json::Value,
     limit_prices: serde_json::Value,
+    native_prices: Option<serde_json::Value>,
 ) -> serde_json::Value {
-    json!({
+    let mut req = json!({
         "quoteId": quote_id,
         "order": order,
         "limitPrices": limit_prices,
         "submissionDeadlineLatestBlock": submission_deadline_latest_block,
         "auctionId": auction_id,
-    })
+    });
+    // Omit `nativePrices` when absent.
+    if let Some(native_prices) = native_prices {
+        req["nativePrices"] = native_prices;
+    }
+    req
 }
 
 /// The quoted sell/buy amounts, used as the fast-path limit prices.

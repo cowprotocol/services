@@ -3,6 +3,7 @@ use {
     eth_domain_types as eth,
     serde::Deserialize,
     serde_with::serde_as,
+    std::collections::HashMap,
 };
 
 /// Settle the quote solution cached under `quote_id`, re-encoded against the
@@ -24,6 +25,12 @@ pub struct SettleFastPathRequest {
     /// to one.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub auction_id: i64,
+    /// Native prices (wei per 10**18) for the order's tokens, used to bound
+    /// AMM-interaction slippage at the solver's configured absolute cap.
+    /// Absent from an older autopilot: then the absolute cap is not applied.
+    #[serde(default)]
+    #[serde_as(as = "HashMap<_, serde_ext::U256>")]
+    pub native_prices: HashMap<eth::Address, eth::U256>,
 }
 
 #[serde_as]

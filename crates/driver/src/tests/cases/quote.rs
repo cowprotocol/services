@@ -118,12 +118,17 @@ async fn fast_path_test() -> setup::Test {
 async fn fast_path_settle() {
     let test = fast_path_test().await;
     test.quote().await.ok();
-    test.settle_with_order(test.quote_id(), test.order_json(), test.limit_prices_json())
-        .await
-        .ok()
-        .await
-        .ab_order_executed(&test)
-        .await;
+    test.settle_with_order(
+        test.quote_id(),
+        test.order_json(),
+        test.limit_prices_json(),
+        None,
+    )
+    .await
+    .ok()
+    .await
+    .ab_order_executed(&test)
+    .await;
 }
 
 /// The re-encoded settlement fills the order at exactly the signed limit, not
@@ -135,7 +140,7 @@ async fn fast_path_settle_fills_at_limit() {
     test.quote().await.ok();
     let limit_prices = test.limit_prices_json();
     let expected_buy: eth::U256 = limit_prices["buy"].as_str().unwrap().parse().unwrap();
-    test.settle_with_order(test.quote_id(), test.order_json(), limit_prices)
+    test.settle_with_order(test.quote_id(), test.order_json(), limit_prices, None)
         .await
         .ok()
         .await
@@ -166,6 +171,7 @@ async fn fast_path_settle_requires_matching_quote_id() {
         test.quote_id() + 1,
         test.order_json(),
         test.limit_prices_json(),
+        None,
     )
     .await
     .err()
@@ -181,7 +187,7 @@ async fn fast_path_settle_rejects_mismatched_order() {
     test.quote().await.ok();
     let mut order = test.order_json();
     order["buyToken"] = serde_json::json!("0x0101010101010101010101010101010101010101");
-    test.settle_with_order(test.quote_id(), order, test.limit_prices_json())
+    test.settle_with_order(test.quote_id(), order, test.limit_prices_json(), None)
         .await
         .err()
         .kind("FastPathOrderMismatch");
@@ -195,7 +201,7 @@ async fn fast_path_settle_rejects_wrong_amount() {
     test.quote().await.ok();
     let mut order = test.order_json();
     order["sellAmount"] = serde_json::json!("1");
-    test.settle_with_order(test.quote_id(), order, test.limit_prices_json())
+    test.settle_with_order(test.quote_id(), order, test.limit_prices_json(), None)
         .await
         .err()
         .kind("FastPathOrderMismatch");
@@ -210,7 +216,7 @@ async fn fast_path_settle_rejects_tight_limit() {
     test.quote().await.ok();
     let mut limit_prices = test.limit_prices_json();
     limit_prices["buy"] = serde_json::json!("1000000000000000000000000000000");
-    test.settle_with_order(test.quote_id(), test.order_json(), limit_prices)
+    test.settle_with_order(test.quote_id(), test.order_json(), limit_prices, None)
         .await
         .err()
         .kind("FastPathLimitNotMet");

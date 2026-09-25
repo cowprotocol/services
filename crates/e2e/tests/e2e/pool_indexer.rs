@@ -464,6 +464,7 @@ max-pools-to-initialize = 10
             vec![baseline_solver],
             colocation::LiquidityProvider::UniswapV2,
             Some(&config_override),
+            None,
         );
 
         wait_for_condition(TIMEOUT, || async {

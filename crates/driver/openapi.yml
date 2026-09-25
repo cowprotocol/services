@@ -679,6 +679,15 @@ components:
             one.
           type: integer
           example: 123
+        nativePrices:
+          description: >
+            Native prices (wei per 10**18) for the order's tokens, used to bound
+            AMM-interaction slippage at the solver's configured absolute cap.
+            Omitted by an older autopilot, in which case the absolute cap is not
+            applied.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenAmount"
     RevealRequest:
       description: Request to the `/reveal` endpoint.
       type: object
