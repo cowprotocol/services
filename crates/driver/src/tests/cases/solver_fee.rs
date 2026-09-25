@@ -35,7 +35,6 @@ async fn solver_fee_reduces_score_for_sell_order() {
     // The pool has 100000:6000 ratio, so selling 50 A gets ~2.97 B
     // We set a generous buy_amount limit (e.g., 2 B) to create slack
     let side = order::Side::Sell;
-    let kind = order::Kind::Limit;
     let signed_sell_amount = ab_order().sell_amount;
 
     // First, get baseline without solver fee
@@ -45,7 +44,6 @@ async fn solver_fee_reduces_score_for_sell_order() {
         .order(
             ab_order()
                 .side(side)
-                .kind(kind)
                 .buy_amount(2u64.eth()) // Low limit creates surplus
                 .solver_fee(Some(eth::U256::from(100))),
         )
@@ -64,7 +62,6 @@ async fn solver_fee_reduces_score_for_sell_order() {
         .order(
             ab_order()
                 .side(side)
-                .kind(kind)
                 .buy_amount(2u64.ether().into_wei()) // Same low limit
                 .solver_fee(Some(eth::U256::from(100))),
         )
@@ -174,7 +171,6 @@ async fn solver_fee_reduces_score_for_sell_order() {
 #[ignore]
 async fn solver_fee_increases_sell_amount_for_buy_order() {
     let side = order::Side::Buy;
-    let kind = order::Kind::Limit;
     let signed_buy_amount = 2u64.eth();
     let signed_sell_limit = 100u64.ether().into_wei();
 
@@ -187,7 +183,6 @@ async fn solver_fee_increases_sell_amount_for_buy_order() {
         .order(
             ab_order()
                 .side(side)
-                .kind(kind)
                 .buy_amount(signed_buy_amount) // Target buy amount (what user signs for)
                 .sell_amount(signed_sell_limit) // Generous sell limit creates surplus
                 .solver_fee(Some(eth::U256::from(100))),
@@ -206,7 +201,6 @@ async fn solver_fee_increases_sell_amount_for_buy_order() {
         .order(
             ab_order()
                 .side(side)
-                .kind(kind)
                 .buy_amount(signed_buy_amount) // Same target buy amount
                 .sell_amount(signed_sell_limit) // Same generous sell limit
                 .solver_fee(Some(eth::U256::from(100))),

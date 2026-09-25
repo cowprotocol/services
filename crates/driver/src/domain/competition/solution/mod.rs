@@ -158,7 +158,6 @@ impl Solution {
                     competition::Order {
                         data: std::sync::Arc::new(order::OrderData {
                             uid: jit.order().uid,
-                            kind: order::Kind::Limit,
                             side: jit.order().side,
                             sell: jit.order().sell,
                             buy: jit.order().buy,

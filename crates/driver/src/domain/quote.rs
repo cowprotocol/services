@@ -213,9 +213,6 @@ impl Order {
                     buy: self.buy(),
                     sell: self.sell(),
                     side: self.side,
-                    // Quotes always use limit orders so that the engine
-                    // determines the fee (see `Order::solver_determines_fee`).
-                    kind: competition::order::Kind::Limit,
                     pre_interactions: Default::default(),
                     post_interactions: Default::default(),
                     sell_token_balance: competition::order::SellTokenBalance::Erc20,

@@ -120,7 +120,6 @@ pub struct Order {
     pub partial: Partial,
     pub created: u32,
     pub valid_to: u32,
-    pub kind: order::Kind,
 
     // Currently used for limit orders to represent the surplus_fee calculated by the solver.
     pub solver_fee: Option<eth::U256>,
@@ -191,11 +190,6 @@ impl Order {
         }
     }
 
-    /// Set the order kind.
-    pub fn kind(self, kind: order::Kind) -> Self {
-        Self { kind, ..self }
-    }
-
     /// Set the order side.
     pub fn side(self, side: order::Side) -> Self {
         Self { side, ..self }
@@ -204,14 +198,6 @@ impl Order {
     /// Set the solver fee.
     pub fn solver_fee(self, solver_fee: Option<eth::U256>) -> Self {
         Self { solver_fee, ..self }
-    }
-
-    /// Make this a limit order.
-    pub fn limit(self) -> Self {
-        Self {
-            kind: order::Kind::Limit,
-            ..self
-        }
     }
 
     /// Mark that this order should be filtered out before being sent to the
@@ -295,10 +281,7 @@ impl Order {
     }
 
     fn surplus_fee(&self) -> eth::U256 {
-        match self.kind {
-            order::Kind::Limit => self.solver_fee.unwrap_or_default(),
-            _ => eth::U256::ZERO,
-        }
+        self.solver_fee.unwrap_or_default()
     }
 
     pub fn receiver(self, receiver: Option<eth::Address>) -> Self {
@@ -318,7 +301,6 @@ impl Default for Order {
             partial: Default::default(),
             created: u32::MIN,
             valid_to: u32::MAX,
-            kind: order::Kind::Limit,
             solver_fee: Default::default(),
             name: Default::default(),
             surplus_factor: DEFAULT_SURPLUS_FACTOR.ether().into_wei(),

@@ -170,10 +170,7 @@ impl Solver {
                     order::Side::Buy => "buy",
                 },
                 "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
-                "class": match quote.order.kind {
-                    order::Kind::Market => "market",
-                    order::Kind::Limit => "limit",
-                },
+                "class": "limit",
                 "appData": app_data::AppDataHash(quote.order.app_data.hash().0.0),
                 "signature": if config.quote { "0x".to_string() } else { const_hex::encode_prefixed(quote.order_signature(config.blockchain)) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
@@ -191,15 +188,15 @@ impl Solver {
                 });
             }
             if config.fee_handler == FeeHandler::Solver {
-                let mut fee_policies_json: Vec<serde_json::Value> = match quote.order.kind {
-                    _ if config.quote => vec![],
-                    order::Kind::Market => vec![],
-                    order::Kind::Limit => quote
+                let mut fee_policies_json: Vec<serde_json::Value> = if config.quote {
+                    vec![]
+                } else {
+                    quote
                         .order
                         .fee_policy
                         .iter()
                         .map(|policy| policy.to_json_value())
-                        .collect(),
+                        .collect()
                 };
                 // In solver fee-handling mode the injected solver fee is
                 // forwarded to the solver as a regular volume fee policy.

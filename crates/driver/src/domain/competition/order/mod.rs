@@ -31,7 +31,6 @@ pub struct OrderData {
     /// The maximum amount this order is allowed to sell when completely filled.
     pub sell: eth::Asset,
     pub side: Side,
-    pub kind: Kind,
     /// The onchain calls to run before sending user funds to the settlement
     /// contract.
     /// These are set by the user and included in the settlement transaction.
@@ -199,12 +198,6 @@ impl Order {
 
         amounts
     }
-
-    /// Should the order fee be determined by the solver? This is true for
-    /// partial limit orders.
-    pub fn solver_determines_fee(&self) -> bool {
-        matches!(self.kind, Kind::Limit)
-    }
 }
 
 impl Available {
@@ -319,23 +312,6 @@ impl From<Uid> for [u8; UID_LEN] {
     fn from(uid: Uid) -> Self {
         uid.0.into()
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
-    /// Order intended to be immediately executed. This is the "regular" type of
-    /// order.
-    Market,
-    /// Order intended to be fulfilled possibly far into the future, when the
-    /// price is such that the order can be executed. Because the fulfillment
-    /// can happen any time into the future, it's impossible to calculate
-    /// the order fees ahead of time, so the fees are taken from the order
-    /// surplus instead.
-    ///
-    /// The order surplus is the additional money that the solver managed to
-    /// solve for, above what the user specified in the order. The exact amount
-    /// of fees that are taken is determined by the solver.
-    Limit,
 }
 
 /// [Balancer V2](https://docs.balancer.fi/) integration, used for settlement encoding.
@@ -491,7 +467,6 @@ mod tests {
                     buy: buy(buy_amount),
                     sell: sell(sell_amount),
                     side,
-                    kind: Kind::Limit,
                     pre_interactions: Default::default(),
                     post_interactions: Default::default(),
                     sell_token_balance: SellTokenBalance::Erc20,

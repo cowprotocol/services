@@ -88,7 +88,6 @@ async fn run(test_case: TestCase) {
     };
 
     let mut order = ab_order()
-        .kind(order::Kind::Limit)
         .sell_amount(test_case.order.sell_amount)
         .buy_amount(test_case.order.buy_amount)
         .solver_fee(Some(solver_fee))
