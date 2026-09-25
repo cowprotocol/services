@@ -67,17 +67,12 @@ impl Auction {
     /// Drop each order whose buy token account can neither receive the payout
     /// nor be created, and record the remaining accounts' state so the engine
     /// can price in the rent of a missing one.
-    ///
-    /// Fails when the lookup does, or when no order survives.
     pub async fn resolve_buy_token_accounts(
         &mut self,
         blockchain: &Solana,
-    ) -> Result<(), ResolveBuyTokenAccountsError> {
+    ) -> Result<(), cow_solana_rpc::Error> {
         let accounts = self.orders.iter().map(|order| order.buy_token_account);
-        let snapshot = blockchain
-            .accounts_snapshot(accounts)
-            .await
-            .map_err(ResolveBuyTokenAccountsError::Rpc)?;
+        let snapshot = blockchain.accounts_snapshot(accounts).await?;
         self.orders.retain_mut(|order| {
             let state = snapshot.buy_token_account_state(order);
             let receivable = state.receivable();
@@ -92,19 +87,8 @@ impl Auction {
             order.buy_token_account_state = Some(state);
             receivable
         });
-        if self.orders.is_empty() {
-            return Err(ResolveBuyTokenAccountsError::NoResolvableOrders);
-        }
         Ok(())
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ResolveBuyTokenAccountsError {
-    #[error("rpc request failed: {0}")]
-    Rpc(#[source] cow_solana_rpc::Error),
-    #[error("no order has a resolvable buy token account")]
-    NoResolvableOrders,
 }
 
 /// One order available for solvers to fill.
@@ -251,34 +235,12 @@ mod tests {
         )]);
         let mut auction = auction(vec![order(1, pubkey(0x66))]);
 
-        let err = auction
+        auction
             .resolve_buy_token_accounts(&blockchain(mocks))
             .await
             .expect_err("a failed lookup fails the resolution");
 
-        assert!(matches!(err, ResolveBuyTokenAccountsError::Rpc(_)));
         assert!(auction.orders[0].buy_token_account_state.is_none());
-    }
-
-    #[tokio::test]
-    async fn fails_when_no_order_is_receivable() {
-        let mocks = Mocks::from([(
-            RpcRequest::GetMultipleAccounts,
-            multiple_accounts_json([Value::Null]),
-        )]);
-        // pubkey(0x66) is not the owner's associated token account.
-        let mut auction = auction(vec![order(1, pubkey(0x66))]);
-
-        let err = auction
-            .resolve_buy_token_accounts(&blockchain(mocks))
-            .await
-            .expect_err("an auction without a resolvable order fails");
-
-        assert!(matches!(
-            err,
-            ResolveBuyTokenAccountsError::NoResolvableOrders
-        ));
-        assert!(auction.orders.is_empty());
     }
 
     #[test]

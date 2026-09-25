@@ -217,9 +217,13 @@ fn engine_response(solutions: &[(u64, &str)]) -> serde_json::Value {
 
 /// POST the standard solve request and return the parsed response body.
 async fn call_solve(addr: SocketAddr) -> serde_json::Value {
+    call_solve_with(addr, solve_request()).await
+}
+
+async fn call_solve_with(addr: SocketAddr, request: serde_json::Value) -> serde_json::Value {
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/mock/solve"))
-        .json(&solve_request())
+        .json(&request)
         .send()
         .await
         .unwrap();
@@ -342,6 +346,24 @@ async fn solve_flags_a_missing_buy_token_account_to_the_engine() {
         request["orders"][0]["missingBuyTokenAccount"],
         serde_json::json!(true)
     );
+}
+
+/// An absent buy token account that is not the owner's associated token
+/// account cannot be created by the settlement: the driver drops the order
+/// and, with none left, answers empty without calling the engine, like the
+/// EVM driver.
+#[tokio::test]
+async fn solve_skips_the_engine_when_no_order_is_receivable() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+    let mut request = solve_request();
+    request["orders"][0]["buyTokenAccount"] = serde_json::json!(pubkey(0x66).to_string());
+
+    let body = call_solve_with(addr, request).await;
+
+    assert_eq!(response_ids(&body), Vec::<u64>::new());
+    assert!(requests.lock().unwrap().is_none());
 }
 
 /// Two solutions with the same id: the driver keeps only the last occurrence

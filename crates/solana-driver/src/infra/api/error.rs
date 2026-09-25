@@ -80,7 +80,6 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::DeadlineExceeded => Kind::DeadlineExceeded,
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
             competition::Error::Rpc(_) => Kind::Unknown,
-            competition::Error::ResolveBuyTokenAccounts(_) => Kind::Unknown,
             competition::Error::FailedToSubmit { .. } => Kind::FailedToSubmit,
             competition::Error::FailedToCreate(_) => Kind::FailedToCreate,
             competition::Error::SimulationFailed { .. } => Kind::SimulationFailed,
