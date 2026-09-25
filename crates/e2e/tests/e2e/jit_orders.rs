@@ -170,11 +170,11 @@ async fn single_limit_order_test(web3: Web3) {
                 // Making it 9 + 1 so we cover the edge case of fill-or-kill solution mismatches
                 // when observing settlements https://github.com/cowprotocol/services/pull/3440
                 executed_amount: 9u64.eth(),
-                fee: Some(1u64.eth()),
+                fee: 1u64.eth(),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order.sell_amount,
-                fee: Some(::alloy::primitives::U256::ZERO),
+                fee: ::alloy::primitives::U256::ZERO,
                 order: solvers_dto::solution::OrderUid(order_id.0),
             }),
         ],

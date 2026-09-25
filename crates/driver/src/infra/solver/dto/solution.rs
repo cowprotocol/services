@@ -65,11 +65,7 @@ impl Solutions {
                                 competition::solution::trade::Fulfillment::new(
                                     order,
                                     fulfillment.executed_amount.into(),
-                                    // An absent fee is treated as a fee of 0. This only happens during quoting 
-                                    // from solvers that don't support computing fees in the sell token.
-                                    competition::order::SellAmount(
-                                        fulfillment.fee.unwrap_or_default(),
-                                    ),
+                                    competition::order::SellAmount(fulfillment.fee),
                                     haircut_fee,
                                 )
                                     .map(competition::solution::Trade::Fulfillment)
@@ -127,7 +123,7 @@ impl Solutions {
                                             )?,
                                         },
                                         jit.executed_amount.into(),
-                                        jit.fee.unwrap_or_default().into(),
+                                        jit.fee.into(),
                                     )
                                         .map_err(|err| super::Error(format!("invalid JIT trade: {err}")))?,
                                 ))

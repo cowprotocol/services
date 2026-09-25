@@ -137,9 +137,8 @@ pub struct Fulfillment {
     pub order: OrderUid,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_amount: U256,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub fee: Option<U256>,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee: U256,
 }
 
 #[serde_as]
@@ -149,9 +148,8 @@ pub struct JitTrade {
     pub order: JitOrder,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_amount: U256,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub fee: Option<U256>,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee: U256,
 }
 
 #[serde_as]
@@ -366,6 +364,7 @@ mod tests {
                 "kind": "fulfillment",
                 "order": order,
                 "executedAmount": "1000",
+                "fee": "1",
             })).collect::<Vec<_>>(),
             "interactions": [],
         })
@@ -450,5 +449,65 @@ mod tests {
                 if error.code == code && error.message.as_deref() == Some("custom message")
             ));
         }
+    }
+
+    #[test]
+    fn fulfillment_requires_fee() {
+        let trade = json!({
+            "kind": "fulfillment",
+            "order": order_uid(1),
+            "executedAmount": "131204135000000000",
+        });
+
+        let err = serde_json::from_value::<Trade>(trade).unwrap_err();
+        assert!(
+            err.to_string().starts_with("missing field `fee`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn fulfillment_fee_round_trips() {
+        let trade = json!({
+            "kind": "fulfillment",
+            "order": order_uid(1),
+            "executedAmount": "131204135000000000",
+            "fee": "2495865000000000",
+        });
+
+        let Trade::Fulfillment(trade) = serde_json::from_value::<Trade>(trade).unwrap() else {
+            panic!("expected fulfillment");
+        };
+        assert_eq!(trade.fee, U256::from(2495865000000000u64));
+        let out = serde_json::to_value(Trade::Fulfillment(trade)).unwrap();
+        assert_eq!(out["fee"], "2495865000000000");
+    }
+
+    #[test]
+    fn jit_trade_requires_fee() {
+        let trade = json!({
+            "kind": "jit",
+            "order": {
+                "sellToken": "0x0101010101010101010101010101010101010101",
+                "buyToken": "0x0202020202020202020202020202020202020202",
+                "receiver": "0x0303030303030303030303030303030303030303",
+                "sellAmount": "1",
+                "buyAmount": "1",
+                "validTo": 0,
+                "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "kind": "sell",
+                "sellTokenBalance": "erc20",
+                "buyTokenBalance": "erc20",
+                "signingScheme": "eip712",
+                "signature": "0x00",
+            },
+            "executedAmount": "1",
+        });
+
+        let err = serde_json::from_value::<Trade>(trade).unwrap_err();
+        assert!(
+            err.to_string().starts_with("missing field `fee`"),
+            "unexpected error: {err}"
+        );
     }
 }

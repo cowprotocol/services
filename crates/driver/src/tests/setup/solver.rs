@@ -278,20 +278,14 @@ impl Solver {
                                 .quoted_order
                                 .order
                                 .solver_fee
-                                .map(|fee| fee.to_string());
-                            let trade_json = match fee {
-                                Some(fee) => json!({
-                                    "kind": "fulfillment",
-                                    "order": order,
-                                    "executedAmount": executed_amount,
-                                    "fee": fee,
-                                }),
-                                None => json!({
-                                    "kind": "fulfillment",
-                                    "order": order,
-                                    "executedAmount": executed_amount,
-                                }),
-                            };
+                                .unwrap_or_default()
+                                .to_string();
+                            let trade_json = json!({
+                                "kind": "fulfillment",
+                                "order": order,
+                                "executedAmount": executed_amount,
+                                "fee": fee,
+                            });
 
                             trades_json.push(trade_json);
                         }
