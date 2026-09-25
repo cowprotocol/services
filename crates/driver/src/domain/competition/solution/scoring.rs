@@ -173,18 +173,34 @@ impl Trade {
     }
 
     /// Protocol fees are defined by fee policies attached to the order.
+    ///
+    /// Policies are unwound in reverse, each one's price reconstruction feeding
+    /// the next, so every fee has to be taken off the price regardless of
+    /// whether it ends up in the score. A fee the solver charges for itself
+    /// (see [`FeePolicy::contributes_to_score`]) is therefore unwound like any
+    /// other but left out of the returned total; skipping it entirely would
+    /// make the policies applied before it look smaller than they were.
     fn fees(&self) -> Result<eth::SurplusTokenAmount, Error> {
         let mut current_trade = self.clone();
-        let mut total = eth::SurplusTokenAmount::default();
+        let mut unwound = eth::SurplusTokenAmount::default();
+        let mut scored = eth::SurplusTokenAmount::default();
         for protocol_fee in self.policies.iter().rev() {
-            total = total
+            let fee = current_trade.protocol_fee(protocol_fee)?;
+            unwound = unwound
                 .0
-                .checked_add(current_trade.protocol_fee(protocol_fee)?.0)
+                .checked_add(fee.0)
                 .ok_or(Error::Math(Math::Overflow))?
                 .into();
-            current_trade.custom_price = self.calculate_custom_prices(total)?;
+            if protocol_fee.contributes_to_score() {
+                scored = scored
+                    .0
+                    .checked_add(fee.0)
+                    .ok_or(Error::Math(Math::Overflow))?
+                    .into();
+            }
+            current_trade.custom_price = self.calculate_custom_prices(unwound)?;
         }
-        Ok(total)
+        Ok(scored)
     }
 
     /// The effective amount that left the user's wallet including all fees.
@@ -451,5 +467,70 @@ mod tests {
 
         let score = trade.score(&native_prices).unwrap();
         assert_eq!(score.0, U256::from(911));
+    }
+
+    /// A fee the solver keeps for itself does not count towards the score, but
+    /// it still has to be unwound so that the protocol fee applied before it is
+    /// measured against the output it actually took its cut from.
+    ///
+    /// Raw output 1000, of which a 10% protocol fee takes 100, leaving 900, and
+    /// a 20% solver fee takes 180, leaving the user 720. The protocol's 100 is
+    /// what the score may count; reconstructing it from the 720 the user ended
+    /// up with would yield 80.
+    #[test]
+    fn solver_fee_is_unwound_but_not_scored() {
+        const SELL: Address = address!("0000000000000000000000000000000000000001");
+        const BUY: Address = address!("0000000000000000000000000000000000000002");
+
+        let trade = |policies| Trade {
+            signed_sell: eth::Asset {
+                token: SELL.into(),
+                amount: U256::from(1000u128).into(),
+            },
+            // Signed at what the user ends up with, so all that is left in the
+            // score is the fees.
+            signed_buy: eth::Asset {
+                token: BUY.into(),
+                amount: U256::from(720u128).into(),
+            },
+            side: Side::Sell,
+            executed: order::TargetAmount(U256::from(1000u128)),
+            custom_price: CustomClearingPrices {
+                sell: U256::from(720u128),
+                buy: U256::from(1000u128),
+            },
+            policies,
+        };
+        let protocol_fee = FeePolicy::Volume {
+            factor: 0.1,
+            contributes_to_score: true,
+        };
+        let solver_fee = FeePolicy::Volume {
+            factor: 0.2,
+            contributes_to_score: false,
+        };
+
+        let native_prices: HashMap<_, _> = [
+            (
+                SELL.into(),
+                Price(eth::Ether(U256::from(1000000000000000000u128))),
+            ),
+            (
+                BUY.into(),
+                Price(eth::Ether(U256::from(1000000000000000000u128))),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        let scored = trade(vec![protocol_fee.clone(), solver_fee])
+            .score(&native_prices)
+            .unwrap();
+        assert_eq!(scored.0, U256::from(100u128));
+
+        // Dropping the solver fee from the list instead of unwinding it is what
+        // undercounts the protocol fee.
+        let dropped = trade(vec![protocol_fee]).score(&native_prices).unwrap();
+        assert_eq!(dropped.0, U256::from(80u128));
     }
 }

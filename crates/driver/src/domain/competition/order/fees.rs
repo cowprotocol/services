@@ -49,3 +49,18 @@ pub enum FeePolicy {
         contributes_to_score: bool,
     },
 }
+
+impl FeePolicy {
+    /// Whether the fee this policy takes counts towards the solution's score.
+    /// Policies that do not still have to be unwound when reconstructing the
+    /// prices earlier policies were applied at.
+    pub fn contributes_to_score(&self) -> bool {
+        match self {
+            Self::Volume {
+                contributes_to_score,
+                ..
+            } => *contributes_to_score,
+            Self::Surplus { .. } | Self::PriceImprovement { .. } => true,
+        }
+    }
+}

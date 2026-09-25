@@ -125,6 +125,10 @@ async fn local_node_fast_path_penalty_cap() {
     run_test(fast_path_penalty_cap).await;
 }
 
+/// A fast-path order signed against a quoting solver that charges a solver
+/// fee, at exactly the quote and with no slippage of the user's own. The fee is
+/// what made that quote conservative, so the settlement has to land on the
+/// signed limit and the fast path itself has to be what settles it.
 async fn fast_path_settle(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -163,8 +167,12 @@ async fn fast_path_settle(web3: Web3) {
         configs::orderbook::Configuration::test_default(),
         exclusivity,
     );
+    // The solver charges a solver fee, which is what makes the quote it
+    // publishes conservative. The user signs against that quote below without
+    // adding any slippage of their own, so the settlement has no room to take
+    // the fee a second time.
     services
-        .start_protocol_with_args(autopilot_config, orderbook_config, solver)
+        .start_protocol_with_args_and_solver_fee(autopilot_config, orderbook_config, solver, 100)
         .await;
 
     let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
@@ -204,11 +212,35 @@ async fn fast_path_settle(web3: Web3) {
         &onchain.contracts().domain_separator,
         &trader.signer,
     );
-    let placed_at = std::time::Instant::now();
     let uid = services.create_order(&order).await.unwrap();
+
+    // The fast-path handler stages its competition as soon as the order lands.
+    // Holding on to its auction id is what tells a fast-path settlement apart
+    // from the regular auction, which the autopilot releases the order to as
+    // soon as a fast-path settle fails.
+    tracing::info!("Waiting for the fast-path competition.");
+    wait_for_condition(TIMEOUT, || async {
+        services
+            .get_latest_solver_competition()
+            .await
+            .is_ok_and(|competition| {
+                competition
+                    .solutions
+                    .iter()
+                    .any(|solution| solution.orders.iter().any(|order| order.id == uid))
+            })
+    })
+    .await
+    .unwrap();
+    let fast_path_auction = services
+        .get_latest_solver_competition()
+        .await
+        .unwrap()
+        .auction_id;
 
     tracing::info!("Waiting for the fast-path settlement.");
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         services
             .get_order(&uid)
             .await
@@ -217,15 +249,26 @@ async fn fast_path_settle(web3: Web3) {
     .await
     .unwrap();
 
-    // Regular-auction fallback would need to wait for the whole
-    // `exclusivity` window to elapse before touching the order. If it
-    // Fulfilled well within that window, only the fast path can be
-    // responsible.
-    let elapsed = placed_at.elapsed();
+    // A settlement under any later auction means the fast-path attempt
+    // reverted and the regular auction picked the order up instead.
+    let trade = services.get_trades(&uid).await.unwrap().pop().unwrap();
+    let tx_hash = trade.tx_hash.expect("settled trade has a transaction");
+    let settled_in = services
+        .get_solver_competition(tx_hash)
+        .await
+        .expect("settlement has a competition")
+        .auction_id;
+    assert_eq!(
+        settled_in, fast_path_auction,
+        "order settled under auction {settled_in} but the fast path staged {fast_path_auction}",
+    );
+
+    // And the fill respects what the user signed, solver fee included.
+    let filled_buy: U256 = trade.buy_amount.to_string().parse().unwrap();
     assert!(
-        elapsed < exclusivity / 2,
-        "settled after {elapsed:?} — regular auction fallback would have taken at least \
-         {exclusivity:?}, so this can't be attributed to the fast path",
+        filled_buy >= quote.quote.buy_amount,
+        "filled at {filled_buy} but the user signed for {}",
+        quote.quote.buy_amount,
     );
 }
 
@@ -783,10 +826,10 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
 /// * 1% partner volume fee declared in app-data.
 /// * 2% solver fee on the bad solver.
 /// * user signs at 2% below the (protocol-fee-adjusted) quote. This accounts
-///   for the 1% partner fee AND gives 1% slippage on top. The 2% solver fee will
-///   not have an issue with the 1% partner fee because the user accounted for
-///   that but the 1% slippage is not enough for the 2% solver-fee solution to
-///   still clear the bar.
+///   for the 1% partner fee AND gives 1% slippage on top. The 2% solver fee
+///   will not have an issue with the 1% partner fee because the user accounted
+///   for that but the 1% slippage is not enough for the 2% solver-fee solution
+///   to still clear the bar.
 ///
 /// After the fast-path handler runs, `/solver_competition` must expose the
 /// bad solver's solution as `filtered_out = true` (its 2% solver-fee bid
@@ -1000,8 +1043,8 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
     );
     assert!(
         bad.filtered_out,
-        "the 2% solver-fee bid compounded with volume fees can't clear the signed limit and \
-         must be filtered out"
+        "the 2% solver-fee bid compounded with volume fees can't clear the signed limit and must \
+         be filtered out"
     );
     assert!(!bad.is_winner, "bad solver must not have won the quote");
 }

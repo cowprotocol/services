@@ -328,23 +328,16 @@ impl Solution {
                     .clearing_price(buy.token)
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
-            let mut policies = trade.protocol_fees();
-            policies.retain(|policy| {
-                !matches!(
-                    policy,
-                    order::FeePolicy::Volume {
-                        contributes_to_score: false,
-                        ..
-                    }
-                )
-            });
             trades.push(scoring::Trade::new(
                 sell,
                 buy,
                 trade.side(),
                 executed,
                 trade.custom_prices(&uniform_prices)?,
-                policies,
+                // Every policy is passed on, including the ones that do not
+                // count towards the score: scoring needs them to reconstruct
+                // the prices the earlier policies were applied at.
+                trade.protocol_fees(),
             ))
         }
 
@@ -626,6 +619,16 @@ impl Solution {
         *user = user.with_order(order)?;
         solution.flashloans = flashloans;
         solution.wrappers = wrappers;
+
+        // The quote this solution was cached from was computed with the solver
+        // fee applied, which carved that fee out of the execution. The limit
+        // the user signed against already reflects it, so the fill is rebuilt
+        // without the carve-out; keeping it would take the fee a second time
+        // and leave the user short of their limit. The solver is still paid
+        // the same way it is on the rest of the fast path, out of the gap
+        // between its cached price and the signed limit. Without a fee this
+        // is a no-op.
+        *user = user.without_fee()?;
 
         // Pin the fill to the signed limit so it settles at exactly
         // the price the autopilot expects.
