@@ -224,8 +224,10 @@ components:
         - sell
         - buy
     OrderClass:
+      deprecated: true
       description: |
-        How the CoW Protocol order was classified.
+        Deprecated: every order is a `limit` order. Solvers should not rely on
+        this field, it is retained for compatibility and will be removed.
       type: string
       enum:
         - market
@@ -346,7 +348,6 @@ components:
         - postInteractions
         - sellTokenSource
         - buyTokenDestination
-        - class
         - appData
         - signingScheme
         - signature
@@ -408,7 +409,10 @@ components:
             - $ref: "#/components/schemas/BuyTokenBalance"
           default: erc20
         class:
-          $ref: "#/components/schemas/OrderClass"
+          allOf:
+            - $ref: "#/components/schemas/OrderClass"
+          deprecated: true
+          default: limit
         appData:
           $ref: "#/components/schemas/AppData"
         flashloanHint:

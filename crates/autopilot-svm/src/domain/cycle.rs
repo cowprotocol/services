@@ -7,7 +7,7 @@ use {
     },
     chain_types::solana::{IntentHash, Pubkey, Solana},
     std::collections::{HashMap, HashSet},
-    winner_selection::{Unscored, solution},
+    winner_selection::{Unscored, solution, state::Ranked},
 };
 
 /// Marker type binding the generic loop to the Solana vocabulary.
@@ -45,6 +45,26 @@ pub struct Ranking {
     pub inner: winner_selection::Ranking<Solana>,
     /// Driver index per solution, keyed by `(solver, solution id)`.
     pub drivers: HashMap<SolutionKey, usize>,
+    /// Per winning solver, the winners' total score with that solver's
+    /// solutions removed: the rewards baseline.
+    pub reference_scores: HashMap<Pubkey, u64>,
+}
+
+impl Ranking {
+    /// Every solution with its persisted uid: the position in `ranked`
+    /// followed by `filtered_out`, so winners come first. Everything
+    /// persisted references this uid, it disambiguates solver-assigned ids
+    /// across drivers.
+    pub fn enumerated(
+        &self,
+    ) -> impl Iterator<Item = (i64, &solution::Solution<Ranked<u64>, Solana>)> {
+        self.inner
+            .ranked
+            .iter()
+            .chain(self.inner.filtered_out.iter())
+            .enumerate()
+            .map(|(uid, solution)| (i64::try_from(uid).unwrap_or(i64::MAX), solution))
+    }
 }
 
 impl RankingInfo<SolanaCycle> for Ranking {
