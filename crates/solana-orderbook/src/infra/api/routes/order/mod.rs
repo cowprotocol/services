@@ -23,7 +23,13 @@ pub async fn order(
             error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
         })?
         .ok_or_else(|| error::reply(StatusCode::NOT_FOUND, "NotFound", "Order was not found"))?;
-    Ok(Json(dto::Order::new(row, now_unix())))
+    // Only a pending creation has a deadline to check against the chain.
+    let block_height = if row.last_valid_block_height.is_some() {
+        state.block_height().await
+    } else {
+        None
+    };
+    Ok(Json(dto::Order::new(row, now_unix(), block_height)))
 }
 
 pub(super) fn now_unix() -> i64 {
