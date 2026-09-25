@@ -316,6 +316,7 @@ components:
           enum:
             - market
             - limit
+          default: limit
         appData:
           description: 32 bytes encoded as hex with `0x` prefix.
           type: string
@@ -365,7 +366,6 @@ components:
         - postInteractions
         - sellTokenBalance
         - buyTokenBalance
-        - class
         - appData
         - signature
         - protocolFees

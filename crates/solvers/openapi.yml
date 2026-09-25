@@ -348,7 +348,6 @@ components:
         - postInteractions
         - sellTokenSource
         - buyTokenDestination
-        - class
         - appData
         - signingScheme
         - signature
