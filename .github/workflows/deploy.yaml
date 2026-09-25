@@ -63,6 +63,15 @@ jobs:
       - name: Install Rust stable
         run: rustup toolchain install stable --profile minimal && rustup default stable
 
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      # sccache keys each compilation on the file contents, to not use incompatible caches
+      # Cargo can do this without sccache, but the flag is not stable yet:
+      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
+      - name: Enable sccache
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+
       - name: Prepare build features
         id: features
         run: |
