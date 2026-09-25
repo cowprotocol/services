@@ -1,12 +1,13 @@
 //! Database access for the Solana autopilot.
 
 use {
-    crate::domain::auction::{Auction, Order, OrderKind},
+    crate::domain::auction::{Order, OrderKind},
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
     database::byte_array::ByteArray,
-    sqlx::PgExecutor,
+    solana_sdk::clock::MAX_PROCESSING_AGE,
+    sqlx::{PgExecutor, Postgres, QueryBuilder},
 };
 
 /// The channel the schema's `solana.settlements` trigger notifies.
@@ -171,14 +172,12 @@ WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3 AND outcome IS NULL
     Ok(())
 }
 
-/// Close the auction's windows against the settlements the indexer recorded,
-/// matching each window to its solver's settlement. A window already closed
-/// as timed out upgrades to landed: the settlement executed, just late, and
-/// lateness stays visible as `end_slot` past `deadline_slot`.
-///
-/// A settlement carries no solution uid, so a solver holding several windows
-/// of one auction closes all of them on its first settlement. Correct while
-/// one solver wins at most one solution per auction.
+/// Close the auction's windows against the settlements the indexer recorded.
+/// A settlement carries no solution uid, so a window is matched through its
+/// solution's trade executions: the solver's settlement that traded one of
+/// them is the one that executed it. A window already closed as timed out
+/// upgrades to landed: the settlement executed, just late, and lateness stays
+/// visible as `end_slot` past `deadline_slot`.
 pub async fn close_landed_windows(
     ex: impl PgExecutor<'_>,
     auction_id: i64,
@@ -192,6 +191,15 @@ WHERE e.auction_id = $1
   AND s.auction_id = e.auction_id
   AND s.solver = e.solver
   AND (e.outcome IS NULL OR e.outcome = 'timeout')
+  AND EXISTS (
+      SELECT 1
+      FROM solana.proposed_trade_executions pte
+      JOIN solana.trades t
+        ON t.tx_signature = s.tx_signature
+       AND t.instruction_index = s.instruction_index
+       AND t.order_uid = pte.order_uid
+      WHERE pte.auction_id = e.auction_id AND pte.solution_uid = e.solution_uid
+  )
 RETURNING e.solver, e.end_slot, e.submitted_signature
     "#;
     sqlx::query_as(QUERY)
@@ -225,19 +233,201 @@ pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>
         .context("read open settlement execution windows")
 }
 
-/// Cut an auction from the open orders.
+/// Orders inside a winning solution whose settlement transaction may still
+/// land: a blockhash lifetime past the deadline slot has not run out, no
+/// settlement of the auction traded the order yet, and the driver did not
+/// reject the solution before sending it. A timed-out window keeps the hold,
+/// its transaction may land until the blockhash expires. Landing is checked
+/// per order through the settlement's trades: `settlements.solution_uid` is
+/// unattributed, and one solver may win several solutions of one auction.
+pub async fn in_flight_orders(
+    ex: impl PgExecutor<'_>,
+    tip_slot: i64,
+) -> Result<Vec<ByteArray<32>>> {
+    const QUERY: &str = r#"
+SELECT DISTINCT pte.order_uid
+FROM solana.competition_auctions ca
+JOIN solana.proposed_solutions ps ON ps.auction_id = ca.id AND ps.is_winner
+JOIN solana.proposed_trade_executions pte
+  ON pte.auction_id = ca.id AND pte.solution_uid = ps.uid
+WHERE ca.deadline_slot >= $1
+  AND NOT EXISTS (
+      SELECT 1
+      FROM solana.settlements s
+      JOIN solana.trades t
+        ON t.tx_signature = s.tx_signature AND t.instruction_index = s.instruction_index
+      WHERE s.auction_id = ca.id AND t.order_uid = pte.order_uid
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM solana.settlement_executions se
+      WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid AND se.outcome = 'rejected'
+  )
+    "#;
+    // The oldest deadline whose transaction can still land at the tip.
+    let lifetime = i64::try_from(MAX_PROCESSING_AGE).expect("blockhash lifetime fits i64");
+    let landable_deadline = tip_slot.saturating_sub(lifetime);
+    sqlx::query_scalar(QUERY)
+        .bind(landable_deadline)
+        .fetch_all(ex)
+        .await
+        .context("read in-flight orders")
+}
+
+/// The solvable orders for a fresh auction cut.
 pub async fn cut(
     ex: impl PgExecutor<'_>,
-    id: i64,
     now_unix: i64,
     block_height: Option<i64>,
-) -> Result<Auction> {
-    let orders = orders_from_rows(open_orders(ex, now_unix, block_height).await?);
-    Ok(Auction {
-        id,
-        orders,
-        native_prices: Default::default(),
-    })
+) -> Result<Vec<Order>> {
+    Ok(orders_from_rows(
+        open_orders(ex, now_unix, block_height).await?,
+    ))
+}
+
+/// Replace the current auction and answer the id its identity column
+/// allocated, the source of sequential auction ids.
+pub async fn replace_current_auction(
+    pool: &sqlx::PgPool,
+    tip_slot: i64,
+    json: &serde_json::Value,
+) -> Result<i64> {
+    let mut tx = pool.begin().await.context("begin auction replacement")?;
+    sqlx::query("DELETE FROM solana.auctions")
+        .execute(&mut *tx)
+        .await
+        .context("delete the previous auction")?;
+    let id = sqlx::query_scalar(
+        "INSERT INTO solana.auctions (tip_slot, json) VALUES ($1, $2) RETURNING id",
+    )
+    .bind(tip_slot)
+    .bind(sqlx::types::Json(json))
+    .fetch_one(&mut *tx)
+    .await
+    .context("insert the current auction")?;
+    tx.commit().await.context("commit auction replacement")?;
+    Ok(id)
+}
+
+/// One execution inside a proposed solution.
+pub struct ProposedTrade {
+    pub order_uid: ByteArray<32>,
+    pub executed_sell: BigDecimal,
+    pub executed_buy: BigDecimal,
+}
+
+/// One proposed solution of a competition, with its executions.
+pub struct ProposedSolution {
+    /// Autopilot-generated, unique within the auction.
+    pub uid: i64,
+    /// Solver-assigned, unique only within one driver response.
+    pub id: i64,
+    pub solver: ByteArray<32>,
+    pub is_winner: bool,
+    pub filtered_out: bool,
+    pub score: BigDecimal,
+    pub trades: Vec<ProposedTrade>,
+}
+
+/// A winning solver's reference score: the winners' total score with that
+/// solver's solutions removed.
+pub struct ReferenceScore {
+    pub solver: ByteArray<32>,
+    pub score: BigDecimal,
+}
+
+/// A competition outcome as persisted after ranking.
+pub struct Competition {
+    pub auction_id: i64,
+    pub tip_slot: i64,
+    pub deadline_slot: i64,
+    pub order_uids: Vec<Vec<u8>>,
+    pub price_tokens: Vec<Vec<u8>>,
+    pub price_values: Vec<BigDecimal>,
+    pub solutions: Vec<ProposedSolution>,
+    pub reference_scores: Vec<ReferenceScore>,
+}
+
+/// Persist a competition: the auction snapshot and every proposed solution
+/// with its executions, in one transaction.
+pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition) -> Result<()> {
+    let mut tx = pool.begin().await.context("begin competition persist")?;
+    sqlx::query(
+        "INSERT INTO solana.competition_auctions (id, tip_slot, deadline_slot, order_uids, \
+         price_tokens, price_values) VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(competition.auction_id)
+    .bind(competition.tip_slot)
+    .bind(competition.deadline_slot)
+    .bind(&competition.order_uids)
+    .bind(&competition.price_tokens)
+    .bind(&competition.price_values)
+    .execute(&mut *tx)
+    .await
+    .context("insert competition auction")?;
+    if !competition.solutions.is_empty() {
+        let mut insert = QueryBuilder::<Postgres>::new(
+            "INSERT INTO solana.proposed_solutions (auction_id, uid, id, solver, is_winner, \
+             filtered_out, score) ",
+        );
+        insert.push_values(&competition.solutions, |mut row, solution| {
+            row.push_bind(competition.auction_id)
+                .push_bind(solution.uid)
+                .push_bind(solution.id)
+                .push_bind(solution.solver)
+                .push_bind(solution.is_winner)
+                .push_bind(solution.filtered_out)
+                .push_bind(&solution.score);
+        });
+        insert
+            .build()
+            .execute(&mut *tx)
+            .await
+            .context("insert proposed solutions")?;
+    }
+    let trades: Vec<_> = competition
+        .solutions
+        .iter()
+        .flat_map(|solution| {
+            solution
+                .trades
+                .iter()
+                .map(move |trade| (solution.uid, trade))
+        })
+        .collect();
+    if !trades.is_empty() {
+        let mut insert = QueryBuilder::<Postgres>::new(
+            "INSERT INTO solana.proposed_trade_executions (auction_id, solution_uid, order_uid, \
+             executed_sell, executed_buy) ",
+        );
+        insert.push_values(trades, |mut row, (solution_uid, trade)| {
+            row.push_bind(competition.auction_id)
+                .push_bind(solution_uid)
+                .push_bind(trade.order_uid)
+                .push_bind(&trade.executed_sell)
+                .push_bind(&trade.executed_buy);
+        });
+        insert
+            .build()
+            .execute(&mut *tx)
+            .await
+            .context("insert proposed trade executions")?;
+    }
+    if !competition.reference_scores.is_empty() {
+        let mut insert = QueryBuilder::<Postgres>::new(
+            "INSERT INTO solana.reference_scores (auction_id, solver, reference_score) ",
+        );
+        insert.push_values(&competition.reference_scores, |mut row, reference| {
+            row.push_bind(competition.auction_id)
+                .push_bind(reference.solver)
+                .push_bind(&reference.score);
+        });
+        insert
+            .build()
+            .execute(&mut *tx)
+            .await
+            .context("insert reference scores")?;
+    }
+    tx.commit().await.context("commit competition persist")
 }
 
 /// A row the indexer wrote always converts (on-chain values fit the domain
@@ -293,7 +483,7 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use {
-        super::{last_indexed_slot, open_orders, pending_creations},
+        super::{in_flight_orders, last_indexed_slot, open_orders, pending_creations},
         bigdecimal::BigDecimal,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
@@ -511,6 +701,137 @@ WHERE uid = $1
             .await
             .unwrap();
         assert_eq!(pending, vec![(vec![1; 32], vec![1])]);
+    }
+
+    /// Held: an order of a winning solution through its deadline slot plus
+    /// the blockhash lifetime, a timed-out window included. Released: after
+    /// that, once a settlement of the auction trades the order, or once the
+    /// driver rejects its solution before sending. A solver's second winning
+    /// solution keeps its hold when the first one lands. Orders of
+    /// non-winning solutions are never held.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_in_flight_orders_follow_the_winning_settlement() {
+        let pool = crate::test_db::pool().await;
+        let mut tx = pool.begin().await.unwrap();
+        for table in [
+            "trades",
+            "settlements",
+            "settlement_executions",
+            "proposed_trade_executions",
+            "proposed_solutions",
+            "competition_auctions",
+        ] {
+            sqlx::query(&format!("DELETE FROM solana.{table}"))
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        let winner = ByteArray([0xEE; 32]);
+        sqlx::query(
+            "INSERT INTO solana.competition_auctions (id, tip_slot, deadline_slot, order_uids, \
+             price_tokens, price_values) VALUES (77, 1, 100, '{}', '{}', '{}')",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        for (uid, solver, is_winner, order) in [
+            (0i64, winner, true, 1u8),
+            (1, ByteArray([0xEF; 32]), false, 2),
+            (2, winner, true, 3),
+        ] {
+            sqlx::query(
+                "INSERT INTO solana.proposed_solutions (auction_id, uid, id, solver, is_winner, \
+                 filtered_out, score) VALUES (77, $1, 7, $2, $3, false, 1)",
+            )
+            .bind(uid)
+            .bind(solver)
+            .bind(is_winner)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO solana.proposed_trade_executions (auction_id, solution_uid, \
+                 order_uid, executed_sell, executed_buy) VALUES (77, $1, $2, 10, 20)",
+            )
+            .bind(uid)
+            .bind(ByteArray([order; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        }
+        async fn held(tx: &mut PgTransaction<'_>, tip: i64) -> Vec<u8> {
+            let mut held: Vec<u8> = in_flight_orders(&mut **tx, tip)
+                .await
+                .unwrap()
+                .iter()
+                .map(|uid| uid.0[0])
+                .collect();
+            held.sort_unstable();
+            held
+        }
+
+        assert_eq!(held(&mut tx, 100).await, vec![1, 3]);
+        assert_eq!(held(&mut tx, 250).await, vec![1, 3]);
+        assert_eq!(held(&mut tx, 251).await, Vec::<u8>::new());
+
+        sqlx::query(
+            "INSERT INTO solana.settlement_executions (auction_id, solver, solution_uid, \
+             start_timestamp, start_slot, deadline_slot) VALUES (77, $1, 0, now(), 1, 100)",
+        )
+        .bind(winner)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(held(&mut tx, 50).await, vec![1, 3]);
+        sqlx::query(
+            "UPDATE solana.settlement_executions SET outcome = 'rejected', end_slot = 2, \
+             end_timestamp = now() WHERE auction_id = 77",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(held(&mut tx, 50).await, vec![3]);
+        sqlx::query("UPDATE solana.settlement_executions SET outcome = NULL WHERE auction_id = 77")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(held(&mut tx, 50).await, vec![1, 3]);
+        sqlx::query(
+            "UPDATE solana.settlement_executions SET outcome = 'timeout', end_slot = 100, \
+             end_timestamp = now() WHERE auction_id = 77",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(held(&mut tx, 150).await, vec![1, 3]);
+
+        // The solver's settlement trades order 1 only: order 3, its other
+        // winning solution, stays held until its own trade lands.
+        sqlx::query(
+            "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
+             auction_id) VALUES (10, $1, 0, $2, 77)",
+        )
+        .bind([9u8; 64])
+        .bind(winner)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        for order in [1u8, 3] {
+            sqlx::query(
+                "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, \
+                 sell_amount, buy_amount, fee_amount) VALUES ($1, 0, $2, 10, 20, 0)",
+            )
+            .bind([9u8; 64])
+            .bind(ByteArray([order; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            assert_eq!(
+                held(&mut tx, 50).await,
+                if order == 1 { vec![3] } else { vec![] }
+            );
+        }
     }
 
     #[tokio::test]
