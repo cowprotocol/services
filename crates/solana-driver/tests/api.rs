@@ -326,9 +326,6 @@ async fn solve_returns_converted_solutions() {
     assert_eq!(json, expected);
 }
 
-/// Two solutions with the same id: the driver keeps only the last occurrence
-/// (each `HashMap::insert` replaces the earlier entry), because
-/// the id is the handle `/settle` addresses a solution by.
 /// The default mock RPC answers every account lookup with "absent", so the
 /// order's buy token account is flagged for creation on the way to the engine.
 #[tokio::test]
@@ -347,6 +344,9 @@ async fn solve_flags_a_missing_buy_token_account_to_the_engine() {
     );
 }
 
+/// Two solutions with the same id: the driver keeps only the last occurrence
+/// (each `HashMap::insert` replaces the earlier entry), because
+/// the id is the handle `/settle` addresses a solution by.
 #[tokio::test]
 async fn solve_discards_duplicate_solution_ids() {
     let solution = serde_json::json!({

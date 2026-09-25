@@ -73,7 +73,7 @@ pub struct Order {
     /// a cost the solution should price in.
     ///
     /// TODO: when Token-2022 mints are supported, this boolean needs to
-    /// change to an type representing `Option<{SplToken, Token2022}>`.
+    /// change to a type representing `Option<{SplToken, Token2022}>`.
     #[serde(default)]
     pub missing_buy_token_account: bool,
 }

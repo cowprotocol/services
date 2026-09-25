@@ -300,8 +300,9 @@ fn accounts_to_create(
         .into_iter()
         .map(|mint| Ata { owner: payer, mint });
 
-    // The user's buy_token ATAs have been previously resolved so we don't need
-    // to re-check their state.
+    // The orders' buy ATAs come from the solve-time flag, not the snapshot:
+    // the engine priced the rent for exactly those, and creating one that
+    // appeared since is a no-op.
     let missing_user_atas = orders
         .iter()
         .filter(|order| order.buy_token_account_missing())

@@ -59,7 +59,7 @@ pub struct Order {
     /// solution should price that rent in.
     ///
     /// TODO: when Token-2022 mints are supported, this boolean needs to
-    /// change to an type representing `Option<{SplToken, Token2022}>`.
+    /// change to a type representing `Option<{SplToken, Token2022}>`.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub missing_buy_token_account: bool,
 }
