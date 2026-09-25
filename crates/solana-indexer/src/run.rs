@@ -6,7 +6,7 @@ use {
         config::Config,
         indexer::{
             decoder::Decoder,
-            ingester::{Error, INGEST_TO_DECODER_CAPACITY, Ingester, Resume},
+            ingester::{INGEST_TO_DECODER_CAPACITY, Ingester, Resume},
         },
         persistence::Postgres,
         yellowstone,
@@ -22,8 +22,7 @@ use {
         time::Duration,
     },
     tokio::{sync::mpsc, task::JoinHandle},
-    yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError},
-    yellowstone_grpc_proto::tonic::Code,
+    yellowstone_grpc_client::GeyserGrpcClient,
 };
 
 /// Wait between attempts to bring the stream back up.
@@ -107,6 +106,11 @@ async fn run(config: Config, start_slot: Option<u64>) {
         let mut resume = start_slot.map_or(Resume::Watermark, Resume::From);
         loop {
             let client = connect_yellowstone(&config.yellowstone).await;
+            // Scan the history between the watermark and the RPC tip before
+            // subscribing: the resume slot then sits inside the provider's
+            // replay window, and a stream drop never skips a slot. Nothing to
+            // scan costs one slot lookup and one signature page.
+            backfiller.backfill().await;
             match Ingester::serve(
                 client,
                 tx.clone(),
@@ -120,21 +124,10 @@ async fn run(config: Config, start_slot: Option<u64>) {
             {
                 // The decoder hung up, the select below reports why.
                 Ok(()) => break,
-                // The resume slot fell out of the provider's replay window.
-                // Recover the gap from RPC history: the backfill moves the
-                // watermark back inside the window, retrying internally and
-                // panicking rather than skipping the gap.
-                Err(Error::Subscribe(err)) if slot_rejection(&err) => {
-                    tracing::warn!(?err, "resume subscription rejected, backfilling");
-                    backfiller.backfill().await;
-                    resume = Resume::Watermark;
-                    // The rejection can repeat (the watermark aged out again,
-                    // or a filter error shares the status code), so pace the
-                    // retry.
-                    tokio::time::sleep(STREAM_RETRY).await;
-                }
+                // A rejected subscription lands here too: after the next
+                // backfill its resume slot is back inside the replay window.
                 Err(err) => {
-                    tracing::error!(?err, "stream ended, reconnecting");
+                    tracing::warn!(?err, "stream ended, reconnecting");
                     resume = Resume::Watermark;
                     tokio::time::sleep(STREAM_RETRY).await;
                 }
@@ -175,20 +168,6 @@ struct Liveness {
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
         sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
-    }
-}
-
-/// Whether a rejected subscription can mean the resume slot fell out of the
-/// provider's replay window. The client carries no typed cause, only a gRPC
-/// status: the geyser plugin rejects an out-of-window `from_slot` with
-/// `InvalidArgument` (`OutOfRange` kept for other implementations), while
-/// authentication and transport failures are never about the slot.
-fn slot_rejection(err: &GeyserGrpcClientError) -> bool {
-    match err {
-        GeyserGrpcClientError::TonicStatus(status) => {
-            matches!(status.code(), Code::InvalidArgument | Code::OutOfRange)
-        }
-        GeyserGrpcClientError::TransportError(_) => false,
     }
 }
 
