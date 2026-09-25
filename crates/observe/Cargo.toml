@@ -23,6 +23,7 @@ opentelemetry_sdk = { workspace = true }
 pin-project-lite = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+rustls = { workspace = true, features = ["aws_lc_rs"] }
 scopeguard = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
