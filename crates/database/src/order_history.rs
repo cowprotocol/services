@@ -69,14 +69,14 @@ pub fn user_orders<'a>(
         ") ",
         // Phase 2: fetch full rows for the relevant UIDs only
         " (",
-        "  SELECT ", orders::SELECT,
-        "  FROM ", orders::FROM,
+        "  SELECT ", orders::ORDER_DETAILS_SELECT,
+        "  FROM ", orders::ORDER_DETAILS_FROM,
         "  WHERE o.uid IN (SELECT uid FROM page_uids)",
         " )",
         " UNION ALL",
         " (",
-        "  SELECT ", jit_orders::SELECT,
-        "  FROM ", jit_orders::FROM,
+        "  SELECT ", jit_orders::ORDER_DETAILS_SELECT,
+        "  FROM ", jit_orders::ORDER_DETAILS_FROM,
         "  WHERE o.uid IN (SELECT uid FROM page_uids)",
         // despite already handling duplicates in phase 1 we need to handle
         // them here again. Because JIT orders are very rare we check that
