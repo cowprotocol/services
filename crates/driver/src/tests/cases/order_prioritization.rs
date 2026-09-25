@@ -103,7 +103,6 @@ async fn creation_timestamp_sorting() {
         .order(
             ab_order()
                 .rename("2")
-                .limit()
                 .created(now - 1)
                 .reduce_amount("1e-2".ether().into_wei())
                 .quote(OrderQuote::default().solver(solver.address())),
@@ -135,7 +134,6 @@ async fn external_price_sorting() {
         .order(
             ab_order()
                 .rename("2")
-                .limit()
                 .created(now)
                 .reduce_amount("1e-2".ether().into_wei())
                 .quote(OrderQuote::default().solver(solver.address())),
@@ -271,7 +269,6 @@ async fn filtering() {
                 .rename("fourth order")
                 .unfunded()
                 .filtered()
-                .limit()
         )
         .solution(ab_solution())
         .done()

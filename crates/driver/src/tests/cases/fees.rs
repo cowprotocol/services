@@ -14,10 +14,7 @@ use {
 #[ignore]
 async fn solver_fee() {
     for side in [order::Side::Buy, order::Side::Sell] {
-        let order = ab_order()
-            .kind(order::Kind::Limit)
-            .side(side)
-            .solver_fee(Some(eth::U256::from(500)));
+        let order = ab_order().side(side).solver_fee(Some(eth::U256::from(500)));
         let test = tests::setup()
             .name(format!("Solver Fee: {side:?}"))
             .solvers(vec![test_solver().fee_handler(FeeHandler::Driver)])
