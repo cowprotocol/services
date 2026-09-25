@@ -43,6 +43,9 @@ pub struct Solution {
     /// Optional solver estimate of total settlement compute units.
     #[serde(default)]
     pub cu_estimate: Option<u32>,
+    /// Settlement transaction format: omitted or 0 selects v0; 1 selects v1.
+    #[serde(default)]
+    pub transaction_version: Option<u8>,
     /// The address lookup tables the interactions assume.
     #[serde(default)]
     #[serde_as(as = "Vec<serde_with::DisplayFromStr>")]
@@ -159,6 +162,8 @@ impl From<Instruction> for SdkInstruction {
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error {
+    #[error("unsupported transaction version {0}; expected 0 or 1")]
+    UnsupportedTransactionVersion(u8),
     /// A trade references an order that was not in the sent auction.
     #[error("trade references unknown order UID {0}")]
     UnknownOrderUid(OrderUid),
@@ -196,8 +201,14 @@ impl Solutions {
                     trades,
                     interactions,
                     cu_estimate,
+                    transaction_version,
                     address_lookup_tables,
                 } = solution;
+                let transaction_version = match transaction_version.unwrap_or(0) {
+                    0 => domain::solution::TransactionVersion::V0,
+                    1 => domain::solution::TransactionVersion::V1,
+                    version => return Err(Error::UnsupportedTransactionVersion(version)),
+                };
                 let trades = trades
                     .into_iter()
                     .map(|trade| {
@@ -224,6 +235,7 @@ impl Solutions {
                     interactions: interactions.into_iter().map(Into::into).collect(),
                     address_lookup_tables,
                     cu_estimate,
+                    transaction_version,
                 })
             })
             .collect()
@@ -332,6 +344,7 @@ mod tests {
                 }],
                 interactions: vec![],
                 cu_estimate: None,
+                transaction_version: None,
                 address_lookup_tables: vec![],
             }],
         };
@@ -357,6 +370,7 @@ mod tests {
                 }],
                 interactions: vec![],
                 cu_estimate: None,
+                transaction_version: None,
                 address_lookup_tables: vec![],
             }],
         };
@@ -402,6 +416,7 @@ mod tests {
                 }],
                 interactions: vec![],
                 cu_estimate: None,
+                transaction_version: None,
                 address_lookup_tables: vec![],
             }],
         };
@@ -481,6 +496,7 @@ mod tests {
                     instruction_data: vec![0xde, 0xad],
                 }],
                 cu_estimate: None,
+                transaction_version: None,
                 address_lookup_tables: vec![pubkey(7)],
             }],
         };

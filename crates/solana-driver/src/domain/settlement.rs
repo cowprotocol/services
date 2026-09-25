@@ -1,7 +1,13 @@
 //! Settlement encoding.
 
 use {
-    super::{Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
+    super::{
+        Order,
+        Side,
+        auction::Id,
+        order_uid::OrderUid,
+        solution::{Solution, TransactionVersion},
+    },
     crate::infra::blockchain::{
         AccountsSnapshot,
         InvalidAddressLookupTableReason,
@@ -23,11 +29,17 @@ use {
         pda::{buffer::find_buffer_pda, order::find_order_pda},
         token_program::TokenProgram,
     },
+    solana_builtins_default_costs::{
+        BuiltinMigrationFeatureIndex,
+        MIGRATING_BUILTINS_COSTS,
+        get_builtin_migration_feature_index,
+        get_migration_feature_id,
+    },
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_sdk::{
         hash::Hash,
         instruction::Instruction,
-        message::{AddressLookupTableAccount, VersionedMessage, v0::Message as MessageV0},
+        message::{AddressLookupTableAccount, VersionedMessage, v0::Message as MessageV0, v1},
         pubkey::Pubkey,
         signer::{Signer, keypair::Keypair},
         transaction::VersionedTransaction,
@@ -71,6 +83,8 @@ pub(crate) struct ResolvedSettlement {
     /// Sell-token mints for which the payer's ATA does not exist on chain
     /// yet, sorted and deduplicated.
     missing_payer_atas: Vec<Pubkey>,
+    /// Cluster feature state used only for v1's missing-CU-estimate fallback.
+    active_builtin_migrations: [bool; MIGRATING_BUILTINS_COSTS.len()],
 }
 
 impl Settlement {
@@ -102,6 +116,16 @@ impl Settlement {
         blockchain: &Solana,
         payer: Pubkey,
     ) -> Result<ResolvedSettlement, ResolveError> {
+        // V1 carries all account addresses inline; lookup tables are irrelevant.
+        let lookup_keys = match self.solution.transaction_version {
+            TransactionVersion::V0 => self.solution.address_lookup_tables.as_slice(),
+            TransactionVersion::V1 => &[],
+        };
+        let needs_cu_default = self.solution.transaction_version == TransactionVersion::V1
+            && self.solution.cu_estimate.is_none();
+        let migration_features = (0..MIGRATING_BUILTINS_COSTS.len())
+            .filter(|_| needs_cu_default)
+            .map(|index| *get_migration_feature_id(index));
         let mut buffers = Vec::with_capacity(self.orders.len());
         let mut sell_atas = Vec::with_capacity(self.orders.len());
         for order in &self.orders {
@@ -109,22 +133,19 @@ impl Settlement {
             sell_atas.push(SetupAccount::new_ata(order.sell_token, payer));
         }
 
-        let addresses = self
-            .solution
-            .address_lookup_tables
+        let addresses = lookup_keys
             .iter()
             .copied()
             .chain(buffers.iter().map(|token| token.address))
-            .chain(sell_atas.iter().map(|token| token.address));
+            .chain(sell_atas.iter().map(|token| token.address))
+            .chain(migration_features);
 
         let snapshot = blockchain
             .accounts_snapshot(addresses)
             .await
             .map_err(ResolveError::Rpc)?;
 
-        let lookup_tables = self
-            .solution
-            .address_lookup_tables
+        let lookup_tables = lookup_keys
             .iter()
             .map(|key| {
                 snapshot
@@ -139,17 +160,38 @@ impl Settlement {
         let mut missing_payer_atas = missing_setup_accounts(&sell_atas, &snapshot)?;
         missing_payer_atas.sort_unstable();
         missing_payer_atas.dedup();
+        let active_builtin_migrations = std::array::from_fn(|index| {
+            needs_cu_default && snapshot.is_feature_active(get_migration_feature_id(index))
+        });
 
         Ok(ResolvedSettlement {
             settlement: self,
             lookup_tables,
             missing_buffers,
             missing_payer_atas,
+            active_builtin_migrations,
         })
     }
 }
 
 impl ResolvedSettlement {
+    // Match Agave's v0 default over top-level instructions, including migrated builtins.
+    fn default_compute_unit_limit(&self, instructions: &[Instruction]) -> u32 {
+        instructions
+            .iter()
+            .fold(0_u32, |total, instruction| {
+                let is_sbf = match get_builtin_migration_feature_index(&instruction.program_id) {
+                    BuiltinMigrationFeatureIndex::NotBuiltin => true,
+                    BuiltinMigrationFeatureIndex::BuiltinNoMigrationFeature => false,
+                    BuiltinMigrationFeatureIndex::BuiltinWithMigrationFeature(index) => {
+                        self.active_builtin_migrations[index]
+                    }
+                };
+                total.saturating_add(if is_sbf { 200_000 } else { 3_000 })
+            })
+            .min(1_400_000)
+    }
+
     /// Build the settlement instruction list.
     fn instructions(&self, payer: Pubkey) -> Result<Vec<Instruction>, Error> {
         // Prepare each order for settlement: resolve its executed amounts and
@@ -188,7 +230,9 @@ impl ResolvedSettlement {
         // if it is missing we fall back to the Solana default. TODO:
         // Once we have CU price estimation, add the respective
         // `ComputeBudget::set_compute_unit_price` instruction too.
-        if let Some(cu_limit) = self.settlement.solution.cu_estimate {
+        if let Some(cu_limit) = self.settlement.solution.cu_estimate
+            && self.settlement.solution.transaction_version == TransactionVersion::V0
+        {
             instructions.push(ComputeBudgetInstruction::set_compute_unit_limit(cu_limit));
         }
         // Insert a `CreateBuffers` instruction when buffer accounts are
@@ -251,16 +295,34 @@ impl ResolvedSettlement {
         Ok(instructions)
     }
 
-    /// Encode the resolved settlement as a signed v0 transaction.
+    /// Encode the resolved settlement using the solver's requested transaction format.
     pub fn encode(self, signer: &Keypair, blockhash: Hash) -> Result<VersionedTransaction, Error> {
         let instructions = self.instructions(signer.pubkey())?;
-        let message = MessageV0::try_compile(
-            &signer.pubkey(),
-            &instructions,
-            &self.lookup_tables,
-            blockhash,
-        )?;
-        let transaction = VersionedTransaction::try_new(VersionedMessage::V0(message), &[signer])?;
+        let message = match self.settlement.solution.transaction_version {
+            TransactionVersion::V0 => VersionedMessage::V0(MessageV0::try_compile(
+                &signer.pubkey(),
+                &instructions,
+                &self.lookup_tables,
+                blockhash,
+            )?),
+            TransactionVersion::V1 => VersionedMessage::V1(v1::Message::try_compile_with_config(
+                &signer.pubkey(),
+                &instructions,
+                blockhash,
+                v1::TransactionConfig {
+                    compute_unit_limit: Some(
+                        self.settlement
+                            .solution
+                            .cu_estimate
+                            .unwrap_or_else(|| self.default_compute_unit_limit(&instructions)),
+                    ),
+                    // V1 defaults to zero; retain v0's 64 MiB account-data allowance.
+                    loaded_accounts_data_size_limit: Some(64 * 1024 * 1024),
+                    ..v1::TransactionConfig::empty()
+                },
+            )?),
+        };
+        let transaction = VersionedTransaction::try_new(message, &[signer])?;
         Ok(transaction)
     }
 }
@@ -633,6 +695,7 @@ mod tests {
             interactions: Vec::new(),
             address_lookup_tables: Vec::new(),
             cu_estimate: Some(200_000),
+            transaction_version: TransactionVersion::V0,
         }
     }
 
@@ -653,6 +716,7 @@ mod tests {
             lookup_tables: Vec::new(),
             missing_buffers: Vec::new(),
             missing_payer_atas: Vec::new(),
+            active_builtin_migrations: [false; MIGRATING_BUILTINS_COSTS.len()],
         }
     }
 
@@ -1068,6 +1132,7 @@ mod tests {
             lookup_tables: Vec::new(),
             missing_buffers,
             missing_payer_atas,
+            active_builtin_migrations: [false; MIGRATING_BUILTINS_COSTS.len()],
         };
 
         let instructions = resolved.instructions(payer).unwrap();

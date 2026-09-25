@@ -8,6 +8,7 @@ use {
     moka::sync::Cache,
     solana_sdk::{
         instruction::InstructionError,
+        message::{VersionedMessage, v1},
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
@@ -25,7 +26,7 @@ const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
 /// deadline slot into a wall-clock confirmation timeout. This is mainnet's
 /// target; other clusters can drift.
 const SLOT_DURATION_MS: u64 = 400;
-/// The network's per-transaction byte ceiling,
+/// The legacy/v0 per-transaction byte ceiling,
 /// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
 /// rejects a larger transaction before it simulates anything.
 const MAX_TRANSACTION_BYTES: u64 = 1232;
@@ -262,10 +263,14 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
+        let limit = match &transaction.message {
+            VersionedMessage::Legacy(_) | VersionedMessage::V0(_) => MAX_TRANSACTION_BYTES,
+            VersionedMessage::V1(_) => v1::MAX_TRANSACTION_SIZE as u64,
+        };
         if let Some(size) = observe_transaction(&transaction, cu_estimate)
-            && size > MAX_TRANSACTION_BYTES
+            && size > limit
         {
-            return Err(Error::TransactionTooLarge { size });
+            return Err(Error::TransactionTooLarge { size, limit });
         }
 
         self.simulate_settlement(&transaction).await?;
@@ -533,8 +538,8 @@ pub(crate) enum Error {
     },
     /// The encoded settlement exceeds the network's per-transaction ceiling.
     /// Nothing was sent.
-    #[error("settlement transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
-    TransactionTooLarge { size: u64 },
+    #[error("settlement transaction is {size} bytes, over the {limit} limit")]
+    TransactionTooLarge { size: u64, limit: u64 },
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
@@ -552,8 +557,8 @@ struct Metrics {
     /// Settlement attempts by final outcome and solver.
     #[metric(labels("outcome", "solver"))]
     outcomes: prometheus::IntCounterVec,
-    /// Serialized settlement transaction size in bytes. The network rejects a
-    /// transaction over 1232 bytes.
+    /// Serialized settlement transaction size in bytes. The limit is 1232
+    /// bytes for legacy/v0 and 4096 for v1.
     #[metric(buckets(600., 800., 1000., 1100., 1200., 1232., 1400., 1600.))]
     transaction_bytes: prometheus::Histogram,
     /// Settlement transaction account count, static keys plus lookup-table
@@ -594,7 +599,7 @@ fn observe_transaction(
 
 /// The transaction's wire size, `None` when it does not serialize.
 fn encoded_size(transaction: &VersionedTransaction) -> Option<u64> {
-    bincode::serialized_size(transaction).ok()
+    wincode::serialized_size(transaction).ok()
 }
 
 /// Total accounts a transaction resolves to: its static keys plus every
