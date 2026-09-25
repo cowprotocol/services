@@ -40,8 +40,10 @@ pub struct Args {
     config: PathBuf,
 
     /// Slot to start indexing from, overriding the persisted resume point
-    /// for the first subscription. Must be within the provider's replay
-    /// window (~150 slots).
+    /// for the first subscription. No backfill runs before that
+    /// subscription, so slots between the persisted watermark and this one
+    /// are skipped when it lies ahead and re-streamed when it lies behind.
+    /// Must be within the provider's replay window (~150 slots).
     #[arg(long, env)]
     start_slot: Option<u64>,
 }
@@ -109,8 +111,11 @@ async fn run(config: Config, start_slot: Option<u64>) {
             // Scan the history between the watermark and the RPC tip before
             // subscribing: the resume slot then sits inside the provider's
             // replay window, and a stream drop never skips a slot. Nothing to
-            // scan costs one slot lookup and one signature page.
-            backfiller.backfill().await;
+            // scan costs one slot lookup and one signature page. An operator
+            // override names its own resume slot instead.
+            if resume == Resume::Watermark {
+                backfiller.backfill().await;
+            }
             match Ingester::serve(
                 client,
                 tx.clone(),
@@ -127,7 +132,7 @@ async fn run(config: Config, start_slot: Option<u64>) {
                 // A rejected subscription lands here too: after the next
                 // backfill its resume slot is back inside the replay window.
                 Err(err) => {
-                    tracing::warn!(?err, "stream ended, reconnecting");
+                    tracing::error!(?err, "stream ended, reconnecting");
                     resume = Resume::Watermark;
                     tokio::time::sleep(STREAM_RETRY).await;
                 }
