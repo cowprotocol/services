@@ -274,6 +274,8 @@ async fn fast_path_penalty_cap(web3: Web3) {
             usd_reference_token: *onchain.contracts().weth.address(),
             overrides: vec![],
         }),
+        // Opt the fast path into penalties (off by default).
+        fast_path_penalty_cap_enabled: true,
         ..AutopilotConfiguration::test("test_solver", solver.address())
     };
     let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(

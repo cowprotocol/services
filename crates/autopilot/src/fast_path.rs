@@ -49,7 +49,11 @@ use {
     model::order::OrderKind,
     number::conversions::u256_to_big_decimal,
     price_estimation::native::to_normalized_price,
-    std::{collections::BTreeMap, sync::Arc, time::Instant},
+    std::{
+        collections::{BTreeMap, HashMap},
+        sync::Arc,
+        time::Instant,
+    },
     tracing::{Instrument, instrument},
     winner_selection as winsel,
 };
@@ -67,8 +71,9 @@ pub struct FastPathHandler {
     /// from one block count and can't drift apart. `None` disables the fast
     /// path: orders drop straight into the next regular auction.
     exclusivity_period_blocks: Option<u64>,
-    /// Shared with the regular auction loop so fast-path orders get the same
-    /// CIP-87 penalty cap.
+    /// CIP-87 penalty cap calculator, present only when fast-path penalties are
+    /// enabled (`fast_path_penalty_cap_enabled`). `None` leaves fast-path
+    /// orders without a penalty cap.
     penalty_cap_calculator: Option<Arc<domain::penalty_cap::PenaltyCapCalculator>>,
 }
 
@@ -448,29 +453,7 @@ impl FastPathHandler {
 
         let reference_score = compute_reference_score(auction_id, &solution_rows)?;
 
-        // Same CIP-87 penalty cap as a regular auction; 0 when penalties are
-        // disabled in the config.
-        let penalty_cap_native = self
-            .penalty_cap_calculator
-            .as_ref()
-            .map(|calculator| {
-                let mut prices: BTreeMap<Address, U256> = staged
-                    .data
-                    .native_prices
-                    .iter()
-                    .map(|(token, price)| (*token, *price))
-                    .collect();
-                // Buy-ETH orders key the native price under the ETH marker, but
-                // the calculator looks it up under WETH. Insert WETH at 1 so
-                // the lookup hits.
-                prices
-                    .entry(*self.eth.contracts().weth().address())
-                    .or_insert_with(|| {
-                        to_normalized_price(1.0).expect("1.0 is a valid native price")
-                    });
-                u256_to_big_decimal(&calculator.calculate(&order, &prices).0)
-            })
-            .unwrap_or_else(|| 0.into());
+        let penalty_cap_native = self.penalty_cap_native(&order, &staged.data.native_prices);
 
         self.persistence
             .finalize_fast_path(FastPathPromotion {
@@ -495,6 +478,29 @@ impl FastPathHandler {
             limit_sell,
             limit_buy,
         })
+    }
+
+    /// The CIP-87 penalty cap for a fast-path order: the same cap a regular
+    /// auction would assign, or 0 when the calculator is disabled.
+    fn penalty_cap_native(
+        &self,
+        order: &model::order::Order,
+        native_prices: &HashMap<Address, U256>,
+    ) -> BigDecimal {
+        let Some(calculator) = self.penalty_cap_calculator.as_ref() else {
+            return 0.into();
+        };
+        let mut prices: BTreeMap<Address, U256> = native_prices
+            .iter()
+            .map(|(token, price)| (*token, *price))
+            .collect();
+        // Buy-ETH orders key the native price under the ETH marker, but the
+        // calculator looks it up under WETH. Insert WETH at 1 so the lookup
+        // hits.
+        prices
+            .entry(*self.eth.contracts().weth().address())
+            .or_insert_with(|| to_normalized_price(1.0).expect("1.0 is a valid native price"));
+        u256_to_big_decimal(&calculator.calculate(order, &prices).0)
     }
 
     /// Computes timestamp and number of the last block the order may be
