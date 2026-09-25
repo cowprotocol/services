@@ -17,6 +17,8 @@ pub struct PriceEstimateEvent {
     pub elapsed: u64,
     pub estimator: String,
     /// Settlement address of the solver behind `estimator`.
+    /// Absent when the estimator failed, and for estimates no solver produced
+    /// (trivial ETH/WETH quotes).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
     pub solver: Option<Address>,

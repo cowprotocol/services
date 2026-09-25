@@ -20,8 +20,10 @@ pub struct WinningPriceEstimateEvent {
     /// Name of the estimator whose price estimate won the competition.
     pub estimator: String,
     /// Settlement address of the solver behind `estimator`.
-    #[schemars(with = "String")]
-    pub solver: Address,
+    /// Absent for quotes no solver produced (trivial ETH/WETH quotes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub solver: Option<Address>,
     /// Absent for quotes no solver produced (trivial ETH/WETH quotes), which
     /// are stored under a freshly allocated id instead.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -46,7 +48,7 @@ mod tests {
                 kind: OrderKind::Sell,
             },
             estimator: "baseline".into(),
-            solver: address!("0x0000000000000000000000000000000000000003"),
+            solver: Some(address!("0x0000000000000000000000000000000000000003")),
             quote_id: Some(42),
         };
         assert_eq!(

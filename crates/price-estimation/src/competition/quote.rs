@@ -17,7 +17,7 @@ use {
         RankedEstimates,
         StreamingPriceEstimating,
     },
-    alloy::primitives::U256,
+    alloy::primitives::{Address, U256},
     event_bus_dto::{
         price_estimate::{EstimateResult, PriceEstimateEvent},
         query::{OrderKind as DtoOrderKind, QueryFields},
@@ -342,11 +342,18 @@ fn query_fields(query: &Query) -> QueryFields {
     }
 }
 
+/// The solver behind an estimate. `None` for the trivial ETH/WETH estimates
+/// the sanitized estimator answers itself: no solver produced those, and they
+/// carry the zero address.
+fn solver_of(estimate: &Estimate) -> Option<Address> {
+    (!estimate.solver.is_zero()).then_some(estimate.solver)
+}
+
 fn emit_winning_price_estimate_event(estimator_name: &str, query: &Query, winner: &Estimate) {
     observe::event_bus::publish_event(WinningPriceEstimateEvent {
         query: query_fields(query),
         estimator: estimator_name.to_owned(),
-        solver: winner.solver,
+        solver: solver_of(winner),
         quote_id: winner.quote_id,
     });
 }
@@ -366,7 +373,7 @@ fn emit_quote_event(
         timeout: query.timeout.as_millis() as u64,
         elapsed: elapsed.as_millis() as u64,
         estimator: estimator_name.to_owned(),
-        solver: result.as_ref().ok().map(|estimate| estimate.solver),
+        solver: result.as_ref().ok().and_then(solver_of),
         quote_id: result.as_ref().ok().and_then(|estimate| estimate.quote_id),
         result: match result {
             Ok(estimate) => EstimateResult::Ok {

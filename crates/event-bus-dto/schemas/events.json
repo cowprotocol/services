@@ -152,7 +152,7 @@
             "$ref": "#/$defs/QueryFields"
           },
           "quoteId": {
-            "description": "Id of the quote this estimator was asked to compute, i.e. the id the\nstored quote gets if this estimate wins the competition and the id the\norder placed with it references. Absent when the estimator failed, and\nfor estimates no solver produced (trivial ETH/WETH quotes).",
+            "description": "Absent when the estimator failed, and for estimates no solver produced\n(trivial ETH/WETH quotes).",
             "format": "int64",
             "type": [
               "integer",
@@ -163,7 +163,7 @@
             "$ref": "#/$defs/EstimateResult"
           },
           "solver": {
-            "description": "Settlement address of the solver behind `estimator`, which is how the\nrest of the protocol (`order_quotes.solver`, settlements, payouts)\nidentifies it. Absent when the estimator failed, since the address\ncomes with the estimate.",
+            "description": "Settlement address of the solver behind `estimator`.\nAbsent when the estimator failed, and for estimates no solver produced\n(trivial ETH/WETH quotes).",
             "type": [
               "string",
               "null"
@@ -517,7 +517,7 @@
             "$ref": "#/$defs/QueryFields"
           },
           "quoteId": {
-            "description": "Id the winning quote is stored under, which the order placed with it\nreferences. Absent for quotes no solver produced (trivial ETH/WETH\nquotes), which are stored under a freshly allocated id instead.",
+            "description": "Absent for quotes no solver produced (trivial ETH/WETH quotes), which\nare stored under a freshly allocated id instead.",
             "format": "int64",
             "type": [
               "integer",
@@ -525,14 +525,16 @@
             ]
           },
           "solver": {
-            "description": "Settlement address of the solver behind `estimator`. The quote stored\nfor this competition records the same address.",
-            "type": "string"
+            "description": "Settlement address of the solver behind `estimator`.\nAbsent for quotes no solver produced (trivial ETH/WETH quotes).",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "query",
-          "estimator",
-          "solver"
+          "estimator"
         ],
         "type": "object"
       }
