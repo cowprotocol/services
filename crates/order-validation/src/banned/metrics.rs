@@ -2,7 +2,7 @@
 //! front of them.
 
 use {
-    prometheus::{HistogramVec, IntCounter, IntCounterVec, IntGauge},
+    prometheus::{HistogramVec, IntCounterVec, IntGaugeVec},
     std::time::Duration,
 };
 
@@ -28,13 +28,16 @@ pub(super) struct Metrics {
     #[metric(labels("result"))]
     cache: IntCounterVec,
 
-    /// Newly banned addresses. Counted once per address for as long as it
-    /// stays cached, so repeated checks and background refreshes of an already
-    /// known address do not inflate it.
-    detected: IntCounter,
+    /// Newly banned addresses, by the backend that reported them. Counted
+    /// once per address and backend for as long as the address stays cached,
+    /// so repeated checks and refreshes of a known address do not inflate it.
+    #[metric(labels("backend"))]
+    detected: IntCounterVec,
 
-    /// Banned addresses currently held in the cache.
-    currently_banned: IntGauge,
+    /// Banned addresses currently held in the cache, by the backend that
+    /// reported them. An address several backends report counts under each.
+    #[metric(labels("backend"))]
+    currently_banned: IntGaugeVec,
 }
 
 impl Metrics {
@@ -68,11 +71,19 @@ impl Metrics {
             .inc_by(misses as u64);
     }
 
-    pub(super) fn detected() {
-        Self::get().detected.inc();
+    pub(super) fn detected(backend: &str) {
+        Self::get().detected.with_label_values(&[backend]).inc();
     }
 
-    pub(super) fn currently_banned(count: i64) {
-        Self::get().currently_banned.set(count);
+    #[cfg(test)]
+    pub(super) fn detected_count(backend: &str) -> u64 {
+        Self::get().detected.with_label_values(&[backend]).get()
+    }
+
+    pub(super) fn currently_banned(backend: &str, count: usize) {
+        Self::get()
+            .currently_banned
+            .with_label_values(&[backend])
+            .set(i64::try_from(count).unwrap_or(i64::MAX));
     }
 }
