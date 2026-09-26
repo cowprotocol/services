@@ -1,0 +1,44 @@
+name: Set up the Rust cache
+description: >
+  Installs sccache, restores the cargo caches, and gives each unchanged file its
+  previous time again, so that cargo reuses the cached workspace artifacts.
+
+inputs:
+  shared-key:
+    description: >
+      The cache bucket to read and write. Jobs that build the same artifacts
+      give the same value.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+    # sccache keys each compilation on the file contents, to not use incompatible caches
+    # Cargo can do this without sccache, but the flag is not stable yet:
+    # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
+    - name: Enable sccache
+      shell: bash
+      run: |
+        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        # sccache cannot cache an incremental build
+        echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        cache-all-crates: true
+        cache-workspace-crates: true
+        # Used by the mtime_cache step below
+        cache-directories: ${{ runner.temp }}/mtime-cache
+        shared-key: ${{ inputs.shared-key }}
+        # Only write to the cache if running on main
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
+    # Gives each unchanged file its previous time again, so that cargo reuses the
+    # cached workspace artifacts. A changed file keeps the time of the checkout.
+    - uses: ./.github/mtime_cache
+      with:
+        # Must match cache-directories in the rust-cache step above
+        cache-path: ${{ runner.temp }}/mtime-cache

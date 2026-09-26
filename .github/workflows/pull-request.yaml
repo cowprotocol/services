@@ -15,32 +15,9 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Clippy makes different artifacts to a build, so keep a separate cache
           shared-key: lint
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # v1.0.7
         with:
           profile: minimal
@@ -115,32 +92,9 @@ jobs:
         with:
           just-version: 1.39.0
       - run: rustup toolchain install stable --profile minimal
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Shared by doc-tests and event-bus-schemas, which build the same dependencies
           shared-key: checks
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       - run: just test-doc
 
   unit-tests:
@@ -156,32 +110,9 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -204,32 +135,9 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build --locked -p orderbook -p database -p autopilot -p solana-indexer -p solana-orderbook --tests &
@@ -258,32 +166,9 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build --locked -p solana-indexer -p autopilot-svm --tests &
@@ -315,32 +200,9 @@ jobs:
         with:
           # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
           version: v1.7.1
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build --locked -p e2e --tests &
@@ -380,32 +242,9 @@ jobs:
           # the latest version introduced a bug caused forked node tests to fail
           # only switch back to latest stable version after it was fixed in anvil
           version: v1.0.0
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build --locked -p e2e --tests &
@@ -437,32 +276,9 @@ jobs:
         with:
           # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
           version: v1.7.1
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -534,32 +350,9 @@ jobs:
         with:
           # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
           version: v1.7.1
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build --locked -p e2e --tests &
@@ -591,32 +384,9 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - run: rustup toolchain install nightly --profile minimal --component rustfmt
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Builds the contracts project in release, so keep a separate cache
           shared-key: generated-contracts
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
@@ -666,32 +436,9 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      # sccache keys each compilation on the file contents, to not use incompatible caches
-      # Cargo can do this without sccache, but the flag is not stable yet:
-      # https://github.com/rust-lang/cargo/issues/14136 (-Z checksum-freshness)
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          cache-all-crates: true
-          cache-workspace-crates: true
-          # Used by the mtime_cache step below
-          cache-directories: ${{ runner.temp }}/mtime-cache
-          # Shared by doc-tests and event-bus-schemas, which build the same dependencies
           shared-key: checks
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Gives each unchanged file its previous time again, so that cargo reuses the
-      # cached workspace artifacts. A changed file keeps the time of the checkout.
-      - uses: ./.github/mtime_cache
-        with:
-          # Must match cache-directories in the rust-cache step above
-          cache-path: ${{ runner.temp }}/mtime-cache
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
