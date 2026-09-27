@@ -1,0 +1,280 @@
+{
+  "description": "Signed order amounts and final GPv2 prices from 32 rejected Base settlement payloads and 7 successful transactions, 2026-09-26/27. Only integer arithmetic inputs are retained; identifiers, calldata, signatures and production logs are omitted. Valid refers only to the signed limit inequality, not full execution feasibility. Fee composition is tested separately through the driver pipeline.",
+  "invalid_count": 32,
+  "successful_trade_count": 7,
+  "cases": [
+    {
+      "sell_amount": "44040923322302935994",
+      "buy_amount": "35693999",
+      "sell_price": "35550471",
+      "buy_price": "44040923322302935994",
+      "valid": false
+    },
+    {
+      "sell_amount": "44040923322302935994",
+      "buy_amount": "35693999",
+      "sell_price": "35550518",
+      "buy_price": "44040923322302935994",
+      "valid": false
+    },
+    {
+      "sell_amount": "44040923322302935994",
+      "buy_amount": "35693999",
+      "sell_price": "35550500",
+      "buy_price": "44040923322302935994",
+      "valid": false
+    },
+    {
+      "sell_amount": "44040923322302935994",
+      "buy_amount": "35693999",
+      "sell_price": "35550544",
+      "buy_price": "44040923322302935994",
+      "valid": false
+    },
+    {
+      "sell_amount": "44040923322302935994",
+      "buy_amount": "35693999",
+      "sell_price": "35550484",
+      "buy_price": "44040923322302935994",
+      "valid": false
+    },
+    {
+      "sell_amount": "100000000",
+      "buy_amount": "11696354842597500000000",
+      "sell_price": "11677362507630894657968",
+      "buy_price": "100000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "50000000",
+      "buy_amount": "5832352941001500000000",
+      "sell_price": "5831932283152978171163",
+      "buy_price": "50000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "100000000",
+      "buy_amount": "11696354842597500000000",
+      "sell_price": "11666108092381717771766",
+      "buy_price": "100000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "100000000",
+      "buy_amount": "11696354842597500000000",
+      "sell_price": "11664615924110778792240",
+      "buy_price": "100000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "100000000",
+      "buy_amount": "11696354842597500000000",
+      "sell_price": "11664612728688053430560",
+      "buy_price": "100000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "100000000",
+      "buy_amount": "11696354842597500000000",
+      "sell_price": "11646210313205478259179",
+      "buy_price": "100000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "100000000",
+      "buy_amount": "11696354842597500000000",
+      "sell_price": "11646199619425250247981",
+      "buy_price": "100000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "100000000",
+      "buy_amount": "11696354842597500000000",
+      "sell_price": "11646189043015287877986",
+      "buy_price": "100000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "100000000",
+      "buy_amount": "11696354842597500000000",
+      "sell_price": "11646189043015287877986",
+      "buy_price": "100000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "100000000",
+      "buy_amount": "11696354842597500000000",
+      "sell_price": "11646190218161432170769",
+      "buy_price": "100000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "514660454750000000000",
+      "buy_amount": "4109765616",
+      "sell_price": "4092292962",
+      "buy_price": "514660454750000000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "514660454750000000000",
+      "buy_amount": "4109765616",
+      "sell_price": "4092530423",
+      "buy_price": "514660454750000000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "514660454750000000000",
+      "buy_amount": "4109765616",
+      "sell_price": "4092598833",
+      "buy_price": "514660454750000000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "514660454750000000000",
+      "buy_amount": "4109765616",
+      "sell_price": "4092547005",
+      "buy_price": "514660454750000000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "514660454750000000000",
+      "buy_amount": "4109765616",
+      "sell_price": "4093717084",
+      "buy_price": "514660454750000000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "401007057530000000000",
+      "buy_amount": "118979999",
+      "sell_price": "118487758",
+      "buy_price": "401007057530000000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "401007057530000000000",
+      "buy_amount": "118979999",
+      "sell_price": "118508949",
+      "buy_price": "401007057530000000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "401007057530000000000",
+      "buy_amount": "118979999",
+      "sell_price": "118537947",
+      "buy_price": "401007057530000000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "401007057530000000000",
+      "buy_amount": "118979999",
+      "sell_price": "118569495",
+      "buy_price": "401007057530000000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "401007057530000000000",
+      "buy_amount": "118979999",
+      "sell_price": "118568624",
+      "buy_price": "401007057530000000000",
+      "valid": false
+    },
+    {
+      "sell_amount": "30061000",
+      "buy_amount": "35863755",
+      "sell_price": "33628018",
+      "buy_price": "28229009",
+      "valid": false
+    },
+    {
+      "sell_amount": "30061000",
+      "buy_amount": "35863755",
+      "sell_price": "33628018",
+      "buy_price": "28229009",
+      "valid": false
+    },
+    {
+      "sell_amount": "30061000",
+      "buy_amount": "35863755",
+      "sell_price": "33628018",
+      "buy_price": "28229009",
+      "valid": false
+    },
+    {
+      "sell_amount": "30061000",
+      "buy_amount": "35863755",
+      "sell_price": "33628018",
+      "buy_price": "28229009",
+      "valid": false
+    },
+    {
+      "sell_amount": "30061000",
+      "buy_amount": "35863755",
+      "sell_price": "33628016",
+      "buy_price": "28229009",
+      "valid": false
+    },
+    {
+      "sell_amount": "52349164855790846042275",
+      "buy_amount": "1515468178989742",
+      "sell_price": "1515346064734214",
+      "buy_price": "52349164855790846042275",
+      "valid": false
+    },
+    {
+      "sell_amount": "52349164855790846042275",
+      "buy_amount": "1515468178989742",
+      "sell_price": "1515352443064955",
+      "buy_price": "52349164855790846042275",
+      "valid": false
+    },
+    {
+      "sell_amount": "52349164855790846042275",
+      "buy_amount": "1515468178989742",
+      "sell_price": "1515682238092248",
+      "buy_price": "52349164855790846042275",
+      "valid": true
+    },
+    {
+      "sell_amount": "4656769179235649",
+      "buy_amount": "17344612054517090351",
+      "sell_price": "17553609313806809143",
+      "buy_price": "4656769179235649",
+      "valid": true
+    },
+    {
+      "sell_amount": "1561282808879102",
+      "buy_amount": "1485747606224238018560",
+      "sell_price": "1535344705561115450608",
+      "buy_price": "1561282808879102",
+      "valid": true
+    },
+    {
+      "sell_amount": "1552643942365912",
+      "buy_amount": "2063961564",
+      "sell_price": "2064053370",
+      "buy_price": "1552643942365912",
+      "valid": true
+    },
+    {
+      "sell_amount": "30000000000000000000000",
+      "buy_amount": "741264709610607",
+      "sell_price": "778289830828592",
+      "buy_price": "30000000000000000000000",
+      "valid": true
+    },
+    {
+      "sell_amount": "1451618463918527610834",
+      "buy_amount": "1435759726676203",
+      "sell_price": "1436334076481483",
+      "buy_price": "1451618463918527610834",
+      "valid": true
+    },
+    {
+      "sell_amount": "1561268122416757",
+      "buy_amount": "1064861860",
+      "sell_price": "1065935870",
+      "buy_price": "1561268122416757",
+      "valid": true
+    }
+  ]
+}
