@@ -1,7 +1,15 @@
 //! One `Competition` per solver engine, mounted on the API under `/{name}`.
 
 use {
-    super::{Auction, Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
+    super::{
+        Auction,
+        Order,
+        Side,
+        auction::Id,
+        buy_token_accounts::BuyTokenAccountCache,
+        order_uid::OrderUid,
+        solution::Solution,
+    },
     crate::infra::{blockchain::Solana, solver::Solver},
     cow_settlement_interface::SettlementError,
     itertools::Itertools,
@@ -51,14 +59,22 @@ struct CachedSolution {
 pub(crate) struct Competition {
     solver: Solver,
     blockchain: Arc<Solana>,
+    /// Shared with the driver's other solver engines, which solve the same
+    /// auction.
+    buy_token_accounts: BuyTokenAccountCache,
     solutions: Cache<Key, CachedSolution>,
 }
 
 impl Competition {
-    pub fn new(solver: Solver, blockchain: Arc<Solana>) -> Self {
+    pub fn new(
+        solver: Solver,
+        blockchain: Arc<Solana>,
+        buy_token_accounts: BuyTokenAccountCache,
+    ) -> Self {
         Self {
             solver,
             blockchain,
+            buy_token_accounts,
             solutions: Cache::builder().time_to_live(SOLUTION_CACHE_TTL).build(),
         }
     }
@@ -73,16 +89,19 @@ impl Competition {
         auction_id: Id,
         mut auction: Auction,
     ) -> Result<Vec<Solution>, Error> {
-        let missing_buy_token_accounts = auction
-            .resolve_buy_token_accounts(&self.blockchain)
+        let buy_token_accounts = auction
+            .resolve_buy_token_accounts(auction_id, &self.blockchain, &self.buy_token_accounts)
             .await
-            .map_err(Error::Rpc)?;
+            .map_err(Error::BuyTokenAccounts)?;
+        auction
+            .orders
+            .retain(|order| !buy_token_accounts.unreceivable.contains(&order.uid));
         if auction.orders.is_empty() {
             tracing::info!("no receivable order left; skipping solving");
             return Ok(Vec::new());
         }
         let solutions = self
-            .compute_solutions(&auction, &missing_buy_token_accounts)
+            .compute_solutions(&auction, &buy_token_accounts.missing)
             .await?;
 
         let auction = Arc::new(auction);
@@ -541,6 +560,11 @@ pub(crate) enum Error {
     /// A pre-submission RPC read failed; nothing was submitted.
     #[error("rpc request failed: {0}")]
     Rpc(#[source] cow_solana_rpc::Error),
+    /// The buy token account lookup failed; nothing was solved. The error is
+    /// shared because the cache hands the same failure to every engine
+    /// waiting on the lookup.
+    #[error("buy token account lookup failed: {0}")]
+    BuyTokenAccounts(#[source] Arc<cow_solana_rpc::Error>),
     #[error("failed to submit or confirm settlement: {err}, settlement error {settlement_error:?}")]
     FailedToSubmit {
         #[source]
@@ -650,6 +674,7 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
         Error::DeadlineExceeded => "deadline_exceeded",
         Error::TooManyPendingSettlements => "throttled",
         Error::Rpc(_) => "rpc_failed",
+        Error::BuyTokenAccounts(_) => "rpc_failed",
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",

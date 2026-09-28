@@ -1,11 +1,15 @@
 //! Domain model of an auction the driver asks solver engines to fill.
 
 use {
-    super::{order_uid::OrderUid, slot::Slot},
+    super::{
+        buy_token_accounts::{BuyTokenAccountCache, BuyTokenAccounts},
+        order_uid::OrderUid,
+        slot::Slot,
+    },
     crate::infra::blockchain::{Solana, TokenAccountState, associated_token_address},
     serde::Serialize,
     solana_sdk::pubkey::Pubkey,
-    std::{collections::HashSet, fmt},
+    std::{fmt, sync::Arc},
 };
 
 /// The autopilot-assigned identifier of an auction.
@@ -64,23 +68,34 @@ pub struct Auction {
 }
 
 impl Auction {
-    /// Drop each order whose buy token account can neither receive the
-    /// payout nor be created by the settlement, and return the orders whose
-    /// account the settlement will create so the engine can price in their
-    /// rent.
-    pub async fn resolve_buy_token_accounts(
-        &mut self,
+    /// Every order's buy token account classified against the chain, resolved
+    /// once per auction: engines solving the same auction read the first
+    /// one's lookup from `cache`.
+    pub(super) async fn resolve_buy_token_accounts(
+        &self,
+        auction_id: Id,
         blockchain: &Solana,
-    ) -> Result<HashSet<OrderUid>, cow_solana_rpc::Error> {
+        cache: &BuyTokenAccountCache,
+    ) -> Result<Arc<BuyTokenAccounts>, Arc<cow_solana_rpc::Error>> {
+        cache
+            .resolve(auction_id, self.classify_buy_token_accounts(blockchain))
+            .await
+    }
+
+    /// Classify every order's buy token account, the settlement's payout
+    /// destination, against the chain.
+    async fn classify_buy_token_accounts(
+        &self,
+        blockchain: &Solana,
+    ) -> Result<BuyTokenAccounts, cow_solana_rpc::Error> {
         let accounts = self.orders.iter().map(|order| order.buy_token_account);
         let snapshot = blockchain.accounts_snapshot(accounts).await?;
-        let mut missing = HashSet::new();
-        self.orders.retain(|order| {
+        let mut resolved = BuyTokenAccounts::default();
+        for order in &self.orders {
             match snapshot.token_account_state(&order.buy_token_account) {
-                TokenAccountState::Initialized => true,
+                TokenAccountState::Initialized => (),
                 TokenAccountState::NeedsCreation if order.buy_token_account_is_ata() => {
-                    missing.insert(order.uid);
-                    true
+                    resolved.missing.insert(order.uid);
                 }
                 state => {
                     tracing::warn!(
@@ -89,11 +104,11 @@ impl Auction {
                         ?state,
                         "dropping order, its buy token account cannot receive the payout"
                     );
-                    false
+                    resolved.unreceivable.insert(order.uid);
                 }
             }
-        });
-        Ok(missing)
+        }
+        Ok(resolved)
     }
 }
 
@@ -140,6 +155,7 @@ mod tests {
         cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
         serde_json::{Value, json},
         solana_testlib::{multiple_accounts_json, token_account_json},
+        std::collections::HashSet,
     };
 
     fn pubkey(byte: u8) -> Pubkey {
@@ -173,16 +189,22 @@ mod tests {
         }
     }
 
+    fn uids(set: &HashSet<OrderUid>) -> Vec<u8> {
+        let mut uids: Vec<u8> = set.iter().map(|uid| uid.0[0]).collect();
+        uids.sort_unstable();
+        uids
+    }
+
     fn blockchain(mocks: Mocks) -> Solana {
         Solana::new(SolanaRPC::new_mock_with_mocks(mocks), pubkey(0xaa))
     }
 
     /// The lookup answers in order: an initialized token account, absent at
     /// the owner's associated token address, absent elsewhere, and an account
-    /// of another program. Only the absent associated token account is
-    /// flagged; the last two can never receive the payout and are dropped.
+    /// of another program. Only the absent associated token account is the
+    /// settlement's to create; the last two can never receive the payout.
     #[tokio::test]
-    async fn flags_a_creatable_account_and_drops_the_unreceivable_ones() {
+    async fn resolves_each_buy_token_account() {
         let ata = associated_token_address(&pubkey(0x22), &pubkey(0x44));
         let foreign = json!({
             "lamports": 1u64,
@@ -202,20 +224,23 @@ mod tests {
             ]),
         )]);
 
-        let mut auction = auction(vec![
+        let auction = auction(vec![
             order(1, pubkey(0x66)),
             order(2, ata),
             order(3, pubkey(0x67)),
             order(4, pubkey(0x68)),
         ]);
-        let missing = auction
-            .resolve_buy_token_accounts(&blockchain(mocks))
+        let resolved = auction
+            .resolve_buy_token_accounts(
+                Id::new(1).unwrap(),
+                &blockchain(mocks),
+                &BuyTokenAccountCache::default(),
+            )
             .await
             .unwrap();
 
-        let kept: Vec<u8> = auction.orders.iter().map(|order| order.uid.0[0]).collect();
-        assert_eq!(kept, [1, 2]);
-        assert_eq!(missing, HashSet::from([OrderUid([2; 32])]));
+        assert_eq!(uids(&resolved.missing), [2]);
+        assert_eq!(uids(&resolved.unreceivable), [3, 4]);
     }
 
     #[tokio::test]
@@ -224,10 +249,14 @@ mod tests {
             RpcRequest::GetMultipleAccounts,
             json!("not an account list"),
         )]);
-        let mut auction = auction(vec![order(1, pubkey(0x66))]);
+        let auction = auction(vec![order(1, pubkey(0x66))]);
 
         auction
-            .resolve_buy_token_accounts(&blockchain(mocks))
+            .resolve_buy_token_accounts(
+                Id::new(1).unwrap(),
+                &blockchain(mocks),
+                &BuyTokenAccountCache::default(),
+            )
             .await
             .expect_err("a failed lookup fails the resolution");
     }
