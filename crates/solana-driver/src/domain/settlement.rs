@@ -324,6 +324,17 @@ fn accounts_to_create(
     missing_atas.sort_unstable();
     missing_atas.dedup();
 
+    // The one place the payer's rent buys someone else an account, which its
+    // owner can close and reclaim the rent lamports right after the fill.
+    for ata in missing_atas.iter().filter(|ata| ata.owner != payer) {
+        tracing::info!(
+            %payer,
+            owner = %ata.owner,
+            mint = %ata.mint,
+            "creating a user's buy token account"
+        );
+    }
+
     Ok((missing_buffers, missing_atas))
 }
 
