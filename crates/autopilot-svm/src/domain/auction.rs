@@ -3,7 +3,7 @@
 
 use {
     crate::run_loop::AuctionInfo,
-    chain_types::solana::{AppData, IntentHash, Pubkey},
+    chain_types::solana::{AppData, IntentHash, NATIVE_SOL, Pubkey},
     std::collections::HashMap,
 };
 
@@ -24,7 +24,8 @@ pub struct Order {
     pub sell_token_account: Pubkey,
     /// Where the buy tokens are paid out. Any SPL token account: it names its
     /// own owner and mint, so it doubles as the receiver and there is no
-    /// separate receiver field like on EVM.
+    /// separate receiver field like on EVM. For a native SOL buy it is the
+    /// wallet receiving the lamports.
     pub buy_token_account: Pubkey,
     pub sell_amount: u64,
     pub buy_amount: u64,
@@ -37,6 +38,13 @@ pub struct Order {
     /// order creates its own accounts (the order PDA, the buy token account)
     /// only at settlement time through its presigned transaction.
     pub created_on_chain: bool,
+}
+
+impl Order {
+    /// Whether the order buys native SOL instead of an SPL token.
+    pub fn buys_native_sol(&self) -> bool {
+        self.buy_token == NATIVE_SOL
+    }
 }
 
 /// The cut auction the loop fans out to solvers.
