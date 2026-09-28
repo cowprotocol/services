@@ -1011,8 +1011,9 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
 }
 
 /// Backfill end to end: the watermark trails the tip past the replay window,
-/// RPC history supplies the missing transaction, and the watermark lands on
-/// the scanned tip with the recovered order persisted.
+/// RPC history supplies the missing transaction, and the watermark lands
+/// the signature index allowance below the scanned tip with the recovered
+/// order persisted.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
 async fn solana_db_backfill_recovers_the_gap() {
@@ -1025,7 +1026,7 @@ async fn solana_db_backfill_recovers_the_gap() {
     let (instruction, expected) = create_order_parts();
     let tx = versioned_tx(instruction);
     let mut mocks = Mocks::default();
-    mocks.insert(RpcRequest::GetSlot, serde_json::json!(50u64));
+    mocks.insert(RpcRequest::GetSlot, serde_json::json!(100u64));
     mocks.insert(
         RpcRequest::GetSignaturesForAddress,
         serde_json::json!([{
@@ -1052,7 +1053,7 @@ async fn solana_db_backfill_recovers_the_gap() {
 
     assert_eq!(
         persistence.last_indexed_slot().await.unwrap(),
-        Some(Slot(50))
+        Some(Slot(100 - super::backfill::SIGNATURE_INDEX_LAG))
     );
     let (uid, created_by_tx, created_in_slot): (Vec<u8>, Vec<u8>, i64) = sqlx::query_as(
         "SELECT o.uid, p.created_by_tx, p.created_in_slot
