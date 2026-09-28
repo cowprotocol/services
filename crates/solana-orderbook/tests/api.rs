@@ -1019,13 +1019,18 @@ async fn solana_db_cancel_order_marks_a_pending_order() {
         (status, body),
         (reqwest::StatusCode::OK, serde_json::json!("Cancelled"))
     );
-    let order: serde_json::Value = reqwest::get(format!("http://{addr}/api/v1/orders/{uid}"))
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_eq!(order["status"], "cancelled");
+    assert_eq!(get_order(addr, &uid).await["status"], "cancelled");
+    let listed: Vec<serde_json::Value> = reqwest::get(format!(
+        "http://{addr}/api/v1/account/{}/orders",
+        owner.pubkey()
+    ))
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["status"], "cancelled");
     let progress: serde_json::Value =
         reqwest::get(format!("http://{addr}/api/v1/orders/{uid}/status"))
             .await
@@ -1058,13 +1063,7 @@ async fn solana_db_cancel_order_marks_a_pending_order() {
         (status, body["errorType"].as_str()),
         (reqwest::StatusCode::BAD_REQUEST, Some("OnChainOrder"))
     );
-    let order: serde_json::Value = reqwest::get(format!("http://{addr}/api/v1/orders/{uid}"))
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_eq!(order["status"], "open");
+    assert_eq!(get_order(addr, &uid).await["status"], "open");
 }
 
 async fn delete_order(

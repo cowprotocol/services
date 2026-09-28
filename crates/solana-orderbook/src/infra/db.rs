@@ -453,53 +453,6 @@ VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
         .unwrap();
     }
 
-    /// An off-chain cancellation stamps a pending order once and shows in its
-    /// row until a PDA lands, and an order with a PDA is left to the chain.
-    #[tokio::test]
-    #[ignore = "needs the solana.* schema applied to the local database"]
-    async fn solana_db_cancel_order_stamps_a_pending_order_once() {
-        let pool = PgPool::connect("postgresql://").await.unwrap();
-        let uid = [0x11; 32];
-        seed(&pool, uid, false).await;
-        sqlx::query("TRUNCATE solana.order_events")
-            .execute(&pool)
-            .await
-            .unwrap();
-        // The seed lands a PDA row: this order is on chain.
-        assert_eq!(
-            cancel_order(&pool, uid).await.unwrap(),
-            Cancellation::OnChain
-        );
-
-        sqlx::query("DELETE FROM solana.order_pda")
-            .execute(&pool)
-            .await
-            .unwrap();
-        assert_eq!(
-            cancel_order(&pool, uid).await.unwrap(),
-            Cancellation::Cancelled
-        );
-        assert_eq!(
-            cancel_order(&pool, uid).await.unwrap(),
-            Cancellation::AlreadyCancelled
-        );
-        let row = find_order_by_uid(&pool, uid).await.unwrap().unwrap();
-        assert!(row.cancellation_timestamp.is_some());
-        assert!(matches!(
-            find_latest_order_event(&pool, uid).await.unwrap(),
-            Some(OrderEventLabel::Cancelled)
-        ));
-
-        // A creation landing afterwards makes the PDA's state the truth.
-        sqlx::query("INSERT INTO solana.order_pda (order_uid, created_by) VALUES ($1, $1)")
-            .bind(ByteArray(uid))
-            .execute(&pool)
-            .await
-            .unwrap();
-        let row = find_order_by_uid(&pool, uid).await.unwrap().unwrap();
-        assert!(row.cancellation_timestamp.is_none());
-    }
-
     /// Pagination walks one owner's orders newest first, other owners are
     /// excluded, and the fill state joins in.
     #[tokio::test]
