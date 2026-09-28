@@ -313,7 +313,7 @@ async fn solve_order(
                 "executed": "0",
                 "preInteractions": [],
                 "postInteractions": [],
-                "class": "market",
+                "class": "limit",
                 "appData": format!("0x{}", const_hex::encode([0u8; 32])),
                 "signingScheme": "eip712",
                 "signature": format!("0x{}", const_hex::encode(&sig_bytes)),

@@ -120,7 +120,6 @@ pub struct Order {
     pub partial: Partial,
     pub created: u32,
     pub valid_to: u32,
-    pub kind: order::Kind,
 
     // Currently used for limit orders to represent the surplus_fee calculated by the solver.
     pub solver_fee: Option<eth::U256>,
@@ -191,11 +190,6 @@ impl Order {
         }
     }
 
-    /// Set the order kind.
-    pub fn kind(self, kind: order::Kind) -> Self {
-        Self { kind, ..self }
-    }
-
     /// Set the order side.
     pub fn side(self, side: order::Side) -> Self {
         Self { side, ..self }
@@ -204,14 +198,6 @@ impl Order {
     /// Set the solver fee.
     pub fn solver_fee(self, solver_fee: Option<eth::U256>) -> Self {
         Self { solver_fee, ..self }
-    }
-
-    /// Make this a limit order.
-    pub fn limit(self) -> Self {
-        Self {
-            kind: order::Kind::Limit,
-            ..self
-        }
     }
 
     /// Mark that this order should be filtered out before being sent to the
@@ -295,10 +281,7 @@ impl Order {
     }
 
     fn surplus_fee(&self) -> eth::U256 {
-        match self.kind {
-            order::Kind::Limit => self.solver_fee.unwrap_or_default(),
-            _ => eth::U256::ZERO,
-        }
+        self.solver_fee.unwrap_or_default()
     }
 
     pub fn receiver(self, receiver: Option<eth::Address>) -> Self {
@@ -318,7 +301,6 @@ impl Default for Order {
             partial: Default::default(),
             created: u32::MIN,
             valid_to: u32::MAX,
-            kind: order::Kind::Limit,
             solver_fee: Default::default(),
             name: Default::default(),
             surplus_factor: DEFAULT_SURPLUS_FACTOR.ether().into_wei(),
@@ -359,8 +341,8 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
-    /// Haircut in basis points (0-10000) for conservative bidding.
-    haircut_bps: u32,
+    /// Solver fee in basis points (0-10000) for conservative bidding.
+    solver_fee_bps: u32,
     /// Maximum number of solutions the driver proposes per auction.
     max_solutions_to_propose: usize,
     /// Additional submission accounts for EIP-7702 parallel settlement.
@@ -393,7 +375,7 @@ pub fn test_solver() -> Solver {
         },
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
-        haircut_bps: 0,
+        solver_fee_bps: 0,
         max_solutions_to_propose: 1,
         submission_accounts: vec![],
         fast_path_enabled: false,
@@ -436,9 +418,9 @@ impl Solver {
         self
     }
 
-    pub fn haircut_bps(self, haircut_bps: u32) -> Self {
+    pub fn solver_fee_bps(self, solver_fee_bps: u32) -> Self {
         Self {
-            haircut_bps,
+            solver_fee_bps,
             ..self
         }
     }
@@ -1025,7 +1007,7 @@ impl Setup {
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
-                haircut_bps: solver.haircut_bps,
+                solver_fee_bps: solver.solver_fee_bps,
             })
             .await;
 

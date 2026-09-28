@@ -1,22 +1,19 @@
-//! Competition bookkeeping. Auction progress is written to
-//! `solana.order_events`, everything else is logged only: there are no
-//! competition tables (auction snapshots, proposed executions) to write.
-//!
-//! TODO: persist the competition outcome once the tables exist. The
-//! settlement attribution (`solana.settlements.solution_uid`) depends on
-//! the persisted ranking.
+//! Competition bookkeeping: auction progress in `solana.order_events`, the
+//! ranked outcome in the competition tables.
 
 use {
     crate::{
         domain::{auction::Auction, cycle::Ranking},
-        infra::{observation::SettlementWindows, order_events},
+        infra::{db, observation::SettlementWindows, order_events},
         run_loop::SettlementObserver,
     },
     async_trait::async_trait,
+    bigdecimal::BigDecimal,
     chain_types::solana::IntentHash,
-    database::solana::OrderEventLabel,
+    database::{byte_array::ByteArray, solana::OrderEventLabel},
     sqlx::PgPool,
     std::{collections::HashSet, sync::Mutex},
+    winner_selection::state::RankedItem,
 };
 
 /// Writes order events, logs the competition phases, and drives the
@@ -41,12 +38,7 @@ impl CompetitionObserver {
     /// Store the events without blocking the cycle: a lost event degrades the
     /// status endpoint, never the competition.
     fn store_events(&self, uids: Vec<IntentHash>, label: OrderEventLabel) {
-        let pool = self.pool.clone();
-        tokio::spawn(async move {
-            if let Err(err) = order_events::store(&pool, uids, label).await {
-                tracing::error!(?err, ?label, "failed to store order events");
-            }
-        });
+        order_events::store_detached(self.pool.clone(), uids, label);
     }
 }
 
@@ -82,7 +74,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
 
     async fn persist_competition_ranking(
         &self,
-        _auction: &Auction,
+        auction: &Auction,
         tip: &u64,
         ranking: &Ranking,
         deadline: u64,
@@ -92,13 +84,61 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
         if let Err(err) = self.windows.expire_past_deadline(*tip).await {
             tracing::error!(?err, "failed to flag expired settlement windows");
         }
+        let solutions = ranking
+            .enumerated()
+            .map(|(uid, solution)| db::ProposedSolution {
+                uid,
+                id: i64::try_from(solution.id()).unwrap_or(i64::MAX),
+                solver: ByteArray(solution.solver().0),
+                is_winner: solution.is_winner(),
+                filtered_out: solution.is_filtered_out(),
+                score: BigDecimal::from(solution.score()),
+                trades: solution
+                    .orders()
+                    .iter()
+                    .map(|order| db::ProposedTrade {
+                        order_uid: ByteArray(order.uid.0),
+                        executed_sell: BigDecimal::from(order.executed_sell),
+                        executed_buy: BigDecimal::from(order.executed_buy),
+                    })
+                    .collect(),
+            })
+            .collect();
+        let (price_tokens, price_values) = auction
+            .native_prices
+            .iter()
+            .map(|(token, price)| (token.0.to_vec(), BigDecimal::from(*price)))
+            .unzip();
+        let competition = db::Competition {
+            auction_id: auction.id,
+            tip_slot: i64::try_from(*tip).unwrap_or(i64::MAX),
+            deadline_slot: i64::try_from(deadline).unwrap_or(i64::MAX),
+            order_uids: auction
+                .orders
+                .iter()
+                .map(|order| order.uid.0.to_vec())
+                .collect(),
+            price_tokens,
+            price_values,
+            solutions,
+            reference_scores: ranking
+                .reference_scores
+                .iter()
+                .map(|(solver, score)| db::ReferenceScore {
+                    solver: ByteArray(solver.0),
+                    score: BigDecimal::from(*score),
+                })
+                .collect(),
+        };
+        db::persist_competition(&self.pool, &competition).await?;
         tracing::info!(
+            auction_id = auction.id,
             tip,
             deadline,
             winners = ranking.inner.winners().count(),
             ranked = ranking.inner.ranked.len(),
             filtered_out = ranking.inner.filtered_out.len(),
-            "competition ranked"
+            "competition persisted"
         );
         Ok(())
     }

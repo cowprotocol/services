@@ -71,18 +71,12 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
         "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
         "sellAmount": quote.sell_amount().to_string(),
         "buyAmount": quote.buy_amount().to_string(),
-        "protocolFees": match quote.order.kind {
-            order::Kind::Market => json!([]),
-            order::Kind::Limit => {
-                let fee_policies_json: Vec<serde_json::Value> = quote
-                    .order
-                    .fee_policy
-                    .iter()
-                    .map(|policy| policy.to_json_value())
-                    .collect();
-                json!(fee_policies_json)
-            }
-        },
+        "protocolFees": quote
+            .order
+            .fee_policy
+            .iter()
+            .map(|policy| policy.to_json_value())
+            .collect::<Vec<_>>(),
         "created": quote.order.created,
         "validTo": quote.order.valid_to,
         "kind": match quote.order.side {
@@ -97,10 +91,7 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
         },
         "preInteractions": [],
         "postInteractions": [],
-        "class": match quote.order.kind {
-            order::Kind::Market => "market",
-            order::Kind::Limit => "limit",
-        },
+        "class": "limit",
         "appData": app_data::AppDataHash(quote.order.app_data.hash().0 .0),
         "signingScheme": "eip712",
         "signature": const_hex::encode_prefixed(quote.order_signature(&test.blockchain)),
@@ -363,7 +354,7 @@ async fn create_config_file(
                http-time-buffer = "{}ms"
                fee-handler = {}
                merge-solutions = {}
-               haircut-bps = {}
+               solver-fee-bps = {}
                max-solutions-to-propose = {}
                fast-path-enabled = {}
                "#,
@@ -380,7 +371,7 @@ async fn create_config_file(
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),
             solver.merge_solutions,
-            solver.haircut_bps,
+            solver.solver_fee_bps,
             solver.max_solutions_to_propose,
             solver.fast_path_enabled,
         )

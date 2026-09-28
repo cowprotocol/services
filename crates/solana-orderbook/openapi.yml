@@ -283,7 +283,9 @@ components:
       description: |
         Lifecycle of the order. A full fill wins over cancellation because
         reclaiming a filled order's account stamps a cancellation timestamp
-        without undoing the fill.
+        without undoing the fill. `expired` covers the intent's `validTo`
+        passing and a pending sponsored creation whose transaction died: the
+        chain passed its `lastValidBlockHeight` before the creation landed.
       type: string
       enum: [open, fulfilled, cancelled, expired]
     Order:

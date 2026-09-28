@@ -176,6 +176,13 @@ pub struct Configuration {
     #[serde(default)]
     pub fast_path_submission_deadline: Option<u64>,
 
+    /// Whether fast-path orders get the CIP-87 penalty cap. Off at launch so
+    /// fast-path penalties stay decoupled from the regular auction's; enable
+    /// once solvers understand the feature. Has no effect unless `penalty_cap`
+    /// is also configured.
+    #[serde(default)]
+    pub fast_path_penalty_cap_enabled: bool,
+
     /// Configurations for price estimation (tenderly, rate limiting, CoinGecko,
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
@@ -250,6 +257,7 @@ impl Configuration {
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
             fast_path_submission_deadline: None,
+            fast_path_penalty_cap_enabled: false,
             price_estimation: TestDefault::test_default(),
             balance_cache: TestDefault::test_default(),
         }
@@ -284,6 +292,7 @@ impl Configuration {
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
             fast_path_submission_deadline: None,
+            fast_path_penalty_cap_enabled: false,
             price_estimation: TestDefault::test_default(),
             balance_cache: TestDefault::test_default(),
         }
@@ -335,6 +344,7 @@ mod tests {
         max-auction-age = "10m"
         native-price-timeout = "3s"
         fast-path-submission-deadline = 3
+        fast-path-penalty-cap-enabled = true
 
         [[drivers]]
         name = "solver1"
@@ -488,6 +498,7 @@ mod tests {
         assert_eq!(config.max_auction_age, Duration::from_secs(600));
         assert_eq!(config.native_price_timeout, Duration::from_secs(3));
         assert_eq!(config.fast_path_submission_deadline, Some(3));
+        assert!(config.fast_path_penalty_cap_enabled);
 
         assert_eq!(config.balance_cache.eviction_time, Duration::from_secs(10));
         assert_eq!(
@@ -558,6 +569,7 @@ mod tests {
         assert_eq!(config.max_auction_age, Duration::from_secs(300));
         assert_eq!(config.native_price_timeout, Duration::ZERO);
         assert_eq!(config.fast_path_submission_deadline, None);
+        assert!(!config.fast_path_penalty_cap_enabled);
     }
 
     #[test]

@@ -9,8 +9,13 @@ use {
     },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     sqlx::PgPool,
-    std::{io, net::SocketAddr, sync::Arc},
-    tokio::net::TcpListener,
+    std::{
+        io,
+        net::SocketAddr,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
+    tokio::{net::TcpListener, sync::Mutex},
     tokio_util::sync::CancellationToken,
     tower::ServiceBuilder,
     tower_http::{
@@ -23,6 +28,11 @@ use {
 pub mod error;
 pub mod extract;
 pub mod routes;
+
+/// How long a block height read serves later requests. Polling clients then
+/// share one RPC read, and a creation deadline is checked no coarser than
+/// the height itself moves.
+const BLOCK_HEIGHT_TTL: Duration = Duration::from_secs(2);
 
 /// The Solana orderbook HTTP API server.
 pub struct Api {
@@ -156,6 +166,7 @@ impl State {
             validation,
             quote_expiry,
             sponsoring,
+            block_height: Mutex::default(),
         }))
     }
 
@@ -184,6 +195,36 @@ impl State {
     pub fn sponsoring(&self) -> Option<&Sponsoring> {
         self.0.sponsoring.as_ref()
     }
+
+    /// The chain's block height, which decides whether a pending sponsored
+    /// creation can still land, read at most once per `BLOCK_HEIGHT_TTL`.
+    /// `None` without sponsoring, which stores no creation deadlines, or
+    /// when the read fails: the deadline check is skipped rather than the
+    /// request failed.
+    pub async fn block_height(&self) -> Option<i64> {
+        let sponsoring = self.sponsoring()?;
+        // Held across the read so concurrent requests share it.
+        let mut cached = self.0.block_height.lock().await;
+        if let Some((read_at, height)) = *cached
+            && read_at.elapsed() < BLOCK_HEIGHT_TTL
+        {
+            return Some(height);
+        }
+        match sponsoring.rpc.block_height().await {
+            Ok(height) => {
+                let height = i64::try_from(u64::from(height)).ok()?;
+                *cached = Some((Instant::now(), height));
+                Some(height)
+            }
+            Err(err) => {
+                tracing::warn!(
+                    ?err,
+                    "block height read failed, creation deadlines unchecked"
+                );
+                None
+            }
+        }
+    }
 }
 
 struct Inner {
@@ -197,4 +238,6 @@ struct Inner {
     quote_expiry: std::time::Duration,
     /// Sponsored placement dependencies, absent when the feature is off.
     sponsoring: Option<Sponsoring>,
+    /// The last block height read and when, see [`State::block_height`].
+    block_height: Mutex<Option<(Instant, i64)>>,
 }

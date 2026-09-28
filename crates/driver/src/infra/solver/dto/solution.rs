@@ -34,8 +34,6 @@ impl Solutions {
         solver: Solver,
         flashloan_hints: &HashMap<competition::order::Uid, domain::flashloan::Flashloan>,
     ) -> Result<Vec<competition::Solution>, super::Error> {
-        let haircut_bps = solver.haircut_bps();
-
         self.0
             .into_iter()
             .map(|solution| {
@@ -49,19 +47,6 @@ impl Solutions {
                                 let order =
                                     find_order(auction.orders(), &fulfillment.order)?.clone();
 
-                                // Calculate haircut fee for conservative bidding.
-                                // This reduces reported surplus without affecting executed amounts.
-                                let haircut_fee = if haircut_bps > 0 {
-                                    eth::U256::from(fulfillment.executed_amount)
-                                        .checked_mul(eth::U256::from(haircut_bps))
-                                        .and_then(|v| {
-                                            v.checked_div(eth::U256::from(super::MAX_BASE_POINT))
-                                        })
-                                        .unwrap_or_default()
-                                } else {
-                                    Default::default()
-                                };
-
                                 competition::solution::trade::Fulfillment::new(
                                     order,
                                     fulfillment.executed_amount.into(),
@@ -70,7 +55,6 @@ impl Solutions {
                                     competition::order::SellAmount(
                                         fulfillment.fee.unwrap_or_default(),
                                     ),
-                                    haircut_fee,
                                 )
                                     .map(competition::solution::Trade::Fulfillment)
                                     .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))

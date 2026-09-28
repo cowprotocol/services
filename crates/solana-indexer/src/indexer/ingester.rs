@@ -2,23 +2,21 @@
 //! pushes tagged updates into the channel, and advances the latest-chain-slot
 //! counter on every confirmed slot message. It performs no decoding.
 //!
-//! The stream it drains is an `AutoReconnect`-backed
+//! The stream it drains is a
 //! [`GeyserStream`](yellowstone_grpc_client::GeyserStream) from
-//! `yellowstone-grpc-client`: reconnects and backoff are handled inside that
-//! stream and never surface here, and a reconnect continues from the live
-//! head. The ingester's [`Ingester::run`] loop therefore has no backoff of its
-//! own; it returns when the stream ends (the wrapper gave up on an
-//! unrecoverable error) or when the decoder hangs up.
+//! `yellowstone-grpc-client` without the library's reconnect layer: the first
+//! stream error ends the drain loop, and the run loop resubscribes from the
+//! persisted watermark after an RPC backfill. The ingester's
+//! [`Ingester::run`] loop therefore has no backoff of its own; it returns when
+//! the stream ends or errors, or when the decoder hangs up.
 //!
-//! [`Ingester::serve`] is the production entrypoint — the "actual caller" —
-//! that builds the subscription request, resumes past the last indexed slot,
-//! opens the `GeyserStream`, and runs the drain loop. It expects the
-//! [`GeyserGrpcClient`] it receives to have been built with a reconnect config
-//! (via `set_reconnect_config`), otherwise the `AutoReconnect` wrapper won't
-//! actually reconnect, and with HTTP/2 keepalive (`http2_keep_alive_interval`
-//! / `keep_alive_while_idle`). The ingester does not answer server `Ping`
-//! frames itself, so the transport keepalive is what holds an otherwise idle
-//! connection open.
+//! [`Ingester::serve`] is the production entrypoint that builds the
+//! subscription request, resumes past the last indexed slot, opens the
+//! `GeyserStream`, and runs the drain loop. It expects the
+//! [`GeyserGrpcClient`] it receives to have been built with HTTP/2 keepalive
+//! (`http2_keep_alive_interval` / `keep_alive_while_idle`). The ingester does
+//! not answer server `Ping` frames itself, so the transport keepalive is what
+//! holds an otherwise idle connection open.
 
 use {
     crate::{
@@ -62,8 +60,7 @@ pub const INGEST_TO_DECODER_CAPACITY: usize = 1024;
 /// Ingester component.
 ///
 /// Generic over the update `Stream` so unit tests can drive it with a mock.
-/// Production wires this to an `AutoReconnect`-backed `GeyserStream` via
-/// [`Ingester::serve`].
+/// Production wires this to a `GeyserStream` via [`Ingester::serve`].
 ///
 /// `Ping`/`Pong` frames are ignored: the library passes them through, but they
 /// carry no data the ingester needs, and answering server pings is not part of
@@ -72,9 +69,8 @@ pub(crate) struct Ingester<S>
 where
     S: Stream<Item = Result<SubscribeUpdate, Status>> + Unpin + Send,
 {
-    /// The yellowstone update stream. Expected to be `AutoReconnect`-backed in
-    /// production, so reconnects happen inside the stream and never surface to
-    /// the drain loop.
+    /// The yellowstone update stream. Its first error ends the drain loop.
+    /// Resubscribing is the caller's job.
     pub stream: S,
 
     /// Sends `StreamUpdate` to the decoder. Should be bounded to
@@ -95,9 +91,9 @@ where
     /// Construct a new ingester over an already-open update stream. The caller
     /// supplies `latest_chain_slot` so it can share the same `Arc<AtomicU64>`
     /// with other components, and reuse it across restarts. The caller
-    /// also owns building the stream, the
-    /// subscription request, the resume slot, and the reconnect policy that
-    /// come with it. Production wiring lives in [`Ingester::serve`].
+    /// also owns building the stream, the subscription request, and the
+    /// resume slot that come with it. Production wiring lives in
+    /// [`Ingester::serve`].
     pub fn new(stream: S, tx: Sender<StreamUpdate>, latest_chain_slot: Arc<AtomicU64>) -> Self {
         Self {
             stream,
@@ -108,11 +104,9 @@ where
 
     /// Drain the update stream until it ends or the decoder hangs up.
     ///
-    /// Recoverable stream errors never reach this loop: the `AutoReconnect`
-    /// wrapper handles them internally. Returns `Ok(())` when the decoder
-    /// dropped its receiver (clean shutdown), or [`Err(Error)`] when the stream
-    /// ended terminally (the wrapper gave up on an unrecoverable error, or the
-    /// stream closed).
+    /// Returns `Ok(())` when the decoder dropped its receiver (clean
+    /// shutdown), or [`Err(Error)`] on the first stream error or when the
+    /// stream closes.
     pub async fn run(&mut self) -> Result<(), Error> {
         while let Some(update) = self.stream.next().await {
             match update {
@@ -259,23 +253,21 @@ pub(crate) enum Error {
     /// The yellowstone subscription could not be opened.
     #[error("failed to open the yellowstone subscription: {0}")]
     Subscribe(#[from] GeyserGrpcClientError),
-    /// The stream returned a terminal gRPC error — the `AutoReconnect` wrapper
-    /// gave up on an unrecoverable failure.
+    /// The stream returned a gRPC error.
     #[error("yellowstone stream error: {0}")]
     Stream(#[from] Status),
-    /// The stream ended without an error — the `AutoReconnect` wrapper stopped.
+    /// The stream ended without an error.
     #[error("yellowstone stream ended")]
     StreamEnded,
 }
 
 impl Ingester<GeyserStream> {
     /// Production entrypoint: build the subscription request, resume past
-    /// the persisted last indexed slot, open an `AutoReconnect`-backed
-    /// `GeyserStream`, and run the drain loop.
+    /// the persisted last indexed slot, open a `GeyserStream`, and run the
+    /// drain loop.
     ///
     /// The initial `from_slot` is `last_indexed_slot + 1`, or `None` on a cold
-    /// start (the provider subscribes from the live tip). Reconnects inside
-    /// the stream start from the live head, not from this slot.
+    /// start (the provider subscribes from the live tip).
     ///
     /// Returns `Ok(())` on a clean shutdown (the decoder dropped its receiver),
     /// or `Err(Error)` if setup failed or the stream ended terminally. The
@@ -334,10 +326,6 @@ pub(crate) enum Resume {
 /// slot-status filter, multiplexed into a single subscription at
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
 /// [`Ingester::serve`] (`last_indexed_slot + 1`, or `None` for the live tip).
-///
-/// The library auto-adds a `BlockMeta` + `slot` filter under its
-/// `__autoreconnect` key. Those messages are consumed inside the wrapper and
-/// never reach the ingester.
 fn subscribe_request(
     settlement_program: Pubkey,
     solflow_program: Option<Pubkey>,
