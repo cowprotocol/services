@@ -46,14 +46,15 @@ impl DbAuctionProvider {
     /// that does not exist yet stays in when it is the owner's associated
     /// token account, the settlement creates it. A native SOL buy pays a
     /// wallet instead, which must be missing or owned by the System Program.
-    /// Only orders already created on chain are checked, a pending sponsored
-    /// order creates its own accounts at settlement time. When the account
-    /// lookup fails every order passes, a doomed order then costs one failed
+    /// A pending sponsored token buy skips the check, its creation
+    /// transaction creates the buy token account. When the account lookup
+    /// fails every order passes, a doomed order then costs one failed
     /// settlement instead of the whole cut.
     async fn receivable_orders(&self, orders: Vec<Order>) -> Vec<Order> {
+        let checked = |order: &Order| order.created_on_chain || order.buys_native_sol();
         let candidates = orders
             .iter()
-            .filter(|order| order.created_on_chain)
+            .filter(|order| checked(order))
             .map(|order| Pubkey::new_from_array(order.buy_token_account.0));
         let accounts = match self.rpc.multiple_accounts(candidates).await {
             Ok(accounts) => accounts,
@@ -65,7 +66,7 @@ impl DbAuctionProvider {
         orders
             .into_iter()
             .filter(|order| {
-                if !order.created_on_chain {
+                if !checked(order) {
                     return true;
                 }
                 let account = Pubkey::new_from_array(order.buy_token_account.0);
@@ -391,7 +392,8 @@ mod tests {
     }
 
     /// A native SOL buy pays its wallet directly: a missing or system-owned
-    /// wallet receives it, an account of another program does not.
+    /// wallet receives it, an account of another program does not. A pending
+    /// sponsored native buy gets the same check.
     #[tokio::test]
     async fn native_buys_pay_system_wallets() {
         let system_wallet = serde_json::json!({
@@ -404,14 +406,24 @@ mod tests {
         });
         let response = serde_json::json!({
             "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-            "value": [null, system_wallet, crate::tests::token_account_json([0x44; 32])],
+            "value": [
+                null,
+                system_wallet,
+                crate::tests::token_account_json([0x44; 32]),
+                crate::tests::token_account_json([0x44; 32]),
+            ],
         });
         let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
-        let native = |wallet| Order {
+        let native = |wallet, created_on_chain| Order {
             buy_token: NATIVE_SOL,
-            ..order(wallet, true)
+            ..order(wallet, created_on_chain)
         };
-        let orders = vec![native([0x01; 32]), native([0x02; 32]), native([0x03; 32])];
+        let orders = vec![
+            native([0x01; 32], true),
+            native([0x02; 32], true),
+            native([0x03; 32], true),
+            native([0x04; 32], false),
+        ];
         let kept: Vec<[u8; 32]> = provider
             .receivable_orders(orders)
             .await
