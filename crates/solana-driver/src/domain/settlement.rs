@@ -636,7 +636,6 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey::default(), // re-derived below
             app_data: [0x77; 32],
-            missing_buy_token_account: false,
         };
         customize(&mut order);
         let uid = OrderIntent::from(&order).uid();

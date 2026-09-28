@@ -13,7 +13,7 @@ use {
         transaction::{TransactionError, VersionedTransaction},
     },
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -73,7 +73,7 @@ impl Competition {
         auction_id: Id,
         mut auction: Auction,
     ) -> Result<Vec<Solution>, Error> {
-        auction
+        let missing_buy_token_accounts = auction
             .resolve_buy_token_accounts(&self.blockchain)
             .await
             .map_err(Error::Rpc)?;
@@ -81,7 +81,9 @@ impl Competition {
             tracing::info!("no receivable order left; skipping solving");
             return Ok(Vec::new());
         }
-        let solutions = self.compute_solutions(&auction).await?;
+        let solutions = self
+            .compute_solutions(&auction, &missing_buy_token_accounts)
+            .await?;
 
         let auction = Arc::new(auction);
         for solution in &solutions {
@@ -102,10 +104,21 @@ impl Competition {
 
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them.
-    pub async fn compute_solutions(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
+    ///
+    /// `missing_buy_token_accounts` marks the orders whose payout account the
+    /// settlement creates, so the engine can price its rent in.
+    pub async fn compute_solutions(
+        &self,
+        auction: &Auction,
+        missing_buy_token_accounts: &HashSet<OrderUid>,
+    ) -> Result<Vec<Solution>, Error> {
         let solutions = self
             .solver
-            .solve(auction, self.blockchain.program_id())
+            .solve(
+                auction,
+                self.blockchain.program_id(),
+                missing_buy_token_accounts,
+            )
             .await?;
 
         // Discard solutions with duplicate ids. The first occurrence wins, and

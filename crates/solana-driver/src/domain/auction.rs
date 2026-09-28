@@ -5,7 +5,7 @@ use {
     crate::infra::blockchain::{Solana, TokenAccountState, associated_token_address},
     serde::Serialize,
     solana_sdk::pubkey::Pubkey,
-    std::fmt,
+    std::{collections::HashSet, fmt},
 };
 
 /// The autopilot-assigned identifier of an auction.
@@ -65,19 +65,21 @@ pub struct Auction {
 
 impl Auction {
     /// Drop each order whose buy token account can neither receive the
-    /// payout nor be created by the settlement, and flag the ones the
-    /// settlement will create so the engine can price in their rent.
+    /// payout nor be created by the settlement, and return the orders whose
+    /// account the settlement will create so the engine can price in their
+    /// rent.
     pub async fn resolve_buy_token_accounts(
         &mut self,
         blockchain: &Solana,
-    ) -> Result<(), cow_solana_rpc::Error> {
+    ) -> Result<HashSet<OrderUid>, cow_solana_rpc::Error> {
         let accounts = self.orders.iter().map(|order| order.buy_token_account);
         let snapshot = blockchain.accounts_snapshot(accounts).await?;
-        self.orders.retain_mut(|order| {
+        let mut missing = HashSet::new();
+        self.orders.retain(|order| {
             match snapshot.token_account_state(&order.buy_token_account) {
                 TokenAccountState::Initialized => true,
                 TokenAccountState::NeedsCreation if order.buy_token_account_is_ata() => {
-                    order.missing_buy_token_account = true;
+                    missing.insert(order.uid);
                     true
                 }
                 state => {
@@ -91,7 +93,7 @@ impl Auction {
                 }
             }
         });
-        Ok(())
+        Ok(missing)
     }
 }
 
@@ -112,10 +114,6 @@ pub struct Order {
     pub partially_fillable: bool,
     pub order_pda: Pubkey,
     pub app_data: [u8; 32],
-    /// Whether `buy_token_account` was missing on chain at solve time and
-    /// the settlement will create it, see
-    /// [`Auction::resolve_buy_token_accounts`].
-    pub missing_buy_token_account: bool,
 }
 
 impl Order {
@@ -163,7 +161,6 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x77),
             app_data: [0; 32],
-            missing_buy_token_account: false,
         }
     }
 
@@ -211,17 +208,14 @@ mod tests {
             order(3, pubkey(0x67)),
             order(4, pubkey(0x68)),
         ]);
-        auction
+        let missing = auction
             .resolve_buy_token_accounts(&blockchain(mocks))
             .await
             .unwrap();
 
-        let flagged: Vec<(u8, bool)> = auction
-            .orders
-            .iter()
-            .map(|order| (order.uid.0[0], order.missing_buy_token_account))
-            .collect();
-        assert_eq!(flagged, [(1, false), (2, true)]);
+        let kept: Vec<u8> = auction.orders.iter().map(|order| order.uid.0[0]).collect();
+        assert_eq!(kept, [1, 2]);
+        assert_eq!(missing, HashSet::from([OrderUid([2; 32])]));
     }
 
     #[tokio::test]
