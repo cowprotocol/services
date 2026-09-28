@@ -38,7 +38,7 @@ runs:
 
     # Gives each unchanged file its previous time again, so that cargo reuses the
     # cached workspace artifacts. A changed file keeps the time of the checkout.
-    - uses: ./.github/mtime_cache
+    - uses: ./.github/actions/mtime_cache
       with:
         # Must match cache-directories in the rust-cache step above
         cache-path: ${{ runner.temp }}/mtime-cache
