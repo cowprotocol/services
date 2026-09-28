@@ -305,7 +305,10 @@ fn accounts_to_create(
     // flag: an account closed since would revert the payout.
     let missing_user_atas = orders
         .iter()
-        .filter(|order| snapshot.buy_token_account_missing(order))
+        .filter(|order| {
+            snapshot.token_account_needs_creation(order.buy_token_account)
+                && order.buy_token_account_is_ata()
+        })
         .map(|order| Ata {
             owner: order.owner,
             mint: order.buy_token,

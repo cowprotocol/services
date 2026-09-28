@@ -2,7 +2,7 @@
 
 use {
     super::{order_uid::OrderUid, slot::Slot},
-    crate::infra::blockchain::Solana,
+    crate::infra::blockchain::{Solana, associated_token_address},
     serde::Serialize,
     solana_sdk::pubkey::Pubkey,
     std::fmt,
@@ -78,7 +78,9 @@ impl Auction {
             }
         };
         for order in &mut self.orders {
-            order.missing_buy_token_account = snapshot.buy_token_account_missing(order);
+            order.missing_buy_token_account = snapshot
+                .token_account_needs_creation(order.buy_token_account)
+                && order.buy_token_account_is_ata();
         }
     }
 }
@@ -106,6 +108,15 @@ pub struct Order {
     pub missing_buy_token_account: bool,
 }
 
+impl Order {
+    /// Whether `buy_token_account` is the owner's associated token account
+    /// for the buy mint, the only destination an idempotent create can
+    /// produce.
+    pub fn buy_token_account_is_ata(&self) -> bool {
+        self.buy_token_account == associated_token_address(&self.owner, &self.buy_token)
+    }
+}
+
 /// Direction of the trade.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -118,7 +129,6 @@ pub enum Side {
 mod tests {
     use {
         super::*,
-        crate::infra::blockchain::associated_token_address,
         cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
         serde_json::{Value, json},
         solana_testlib::{multiple_accounts_json, token_account_json},
