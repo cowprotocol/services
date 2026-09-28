@@ -44,15 +44,15 @@ impl Sponsor {
         let pending = db::pending_creations(&self.pool, &uids).await?;
         let mut creations = Vec::with_capacity(pending.len());
         for (uid, bytes) in pending {
-            match self.countersign(&bytes).await {
-                Ok(creation) => creations.push(creation),
-                Err(err) => {
-                    if err.is::<BlockhashExpired>() {
-                        self.expire(&uid).await;
-                    }
-                    return Err(err.context(format!("order 0x{}", const_hex::encode(uid))));
+            let creation = match self.countersign(&bytes).await {
+                Err(err) if err.is::<BlockhashExpired>() => {
+                    self.expire(&uid).await;
+                    Err(err)
                 }
+                creation => creation,
             }
+            .with_context(|| format!("order 0x{}", const_hex::encode(uid)))?;
+            creations.push(creation);
         }
         Ok(creations)
     }
