@@ -92,9 +92,10 @@ paths:
         broadcast. Once a creation landed, only the settlement program's
         `CancelOrder` instruction cancels the order.
 
-        The body carries the owner's Ed25519 signature over the UTF-8 text
-        `cancel order <uid>`, with the uid as 0x-prefixed lowercase hex, the
-        bytes a wallet's plain `signMessage` produces.
+        The body carries the owner's Ed25519 signature over the one-line text
+        `CoW Protocol order cancellation, program <program>, orders <uid>`,
+        with the settlement program ID in base58 and the uid as 0x-prefixed
+        lowercase hex, the bytes a wallet's plain `signMessage` produces.
       parameters:
         - name: uid
           in: path
@@ -123,7 +124,8 @@ paths:
                 enum: [Cancelled]
         "400":
           description: |
-            A signature that does not verify against the order owner
+            Sponsoring disabled on this deployment (`SponsoringDisabled`), a
+            signature that does not verify against the order owner
             (`InvalidSignature`), an order with a PDA on chain
             (`OnChainOrder`), a uid that is not 32 bytes of hex
             (`InvalidOrderUid`), or an unparsable body (`InvalidRequestBody`).

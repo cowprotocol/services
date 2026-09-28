@@ -1003,7 +1003,11 @@ async fn solana_db_cancel_order_marks_a_pending_order() {
     assert_eq!(status, reqwest::StatusCode::CREATED);
     let uid = format!("0x{}", const_hex::encode(intent.uid().to_bytes()));
     let signed = |keypair: &solana_sdk::signer::keypair::Keypair| {
-        let signature = keypair.sign_message(format!("cancel order {uid}").as_bytes());
+        let text = format!(
+            "CoW Protocol order cancellation, program {}, orders {uid}",
+            cow_settlement_interface::id()
+        );
+        let signature = keypair.sign_message(text.as_bytes());
         base64::prelude::BASE64_STANDARD.encode(signature.as_ref())
     };
 
@@ -1064,6 +1068,18 @@ async fn solana_db_cancel_order_marks_a_pending_order() {
         (reqwest::StatusCode::BAD_REQUEST, Some("OnChainOrder"))
     );
     assert_eq!(get_order(addr, &uid).await["status"], "open");
+}
+
+/// Off-chain cancellation is part of sponsoring: without its config the route
+/// refuses before any database access.
+#[tokio::test]
+async fn cancel_order_is_off_without_sponsoring() {
+    let uid = format!("0x{}", "00".repeat(32));
+    let (status, body) = delete_order(spawn_server().await, &uid, String::new()).await;
+    assert_eq!(
+        (status, body["errorType"].as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, Some("SponsoringDisabled"))
+    );
 }
 
 async fn delete_order(
