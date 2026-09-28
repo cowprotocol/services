@@ -3,17 +3,18 @@
 use {
     crate::{
         domain::{auction::Order, cycle::SolanaCycle},
-        infra::{db, inflight::InFlightOrders, prices::NativePrices},
+        infra::{db, order_events, prices::NativePrices},
         run_loop::AuctionProvider,
     },
     async_trait::async_trait,
-    chain_types::solana::Pubkey as ChainPubkey,
+    chain_types::solana::{IntentHash, Pubkey as ChainPubkey},
     cow_solana_rpc::SolanaRPC,
+    database::solana::OrderEventLabel,
     solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey},
     spl_token_interface::state::{Account as TokenAccount, AccountState},
     sqlx::PgPool,
     std::{
-        sync::atomic::{AtomicI64, Ordering},
+        collections::HashSet,
         time::{SystemTime, UNIX_EPOCH},
     },
 };
@@ -24,33 +25,16 @@ pub struct DbAuctionProvider {
     rpc: SolanaRPC,
     /// Slots the indexer may lag behind the tip before cuts are skipped.
     max_indexer_lag: u64,
-    /// Orders with a settlement in flight, excluded from cuts until their
-    /// submission deadline passes.
-    inflight: InFlightOrders,
     prices: NativePrices,
-    /// Last allocated auction id. Ids are unix seconds, bumped past the
-    /// previous allocation when cycles land within the same second. Unique
-    /// only per process: no table allocates auction ids.
-    /// TODO: allocate from the auctions table sequence once competition
-    /// persistence lands, like the EVM `auctions.id` bigserial.
-    last_id: AtomicI64,
 }
 
 impl DbAuctionProvider {
-    pub fn new(
-        pool: PgPool,
-        rpc: SolanaRPC,
-        max_indexer_lag: u64,
-        inflight: InFlightOrders,
-        prices: NativePrices,
-    ) -> Self {
+    pub fn new(pool: PgPool, rpc: SolanaRPC, max_indexer_lag: u64, prices: NativePrices) -> Self {
         Self {
             pool,
             rpc,
             max_indexer_lag,
-            inflight,
             prices,
-            last_id: AtomicI64::new(0),
         }
     }
 
@@ -96,18 +80,6 @@ impl DbAuctionProvider {
                 receivable
             })
             .collect()
-    }
-
-    /// Allocates the next auction id: the current unix second, or one past
-    /// the previous id when several cycles land within the same second, so
-    /// ids strictly increase within the process.
-    fn next_id(&self, now: i64) -> i64 {
-        let prev = self
-            .last_id
-            .update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
-                now.max(prev + 1)
-            });
-        now.max(prev + 1)
     }
 }
 
@@ -156,31 +128,46 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                 None
             }
         };
-        let mut auction = db::cut(&self.pool, self.next_id(now), now, block_height)
+        let orders = db::cut(&self.pool, now, block_height)
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
         // An order with a settlement in flight stays out until the
         // settlement cannot land any more: a second winner could
-        // double-settle it.
-        let held = self.inflight.held_at(*tip);
-        let before = auction.orders.len();
-        auction.orders.retain(|order| !held.contains(&order.uid));
-        let held_out = before - auction.orders.len();
-        if held_out > 0 {
+        // double-settle it. A failed read skips the cut rather than cutting
+        // without the hold.
+        let tip_slot = i64::try_from(*tip).unwrap_or(i64::MAX);
+        let held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, tip_slot).await {
+            Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
+            Err(err) => {
+                tracing::warn!(?err, "in-flight order lookup failed, skipping the cut");
+                return None;
+            }
+        };
+        let (orders, held_out): (Vec<_>, Vec<_>) = orders
+            .into_iter()
+            .partition(|order| !held.contains(&order.uid));
+        if !held_out.is_empty() {
             metrics()
                 .held_out_orders
-                .inc_by(u64::try_from(held_out).unwrap_or(u64::MAX));
-            tracing::debug!(held_out, "orders held out with settlements in flight");
+                .inc_by(u64::try_from(held_out.len()).unwrap_or(u64::MAX));
+            tracing::debug!(
+                held_out = held_out.len(),
+                "orders held out with settlements in flight"
+            );
+            order_events::store_detached(
+                self.pool.clone(),
+                held_out.into_iter().map(|order| order.uid).collect(),
+                OrderEventLabel::Filtered,
+            );
         }
-        auction.orders = self.receivable_orders(auction.orders).await;
-        if auction.orders.is_empty() {
+        let orders = self.receivable_orders(orders).await;
+        if orders.is_empty() {
             return None;
         }
         // A cut without prices would rank solutions on incomparable scores,
         // so a failed lookup skips the cycle instead.
-        let tokens = auction
-            .orders
+        let tokens = orders
             .iter()
             .flat_map(|order| [order.sell_token, order.buy_token])
             .map(|token| Pubkey::new_from_array(token.0))
@@ -192,12 +179,50 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                 return None;
             }
         };
-        auction.native_prices = prices
-            .into_iter()
-            .map(|(token, price)| (ChainPubkey(token.to_bytes()), price))
-            .collect();
+        let mut auction = crate::domain::auction::Auction {
+            id: 0,
+            orders,
+            native_prices: prices
+                .into_iter()
+                .map(|(token, price)| (ChainPubkey(token.to_bytes()), price))
+                .collect(),
+        };
+        // The id must be durable before anything references it: windows and
+        // the competition snapshot key on it, so a failed write skips the
+        // cycle.
+        let snapshot = auction_snapshot(*tip, &auction);
+        auction.id = match db::replace_current_auction(&self.pool, tip_slot, &snapshot).await {
+            Ok(id) => id,
+            Err(err) => {
+                tracing::warn!(?err, "failed to store the auction, skipping the cut");
+                return None;
+            }
+        };
         Some(auction)
     }
+}
+
+/// The stored auction body: the solver-facing content without the deadline,
+/// which is only known at dispatch.
+fn auction_snapshot(tip: u64, auction: &crate::domain::auction::Auction) -> serde_json::Value {
+    serde_json::json!({
+        "tipSlot": tip,
+        "orders": auction
+            .orders
+            .iter()
+            .map(|order| order.uid.to_string())
+            .collect::<Vec<_>>(),
+        "nativePrices": auction
+            .native_prices
+            .iter()
+            .map(|(token, price)| {
+                (
+                    Pubkey::new_from_array(token.0).to_string(),
+                    price.to_string(),
+                )
+            })
+            .collect::<std::collections::HashMap<_, _>>(),
+    })
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -273,7 +298,6 @@ mod tests {
             sqlx::PgPool::connect_lazy("postgresql://").unwrap(),
             SolanaRPC::new_mock_with_mocks(mocks),
             150,
-            InFlightOrders::default(),
             NativePrices::seeded([]),
         )
     }

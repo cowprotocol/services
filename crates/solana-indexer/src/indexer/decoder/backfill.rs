@@ -2,8 +2,8 @@
 //! live tip when it exceeds the stream's replay window. The node's deep
 //! transaction history is scanned back to the watermark and every tracked
 //! transaction runs through the same decode and flush path the stream uses.
-//! The watermark ends at the scanned tip, back inside the replay window, so
-//! the next subscription resumes without a hole.
+//! The watermark ends just below the scanned tip, back inside the replay
+//! window, so the next subscription resumes without a hole.
 
 use {
     super::{Decoder, SlotBuffer},
@@ -36,10 +36,16 @@ const BACKFILL_ATTEMPTS: usize = 3;
 /// Pause between backfill attempts.
 const BACKFILL_RETRY: Duration = Duration::from_secs(5);
 
+/// Slots below the reported tip the scan leaves to the stream. The node
+/// indexes signatures behind its slot tip, so the newest slots can be
+/// scanned before their transactions are visible.
+pub(super) const SIGNATURE_INDEX_LAG: u64 = 32;
+
 impl Decoder {
     /// Index every tracked transaction between the persisted watermark and
-    /// the live tip from RPC history, then advance the watermark to that
-    /// tip. A missing watermark is a cold start with nothing to recover.
+    /// the live tip from RPC history, then advance the watermark to just
+    /// below that tip. A missing watermark is a cold start with nothing to
+    /// recover.
     /// Transient failures retry, a persistent one panics: the watermark
     /// never passes an unscanned slot, so the restart reruns the recovery
     /// until the dependencies serve it, and nothing is skipped silently.
@@ -88,6 +94,7 @@ impl Decoder {
             }
         }
 
+        let last_flushed = slots.keys().next_back().copied().unwrap_or(watermark);
         for (slot, signatures) in slots {
             let mut buffer = SlotBuffer::default();
             for signature in signatures {
@@ -110,9 +117,13 @@ impl Decoder {
             }
             self.flush_slot(slot, buffer, true).await?;
         }
-        // Slots past the last tracked transaction are quiet, the scan proved
-        // them empty through the tip.
-        self.persistence.write_last_indexed_slot(tip).await?;
+        // Slots past the last tracked transaction are quiet as far as the
+        // signature index has provably caught up. The newest slots stay with
+        // the stream, which replays from the watermark.
+        let verified = Slot(tip.0.saturating_sub(SIGNATURE_INDEX_LAG));
+        if verified > last_flushed {
+            self.persistence.write_last_indexed_slot(verified).await?;
+        }
         Ok(())
     }
 
