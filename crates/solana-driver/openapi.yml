@@ -194,7 +194,9 @@ components:
           description: |-
             The token account the settlement pays out to. When it does not
             exist yet and is the owner's associated token account, the
-            settlement creates it and the solver pays its rent.
+            settlement creates it and the solver pays its rent. An account
+            that is absent and cannot be created leaves the order out of the
+            auction sent to the engine.
           allOf:
             - $ref: "#/components/schemas/Address"
         sellAmount:

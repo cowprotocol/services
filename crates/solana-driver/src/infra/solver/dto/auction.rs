@@ -60,8 +60,8 @@ pub struct Order {
     /// so the solution should price that rent in.
     ///
     /// TODO(token-2022): a token-2022 account rents more bytes, so once
-    /// those mints are supported this boolean becomes the missing account's
-    /// token program.
+    /// those mints are supported this boolean becomes a `setupCostLamports`
+    /// number and engines stop having to know the rent math.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub missing_buy_token_account: bool,
 }
