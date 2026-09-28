@@ -8,7 +8,11 @@ mod token;
 
 pub use {
     accounts::{AccountsSnapshot, InvalidAddressLookupTableReason, TokenAccountState},
-    token::{associated_token_address, create_associated_token_account_idempotent},
+    token::{
+        associated_token_address,
+        close_token_account,
+        create_associated_token_account_idempotent,
+    },
 };
 use {
     cow_solana_rpc::{Error, LatestBlockhash, SolanaRPC},

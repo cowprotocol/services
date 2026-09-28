@@ -45,6 +45,23 @@ pub fn create_associated_token_account_idempotent(
     )
 }
 
+/// Create the instruction that closes `owner`'s token `account` under the SPL
+/// Token program and sends its lamports to `destination`. Closing a wSOL
+/// account unwraps its whole balance.
+///
+/// This function has the same token-2022 limitation as
+/// [`associated_token_address`]
+pub fn close_token_account(account: &Pubkey, destination: &Pubkey, owner: &Pubkey) -> Instruction {
+    spl_token_interface::instruction::close_account(
+        &SPL_TOKEN_PROGRAM_ID,
+        account,
+        destination,
+        owner,
+        &[],
+    )
+    .expect("the SPL Token program id passes the program check")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
