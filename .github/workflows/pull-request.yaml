@@ -15,12 +15,9 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Clippy makes different artifacts to a build, so keep a separate cache
           shared-key: lint
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # v1.0.7
         with:
           profile: minimal
@@ -95,12 +92,9 @@ jobs:
         with:
           just-version: 1.39.0
       - run: rustup toolchain install stable --profile minimal
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Shared by doc-tests and event-bus-schemas, which build the same dependencies
           shared-key: checks
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: just test-doc
 
   unit-tests:
@@ -116,19 +110,16 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - run: cargo build --tests
+      - run: cargo build --locked --tests
       - run: just test-unit
 
   test-db:
@@ -144,15 +135,12 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p orderbook -p database -p autopilot -p solana-indexer -p solana-orderbook --tests &
+      - run: cargo build --locked -p orderbook -p database -p autopilot -p solana-indexer -p solana-orderbook --tests &
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -178,15 +166,12 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p solana-indexer -p autopilot-svm --tests &
+      - run: cargo build --locked -p solana-indexer -p autopilot-svm --tests &
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -215,15 +200,12 @@ jobs:
         with:
           # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
           version: v1.7.1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p e2e --tests &
+      - run: cargo build --locked -p e2e --tests &
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -260,15 +242,12 @@ jobs:
           # the latest version introduced a bug caused forked node tests to fail
           # only switch back to latest stable version after it was fixed in anvil
           version: v1.0.0
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p e2e --tests &
+      - run: cargo build --locked -p e2e --tests &
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -297,12 +276,9 @@ jobs:
         with:
           # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
           version: v1.7.1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -310,7 +286,7 @@ jobs:
         with:
           just-version: 1.39.0
       # Build the driver's tests.
-      - run: cargo build -p driver --tests
+      - run: cargo build --locked -p driver --tests
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
       - run: just test-driver
 
@@ -374,15 +350,12 @@ jobs:
         with:
           # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
           version: v1.7.1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Shared by all test jobs, which build the same dependencies
           shared-key: tests
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p e2e --tests &
+      - run: cargo build --locked -p e2e --tests &
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -411,12 +384,9 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - run: rustup toolchain install nightly --profile minimal --component rustfmt
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Builds the contracts project in release, so keep a separate cache
           shared-key: generated-contracts
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
@@ -466,12 +436,9 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/setup-rust-cache
         with:
-          # Shared by doc-tests and event-bus-schemas, which build the same dependencies
           shared-key: checks
-          # Only write to the cache if running on main
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
