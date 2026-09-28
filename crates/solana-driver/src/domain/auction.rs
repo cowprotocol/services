@@ -2,7 +2,7 @@
 
 use {
     super::{order_uid::OrderUid, slot::Slot},
-    crate::infra::blockchain::{Solana, associated_token_address},
+    crate::infra::blockchain::{Solana, TokenAccountState, associated_token_address},
     serde::Serialize,
     solana_sdk::pubkey::Pubkey,
     std::fmt,
@@ -64,24 +64,34 @@ pub struct Auction {
 }
 
 impl Auction {
-    /// Flag each order whose buy token account the settlement will create,
-    /// so the engine can price in its rent. A failed lookup flags nothing:
-    /// the settlement checks the chain again and creates the account either
-    /// way, only the rent goes unpriced.
-    pub async fn flag_missing_buy_token_accounts(&mut self, blockchain: &Solana) {
+    /// Drop each order whose buy token account can neither receive the
+    /// payout nor be created by the settlement, and flag the ones the
+    /// settlement will create so the engine can price in their rent.
+    pub async fn resolve_buy_token_accounts(
+        &mut self,
+        blockchain: &Solana,
+    ) -> Result<(), cow_solana_rpc::Error> {
         let accounts = self.orders.iter().map(|order| order.buy_token_account);
-        let snapshot = match blockchain.accounts_snapshot(accounts).await {
-            Ok(snapshot) => snapshot,
-            Err(err) => {
-                tracing::warn!(?err, "buy token account lookup failed, flagging no order");
-                return;
+        let snapshot = blockchain.accounts_snapshot(accounts).await?;
+        self.orders.retain_mut(|order| {
+            match snapshot.token_account_state(&order.buy_token_account) {
+                TokenAccountState::Initialized => true,
+                TokenAccountState::NeedsCreation if order.buy_token_account_is_ata() => {
+                    order.missing_buy_token_account = true;
+                    true
+                }
+                state => {
+                    tracing::warn!(
+                        order = %order.uid,
+                        buy_token_account = %order.buy_token_account,
+                        ?state,
+                        "dropping order, its buy token account cannot receive the payout"
+                    );
+                    false
+                }
             }
-        };
-        for order in &mut self.orders {
-            order.missing_buy_token_account = snapshot
-                .token_account_needs_creation(order.buy_token_account)
-                && order.buy_token_account_is_ata();
-        }
+        });
+        Ok(())
     }
 }
 
@@ -104,7 +114,7 @@ pub struct Order {
     pub app_data: [u8; 32],
     /// Whether `buy_token_account` was missing on chain at solve time and
     /// the settlement will create it, see
-    /// [`Auction::flag_missing_buy_token_accounts`].
+    /// [`Auction::resolve_buy_token_accounts`].
     pub missing_buy_token_account: bool,
 }
 
@@ -173,9 +183,9 @@ mod tests {
     /// The lookup answers in order: an initialized token account, absent at
     /// the owner's associated token address, absent elsewhere, and an account
     /// of another program. Only the absent associated token account is
-    /// flagged, and every order stays.
+    /// flagged; the last two can never receive the payout and are dropped.
     #[tokio::test]
-    async fn flags_only_an_absent_associated_token_account() {
+    async fn flags_a_creatable_account_and_drops_the_unreceivable_ones() {
         let ata = associated_token_address(&pubkey(0x22), &pubkey(0x44));
         let foreign = json!({
             "lamports": 1u64,
@@ -202,31 +212,30 @@ mod tests {
             order(4, pubkey(0x68)),
         ]);
         auction
-            .flag_missing_buy_token_accounts(&blockchain(mocks))
-            .await;
+            .resolve_buy_token_accounts(&blockchain(mocks))
+            .await
+            .unwrap();
 
         let flagged: Vec<(u8, bool)> = auction
             .orders
             .iter()
             .map(|order| (order.uid.0[0], order.missing_buy_token_account))
             .collect();
-        assert_eq!(flagged, [(1, false), (2, true), (3, false), (4, false)]);
+        assert_eq!(flagged, [(1, false), (2, true)]);
     }
 
     #[tokio::test]
-    async fn flags_nothing_when_the_lookup_fails() {
+    async fn fails_when_the_lookup_fails() {
         let mocks = Mocks::from([(
             RpcRequest::GetMultipleAccounts,
             json!("not an account list"),
         )]);
-        let ata = associated_token_address(&pubkey(0x22), &pubkey(0x44));
-        let mut auction = auction(vec![order(1, ata)]);
+        let mut auction = auction(vec![order(1, pubkey(0x66))]);
 
         auction
-            .flag_missing_buy_token_accounts(&blockchain(mocks))
-            .await;
-
-        assert!(!auction.orders[0].missing_buy_token_account);
+            .resolve_buy_token_accounts(&blockchain(mocks))
+            .await
+            .expect_err("a failed lookup fails the resolution");
     }
 
     #[test]
