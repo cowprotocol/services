@@ -112,7 +112,7 @@ fn validate(
     now_secs: u32,
     validation: &ValidationParameters,
 ) -> Result<(), error::Reply> {
-    if request.sell_token == request.buy_token {
+    if super::same_token(&request.sell_token, &request.buy_token) {
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
             "SameBuyAndSellToken",

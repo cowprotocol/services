@@ -156,6 +156,9 @@ async fn quote_validation_rejects_bad_orders() {
     let addr = spawn_server().await;
     let mut same_tokens = quote_body(serde_json::json!({"validFor": 1800}));
     same_tokens["buyToken"] = same_tokens["sellToken"].clone();
+    // The body sells wSOL, which counts as the same token as native SOL.
+    let mut unwrap = quote_body(serde_json::json!({"validFor": 1800}));
+    unwrap["buyToken"] = serde_json::json!("11111111111111111111111111111111");
     let mut zero_amount = quote_body(serde_json::json!({"validFor": 1800}));
     zero_amount["sellAmountBeforeFee"] = serde_json::json!("0");
 
@@ -169,6 +172,7 @@ async fn quote_validation_rejects_bad_orders() {
             "ExcessiveValidTo",
         ),
         (same_tokens, "SameBuyAndSellToken"),
+        (unwrap, "SameBuyAndSellToken"),
         (zero_amount, "ZeroAmount"),
     ] {
         let (status, kind) = post_quote(addr, body).await;
@@ -529,6 +533,18 @@ fn sponsored_intent(
     }
 }
 
+/// A sponsored intent buying `buy_amount` lamports of native SOL into the
+/// owner's wallet.
+fn native_buy_intent(
+    owner: solana_sdk::pubkey::Pubkey,
+    buy_amount: u64,
+) -> cow_settlement_interface::data::intent::OrderIntent {
+    let mut intent = sponsored_intent(owner, false);
+    intent.buy = cow_settlement_interface::data::intent::Asset::Native(owner);
+    intent.buy_amount = buy_amount;
+    intent
+}
+
 /// The owner's associated token account for `mint` under the SPL Token
 /// program.
 fn ata(
@@ -817,6 +833,28 @@ async fn create_order_rejects_invalid_submissions() {
         );
     }
 
+    // Native SOL buys: a payout under the rent-exempt minimum, a partially
+    // fillable order, and wSOL sold for native SOL.
+    let mut partial = native_buy_intent(owner.pubkey(), 1_000_000_000);
+    partial.flags.partially_fillable = true;
+    let mut unwrap = native_buy_intent(owner.pubkey(), 1_000_000_000);
+    unwrap.sell.mint = spl_token_interface::native_mint::ID;
+    for (intent, expected) in [
+        (
+            native_buy_intent(owner.pubkey(), 890_879),
+            "InvalidNativeBuy",
+        ),
+        (partial, "InvalidNativeBuy"),
+        (unwrap, "SameBuyAndSellToken"),
+    ] {
+        let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected)
+        );
+    }
+
     // A well-formed transaction whose blockhash already died.
     let addr = spawn_sponsored_server(
         PgPool::connect_lazy("postgresql://").unwrap(),
@@ -951,6 +989,16 @@ async fn create_order_checks_the_preparation_template() {
     let wrap =
         solana_system_interface::instruction::transfer(&owner, &plain.sell.token_account, 1_000);
     let transaction = creation_tx(funder, &owner_keypair, &plain, vec![wrap], true);
+    let (status, kind) = post_order(addr, transaction).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
+    );
+
+    // A native SOL buy has no buy token account to create.
+    let native = native_buy_intent(owner, 1_000_000_000);
+    let creation = destination_creation(funder, owner, &native);
+    let transaction = creation_tx(funder, &owner_keypair, &native, vec![creation], true);
     let (status, kind) = post_order(addr, transaction).await;
     assert_eq!(
         (status, kind.as_str()),
@@ -1175,6 +1223,36 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
         .await
         .unwrap();
     assert_eq!(stored, intent.buy.encode().1.to_bytes().to_vec());
+}
+
+/// A native SOL buy lands without a buy account creation: the payout goes
+/// to the wallet itself.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_accepts_a_native_buy() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let intent = native_buy_intent(owner.pubkey(), 890_880);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+
+    let (status, _) = post_order(addr, transaction).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+    let (buy_token, buy_token_account): (Vec<u8>, Vec<u8>) =
+        sqlx::query_as("SELECT buy_token, buy_token_account FROM solana.orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(buy_token, [0; 32]);
+    assert_eq!(buy_token_account, owner.pubkey().to_bytes());
 }
 
 async fn get_order(addr: SocketAddr, uid: &str) -> serde_json::Value {

@@ -7,7 +7,9 @@
 //! SOL, delegate the sell account, create the buy token account. The
 //! buy-account creation is required even when the account exists (it is
 //! idempotent on chain): settlement pays out to it and never creates it,
-//! and the instruction proves receivability without a lookup or a race.
+//! and the instruction proves receivability without a lookup or a race. A
+//! native SOL buy has no buy token account: its payout goes to the wallet
+//! and creates it when missing.
 
 use {
     crate::infra::{
@@ -28,6 +30,7 @@ use {
         clock::MAX_PROCESSING_AGE,
         message::compiled_instruction::CompiledInstruction,
         pubkey::Pubkey,
+        rent::Rent,
         transaction::VersionedTransaction,
     },
     solana_system_interface::instruction::SystemInstruction,
@@ -62,6 +65,7 @@ enum PlacementError {
     WrongDelegate,
     SameBuyAndSellToken,
     ZeroAmount,
+    InvalidNativeBuy(&'static str),
     InsufficientValidTo,
     InvalidSignature,
     BlockhashExpired,
@@ -99,6 +103,7 @@ impl From<PlacementError> for error::Reply {
                 ("SameBuyAndSellToken", "buy and sell token must differ")
             }
             PlacementError::ZeroAmount => ("ZeroAmount", "order amounts must not be zero"),
+            PlacementError::InvalidNativeBuy(description) => ("InvalidNativeBuy", description),
             PlacementError::InsufficientValidTo => (
                 "InsufficientValidTo",
                 "validTo lies closer than the minimum validity",
@@ -264,16 +269,24 @@ fn validate(
     if !keys.iter().take(signers).any(|key| *key == intent.owner) {
         return Err(PlacementError::InvalidSignature);
     }
-    let Asset::TokenProgram(buy) = &intent.buy else {
-        return Err(PlacementError::InvalidTransaction(
-            "buying native SOL is not supported",
-        ));
-    };
-    if intent.sell.mint == buy.mint {
+    if super::same_token(&intent.sell.mint, &intent.buy.encode().0) {
         return Err(PlacementError::SameBuyAndSellToken);
     }
     if intent.sell_amount == 0 || intent.buy_amount == 0 {
         return Err(PlacementError::ZeroAmount);
+    }
+    // A native payout under the rent-exempt minimum of an empty account
+    // reverts the whole settlement, and a partial fill can land under it.
+    let native_buy = matches!(intent.buy, Asset::Native(_));
+    if native_buy && intent.buy_amount < Rent::default().minimum_balance(0) {
+        return Err(PlacementError::InvalidNativeBuy(
+            "a native SOL buy must pay at least the rent-exempt minimum of an empty account",
+        ));
+    }
+    if native_buy && intent.flags.partially_fillable {
+        return Err(PlacementError::InvalidNativeBuy(
+            "a native SOL buy cannot be partially fillable",
+        ));
     }
     let order_pda = find_order_pda(&sponsoring.settlement_program, &uid).0;
     if *input.order_pda != order_pda {
@@ -286,8 +299,8 @@ fn validate(
     }
 
     // The preparation instructions may only follow the template: each step
-    // at most once, in template order. The buy-account creation is the one
-    // mandatory step, everything else is omittable.
+    // at most once, in template order. The buy-account creation is mandatory
+    // for a token buy, everything else is omittable.
     let state_pda = find_state_pda(&sponsoring.settlement_program).0;
     let mut last_step = 0;
     for preparation in preparations {
@@ -299,7 +312,7 @@ fn validate(
         }
         last_step = step;
     }
-    if last_step != CREATE_DESTINATION {
+    if !native_buy && last_step != CREATE_DESTINATION {
         return Err(PlacementError::InvalidTransaction(
             "the bundle must create the buy token account",
         ));
@@ -502,7 +515,6 @@ fn preparation_step(
     // Wrap steps only make sense when the order sells native SOL through the
     // wSOL mint.
     let wrapped_sell = intent.sell.mint == spl_token_interface::native_mint::ID;
-    let (buy_mint, buy_token_account) = intent.buy.encode();
 
     if *program == solana_system_interface::program::ID {
         if !matches!(
@@ -611,7 +623,10 @@ fn preparation_step(
                 ));
             }
             Ok(WRAP_CREATE)
-        } else if account == buy_token_account && mint == buy_mint {
+        } else if let Asset::TokenProgram(buy) = &intent.buy
+            && account == buy.token_account
+            && mint == buy.mint
+        {
             // Any wallet may receive the proceeds: settlement pays out to the
             // account the intent names, whoever owns it.
             Ok(CREATE_DESTINATION)
