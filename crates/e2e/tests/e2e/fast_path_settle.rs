@@ -1,6 +1,6 @@
 use {
     crate::ethflow::ExtendedEthFlowOrder,
-    ::alloy::primitives::{Address, U256},
+    ::alloy::primitives::{Address, B256, U256},
     app_data::AppDataHash,
     configs::{
         autopilot::{
@@ -31,6 +31,7 @@ use {
             Validity,
         },
         signature::EcdsaSigningScheme,
+        solver_competition_v2,
     },
     number::{nonzero::NonZeroU256, u256_ext::U256Ext, units::EthUnit},
     serde_json::json,
@@ -75,6 +76,23 @@ fn with_fast_path_exclusivity(
         ..orderbook
     };
     (autopilot, orderbook)
+}
+
+/// Fetches the competition a settlement tx belongs to. The order is
+/// `Fulfilled` as soon as the trade event is indexed, but the lookup 404s
+/// until the settlement observer links the tx to its auction.
+async fn settled_competition(
+    onchain: &OnchainComponents,
+    services: &Services<'_>,
+    tx_hash: B256,
+) -> solver_competition_v2::Response {
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        services.get_solver_competition(tx_hash).await.is_ok()
+    })
+    .await
+    .expect("settlement has a competition");
+    services.get_solver_competition(tx_hash).await.unwrap()
 }
 
 #[tokio::test]
@@ -277,10 +295,8 @@ async fn fast_path_settle(web3: Web3, side: OrderKind) {
     // reverted and the regular auction picked the order up instead.
     let trade = services.get_trades(&uid).await.unwrap().pop().unwrap();
     let tx_hash = trade.tx_hash.expect("settled trade has a transaction");
-    let settled_in = services
-        .get_solver_competition(tx_hash)
+    let settled_in = settled_competition(&onchain, &services, tx_hash)
         .await
-        .expect("settlement has a competition")
         .auction_id;
     assert_eq!(
         settled_in, fast_path_auction,
@@ -833,7 +849,7 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
         .next()
         .expect("settled order should have a trade");
     let tx_hash = trade.tx_hash.expect("settled trade should have a tx hash");
-    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+    let competition = settled_competition(&onchain, &services, tx_hash).await;
     let winner = competition
         .solutions
         .iter()
@@ -1051,7 +1067,7 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
         .next()
         .expect("settled order should have a trade");
     let tx_hash = trade.tx_hash.expect("settled trade should have a tx hash");
-    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+    let competition = settled_competition(&onchain, &services, tx_hash).await;
 
     let good = competition
         .solutions
