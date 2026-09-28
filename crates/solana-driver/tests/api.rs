@@ -2,7 +2,14 @@
 
 use {
     cow_settlement_interface::{
-        data::intent::{Asset, Flags, OrderIntent, OrderKind, TokenAsset},
+        data::intent::{
+            Asset,
+            ENCODED_NATIVE_SOL_TRANSFER,
+            Flags,
+            OrderIntent,
+            OrderKind,
+            TokenAsset,
+        },
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
@@ -12,6 +19,7 @@ use {
     },
     solana_sdk::pubkey::Pubkey,
     solana_testlib::temp_keypair,
+    spl_token_interface::native_mint,
     std::{net::SocketAddr, num::NonZero, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
@@ -626,6 +634,57 @@ async fn quote_with_identical_tokens_is_rejected() {
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "QuoteSameTokens");
+}
+
+#[tokio::test]
+async fn quote_selling_wsol_for_native_sol_is_rejected() {
+    let (solver, _) = dead_solver();
+    let addr = spawn_server(vec![solver]).await;
+
+    let mut body = quote_request("sell", "1000");
+    body["sellToken"] = serde_json::json!(native_mint::ID.to_string());
+    body["buyToken"] = serde_json::json!(ENCODED_NATIVE_SOL_TRANSFER.to_string());
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "QuoteSameTokens");
+}
+
+/// The engine sees a native SOL buy as a wSOL buy, so it keys the buy price
+/// by the wSOL mint.
+#[tokio::test]
+async fn native_sol_buy_quote_is_priced_as_wsol() {
+    let mut solution = quote_solution("1000");
+    let prices = solution["solutions"][0]["prices"].as_object_mut().unwrap();
+    let buy_price = prices.remove(&pubkey(0x44).to_string()).unwrap();
+    prices.insert(native_mint::ID.to_string(), buy_price);
+    let engine = spawn_mock_solver_engine(solution).await;
+    let (solver, account) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+
+    let mut body = quote_request("sell", "1000");
+    body["buyToken"] = serde_json::json!(ENCODED_NATIVE_SOL_TRANSFER.to_string());
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "sellAmount": "1000",
+            "buyAmount": "2000",
+            "solver": account.to_string(),
+        })
+    );
 }
 
 #[tokio::test]

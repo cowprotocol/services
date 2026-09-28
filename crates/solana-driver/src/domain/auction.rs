@@ -2,6 +2,7 @@
 
 use {
     super::{order_uid::OrderUid, slot::Slot},
+    cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
     serde::Serialize,
     solana_sdk::pubkey::Pubkey,
     std::fmt,
@@ -79,6 +80,14 @@ pub struct Order {
     pub partially_fillable: bool,
     pub order_pda: Pubkey,
     pub app_data: [u8; 32],
+}
+
+impl Order {
+    /// Whether the order buys native SOL. The intent encodes it as the System
+    /// Program ID in place of a buy mint.
+    pub fn buys_native_sol(&self) -> bool {
+        self.buy_token == ENCODED_NATIVE_SOL_TRANSFER
+    }
 }
 
 /// Direction of the trade.
