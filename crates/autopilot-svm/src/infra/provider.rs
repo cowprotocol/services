@@ -295,6 +295,9 @@ fn receivable_token_account(account: &Account, buy_mint: [u8; 32]) -> bool {
 /// partial fill can land under it. A wSOL sell reaches solvers as wSOL for
 /// wSOL.
 fn payable_orders(orders: Vec<Order>) -> Vec<Order> {
+    // TODO: use the cluster's rent, refreshed periodically. The SDK default is
+    // above it since SIMD-0437, so this floor also drops small payouts that
+    // would settle.
     let min_payout = Rent::default().minimum_balance(0);
     orders
         .into_iter()
