@@ -40,6 +40,10 @@ pub struct Order {
     pub sell_mint: Pubkey,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_mint: Pubkey,
+    /// The account the swap output lands in: the buy-mint buffer, or the
+    /// taker's wSOL ATA for an order buying native SOL. The route must leave
+    /// that ATA open: the settlement closes it after the swap to unwrap the
+    /// payouts.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_destination: Pubkey,
     #[serde_as(as = "serde_with::DisplayFromStr")]
