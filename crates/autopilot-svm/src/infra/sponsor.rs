@@ -1,10 +1,11 @@
 //! Countersigning of sponsored creation transactions for winning solutions.
 
 use {
-    crate::infra::db,
+    crate::infra::{db, order_events},
     anyhow::{Context, Result, ensure},
     chain_types::solana::IntentHash,
     cow_solana_rpc::SolanaRPC,
+    database::solana::OrderEventLabel,
     solana_sdk::{
         signer::{Signer, keypair::Keypair},
         transaction::VersionedTransaction,
@@ -58,13 +59,20 @@ impl Sponsor {
     }
 
     /// Lower a dead creation's stored deadline below the chain height, which
-    /// drops the order from the next cut. On failure the stored upper bound
-    /// still drops it later.
+    /// drops the order from the next cut, and record the order as invalid,
+    /// since the cut drops it without an event. On failure the stored upper
+    /// bound still drops it later.
     async fn expire(&self, uid: &[u8]) {
         let order_uid = const_hex::encode_prefixed(uid);
         let expired = async {
             let height = u64::from(self.rpc.block_height().await?);
-            db::expire_creation(&self.pool, uid, i64::try_from(height)?.saturating_sub(1)).await
+            db::expire_creation(&self.pool, uid, i64::try_from(height)?.saturating_sub(1)).await?;
+            order_events::store(
+                &self.pool,
+                [IntentHash(uid.try_into()?)],
+                OrderEventLabel::Invalid,
+            )
+            .await
         };
         match expired.await {
             Ok(()) => tracing::info!(%order_uid, "sponsored creation expired, dropping the order"),
@@ -192,7 +200,8 @@ mod tests {
     }
 
     /// A dead blockhash pulls the order's stored creation deadline below the
-    /// chain height, never above what was stored.
+    /// chain height, never above what was stored, and records the order as
+    /// invalid.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_a_dead_blockhash_expires_the_creation() {
@@ -261,6 +270,14 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 2000, 'sell'::solana.OrderKind, fals
             .await
             .unwrap();
             assert_eq!(height, expected);
+            let labels: Vec<String> = sqlx::query_scalar(
+                "SELECT label::text FROM solana.order_events WHERE order_uid = $1",
+            )
+            .bind(vec![n; 32])
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            assert_eq!(labels, ["invalid"]);
         }
     }
 }
