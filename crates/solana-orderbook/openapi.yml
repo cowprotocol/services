@@ -253,7 +253,9 @@ paths:
             The body could not be parsed (`InvalidRequestBody`), buy and sell
             token are the same, wSOL for native SOL included
             (`SameBuyAndSellToken`), the amount is zero
-            (`ZeroAmount`), or `validTo` is closer than the configured minimum
+            (`ZeroAmount`), a native SOL buy is quoted under 890880 lamports,
+            the rent-exempt minimum of an empty account (`InvalidNativeBuy`),
+            or `validTo` is closer than the configured minimum
             (default two minutes) or further than the configured maximum
             (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`).
           content:

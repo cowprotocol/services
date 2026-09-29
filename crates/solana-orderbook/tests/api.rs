@@ -183,6 +183,36 @@ async fn quote_validation_rejects_bad_orders() {
     }
 }
 
+/// A native SOL buy quoted under the rent-exempt minimum of an empty account
+/// answers `InvalidNativeBuy`, since placement would reject the order.
+#[tokio::test]
+async fn quote_rejects_a_native_buy_under_the_payout_floor() {
+    for (buy_amount, expected) in [
+        (
+            "890879",
+            (reqwest::StatusCode::BAD_REQUEST, "InvalidNativeBuy"),
+        ),
+        ("890880", (reqwest::StatusCode::OK, "")),
+    ] {
+        let driver = spawn_mock_driver(serde_json::json!({
+            "sellAmount": "10000000",
+            "buyAmount": buy_amount,
+            "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        }))
+        .await;
+        let addr = spawn_server_with(Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ))
+        .await;
+        let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+        body["sellToken"] = serde_json::json!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+        body["buyToken"] = serde_json::json!("11111111111111111111111111111111");
+        let (status, kind) = post_quote(addr, body).await;
+        assert_eq!((status, kind.as_str()), expected);
+    }
+}
+
 /// The full happy path: the driver's amounts come back in the EVM response
 /// shape with the request's own fields echoed.
 #[tokio::test]

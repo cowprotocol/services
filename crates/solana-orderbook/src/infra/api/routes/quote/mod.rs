@@ -10,6 +10,7 @@ use {
     },
     axum::{Json, http::StatusCode},
     chrono::Utc,
+    cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
     database::{byte_array::ByteArray, solana::OrderKind},
     std::time::Duration,
 };
@@ -54,6 +55,16 @@ pub async fn quote(
         .map_err(|quoter::Error::NoQuotes| {
             error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
         })?;
+    // A native SOL buy under the floor cannot be placed.
+    if request.buy_token == ENCODED_NATIVE_SOL_TRANSFER
+        && quoted.buy_amount < super::min_native_payout()
+    {
+        return Err(error::reply(
+            StatusCode::BAD_REQUEST,
+            "InvalidNativeBuy",
+            "a native SOL buy must pay at least the rent-exempt minimum of an empty account",
+        ));
+    }
 
     let expiration = now + state.quote_expiry();
     // A failed insert answers without an id instead of failing the quote,

@@ -36,7 +36,6 @@ use {
         clock::MAX_PROCESSING_AGE,
         message::compiled_instruction::CompiledInstruction,
         pubkey::Pubkey,
-        rent::Rent,
         transaction::VersionedTransaction,
     },
     solana_system_interface::instruction::SystemInstruction,
@@ -305,7 +304,7 @@ fn validate(
     // A native payout under the rent-exempt minimum of an empty account
     // reverts the whole settlement, and a partial fill can land under it.
     let native_buy = matches!(intent.buy, Asset::Native(_));
-    if native_buy && intent.buy_amount < Rent::default().minimum_balance(0) {
+    if native_buy && intent.buy_amount < super::min_native_payout() {
         return Err(PlacementError::InvalidNativeBuy(
             "a native SOL buy must pay at least the rent-exempt minimum of an empty account",
         ));
