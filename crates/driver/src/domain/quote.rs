@@ -181,9 +181,15 @@ impl Order {
         if self.enable_fast_path {
             // For some cases (e.g. RWA trades) the true execution path can't be
             // committed to at the time of quoting. In those cases solvers may
-            // return an empty list of interactions. Since caching and executing
+            // return an execution plan. Since caching and executing
             // those solutions later on clearly does not work the driver detects
-            // that and returns no solution instead.
+            // that and returns `FastPathNotSupported` instead.
+            //
+            // Technically `pre-`/`post-interactions`, `wrappers` and
+            // `flashloans` can also be considered part of the
+            // execution plan but the heart of it are the regular
+            // interactions so to avoid false positives we pin
+            // the check only to them.
             if solution.interactions().is_empty() {
                 return Err(Error::QuotingFailed(QuotingFailed::FastPathNotSupported));
             }
