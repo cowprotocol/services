@@ -465,7 +465,12 @@ async fn spawn_sponsored_server(
     funder: solana_sdk::pubkey::Pubkey,
     blockhash_valid: bool,
 ) -> SocketAddr {
-    let mocks = Mocks::from([
+    spawn_sponsored_server_with(pool, funder, blockhash_mocks(blockhash_valid)).await
+}
+
+/// The mock RPC answers to the blockhash and height probes.
+fn blockhash_mocks(blockhash_valid: bool) -> Mocks {
+    Mocks::from([
         (
             RpcRequest::IsBlockhashValid,
             serde_json::json!({
@@ -474,7 +479,15 @@ async fn spawn_sponsored_server(
             }),
         ),
         (RpcRequest::GetBlockHeight, serde_json::json!(100u64)),
-    ]);
+    ])
+}
+
+/// A sponsored-placement server whose mock RPC answers from `mocks`.
+async fn spawn_sponsored_server_with(
+    pool: PgPool,
+    funder: solana_sdk::pubkey::Pubkey,
+    mocks: Mocks,
+) -> SocketAddr {
     let api = Api {
         pool,
         sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
@@ -867,6 +880,48 @@ async fn create_order_rejects_invalid_submissions() {
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "BlockhashExpired")
     );
+}
+
+/// A native SOL buy pays a wallet the System Program owns: an account of
+/// another program is rejected, a system wallet passes on to the blockhash
+/// check.
+#[tokio::test]
+async fn create_order_checks_the_native_buy_wallet() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let intent = native_buy_intent(owner.pubkey(), 1_000_000_000);
+    for (wallet_owner, expected) in [
+        (spl_token_interface::ID, "InvalidNativeBuy"),
+        (solana_system_interface::program::ID, "BlockhashExpired"),
+    ] {
+        let mut mocks = blockhash_mocks(false);
+        mocks.insert(
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!({
+                "context": { "slot": 1u64, "apiVersion": "2.0.0" },
+                "value": [{
+                    "lamports": 2_039_280u64,
+                    "data": ["", "base64"],
+                    "owner": wallet_owner.to_string(),
+                    "executable": false,
+                    "rentEpoch": 0u64,
+                    "space": 0u64,
+                }],
+            }),
+        );
+        let addr = spawn_sponsored_server_with(
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            funder,
+            mocks,
+        )
+        .await;
+        let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected)
+        );
+    }
 }
 
 /// A message header that leaves the owner outside the signer region is

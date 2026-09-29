@@ -9,7 +9,7 @@
 //! idempotent on chain): settlement pays out to it and never creates it,
 //! and the instruction proves receivability without a lookup or a race. A
 //! native SOL buy has no buy token account: its payout goes to the wallet
-//! and creates it when missing.
+//! and creates it when missing, so placement looks the wallet up instead.
 
 use {
     crate::infra::{
@@ -19,7 +19,13 @@ use {
     axum::{Json, http::StatusCode},
     bigdecimal::ToPrimitive,
     cow_settlement_interface::{
-        data::intent::{Asset, OrderIntent, OrderKind as IntentOrderKind, hash_bytes},
+        data::intent::{
+            Asset,
+            ENCODED_NATIVE_SOL_TRANSFER,
+            OrderIntent,
+            OrderKind as IntentOrderKind,
+            hash_bytes,
+        },
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
         pda::{order::find_order_pda, state::find_state_pda},
     },
@@ -142,6 +148,27 @@ pub async fn create_order(
         })?;
     let mut order = validate(sponsoring, &transaction, state.validation().min_validity)?;
     order.presigned_transaction = params.transaction;
+
+    // Lamports paid to a program or a sysvar revert the settlement, and a
+    // program-owned account strands them. The payout creates a missing
+    // wallet.
+    if order.buy_token.0 == ENCODED_NATIVE_SOL_TRANSFER.to_bytes() {
+        let wallet = Pubkey::new_from_array(order.buy_token_account.0);
+        let accounts = sponsoring
+            .rpc
+            .multiple_accounts([wallet])
+            .await
+            .map_err(|err| internal_error_reply(err, "native buy wallet lookup failed"))?;
+        if accounts
+            .get(&wallet)
+            .is_some_and(|account| account.owner != solana_system_interface::program::ID)
+        {
+            return Err(PlacementError::InvalidNativeBuy(
+                "a native SOL buy must pay a wallet owned by the System Program",
+            )
+            .into());
+        }
+    }
 
     // The countersign re-checks freshness, so the stored expiry only has to
     // be an upper bound: the tip cannot have moved past the blockhash's own
