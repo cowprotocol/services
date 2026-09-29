@@ -979,6 +979,124 @@ async fn create_order_checks_the_preparation_template() {
     );
 }
 
+/// The owner cancels a pending sponsored order off-chain: it reports
+/// cancelled, a replay is harmless, a stranger's signature is refused, and
+/// once a PDA lands the chain's state takes over.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_cancel_order_marks_a_pending_order() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let (status, _) = post_order(addr, transaction).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+    let uid = format!("0x{}", const_hex::encode(intent.uid().to_bytes()));
+    let signed = |keypair: &solana_sdk::signer::keypair::Keypair| {
+        let text = format!(
+            "CoW Protocol order cancellation, program {}, orders {uid}",
+            cow_settlement_interface::id()
+        );
+        let signature = keypair.sign_message(text.as_bytes());
+        base64::prelude::BASE64_STANDARD.encode(signature.as_ref())
+    };
+
+    let stranger = solana_sdk::signer::keypair::Keypair::new();
+    let (status, body) = delete_order(addr, &uid, signed(&stranger)).await;
+    assert_eq!(
+        (status, body["errorType"].as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, Some("InvalidSignature"))
+    );
+
+    let (status, body) = delete_order(addr, &uid, signed(&owner)).await;
+    assert_eq!(
+        (status, body),
+        (reqwest::StatusCode::OK, serde_json::json!("Cancelled"))
+    );
+    assert_eq!(get_order(addr, &uid).await["status"], "cancelled");
+    let listed: Vec<serde_json::Value> = reqwest::get(format!(
+        "http://{addr}/api/v1/account/{}/orders",
+        owner.pubkey()
+    ))
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["status"], "cancelled");
+    let progress: serde_json::Value =
+        reqwest::get(format!("http://{addr}/api/v1/orders/{uid}/status"))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+    assert_eq!(progress["type"], "cancelled");
+
+    // A replay is harmless.
+    let (status, _) = delete_order(addr, &uid, signed(&owner)).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+
+    let unknown = format!("0x{}", "00".repeat(32));
+    let (status, body) = delete_order(addr, &unknown, signed(&owner)).await;
+    assert_eq!(
+        (status, body["errorType"].as_str()),
+        (reqwest::StatusCode::NOT_FOUND, Some("OrderNotFound"))
+    );
+
+    // The creation lands after all: the PDA's state is the truth from here.
+    sqlx::query("INSERT INTO solana.order_pda (order_uid, created_by) VALUES ($1, $2)")
+        .bind(intent.uid().to_bytes())
+        .bind(funder.to_bytes())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, body) = delete_order(addr, &uid, signed(&owner)).await;
+    assert_eq!(
+        (status, body["errorType"].as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, Some("OnChainOrder"))
+    );
+    assert_eq!(get_order(addr, &uid).await["status"], "open");
+}
+
+/// Off-chain cancellation is part of sponsoring: without its config the route
+/// refuses before any database access.
+#[tokio::test]
+async fn cancel_order_is_off_without_sponsoring() {
+    let uid = format!("0x{}", "00".repeat(32));
+    let (status, body) = delete_order(spawn_server().await, &uid, String::new()).await;
+    assert_eq!(
+        (status, body["errorType"].as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, Some("SponsoringDisabled"))
+    );
+}
+
+async fn delete_order(
+    addr: SocketAddr,
+    uid: &str,
+    signature: String,
+) -> (reqwest::StatusCode, serde_json::Value) {
+    let response = reqwest::Client::new()
+        .delete(format!("http://{addr}/api/v1/orders/{uid}"))
+        .json(&serde_json::json!({ "signature": signature }))
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, response.json().await.unwrap())
+}
+
 /// The happy path lands the order and the duplicate is rejected.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
