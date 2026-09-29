@@ -42,6 +42,7 @@ use {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Params {
     #[serde_as(as = "Base64")]
+    // TODO: the alias is deprecated and should be dropped in the future
     #[serde(alias = "transaction")]
     pub partially_signed_tx: Vec<u8>,
     /// The id the quote endpoint answered for this order, if any.
