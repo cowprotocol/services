@@ -178,13 +178,29 @@ impl Order {
             .ok_or(QuotingFailed::NoSolutions)?;
         let quote = Quote::try_new(eth, &solution)?;
 
-        // Cache the fast-path solution so it can be settled later by its quote
-        // id.
         if self.enable_fast_path {
+            // For some cases (e.g. RWA trades) the true execution path can't be
+            // committed to at the time of quoting. In those cases solvers may
+            // return an execution plan. Since caching and executing
+            // those solutions later on clearly does not work the driver detects
+            // that and returns `FastPathNotSupported` instead.
+            //
+            // Technically `pre-`/`post-interactions`, `wrappers` and
+            // `flashloans` can also be considered part of the
+            // execution plan but the heart of it are the regular
+            // interactions so to avoid false positives we pin
+            // the check only to them.
+            if solution.interactions().is_empty() {
+                return Err(Error::QuotingFailed(QuotingFailed::FastPathNotSupported));
+            }
+
+            // Now that we are reasonably sure that the solution can actually be
+            // executed we cache it so it can be settled later by its quote id.
             competition
                 .cache_quote_solution(self.quote_id, auction.clone(), solution)
                 .await;
         }
+
         Ok(quote)
     }
 
