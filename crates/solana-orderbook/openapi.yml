@@ -187,13 +187,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [transaction]
+              required: [partiallySignedTx]
               properties:
-                transaction:
+                partiallySignedTx:
                   description: |
-                    The creation transaction in wire format, base64. It is
-                    always partially signed: only the autopilot holds the key
-                    of the funder (the sponsor account). To build it:
+                    The creation transaction in wire format, base64. Only the
+                    autopilot holds the key of the funder (the sponsor
+                    account), so the client never signs it in full. To build
+                    it:
 
                     1. Read the funder address from the `funder` field of
                        `POST /api/v1/quote`.

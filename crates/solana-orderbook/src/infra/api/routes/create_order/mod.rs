@@ -42,7 +42,7 @@ use {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Params {
     #[serde_as(as = "Base64")]
-    pub transaction: Vec<u8>,
+    pub partially_signed_tx: Vec<u8>,
     /// The id the quote endpoint answered for this order, if any.
     #[serde(default)]
     pub quote_id: Option<i64>,
@@ -131,12 +131,12 @@ pub async fn create_order(
     let Some(sponsoring) = state.sponsoring() else {
         return Err(PlacementError::SponsoringDisabled.into());
     };
-    let transaction: VersionedTransaction =
-        bincode::deserialize(&params.transaction).map_err(|_| {
+    let transaction: VersionedTransaction = bincode::deserialize(&params.partially_signed_tx)
+        .map_err(|_| {
             PlacementError::InvalidTransaction("the bytes do not decode to a transaction")
         })?;
     let mut order = validate(sponsoring, &transaction, state.validation().min_validity)?;
-    order.presigned_transaction = params.transaction;
+    order.presigned_transaction = params.partially_signed_tx;
 
     // The countersign re-checks freshness, so the stored expiry only has to
     // be an upper bound: the tip cannot have moved past the blockhash's own

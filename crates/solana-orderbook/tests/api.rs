@@ -731,7 +731,7 @@ fn lighthouse_memory_creation_tx(
 async fn post_order(addr: SocketAddr, transaction: String) -> (reqwest::StatusCode, String) {
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "transaction": transaction }))
+        .json(&serde_json::json!({ "partiallySignedTx": transaction }))
         .send()
         .await
         .unwrap();
@@ -1037,7 +1037,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "transaction": transaction.clone(), "quoteId": quote_id }))
+        .json(&serde_json::json!({ "partiallySignedTx": transaction.clone(), "quoteId": quote_id }))
         .send()
         .await
         .unwrap();
@@ -1095,7 +1095,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     let transaction = creation_tx(funder, &other_owner, &other, vec![destination], true);
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "transaction": transaction, "quoteId": mismatched }))
+        .json(&serde_json::json!({ "partiallySignedTx": transaction, "quoteId": mismatched }))
         .send()
         .await
         .unwrap();
@@ -1128,7 +1128,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     let transaction = creation_tx(funder, &late_owner, &late, vec![destination], true);
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "transaction": transaction, "quoteId": expired }))
+        .json(&serde_json::json!({ "partiallySignedTx": transaction, "quoteId": expired }))
         .send()
         .await
         .unwrap();
