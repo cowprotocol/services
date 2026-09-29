@@ -3,11 +3,15 @@
 //! The wire format matches `solana-solvers/src/dto/auction.rs`.
 
 use {
-    crate::domain::{self, Side, order_uid::OrderUid, solver_fee::SolverFee},
+    crate::{
+        domain::{self, Side, order_uid::OrderUid, solver_fee::SolverFee},
+        infra::blockchain::associated_token_address,
+    },
     cow_settlement_interface::pda::buffer::find_buffer_pda,
     serde::Serialize,
     serde_with::serde_as,
     solana_sdk::pubkey::Pubkey,
+    spl_token_interface::native_mint,
 };
 
 /// The auction the driver posts to `/solve`.
@@ -64,27 +68,46 @@ impl Order {
         }
     }
 
-    /// Build the wire order from a domain order and the settlement program id.
+    /// Build the wire order from a domain order, the taker and the settlement
+    /// program id.
     ///
     /// The swap output must land in the buy-mint buffer PDA so that
-    /// `FinalizeSettle` can push it to the user's buy token account.
+    /// `FinalizeSettle` can push it to the user's buy token account. Solvers
+    /// swap into token accounts, so a native SOL buy goes out as a wSOL buy
+    /// into the taker's wSOL ATA.
     ///
     /// The wire format does not specify how the sell tokens are ultimately
     /// used, so the driver defaults `BeginSettle` to pull sell tokens into the
     /// taker's sell ATA. A future optimization can let solvers report per-order
     /// pull destinations so the driver routes directly to their chosen
     /// accounts.
-    fn new(order: &domain::Order, program_id: Pubkey, fee: Option<SolverFee>) -> Self {
+    fn new(
+        order: &domain::Order,
+        taker: Pubkey,
+        program_id: Pubkey,
+        fee: Option<SolverFee>,
+    ) -> Self {
         let tighten = |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
         let (sell_amount, buy_amount) = match order.side {
             Side::Sell => (order.sell_amount, tighten(Side::Sell, order.buy_amount)),
             Side::Buy => (tighten(Side::Buy, order.sell_amount), order.buy_amount),
         };
+        let (buy_mint, buy_destination) = if order.buys_native_sol() {
+            (
+                native_mint::ID,
+                associated_token_address(&taker, &native_mint::ID),
+            )
+        } else {
+            (
+                order.buy_token,
+                find_buffer_pda(&program_id, &order.buy_token).0,
+            )
+        };
         Self {
             uid: order.uid,
             sell_mint: order.sell_token,
-            buy_mint: order.buy_token,
-            buy_destination: find_buffer_pda(&program_id, &order.buy_token).0,
+            buy_mint,
+            buy_destination,
             sell_amount,
             buy_amount,
             amount: match order.side {
@@ -101,10 +124,10 @@ impl Order {
 impl Auction {
     /// Build the wire auction from the domain auction.
     ///
-    /// The `taker` is the solver that signs the settlement transaction.
-    /// `program_id` is used to derive the buy-mint buffer PDA, which is the
-    /// swap output destination so `FinalizeSettle` can push it to the
-    /// user's buy token account. `fee` tightens every order's limit leg.
+    /// The `taker` is the solver that signs the settlement transaction, and its
+    /// wSOL ATA receives native SOL buys. `program_id` derives the buy-mint
+    /// buffer PDA that every other order swaps into. `fee` tightens every
+    /// order's limit leg.
     pub fn new(
         auction: &domain::Auction,
         taker: Pubkey,
@@ -117,7 +140,7 @@ impl Auction {
             orders: auction
                 .orders
                 .iter()
-                .map(|order| Order::new(order, program_id, fee))
+                .map(|order| Order::new(order, taker, program_id, fee))
                 .collect(),
             deadline: auction.deadline,
         }
@@ -126,7 +149,12 @@ impl Auction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::domain::Side, serde_json::json};
+    use {
+        super::*,
+        crate::domain::Side,
+        cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
+        serde_json::json,
+    };
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -201,7 +229,7 @@ mod tests {
 
     #[test]
     fn without_a_fee_both_legs_are_the_signed_amounts() {
-        let order = Order::new(&domain_order(Side::Sell), pubkey(0xaa), None);
+        let order = Order::new(&domain_order(Side::Sell), pubkey(3), pubkey(0xaa), None);
         assert_eq!((order.sell_amount, order.buy_amount), (1_000, 1_000));
         assert_eq!(
             (order.full_sell_amount, order.full_buy_amount),
@@ -212,15 +240,41 @@ mod tests {
     #[test]
     fn the_fee_tightens_the_limit_leg() {
         let fee = Some(SolverFee::try_from(500).unwrap());
-        let sell = Order::new(&domain_order(Side::Sell), pubkey(0xaa), fee);
+        let sell = Order::new(&domain_order(Side::Sell), pubkey(3), pubkey(0xaa), fee);
         assert_eq!((sell.sell_amount, sell.buy_amount), (1_000, 1_053));
         assert_eq!(
             (sell.full_sell_amount, sell.full_buy_amount),
             (1_000, 1_000)
         );
 
-        let buy = Order::new(&domain_order(Side::Buy), pubkey(0xaa), fee);
+        let buy = Order::new(&domain_order(Side::Buy), pubkey(3), pubkey(0xaa), fee);
         assert_eq!((buy.sell_amount, buy.buy_amount), (952, 1_000));
         assert_eq!((buy.full_sell_amount, buy.full_buy_amount), (1_000, 1_000));
+    }
+
+    #[test]
+    fn a_token_buy_lands_in_the_buffer_pda() {
+        let (taker, program_id) = (pubkey(3), pubkey(0xaa));
+        let order = Order::new(&domain_order(Side::Sell), taker, program_id, None);
+        assert_eq!(order.buy_mint, pubkey(2));
+        assert_eq!(
+            order.buy_destination,
+            find_buffer_pda(&program_id, &pubkey(2)).0
+        );
+    }
+
+    #[test]
+    fn a_native_sol_buy_goes_out_as_wsol_into_the_takers_ata() {
+        let (taker, program_id) = (pubkey(3), pubkey(0xaa));
+        let native_buy = domain::Order {
+            buy_token: ENCODED_NATIVE_SOL_TRANSFER,
+            ..domain_order(Side::Sell)
+        };
+        let order = Order::new(&native_buy, taker, program_id, None);
+        assert_eq!(order.buy_mint, native_mint::ID);
+        assert_eq!(
+            order.buy_destination,
+            associated_token_address(&taker, &native_mint::ID)
+        );
     }
 }
