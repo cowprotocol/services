@@ -78,9 +78,7 @@ fn with_fast_path_exclusivity(
     (autopilot, orderbook)
 }
 
-/// Fetches the competition a settlement tx belongs to. The order is
-/// `Fulfilled` as soon as the trade event is indexed, but the lookup 404s
-/// until the settlement observer links the tx to its auction.
+/// Fetches the competition a settlement tx belongs to.
 async fn settled_competition(
     onchain: &OnchainComponents,
     services: &Services<'_>,
