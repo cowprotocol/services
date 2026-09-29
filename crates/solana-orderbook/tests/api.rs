@@ -3,7 +3,10 @@
 use {
     base64::Engine,
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-    database::{byte_array::ByteArray, solana::OrderKind},
+    database::{
+        byte_array::ByteArray,
+        solana::{OrderEventLabel, OrderKind},
+    },
     solana_orderbook::infra::{api::Api, db, quoter::Quoter},
     solana_sdk::signer::Signer,
     sqlx::PgPool,
@@ -1185,6 +1188,14 @@ async fn get_order(addr: SocketAddr, uid: &str) -> serde_json::Value {
     response.json().await.unwrap()
 }
 
+async fn get_status(addr: SocketAddr, uid: &str) -> serde_json::Value {
+    let response = reqwest::get(format!("http://{addr}/api/v1/orders/{uid}/status"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    response.json().await.unwrap()
+}
+
 /// A pending sponsored creation reads as expired once the chain passes its
 /// block height. The sponsored server's mock answers `getBlockHeight` with
 /// 100, once, so every read goes through a fresh server.
@@ -1228,6 +1239,8 @@ async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let json = get_order(addr, &uid).await;
     assert_eq!(json["status"], "open");
     assert_eq!(json["lastValidBlockHeight"], 100);
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    assert_eq!(get_status(addr, &uid).await["type"], "scheduled");
 
     sqlx::query("UPDATE solana.orders SET last_valid_block_height = 99")
         .execute(&pool)
@@ -1236,6 +1249,18 @@ async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let json = get_order(addr, &uid).await;
     assert_eq!(json["status"], "expired");
+
+    // An `invalid` event alone reads as `open`, expiry outranks it.
+    sqlx::query(
+        "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
+    )
+    .bind(order.uid)
+    .bind(OrderEventLabel::Invalid)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    assert_eq!(get_status(addr, &uid).await["type"], "expired");
 
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let listed: Vec<serde_json::Value> =

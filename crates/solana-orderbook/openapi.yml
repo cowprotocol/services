@@ -87,9 +87,10 @@ paths:
     get:
       operationId: getOrderStatus
       description: |
-        The order's auction progress. A trade always reports `traded`,
-        otherwise the latest auction event decides, and an indexed order
-        without events is `scheduled`.
+        The order's auction progress. A trade always reports `traded`. An
+        untraded order reports `cancelled` or `expired` when the order's own
+        `status` says so. Otherwise the latest auction event decides, and an
+        indexed order without events is `scheduled`.
       parameters:
         - name: uid
           in: path
@@ -381,7 +382,7 @@ components:
       properties:
         type:
           type: string
-          enum: [open, scheduled, active, solved, executing, traded, cancelled]
+          enum: [open, scheduled, active, solved, executing, traded, cancelled, expired]
         value:
           description: |-
             A list of solvers who participated in the latest competition, sorted
