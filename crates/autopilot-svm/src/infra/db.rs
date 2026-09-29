@@ -117,6 +117,23 @@ WHERE o.uid = ANY($1)
         .context("read pending solana.orders creations")
 }
 
+/// Lower a pending sponsored creation's stored deadline to `height`, a height
+/// its blockhash is known dead at. Never raises it.
+pub async fn expire_creation(ex: impl PgExecutor<'_>, uid: &[u8], height: i64) -> Result<()> {
+    const QUERY: &str = r#"
+UPDATE solana.orders
+SET last_valid_block_height = LEAST(last_valid_block_height, $2)
+WHERE uid = $1 AND last_valid_block_height IS NOT NULL
+    "#;
+    sqlx::query(QUERY)
+        .bind(uid)
+        .bind(height)
+        .execute(ex)
+        .await
+        .context("expire the solana.orders creation")?;
+    Ok(())
+}
+
 /// Open a settlement-execution window for a dispatched settlement.
 pub async fn open_settlement_window(
     ex: impl PgExecutor<'_>,
