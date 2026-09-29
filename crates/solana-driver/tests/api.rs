@@ -344,6 +344,47 @@ async fn solve_discards_duplicate_solution_ids() {
     assert_eq!(json["solutions"].as_array().unwrap().len(), 1);
 }
 
+/// A solution whose settlement transaction is over the network's byte limit
+/// is dropped at `/solve`: it would win the auction and then fail to settle.
+#[tokio::test]
+async fn solve_drops_a_solution_over_the_transaction_size_limit() {
+    // The mints of `test_order_intent`, so the order matches its uid and the
+    // settlement builds.
+    let (sell, buy) = (pubkey(0x88).to_string(), pubkey(0x77).to_string());
+    let solution = |id: u64, interactions: serde_json::Value| {
+        serde_json::json!({
+            "id": id,
+            "prices": { (sell.clone()): "2000", (buy.clone()): "1000" },
+            "trades": [{ "orderUid": uid(), "executedAmount": "1000" }],
+            "interactions": interactions,
+        })
+    };
+    // 1,233 zero bytes of instruction data alone exceed the 1,232-byte limit.
+    let oversized = serde_json::json!([{
+        "programId": pubkey(0x99).to_string(),
+        "accounts": [],
+        "instructionData": "AAAA".repeat(411),
+    }]);
+    let engine = spawn_mock_solver_engine(serde_json::json!({
+        "solutions": [solution(1, serde_json::json!([])), solution(2, oversized)],
+    }))
+    .await;
+    let (solver, _) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+    let mut request = solve_request();
+    request["orders"][0]["sellToken"] = serde_json::json!(sell);
+    request["orders"][0]["buyToken"] = serde_json::json!(buy);
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/solve"))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert_eq!(response_ids(&response.json().await.unwrap()), [1]);
+}
+
 #[tokio::test]
 async fn solve_with_engine_down_returns_solver_failed() {
     // Point the solver at a port with no listener.
