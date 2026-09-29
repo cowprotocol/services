@@ -10,6 +10,7 @@ use {
         associated_token_address,
         close_token_account,
         create_associated_token_account_idempotent,
+        require_token_balance,
     },
     cow_settlement_client::instruction::{
         BeginSettle,
@@ -560,10 +561,12 @@ impl SettlementOrder {
     }
 }
 
-/// The instructions that fund the state PDA's native SOL payouts: close the
-/// payer's wSOL ATA to unwrap the swap output, then transfer exactly the
-/// payouts to the state PDA. Only pushes move lamports out of the state PDA, so
-/// any excess would stay there. Empty without a native SOL buy.
+/// The instructions that fund the state PDA's native SOL payouts: check that
+/// the payer's wSOL ATA holds the payouts, close it to unwrap the swap output,
+/// then transfer exactly the payouts to the state PDA. The check reverts the
+/// settlement when the route delivered less, so the payer's own SOL never
+/// covers the gap. Only pushes move lamports out of the state PDA, so any
+/// excess would stay there. Empty without a native SOL buy.
 fn native_payout_funding(
     program_id: &Pubkey,
     payer: &Pubkey,
@@ -582,6 +585,7 @@ fn native_payout_funding(
         .ok_or(Error::ExecutedAmountOverflow)?;
     let wsol_ata = associated_token_address(payer, &native_mint::ID);
     Ok(vec![
+        require_token_balance(&wsol_ata, payer, total),
         close_token_account(&wsol_ata, payer, payer),
         transfer(payer, &find_state_pda(program_id).0, total),
     ])
@@ -1192,10 +1196,10 @@ mod tests {
         assert_eq!(ata_mints, expected);
     }
 
-    /// Between the interactions and `FinalizeSettle`, the payer unwraps its
-    /// wSOL ATA and moves exactly the native SOL payouts into the state PDA,
-    /// which `FinalizeSettle` pays those orders from. Token payouts are not
-    /// part of the transfer.
+    /// Between the interactions and `FinalizeSettle`, the payer checks that its
+    /// wSOL ATA holds the native SOL payouts, unwraps it and moves exactly the
+    /// payouts into the state PDA, which `FinalizeSettle` pays those orders
+    /// from. Token payouts are not part of the transfer.
     #[test]
     fn native_sol_payouts_are_funded_from_the_unwrapped_wsol() {
         let program_id = pubkey(0xaa);
@@ -1221,23 +1225,35 @@ mod tests {
         .unwrap();
 
         let instructions = resolve_for_test(settlement).instructions(payer).unwrap();
-        // [SetComputeUnitLimit, BeginSettle, CloseAccount, Transfer,
-        // FinalizeSettle].
-        assert_eq!(instructions.len(), 5);
+        // [SetComputeUnitLimit, BeginSettle, Transfer (self), CloseAccount,
+        // Transfer, FinalizeSettle].
+        assert_eq!(instructions.len(), 6);
         let state_pda = find_state_pda(&program_id).0;
         let wsol_ata = associated_token_address(&payer, &native_mint::ID);
         assert_eq!(
             instructions[2],
+            spl_token_interface::instruction::transfer(
+                &spl_token_interface::ID,
+                &wsol_ata,
+                &wsol_ata,
+                &payer,
+                &[],
+                3_000,
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            instructions[3],
             close_token_account(&wsol_ata, &payer, &payer)
         );
-        assert_eq!(instructions[3], transfer(&payer, &state_pda, 3_000));
+        assert_eq!(instructions[4], transfer(&payer, &state_pda, 3_000));
 
         let begin = &instructions[1];
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
-        assert_eq!(begin_input.finalize_ix_index, 4);
+        assert_eq!(begin_input.finalize_ix_index, 5);
 
-        let finalize = &instructions[4];
+        let finalize = &instructions[5];
         let finalize_accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
         let finalize_input =
             FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();

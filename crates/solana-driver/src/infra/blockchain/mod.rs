@@ -12,6 +12,7 @@ pub use {
         associated_token_address,
         close_token_account,
         create_associated_token_account_idempotent,
+        require_token_balance,
     },
 };
 use {

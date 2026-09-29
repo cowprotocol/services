@@ -62,6 +62,24 @@ pub fn close_token_account(account: &Pubkey, destination: &Pubkey, owner: &Pubke
     .expect("the SPL Token program id passes the program check")
 }
 
+/// Create the instruction that fails unless `owner`'s token `account` holds at
+/// least `amount`. It is a self-transfer, which checks the balance and moves
+/// nothing.
+///
+/// This function has the same token-2022 limitation as
+/// [`associated_token_address`]
+pub fn require_token_balance(account: &Pubkey, owner: &Pubkey, amount: u64) -> Instruction {
+    spl_token_interface::instruction::transfer(
+        &SPL_TOKEN_PROGRAM_ID,
+        account,
+        account,
+        owner,
+        &[],
+        amount,
+    )
+    .expect("the SPL Token program id passes the program check")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
