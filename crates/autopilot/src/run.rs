@@ -491,7 +491,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     .spawn(db_write.pool.clone());
 
     let penalty_cap_calculator = match &config.penalty_cap {
-        Some(penalty_cap_config) => Some(
+        Some(penalty_cap_config) => Some(Arc::new(
             build_penalty_cap_calculator(
                 penalty_cap_config,
                 *eth.contracts().weth().address(),
@@ -499,7 +499,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 &competition_native_price_updater,
             )
             .await,
-        ),
+        )),
         None => None,
     };
 
@@ -526,7 +526,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         competition_native_price_updater.clone(),
         *eth.contracts().weth().address(),
         protocol_fees.clone(),
-        penalty_cap_calculator,
+        penalty_cap_calculator.clone(),
         surplus_capturing_jit_order_owners.clone(),
         config.native_price_timeout,
         *eth.contracts().settlement().address(),
@@ -671,6 +671,13 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         awaiter.clone(),
         run_loop_config.max_settlement_transaction_wait,
     ));
+    // Fast-path penalties are decoupled from the regular auction's: the handler
+    // only gets the calculator when explicitly enabled, so orders carry no
+    // penalty cap at launch.
+    let fast_path_penalty_cap_calculator = config
+        .fast_path_penalty_cap_enabled
+        .then(|| penalty_cap_calculator.clone())
+        .flatten();
     let fast_path_handler = FastPathHandler::new(
         eth.clone(),
         persistence.clone(),
@@ -679,6 +686,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         surplus_capturing_jit_order_owners,
         settle_coordinator.clone(),
         config.fast_path_submission_deadline,
+        fast_path_penalty_cap_calculator,
     );
     fast_path_handler.spawn(fast_path_receiver).await;
 

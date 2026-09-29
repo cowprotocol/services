@@ -2,7 +2,7 @@
 
 use {
     cow_settlement_interface::{
-        data::intent::{Flags, OrderIntent, OrderKind},
+        data::intent::{Asset, Flags, OrderIntent, OrderKind, TokenAsset},
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
@@ -24,10 +24,14 @@ fn pubkey(byte: u8) -> Pubkey {
 fn test_order_intent() -> OrderIntent {
     OrderIntent {
         owner: pubkey(0x22),
-        buy_token_account: pubkey(0x66),
-        buy_mint: pubkey(0x77),
-        sell_token_account: pubkey(0x55),
-        sell_mint: pubkey(0x88),
+        sell: TokenAsset {
+            mint: pubkey(0x88),
+            token_account: pubkey(0x55),
+        },
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: pubkey(0x77),
+            token_account: pubkey(0x66),
+        }),
         sell_amount: 1_000,
         buy_amount: 2_000,
         // Far future so the settle path's order-expiry check passes.
