@@ -43,8 +43,9 @@ impl DbAuctionProvider {
     /// already created on chain are checked, a pending sponsored order
     /// creates its own accounts at settlement time. When the account lookup
     /// fails every order passes, a doomed order then costs one failed
-    /// settlement instead of the whole cut.
-    async fn receivable_orders(&self, orders: Vec<Order>) -> Vec<Order> {
+    /// settlement instead of the whole cut. Returns the kept orders and the
+    /// uids of the dropped ones.
+    async fn receivable_orders(&self, orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
         let candidates = orders
             .iter()
             .filter(|order| order.created_on_chain)
@@ -53,10 +54,11 @@ impl DbAuctionProvider {
             Ok(accounts) => accounts,
             Err(err) => {
                 tracing::warn!(?err, "buy account lookup failed, keeping all orders");
-                return orders;
+                return (orders, Vec::new());
             }
         };
-        orders
+        let mut dropped = Vec::new();
+        let orders = orders
             .into_iter()
             .filter(|order| {
                 if !order.created_on_chain {
@@ -68,18 +70,31 @@ impl DbAuctionProvider {
                     .is_some_and(|found| receivable_token_account(found, order.buy_token.0));
                 if !receivable {
                     // A doomed order repeats this on every cut until it
-                    // expires: the counter is the alerting signal, the log
-                    // line stays at debug.
+                    // expires: the counter is the alerting signal.
                     metrics().unreceivable_orders.inc();
-                    tracing::debug!(
-                        order = %order.uid,
-                        %account,
-                        "excluding order, its buy token account cannot receive the payout"
-                    );
+                    dropped.push(order.uid);
                 }
                 receivable
             })
-            .collect()
+            .collect();
+        (orders, dropped)
+    }
+
+    /// Log the orders a cut leaves out for `reason` and record them as
+    /// filtered. An order repeats this on every cut while the reason holds,
+    /// so the line stays at debug.
+    fn exclude(&self, reason: &'static str, uids: &[IntentHash]) {
+        if uids.is_empty() {
+            return;
+        }
+        let orders: Vec<String> = uids.iter().map(ToString::to_string).collect();
+        tracing::debug!(
+            reason,
+            count = orders.len(),
+            ?orders,
+            "orders excluded from the auction"
+        );
+        order_events::store_detached(self.pool.clone(), uids.to_vec(), OrderEventLabel::Filtered);
     }
 }
 
@@ -147,21 +162,13 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         let (orders, held_out): (Vec<_>, Vec<_>) = orders
             .into_iter()
             .partition(|order| !held.contains(&order.uid));
-        if !held_out.is_empty() {
-            metrics()
-                .held_out_orders
-                .inc_by(u64::try_from(held_out.len()).unwrap_or(u64::MAX));
-            tracing::debug!(
-                held_out = held_out.len(),
-                "orders held out with settlements in flight"
-            );
-            order_events::store_detached(
-                self.pool.clone(),
-                held_out.into_iter().map(|order| order.uid).collect(),
-                OrderEventLabel::Filtered,
-            );
-        }
-        let orders = self.receivable_orders(orders).await;
+        let held_out: Vec<IntentHash> = held_out.into_iter().map(|order| order.uid).collect();
+        metrics()
+            .held_out_orders
+            .inc_by(u64::try_from(held_out.len()).unwrap_or(u64::MAX));
+        self.exclude("settlement_in_flight", &held_out);
+        let (orders, unreceivable) = self.receivable_orders(orders).await;
+        self.exclude("unreceivable_buy_token_account", &unreceivable);
         if orders.is_empty() {
             return None;
         }
@@ -322,13 +329,13 @@ mod tests {
             order([0x03; 32], true),
             order([0x04; 32], true),
         ];
-        let kept: Vec<u8> = provider
-            .receivable_orders(orders)
-            .await
+        let (kept, dropped) = provider.receivable_orders(orders).await;
+        let kept: Vec<u8> = kept
             .iter()
             .map(|order| order.buy_token_account.0[0])
             .collect();
         assert_eq!(kept, [0x01, 0x02]);
+        assert_eq!(dropped, [IntentHash([0x03; 32]), IntentHash([0x04; 32])]);
     }
 
     /// A failed lookup (here a malformed response) keeps every order.
@@ -339,7 +346,8 @@ mod tests {
             serde_json::json!("not an account list"),
         )]));
         let orders = vec![order([0x01; 32], true)];
-        assert_eq!(provider.receivable_orders(orders).await.len(), 1);
+        let (kept, dropped) = provider.receivable_orders(orders).await;
+        assert_eq!((kept.len(), dropped.len()), (1, 0));
     }
 
     /// The watermark trips past the allowed lag, on a never-written indexer,
