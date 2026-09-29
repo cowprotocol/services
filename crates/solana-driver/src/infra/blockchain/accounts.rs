@@ -5,8 +5,6 @@
 //! token-account states, never raw `Account`s.
 
 use {
-    super::token::associated_token_address,
-    crate::domain::Order,
     solana_address_lookup_table_interface::{
         program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
         state::AddressLookupTable,
@@ -119,15 +117,13 @@ impl AccountsSnapshot {
         }
     }
 
-    /// Whether the order's buy token account, the settlement's payout
-    /// destination, is missing on chain and is the owner's associated token
-    /// account: the one destination an idempotent create can produce. Any
-    /// other absent destination stays the owner's to create.
-    pub fn buy_token_account_missing(&self, order: &Order) -> bool {
+    /// Whether the token account at `address` must be created before it can
+    /// hold tokens, see [`Self::token_account_state`].
+    pub fn token_account_needs_creation(&self, address: Pubkey) -> bool {
         matches!(
-            self.token_account_state(&order.buy_token_account),
+            self.token_account_state(&address),
             TokenAccountState::NeedsCreation
-        ) && order.buy_token_account == associated_token_address(&order.owner, &order.buy_token)
+        )
     }
 }
 

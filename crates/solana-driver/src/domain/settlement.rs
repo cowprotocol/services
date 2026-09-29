@@ -54,6 +54,12 @@ pub struct Settlement {
 /// A settlement with its on-chain accounts resolved by
 /// [`Settlement::resolve_accounts`]: lookup tables and the setup accounts
 /// the settlement transaction requires.
+///
+/// The transaction optionally sets a compute-unit limit and creates the
+/// missing setup accounts (buy-mint buffer PDAs, the payer's sell-mint ATAs,
+/// the orders' buy-mint ATAs), then runs `BeginSettle` (pulls sell tokens
+/// into the payer's sell ATAs), the solver interactions, and
+/// `FinalizeSettle` (pushes buy tokens out of the buy-mint buffer PDAs).
 pub(crate) struct ResolvedSettlement {
     settlement: Settlement,
     /// The solution's resolved address lookup tables.
@@ -284,8 +290,8 @@ impl SetupAccount {
 
 /// The setup accounts the settlement must create before `BeginSettle`, each
 /// list sorted and deduplicated: the mints whose buffer PDA is missing on
-/// chain, and the missing ATAs, the payer's sell ATAs and the orders' buy
-/// ATAs.
+/// chain, and the missing ATAs, both the payer's sell ATAs and the orders'
+/// buy ATAs.
 fn accounts_to_create(
     orders: &[Order],
     buffers: &[SetupAccount],
@@ -302,10 +308,13 @@ fn accounts_to_create(
         .map(|mint| Ata { owner: payer, mint });
 
     // Checked against the chain again rather than taken from the solve-time
-    // flag: an account closed since would revert the payout.
+    // resolution: an account closed since would revert the payout.
     let missing_user_atas = orders
         .iter()
-        .filter(|order| snapshot.buy_token_account_missing(order))
+        .filter(|order| {
+            snapshot.token_account_needs_creation(order.buy_token_account)
+                && order.buy_token_account_is_ata()
+        })
         .map(|order| Ata {
             owner: order.owner,
             mint: order.buy_token,
@@ -314,6 +323,17 @@ fn accounts_to_create(
     let mut missing_atas: Vec<Ata> = missing_user_atas.chain(missing_payer_atas).collect();
     missing_atas.sort_unstable();
     missing_atas.dedup();
+
+    // The one place the payer's rent buys someone else an account, which its
+    // owner can close and reclaim the rent lamports right after the fill.
+    for ata in missing_atas.iter().filter(|ata| ata.owner != payer) {
+        tracing::info!(
+            %payer,
+            owner = %ata.owner,
+            mint = %ata.mint,
+            "creating a user's buy token account"
+        );
+    }
 
     Ok((missing_buffers, missing_atas))
 }
@@ -633,7 +653,6 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey::default(), // re-derived below
             app_data: [0x77; 32],
-            missing_buy_token_account: false,
         };
         customize(&mut order);
         let uid = OrderIntent::from(&order).uid();

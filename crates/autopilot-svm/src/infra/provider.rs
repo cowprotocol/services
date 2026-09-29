@@ -42,11 +42,9 @@ impl DbAuctionProvider {
     }
 
     /// Drop orders whose buy token account cannot receive the settlement
-    /// payout: their settlement would revert at `FinalizeSettle`. An account
-    /// that does not exist yet stays in when it is the owner's associated
-    /// token account, the settlement creates it. A native SOL buy pays a
-    /// wallet instead, which must be missing or owned by the System Program.
-    /// A pending sponsored token buy skips the check, its creation
+    /// payout: their settlement would revert at `FinalizeSettle`. A native SOL
+    /// buy pays a wallet instead, which must be missing or owned by the System
+    /// Program. A pending sponsored token buy skips the check, its creation
     /// transaction creates the buy token account. When the account lookup
     /// fails every order passes, a doomed order then costs one failed
     /// settlement instead of the whole cut.
@@ -73,7 +71,9 @@ impl DbAuctionProvider {
                 let receivable = match accounts.get(&account) {
                     found if order.buys_native_sol() => found.is_none_or(receivable_wallet),
                     Some(found) => receivable_token_account(found, order.buy_token.0),
-                    None => account == associated_token_address(order),
+                    None => false,
+                    // TODO: flip on once the buy token account rent is priced.
+                    // None => account == associated_token_address(order),
                 };
                 if !receivable {
                     // A doomed order repeats this on every cut until it
@@ -271,6 +271,13 @@ fn indexer_lags(tip: u64, indexed: Option<i64>, max_lag: u64) -> bool {
 /// the payout when it does not exist yet.
 /// TODO(token-2022): a token-2022 mint derives a different address, so its
 /// missing account is dropped here, like the driver cannot settle it yet.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the receivable check that uses it is held until solvers price the ATA rent"
+    )
+)]
 fn associated_token_address(order: &Order) -> Pubkey {
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
         &Pubkey::new_from_array(order.owner.0),
@@ -364,7 +371,9 @@ mod tests {
     /// The lookup answers for the four created orders in candidate order:
     /// initialized with the buy mint, initialized with a wrong mint, absent
     /// at an arbitrary address, absent at the owner's associated token
-    /// address. The pending sponsored order is exempt from the check.
+    /// address. An absent account is dropped either way while the settlement
+    /// creating it is held. The pending sponsored order is exempt from the
+    /// check.
     #[tokio::test]
     async fn drops_created_orders_with_unreceivable_buy_accounts() {
         let response = serde_json::json!({
@@ -391,7 +400,7 @@ mod tests {
             .iter()
             .map(|order| order.buy_token_account.0)
             .collect();
-        assert_eq!(kept, [[0x01; 32], [0x02; 32], ata]);
+        assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
     }
 
     /// A native SOL buy pays its wallet directly: a missing or system-owned

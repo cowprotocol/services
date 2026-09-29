@@ -8,6 +8,7 @@ use {
     serde::Serialize,
     serde_with::serde_as,
     solana_sdk::pubkey::Pubkey,
+    std::collections::HashSet,
 };
 
 /// The auction the driver posts to `/solve`.
@@ -59,8 +60,8 @@ pub struct Order {
     /// so the solution should price that rent in.
     ///
     /// TODO(token-2022): a token-2022 account rents more bytes, so once
-    /// those mints are supported this boolean becomes the missing account's
-    /// token program.
+    /// those mints are supported this boolean becomes a `setupCostLamports`
+    /// number and engines stop having to know the rent math.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub missing_buy_token_account: bool,
 }
@@ -83,7 +84,12 @@ impl Order {
     /// taker's sell ATA. A future optimization can let solvers report per-order
     /// pull destinations so the driver routes directly to their chosen
     /// accounts.
-    fn new(order: &domain::Order, program_id: Pubkey, fee: Option<SolverFee>) -> Self {
+    fn new(
+        order: &domain::Order,
+        program_id: Pubkey,
+        fee: Option<SolverFee>,
+        missing_buy_token_account: bool,
+    ) -> Self {
         let tighten = |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
         let (sell_amount, buy_amount) = match order.side {
             Side::Sell => (order.sell_amount, tighten(Side::Sell, order.buy_amount)),
@@ -103,7 +109,7 @@ impl Order {
             full_sell_amount: order.sell_amount,
             full_buy_amount: order.buy_amount,
             side: order.side,
-            missing_buy_token_account: order.missing_buy_token_account,
+            missing_buy_token_account,
         }
     }
 }
@@ -115,11 +121,14 @@ impl Auction {
     /// `program_id` is used to derive the buy-mint buffer PDA, which is the
     /// swap output destination so `FinalizeSettle` can push it to the
     /// user's buy token account. `fee` tightens every order's limit leg.
+    /// `missing_buy_token_accounts` marks the orders whose payout account the
+    /// settlement creates.
     pub fn new(
         auction: &domain::Auction,
         taker: Pubkey,
         program_id: Pubkey,
         fee: Option<SolverFee>,
+        missing_buy_token_accounts: &HashSet<OrderUid>,
     ) -> Self {
         Self {
             id: auction.id.map(|id| id.get()),
@@ -127,7 +136,14 @@ impl Auction {
             orders: auction
                 .orders
                 .iter()
-                .map(|order| Order::new(order, program_id, fee))
+                .map(|order| {
+                    Order::new(
+                        order,
+                        program_id,
+                        fee,
+                        missing_buy_token_accounts.contains(&order.uid),
+                    )
+                })
                 .collect(),
             deadline: auction.deadline,
         }
@@ -207,13 +223,12 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x67),
             app_data: [0x77; 32],
-            missing_buy_token_account: false,
         }
     }
 
     #[test]
     fn without_a_fee_both_legs_are_the_signed_amounts() {
-        let order = Order::new(&domain_order(Side::Sell), pubkey(0xaa), None);
+        let order = Order::new(&domain_order(Side::Sell), pubkey(0xaa), None, false);
         assert_eq!((order.sell_amount, order.buy_amount), (1_000, 1_000));
         assert_eq!(
             (order.full_sell_amount, order.full_buy_amount),
@@ -224,14 +239,14 @@ mod tests {
     #[test]
     fn the_fee_tightens_the_limit_leg() {
         let fee = Some(SolverFee::try_from(500).unwrap());
-        let sell = Order::new(&domain_order(Side::Sell), pubkey(0xaa), fee);
+        let sell = Order::new(&domain_order(Side::Sell), pubkey(0xaa), fee, false);
         assert_eq!((sell.sell_amount, sell.buy_amount), (1_000, 1_053));
         assert_eq!(
             (sell.full_sell_amount, sell.full_buy_amount),
             (1_000, 1_000)
         );
 
-        let buy = Order::new(&domain_order(Side::Buy), pubkey(0xaa), fee);
+        let buy = Order::new(&domain_order(Side::Buy), pubkey(0xaa), fee, false);
         assert_eq!((buy.sell_amount, buy.buy_amount), (952, 1_000));
         assert_eq!((buy.full_sell_amount, buy.full_buy_amount), (1_000, 1_000));
     }
@@ -239,27 +254,12 @@ mod tests {
     #[test]
     fn missing_buy_token_account_is_on_the_wire_only_when_flagged() {
         let program_id = pubkey(0xaa);
-        let order = |missing: bool| domain::Order {
-            uid: OrderUid([8; 32]),
-            owner: pubkey(0x22),
-            sell_token: pubkey(0x33),
-            buy_token: pubkey(0x44),
-            sell_token_account: pubkey(0x55),
-            buy_token_account: pubkey(0x66),
-            sell_amount: 1_000,
-            buy_amount: 2_000,
-            valid_to: u32::MAX,
-            side: Side::Sell,
-            partially_fillable: false,
-            order_pda: pubkey(0x77),
-            app_data: [0; 32],
-            missing_buy_token_account: missing,
-        };
+        let order = domain_order(Side::Sell);
 
-        let flagged = serde_json::to_value(Order::new(&order(true), program_id, None)).unwrap();
+        let flagged = serde_json::to_value(Order::new(&order, program_id, None, true)).unwrap();
         assert_eq!(flagged["missingBuyTokenAccount"], json!(true));
 
-        let unflagged = serde_json::to_value(Order::new(&order(false), program_id, None)).unwrap();
+        let unflagged = serde_json::to_value(Order::new(&order, program_id, None, false)).unwrap();
         assert!(unflagged.get("missingBuyTokenAccount").is_none());
     }
 }
