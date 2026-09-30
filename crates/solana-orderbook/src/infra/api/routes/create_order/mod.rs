@@ -295,7 +295,12 @@ fn validate(
     if !keys.iter().take(signers).any(|key| *key == intent.owner) {
         return Err(PlacementError::InvalidSignature);
     }
-    if super::same_token(&intent.sell.mint, &intent.buy.encode().0) {
+    // Buying native SOL counts as buying wSOL.
+    let buy_mint = match &intent.buy {
+        Asset::TokenProgram(buy) => buy.mint,
+        Asset::Native(_) => spl_token_interface::native_mint::ID,
+    };
+    if intent.sell.mint == buy_mint {
         return Err(PlacementError::SameBuyAndSellToken);
     }
     if intent.sell_amount == 0 || intent.buy_amount == 0 {

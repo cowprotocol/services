@@ -12,6 +12,8 @@ use {
     chrono::Utc,
     cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
     database::{byte_array::ByteArray, solana::OrderKind},
+    solana_sdk::pubkey::Pubkey,
+    spl_token_interface::native_mint,
     std::time::Duration,
 };
 
@@ -123,7 +125,7 @@ fn validate(
     now_secs: u32,
     validation: &ValidationParameters,
 ) -> Result<(), error::Reply> {
-    if super::same_token(&request.sell_token, &request.buy_token) {
+    if same_token(&request.sell_token, &request.buy_token) {
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
             "SameBuyAndSellToken",
@@ -152,4 +154,26 @@ fn validate(
         ));
     }
     Ok(())
+}
+
+/// Whether a quote trades a token for itself. Native SOL can only be bought,
+/// and buying it counts as buying wSOL.
+fn same_token(sell: &Pubkey, buy: &Pubkey) -> bool {
+    sell == buy || (*sell == native_mint::ID && *buy == ENCODED_NATIVE_SOL_TRANSFER)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_sol_buys_count_as_wsol() {
+        let mint = Pubkey::new_unique();
+        assert!(same_token(&mint, &mint));
+        assert!(!same_token(&mint, &Pubkey::new_unique()));
+        assert!(same_token(&native_mint::ID, &ENCODED_NATIVE_SOL_TRANSFER));
+        assert!(!same_token(&mint, &ENCODED_NATIVE_SOL_TRANSFER));
+        // Native SOL can only be bought, so a native sell is no wSOL sell.
+        assert!(!same_token(&ENCODED_NATIVE_SOL_TRANSFER, &native_mint::ID));
+    }
 }

@@ -638,7 +638,7 @@ fn full_preparations(
         spl_associated_token_account_interface::instruction::create_associated_token_account(
             &funder,
             &owner,
-            &intent.buy.encode().0,
+            &buy_mint(intent),
             &spl_token_interface::ID,
         ),
     ]
@@ -710,9 +710,19 @@ fn destination_creation(
     spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
         &funder,
         &owner,
-        &intent.buy.encode().0,
+        &buy_mint(intent),
         &spl_token_interface::ID,
     )
+}
+
+/// The intent's buy mint. A native SOL buy has none, so it panics.
+fn buy_mint(
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+) -> solana_sdk::pubkey::Pubkey {
+    let cow_settlement_interface::data::intent::Asset::TokenProgram(buy) = &intent.buy else {
+        panic!("a native SOL buy has no mint");
+    };
+    buy.mint
 }
 
 /// A sponsored creation transaction with an arbitrary SPL sell and only the
@@ -1080,9 +1090,16 @@ async fn create_order_checks_the_preparation_template() {
         (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
     );
 
-    // A native SOL buy has no buy token account to create.
+    // A native SOL buy has no buy token account to create, not even a wSOL
+    // one.
     let native = native_buy_intent(owner, 1_000_000_000);
-    let creation = destination_creation(funder, owner, &native);
+    let creation =
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+            &funder,
+            &owner,
+            &spl_token_interface::native_mint::ID,
+            &spl_token_interface::ID,
+        );
     let transaction = creation_tx(funder, &owner_keypair, &native, vec![creation], true);
     let (status, kind) = post_order(addr, transaction).await;
     assert_eq!(
