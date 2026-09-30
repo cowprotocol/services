@@ -71,6 +71,7 @@ impl Transaction {
         transaction: &blockchain::Transaction,
         domain_separator: &eth::DomainSeparator,
         settlement_contract: eth::Address,
+        weth: eth::WrappedNativeToken,
         authenticator: &impl Authenticator,
     ) -> Result<Self, Error> {
         // Find trace call to settlement contract
@@ -120,6 +121,16 @@ impl Transaction {
                     ..
                 } = GPv2Settlement::GPv2Settlement::settleCall::abi_decode(data)?;
 
+                // Custom prices follow the uniform ones, so the lowest trade
+                // index marks the end of the uniform prices.
+                let uniform_len = decoded_trades
+                    .iter()
+                    .flat_map(|trade| [trade.sellTokenIndex, trade.buyTokenIndex])
+                    .min()
+                    .map_or(0, |index| {
+                        usize::try_from(index).expect("SC was able to look up this index")
+                    });
+
                 let mut trades = Vec::with_capacity(decoded_trades.len());
                 for trade in decoded_trades {
                     let flags = tokenized::TradeFlags(trade.flags);
@@ -129,12 +140,10 @@ impl Transaction {
                         .expect("SC was able to look up this index");
                     let sell_token = tokens[sell_token_index];
                     let buy_token = tokens[buy_token_index];
-                    let uniform_sell_token_index = tokens
-                        .iter()
-                        .position(|token| token == &sell_token)
-                        .unwrap();
+                    let uniform_sell_token_index =
+                        uniform_token_index(&tokens, uniform_len, sell_token, weth);
                     let uniform_buy_token_index =
-                        tokens.iter().position(|token| token == &buy_token).unwrap();
+                        uniform_token_index(&tokens, uniform_len, buy_token, weth);
                     trades.push(EncodedTrade {
                         uid: tokenized::order_uid(&trade, &tokens, domain_separator)
                             .map_err(Error::OrderUidRecover)?,
@@ -177,6 +186,24 @@ impl Transaction {
             },
         })
     }
+}
+
+/// Index of `token`'s uniform price in `tokens[..uniform_len]`, with ETH and
+/// WETH standing in for each other. Falls back to the first occurrence.
+fn uniform_token_index(
+    tokens: &[eth::Address],
+    uniform_len: usize,
+    token: eth::Address,
+    weth: eth::WrappedNativeToken,
+) -> usize {
+    let uniform = &tokens[..uniform_len];
+    let erc20 = |token: eth::Address| eth::TokenAddress::from(token).as_erc20(weth);
+    uniform
+        .iter()
+        .position(|t| *t == token)
+        .or_else(|| uniform.iter().position(|t| erc20(*t) == erc20(token)))
+        .or_else(|| tokens.iter().position(|t| *t == token))
+        .expect("token was read from `tokens`")
 }
 
 fn find_settlement_trace_and_callers(
@@ -280,4 +307,29 @@ pub enum Error {
     SignatureRecover(#[source] anyhow::Error),
     #[error("failed to check authentication {0}")]
     Authentication(#[source] alloy::contract::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uniform_token_index_treats_eth_and_weth_as_equivalent() {
+        let [a, b, weth] = [1, 2, 3].map(eth::Address::repeat_byte);
+        let eth = *eth::ETH_TOKEN;
+        let index = |tokens: &[eth::Address], uniform_len, token| {
+            uniform_token_index(tokens, uniform_len, token, weth.into())
+        };
+
+        // An explicit uniform ETH price wins over WETH.
+        assert_eq!(index(&[a, weth, eth, a, eth], 3, eth), 2);
+        // ETH falls back to WETH, also for a second trade buying ETH.
+        assert_eq!(index(&[a, weth, a, eth, b, eth], 2, eth), 1);
+        // WETH falls back to ETH.
+        assert_eq!(index(&[eth, a, weth, a], 1, weth), 0);
+        // Without a uniform section the first occurrence is used.
+        assert_eq!(index(&[a, weth, a, eth], 0, eth), 3);
+        // Other tokens never resolve to ETH or WETH.
+        assert_eq!(index(&[weth, a, b, a], 1, a), 1);
+    }
 }

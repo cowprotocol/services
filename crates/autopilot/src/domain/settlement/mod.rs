@@ -382,12 +382,19 @@ mod tests {
             settlement::{OrderMatchKey, trade_to_key},
         },
         alloy::{eips::BlockId, primitives::address},
+        chain::Chain,
         eth_domain_types::{self as eth, Address},
         hex_literal::hex,
         number::u256_ext::U256Ext,
         std::collections::{HashMap, HashSet},
         winner_selection::{self as ws, state::RankedItem},
     };
+
+    fn wrapped_native_token(chain: Chain) -> eth::WrappedNativeToken {
+        contracts::WETH9::deployment_address(&chain.id())
+            .expect("WETH9 is deployed on all chains")
+            .into()
+    }
 
     #[derive(Clone)]
     struct MockAuthenticator;
@@ -741,6 +748,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -849,6 +857,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -991,6 +1000,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -1165,6 +1175,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -1344,6 +1355,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -1570,6 +1582,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Gnosis),
             &MockAuthenticator,
         )
         .await
