@@ -1499,7 +1499,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
- "base64 0.22.1",
  "bigdecimal",
  "bincode",
  "chain-types",
@@ -1523,6 +1522,7 @@ dependencies = [
  "solana-sdk",
  "solana-system-interface 3.2.0",
  "solana-testlib",
+ "solana-token",
  "spl-associated-token-account-interface",
  "spl-token-2022-interface 2.1.0",
  "spl-token-interface",
@@ -10312,6 +10312,7 @@ dependencies = [
  "base64 0.22.1",
  "serde_json",
  "solana-sdk",
+ "spl-token-2022-interface 2.1.0",
  "spl-token-interface",
  "tempfile",
 ]
@@ -10321,6 +10322,16 @@ name = "solana-time-utils"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ced92c60aa76ec4780a9d93f3bd64dfa916e1b998eacc6f1c110f3f444f02c9"
+
+[[package]]
+name = "solana-token"
+version = "0.1.0"
+dependencies = [
+ "cow-settlement-interface",
+ "solana-sdk",
+ "solana-testlib",
+ "spl-token-2022-interface 2.1.0",
+]
 
 [[package]]
 name = "solana-transaction"

@@ -11,19 +11,7 @@ use {
     cow_solana_rpc::SolanaRPC,
     database::solana::OrderEventLabel,
     solana_sdk::{account::Account, pubkey::Pubkey, rent::Rent},
-    spl_token_2022_interface::{
-        extension::{
-            BaseStateWithExtensions,
-            StateWithExtensions,
-            default_account_state::DefaultAccountState,
-            memo_transfer::memo_required,
-            non_transferable::NonTransferable,
-            pausable::PausableConfig,
-            transfer_fee::TransferFeeConfig,
-            transfer_hook::TransferHook,
-        },
-        state::{Account as TokenAccount, AccountState, Mint},
-    },
+    solana_token::{receivable_token_account, unsettleable_mint},
     spl_token_interface::native_mint,
     sqlx::PgPool,
     std::{
@@ -82,7 +70,7 @@ impl DbAuctionProvider {
                 tracing::debug!(
                     order = %order.uid,
                     %mint,
-                    ?reason,
+                    %reason,
                     "excluding order, the settlement program cannot move its mint"
                 );
             }
@@ -97,7 +85,9 @@ impl DbAuctionProvider {
                 let account = Pubkey::new_from_array(order.buy_token_account.0);
                 let receivable = match accounts.get(&account) {
                     found if order.buys_native_sol() => found.is_none_or(receivable_wallet),
-                    Some(found) => receivable_token_account(found, order.buy_token.0),
+                    Some(found) => {
+                        receivable_token_account(found, &Pubkey::new_from_array(order.buy_token.0))
+                    }
                     None => false,
                     // TODO: flip on once the buy token account rent is priced,
                     // with the program that owns the buy mint account.
@@ -328,18 +318,6 @@ fn associated_token_address(order: &Order, program: &Pubkey) -> Pubkey {
     )
 }
 
-/// An initialized, unfrozen token account holding the order's buy mint. It
-/// must not require memos on incoming transfers, since the payout carries
-/// none. Anything else reverts the payout at settlement.
-fn receivable_token_account(account: &Account, buy_mint: [u8; 32]) -> bool {
-    token_program_owned(account)
-        && StateWithExtensions::<TokenAccount>::unpack(&account.data).is_ok_and(|state| {
-            state.base.state == AccountState::Initialized
-                && state.base.mint.to_bytes() == buy_mint
-                && !memo_required(&state)
-        })
-}
-
 /// The token mints an order moves: the sell mint, and the buy mint unless the
 /// order buys native SOL.
 fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
@@ -347,63 +325,6 @@ fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
     std::iter::once(order.sell_token)
         .chain(buy)
         .map(|mint| Pubkey::new_from_array(mint.0))
-}
-
-/// Why the settlement program cannot move a mint's tokens.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum UnsettleableMint {
-    /// The account is missing or not a mint of either token program.
-    NotAMint,
-    /// Token-2022 rejects the program's plain `Transfer` for this mint, even
-    /// at a zero fee.
-    TransferFee,
-    /// Token-2022 rejects the program's plain `Transfer` for this mint, even
-    /// without a hook program.
-    TransferHook,
-    /// Token-2022 rejects the program's plain `Transfer` for this mint, even
-    /// while it is not paused.
-    Pausable,
-    /// Token-2022 rejects every transfer of this mint's tokens.
-    NonTransferable,
-    /// New token accounts start frozen, so the buffer and payer account the
-    /// settlement creates cannot receive the tokens.
-    FrozenByDefault,
-}
-
-/// Why the settlement program cannot move the tokens of the mint at
-/// `account`, `None` when it can.
-///
-/// TODO(BE-344): a permanent delegate mint passes, although its issuer can
-/// move the buffer's balance of the token, retained fees included.
-fn unsettleable_mint(account: Option<&Account>) -> Option<UnsettleableMint> {
-    let Some(mint) = account
-        .filter(|account| token_program_owned(account))
-        .and_then(|account| StateWithExtensions::<Mint>::unpack(&account.data).ok())
-    else {
-        return Some(UnsettleableMint::NotAMint);
-    };
-    if mint.get_extension::<TransferFeeConfig>().is_ok() {
-        Some(UnsettleableMint::TransferFee)
-    } else if mint.get_extension::<TransferHook>().is_ok() {
-        Some(UnsettleableMint::TransferHook)
-    } else if mint.get_extension::<PausableConfig>().is_ok() {
-        Some(UnsettleableMint::Pausable)
-    } else if mint.get_extension::<NonTransferable>().is_ok() {
-        Some(UnsettleableMint::NonTransferable)
-    } else if mint
-        .get_extension::<DefaultAccountState>()
-        .is_ok_and(|default| default.state == AccountState::Frozen as u8)
-    {
-        Some(UnsettleableMint::FrozenByDefault)
-    } else {
-        None
-    }
-}
-
-/// Whether one of the two token programs, classic SPL or Token-2022, owns
-/// `account`.
-fn token_program_owned(account: &Account) -> bool {
-    account.owner == spl_token_interface::ID || account.owner == spl_token_2022_interface::ID
 }
 
 /// Drop native SOL buys the settlement cannot pay out. A payout under the
@@ -445,15 +366,11 @@ mod tests {
         crate::domain::auction::OrderKind,
         chain_types::solana::{AppData, IntentHash, NATIVE_SOL, Pubkey as ChainPubkey},
         cow_solana_rpc::{Mocks, RpcRequest},
-        solana_sdk::program_pack::Pack,
+        solana_testlib::{account_json, token_2022_mint},
         spl_token_2022_interface::extension::{
             BaseStateWithExtensionsMut,
             ExtensionType,
-            StateWithExtensionsMut,
-            immutable_owner::ImmutableOwner,
-            memo_transfer::MemoTransfer,
-            mint_close_authority::MintCloseAuthority,
-            permanent_delegate::PermanentDelegate,
+            transfer_fee::TransferFeeConfig,
         },
     };
 
@@ -617,7 +534,7 @@ mod tests {
     /// missing from the lookup counts as one the program cannot move.
     #[tokio::test]
     async fn drops_orders_on_mints_the_program_cannot_move() {
-        let fee_mint = crate::tests::token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
+        let fee_mint = token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
             mint.init_extension::<TransferFeeConfig>(true).unwrap();
         });
         // The pending sponsored orders skip the buy account check, so the
@@ -628,7 +545,7 @@ mod tests {
             "value": [
                 crate::tests::mint_account_json(6),
                 crate::tests::mint_account_json(6),
-                crate::tests::account_json(&fee_mint),
+                account_json(&fee_mint),
                 null,
             ],
         });
@@ -662,161 +579,6 @@ mod tests {
                 IntentHash([0x04; 32])
             ]
         );
-    }
-
-    /// An initialized classic SPL Token mint.
-    fn classic_mint() -> Account {
-        let mut data = vec![0; Mint::LEN];
-        Mint {
-            is_initialized: true,
-            decimals: 6,
-            ..Mint::default()
-        }
-        .pack_into_slice(&mut data);
-        Account {
-            owner: spl_token_interface::ID,
-            data,
-            ..Account::default()
-        }
-    }
-
-    /// The program moves classic mints and Token-2022 mints whose extensions
-    /// leave a plain transfer alone, a permanent delegate included. Transfer
-    /// fee, transfer hook and pausable mints fail it, paused or not, and so do
-    /// non-transferable and frozen-by-default mints.
-    #[test]
-    fn classifies_mints_by_their_extensions() {
-        let with = |extension, init: fn(&mut StateWithExtensionsMut<Mint>)| {
-            unsettleable_mint(Some(&crate::tests::token_2022_mint(&[extension], init)))
-        };
-        assert_eq!(unsettleable_mint(Some(&classic_mint())), None);
-        assert_eq!(
-            with(ExtensionType::MintCloseAuthority, |mint| {
-                mint.init_extension::<MintCloseAuthority>(true).unwrap();
-            }),
-            None
-        );
-        assert_eq!(
-            with(ExtensionType::PermanentDelegate, |mint| {
-                mint.init_extension::<PermanentDelegate>(true)
-                    .unwrap()
-                    .delegate = Some(Pubkey::new_unique()).try_into().unwrap();
-            }),
-            None
-        );
-        assert_eq!(
-            with(ExtensionType::TransferFeeConfig, |mint| {
-                mint.init_extension::<TransferFeeConfig>(true).unwrap();
-            }),
-            Some(UnsettleableMint::TransferFee)
-        );
-        assert_eq!(
-            with(ExtensionType::TransferHook, |mint| {
-                mint.init_extension::<TransferHook>(true).unwrap();
-            }),
-            Some(UnsettleableMint::TransferHook)
-        );
-        assert_eq!(
-            with(ExtensionType::DefaultAccountState, |mint| {
-                mint.init_extension::<DefaultAccountState>(true)
-                    .unwrap()
-                    .state = AccountState::Frozen as u8;
-            }),
-            Some(UnsettleableMint::FrozenByDefault)
-        );
-        assert_eq!(
-            with(ExtensionType::DefaultAccountState, |mint| {
-                mint.init_extension::<DefaultAccountState>(true)
-                    .unwrap()
-                    .state = AccountState::Initialized as u8;
-            }),
-            None
-        );
-        assert_eq!(
-            with(ExtensionType::Pausable, |mint| {
-                mint.init_extension::<PausableConfig>(true).unwrap().paused = true.into();
-            }),
-            Some(UnsettleableMint::Pausable)
-        );
-        assert_eq!(
-            with(ExtensionType::Pausable, |mint| {
-                mint.init_extension::<PausableConfig>(true).unwrap();
-            }),
-            Some(UnsettleableMint::Pausable)
-        );
-        assert_eq!(
-            with(ExtensionType::NonTransferable, |mint| {
-                mint.init_extension::<NonTransferable>(true).unwrap();
-            }),
-            Some(UnsettleableMint::NonTransferable)
-        );
-    }
-
-    /// A missing account, a token account and a mint layout under another
-    /// program are no mints the program can move.
-    #[test]
-    fn only_token_program_mints_are_settleable() {
-        let foreign = Account {
-            owner: solana_system_interface::program::ID,
-            ..classic_mint()
-        };
-        assert_eq!(unsettleable_mint(None), Some(UnsettleableMint::NotAMint));
-        assert_eq!(
-            unsettleable_mint(Some(&token_2022_account([0x44; 32], false))),
-            Some(UnsettleableMint::NotAMint)
-        );
-        assert_eq!(
-            unsettleable_mint(Some(&foreign)),
-            Some(UnsettleableMint::NotAMint)
-        );
-    }
-
-    /// An initialized Token-2022 account of `mint` with the `MemoTransfer`
-    /// extension, requiring memos on incoming transfers or not.
-    fn token_2022_account(mint: [u8; 32], require_memos: bool) -> Account {
-        let len = ExtensionType::try_calculate_account_len::<TokenAccount>(&[
-            ExtensionType::ImmutableOwner,
-            ExtensionType::MemoTransfer,
-        ])
-        .unwrap();
-        let mut data = vec![0; len];
-        let mut account =
-            StateWithExtensionsMut::<TokenAccount>::unpack_uninitialized(&mut data).unwrap();
-        account.init_extension::<ImmutableOwner>(true).unwrap();
-        account
-            .init_extension::<MemoTransfer>(true)
-            .unwrap()
-            .require_incoming_transfer_memos = require_memos.into();
-        account.base = TokenAccount {
-            mint: Pubkey::new_from_array(mint),
-            state: AccountState::Initialized,
-            ..TokenAccount::default()
-        };
-        account.pack_base();
-        account.init_account_type().unwrap();
-        Account {
-            owner: spl_token_2022_interface::ID,
-            data,
-            ..Account::default()
-        }
-    }
-
-    /// A Token-2022 buy account receives the payout unless it requires memos
-    /// on incoming transfers, which the payout does not carry.
-    #[test]
-    fn token_2022_buy_accounts_receive_without_a_memo_requirement() {
-        assert!(receivable_token_account(
-            &token_2022_account([0x44; 32], false),
-            [0x44; 32]
-        ));
-        assert!(!receivable_token_account(
-            &token_2022_account([0x44; 32], true),
-            [0x44; 32]
-        ));
-        assert!(!receivable_token_account(
-            &token_2022_account([0x99; 32], false),
-            [0x44; 32]
-        ));
     }
 
     /// The watermark trips past the allowed lag, on a never-written indexer,

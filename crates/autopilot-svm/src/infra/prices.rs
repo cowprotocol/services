@@ -807,14 +807,14 @@ mod tests {
         let listed = Pubkey::new_unique();
         let (endpoint, _) =
             coingecko_server(serde_json::json!({ listed.to_string(): { "sol": 0.005 } })).await;
-        let mint = crate::tests::token_2022_mint(&[ExtensionType::MintCloseAuthority], |mint| {
+        let mint = solana_testlib::token_2022_mint(&[ExtensionType::MintCloseAuthority], |mint| {
             mint.init_extension::<MintCloseAuthority>(true).unwrap();
         });
         let mocks = Mocks::from([(
             RpcRequest::GetMultipleAccounts,
             serde_json::json!({
                 "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-                "value": [crate::tests::account_json(&mint)],
+                "value": [solana_testlib::account_json(&mint)],
             }),
         )]);
         let prices = NativePrices::new(
@@ -954,14 +954,14 @@ mod tests {
         let (coingecko, requests) =
             coingecko_server(serde_json::json!({ token.to_string(): { "sol": 0.01 } })).await;
         let driver = driver_server(20_000_000).await;
-        let mint = crate::tests::token_2022_mint(&[ExtensionType::ScaledUiAmount], |mint| {
+        let mint = solana_testlib::token_2022_mint(&[ExtensionType::ScaledUiAmount], |mint| {
             mint.init_extension::<ScaledUiAmountConfig>(true).unwrap();
         });
         let mocks = Mocks::from([(
             RpcRequest::GetMultipleAccounts,
             serde_json::json!({
                 "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-                "value": [crate::tests::account_json(&mint)],
+                "value": [solana_testlib::account_json(&mint)],
             }),
         )]);
         let config = config::NativePrices {

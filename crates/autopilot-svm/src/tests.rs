@@ -24,15 +24,9 @@ use {
     },
     async_trait::async_trait,
     axum::{Json, Router, extract::State, routing::post},
-    base64::{Engine, prelude::BASE64_STANDARD},
     chain_types::solana::{IntentHash, Pubkey, Signature},
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     database::byte_array::ByteArray,
-    solana_sdk::account::Account,
-    spl_token_2022_interface::{
-        extension::{BaseStateWithExtensionsMut, ExtensionType, StateWithExtensionsMut},
-        state::Mint,
-    },
     sqlx::PgPool,
     std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::{mpsc, watch},
@@ -96,18 +90,7 @@ async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
 /// A canned `getMultipleAccounts` entry: an initialized mint of the classic
 /// SPL token program with the given decimals.
 pub(crate) fn mint_account_json(decimals: u8) -> serde_json::Value {
-    let mut data = [0u8; 82];
-    data[44] = decimals;
-    // The initialized flag.
-    data[45] = 1;
-    serde_json::json!({
-        "lamports": 1_461_600u64,
-        "data": [BASE64_STANDARD.encode(data), "base64"],
-        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "executable": false,
-        "rentEpoch": 0u64,
-        "space": 82u64,
-    })
+    solana_testlib::account_json(&solana_testlib::classic_mint(decimals))
 }
 
 /// A canned `getMultipleAccounts` entry: an initialized account of the
@@ -117,42 +100,6 @@ pub(crate) fn token_account_json(mint: [u8; 32]) -> serde_json::Value {
         &solana_sdk::pubkey::Pubkey::new_from_array(mint),
         &solana_sdk::pubkey::Pubkey::default(),
     )
-}
-
-/// A canned `getMultipleAccounts` entry for `account`.
-pub(crate) fn account_json(account: &Account) -> serde_json::Value {
-    serde_json::json!({
-        "lamports": account.lamports,
-        "data": [BASE64_STANDARD.encode(&account.data), "base64"],
-        "owner": account.owner.to_string(),
-        "executable": account.executable,
-        "rentEpoch": account.rent_epoch,
-        "space": account.data.len(),
-    })
-}
-
-/// An initialized Token-2022 mint with 6 decimals and the `extensions`, whose
-/// values `init` sets.
-pub(crate) fn token_2022_mint(
-    extensions: &[ExtensionType],
-    init: impl FnOnce(&mut StateWithExtensionsMut<Mint>),
-) -> Account {
-    let len = ExtensionType::try_calculate_account_len::<Mint>(extensions).unwrap();
-    let mut data = vec![0; len];
-    let mut mint = StateWithExtensionsMut::<Mint>::unpack_uninitialized(&mut data).unwrap();
-    init(&mut mint);
-    mint.base = Mint {
-        is_initialized: true,
-        decimals: 6,
-        ..Mint::default()
-    };
-    mint.pack_base();
-    mint.init_account_type().unwrap();
-    Account {
-        owner: spl_token_2022_interface::ID,
-        data,
-        ..Account::default()
-    }
 }
 
 /// A mock RPC answering one order-account lookup: an initialized token
