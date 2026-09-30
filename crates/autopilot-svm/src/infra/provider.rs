@@ -65,9 +65,7 @@ impl DbAuctionProvider {
                 let account = Pubkey::new_from_array(order.buy_token_account.0);
                 let receivable = match accounts.get(&account) {
                     Some(found) => receivable_token_account(found, order.buy_token.0),
-                    None => false,
-                    // TODO: flip on once the buy token account rent is priced.
-                    // None => account == associated_token_address(order),
+                    None => account == associated_token_address(order),
                 };
                 if !receivable {
                     // A doomed order repeats this on every cut until it
@@ -264,13 +262,6 @@ fn indexer_lags(tip: u64, indexed: Option<i64>, max_lag: u64) -> bool {
 /// the payout when it does not exist yet.
 /// TODO(token-2022): a token-2022 mint derives a different address, so its
 /// missing account is dropped here, like the driver cannot settle it yet.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the receivable check that uses it is held until solvers price the ATA rent"
-    )
-)]
 fn associated_token_address(order: &Order) -> Pubkey {
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
         &Pubkey::new_from_array(order.owner.0),
