@@ -1,7 +1,15 @@
 //! One `Competition` per solver engine, mounted on the API under `/{name}`.
 
 use {
-    super::{Auction, Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
+    super::{
+        Auction,
+        Order,
+        Side,
+        auction::Id,
+        order_uid::OrderUid,
+        settlement::ResolveError,
+        solution::Solution,
+    },
     crate::infra::{blockchain::Solana, solver::Solver},
     cow_settlement_interface::SettlementError,
     itertools::Itertools,
@@ -68,13 +76,50 @@ impl Competition {
         self.solver.name()
     }
 
-    /// Solve the auction and cache each solution for a later `settle`.
+    /// Solve the auction, drop the solutions whose settlement provably fails
+    /// (over the byte limit or failing in simulation), and cache the rest for
+    /// a later `settle`.
     pub async fn solve(&self, auction_id: Id, auction: &Auction) -> Result<Vec<Solution>, Error> {
         let solutions = self.compute_solutions(auction).await?;
-        let solutions = self.fitting_solutions(auction_id, auction, solutions).await;
+        // The autopilot discards a late response, so the simulations get half
+        // the remaining window. A timeout is no verdict.
+        let window = auction
+            .deadline
+            .signed_duration_since(chrono::Utc::now())
+            .to_std()
+            .unwrap_or_default()
+            / 2;
+        let verdicts = futures::future::join_all(solutions.iter().map(|solution| {
+            tokio::time::timeout(
+                window,
+                self.simulate_solution(auction_id, auction, solution),
+            )
+        }))
+        .await;
 
         let auction = Arc::new(auction.clone());
-        for solution in &solutions {
+        let mut kept = Vec::new();
+        for (solution, verdict) in solutions.into_iter().zip(verdicts) {
+            let verdict = verdict.unwrap_or(Err(Error::DeadlineExceeded));
+            metrics()
+                .solve_simulations
+                .with_label_values(&[
+                    verdict.as_ref().err().map_or("passed", error_label),
+                    self.solver.name(),
+                ])
+                .inc();
+            if let Err(error) = &verdict {
+                let dropped = proves_failure(error);
+                tracing::warn!(
+                    solution_id = solution.id,
+                    ?error,
+                    dropped,
+                    "solution simulation failed"
+                );
+                if dropped {
+                    continue;
+                }
+            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -85,69 +130,61 @@ impl Competition {
                     solution: solution.clone(),
                 },
             );
+            kept.push(solution);
         }
-
-        Ok(solutions)
+        Ok(kept)
     }
 
-    /// Drop the solutions whose settlement transaction is over the network's
-    /// byte limit: they would win the auction and then fail to settle. A
-    /// solution whose transaction cannot be built here stays, and `settle`
-    /// reports its failure.
-    async fn fitting_solutions(
-        &self,
-        auction_id: Id,
-        auction: &Auction,
-        solutions: Vec<Solution>,
-    ) -> Vec<Solution> {
-        let sizes = futures::future::join_all(
-            solutions
-                .iter()
-                .map(|solution| self.transaction_size(auction_id, auction, solution)),
-        )
-        .await;
-        solutions
-            .into_iter()
-            .zip(sizes)
-            .filter_map(|(solution, size)| match size {
-                Some(size) if size > MAX_TRANSACTION_BYTES => {
-                    tracing::warn!(
-                        solver = %self.solver.name(),
-                        solution_id = solution.id,
-                        size,
-                        "dropping solution whose settlement transaction is over the size limit"
-                    );
-                    None
-                }
-                _ => Some(solution),
-            })
-            .collect()
-    }
-
-    /// The wire size of the solution's settlement transaction, `None` when
-    /// it cannot be built. The blockhash does not change the size.
-    async fn transaction_size(
+    /// Check the solution's settlement fits the network's byte limit, then
+    /// simulate it as one atomic bundle behind the creations of its orders
+    /// not created on chain yet. Either failure would win the auction and
+    /// then fail to settle. An error that [`proves_failure`] is a verdict on
+    /// the solution; any other means the driver could not find out.
+    async fn simulate_solution(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Option<u64> {
+    ) -> Result<(), Error> {
+        let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
-        let settlement = super::Settlement::new(
-            self.blockchain.program_id(),
-            auction_id,
-            orders,
-            solution.clone(),
-        )
-        .ok()?;
+        let mut bundle: Vec<_> = orders
+            .iter()
+            .filter_map(|order| auction.creations.get(&order.uid).cloned())
+            .collect();
+        let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
+            .await?;
+        // The simulation replaces every blockhash, so a placeholder saves the
+        // fetch.
+        let transaction = resolved.encode(self.solver.keypair(), Hash::default())?;
+        if let Some(size) = encoded_size(&transaction)
+            && size > MAX_TRANSACTION_BYTES
+        {
+            return Err(Error::TransactionTooLarge { size });
+        }
+        bundle.push(transaction);
+
+        let results = self
+            .blockchain
+            .simulate_bundle(&bundle)
             .await
-            .ok()?;
-        let transaction = resolved
-            .encode(self.solver.keypair(), Hash::default())
-            .ok()?;
-        encoded_size(&transaction)
+            .map_err(Error::Rpc)?;
+        for (transaction, result) in bundle.iter().zip(&results) {
+            if let Some(err) = &result.err {
+                tracing::warn!(logs = ?result.logs, "bundle simulation failed");
+                return Err(Error::SimulationFailed {
+                    settlement_error: settlement_error(
+                        program_id,
+                        transaction,
+                        &err.clone().into(),
+                    ),
+                    err: err.clone(),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Send the auction to the solver engine and return its deduplicated
@@ -614,6 +651,9 @@ struct Metrics {
     /// Settlement attempts by final outcome and solver.
     #[metric(labels("outcome", "solver"))]
     outcomes: prometheus::IntCounterVec,
+    /// Solve-time settlement simulations by outcome and solver.
+    #[metric(labels("outcome", "solver"))]
+    solve_simulations: prometheus::IntCounterVec,
     /// Serialized settlement transaction size in bytes. The network rejects a
     /// transaction over 1232 bytes.
     #[metric(buckets(600., 800., 1000., 1100., 1200., 1232., 1400., 1600.))]
@@ -675,12 +715,26 @@ fn account_count(transaction: &VersionedTransaction) -> usize {
     message.static_account_keys().len() + loaded
 }
 
+/// Whether the error proves the settlement fails on chain, as opposed to the
+/// driver failing to find out. Only a proof drops a solution at solve time:
+/// an unverified solution costs at most one failed settlement, a wrongly
+/// dropped one costs the auction its best solution.
+fn proves_failure(error: &Error) -> bool {
+    match error {
+        Error::Settlement(_)
+        | Error::SimulationFailed { .. }
+        | Error::TransactionTooLarge { .. } => true,
+        Error::Resolve(error) => !matches!(error, ResolveError::Rpc(_)),
+        _ => false,
+    }
+}
+
 /// The metrics label for a finished settlement attempt.
 fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
-    let error = match result {
-        Ok(_) => return "submitted",
-        Err(error) => error,
-    };
+    result.as_ref().err().map_or("submitted", error_label)
+}
+
+fn error_label(error: &Error) -> &'static str {
     match error {
         Error::Solver(_) => "solver_failed",
         Error::SolutionNotAvailable => "solution_unavailable",

@@ -121,6 +121,7 @@ impl From<AuctionError> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: AuctionError) -> Self {
         match value {
             AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
+            AuctionError::InvalidCreation => Kind::InvalidCreation,
         }
         .into()
     }

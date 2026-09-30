@@ -4,8 +4,8 @@ use {
     super::{order_uid::OrderUid, slot::Slot},
     cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
     serde::Serialize,
-    solana_sdk::pubkey::Pubkey,
-    std::fmt,
+    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
+    std::{collections::HashMap, fmt},
 };
 
 /// The autopilot-assigned identifier of an auction.
@@ -61,6 +61,10 @@ pub struct Auction {
     /// driver derives each request's timeout as the time left until this
     /// instant. It skips the request if the deadline has passed.
     pub deadline: chrono::DateTime<chrono::Utc>,
+    /// The owner-signed creation transaction of each order not created on
+    /// chain yet, by uid. It lacks the funder's signature, so it can only be
+    /// simulated ahead of a settlement, never sent.
+    pub creations: HashMap<OrderUid, VersionedTransaction>,
 }
 
 /// One order available for solvers to fill.

@@ -1,6 +1,7 @@
 //! Integration tests for the HTTP API server.
 
 use {
+    base64::Engine,
     cow_settlement_interface::{
         data::intent::{
             Asset,
@@ -12,7 +13,7 @@ use {
         },
         pda::order::find_order_pda,
     },
-    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
+    cow_solana_rpc::{Mocks, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
     solana_driver::{
         domain::solver_fee::SolverFee,
         infra::{api::Api, blockchain::Solana, config, solver::Solver},
@@ -33,11 +34,11 @@ fn test_order_intent() -> OrderIntent {
     OrderIntent {
         owner: pubkey(0x22),
         sell: TokenAsset {
-            mint: pubkey(0x88),
+            mint: pubkey(0x33),
             token_account: pubkey(0x55),
         },
         buy: Asset::TokenProgram(TokenAsset {
-            mint: pubkey(0x77),
+            mint: pubkey(0x44),
             token_account: pubkey(0x66),
         }),
         sell_amount: 1_000,
@@ -62,24 +63,28 @@ fn uid() -> String {
     )
 }
 
-fn blockchain() -> Arc<Solana> {
+fn blockchain(mocks: Mocks) -> Arc<Solana> {
     Arc::new(Solana::new(
-        SolanaRPC::new_mock("succeeds".to_string()),
+        SolanaRPC::new_mock_with_mocks(mocks),
         cow_settlement_interface::id(),
     ))
 }
 
-fn api_with(solvers: Vec<Solver>) -> Api {
+fn api_with(solvers: Vec<Solver>, mocks: Mocks) -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
-        blockchain: blockchain(),
+        blockchain: blockchain(mocks),
         solvers,
     }
 }
 
 /// Spawn the API server on an ephemeral port and return its bound address.
 async fn spawn_server(solvers: Vec<Solver>) -> SocketAddr {
-    let api = api_with(solvers);
+    spawn_server_with_mocks(solvers, Mocks::new()).await
+}
+
+async fn spawn_server_with_mocks(solvers: Vec<Solver>, mocks: Mocks) -> SocketAddr {
+    let api = api_with(solvers, mocks);
     let (listener, addr) = api.bind().await.unwrap();
     // The test never cancels this token, so the server stays alive.
     let shutdown = CancellationToken::new();
@@ -230,6 +235,27 @@ fn response_ids(body: &serde_json::Value) -> Vec<u64> {
         .collect()
 }
 
+/// The standard solve request with its order not created on chain yet, so
+/// it carries the owner-signed creation transaction.
+fn sponsored_solve_request() -> serde_json::Value {
+    let creation =
+        bincode::serialize(&solana_sdk::transaction::VersionedTransaction::default()).unwrap();
+    let mut request = solve_request();
+    request["orders"][0]["creation"] = base64::engine::general_purpose::STANDARD
+        .encode(creation)
+        .into();
+    request
+}
+
+async fn post_solve(addr: SocketAddr, request: &serde_json::Value) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(format!("http://{addr}/mock/solve"))
+        .json(request)
+        .send()
+        .await
+        .unwrap()
+}
+
 #[tokio::test]
 async fn healthz_returns_200() {
     let addr = spawn_server(Vec::new()).await;
@@ -243,7 +269,7 @@ async fn healthz_returns_200() {
 
 #[tokio::test]
 async fn shuts_down_cleanly_on_signal() {
-    let api = api_with(Vec::new());
+    let api = api_with(Vec::new(), Mocks::new());
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown_token = CancellationToken::new();
     let serve = api.serve(listener, shutdown_token.clone());
@@ -348,13 +374,10 @@ async fn solve_discards_duplicate_solution_ids() {
 /// is dropped at `/solve`: it would win the auction and then fail to settle.
 #[tokio::test]
 async fn solve_drops_a_solution_over_the_transaction_size_limit() {
-    // The mints of `test_order_intent`, so the order matches its uid and the
-    // settlement builds.
-    let (sell, buy) = (pubkey(0x88).to_string(), pubkey(0x77).to_string());
     let solution = |id: u64, interactions: serde_json::Value| {
         serde_json::json!({
             "id": id,
-            "prices": { (sell.clone()): "2000", (buy.clone()): "1000" },
+            "prices": { (pubkey(0x33).to_string()): "2000", (pubkey(0x44).to_string()): "1000" },
             "trades": [{ "orderUid": uid(), "executedAmount": "1000" }],
             "interactions": interactions,
         })
@@ -371,9 +394,7 @@ async fn solve_drops_a_solution_over_the_transaction_size_limit() {
     .await;
     let (solver, _) = solver_with_keypair(engine);
     let addr = spawn_server(vec![solver]).await;
-    let mut request = solve_request();
-    request["orders"][0]["sellToken"] = serde_json::json!(sell);
-    request["orders"][0]["buyToken"] = serde_json::json!(buy);
+    let request = solve_request();
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/mock/solve"))
@@ -795,4 +816,43 @@ async fn solve_takes_part_every_nth_solve() {
 
     // Third solve (seq 2) takes part again, one full stride later.
     assert_eq!(solve_status(addr).await, reqwest::StatusCode::BAD_REQUEST);
+}
+
+/// The other solve tests run against a mock that cannot simulate a bundle
+/// and keep their solutions: only a failing simulation drops one.
+#[tokio::test]
+async fn solve_drops_a_solution_whose_bundle_simulation_fails() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine);
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        SIMULATE_BUNDLE,
+        serde_json::json!({
+            "context": { "slot": 1 },
+            "value": { "transactionResults": [
+                { "err": null, "logs": [] },
+                { "err": { "InstructionError": [1, { "Custom": 1 }] }, "logs": ["boom"] },
+            ] },
+        }),
+    );
+    let addr = spawn_server_with_mocks(vec![solver], mocks).await;
+
+    let response = post_solve(addr, &sponsored_solve_request()).await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(response_ids(&body), Vec::<u64>::new());
+}
+
+#[tokio::test]
+async fn solve_rejects_a_malformed_creation() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+
+    let mut request = solve_request();
+    request["orders"][0]["creation"] = "AQID".into();
+    let response = post_solve(addr, &request).await;
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "InvalidCreation");
 }

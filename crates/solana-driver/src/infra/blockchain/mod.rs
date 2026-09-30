@@ -57,6 +57,14 @@ impl Solana {
         self.rpc.simulate_transaction(transaction).await
     }
 
+    /// See [`SolanaRPC::simulate_bundle`].
+    pub async fn simulate_bundle(
+        &self,
+        transactions: &[VersionedTransaction],
+    ) -> Result<Vec<cow_solana_rpc::RpcSimulateBundleTransactionResult>, Error> {
+        self.rpc.simulate_bundle(transactions).await
+    }
+
     /// Send a signed transaction and wait for confirmation.
     pub async fn send_and_confirm_transaction(
         &self,
