@@ -49,6 +49,10 @@ pub struct StagedSolution {
     pub is_winner: bool,
     pub quoted_sell: U256,
     pub quoted_buy: U256,
+    /// The quote's gas fee in the sell token. Used to deduct the gas cost
+    /// from the bid to exactly match the values returned in the quote.
+    #[serde(default)]
+    pub gas_cost_in_sell_token: U256,
     /// Id the solver was asked with; its driver cached the solution under it,
     /// which is what the fast path settles by, and the promoted solution row
     /// is identified by it.
@@ -133,6 +137,12 @@ async fn stage_competition(
             is_winner: index == 0,
             quoted_sell: quote.quoted_sell_amount,
             quoted_buy: quote.quoted_buy_amount,
+            gas_cost_in_sell_token: crate::fee::FeeParameters {
+                gas_amount: quote.gas_amount,
+                gas_price: data.metadata.gas_price,
+                sell_token_price: data.metadata.sell_token_price,
+            }
+            .fee(),
             quote_id,
         })
         .collect();

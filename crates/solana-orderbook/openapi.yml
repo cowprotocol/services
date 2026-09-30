@@ -188,10 +188,28 @@ paths:
           application/json:
             schema:
               type: object
-              required: [transaction]
+              required: [partiallySignedTx]
               properties:
-                transaction:
-                  description: The partially signed transaction, base64.
+                partiallySignedTx:
+                  description: |
+                    The creation transaction in wire format, base64. Only the
+                    autopilot holds the key of the funder (the sponsor
+                    account), so the client never signs it in full. To build
+                    it:
+
+                    1. Read the funder address from the `funder` field of
+                       `POST /api/v1/quote`.
+                    2. Make the funder the fee payer (the first account key)
+                       and the `created_by` rent payer of `CreateOrder`.
+                       Address lookup tables are not accepted.
+                    3. Sign with the order owner's key only. The funder's
+                       signature slot stays 64 zero bytes until the autopilot
+                       countersigns the transaction for the auction the order
+                       wins.
+                    4. Serialize the transaction with its signatures and
+                       base64-encode it. With `@solana/web3.js` 1.x, a legacy
+                       `Transaction` needs
+                       `serialize({ requireAllSignatures: false })`.
                   type: string
                 quoteId:
                   description: |
@@ -543,8 +561,9 @@ components:
         funder:
           description: >-
             The account a sponsored creation transaction must name as its fee
-            payer. Null when the deployment does not sponsor placements, in
-            which case `POST /api/v1/orders` refuses a creation transaction.
+            payer and as the `created_by` rent payer of `CreateOrder`. Null
+            when the deployment does not sponsor placements, in which case
+            `POST /api/v1/orders` refuses a creation transaction.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
           nullable: true
