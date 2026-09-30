@@ -63,9 +63,12 @@ impl DbAuctionProvider {
                     return true;
                 }
                 let account = Pubkey::new_from_array(order.buy_token_account.0);
-                let receivable = accounts
-                    .get(&account)
-                    .is_some_and(|found| receivable_token_account(found, order.buy_token.0));
+                let receivable = match accounts.get(&account) {
+                    Some(found) => receivable_token_account(found, order.buy_token.0),
+                    None => false,
+                    // TODO: flip on once the buy token account rent is priced.
+                    // None => account == associated_token_address(order),
+                };
                 if !receivable {
                     // A doomed order repeats this on every cut until it
                     // expires: the counter is the alerting signal, the log
@@ -256,6 +259,26 @@ fn indexer_lags(tip: u64, indexed: Option<i64>, max_lag: u64) -> bool {
     tip.saturating_sub(indexed) > max_lag
 }
 
+/// The order owner's associated token account for the buy mint under the
+/// classic SPL token program, the one account a settlement can create for
+/// the payout when it does not exist yet.
+/// TODO(token-2022): a token-2022 mint derives a different address, so its
+/// missing account is dropped here, like the driver cannot settle it yet.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the receivable check that uses it is held until solvers price the ATA rent"
+    )
+)]
+fn associated_token_address(order: &Order) -> Pubkey {
+    spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+        &Pubkey::new_from_array(order.owner.0),
+        &Pubkey::new_from_array(order.buy_token.0),
+        &spl_token_interface::ID,
+    )
+}
+
 /// An initialized, unfrozen account of the classic SPL token program holding
 /// the order's buy mint: anything else reverts the payout at settlement.
 /// TODO(token-2022): accounts of the token-2022 program are dropped here,
@@ -304,9 +327,12 @@ mod tests {
         )
     }
 
-    /// The lookup answers for the three created orders in candidate order:
-    /// initialized with the buy mint, initialized with a wrong mint, absent.
-    /// The pending sponsored order is exempt from the check.
+    /// The lookup answers for the four created orders in candidate order:
+    /// initialized with the buy mint, initialized with a wrong mint, absent
+    /// at an arbitrary address, absent at the owner's associated token
+    /// address. An absent account is dropped either way while the settlement
+    /// creating it is held. The pending sponsored order is exempt from the
+    /// check.
     #[tokio::test]
     async fn drops_created_orders_with_unreceivable_buy_accounts() {
         let response = serde_json::json!({
@@ -315,22 +341,25 @@ mod tests {
                 crate::tests::token_account_json([0x44; 32]),
                 crate::tests::token_account_json([0x99; 32]),
                 null,
+                null,
             ],
         });
         let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
+        let ata = associated_token_address(&order([0; 32], true)).to_bytes();
         let orders = vec![
             order([0x01; 32], true),
             order([0x02; 32], false),
             order([0x03; 32], true),
             order([0x04; 32], true),
+            order(ata, true),
         ];
-        let kept: Vec<u8> = provider
+        let kept: Vec<[u8; 32]> = provider
             .receivable_orders(orders)
             .await
             .iter()
-            .map(|order| order.buy_token_account.0[0])
+            .map(|order| order.buy_token_account.0)
             .collect();
-        assert_eq!(kept, [0x01, 0x02]);
+        assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
     }
 
     /// A failed lookup (here a malformed response) keeps every order.
