@@ -301,28 +301,26 @@ fn receivable_token_account(account: &Account, buy_mint: [u8; 32]) -> bool {
 /// rent-exempt minimum of an empty wallet reverts the whole settlement, and a
 /// partial fill can land under it. A wSOL sell reaches solvers as wSOL for
 /// wSOL.
-fn payable_orders(orders: Vec<Order>) -> Vec<Order> {
+fn payable_orders(mut orders: Vec<Order>) -> Vec<Order> {
     // TODO: use the cluster's rent, refreshed periodically. The SDK default is
     // above it since SIMD-0437, so this floor also drops small payouts that
     // would settle.
     let min_payout = Rent::default().minimum_balance(0);
+    orders.retain(|order| {
+        let payable = !order.buys_native_sol()
+            || (order.buy_amount >= min_payout
+                && !order.partially_fillable
+                && order.sell_token.0 != native_mint::ID.to_bytes());
+        if !payable {
+            metrics().unpayable_native_buys.inc();
+            tracing::debug!(
+                order = %order.uid,
+                "excluding native SOL buy, the settlement cannot pay it out"
+            );
+        }
+        payable
+    });
     orders
-        .into_iter()
-        .filter(|order| {
-            let payable = !order.buys_native_sol()
-                || (order.buy_amount >= min_payout
-                    && !order.partially_fillable
-                    && order.sell_token.0 != native_mint::ID.to_bytes());
-            if !payable {
-                metrics().unpayable_native_buys.inc();
-                tracing::debug!(
-                    order = %order.uid,
-                    "excluding native SOL buy, the settlement cannot pay it out"
-                );
-            }
-            payable
-        })
-        .collect()
 }
 
 /// Whether `account` is a System Program wallet. Lamports paid to a program
