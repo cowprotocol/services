@@ -18,7 +18,7 @@ use {
         infra::{api::Api, blockchain::Solana, config, solver::Solver},
     },
     solana_sdk::pubkey::Pubkey,
-    solana_testlib::temp_keypair,
+    solana_testlib::{mint_account_json, multiple_accounts_json, temp_keypair},
     spl_token_interface::native_mint,
     std::{net::SocketAddr, num::NonZero, sync::Arc},
     tokio_util::sync::CancellationToken,
@@ -370,7 +370,24 @@ async fn solve_drops_a_solution_over_the_transaction_size_limit() {
     }))
     .await;
     let (solver, _) = solver_with_keypair(engine);
-    let addr = spawn_server(vec![solver]).await;
+    // Measuring a settlement reads the token program of both mints. The mock
+    // answers one fetch: the first solution's lookup caches both mints for the
+    // second.
+    let mocks = Mocks::from([(
+        RpcRequest::GetMultipleAccounts,
+        multiple_accounts_json([mint_account_json(), mint_account_json()]),
+    )]);
+    let api = Api {
+        addr: "0.0.0.0:0".parse().unwrap(),
+        blockchain: Arc::new(Solana::new(
+            SolanaRPC::new_mock_with_mocks(mocks),
+            cow_settlement_interface::id(),
+        )),
+        solvers: vec![solver],
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
     let mut request = solve_request();
     request["orders"][0]["sellToken"] = serde_json::json!(sell);
     request["orders"][0]["buyToken"] = serde_json::json!(buy);

@@ -1,6 +1,7 @@
 //! The Solana blockchain adapter.
 //!
-//! Owns the RPC client and the settlement program id. Mirrors the EVM driver's
+//! Owns the RPC client, the settlement program id and the token program of
+//! each mint looked up so far. Mirrors the EVM driver's
 //! `infra/blockchain/mod.rs` (`struct Ethereum`).
 
 mod accounts;
@@ -16,20 +17,34 @@ pub use {
     },
 };
 use {
+    cow_settlement_interface::token_program::TokenProgram,
     cow_solana_rpc::{Error, LatestBlockhash, SolanaRPC},
+    itertools::{Either, Itertools},
+    moka::sync::Cache,
     solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
+    std::collections::HashMap,
 };
+
+/// How many mints the token program cache holds.
+const TOKEN_PROGRAM_CACHE_CAPACITY: u64 = 10_000;
 
 /// The Solana blockchain adapter.
 pub struct Solana {
     rpc: SolanaRPC,
     program_id: Pubkey,
+    /// The token program of each mint looked up so far. Entries never expire:
+    /// a mint's owner changes only if the mint is closed and re-created.
+    token_programs: Cache<Pubkey, TokenProgram>,
 }
 
 impl Solana {
     /// Build the adapter from the RPC client and the settlement program id.
     pub fn new(rpc: SolanaRPC, program_id: Pubkey) -> Self {
-        Self { rpc, program_id }
+        Self {
+            rpc,
+            program_id,
+            token_programs: Cache::new(TOKEN_PROGRAM_CACHE_CAPACITY),
+        }
     }
 
     /// The settlement program id this driver settles against.
@@ -81,5 +96,60 @@ impl Solana {
         Ok(AccountsSnapshot::new(
             self.rpc.multiple_accounts(keys).await?,
         ))
+    }
+
+    /// The token program of each of `mints`, fetching only the mints missing
+    /// from the cache. A mint that does not exist or is not a mint of either
+    /// token program is absent from the map.
+    pub async fn token_programs(
+        &self,
+        mints: impl IntoIterator<Item = Pubkey>,
+    ) -> Result<HashMap<Pubkey, TokenProgram>, Error> {
+        let (mut programs, unknown): (HashMap<_, _>, Vec<_>) =
+            mints
+                .into_iter()
+                .partition_map(|mint| match self.token_programs.get(&mint) {
+                    Some(program) => Either::Left((mint, program)),
+                    None => Either::Right(mint),
+                });
+        let accounts = self.accounts_snapshot(unknown.iter().copied()).await?;
+        for mint in unknown {
+            if let Some(program) = accounts.mint_token_program(&mint) {
+                self.token_programs.insert(mint, program);
+                programs.insert(mint, program);
+            }
+        }
+        Ok(programs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        cow_solana_rpc::{Mocks, RpcRequest},
+        solana_testlib::{mint_account_json, multiple_accounts_json},
+    };
+
+    /// The mock answers the first fetch only, so the second lookup finds the
+    /// mint only if the first one cached it.
+    #[tokio::test]
+    async fn resolved_token_programs_are_cached() {
+        let (mint, absent) = (Pubkey::new_unique(), Pubkey::new_unique());
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            multiple_accounts_json([mint_account_json(), serde_json::Value::Null]),
+        )]);
+        let solana = Solana::new(SolanaRPC::new_mock_with_mocks(mocks), Pubkey::new_unique());
+
+        let expected = HashMap::from([(mint, TokenProgram::SplToken)]);
+        assert_eq!(
+            solana.token_programs([mint, absent]).await.unwrap(),
+            expected
+        );
+        assert_eq!(
+            solana.token_programs([mint, absent]).await.unwrap(),
+            expected
+        );
     }
 }

@@ -107,10 +107,11 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::Resolve(error) => match error {
                 // The solver supplied the lookup table keys.
                 settlement::ResolveError::InvalidAddressLookupTable { .. } => Kind::SolverFailed,
-                // RPC failures and unexpected setup accounts are outside solver
-                // control. Map them to Unknown.
+                // RPC failures, unexpected setup accounts and invalid mints are
+                // outside solver control. Map them to Unknown.
                 settlement::ResolveError::Rpc(_)
-                | settlement::ResolveError::UnexpectedSetupAccount { .. } => Kind::Unknown,
+                | settlement::ResolveError::UnexpectedSetupAccount { .. }
+                | settlement::ResolveError::InvalidMint { .. } => Kind::Unknown,
             },
         }
         .into()

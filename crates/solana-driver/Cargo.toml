@@ -42,6 +42,7 @@ solana-compute-budget-interface = { workspace = true }
 solana-sdk = { workspace = true }
 solana-system-interface = { workspace = true, features = ["bincode"] }
 spl-associated-token-account-interface = { workspace = true }
+spl-token-2022-interface = { workspace = true }
 spl-token-interface = { workspace = true }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
