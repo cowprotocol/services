@@ -7,6 +7,7 @@ use {
         slot::Slot,
     },
     crate::infra::blockchain::{Solana, TokenAccountState, associated_token_address},
+    cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
     serde::Serialize,
     solana_sdk::pubkey::Pubkey,
     std::{fmt, sync::Arc},
@@ -68,9 +69,9 @@ pub struct Auction {
 }
 
 impl Auction {
-    /// Every order's buy token account classified against the chain, resolved
-    /// once per auction: engines solving the same auction read the first
-    /// one's lookup from `cache`.
+    /// Every token buy's buy token account classified against the chain,
+    /// resolved once per auction: engines solving the same auction read the
+    /// first one's lookup from `cache`.
     pub(super) async fn resolve_buy_token_accounts(
         &self,
         auction_id: Id,
@@ -82,16 +83,19 @@ impl Auction {
             .await
     }
 
-    /// Classify every order's buy token account, the settlement's payout
-    /// destination, against the chain.
+    /// Classify every token buy's buy token account, the settlement's payout
+    /// destination, against the chain. A native SOL buy pays out to a wallet,
+    /// which the payout creates when it is missing, so it needs no lookup.
     async fn classify_buy_token_accounts(
         &self,
         blockchain: &Solana,
     ) -> Result<BuyTokenAccounts, cow_solana_rpc::Error> {
-        let accounts = self.orders.iter().map(|order| order.buy_token_account);
-        let snapshot = blockchain.accounts_snapshot(accounts).await?;
+        let token_buys = || self.orders.iter().filter(|order| !order.buys_native_sol());
+        let snapshot = blockchain
+            .accounts_snapshot(token_buys().map(|order| order.buy_token_account))
+            .await?;
         let mut resolved = BuyTokenAccounts::default();
-        for order in &self.orders {
+        for order in token_buys() {
             match snapshot.token_account_state(&order.buy_token_account) {
                 TokenAccountState::Initialized => (),
                 TokenAccountState::NeedsCreation if order.buy_token_account_is_ata() => {
@@ -137,6 +141,12 @@ impl Order {
     /// produce.
     pub fn buy_token_account_is_ata(&self) -> bool {
         self.buy_token_account == associated_token_address(&self.owner, &self.buy_token)
+    }
+
+    /// Whether the order buys native SOL. The intent encodes it as the System
+    /// Program ID in place of a buy mint.
+    pub fn buys_native_sol(&self) -> bool {
+        self.buy_token == ENCODED_NATIVE_SOL_TRANSFER
     }
 }
 
@@ -241,6 +251,34 @@ mod tests {
 
         assert_eq!(uids(&resolved.missing), [2]);
         assert_eq!(uids(&resolved.unreceivable), [3, 4]);
+    }
+
+    /// A native SOL buy pays out to a wallet, so it has no token account to
+    /// classify: the lookup answers only for the token buy, absent at the
+    /// owner's associated token address.
+    #[tokio::test]
+    async fn a_native_sol_buy_has_no_buy_token_account_to_resolve() {
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            multiple_accounts_json([Value::Null]),
+        )]);
+        let native_buy = Order {
+            buy_token: ENCODED_NATIVE_SOL_TRANSFER,
+            ..order(1, pubkey(0x68))
+        };
+        let token_buy = order(2, associated_token_address(&pubkey(0x22), &pubkey(0x44)));
+
+        let resolved = auction(vec![native_buy, token_buy])
+            .resolve_buy_token_accounts(
+                Id::new(1).unwrap(),
+                &blockchain(mocks),
+                &BuyTokenAccountCache::default(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(uids(&resolved.missing), [2]);
+        assert!(resolved.unreceivable.is_empty());
     }
 
     #[tokio::test]

@@ -42,7 +42,9 @@ use {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Params {
     #[serde_as(as = "Base64")]
-    pub transaction: Vec<u8>,
+    // TODO: the alias is deprecated and should be dropped in the future
+    #[serde(alias = "transaction")]
+    pub partially_signed_tx: Vec<u8>,
     /// The id the quote endpoint answered for this order, if any.
     #[serde(default)]
     pub quote_id: Option<i64>,
@@ -131,12 +133,12 @@ pub async fn create_order(
     let Some(sponsoring) = state.sponsoring() else {
         return Err(PlacementError::SponsoringDisabled.into());
     };
-    let transaction: VersionedTransaction =
-        bincode::deserialize(&params.transaction).map_err(|_| {
+    let transaction: VersionedTransaction = bincode::deserialize(&params.partially_signed_tx)
+        .map_err(|_| {
             PlacementError::InvalidTransaction("the bytes do not decode to a transaction")
         })?;
     let mut order = validate(sponsoring, &transaction, state.validation().min_validity)?;
-    order.presigned_transaction = params.transaction;
+    order.presigned_transaction = params.partially_signed_tx;
 
     // The countersign re-checks freshness, so the stored expiry only has to
     // be an upper bound: the tip cannot have moved past the blockhash's own
@@ -744,5 +746,12 @@ mod tests {
         assert!(budget.read(&[2, 1]).is_err());
         // Variants that cost the funder nothing are ignored, not parsed.
         assert!(budget.read(&[1, 0, 0, 4, 0]).is_ok());
+    }
+
+    #[test]
+    fn transaction_is_an_alias_of_partially_signed_tx() {
+        let params: Params =
+            serde_json::from_value(serde_json::json!({ "transaction": "AQID" })).unwrap();
+        assert_eq!(params.partially_signed_tx, [1, 2, 3]);
     }
 }

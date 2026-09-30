@@ -570,6 +570,10 @@ pub enum Calldata {
     },
     /// Set up the solver to return a solution with bogus calldata.
     Invalid,
+    /// Set up the solver to return a solution without any interactions,
+    /// simulating a solver that can't commit to an execution path at quote
+    /// time (e.g. RWA trades).
+    Missing,
 }
 
 #[derive(Debug, Clone)]
@@ -589,6 +593,7 @@ impl Solution {
                     additional_bytes: 10,
                 },
                 Calldata::Invalid => Calldata::Invalid,
+                Calldata::Missing => Calldata::Missing,
             },
             ..self
         }
@@ -606,6 +611,7 @@ impl Solution {
                     additional_bytes: existing + additional_bytes,
                 },
                 Calldata::Invalid => Calldata::Invalid,
+                Calldata::Missing => Calldata::Missing,
             },
             ..self
         }
@@ -615,6 +621,15 @@ impl Solution {
     pub fn invalid(self) -> Self {
         Self {
             calldata: Calldata::Invalid,
+            ..self
+        }
+    }
+
+    /// Make the solution return no interactions at all, as if the solver
+    /// couldn't commit to an execution path at quote time.
+    pub fn no_interactions(self) -> Self {
+        Self {
+            calldata: Calldata::Missing,
             ..self
         }
     }
@@ -1588,6 +1603,26 @@ impl<'a> Quote<'a> {
             body: self.body,
             blockchain: self.blockchain,
         }
+    }
+
+    /// Expect the /quote endpoint to have returned an error response.
+    pub fn err(self) -> QuoteErr {
+        assert_ne!(self.status, axum::http::StatusCode::OK);
+        QuoteErr { body: self.body }
+    }
+}
+
+pub struct QuoteErr {
+    body: String,
+}
+
+impl QuoteErr {
+    /// Check the kind field in the error response.
+    pub fn kind(self, expected_kind: &str) {
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        let kind = result.get("kind").unwrap().as_str().unwrap();
+        assert_eq!(kind, expected_kind);
     }
 }
 

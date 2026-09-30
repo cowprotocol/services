@@ -518,13 +518,8 @@ impl Solver {
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
                     let base_fee = eth.current_block().borrow().base_fee;
                     let effective_gas_price = eth.gas_price().await.unwrap().effective(base_fee).to_string();
-                    let expected = json!({
-                        // Regular auctions use a fixed id; quote auctions carry
-                        // the quote id.
-                        "id": match config.quote {
-                            false => "1".to_owned(),
-                            true => config.quote_id.expect("quotes carry a quote id").to_string(),
-                        },
+                    let mut expected = json!({
+                        "id": (!config.quote).then_some("1"),
                         "tokens": tokens_json,
                         "orders": orders_json,
                         "liquidity": [],
@@ -532,6 +527,10 @@ impl Solver {
                         "deadline": config.deadline.solvers(),
                         "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
+                    if config.quote {
+                        expected["quoteId"] =
+                            config.quote_id.expect("quotes carry a quote id").to_string().into();
+                    }
                     check_solve_request(req, expected);
                     let mut state = state.0.lock().unwrap();
                     assert!(

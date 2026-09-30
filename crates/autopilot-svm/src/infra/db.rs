@@ -117,6 +117,23 @@ WHERE o.uid = ANY($1)
         .context("read pending solana.orders creations")
 }
 
+/// Lower a pending sponsored creation's stored deadline to `height`, a height
+/// its blockhash is known dead at. Never raises it.
+pub async fn expire_creation(ex: impl PgExecutor<'_>, uid: &[u8], height: i64) -> Result<()> {
+    const QUERY: &str = r#"
+UPDATE solana.orders
+SET last_valid_block_height = LEAST(last_valid_block_height, $2)
+WHERE uid = $1 AND last_valid_block_height IS NOT NULL
+    "#;
+    sqlx::query(QUERY)
+        .bind(uid)
+        .bind(height)
+        .execute(ex)
+        .await
+        .context("expire the solana.orders creation")?;
+    Ok(())
+}
+
 /// Open a settlement-execution window for a dispatched settlement.
 pub async fn open_settlement_window(
     ex: impl PgExecutor<'_>,
@@ -165,6 +182,35 @@ WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3 AND outcome IS NULL
         .execute(ex)
         .await
         .context("reject settlement execution window")?;
+    Ok(())
+}
+
+/// Record a winner skipped before dispatch as a window already closed as
+/// rejected. No transaction went out, so its orders are not in flight.
+pub async fn skip_settlement_window(
+    ex: impl PgExecutor<'_>,
+    auction_id: i64,
+    solver: Pubkey,
+    solution_uid: i64,
+    slot: i64,
+    deadline_slot: i64,
+) -> Result<()> {
+    const QUERY: &str = r#"
+INSERT INTO solana.settlement_executions
+    (auction_id, solver, solution_uid, start_timestamp, end_timestamp, start_slot, end_slot,
+     deadline_slot, outcome)
+VALUES ($1, $2, $3, now(), now(), $4, $4, $5, 'rejected')
+ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
+    "#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(solver.0)
+        .bind(solution_uid)
+        .bind(slot)
+        .bind(deadline_slot)
+        .execute(ex)
+        .await
+        .context("record skipped settlement execution window")?;
     Ok(())
 }
 
@@ -257,8 +303,8 @@ pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>
 
 /// Orders inside a winning solution whose settlement transaction may still
 /// land: a blockhash lifetime past the deadline slot has not run out, no
-/// settlement of the auction traded the order yet, and the driver did not
-/// reject the solution before sending it. A timed-out window keeps the hold,
+/// settlement of the auction traded the order yet, and no `rejected` window
+/// says the solution never went out. A timed-out window keeps the hold,
 /// its transaction may land until the blockhash expires. Landing is checked
 /// per order through the settlement's trades: `settlements.solution_uid` is
 /// unattributed, and one solver may win several solutions of one auction.
@@ -505,8 +551,9 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use {
-        super::{in_flight_orders, last_indexed_slot, open_orders},
+        super::{in_flight_orders, last_indexed_slot, open_orders, skip_settlement_window},
         bigdecimal::BigDecimal,
+        chain_types::solana::Pubkey,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
     };
@@ -799,6 +846,44 @@ WHERE uid = $1
                 if order == 1 { vec![3] } else { vec![] }
             );
         }
+    }
+
+    /// A winner skipped before dispatch holds none of its orders.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_a_skipped_winner_holds_nothing() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+        let solver = ByteArray([0xEE; 32]);
+        sqlx::query(
+            "INSERT INTO solana.competition_auctions (id, tip_slot, deadline_slot, order_uids, \
+             price_tokens, price_values) VALUES (77, 1, 100, '{}', '{}', '{}')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.proposed_solutions (auction_id, uid, id, solver, is_winner, \
+             filtered_out, score) VALUES (77, 0, 7, $1, true, false, 1)",
+        )
+        .bind(solver)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.proposed_trade_executions (auction_id, solution_uid, order_uid, \
+             executed_sell, executed_buy) VALUES (77, 0, $1, 10, 20)",
+        )
+        .bind(ByteArray([1u8; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert_eq!(in_flight_orders(&pool, 50).await.unwrap().len(), 1);
+
+        skip_settlement_window(&pool, 77, Pubkey(solver.0), 0, 1, 100)
+            .await
+            .unwrap();
+        assert!(in_flight_orders(&pool, 50).await.unwrap().is_empty());
     }
 
     #[tokio::test]
