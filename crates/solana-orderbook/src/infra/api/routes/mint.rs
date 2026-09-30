@@ -81,7 +81,7 @@ impl fmt::Display for UnsettleableMint {
 /// Why the settlement program cannot move the tokens of the mint at
 /// `account`, `None` when it can.
 ///
-/// TODO(BE-320): a permanent delegate mint passes, although its issuer can
+/// TODO(BE-344): a permanent delegate mint passes, although its issuer can
 /// move the buffer's balance of the token, retained fees included.
 fn unsettleable_mint(account: Option<&Account>) -> Option<UnsettleableMint> {
     let Some(mint) = account
