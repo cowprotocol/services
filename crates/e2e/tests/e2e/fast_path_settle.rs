@@ -133,8 +133,14 @@ async fn local_node_fast_path_penalty_cap() {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_fast_path_executed_price_matches_quote() {
-    run_test(fast_path_executed_price_matches_quote).await;
+async fn local_node_fast_path_executed_amounts_match_quote() {
+    run_test(|web3| fast_path_executed_amounts_match_quote(web3, OrderKind::Sell)).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_fast_path_executed_amounts_match_quote_buy_order() {
+    run_test(|web3| fast_path_executed_amounts_match_quote(web3, OrderKind::Buy)).await;
 }
 
 /// A fast-path order signed against a quoting solver that charges a solver
@@ -308,14 +314,19 @@ async fn fast_path_settle(web3: Web3, side: OrderKind) {
     );
 }
 
-/// The on-chain fill of a fast-path order matches the quote the UI showed.
+/// The on-chain fill of a fast-path order lands on the compounded
+/// quote-plus-fees bid to the wei, exercising the full fee stack for both
+/// order kinds:
 ///
-/// The solver runs with a 1% haircut, which used to be applied twice — once in
-/// the quote and again at settle — pushing the on-chain fill ~1% below the
-/// recorded bid (the circuit-breaker mismatch Tamir reported). With the driver
-/// executing the autopilot's bid verbatim, the fill lands on the quoted buy
-/// amount to the wei.
-async fn fast_path_executed_price_matches_quote(web3: Web3) {
+/// * a 1% solver haircut baked into the colocated baseline solver's quote,
+/// * a 1% protocol volume fee configured on the autopilot, and
+/// * a 2% partner volume fee declared in app-data.
+///
+/// The driver settles at the autopilot's compounded bid verbatim. For a sell
+/// order the compounding shaves the buy; for a buy order it inflates the
+/// sell. Both directions are checked by reproducing the autopilot's forward
+/// math with the same `apply_volume_fee` primitive.
+async fn fast_path_executed_amounts_match_quote(web3: Web3, side: OrderKind) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
@@ -324,11 +335,18 @@ async fn fast_path_executed_price_matches_quote(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
-    let sell_amount = 1u64.eth();
+    // The traded amount is the sell for a sell order and the buy for a buy
+    // order; buy orders pay gas + compounded volume fees on top of the raw
+    // sell quote, so fund extra headroom.
+    let amount = 1u64.eth();
+    let funded = match side {
+        OrderKind::Sell => amount,
+        OrderKind::Buy => amount * U256::from(2u8),
+    };
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance, sell_amount)
+        .approve(onchain.contracts().allowance, funded)
         .from(trader.address())
         .send_and_watch()
         .await
@@ -338,7 +356,7 @@ async fn fast_path_executed_price_matches_quote(web3: Web3) {
         .weth
         .deposit()
         .from(trader.address())
-        .value(sell_amount)
+        .value(funded)
         .send_and_watch()
         .await
         .unwrap();
@@ -348,50 +366,69 @@ async fn fast_path_executed_price_matches_quote(web3: Web3) {
     // Long exclusivity so only the fast path can settle within the test window.
     let exclusivity = Duration::from_secs(300);
 
-    // A 1% haircut: before the fix it was applied once in the quote and again
-    // at settle, so the on-chain fill fell below the recorded bid.
-    colocation::start_driver(
-        onchain.contracts(),
-        vec![
-            colocation::start_baseline_solver_with_solver_fee(
-                "test_solver".into(),
-                solver.clone(),
-                *onchain.contracts().weth.address(),
-                vec![],
-                1,
-                true,
-                100,
-            )
-            .await,
-        ],
-        colocation::LiquidityProvider::UniswapV2,
-    );
+    // 1% protocol volume fee applied to any order class.
+    let protocol_volume_factor: f64 = 0.01;
+    // 2% partner volume fee (200 bps).
+    let partner_volume_bps: u64 = 200;
+    let partner_recipient = Address::repeat_byte(0xb0);
+    // 1% solver haircut baked into the quote by the colocated baseline solver
+    // — the original bug re-applied this at settle.
+    let solver_fee_bps: u32 = 100;
 
-    let quoter = ExternalSolver::new("test_solver", "http://localhost:11088/test_solver");
     let autopilot_config = AutopilotConfiguration {
         drivers: vec![Solver::test("test_solver", solver.address())],
-        order_quoting: OrderQuoting::test_with_drivers(vec![quoter.clone()]),
+        fee_policies: FeePoliciesConfig {
+            policies: vec![ConfigFeePolicy {
+                kind: ConfigFeePolicyKind::Volume {
+                    factor: protocol_volume_factor.try_into().unwrap(),
+                },
+                order_class: ConfigFeePolicyOrderClass::Any,
+            }],
+            // Room for the partner factor (2%).
+            max_partner_fee: 0.05.try_into().unwrap(),
+            ..Default::default()
+        },
         ..AutopilotConfiguration::test_no_drivers()
     };
-    let orderbook_config = configs::orderbook::Configuration {
-        order_quoting: OrderQuoting::test_with_drivers(vec![quoter]),
-        ..configs::orderbook::Configuration::test_default()
-    };
-    let (autopilot_config, orderbook_config) =
-        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
-    services.start_autopilot(None, autopilot_config).await;
-    services.start_api(orderbook_config).await;
+    let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
+        autopilot_config,
+        configs::orderbook::Configuration::test_default(),
+        exclusivity,
+    );
+    services
+        .start_protocol_with_args_and_solver_fee(
+            autopilot_config,
+            orderbook_config,
+            solver,
+            solver_fee_bps,
+        )
+        .await;
 
-    let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
+    let app_data = json!({
+        "version": "1.1.0",
+        "metadata": {
+            "enableFastPath": true,
+            "partnerFee": {
+                "bps": partner_volume_bps,
+                "recipient": partner_recipient,
+            }
+        }
+    })
+    .to_string();
 
-    tracing::info!("Quoting with enableFastPath.");
+    tracing::info!("Quoting with enableFastPath and a partner fee.");
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
         sell_token: *onchain.contracts().weth.address(),
         buy_token: *token.address(),
-        side: OrderQuoteSide::Sell {
-            sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(sell_amount).unwrap(),
+        side: match side {
+            OrderKind::Sell => OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(amount).unwrap(),
+                },
+            },
+            OrderKind::Buy => OrderQuoteSide::Buy {
+                buy_amount_after_fee: NonZeroU256::try_from(amount).unwrap(),
             },
         },
         app_data: OrderCreationAppData::Full {
@@ -402,18 +439,33 @@ async fn fast_path_executed_price_matches_quote(web3: Web3) {
     let quote = services.submit_quote(&quote_request).await.unwrap();
     let quote_id = quote.id.expect("fast-path quote should carry an id");
 
-    // Sign below the quote so the bid clears the signed floor; the fast path
-    // still settles at the full quoted bid.
-    let signed_buy = quote.quote.buy_amount * U256::from(90u8) / U256::from(100u8);
+    // The raw (pre-volume-fee) amounts the autopilot's `finalize_bid` starts
+    // from: for a sell order the quote already reflects gas netting, so
+    // `quote.quote.buy_amount` is the input to the volume-fee stack. For a
+    // buy order the same is true of `sell_amount + fee_amount`.
+    let (raw_sell, raw_buy) = match side {
+        OrderKind::Sell => (amount, quote.quote.buy_amount),
+        OrderKind::Buy => (quote.quote.sell_amount + quote.quote.fee_amount, amount),
+    };
+
+    // Sign with headroom on the fee-taking side so the ~3% compounded volume
+    // fees can be extracted without breaching the on-chain limit-price check:
+    // a sell order accepts a 10% smaller buy, a buy order accepts a 20%
+    // larger sell.
+    let (signed_sell, signed_buy) = match side {
+        OrderKind::Sell => (amount, raw_buy * U256::from(90u8) / U256::from(100u8)),
+        OrderKind::Buy => (raw_sell * U256::from(120u8) / U256::from(100u8), amount),
+    };
+
     tracing::info!("Placing the fast-path order.");
     let order = OrderCreation {
         quote_id: Some(quote_id),
         sell_token: *onchain.contracts().weth.address(),
-        sell_amount,
+        sell_amount: signed_sell,
         buy_token: *token.address(),
         buy_amount: signed_buy,
         valid_to: model::time::now_in_epoch_seconds() + 3600,
-        kind: OrderKind::Sell,
+        kind: side,
         app_data: OrderCreationAppData::Full { full: app_data },
         ..Default::default()
     }
@@ -441,14 +493,37 @@ async fn fast_path_executed_price_matches_quote(web3: Web3) {
         .into_iter()
         .next()
         .expect("settled order should have a trade");
+    let executed_sell = number::conversions::big_uint_to_u256(&trade.sell_amount)
+        .expect("trade sell amount fits in U256");
     let executed_buy = number::conversions::big_uint_to_u256(&trade.buy_amount)
         .expect("trade buy amount fits in U256");
-    // The driver settles at the autopilot's adjusted bid verbatim, and with
-    // no volume fees that bid equals the quoted buy amount to the wei.
-    let quoted_buy = quote.quote.buy_amount;
+
+    // Reproduce the autopilot's forward math with the same primitive
+    // (`apply_volume_fee`) it uses when computing limit_sell/limit_buy: each
+    // step only moves the fee-taking side, so the fixed side is unchanged by
+    // the compounding.
+    let protocol_factor: configs::fee_factor::FeeFactor =
+        protocol_volume_factor.try_into().unwrap();
+    let partner_factor: configs::fee_factor::FeeFactor =
+        (partner_volume_bps as f64 / 10_000.0).try_into().unwrap();
+    let (after_protocol_sell, after_protocol_buy) =
+        shared::fee::apply_volume_fee(raw_sell, raw_buy, side, protocol_factor);
+    let (expected_executed_sell, expected_executed_buy) = shared::fee::apply_volume_fee(
+        after_protocol_sell,
+        after_protocol_buy,
+        side,
+        partner_factor,
+    );
+
     assert_eq!(
-        executed_buy, quoted_buy,
-        "executed buy should match the quoted buy amount exactly",
+        executed_sell, expected_executed_sell,
+        "executed sell should equal the quoted sell compounded with the protocol + partner volume \
+         fees",
+    );
+    assert_eq!(
+        executed_buy, expected_executed_buy,
+        "executed buy should equal the quoted buy compounded with the protocol + partner volume \
+         fees",
     );
 }
 
