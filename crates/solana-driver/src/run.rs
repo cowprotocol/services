@@ -54,7 +54,9 @@ pub async fn run(args: Args) {
             CommitmentConfig::confirmed(),
         ));
     }
-    let blockchain = Arc::new(blockchain);
+    let blockchain = Arc::new(
+        blockchain.with_bundle_throttler(blockchain::Throttler::new(config.rpc.bundle_throttle)),
+    );
     let api = Api {
         addr: config.http.bind_address,
         blockchain,
