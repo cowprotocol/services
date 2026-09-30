@@ -2,7 +2,14 @@
 
 use {
     cow_settlement_interface::{
-        data::intent::{Asset, Flags, OrderIntent, OrderKind, TokenAsset},
+        data::intent::{
+            Asset,
+            ENCODED_NATIVE_SOL_TRANSFER,
+            Flags,
+            OrderIntent,
+            OrderKind,
+            TokenAsset,
+        },
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
@@ -12,6 +19,7 @@ use {
     },
     solana_sdk::pubkey::Pubkey,
     solana_testlib::temp_keypair,
+    spl_token_interface::native_mint,
     std::{net::SocketAddr, num::NonZero, sync::Arc},
     tokio_util::sync::CancellationToken,
 };
@@ -336,6 +344,47 @@ async fn solve_discards_duplicate_solution_ids() {
     assert_eq!(json["solutions"].as_array().unwrap().len(), 1);
 }
 
+/// A solution whose settlement transaction is over the network's byte limit
+/// is dropped at `/solve`: it would win the auction and then fail to settle.
+#[tokio::test]
+async fn solve_drops_a_solution_over_the_transaction_size_limit() {
+    // The mints of `test_order_intent`, so the order matches its uid and the
+    // settlement builds.
+    let (sell, buy) = (pubkey(0x88).to_string(), pubkey(0x77).to_string());
+    let solution = |id: u64, interactions: serde_json::Value| {
+        serde_json::json!({
+            "id": id,
+            "prices": { (sell.clone()): "2000", (buy.clone()): "1000" },
+            "trades": [{ "orderUid": uid(), "executedAmount": "1000" }],
+            "interactions": interactions,
+        })
+    };
+    // 1,233 zero bytes of instruction data alone exceed the 1,232-byte limit.
+    let oversized = serde_json::json!([{
+        "programId": pubkey(0x99).to_string(),
+        "accounts": [],
+        "instructionData": "AAAA".repeat(411),
+    }]);
+    let engine = spawn_mock_solver_engine(serde_json::json!({
+        "solutions": [solution(1, serde_json::json!([])), solution(2, oversized)],
+    }))
+    .await;
+    let (solver, _) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+    let mut request = solve_request();
+    request["orders"][0]["sellToken"] = serde_json::json!(sell);
+    request["orders"][0]["buyToken"] = serde_json::json!(buy);
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/solve"))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert_eq!(response_ids(&response.json().await.unwrap()), [1]);
+}
+
 #[tokio::test]
 async fn solve_with_engine_down_returns_solver_failed() {
     // Point the solver at a port with no listener.
@@ -626,6 +675,57 @@ async fn quote_with_identical_tokens_is_rejected() {
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "QuoteSameTokens");
+}
+
+#[tokio::test]
+async fn quote_selling_wsol_for_native_sol_is_rejected() {
+    let (solver, _) = dead_solver();
+    let addr = spawn_server(vec![solver]).await;
+
+    let mut body = quote_request("sell", "1000");
+    body["sellToken"] = serde_json::json!(native_mint::ID.to_string());
+    body["buyToken"] = serde_json::json!(ENCODED_NATIVE_SOL_TRANSFER.to_string());
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "QuoteSameTokens");
+}
+
+/// The engine sees a native SOL buy as a wSOL buy, so it keys the buy price
+/// by the wSOL mint.
+#[tokio::test]
+async fn native_sol_buy_quote_is_priced_as_wsol() {
+    let mut solution = quote_solution("1000");
+    let prices = solution["solutions"][0]["prices"].as_object_mut().unwrap();
+    let buy_price = prices.remove(&pubkey(0x44).to_string()).unwrap();
+    prices.insert(native_mint::ID.to_string(), buy_price);
+    let engine = spawn_mock_solver_engine(solution).await;
+    let (solver, account) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+
+    let mut body = quote_request("sell", "1000");
+    body["buyToken"] = serde_json::json!(ENCODED_NATIVE_SOL_TRANSFER.to_string());
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "sellAmount": "1000",
+            "buyAmount": "2000",
+            "solver": account.to_string(),
+        })
+    );
 }
 
 #[tokio::test]

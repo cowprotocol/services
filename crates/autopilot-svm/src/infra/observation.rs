@@ -29,8 +29,9 @@ use {
 ///
 /// `outcome` records what the indexer observed on chain, which is why a
 /// landing observed after the deadline overwrites a timeout. The one
-/// exception is `rejected`, written from a driver error that proves no
-/// transaction went out, leaving nothing for the indexer to observe.
+/// exception is `rejected`, written when no transaction went out, leaving
+/// nothing for the indexer to observe: a driver error proves it, or the
+/// executor skipped the winner before dispatch.
 #[derive(Clone)]
 pub struct SettlementWindows {
     pool: PgPool,
@@ -97,6 +98,27 @@ impl SettlementWindows {
         solution_uid: i64,
     ) -> Result<()> {
         db::reject_settlement_window(&self.pool, auction_id, solver, solution_uid).await
+    }
+
+    /// Record a winner skipped before dispatch. Its window closes as rejected
+    /// right away, which frees its orders for the next cut.
+    pub async fn record_skipped(
+        &self,
+        auction_id: i64,
+        solver: Pubkey,
+        solution_uid: i64,
+        slot: u64,
+        deadline_slot: u64,
+    ) -> Result<()> {
+        db::skip_settlement_window(
+            &self.pool,
+            auction_id,
+            solver,
+            solution_uid,
+            to_db_integer(slot),
+            to_db_integer(deadline_slot),
+        )
+        .await
     }
 
     /// Close every open window whose deadline the indexer has processed
