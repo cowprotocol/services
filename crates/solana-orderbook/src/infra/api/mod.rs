@@ -143,7 +143,7 @@ pub struct State(Arc<Inner>);
 
 /// Sponsored order placement dependencies: the funder identity the incoming
 /// transactions must commit to, the settlement program they must target, and
-/// the RPC client that vouches for blockhash freshness.
+/// the RPC client that vouches for blockhash freshness and reads the mints.
 pub struct Sponsoring {
     pub funder: solana_sdk::pubkey::Pubkey,
     pub settlement_program: solana_sdk::pubkey::Pubkey,

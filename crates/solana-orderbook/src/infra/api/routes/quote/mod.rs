@@ -3,6 +3,7 @@
 pub mod dto;
 
 use {
+    super::mint::ensure_settleable,
     crate::infra::{
         api::{State, ValidationParameters, error, extract},
         db,
@@ -10,6 +11,8 @@ use {
     },
     axum::{Json, http::StatusCode},
     chrono::Utc,
+    cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
+    cow_solana_rpc::SolanaRPC,
     database::{byte_array::ByteArray, solana::OrderKind},
     std::time::Duration,
 };
@@ -35,6 +38,9 @@ pub async fn quote(
         None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
     };
     validate(&request, valid_to, now_secs, &state.validation())?;
+    if let Some(sponsoring) = state.sponsoring() {
+        check_mints(&sponsoring.rpc, &request).await?;
+    }
 
     let (kind, amount) = request.side.kind_and_amount();
     let quoted = state
@@ -103,6 +109,23 @@ pub async fn quote(
         verified: false,
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
+}
+
+/// Reject a mint the settlement program cannot move. The chain read goes
+/// through the sponsoring RPC client, so the check is skipped without
+/// sponsoring and when the read fails: placement and the autopilot check the
+/// mints again.
+async fn check_mints(rpc: &SolanaRPC, request: &dto::Request) -> Result<(), error::Reply> {
+    // Native SOL has no mint.
+    let buy = (request.buy_token != ENCODED_NATIVE_SOL_TRANSFER).then_some(request.buy_token);
+    let mints = [Some(request.sell_token), buy];
+    match rpc.multiple_accounts(mints.into_iter().flatten()).await {
+        Ok(accounts) => ensure_settleable(&accounts, mints.into_iter().flatten()),
+        Err(err) => {
+            tracing::warn!(?err, "mint lookup failed, quoting unchecked");
+            Ok(())
+        }
+    }
 }
 
 /// The checks an order must pass before it is worth quoting.

@@ -236,7 +236,8 @@ paths:
             (`InvalidIntentFlags`), equal mints (`SameBuyAndSellToken`), a
             zero amount (`ZeroAmount`), a missing owner signature
             (`InvalidSignature`), a validTo below the minimum validity
-            (`InsufficientValidTo`), a dead blockhash (`BlockhashExpired`),
+            (`InsufficientValidTo`), a mint the settlement program cannot
+            move (`UnsupportedToken`), a dead blockhash (`BlockhashExpired`),
             or a known uid (`DuplicatedOrder`).
           content:
             application/json:
@@ -266,9 +267,11 @@ paths:
           description: |
             The body could not be parsed (`InvalidRequestBody`), buy and sell
             token are the same (`SameBuyAndSellToken`), the amount is zero
-            (`ZeroAmount`), or `validTo` is closer than the configured minimum
+            (`ZeroAmount`), `validTo` is closer than the configured minimum
             (default two minutes) or further than the configured maximum
-            (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`).
+            (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
+            or a mint the settlement program cannot move (`UnsupportedToken`,
+            checked on sponsoring deployments).
           content:
             application/json:
               schema:

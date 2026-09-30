@@ -5,7 +5,7 @@ use {
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     database::{byte_array::ByteArray, solana::OrderKind},
     solana_orderbook::infra::{api::Api, db, quoter::Quoter},
-    solana_sdk::signer::Signer,
+    solana_sdk::{program_pack::Pack, signer::Signer},
     sqlx::PgPool,
     std::{net::SocketAddr, time::Duration},
     tokio_util::sync::CancellationToken,
@@ -260,7 +260,10 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
         sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
             funder,
             settlement_program: cow_settlement_interface::id(),
-            rpc: SolanaRPC::new_mock_with_mocks(Mocks::default()),
+            rpc: SolanaRPC::new_mock_with_mocks(Mocks::from([(
+                RpcRequest::GetMultipleAccounts,
+                classic_mints(),
+            )])),
             max_priority_fee_lamports: 100_000,
         }),
         ..mock_api()
@@ -317,6 +320,57 @@ async fn quote_picks_the_best_driver_answer() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["quote"]["buyAmount"], "2000000");
+}
+
+/// A sponsoring deployment reads the quoted mints and refuses one the
+/// settlement program cannot move before asking any driver.
+#[tokio::test]
+async fn quote_rejects_mints_the_settlement_program_cannot_move() {
+    let addr = spawn_sponsored_server_with(
+        PgPool::connect_lazy("postgresql://").unwrap(),
+        solana_sdk::pubkey::Pubkey::new_unique(),
+        true,
+        accounts_response(&[None, Some(mint_account(spl_token_interface::ID))]),
+    )
+    .await;
+    let (status, kind) = post_quote(addr, quote_body(serde_json::json!({"validFor": 1800}))).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "UnsupportedToken")
+    );
+}
+
+/// Native SOL has no mint to read, and a failed mint lookup quotes unchecked:
+/// both reach the drivers, a dead one here.
+#[tokio::test]
+async fn quote_checks_only_the_mints_it_can_read() {
+    let mut native_buy = quote_body(serde_json::json!({"validFor": 1800}));
+    native_buy["buyToken"] = serde_json::json!(
+        cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER.to_string()
+    );
+    for (body, mints) in [
+        (
+            native_buy,
+            accounts_response(&[Some(mint_account(spl_token_interface::ID))]),
+        ),
+        (
+            quote_body(serde_json::json!({"validFor": 1800})),
+            serde_json::json!("not an account list"),
+        ),
+    ] {
+        let addr = spawn_sponsored_server_with(
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            solana_sdk::pubkey::Pubkey::new_unique(),
+            true,
+            mints,
+        )
+        .await;
+        let (status, kind) = post_quote(addr, body).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
+        );
+    }
 }
 
 /// Every driver failure reads as no liquidity, mirroring the EVM mapping of
@@ -455,11 +509,22 @@ async fn account_orders_rejects_bad_parameters() {
 
 /// A sponsored-placement server: a fixed funder pubkey, the interface's
 /// default settlement program, and a mock RPC answering the blockhash and
-/// height probes.
+/// height probes and the mint lookup with two classic SPL Token mints.
 async fn spawn_sponsored_server(
     pool: PgPool,
     funder: solana_sdk::pubkey::Pubkey,
     blockhash_valid: bool,
+) -> SocketAddr {
+    spawn_sponsored_server_with(pool, funder, blockhash_valid, classic_mints()).await
+}
+
+/// A sponsored-placement server whose mock answers the mint lookup with
+/// `mints`, a `getMultipleAccounts` response.
+async fn spawn_sponsored_server_with(
+    pool: PgPool,
+    funder: solana_sdk::pubkey::Pubkey,
+    blockhash_valid: bool,
+    mints: serde_json::Value,
 ) -> SocketAddr {
     let mocks = Mocks::from([
         (
@@ -470,6 +535,7 @@ async fn spawn_sponsored_server(
             }),
         ),
         (RpcRequest::GetBlockHeight, serde_json::json!(100u64)),
+        (RpcRequest::GetMultipleAccounts, mints),
     ]);
     let api = Api {
         pool,
@@ -485,6 +551,53 @@ async fn spawn_sponsored_server(
     let shutdown = CancellationToken::new();
     tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
     addr
+}
+
+/// A plain mint in the base layout both token programs share, owned by
+/// `program`.
+fn mint_account(program: solana_sdk::pubkey::Pubkey) -> solana_sdk::account::Account {
+    let mut data = vec![0; spl_token_interface::state::Mint::LEN];
+    spl_token_interface::state::Mint {
+        is_initialized: true,
+        decimals: 6,
+        ..Default::default()
+    }
+    .pack_into_slice(&mut data);
+    solana_sdk::account::Account {
+        owner: program,
+        data,
+        ..Default::default()
+    }
+}
+
+/// A `getMultipleAccounts` response listing `accounts` in request order,
+/// `None` for a missing account.
+fn accounts_response(accounts: &[Option<solana_sdk::account::Account>]) -> serde_json::Value {
+    let value: Vec<_> = accounts
+        .iter()
+        .map(|account| {
+            account.as_ref().map(|account| {
+                serde_json::json!({
+                    "lamports": account.lamports,
+                    "data": [base64::prelude::BASE64_STANDARD.encode(&account.data), "base64"],
+                    "owner": account.owner.to_string(),
+                    "executable": account.executable,
+                    "rentEpoch": account.rent_epoch,
+                    "space": account.data.len(),
+                })
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "context": { "slot": 1u64, "apiVersion": "2.0.0" },
+        "value": value,
+    })
+}
+
+/// The mint lookup of an order selling and buying classic SPL Token mints.
+fn classic_mints() -> serde_json::Value {
+    let mint = Some(mint_account(spl_token_interface::ID));
+    accounts_response(&[mint.clone(), mint])
 }
 
 /// The order intent a sponsored transaction carries. `native` sells SOL
@@ -979,6 +1092,67 @@ async fn create_order_checks_the_preparation_template() {
     );
 }
 
+/// Placement reads the order's mints: one the settlement program cannot move
+/// answers `UnsupportedToken`, and a token program other than the mint's
+/// owner is an invalid transaction. Every case gets a fresh server, since the
+/// mock answers the mint lookup once.
+#[tokio::test]
+async fn create_order_checks_the_mints_on_chain() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let classic = Some(mint_account(spl_token_interface::ID));
+    let token_2022 = Some(mint_account(spl_token_2022_interface::ID));
+    // Only the mandatory buy account creation, under SPL Token.
+    let plain = sponsored_creation_tx(funder, &owner, true);
+    let token_2022_approve = creation_tx(
+        funder,
+        &owner,
+        &intent,
+        vec![
+            spl_token_2022_interface::instruction::approve(
+                &spl_token_2022_interface::ID,
+                &intent.sell.token_account,
+                &state_pda(),
+                &owner.pubkey(),
+                &[],
+                1_000,
+            )
+            .unwrap(),
+            destination_creation(funder, owner.pubkey(), &intent),
+        ],
+        true,
+    );
+
+    for (transaction, mints, expected) in [
+        // The sell mint does not exist.
+        (plain.clone(), [None, classic.clone()], "UnsupportedToken"),
+        // The buy mint lives under Token-2022 but its account is created
+        // under SPL Token.
+        (plain, [classic.clone(), token_2022], "InvalidTransaction"),
+        // The sell mint lives under SPL Token but its delegation goes
+        // through Token-2022.
+        (
+            token_2022_approve,
+            [classic.clone(), classic],
+            "InvalidTransaction",
+        ),
+    ] {
+        let addr = spawn_sponsored_server_with(
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            funder,
+            true,
+            accounts_response(&mints),
+        )
+        .await;
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected)
+        );
+    }
+}
+
 /// The happy path lands the order and the duplicate is rejected.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
@@ -1167,6 +1341,71 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
     let destination = destination_creation(funder, receiver, &intent);
     let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+
+    let (status, _) = post_order(addr, transaction).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+    let stored: Vec<u8> = sqlx::query_scalar("SELECT buy_token_account FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, intent.buy.encode().1.to_bytes().to_vec());
+}
+
+/// Token-2022 mints place like classic ones: the delegation and the buy
+/// account creation go through Token-2022, and the buy account is the
+/// owner's Token-2022 associated token account.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_accepts_token_2022_mints() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let mut intent = sponsored_intent(owner.pubkey(), false);
+    let buy_mint = intent.buy.encode().0;
+    intent.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+        cow_settlement_interface::data::intent::TokenAsset {
+            mint: buy_mint,
+            token_account:
+                spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+                    &owner.pubkey(),
+                    &buy_mint,
+                    &spl_token_2022_interface::ID,
+                ),
+        },
+    );
+    let preparations = vec![
+        spl_token_2022_interface::instruction::approve(
+            &spl_token_2022_interface::ID,
+            &intent.sell.token_account,
+            &state_pda(),
+            &owner.pubkey(),
+            &[],
+            intent.sell_amount,
+        )
+        .unwrap(),
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+            &funder,
+            &owner.pubkey(),
+            &buy_mint,
+            &spl_token_2022_interface::ID,
+        ),
+    ];
+    let transaction = creation_tx(funder, &owner, &intent, preparations, true);
+    let token_2022 = Some(mint_account(spl_token_2022_interface::ID));
+    let addr = spawn_sponsored_server_with(
+        pool.clone(),
+        funder,
+        true,
+        accounts_response(&[token_2022.clone(), token_2022]),
+    )
+    .await;
 
     let (status, _) = post_order(addr, transaction).await;
     assert_eq!(status, reqwest::StatusCode::CREATED);

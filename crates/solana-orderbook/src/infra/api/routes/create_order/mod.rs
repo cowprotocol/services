@@ -10,6 +10,7 @@
 //! and the instruction proves receivability without a lookup or a race.
 
 use {
+    super::mint::{ensure_settleable, is_token_program},
     crate::infra::{
         api::{Sponsoring, State, error},
         db,
@@ -137,8 +138,10 @@ pub async fn create_order(
         .map_err(|_| {
             PlacementError::InvalidTransaction("the bytes do not decode to a transaction")
         })?;
-    let mut order = validate(sponsoring, &transaction, state.validation().min_validity)?;
+    let (mut order, token_programs) =
+        validate(sponsoring, &transaction, state.validation().min_validity)?;
     order.presigned_transaction = params.partially_signed_tx;
+    check_mints(sponsoring, &order, &token_programs).await?;
 
     // The countersign re-checks freshness, so the stored expiry only has to
     // be an upper bound: the tip cannot have moved past the blockhash's own
@@ -193,12 +196,13 @@ pub async fn create_order(
 
 /// Check the transaction is exactly the sponsored-creation shape and derive
 /// the order from it. The expiry and transaction bytes are filled by the
-/// caller.
+/// caller. Also returns the `(mint, token program)` pairs the preparation
+/// steps name, for the caller to check against the mints on chain.
 fn validate(
     sponsoring: &Sponsoring,
     transaction: &VersionedTransaction,
     min_validity: std::time::Duration,
-) -> Result<db::SponsoredOrder, PlacementError> {
+) -> Result<(db::SponsoredOrder, Vec<(Pubkey, Pubkey)>), PlacementError> {
     let message = &transaction.message;
     if message
         .address_table_lookups()
@@ -292,14 +296,17 @@ fn validate(
     // mandatory step, everything else is omittable.
     let state_pda = find_state_pda(&sponsoring.settlement_program).0;
     let mut last_step = 0;
+    let mut token_programs = Vec::new();
     for preparation in preparations {
-        let step = preparation_step(sponsoring, &state_pda, &intent, keys, preparation)?;
+        let (step, token_program) =
+            preparation_step(sponsoring, &state_pda, &intent, keys, preparation)?;
         if step <= last_step {
             return Err(PlacementError::InvalidTransaction(
                 "the instructions do not follow the sponsored template order",
             ));
         }
         last_step = step;
+        token_programs.extend(token_program);
     }
     if last_step != CREATE_DESTINATION {
         return Err(PlacementError::InvalidTransaction(
@@ -323,7 +330,35 @@ fn validate(
         }
     }
 
-    Ok(build_order(intent, uid, order_pda))
+    Ok((build_order(intent, uid, order_pda), token_programs))
+}
+
+/// Reject an order on a mint the settlement program cannot move, and a
+/// preparation step naming a token program that does not own its mint.
+async fn check_mints(
+    sponsoring: &Sponsoring,
+    order: &db::SponsoredOrder,
+    token_programs: &[(Pubkey, Pubkey)],
+) -> Result<(), error::Reply> {
+    let mints = [order.sell_token, order.buy_token].map(|mint| Pubkey::new_from_array(mint.0));
+    let accounts = sponsoring
+        .rpc
+        .multiple_accounts(mints)
+        .await
+        .map_err(|err| internal_error_reply(err, "mint lookup failed"))?;
+    ensure_settleable(&accounts, mints)?;
+    let owned = token_programs.iter().all(|(mint, program)| {
+        accounts
+            .get(mint)
+            .is_some_and(|account| account.owner == *program)
+    });
+    if !owned {
+        return Err(PlacementError::InvalidTransaction(
+            "a preparation step names a token program that does not own its mint",
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// The quote copy to store under the order: filled when the stored quote
@@ -487,14 +522,16 @@ impl ComputeBudget {
 
 /// Classify one preparation instruction against the sponsored template and
 /// pin every account it touches to the order. The funder pays for the whole
-/// transaction, so anything the template does not name is rejected.
+/// transaction, so anything the template does not name is rejected. Returns
+/// the step's template position and, for a token step, its mint with the
+/// token program it names.
 fn preparation_step(
     sponsoring: &Sponsoring,
     state_pda: &Pubkey,
     intent: &OrderIntent,
     keys: &[Pubkey],
     instruction: &CompiledInstruction,
-) -> Result<u8, PlacementError> {
+) -> Result<(u8, Option<(Pubkey, Pubkey)>), PlacementError> {
     let Some(program) = keys.get(usize::from(instruction.program_id_index)) else {
         return Err(PlacementError::InvalidTransaction(
             "an account index is out of range",
@@ -535,9 +572,10 @@ fn preparation_step(
                 "the wrap transfer must fund the sell token account",
             ));
         }
-        Ok(WRAP_TRANSFER)
-    } else if *program == spl_token_interface::ID {
-        match TokenInstruction::unpack(&instruction.data) {
+        Ok((WRAP_TRANSFER, None))
+    } else if is_token_program(program) {
+        // Token-2022 encodes these instructions the way SPL Token does.
+        let step = match TokenInstruction::unpack(&instruction.data) {
             Ok(TokenInstruction::SyncNative) => {
                 let [account] = accounts[..] else {
                     return Err(PlacementError::InvalidTransaction(
@@ -580,7 +618,8 @@ fn preparation_step(
             _ => Err(PlacementError::InvalidTransaction(
                 "only approve and sync-native are accepted from the token program",
             )),
-        }
+        }?;
+        Ok((step, Some((intent.sell.mint, *program))))
     } else if *program == spl_associated_token_account_interface::program::ID {
         // The data byte selects Create ([] or [0]) or CreateIdempotent ([1]).
         if !matches!(instruction.data.as_slice(), [] | [0] | [1]) {
@@ -593,9 +632,7 @@ fn preparation_step(
                 "an account creation names six accounts",
             ));
         };
-        if system != solana_system_interface::program::ID
-            || token_program != spl_token_interface::ID
-        {
+        if system != solana_system_interface::program::ID || !is_token_program(&token_program) {
             return Err(PlacementError::InvalidTransaction(
                 "the account creation must reference the system and token programs",
             ));
@@ -612,11 +649,11 @@ fn preparation_step(
                     "the created sell token account must belong to the order owner",
                 ));
             }
-            Ok(WRAP_CREATE)
+            Ok((WRAP_CREATE, Some((mint, token_program))))
         } else if account == buy_token_account && mint == buy_mint {
             // Any wallet may receive the proceeds: settlement pays out to the
             // account the intent names, whoever owns it.
-            Ok(CREATE_DESTINATION)
+            Ok((CREATE_DESTINATION, Some((mint, token_program))))
         } else {
             Err(PlacementError::InvalidTransaction(
                 "the created account does not belong to the order",
