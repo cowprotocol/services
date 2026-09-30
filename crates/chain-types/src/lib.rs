@@ -24,9 +24,9 @@ pub trait ChainTypes: Copy + Debug + Eq + Hash + Send + Sync + 'static {
     /// Amount type used for token amounts, prices, and scores.
     type Amount: Amount;
 
-    /// Canonical form of a token for clearing-price uniqueness. EVM maps the
+    /// Canonical form of a token for clearing-price uniqueness: the
     /// native-token sentinel (a buy-side-only value, sell tokens arrive
-    /// wrapped) to the wrapped native token, Solana is identity.
+    /// wrapped) maps to the wrapped native token.
     fn canonical_token(token: Self::TokenId, wrapped_native: Self::TokenId) -> Self::TokenId;
 
     /// Owner embedded in the order UID, if the chain's UID carries one.

@@ -3,9 +3,12 @@
 use {
     base64::Engine,
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-    database::{byte_array::ByteArray, solana::OrderKind},
+    database::{
+        byte_array::ByteArray,
+        solana::{OrderEventLabel, OrderKind},
+    },
     solana_orderbook::infra::{api::Api, db, quoter::Quoter},
-    solana_sdk::{program_pack::Pack, signer::Signer},
+    solana_sdk::signer::Signer,
     sqlx::PgPool,
     std::{net::SocketAddr, time::Duration},
     tokio_util::sync::CancellationToken,
@@ -156,6 +159,9 @@ async fn quote_validation_rejects_bad_orders() {
     let addr = spawn_server().await;
     let mut same_tokens = quote_body(serde_json::json!({"validFor": 1800}));
     same_tokens["buyToken"] = same_tokens["sellToken"].clone();
+    // The body sells wSOL, which counts as the same token as native SOL.
+    let mut unwrap = quote_body(serde_json::json!({"validFor": 1800}));
+    unwrap["buyToken"] = serde_json::json!("11111111111111111111111111111111");
     let mut zero_amount = quote_body(serde_json::json!({"validFor": 1800}));
     zero_amount["sellAmountBeforeFee"] = serde_json::json!("0");
 
@@ -169,6 +175,7 @@ async fn quote_validation_rejects_bad_orders() {
             "ExcessiveValidTo",
         ),
         (same_tokens, "SameBuyAndSellToken"),
+        (unwrap, "SameBuyAndSellToken"),
         (zero_amount, "ZeroAmount"),
     ] {
         let (status, kind) = post_quote(addr, body).await;
@@ -176,6 +183,36 @@ async fn quote_validation_rejects_bad_orders() {
             (status, kind.as_str()),
             (reqwest::StatusCode::BAD_REQUEST, expected)
         );
+    }
+}
+
+/// A native SOL buy quoted under the rent-exempt minimum of an empty account
+/// answers `InvalidNativeBuy`, since placement would reject the order.
+#[tokio::test]
+async fn quote_rejects_a_native_buy_under_the_payout_floor() {
+    for (buy_amount, expected) in [
+        (
+            "890879",
+            (reqwest::StatusCode::BAD_REQUEST, "InvalidNativeBuy"),
+        ),
+        ("890880", (reqwest::StatusCode::OK, "")),
+    ] {
+        let driver = spawn_mock_driver(serde_json::json!({
+            "sellAmount": "10000000",
+            "buyAmount": buy_amount,
+            "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        }))
+        .await;
+        let addr = spawn_server_with(Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ))
+        .await;
+        let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+        body["sellToken"] = serde_json::json!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+        body["buyToken"] = serde_json::json!("11111111111111111111111111111111");
+        let (status, kind) = post_quote(addr, body).await;
+        assert_eq!((status, kind.as_str()), expected);
     }
 }
 
@@ -329,8 +366,10 @@ async fn quote_rejects_mints_the_settlement_program_cannot_move() {
     let addr = spawn_sponsored_server_with(
         PgPool::connect_lazy("postgresql://").unwrap(),
         solana_sdk::pubkey::Pubkey::new_unique(),
-        true,
-        accounts_response(&[None, Some(mint_account(spl_token_interface::ID))]),
+        sponsored_mocks(
+            true,
+            accounts_response(&[None, Some(mint_account(spl_token_interface::ID))]),
+        ),
     )
     .await;
     let (status, kind) = post_quote(addr, quote_body(serde_json::json!({"validFor": 1800}))).await;
@@ -345,6 +384,8 @@ async fn quote_rejects_mints_the_settlement_program_cannot_move() {
 #[tokio::test]
 async fn quote_checks_only_the_mints_it_can_read() {
     let mut native_buy = quote_body(serde_json::json!({"validFor": 1800}));
+    // The default body sells wSOL, which for native SOL is the same token.
+    native_buy["sellToken"] = serde_json::json!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
     native_buy["buyToken"] = serde_json::json!(
         cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER.to_string()
     );
@@ -361,8 +402,7 @@ async fn quote_checks_only_the_mints_it_can_read() {
         let addr = spawn_sponsored_server_with(
             PgPool::connect_lazy("postgresql://").unwrap(),
             solana_sdk::pubkey::Pubkey::new_unique(),
-            true,
-            mints,
+            sponsored_mocks(true, mints),
         )
         .await;
         let (status, kind) = post_quote(addr, body).await;
@@ -509,24 +549,24 @@ async fn account_orders_rejects_bad_parameters() {
 
 /// A sponsored-placement server: a fixed funder pubkey, the interface's
 /// default settlement program, and a mock RPC answering the blockhash and
-/// height probes and the mint lookup with two classic SPL Token mints.
+/// height probes and the account lookup with two classic SPL Token mints.
 async fn spawn_sponsored_server(
     pool: PgPool,
     funder: solana_sdk::pubkey::Pubkey,
     blockhash_valid: bool,
 ) -> SocketAddr {
-    spawn_sponsored_server_with(pool, funder, blockhash_valid, classic_mints()).await
+    spawn_sponsored_server_with(
+        pool,
+        funder,
+        sponsored_mocks(blockhash_valid, classic_mints()),
+    )
+    .await
 }
 
-/// A sponsored-placement server whose mock answers the mint lookup with
-/// `mints`, a `getMultipleAccounts` response.
-async fn spawn_sponsored_server_with(
-    pool: PgPool,
-    funder: solana_sdk::pubkey::Pubkey,
-    blockhash_valid: bool,
-    mints: serde_json::Value,
-) -> SocketAddr {
-    let mocks = Mocks::from([
+/// The mock RPC answers to the blockhash and height probes, and `accounts`
+/// to the order account lookup, a `getMultipleAccounts` response.
+fn sponsored_mocks(blockhash_valid: bool, accounts: serde_json::Value) -> Mocks {
+    Mocks::from([
         (
             RpcRequest::IsBlockhashValid,
             serde_json::json!({
@@ -535,8 +575,16 @@ async fn spawn_sponsored_server_with(
             }),
         ),
         (RpcRequest::GetBlockHeight, serde_json::json!(100u64)),
-        (RpcRequest::GetMultipleAccounts, mints),
-    ]);
+        (RpcRequest::GetMultipleAccounts, accounts),
+    ])
+}
+
+/// A sponsored-placement server whose mock RPC answers from `mocks`.
+async fn spawn_sponsored_server_with(
+    pool: PgPool,
+    funder: solana_sdk::pubkey::Pubkey,
+    mocks: Mocks,
+) -> SocketAddr {
     let api = Api {
         pool,
         sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
@@ -556,45 +604,23 @@ async fn spawn_sponsored_server_with(
 /// A plain mint in the base layout both token programs share, owned by
 /// `program`.
 fn mint_account(program: solana_sdk::pubkey::Pubkey) -> solana_sdk::account::Account {
-    let mut data = vec![0; spl_token_interface::state::Mint::LEN];
-    spl_token_interface::state::Mint {
-        is_initialized: true,
-        decimals: 6,
-        ..Default::default()
-    }
-    .pack_into_slice(&mut data);
     solana_sdk::account::Account {
         owner: program,
-        data,
-        ..Default::default()
+        ..solana_testlib::classic_mint(6)
     }
 }
 
 /// A `getMultipleAccounts` response listing `accounts` in request order,
 /// `None` for a missing account.
 fn accounts_response(accounts: &[Option<solana_sdk::account::Account>]) -> serde_json::Value {
-    let value: Vec<_> = accounts
-        .iter()
-        .map(|account| {
-            account.as_ref().map(|account| {
-                serde_json::json!({
-                    "lamports": account.lamports,
-                    "data": [base64::prelude::BASE64_STANDARD.encode(&account.data), "base64"],
-                    "owner": account.owner.to_string(),
-                    "executable": account.executable,
-                    "rentEpoch": account.rent_epoch,
-                    "space": account.data.len(),
-                })
-            })
-        })
-        .collect();
-    serde_json::json!({
-        "context": { "slot": 1u64, "apiVersion": "2.0.0" },
-        "value": value,
-    })
+    solana_testlib::multiple_accounts_json(accounts.iter().map(|account| {
+        account
+            .as_ref()
+            .map_or(serde_json::Value::Null, solana_testlib::account_json)
+    }))
 }
 
-/// The mint lookup of an order selling and buying classic SPL Token mints.
+/// The account lookup of an order selling and buying classic SPL Token mints.
 fn classic_mints() -> serde_json::Value {
     let mint = Some(mint_account(spl_token_interface::ID));
     accounts_response(&[mint.clone(), mint])
@@ -640,6 +666,18 @@ fn sponsored_intent(
         },
         app_data: [0x44; 32],
     }
+}
+
+/// A sponsored intent buying `buy_amount` lamports of native SOL into the
+/// owner's wallet.
+fn native_buy_intent(
+    owner: solana_sdk::pubkey::Pubkey,
+    buy_amount: u64,
+) -> cow_settlement_interface::data::intent::OrderIntent {
+    let mut intent = sponsored_intent(owner, false);
+    intent.buy = cow_settlement_interface::data::intent::Asset::Native(owner);
+    intent.buy_amount = buy_amount;
+    intent
 }
 
 /// The owner's associated token account for `mint` under the SPL Token
@@ -692,7 +730,7 @@ fn full_preparations(
         spl_associated_token_account_interface::instruction::create_associated_token_account(
             &funder,
             &owner,
-            &intent.buy.encode().0,
+            &buy_mint(intent),
             &spl_token_interface::ID,
         ),
     ]
@@ -764,9 +802,19 @@ fn destination_creation(
     spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
         &funder,
         &owner,
-        &intent.buy.encode().0,
+        &buy_mint(intent),
         &spl_token_interface::ID,
     )
+}
+
+/// The intent's buy mint. A native SOL buy has none, so it panics.
+fn buy_mint(
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+) -> solana_sdk::pubkey::Pubkey {
+    let cow_settlement_interface::data::intent::Asset::TokenProgram(buy) = &intent.buy else {
+        panic!("a native SOL buy has no mint");
+    };
+    buy.mint
 }
 
 /// A sponsored creation transaction with an arbitrary SPL sell and only the
@@ -930,6 +978,28 @@ async fn create_order_rejects_invalid_submissions() {
         );
     }
 
+    // Native SOL buys: a payout under the rent-exempt minimum, a partially
+    // fillable order, and wSOL sold for native SOL.
+    let mut partial = native_buy_intent(owner.pubkey(), 1_000_000_000);
+    partial.flags.partially_fillable = true;
+    let mut unwrap = native_buy_intent(owner.pubkey(), 1_000_000_000);
+    unwrap.sell.mint = spl_token_interface::native_mint::ID;
+    for (intent, expected) in [
+        (
+            native_buy_intent(owner.pubkey(), 890_879),
+            "InvalidNativeBuy",
+        ),
+        (partial, "InvalidNativeBuy"),
+        (unwrap, "SameBuyAndSellToken"),
+    ] {
+        let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected)
+        );
+    }
+
     // A well-formed transaction whose blockhash already died.
     let addr = spawn_sponsored_server(
         PgPool::connect_lazy("postgresql://").unwrap(),
@@ -942,6 +1012,41 @@ async fn create_order_rejects_invalid_submissions() {
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "BlockhashExpired")
     );
+}
+
+/// A native SOL buy pays a wallet the System Program owns: an account of
+/// another program is rejected, a system wallet passes on to the blockhash
+/// check. The lookup answers the sell mint, then the wallet.
+#[tokio::test]
+async fn create_order_checks_the_native_buy_wallet() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let intent = native_buy_intent(owner.pubkey(), 1_000_000_000);
+    for (wallet_owner, expected) in [
+        (spl_token_interface::ID, "InvalidNativeBuy"),
+        (solana_system_interface::program::ID, "BlockhashExpired"),
+    ] {
+        let wallet = solana_sdk::account::Account {
+            lamports: 2_039_280,
+            owner: wallet_owner,
+            ..Default::default()
+        };
+        let addr = spawn_sponsored_server_with(
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            funder,
+            sponsored_mocks(
+                false,
+                accounts_response(&[Some(mint_account(spl_token_interface::ID)), Some(wallet)]),
+            ),
+        )
+        .await;
+        let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected)
+        );
+    }
 }
 
 /// A message header that leaves the owner outside the signer region is
@@ -1070,6 +1175,23 @@ async fn create_order_checks_the_preparation_template() {
         (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
     );
 
+    // A native SOL buy has no buy token account to create, not even a wSOL
+    // one.
+    let native = native_buy_intent(owner, 1_000_000_000);
+    let creation =
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+            &funder,
+            &owner,
+            &spl_token_interface::native_mint::ID,
+            &spl_token_interface::ID,
+        );
+    let transaction = creation_tx(funder, &owner_keypair, &native, vec![creation], true);
+    let (status, kind) = post_order(addr, transaction).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
+    );
+
     // A wrapped sell account owned by a stranger is rejected even when the
     // intent names it. Only the buy account may belong to someone else.
     let stranger = solana_sdk::pubkey::Pubkey::new_unique();
@@ -1141,8 +1263,7 @@ async fn create_order_checks_the_mints_on_chain() {
         let addr = spawn_sponsored_server_with(
             PgPool::connect_lazy("postgresql://").unwrap(),
             funder,
-            true,
-            accounts_response(&mints),
+            sponsored_mocks(true, accounts_response(&mints)),
         )
         .await;
         let (status, kind) = post_order(addr, transaction).await;
@@ -1402,8 +1523,7 @@ async fn solana_db_create_order_accepts_token_2022_mints() {
     let addr = spawn_sponsored_server_with(
         pool.clone(),
         funder,
-        true,
-        accounts_response(&[token_2022.clone(), token_2022]),
+        sponsored_mocks(true, accounts_response(&[token_2022.clone(), token_2022])),
     )
     .await;
 
@@ -1416,8 +1536,54 @@ async fn solana_db_create_order_accepts_token_2022_mints() {
     assert_eq!(stored, intent.buy.encode().1.to_bytes().to_vec());
 }
 
+/// A native SOL buy lands without a buy account creation: the payout goes
+/// to the wallet itself, and creates it when the lookup finds none.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_accepts_a_native_buy() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let intent = native_buy_intent(owner.pubkey(), 890_880);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+    let addr = spawn_sponsored_server_with(
+        pool.clone(),
+        funder,
+        sponsored_mocks(
+            true,
+            accounts_response(&[Some(mint_account(spl_token_interface::ID)), None]),
+        ),
+    )
+    .await;
+
+    let (status, _) = post_order(addr, transaction).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+    let (buy_token, buy_token_account): (Vec<u8>, Vec<u8>) =
+        sqlx::query_as("SELECT buy_token, buy_token_account FROM solana.orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(buy_token, [0; 32]);
+    assert_eq!(buy_token_account, owner.pubkey().to_bytes());
+}
+
 async fn get_order(addr: SocketAddr, uid: &str) -> serde_json::Value {
     let response = reqwest::get(format!("http://{addr}/api/v1/orders/{uid}"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    response.json().await.unwrap()
+}
+
+async fn get_status(addr: SocketAddr, uid: &str) -> serde_json::Value {
+    let response = reqwest::get(format!("http://{addr}/api/v1/orders/{uid}/status"))
         .await
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
@@ -1432,8 +1598,8 @@ async fn get_order(addr: SocketAddr, uid: &str) -> serde_json::Value {
 async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let pool = PgPool::connect("postgresql://").await.unwrap();
     sqlx::query(
-        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
-         CASCADE",
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.trades CASCADE",
     )
     .execute(&pool)
     .await
@@ -1467,6 +1633,8 @@ async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let json = get_order(addr, &uid).await;
     assert_eq!(json["status"], "open");
     assert_eq!(json["lastValidBlockHeight"], 100);
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    assert_eq!(get_status(addr, &uid).await["type"], "scheduled");
 
     sqlx::query("UPDATE solana.orders SET last_valid_block_height = 99")
         .execute(&pool)
@@ -1475,6 +1643,18 @@ async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let json = get_order(addr, &uid).await;
     assert_eq!(json["status"], "expired");
+
+    // An `invalid` event alone reads as `open`, expiry outranks it.
+    sqlx::query(
+        "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
+    )
+    .bind(order.uid)
+    .bind(OrderEventLabel::Invalid)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    assert_eq!(get_status(addr, &uid).await["type"], "expired");
 
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let listed: Vec<serde_json::Value> =
