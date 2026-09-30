@@ -17,6 +17,7 @@ use {
             StateWithExtensions,
             default_account_state::DefaultAccountState,
             memo_transfer::memo_required,
+            non_transferable::NonTransferable,
             pausable::PausableConfig,
             transfer_fee::TransferFeeConfig,
             transfer_hook::TransferHook,
@@ -357,11 +358,14 @@ enum UnsettleableMint {
     /// Token-2022 rejects the program's plain `Transfer` for this mint, even
     /// without a hook program.
     TransferHook,
+    /// Token-2022 rejects the program's plain `Transfer` for this mint, even
+    /// while it is not paused.
+    Pausable,
+    /// Token-2022 rejects every transfer of this mint's tokens.
+    NonTransferable,
     /// New token accounts start frozen, so the buffer and payer account the
     /// settlement creates cannot receive the tokens.
     FrozenByDefault,
-    /// Every transfer fails while the mint is paused.
-    Paused,
 }
 
 /// Why the settlement program cannot move the tokens of the mint at
@@ -380,16 +384,15 @@ fn unsettleable_mint(account: Option<&Account>) -> Option<UnsettleableMint> {
         Some(UnsettleableMint::TransferFee)
     } else if mint.get_extension::<TransferHook>().is_ok() {
         Some(UnsettleableMint::TransferHook)
+    } else if mint.get_extension::<PausableConfig>().is_ok() {
+        Some(UnsettleableMint::Pausable)
+    } else if mint.get_extension::<NonTransferable>().is_ok() {
+        Some(UnsettleableMint::NonTransferable)
     } else if mint
         .get_extension::<DefaultAccountState>()
         .is_ok_and(|default| default.state == AccountState::Frozen as u8)
     {
         Some(UnsettleableMint::FrozenByDefault)
-    } else if mint
-        .get_extension::<PausableConfig>()
-        .is_ok_and(|pausable| bool::from(pausable.paused))
-    {
-        Some(UnsettleableMint::Paused)
     } else {
         None
     }
@@ -677,7 +680,8 @@ mod tests {
 
     /// The program moves classic mints and Token-2022 mints whose extensions
     /// leave a plain transfer alone, a permanent delegate included. Transfer
-    /// fees and hooks fail it, and so do frozen-by-default and paused mints.
+    /// fee, transfer hook and pausable mints fail it, paused or not, and so do
+    /// non-transferable and frozen-by-default mints.
     #[test]
     fn classifies_mints_by_their_extensions() {
         let with = |extension, init: fn(&mut StateWithExtensionsMut<Mint>)| {
@@ -730,13 +734,19 @@ mod tests {
             with(ExtensionType::Pausable, |mint| {
                 mint.init_extension::<PausableConfig>(true).unwrap().paused = true.into();
             }),
-            Some(UnsettleableMint::Paused)
+            Some(UnsettleableMint::Pausable)
         );
         assert_eq!(
             with(ExtensionType::Pausable, |mint| {
                 mint.init_extension::<PausableConfig>(true).unwrap();
             }),
-            None
+            Some(UnsettleableMint::Pausable)
+        );
+        assert_eq!(
+            with(ExtensionType::NonTransferable, |mint| {
+                mint.init_extension::<NonTransferable>(true).unwrap();
+            }),
+            Some(UnsettleableMint::NonTransferable)
         );
     }
 
