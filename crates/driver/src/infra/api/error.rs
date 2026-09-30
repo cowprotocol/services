@@ -160,6 +160,7 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::FastPathLimitNotMet => Kind::FastPathLimitNotMet,
             competition::Error::FastPathInvalidOrder(_) => Kind::InvalidFastPathOrder,
             competition::Error::FastPathSettlement(_) => Kind::Unknown,
+            competition::Error::DeadlineReencodingFailed(_) => Kind::FailedToSubmit,
         };
         error.into()
     }

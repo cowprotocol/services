@@ -558,7 +558,7 @@ impl Solution {
         simulator: &Simulator,
         solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator, solver_native_token).await
+        Settlement::new(self, auction, eth, simulator, solver_native_token).await
     }
 
     /// Swap this quote solution's single user order for the real signed

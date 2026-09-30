@@ -1,5 +1,4 @@
 use {
-    self::solution::settlement,
     super::{
         Mempools,
         mempools::SubmissionMode,
@@ -658,7 +657,7 @@ impl Competition {
         auction: &Auction,
     ) -> Option<u64> {
         let err = match self.simulate_settlement(settlement).await {
-            Err(simulator::Error::Revert(err)) => err,
+            Err(SimulateError::Simulator(simulator::Error::Revert(err))) => err,
             _ => return None,
         };
         observe::winner_voided(self.solver.name(), block, &err);
@@ -877,15 +876,13 @@ impl Competition {
             .find(|s| s.solution().get() == solution_id && s.auction_id == auction_id)
             .cloned()
             .ok_or(Error::SolutionNotAvailable)?;
+        let encoded = settlement
+            .encode(&self.eth, None)
+            .await
+            .map_err(Error::DeadlineReencodingFailed)?;
         Ok(Revealed {
-            internalized_calldata: settlement
-                .transaction(settlement::Internalization::Enable)
-                .input
-                .clone(),
-            uninternalized_calldata: settlement
-                .transaction(settlement::Internalization::Disable)
-                .input
-                .clone(),
+            internalized_calldata: encoded.internalized.input,
+            uninternalized_calldata: encoded.uninternalized.input,
         })
     }
 
@@ -951,6 +948,14 @@ impl Competition {
                 .ok_or(Error::SolutionNotAvailable)?
         };
 
+        let encoded = settlement
+            .encode(&self.eth, Some(submission_deadline))
+            .await
+            .map_err(|err| {
+                tracing::warn!(?err, "failed to encode settlement with deadline check");
+                Error::DeadlineReencodingFailed(err)
+            })?;
+
         // Asynchronously notify liquidity sources to not block settlement
         // execution.
         {
@@ -983,7 +988,7 @@ impl Competition {
 
         let executed = self
             .mempools
-            .execute(&settlement, submission_deadline, &mode)
+            .execute(&encoded, submission_deadline, &mode)
             .await;
 
         notify::executed(
@@ -996,14 +1001,8 @@ impl Competition {
         match executed {
             Err(_) => Err(Error::SubmissionError),
             Ok(tx_hash) => Ok(Settled {
-                internalized_calldata: settlement
-                    .transaction(settlement::Internalization::Enable)
-                    .input
-                    .clone(),
-                uninternalized_calldata: settlement
-                    .transaction(settlement::Internalization::Disable)
-                    .input
-                    .clone(),
+                internalized_calldata: encoded.internalized.input,
+                uninternalized_calldata: encoded.uninternalized.input,
                 tx_hash,
             }),
         }
@@ -1020,15 +1019,16 @@ impl Competition {
     }
 
     /// Returns whether the settlement can be executed or would revert.
-    async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), simulator::Error> {
-        let tx = settlement.transaction(settlement::Internalization::Enable);
-        let gas_needed_for_tx = self.simulator.gas(tx.clone()).await?;
-        if gas_needed_for_tx > settlement.gas.limit {
+    async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), SimulateError> {
+        let encoded = settlement.encode(&self.eth, None).await?;
+        let gas_needed_for_tx = self.simulator.gas(encoded.internalized.clone()).await?;
+        if gas_needed_for_tx > encoded.gas.limit {
             return Err(simulator::Error::Revert(Box::new(RevertError {
-                err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
-                tx: tx.clone(),
+                err: SimulatorError::GasExceeded(gas_needed_for_tx, encoded.gas.limit),
+                tx: encoded.internalized,
                 block: self.eth.current_block().borrow().number.into(),
-            })));
+            }))
+            .into());
         }
         Ok(())
     }
@@ -1171,4 +1171,14 @@ pub enum Error {
     FastPathInvalidOrder(solution::Error),
     #[error("failed to build fast-path settlement: {0:?}")]
     FastPathSettlement(#[from] solution::Error),
+    #[error("failed to re-encode settlement with deadline pre-interaction: {0:?}")]
+    DeadlineReencodingFailed(solution::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+enum SimulateError {
+    #[error(transparent)]
+    Simulator(#[from] simulator::Error),
+    #[error(transparent)]
+    Encoding(#[from] solution::Error),
 }
