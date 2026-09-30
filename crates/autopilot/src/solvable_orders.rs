@@ -501,8 +501,8 @@ impl SolvableOrdersCache {
     }
 }
 
-/// Finds all orders whose owners or receivers are in the set of "banned"
-/// users.
+/// Finds all orders whose owners, receivers or account that placed the order
+/// onchain are in the set of "banned" users.
 async fn find_banned_user_orders(
     orders: &[&Order],
     banned_users: &order_validation::banned::Users,
