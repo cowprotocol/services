@@ -17,7 +17,7 @@ use {
         order_quoting::{ExternalSolver, OrderQuoting},
         test_util::TestDefault,
     },
-    e2e::{assert_approximately_eq, setup::*},
+    e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
         fee_policy::FeePolicy as TradeFeePolicy,
@@ -293,16 +293,18 @@ async fn fast_path_settle(web3: Web3, side: OrderKind) {
         "order settled under auction {settled_in} but the fast path staged {fast_path_auction}",
     );
 
-    // And the fill respects what the user signed, solver fee included.
+    // Signed at the quote, and the fast path settles at exactly the
+    // autopilot's adjusted bid — the fill lands on the signed amounts to the
+    // wei.
     let filled_sell: U256 = trade.sell_amount.to_string().parse().unwrap();
     let filled_buy: U256 = trade.buy_amount.to_string().parse().unwrap();
-    assert!(
-        filled_buy >= signed_buy,
-        "received {filled_buy} but signed for at least {signed_buy}",
+    assert_eq!(
+        filled_buy, signed_buy,
+        "received {filled_buy} but signed for exactly {signed_buy}",
     );
-    assert!(
-        filled_sell <= signed_sell,
-        "paid {filled_sell} but signed for at most {signed_sell}",
+    assert_eq!(
+        filled_sell, signed_sell,
+        "paid {filled_sell} but signed for exactly {signed_sell}",
     );
 }
 
@@ -311,10 +313,8 @@ async fn fast_path_settle(web3: Web3, side: OrderKind) {
 /// The solver runs with a 1% haircut, which used to be applied twice — once in
 /// the quote and again at settle — pushing the on-chain fill ~1% below the
 /// recorded bid (the circuit-breaker mismatch Tamir reported). With the driver
-/// executing the autopilot's bid verbatim, the fill tracks the quote to within
-/// normal quote-vs-AMM-execution variance. (The gas-fee half of the fix is
-/// covered by the `apply_quote_fee` unit tests; local gas is too small to
-/// exercise it meaningfully here.)
+/// executing the autopilot's bid verbatim, the fill lands on the quoted buy
+/// amount to the wei.
 async fn fast_path_executed_price_matches_quote(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -443,14 +443,12 @@ async fn fast_path_executed_price_matches_quote(web3: Web3) {
         .expect("settled order should have a trade");
     let executed_buy = number::conversions::big_uint_to_u256(&trade.buy_amount)
         .expect("trade buy amount fits in U256");
-    // The fill tracks the quote within 0.5%. Before the fix the haircut was
-    // re-applied at settle, so the fill landed ~1% (the haircut) below the
-    // quote — outside this band.
+    // The driver settles at the autopilot's adjusted bid verbatim, and with
+    // no volume fees that bid equals the quoted buy amount to the wei.
     let quoted_buy = quote.quote.buy_amount;
-    assert!(
-        executed_buy > quoted_buy * U256::from(995u64) / U256::from(1000u64)
-            && executed_buy <= quoted_buy * U256::from(1005u64) / U256::from(1000u64),
-        "executed buy {executed_buy} should be within 0.5% of the quote {quoted_buy}",
+    assert_eq!(
+        executed_buy, quoted_buy,
+        "executed buy should match the quoted buy amount exactly",
     );
 }
 
@@ -1429,11 +1427,11 @@ async fn fast_path_volume_fees_captured(web3: Web3) {
     let expected_protocol_fee = (executed_buy + expected_partner_fee)
         .checked_mul_f64(protocol_volume_factor / (1.0 - protocol_volume_factor))
         .expect("protocol fee fits in U256");
-    assert_approximately_eq!(
+    assert_eq!(
         trade.executed_protocol_fees[0].amount,
         expected_protocol_fee
     );
-    assert_approximately_eq!(trade.executed_protocol_fees[1].amount, expected_partner_fee);
+    assert_eq!(trade.executed_protocol_fees[1].amount, expected_partner_fee);
 
     // Sanity: the on-chain buy_amount is strictly smaller than what the API
     // quoted — fees actually shrunk the fill, they're not just recorded rows.
