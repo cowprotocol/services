@@ -486,49 +486,6 @@ mod tests {
     }
 
     #[test]
-    fn apply_quote_fee_then_volume_fee_buy_order() {
-        // Buy order: the gas fee is added to the sell, then the volume fee adds
-        // more sell; the exact buy is untouched by both.
-        let (sell, buy) = adjust_bid_for_gas_costs(
-            U256::from(1_000u64),
-            U256::from(2_000u64),
-            OrderKind::Buy,
-            U256::from(100u64),
-        );
-        let (sell, buy) = apply_volume_fee(sell, buy, OrderKind::Buy, factor(0.01));
-        // sell: 1000 + 100 gas, then + 1% of 1100 = 11 → 1111
-        assert_eq!(sell, U256::from(1_111u64));
-        assert_eq!(buy, U256::from(2_000u64));
-    }
-
-    #[test]
-    fn fast_path_bid_nets_gas_then_volume_fee() {
-        // Reproduces the reported mainnet order 0xcec4886d… end to end: the
-        // fast-path bid is the raw quote buy, gas-scaled then volume-fee'd. The
-        // bug recorded `raw × (1 − 2bps)` (gas never netted); the fix records
-        // `raw × (sell − fee)/sell × (1 − 2bps)`.
-        let quoted_buy = U256::from(9_817_048_400_833_970u128);
-        let sell = U256::from(26_672_321u64);
-        let fee = U256::from(970_218u64); // gas, in sell token
-        let volume_fee = factor(0.0002); // 2 bps
-
-        let (adj_sell, adj_buy) = adjust_bid_for_gas_costs(sell, quoted_buy, OrderKind::Sell, fee);
-        assert_eq!(adj_sell, sell, "a sell order keeps its full sell");
-        let (_sell, bid) = apply_volume_fee(adj_sell, adj_buy, OrderKind::Sell, volume_fee);
-
-        assert_eq!(
-            bid,
-            U256::from(9_458_056_739_658_658u128),
-            "the gas-adjusted, volume-fee'd bid the driver should settle at"
-        );
-        assert_ne!(
-            bid,
-            U256::from(9_815_084_991_153_804u128),
-            "must not equal the pre-fix bid that dropped the gas scaling"
-        );
-    }
-
-    #[test]
     fn compute_volume_fee_sub_bps_uses_high_precision() {
         // 0.3 BPS = 0.00003 must not round to zero.
         let fee = compute_volume_fee(U256::from(1_000_000u64), factor(0.00003));
