@@ -123,6 +123,15 @@ impl AccountsSnapshot {
             },
         }
     }
+
+    /// Whether the token account at `address` must be created before it can
+    /// hold tokens, see [`Self::token_account_state`].
+    pub fn token_account_needs_creation(&self, address: Pubkey) -> bool {
+        matches!(
+            self.token_account_state(&address),
+            TokenAccountState::NeedsCreation
+        )
+    }
 }
 
 /// The observed state of a token account, for a caller that creates missing

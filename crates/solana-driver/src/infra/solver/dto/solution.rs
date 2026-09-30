@@ -274,6 +274,7 @@ mod tests {
                 full_sell_amount: 1_000,
                 full_buy_amount: 0,
                 side: Side::Sell,
+                missing_buy_token_account: false,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
         }
@@ -401,6 +402,7 @@ mod tests {
                 full_sell_amount: u64::MAX,
                 full_buy_amount: 0,
                 side: Side::Sell,
+                missing_buy_token_account: false,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
         };

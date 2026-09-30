@@ -114,7 +114,7 @@ impl Order {
 /// rent stamps a cancellation timestamp, and that cleanup does not undo the
 /// fill. Expiry is the intent's `valid_to` passing, or a pending creation
 /// whose transaction died: past its block height it can no longer land.
-fn status(row: &OrderRow, now_unix: i64, block_height: Option<i64>) -> Status {
+pub fn status(row: &OrderRow, now_unix: i64, block_height: Option<i64>) -> Status {
     let filled = match kind(row) {
         Kind::Sell => row.amount_withdrawn >= row.sell_amount,
         Kind::Buy => row.amount_received >= row.buy_amount,

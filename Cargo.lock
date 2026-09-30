@@ -1543,6 +1543,9 @@ dependencies = [
  "serde_json",
  "serde_with",
  "solana-sdk",
+ "solana-system-interface 3.2.0",
+ "solana-testlib",
+ "spl-associated-token-account-interface",
  "spl-token-interface 2.0.0",
  "sqlx",
  "thiserror 1.0.69",
@@ -10446,7 +10449,10 @@ dependencies = [
 name = "solana-testlib"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "serde_json",
  "solana-sdk",
+ "spl-token-interface 2.0.0",
  "tempfile",
 ]
 

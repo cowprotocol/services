@@ -1,20 +1,28 @@
 //! One `Competition` per solver engine, mounted on the API under `/{name}`.
 
 use {
-    super::{Auction, Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
+    super::{
+        Auction,
+        Order,
+        Side,
+        auction::Id,
+        buy_token_accounts::BuyTokenAccountCache,
+        order_uid::OrderUid,
+        solution::Solution,
+    },
     crate::infra::{blockchain::Solana, solver::Solver},
     cow_settlement_interface::SettlementError,
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
+        hash::Hash,
         instruction::InstructionError,
-        message::{VersionedMessage, v1},
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
     },
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -26,10 +34,6 @@ const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
 /// deadline slot into a wall-clock confirmation timeout. This is mainnet's
 /// target; other clusters can drift.
 const SLOT_DURATION_MS: u64 = 400;
-/// The legacy/v0 per-transaction byte ceiling,
-/// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
-/// rejects a larger transaction before it simulates anything.
-const MAX_TRANSACTION_BYTES: u64 = 1232;
 
 /// Cache key for a proposed solution.
 ///
@@ -52,14 +56,22 @@ struct CachedSolution {
 pub(crate) struct Competition {
     solver: Solver,
     blockchain: Arc<Solana>,
+    /// Shared with the driver's other solver engines, which solve the same
+    /// auction.
+    buy_token_accounts: BuyTokenAccountCache,
     solutions: Cache<Key, CachedSolution>,
 }
 
 impl Competition {
-    pub fn new(solver: Solver, blockchain: Arc<Solana>) -> Self {
+    pub fn new(
+        solver: Solver,
+        blockchain: Arc<Solana>,
+        buy_token_accounts: BuyTokenAccountCache,
+    ) -> Self {
         Self {
             solver,
             blockchain,
+            buy_token_accounts,
             solutions: Cache::builder().time_to_live(SOLUTION_CACHE_TTL).build(),
         }
     }
@@ -69,10 +81,30 @@ impl Competition {
     }
 
     /// Solve the auction and cache each solution for a later `settle`.
-    pub async fn solve(&self, auction_id: Id, auction: &Auction) -> Result<Vec<Solution>, Error> {
-        let solutions = self.compute_solutions(auction).await?;
+    pub async fn solve(
+        &self,
+        auction_id: Id,
+        mut auction: Auction,
+    ) -> Result<Vec<Solution>, Error> {
+        let buy_token_accounts = auction
+            .resolve_buy_token_accounts(auction_id, &self.blockchain, &self.buy_token_accounts)
+            .await
+            .map_err(Error::BuyTokenAccounts)?;
+        auction
+            .orders
+            .retain(|order| !buy_token_accounts.unreceivable.contains(&order.uid));
+        if auction.orders.is_empty() {
+            tracing::info!("no receivable order left; skipping solving");
+            return Ok(Vec::new());
+        }
+        let solutions = self
+            .compute_solutions(&auction, &buy_token_accounts.missing)
+            .await?;
+        let solutions = self
+            .fitting_solutions(auction_id, &auction, solutions)
+            .await;
 
-        let auction = Arc::new(auction.clone());
+        let auction = Arc::new(auction);
         for solution in &solutions {
             self.solutions.insert(
                 Key {
@@ -89,12 +121,84 @@ impl Competition {
         Ok(solutions)
     }
 
+    /// Drop the solutions whose settlement transaction is over the network's
+    /// byte limit: they would win the auction and then fail to settle. A
+    /// solution whose transaction cannot be built here stays, and `settle`
+    /// reports its failure.
+    async fn fitting_solutions(
+        &self,
+        auction_id: Id,
+        auction: &Auction,
+        solutions: Vec<Solution>,
+    ) -> Vec<Solution> {
+        let sizes = futures::future::join_all(
+            solutions
+                .iter()
+                .map(|solution| self.transaction_size(auction_id, auction, solution)),
+        )
+        .await;
+        solutions
+            .into_iter()
+            .zip(sizes)
+            .filter_map(|(solution, size)| match size {
+                Some(size) if size > solution.transaction_version.max_transaction_bytes() => {
+                    tracing::warn!(
+                        solver = %self.solver.name(),
+                        solution_id = solution.id,
+                        size,
+                        limit = solution.transaction_version.max_transaction_bytes(),
+                        "dropping solution whose settlement transaction is over the size limit"
+                    );
+                    None
+                }
+                _ => Some(solution),
+            })
+            .collect()
+    }
+
+    /// The wire size of the solution's settlement transaction, `None` when
+    /// it cannot be built. The blockhash does not change the size.
+    async fn transaction_size(
+        &self,
+        auction_id: Id,
+        auction: &Auction,
+        solution: &Solution,
+    ) -> Option<u64> {
+        let orders = orders_with_trades(auction.orders.clone(), solution);
+        let settlement = super::Settlement::new(
+            self.blockchain.program_id(),
+            auction_id,
+            orders,
+            solution.clone(),
+        )
+        .ok()?;
+        let resolved = settlement
+            .resolve_accounts(&self.blockchain, self.solver.pubkey())
+            .await
+            .ok()?;
+        let transaction = resolved
+            .encode(self.solver.keypair(), Hash::default())
+            .ok()?;
+        encoded_size(&transaction)
+    }
+
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them.
-    pub async fn compute_solutions(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
+    ///
+    /// `missing_buy_token_accounts` marks the orders whose payout account the
+    /// settlement creates, so the engine can price its rent in.
+    pub async fn compute_solutions(
+        &self,
+        auction: &Auction,
+        missing_buy_token_accounts: &HashSet<OrderUid>,
+    ) -> Result<Vec<Solution>, Error> {
         let solutions = self
             .solver
-            .solve(auction, self.blockchain.program_id())
+            .solve(
+                auction,
+                self.blockchain.program_id(),
+                missing_buy_token_accounts,
+            )
             .await?;
 
         // Discard solutions with duplicate ids. The first occurrence wins, and
@@ -222,6 +326,7 @@ impl Competition {
             .get(&key)
             .ok_or(Error::SolutionNotAvailable)?;
         let cu_estimate = solution.cu_estimate;
+        let limit = solution.transaction_version.max_transaction_bytes();
 
         let current_slot = self.blockchain.slot().await.map_err(Error::Rpc)?;
         if current_slot >= submission_deadline_slot {
@@ -263,10 +368,6 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
-        let limit = match &transaction.message {
-            VersionedMessage::Legacy(_) | VersionedMessage::V0(_) => MAX_TRANSACTION_BYTES,
-            VersionedMessage::V1(_) => v1::MAX_TRANSACTION_SIZE as u64,
-        };
         if let Some(size) = observe_transaction(&transaction, cu_estimate)
             && size > limit
         {
@@ -521,6 +622,11 @@ pub(crate) enum Error {
     /// A pre-submission RPC read failed; nothing was submitted.
     #[error("rpc request failed: {0}")]
     Rpc(#[source] cow_solana_rpc::Error),
+    /// The buy token account lookup failed; nothing was solved. The error is
+    /// shared because the cache hands the same failure to every engine
+    /// waiting on the lookup.
+    #[error("buy token account lookup failed: {0}")]
+    BuyTokenAccounts(#[source] Arc<cow_solana_rpc::Error>),
     #[error("failed to submit or confirm settlement: {err}, settlement error {settlement_error:?}")]
     FailedToSubmit {
         #[source]
@@ -630,6 +736,7 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
         Error::DeadlineExceeded => "deadline_exceeded",
         Error::TooManyPendingSettlements => "throttled",
         Error::Rpc(_) => "rpc_failed",
+        Error::BuyTokenAccounts(_) => "rpc_failed",
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",
