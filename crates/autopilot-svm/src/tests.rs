@@ -306,6 +306,13 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         .await
         .unwrap();
     assert_eq!(snapshots, 1);
+    let caps: Vec<i64> = sqlx::query_scalar(
+        "SELECT unnest(penalty_caps_native)::bigint FROM solana.competition_auctions",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(caps, [0]);
     let (solution_uid, solver_id, is_winner, filtered_out): (i64, i64, bool, bool) =
         sqlx::query_as("SELECT uid, id, is_winner, filtered_out FROM solana.proposed_solutions")
             .fetch_one(&pool)

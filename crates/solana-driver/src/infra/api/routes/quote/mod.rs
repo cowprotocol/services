@@ -16,7 +16,9 @@ use {
         },
     },
     axum::{Json, http::StatusCode},
+    cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
     solana_sdk::pubkey::Pubkey,
+    spl_token_interface::native_mint,
     tracing::Instrument,
 };
 
@@ -26,7 +28,10 @@ pub(crate) async fn quote(
     state: axum::extract::State<State>,
     LoggingJson(request): LoggingJson<dto::QuoteRequest>,
 ) -> Result<Json<dto::QuoteResponse>, (StatusCode, Json<ApiError>)> {
-    if request.sell_token == request.buy_token {
+    // wSOL and native SOL count as the same token.
+    let unwraps_sol =
+        request.sell_token == native_mint::ID && request.buy_token == ENCODED_NATIVE_SOL_TRANSFER;
+    if request.sell_token == request.buy_token || unwraps_sol {
         return Err(Kind::QuoteSameTokens.into());
     }
     let side = auction::Side::from(request.kind);

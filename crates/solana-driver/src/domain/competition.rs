@@ -15,6 +15,7 @@ use {
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
+        hash::Hash,
         instruction::InstructionError,
         pubkey::Pubkey,
         signature::Signature,
@@ -103,6 +104,9 @@ impl Competition {
         let solutions = self
             .compute_solutions(&auction, &buy_token_accounts.missing)
             .await?;
+        let solutions = self
+            .fitting_solutions(auction_id, &auction, solutions)
+            .await;
 
         let auction = Arc::new(auction);
         for solution in &solutions {
@@ -119,6 +123,66 @@ impl Competition {
         }
 
         Ok(solutions)
+    }
+
+    /// Drop the solutions whose settlement transaction is over the network's
+    /// byte limit: they would win the auction and then fail to settle. A
+    /// solution whose transaction cannot be built here stays, and `settle`
+    /// reports its failure.
+    async fn fitting_solutions(
+        &self,
+        auction_id: Id,
+        auction: &Auction,
+        solutions: Vec<Solution>,
+    ) -> Vec<Solution> {
+        let sizes = futures::future::join_all(
+            solutions
+                .iter()
+                .map(|solution| self.transaction_size(auction_id, auction, solution)),
+        )
+        .await;
+        solutions
+            .into_iter()
+            .zip(sizes)
+            .filter_map(|(solution, size)| match size {
+                Some(size) if size > MAX_TRANSACTION_BYTES => {
+                    tracing::warn!(
+                        solver = %self.solver.name(),
+                        solution_id = solution.id,
+                        size,
+                        "dropping solution whose settlement transaction is over the size limit"
+                    );
+                    None
+                }
+                _ => Some(solution),
+            })
+            .collect()
+    }
+
+    /// The wire size of the solution's settlement transaction, `None` when
+    /// it cannot be built. The blockhash does not change the size.
+    async fn transaction_size(
+        &self,
+        auction_id: Id,
+        auction: &Auction,
+        solution: &Solution,
+    ) -> Option<u64> {
+        let orders = orders_with_trades(auction.orders.clone(), solution);
+        let settlement = super::Settlement::new(
+            self.blockchain.program_id(),
+            auction_id,
+            orders,
+            solution.clone(),
+        )
+        .ok()?;
+        let resolved = settlement
+            .resolve_accounts(&self.blockchain, self.solver.pubkey())
+            .await
+            .ok()?;
+        let transaction = resolved
+            .encode(self.solver.keypair(), Hash::default())
+            .ok()?;
+        encoded_size(&transaction)
     }
 
     /// Send the auction to the solver engine and return its deduplicated

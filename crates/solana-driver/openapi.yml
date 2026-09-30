@@ -183,7 +183,11 @@ components:
         sellToken:
           $ref: "#/components/schemas/Address"
         buyToken:
-          $ref: "#/components/schemas/Address"
+          description: |-
+            The mint of the token being bought, or the System Program ID
+            (`11111111111111111111111111111111`) for native SOL.
+          allOf:
+            - $ref: "#/components/schemas/Address"
         sellTokenAccount:
           description: |-
             The token account the settlement pulls from. It delegates to the
@@ -196,7 +200,10 @@ components:
             exist yet and is the owner's associated token account, the
             settlement creates it and the solver pays its rent. An account
             that is absent and cannot be created leaves the order out of the
-            auction sent to the engine.
+            auction sent to the engine. For native SOL it is the wallet
+            receiving the lamports, and a payout to a missing wallet creates
+            it. `FinalizeSettle` pays native SOL out of the state PDA's
+            lamports, so the settlement has to move them there first.
           allOf:
             - $ref: "#/components/schemas/Address"
         sellAmount:

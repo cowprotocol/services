@@ -3,7 +3,10 @@
 use {
     base64::Engine,
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-    database::{byte_array::ByteArray, solana::OrderKind},
+    database::{
+        byte_array::ByteArray,
+        solana::{OrderEventLabel, OrderKind},
+    },
     solana_orderbook::infra::{api::Api, db, quoter::Quoter},
     solana_sdk::signer::Signer,
     sqlx::PgPool,
@@ -731,7 +734,7 @@ fn lighthouse_memory_creation_tx(
 async fn post_order(addr: SocketAddr, transaction: String) -> (reqwest::StatusCode, String) {
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "transaction": transaction }))
+        .json(&serde_json::json!({ "partiallySignedTx": transaction }))
         .send()
         .await
         .unwrap();
@@ -1037,7 +1040,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "transaction": transaction.clone(), "quoteId": quote_id }))
+        .json(&serde_json::json!({ "partiallySignedTx": transaction.clone(), "quoteId": quote_id }))
         .send()
         .await
         .unwrap();
@@ -1095,7 +1098,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     let transaction = creation_tx(funder, &other_owner, &other, vec![destination], true);
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "transaction": transaction, "quoteId": mismatched }))
+        .json(&serde_json::json!({ "partiallySignedTx": transaction, "quoteId": mismatched }))
         .send()
         .await
         .unwrap();
@@ -1128,7 +1131,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     let transaction = creation_tx(funder, &late_owner, &late, vec![destination], true);
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "transaction": transaction, "quoteId": expired }))
+        .json(&serde_json::json!({ "partiallySignedTx": transaction, "quoteId": expired }))
         .send()
         .await
         .unwrap();
@@ -1185,6 +1188,14 @@ async fn get_order(addr: SocketAddr, uid: &str) -> serde_json::Value {
     response.json().await.unwrap()
 }
 
+async fn get_status(addr: SocketAddr, uid: &str) -> serde_json::Value {
+    let response = reqwest::get(format!("http://{addr}/api/v1/orders/{uid}/status"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    response.json().await.unwrap()
+}
+
 /// A pending sponsored creation reads as expired once the chain passes its
 /// block height. The sponsored server's mock answers `getBlockHeight` with
 /// 100, once, so every read goes through a fresh server.
@@ -1193,8 +1204,8 @@ async fn get_order(addr: SocketAddr, uid: &str) -> serde_json::Value {
 async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let pool = PgPool::connect("postgresql://").await.unwrap();
     sqlx::query(
-        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
-         CASCADE",
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.trades CASCADE",
     )
     .execute(&pool)
     .await
@@ -1228,6 +1239,8 @@ async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let json = get_order(addr, &uid).await;
     assert_eq!(json["status"], "open");
     assert_eq!(json["lastValidBlockHeight"], 100);
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    assert_eq!(get_status(addr, &uid).await["type"], "scheduled");
 
     sqlx::query("UPDATE solana.orders SET last_valid_block_height = 99")
         .execute(&pool)
@@ -1236,6 +1249,18 @@ async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let json = get_order(addr, &uid).await;
     assert_eq!(json["status"], "expired");
+
+    // An `invalid` event alone reads as `open`, expiry outranks it.
+    sqlx::query(
+        "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
+    )
+    .bind(order.uid)
+    .bind(OrderEventLabel::Invalid)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    assert_eq!(get_status(addr, &uid).await["type"], "expired");
 
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let listed: Vec<serde_json::Value> =

@@ -817,43 +817,50 @@ impl Blockchain {
                 )
                 .calldata()
                 .to_vec();
+            let calldatas: Option<(Vec<u8>, Vec<u8>)> = match solution.calldata {
+                super::Calldata::Missing => None,
+                super::Calldata::Valid { additional_bytes } => Some((
+                    transfer_interaction
+                        .into_iter()
+                        .chain(std::iter::repeat_n(0xab, additional_bytes))
+                        .collect(),
+                    swap_interaction,
+                )),
+                super::Calldata::Invalid => {
+                    Some((vec![1, 2, 3, 4, 5], vec![10, 11, 12, 13, 14, 15, 63, 78]))
+                }
+            };
+            let interactions = calldatas
+                .map(|(transfer_calldata, swap_calldata)| {
+                    vec![
+                        Interaction {
+                            address: *sell_token.address(),
+                            calldata: transfer_calldata,
+                            inputs: Default::default(),
+                            outputs: Default::default(),
+                            internalize: false,
+                        },
+                        Interaction {
+                            address: *pair.contract.address(),
+                            calldata: swap_calldata,
+                            inputs: vec![eth::Asset {
+                                token: (*sell_token.address()).into(),
+                                // Surplus fees stay in the contract.
+                                amount: (execution.sell - order.surplus_fee()).into(),
+                            }],
+                            outputs: vec![eth::Asset {
+                                token: (*buy_token.address()).into(),
+                                amount: execution.buy.into(),
+                            }],
+                            internalize: order.internalize,
+                        },
+                    ]
+                })
+                .unwrap_or_default();
             fulfillments.push(Fulfillment {
                 quoted_order: self.quote(order),
                 execution: execution.clone(),
-                interactions: vec![
-                    Interaction {
-                        address: *sell_token.address(),
-                        calldata: match solution.calldata {
-                            super::Calldata::Valid { additional_bytes } => transfer_interaction
-                                .into_iter()
-                                .chain(std::iter::repeat_n(0xab, additional_bytes))
-                                .collect(),
-                            super::Calldata::Invalid => vec![1, 2, 3, 4, 5],
-                        },
-                        inputs: Default::default(),
-                        outputs: Default::default(),
-                        internalize: false,
-                    },
-                    Interaction {
-                        address: *pair.contract.address(),
-                        calldata: match solution.calldata {
-                            super::Calldata::Valid { .. } => swap_interaction,
-                            super::Calldata::Invalid => {
-                                vec![10, 11, 12, 13, 14, 15, 63, 78]
-                            }
-                        },
-                        inputs: vec![eth::Asset {
-                            token: (*sell_token.address()).into(),
-                            // Surplus fees stay in the contract.
-                            amount: (execution.sell - order.surplus_fee()).into(),
-                        }],
-                        outputs: vec![eth::Asset {
-                            token: (*buy_token.address()).into(),
-                            amount: execution.buy.into(),
-                        }],
-                        internalize: order.internalize,
-                    },
-                ],
+                interactions,
             });
         }
         fulfillments

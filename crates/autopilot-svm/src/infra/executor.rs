@@ -62,7 +62,8 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             tracing::info!(driver = %driver.name, solution = winner.id(), "executing solution");
             // Countersign the winner's pending sponsored creations. A winner
             // whose creations cannot land any more cannot settle, so it is
-            // skipped rather than dispatched to fail.
+            // skipped rather than dispatched to fail, and its orders return
+            // to the next cut.
             let creations = match &self.sponsor {
                 Some(sponsor) => {
                     match sponsor
@@ -76,6 +77,17 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                                 ?err,
                                 "skipping winner, sponsored creations unavailable"
                             );
+                            if let Err(err) = self
+                                .windows
+                                .record_skipped(auction_id, winner.solver(), uid, *tip, deadline)
+                                .await
+                            {
+                                tracing::warn!(
+                                    auction_id,
+                                    ?err,
+                                    "failed to record the skipped settlement"
+                                );
+                            }
                             continue;
                         }
                     }
