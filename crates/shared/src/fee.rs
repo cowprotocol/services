@@ -174,7 +174,7 @@ pub fn apply_volume_fee(sell: U256, buy: U256, kind: OrderKind, factor: FeeFacto
 ///
 /// The fast path must apply this before volume fees so the bid it records
 /// matches what the driver settles and what the UI quoted.
-pub fn apply_quote_fee(sell: U256, buy: U256, kind: OrderKind, fee: U256) -> (U256, U256) {
+pub fn adjust_bid_for_gas_costs(sell: U256, buy: U256, kind: OrderKind, fee: U256) -> (U256, U256) {
     match kind {
         OrderKind::Sell => {
             let net_sell = sell.saturating_sub(fee);
@@ -205,7 +205,7 @@ pub struct FastPathLimitTooTight;
 /// needed: any bid that gives the trader a worse price than signed fails
 /// it. The multiplication widens to `U512` so wei-scale amounts cannot
 /// overflow.
-fn satisfies_limit_price(
+pub fn satisfies_limit_price(
     signed_sell: U256,
     signed_buy: U256,
     executed_sell: U256,
@@ -448,7 +448,7 @@ mod tests {
     #[test]
     fn apply_quote_fee_sell_order_reduces_buy() {
         // Sell keeps its full amount; the buy is scaled by (sell - fee)/sell.
-        let (sell, buy) = apply_quote_fee(
+        let (sell, buy) = adjust_bid_for_gas_costs(
             U256::from(1_000u64),
             U256::from(2_000u64),
             OrderKind::Sell,
@@ -462,7 +462,7 @@ mod tests {
     #[test]
     fn apply_quote_fee_buy_order_increases_sell() {
         // Buy keeps its exact amount; the fee is added to the sell.
-        let (sell, buy) = apply_quote_fee(
+        let (sell, buy) = adjust_bid_for_gas_costs(
             U256::from(1_000u64),
             U256::from(2_000u64),
             OrderKind::Buy,
@@ -475,8 +475,12 @@ mod tests {
     #[test]
     fn apply_quote_fee_zero_fee_is_noop() {
         for kind in [OrderKind::Sell, OrderKind::Buy] {
-            let (sell, buy) =
-                apply_quote_fee(U256::from(1_000u64), U256::from(2_000u64), kind, U256::ZERO);
+            let (sell, buy) = adjust_bid_for_gas_costs(
+                U256::from(1_000u64),
+                U256::from(2_000u64),
+                kind,
+                U256::ZERO,
+            );
             assert_eq!((sell, buy), (U256::from(1_000u64), U256::from(2_000u64)));
         }
     }
@@ -485,7 +489,7 @@ mod tests {
     fn apply_quote_fee_then_volume_fee_buy_order() {
         // Buy order: the gas fee is added to the sell, then the volume fee adds
         // more sell; the exact buy is untouched by both.
-        let (sell, buy) = apply_quote_fee(
+        let (sell, buy) = adjust_bid_for_gas_costs(
             U256::from(1_000u64),
             U256::from(2_000u64),
             OrderKind::Buy,
@@ -508,7 +512,7 @@ mod tests {
         let fee = U256::from(970_218u64); // gas, in sell token
         let volume_fee = factor(0.0002); // 2 bps
 
-        let (adj_sell, adj_buy) = apply_quote_fee(sell, quoted_buy, OrderKind::Sell, fee);
+        let (adj_sell, adj_buy) = adjust_bid_for_gas_costs(sell, quoted_buy, OrderKind::Sell, fee);
         assert_eq!(adj_sell, sell, "a sell order keeps its full sell");
         let (_sell, bid) = apply_volume_fee(adj_sell, adj_buy, OrderKind::Sell, volume_fee);
 

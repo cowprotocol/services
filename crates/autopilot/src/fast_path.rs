@@ -228,32 +228,23 @@ impl FastPathHandler {
             .filter(|p| matches!(p, domain::fee::Policy::Volume { .. }))
             .collect();
 
-        let volume_fee_factors = volume_fee_policies
-            .iter()
-            .filter_map(|policy| match policy {
-                domain::fee::Policy::Volume { factor } => Some(*factor),
-                _ => None,
-            });
-
         let winner = staged.winner();
-        // Net the quote's gas fee out of the bid before checking the limit, the
-        // same way the settled bid is computed, so the fallback decision
-        // matches what the driver would actually execute.
-        let (quoted_sell, quoted_buy) = shared::fee::apply_quote_fee(
+
+        let (adjusted_sell, adjusted_buy) = finalize_bid(
             winner.quoted_sell,
             winner.quoted_buy,
             pending.model_order.data.kind,
-            winner.fee,
+            winner.gas_cost_in_sell_token,
+            &volume_fee_policies,
         );
-        shared::fee::check_fast_path_limit_fits(
-            pending.model_order.data.kind,
+        if !shared::fee::satisfies_limit_price(
             pending.model_order.data.sell_amount,
             pending.model_order.data.buy_amount,
-            quoted_sell,
-            quoted_buy,
-            volume_fee_factors,
-        )
-        .map_err(|_| PreflightError::LimitTooTight)?;
+            adjusted_sell,
+            adjusted_buy,
+        ) {
+            return Err(PreflightError::LimitTooTight);
+        }
 
         let winner = self
             .drivers
@@ -382,19 +373,11 @@ impl FastPathHandler {
             .solutions
             .iter()
             .map(|solution| {
-                // Net the quote's gas fee out first (as the user-facing quote
-                // does), then apply volume fees, so the recorded bid matches
-                // what the driver settles and what the UI quoted.
-                let (gas_adjusted_sell, gas_adjusted_buy) = shared::fee::apply_quote_fee(
+                let (adjusted_sell, adjusted_buy) = finalize_bid(
                     solution.quoted_sell,
                     solution.quoted_buy,
                     order_kind,
-                    solution.fee,
-                );
-                let (adjusted_sell, adjusted_buy) = apply_volume_fees(
-                    gas_adjusted_sell,
-                    gas_adjusted_buy,
-                    order_kind,
+                    solution.gas_cost_in_sell_token,
                     &volume_fee_policies,
                 );
                 if solution.is_winner {
@@ -686,6 +669,20 @@ impl Metrics {
         let secs = (elapsed.num_milliseconds() as f64 / 1000.0).max(0.0);
         Self::get().total_duration.observe(secs);
     }
+}
+
+/// Computes the effective bid the driver would settle at: nets the quote's
+/// gas fee out first (as the user-facing quote does), then applies the
+/// volume-fee policies in order.
+fn finalize_bid(
+    sell: U256,
+    buy: U256,
+    kind: OrderKind,
+    gas_fee: U256,
+    policies: &[domain::fee::Policy],
+) -> (U256, U256) {
+    let (sell, buy) = shared::fee::adjust_bid_for_gas_costs(sell, buy, kind, gas_fee);
+    apply_volume_fees(sell, buy, kind, policies)
 }
 
 /// Applies every `Volume`-type policy in `policies` to `(sell, buy)` in
