@@ -160,6 +160,14 @@ ON CONFLICT (uid) DO NOTHING
         if inserted > 0 {
             tracing::debug!(order_uid = %order.order_uid, "indexed order");
             Self::insert_order_event(tx, order.order_uid.0, OrderEventLabel::Created).await?;
+        } else {
+            // A sponsored order is already stored by the orderbook, so only
+            // its PDA is news here.
+            tracing::debug!(
+                order_uid = %order.order_uid,
+                signature = %order.signature,
+                "indexed order pda"
+            );
         }
         Ok(())
     }

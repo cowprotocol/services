@@ -6,7 +6,7 @@ settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [rpc]
 endpoint = "https://api.mainnet-beta.solana.com"
-# Optional: serves only `simulateBundle`. Absent means `endpoint` serves it.
+# Serves only `simulateBundle`; must support that Jito extension.
 bundle-endpoint = "https://bundles.example.com"
 # Optional: at most `capacity` `simulateBundle` requests in a burst, then one
 # per `refill-interval`. Default shown.

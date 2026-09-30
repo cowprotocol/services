@@ -202,19 +202,19 @@ impl Competition {
         }
         for (leg, (transaction, result)) in bundle.iter().zip(&results).enumerate() {
             if let Some(err) = &result.err {
+                let error = TransactionError::from(err.clone());
+                // Named here because the bundle endpoint may return no logs
+                // for a failed leg.
                 tracing::warn!(
                     solution_id = solution.id,
                     leg,
                     creation = ?creation_uids.get(leg).map(ToString::to_string),
+                    program = ?failing_program(transaction, &error).map(|program| program.to_string()),
                     logs = ?result.logs,
                     "bundle simulation failed"
                 );
                 return Err(Error::SimulationFailed {
-                    settlement_error: settlement_error(
-                        program_id,
-                        transaction,
-                        &err.clone().into(),
-                    ),
+                    settlement_error: settlement_error(program_id, transaction, &error),
                     err: err.clone(),
                 });
             }
@@ -568,17 +568,26 @@ fn settlement_error(
     transaction: &VersionedTransaction,
     err: &TransactionError,
 ) -> Option<SettlementError> {
-    let TransactionError::InstructionError(index, InstructionError::Custom(code)) = err else {
+    let TransactionError::InstructionError(_, InstructionError::Custom(code)) = err else {
+        return None;
+    };
+    (failing_program(transaction, err)? == program_id)
+        .then(|| SettlementError::try_from(*code).ok())
+        .flatten()
+}
+
+/// The program whose instruction the error names. Programs are always static
+/// keys, never loaded from a lookup table.
+fn failing_program(transaction: &VersionedTransaction, err: &TransactionError) -> Option<Pubkey> {
+    let TransactionError::InstructionError(index, _) = err else {
         return None;
     };
     let message = &transaction.message;
     let instruction = message.instructions().get(usize::from(*index))?;
-    let program = message
+    message
         .static_account_keys()
-        .get(usize::from(instruction.program_id_index))?;
-    (*program == program_id)
-        .then(|| SettlementError::try_from(*code).ok())
-        .flatten()
+        .get(usize::from(instruction.program_id_index))
+        .copied()
 }
 
 struct VolumeFee {

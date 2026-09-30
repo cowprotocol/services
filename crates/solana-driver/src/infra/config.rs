@@ -96,9 +96,8 @@ pub struct Rpc {
     /// RPC endpoint to connect to.
     pub endpoint: url::Url,
     /// RPC endpoint for `simulateBundle` only, so a metered plan on the main
-    /// endpoint is spared its cost. Absent means the main endpoint serves it.
-    #[serde(default)]
-    pub bundle_endpoint: Option<url::Url>,
+    /// endpoint is spared its cost.
+    pub bundle_endpoint: url::Url,
     /// Rate limit on `simulateBundle` requests: a bucket of `capacity`
     /// permits refilled one per `refill-interval`. Defaults to 10 per second.
     #[serde(default)]
@@ -161,8 +160,8 @@ mod tests {
             "https://api.mainnet-beta.solana.com/"
         );
         assert_eq!(
-            config.rpc.bundle_endpoint.as_ref().map(|url| url.as_str()),
-            Some("https://bundles.example.com/")
+            config.rpc.bundle_endpoint.as_str(),
+            "https://bundles.example.com/"
         );
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");

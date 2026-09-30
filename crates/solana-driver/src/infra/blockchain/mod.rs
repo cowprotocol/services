@@ -25,7 +25,7 @@ use {
 /// The Solana blockchain adapter.
 pub struct Solana {
     rpc: SolanaRPC,
-    /// Serves `simulateBundle` instead of `rpc` when set.
+    /// Serves `simulateBundle`. `None` only in tests, where `rpc` serves it.
     bundle_rpc: Option<SolanaRPC>,
     /// Paces `simulateBundle` requests when set.
     bundle_throttler: Option<Throttler>,
