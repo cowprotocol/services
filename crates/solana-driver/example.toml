@@ -6,6 +6,8 @@ settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [rpc]
 endpoint = "https://api.mainnet-beta.solana.com"
+# Optional: serves only `simulateBundle`. Absent means `endpoint` serves it.
+bundle-endpoint = "https://bundles.example.com"
 request-timeout = "10s"
 
 [http]
