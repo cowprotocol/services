@@ -23,13 +23,18 @@ pub async fn order(
             error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
         })?
         .ok_or_else(|| error::reply(StatusCode::NOT_FOUND, "NotFound", "Order was not found"))?;
-    // Only a pending creation has a deadline to check against the chain.
-    let block_height = if row.last_valid_block_height.is_some() {
+    let block_height = block_height_for(&state, &row).await;
+    Ok(Json(dto::Order::new(row, now_unix(), block_height)))
+}
+
+/// The chain height to check `row`'s creation deadline against. Only a pending
+/// creation has one, so other orders skip the RPC call.
+pub(super) async fn block_height_for(state: &State, row: &db::OrderRow) -> Option<i64> {
+    if row.last_valid_block_height.is_some() {
         state.block_height().await
     } else {
         None
-    };
-    Ok(Json(dto::Order::new(row, now_unix(), block_height)))
+    }
 }
 
 pub(super) fn now_unix() -> i64 {
