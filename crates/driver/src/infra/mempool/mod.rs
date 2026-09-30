@@ -10,6 +10,7 @@ use {
         primitives::Address,
         providers::{Provider, ext::TxPoolApi},
         rpc::types::TransactionRequest,
+        transports::TransportError,
     },
     anyhow::Context,
     dashmap::DashMap,
@@ -148,7 +149,7 @@ impl Mempool {
             .provider
             .send_transaction(tx_request)
             .await
-            .map_err(anyhow::Error::from);
+            .map_err(explain_rpc_error);
 
         match submission {
             Ok(tx) => {
@@ -221,5 +222,23 @@ impl Mempool {
             self.config.revert_protection,
             infra::mempool::RevertProtection::Disabled
         )
+    }
+}
+
+/// Adds a hint for known JSON-RPC error codes. Codes in -32768..=-32000 mean
+/// different things per chain, so only map new codes once they're understood.
+fn explain_rpc_error(err: TransportError) -> anyhow::Error {
+    let code = err.as_error_resp().map(|resp| resp.code);
+    let err = anyhow::Error::from(err);
+    match code {
+        // Standard error, e.g. "replacement transaction underpriced".
+        None | Some(-32000) => err,
+        // A proxy in front of the sequencer rejected the tx (seen on Ink).
+        // https://github.com/ethereum-optimism/infra/blob/main/proxyd/backend.go#L140-L144
+        Some(-32100) => err.context(
+            "transaction rejected upstream (JSON-RPC -32100): the RPC's proxy refused it before \
+             the sequencer",
+        ),
+        Some(code) => err.context(format!("unexpected error code {code}")),
     }
 }
