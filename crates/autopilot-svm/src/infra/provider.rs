@@ -10,11 +10,20 @@ use {
     chain_types::solana::{IntentHash, Pubkey as ChainPubkey},
     cow_solana_rpc::SolanaRPC,
     database::solana::OrderEventLabel,
-    solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey, rent::Rent},
-    spl_token_interface::{
-        native_mint,
-        state::{Account as TokenAccount, AccountState},
+    solana_sdk::{account::Account, pubkey::Pubkey, rent::Rent},
+    spl_token_2022_interface::{
+        extension::{
+            BaseStateWithExtensions,
+            StateWithExtensions,
+            default_account_state::DefaultAccountState,
+            memo_transfer::memo_required,
+            pausable::PausableConfig,
+            transfer_fee::TransferFeeConfig,
+            transfer_hook::TransferHook,
+        },
+        state::{Account as TokenAccount, AccountState, Mint},
     },
+    spl_token_interface::native_mint,
     sqlx::PgPool,
     std::{
         collections::HashSet,
@@ -41,27 +50,44 @@ impl DbAuctionProvider {
         }
     }
 
-    /// Drop orders whose buy token account cannot receive the settlement
-    /// payout: their settlement would revert at `FinalizeSettle`. A native SOL
-    /// buy pays a wallet instead, which must be missing or owned by the System
-    /// Program. A pending sponsored token buy skips the check, its creation
-    /// transaction creates the buy token account. When the account lookup
-    /// fails every order passes, a doomed order then costs one failed
-    /// settlement instead of the whole cut.
-    async fn receivable_orders(&self, orders: Vec<Order>) -> Vec<Order> {
+    /// Drop orders whose settlement would revert. The program must be able to
+    /// move the sell and buy mints, and the buy token account must receive the
+    /// payout at `FinalizeSettle`. A native SOL buy pays a wallet instead,
+    /// which must be missing or owned by the System Program. A pending
+    /// sponsored token buy skips the account check, its creation transaction
+    /// creates the buy token account. The mints and the accounts share one
+    /// lookup. When it fails every order passes, a doomed order then costs one
+    /// failed settlement instead of the whole cut. Returns the kept orders and
+    /// the uids of those dropped for a mint.
+    async fn receivable_orders(&self, orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
         let checked = |order: &Order| order.created_on_chain || order.buys_native_sol();
-        let candidates = orders
+        let buy_accounts = orders
             .iter()
             .filter(|order| checked(order))
             .map(|order| Pubkey::new_from_array(order.buy_token_account.0));
-        let accounts = match self.rpc.multiple_accounts(candidates).await {
+        let mints = orders.iter().flat_map(token_mints);
+        let accounts = match self.rpc.multiple_accounts(buy_accounts.chain(mints)).await {
             Ok(accounts) => accounts,
             Err(err) => {
-                tracing::warn!(?err, "buy account lookup failed, keeping all orders");
-                return orders;
+                tracing::warn!(?err, "order account lookup failed, keeping all orders");
+                return (orders, Vec::new());
             }
         };
-        orders
+        let (orders, unsettleable): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+            let unsettleable = token_mints(order)
+                .find_map(|mint| Some((mint, unsettleable_mint(accounts.get(&mint))?)));
+            if let Some((mint, reason)) = unsettleable {
+                metrics().unsettleable_orders.inc();
+                tracing::debug!(
+                    order = %order.uid,
+                    %mint,
+                    ?reason,
+                    "excluding order, the settlement program cannot move its mint"
+                );
+            }
+            unsettleable.is_none()
+        });
+        let orders = orders
             .into_iter()
             .filter(|order| {
                 if !checked(order) {
@@ -72,8 +98,9 @@ impl DbAuctionProvider {
                     found if order.buys_native_sol() => found.is_none_or(receivable_wallet),
                     Some(found) => receivable_token_account(found, order.buy_token.0),
                     None => false,
-                    // TODO: flip on once the buy token account rent is priced.
-                    // None => account == associated_token_address(order),
+                    // TODO: flip on once the buy token account rent is priced,
+                    // with the program that owns the buy mint account.
+                    // None => account == associated_token_address(order, &program),
                 };
                 if !receivable {
                     // A doomed order repeats this on every cut until it
@@ -88,7 +115,11 @@ impl DbAuctionProvider {
                 }
                 receivable
             })
-            .collect()
+            .collect();
+        (
+            orders,
+            unsettleable.into_iter().map(|order| order.uid).collect(),
+        )
     }
 }
 
@@ -170,7 +201,14 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                 OrderEventLabel::Filtered,
             );
         }
-        let orders = self.receivable_orders(payable_orders(orders)).await;
+        let (orders, unsettleable) = self.receivable_orders(payable_orders(orders)).await;
+        if !unsettleable.is_empty() {
+            order_events::store_detached(
+                self.pool.clone(),
+                unsettleable,
+                OrderEventLabel::Filtered,
+            );
+        }
         if orders.is_empty() {
             return None;
         }
@@ -240,6 +278,9 @@ struct Metrics {
     /// Orders excluded from auction cuts because their buy token account
     /// cannot receive the payout.
     unreceivable_orders: prometheus::IntCounter,
+    /// Orders excluded from auction cuts because the settlement program cannot
+    /// move their sell or buy mint.
+    unsettleable_orders: prometheus::IntCounter,
     /// Native SOL buys excluded from auction cuts because the settlement
     /// cannot pay them out.
     unpayable_native_buys: prometheus::IntCounter,
@@ -267,10 +308,8 @@ fn indexer_lags(tip: u64, indexed: Option<i64>, max_lag: u64) -> bool {
 }
 
 /// The order owner's associated token account for the buy mint under the
-/// classic SPL token program, the one account a settlement can create for
-/// the payout when it does not exist yet.
-/// TODO(token-2022): a token-2022 mint derives a different address, so its
-/// missing account is dropped here, like the driver cannot settle it yet.
+/// mint's token `program`, the one account a settlement can create for the
+/// payout when it does not exist yet.
 #[cfg_attr(
     not(test),
     expect(
@@ -278,23 +317,88 @@ fn indexer_lags(tip: u64, indexed: Option<i64>, max_lag: u64) -> bool {
         reason = "the receivable check that uses it is held until solvers price the ATA rent"
     )
 )]
-fn associated_token_address(order: &Order) -> Pubkey {
+fn associated_token_address(order: &Order, program: &Pubkey) -> Pubkey {
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
         &Pubkey::new_from_array(order.owner.0),
         &Pubkey::new_from_array(order.buy_token.0),
-        &spl_token_interface::ID,
+        program,
     )
 }
 
-/// An initialized, unfrozen account of the classic SPL token program holding
-/// the order's buy mint: anything else reverts the payout at settlement.
-/// TODO(token-2022): accounts of the token-2022 program are dropped here,
-/// like the driver cannot settle them yet.
+/// An initialized, unfrozen token account holding the order's buy mint. It
+/// must not require memos on incoming transfers, since the payout carries
+/// none. Anything else reverts the payout at settlement.
 fn receivable_token_account(account: &Account, buy_mint: [u8; 32]) -> bool {
-    account.owner == spl_token_interface::ID
-        && TokenAccount::unpack(&account.data).is_ok_and(|account| {
-            account.state == AccountState::Initialized && account.mint.to_bytes() == buy_mint
+    token_program_owned(account)
+        && StateWithExtensions::<TokenAccount>::unpack(&account.data).is_ok_and(|state| {
+            state.base.state == AccountState::Initialized
+                && state.base.mint.to_bytes() == buy_mint
+                && !memo_required(&state)
         })
+}
+
+/// The token mints an order moves: the sell mint, and the buy mint unless the
+/// order buys native SOL.
+fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
+    let buy = (!order.buys_native_sol()).then_some(order.buy_token);
+    std::iter::once(order.sell_token)
+        .chain(buy)
+        .map(|mint| Pubkey::new_from_array(mint.0))
+}
+
+/// Why the settlement program cannot move a mint's tokens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UnsettleableMint {
+    /// The account is missing or not a mint of either token program.
+    NotAMint,
+    /// Token-2022 rejects the program's plain `Transfer` for this mint, even
+    /// at a zero fee.
+    TransferFee,
+    /// Token-2022 rejects the program's plain `Transfer` for this mint, even
+    /// without a hook program.
+    TransferHook,
+    /// New token accounts start frozen, so the buffer and payer account the
+    /// settlement creates cannot receive the tokens.
+    FrozenByDefault,
+    /// Every transfer fails while the mint is paused.
+    Paused,
+}
+
+/// Why the settlement program cannot move the tokens of the mint at
+/// `account`, `None` when it can.
+///
+/// TODO(BE-320): a permanent delegate mint passes, although its issuer can
+/// move the buffer's balance of the token, retained fees included.
+fn unsettleable_mint(account: Option<&Account>) -> Option<UnsettleableMint> {
+    let Some(mint) = account
+        .filter(|account| token_program_owned(account))
+        .and_then(|account| StateWithExtensions::<Mint>::unpack(&account.data).ok())
+    else {
+        return Some(UnsettleableMint::NotAMint);
+    };
+    if mint.get_extension::<TransferFeeConfig>().is_ok() {
+        Some(UnsettleableMint::TransferFee)
+    } else if mint.get_extension::<TransferHook>().is_ok() {
+        Some(UnsettleableMint::TransferHook)
+    } else if mint
+        .get_extension::<DefaultAccountState>()
+        .is_ok_and(|default| default.state == AccountState::Frozen as u8)
+    {
+        Some(UnsettleableMint::FrozenByDefault)
+    } else if mint
+        .get_extension::<PausableConfig>()
+        .is_ok_and(|pausable| bool::from(pausable.paused))
+    {
+        Some(UnsettleableMint::Paused)
+    } else {
+        None
+    }
+}
+
+/// Whether one of the two token programs, classic SPL or Token-2022, owns
+/// `account`.
+fn token_program_owned(account: &Account) -> bool {
+    account.owner == spl_token_interface::ID || account.owner == spl_token_2022_interface::ID
 }
 
 /// Drop native SOL buys the settlement cannot pay out. A payout under the
@@ -336,6 +440,16 @@ mod tests {
         crate::domain::auction::OrderKind,
         chain_types::solana::{AppData, IntentHash, NATIVE_SOL, Pubkey as ChainPubkey},
         cow_solana_rpc::{Mocks, RpcRequest},
+        solana_sdk::program_pack::Pack,
+        spl_token_2022_interface::extension::{
+            BaseStateWithExtensionsMut,
+            ExtensionType,
+            StateWithExtensionsMut,
+            immutable_owner::ImmutableOwner,
+            memo_transfer::MemoTransfer,
+            mint_close_authority::MintCloseAuthority,
+            permanent_delegate::PermanentDelegate,
+        },
     };
 
     fn order(buy_token_account: [u8; 32], created_on_chain: bool) -> Order {
@@ -369,9 +483,9 @@ mod tests {
     /// The lookup answers for the four created orders in candidate order:
     /// initialized with the buy mint, initialized with a wrong mint, absent
     /// at an arbitrary address, absent at the owner's associated token
-    /// address. An absent account is dropped either way while the settlement
-    /// creating it is held. The pending sponsored order is exempt from the
-    /// check.
+    /// address. The sell and buy mints follow. An absent account is dropped
+    /// either way while the settlement creating it is held. The pending
+    /// sponsored order is exempt from the check.
     #[tokio::test]
     async fn drops_created_orders_with_unreceivable_buy_accounts() {
         let response = serde_json::json!({
@@ -381,10 +495,13 @@ mod tests {
                 crate::tests::token_account_json([0x99; 32]),
                 null,
                 null,
+                crate::tests::mint_account_json(6),
+                crate::tests::mint_account_json(6),
             ],
         });
         let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
-        let ata = associated_token_address(&order([0; 32], true)).to_bytes();
+        let ata =
+            associated_token_address(&order([0; 32], true), &spl_token_interface::ID).to_bytes();
         let orders = vec![
             order([0x01; 32], true),
             order([0x02; 32], false),
@@ -395,6 +512,7 @@ mod tests {
         let kept: Vec<[u8; 32]> = provider
             .receivable_orders(orders)
             .await
+            .0
             .iter()
             .map(|order| order.buy_token_account.0)
             .collect();
@@ -403,7 +521,8 @@ mod tests {
 
     /// A native SOL buy pays its wallet directly: a missing or system-owned
     /// wallet receives it, an account of another program does not. A pending
-    /// sponsored native buy gets the same check.
+    /// sponsored native buy gets the same check. Only the sell mint follows
+    /// the wallets in the lookup.
     #[tokio::test]
     async fn native_buys_pay_system_wallets() {
         let system_wallet = serde_json::json!({
@@ -421,6 +540,7 @@ mod tests {
                 system_wallet,
                 crate::tests::token_account_json([0x44; 32]),
                 crate::tests::token_account_json([0x44; 32]),
+                crate::tests::mint_account_json(6),
             ],
         });
         let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
@@ -437,6 +557,7 @@ mod tests {
         let kept: Vec<[u8; 32]> = provider
             .receivable_orders(orders)
             .await
+            .0
             .iter()
             .map(|order| order.buy_token_account.0)
             .collect();
@@ -483,7 +604,207 @@ mod tests {
             serde_json::json!("not an account list"),
         )]));
         let orders = vec![order([0x01; 32], true)];
-        assert_eq!(provider.receivable_orders(orders).await.len(), 1);
+        assert_eq!(provider.receivable_orders(orders).await.0.len(), 1);
+    }
+
+    /// Orders on a mint the program cannot move stay out, on either side of
+    /// the trade, and their uids come back for the `Filtered` event. A mint
+    /// missing from the lookup counts as one the program cannot move.
+    #[tokio::test]
+    async fn drops_orders_on_mints_the_program_cannot_move() {
+        let fee_mint = crate::tests::token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
+            mint.init_extension::<TransferFeeConfig>(true).unwrap();
+        });
+        // The pending sponsored orders skip the buy account check, so the
+        // lookup reads only the mints, in first-seen order: 0x33, 0x44, 0x88,
+        // 0x99.
+        let response = serde_json::json!({
+            "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+            "value": [
+                crate::tests::mint_account_json(6),
+                crate::tests::mint_account_json(6),
+                crate::tests::account_json(&fee_mint),
+                null,
+            ],
+        });
+        let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
+        let orders = vec![
+            order([0x01; 32], false),
+            Order {
+                sell_token: ChainPubkey([0x88; 32]),
+                ..order([0x02; 32], false)
+            },
+            Order {
+                buy_token: ChainPubkey([0x88; 32]),
+                ..order([0x03; 32], false)
+            },
+            Order {
+                sell_token: ChainPubkey([0x99; 32]),
+                ..order([0x04; 32], false)
+            },
+        ];
+
+        let (kept, unsettleable) = provider.receivable_orders(orders).await;
+        assert_eq!(
+            kept.iter().map(|order| order.uid).collect::<Vec<_>>(),
+            [IntentHash([0x01; 32])]
+        );
+        assert_eq!(
+            unsettleable,
+            [
+                IntentHash([0x02; 32]),
+                IntentHash([0x03; 32]),
+                IntentHash([0x04; 32])
+            ]
+        );
+    }
+
+    /// An initialized classic SPL Token mint.
+    fn classic_mint() -> Account {
+        let mut data = vec![0; Mint::LEN];
+        Mint {
+            is_initialized: true,
+            decimals: 6,
+            ..Mint::default()
+        }
+        .pack_into_slice(&mut data);
+        Account {
+            owner: spl_token_interface::ID,
+            data,
+            ..Account::default()
+        }
+    }
+
+    /// The program moves classic mints and Token-2022 mints whose extensions
+    /// leave a plain transfer alone, a permanent delegate included. Transfer
+    /// fees and hooks fail it, and so do frozen-by-default and paused mints.
+    #[test]
+    fn classifies_mints_by_their_extensions() {
+        let with = |extension, init: fn(&mut StateWithExtensionsMut<Mint>)| {
+            unsettleable_mint(Some(&crate::tests::token_2022_mint(&[extension], init)))
+        };
+        assert_eq!(unsettleable_mint(Some(&classic_mint())), None);
+        assert_eq!(
+            with(ExtensionType::MintCloseAuthority, |mint| {
+                mint.init_extension::<MintCloseAuthority>(true).unwrap();
+            }),
+            None
+        );
+        assert_eq!(
+            with(ExtensionType::PermanentDelegate, |mint| {
+                mint.init_extension::<PermanentDelegate>(true)
+                    .unwrap()
+                    .delegate = Some(Pubkey::new_unique()).try_into().unwrap();
+            }),
+            None
+        );
+        assert_eq!(
+            with(ExtensionType::TransferFeeConfig, |mint| {
+                mint.init_extension::<TransferFeeConfig>(true).unwrap();
+            }),
+            Some(UnsettleableMint::TransferFee)
+        );
+        assert_eq!(
+            with(ExtensionType::TransferHook, |mint| {
+                mint.init_extension::<TransferHook>(true).unwrap();
+            }),
+            Some(UnsettleableMint::TransferHook)
+        );
+        assert_eq!(
+            with(ExtensionType::DefaultAccountState, |mint| {
+                mint.init_extension::<DefaultAccountState>(true)
+                    .unwrap()
+                    .state = AccountState::Frozen as u8;
+            }),
+            Some(UnsettleableMint::FrozenByDefault)
+        );
+        assert_eq!(
+            with(ExtensionType::DefaultAccountState, |mint| {
+                mint.init_extension::<DefaultAccountState>(true)
+                    .unwrap()
+                    .state = AccountState::Initialized as u8;
+            }),
+            None
+        );
+        assert_eq!(
+            with(ExtensionType::Pausable, |mint| {
+                mint.init_extension::<PausableConfig>(true).unwrap().paused = true.into();
+            }),
+            Some(UnsettleableMint::Paused)
+        );
+        assert_eq!(
+            with(ExtensionType::Pausable, |mint| {
+                mint.init_extension::<PausableConfig>(true).unwrap();
+            }),
+            None
+        );
+    }
+
+    /// A missing account, a token account and a mint layout under another
+    /// program are no mints the program can move.
+    #[test]
+    fn only_token_program_mints_are_settleable() {
+        let foreign = Account {
+            owner: solana_system_interface::program::ID,
+            ..classic_mint()
+        };
+        assert_eq!(unsettleable_mint(None), Some(UnsettleableMint::NotAMint));
+        assert_eq!(
+            unsettleable_mint(Some(&token_2022_account([0x44; 32], false))),
+            Some(UnsettleableMint::NotAMint)
+        );
+        assert_eq!(
+            unsettleable_mint(Some(&foreign)),
+            Some(UnsettleableMint::NotAMint)
+        );
+    }
+
+    /// An initialized Token-2022 account of `mint` with the `MemoTransfer`
+    /// extension, requiring memos on incoming transfers or not.
+    fn token_2022_account(mint: [u8; 32], require_memos: bool) -> Account {
+        let len = ExtensionType::try_calculate_account_len::<TokenAccount>(&[
+            ExtensionType::ImmutableOwner,
+            ExtensionType::MemoTransfer,
+        ])
+        .unwrap();
+        let mut data = vec![0; len];
+        let mut account =
+            StateWithExtensionsMut::<TokenAccount>::unpack_uninitialized(&mut data).unwrap();
+        account.init_extension::<ImmutableOwner>(true).unwrap();
+        account
+            .init_extension::<MemoTransfer>(true)
+            .unwrap()
+            .require_incoming_transfer_memos = require_memos.into();
+        account.base = TokenAccount {
+            mint: Pubkey::new_from_array(mint),
+            state: AccountState::Initialized,
+            ..TokenAccount::default()
+        };
+        account.pack_base();
+        account.init_account_type().unwrap();
+        Account {
+            owner: spl_token_2022_interface::ID,
+            data,
+            ..Account::default()
+        }
+    }
+
+    /// A Token-2022 buy account receives the payout unless it requires memos
+    /// on incoming transfers, which the payout does not carry.
+    #[test]
+    fn token_2022_buy_accounts_receive_without_a_memo_requirement() {
+        assert!(receivable_token_account(
+            &token_2022_account([0x44; 32], false),
+            [0x44; 32]
+        ));
+        assert!(!receivable_token_account(
+            &token_2022_account([0x44; 32], true),
+            [0x44; 32]
+        ));
+        assert!(!receivable_token_account(
+            &token_2022_account([0x99; 32], false),
+            [0x44; 32]
+        ));
     }
 
     /// The watermark trips past the allowed lag, on a never-written indexer,

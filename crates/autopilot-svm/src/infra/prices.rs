@@ -12,8 +12,8 @@ use {
     moka::sync::Cache,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
-    solana_sdk::{program_pack::Pack, pubkey::Pubkey},
-    spl_token_interface::state::Mint,
+    solana_sdk::pubkey::Pubkey,
+    spl_token_2022_interface::{extension::StateWithExtensions, state::Mint},
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -351,9 +351,9 @@ impl Inner {
     }
 
     /// Decimals per mint, from the cache or the mint accounts on chain. A
-    /// mint that is missing or does not unpack (a token-2022 mint with
-    /// extensions, for example) is absent from the result: one odd token
-    /// must not fail the price lookup and with it every auction cut.
+    /// mint that is missing or does not unpack as a mint of either token
+    /// program is absent from the result: one odd token must not fail the
+    /// price lookup and with it every auction cut.
     async fn decimals(&self, tokens: &[Pubkey]) -> Result<HashMap<Pubkey, u8>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
@@ -382,10 +382,10 @@ impl Inner {
                 tracing::warn!(%token, "mint account not found, token unpriced");
                 continue;
             };
-            match Mint::unpack(&account.data) {
+            match StateWithExtensions::<Mint>::unpack(&account.data) {
                 Ok(mint) => {
-                    self.decimals.insert(token, mint.decimals);
-                    result.insert(token, mint.decimals);
+                    self.decimals.insert(token, mint.base.decimals);
+                    result.insert(token, mint.base.decimals);
                 }
                 Err(err) => {
                     tracing::warn!(%token, ?err, "mint does not unpack, token unpriced");
@@ -583,6 +583,11 @@ mod tests {
     use {
         super::*,
         cow_solana_rpc::{Mocks, RpcRequest},
+        spl_token_2022_interface::extension::{
+            BaseStateWithExtensionsMut,
+            ExtensionType,
+            mint_close_authority::MintCloseAuthority,
+        },
         std::sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -764,6 +769,33 @@ mod tests {
         let prices = NativePrices::new(
             &coingecko_config(endpoint),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
+            Pubkey::new_unique(),
+        );
+
+        let result = prices.prices(HashSet::from([listed])).await.unwrap();
+        assert_eq!(result.get(&listed), Some(&5_000_000_000));
+    }
+
+    /// A Token-2022 mint with extensions reads its decimals like a classic
+    /// mint, so its token gets priced.
+    #[tokio::test]
+    async fn token_2022_mints_with_extensions_are_priced() {
+        let listed = Pubkey::new_unique();
+        let (endpoint, _) =
+            coingecko_server(serde_json::json!({ listed.to_string(): { "sol": 0.005 } })).await;
+        let mint = crate::tests::token_2022_mint(&[ExtensionType::MintCloseAuthority], |mint| {
+            mint.init_extension::<MintCloseAuthority>(true).unwrap();
+        });
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!({
+                "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                "value": [crate::tests::account_json(&mint)],
+            }),
+        )]);
+        let prices = NativePrices::new(
+            &coingecko_config(endpoint),
+            SolanaRPC::new_mock_with_mocks(mocks),
             Pubkey::new_unique(),
         );
 

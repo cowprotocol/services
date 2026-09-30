@@ -28,6 +28,11 @@ use {
     chain_types::solana::{IntentHash, Pubkey, Signature},
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     database::byte_array::ByteArray,
+    solana_sdk::account::Account,
+    spl_token_2022_interface::{
+        extension::{BaseStateWithExtensionsMut, ExtensionType, StateWithExtensionsMut},
+        state::Mint,
+    },
     sqlx::PgPool,
     std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::{mpsc, watch},
@@ -114,13 +119,53 @@ pub(crate) fn token_account_json(mint: [u8; 32]) -> serde_json::Value {
     )
 }
 
-/// A mock RPC answering one buy-account lookup with an initialized token
-/// account of the seeded order's buy mint. Each canned response serves once,
-/// later cuts fail open and keep the orders.
+/// A canned `getMultipleAccounts` entry for `account`.
+pub(crate) fn account_json(account: &Account) -> serde_json::Value {
+    serde_json::json!({
+        "lamports": account.lamports,
+        "data": [BASE64_STANDARD.encode(&account.data), "base64"],
+        "owner": account.owner.to_string(),
+        "executable": account.executable,
+        "rentEpoch": account.rent_epoch,
+        "space": account.data.len(),
+    })
+}
+
+/// An initialized Token-2022 mint with 6 decimals and the `extensions`, whose
+/// values `init` sets.
+pub(crate) fn token_2022_mint(
+    extensions: &[ExtensionType],
+    init: impl FnOnce(&mut StateWithExtensionsMut<Mint>),
+) -> Account {
+    let len = ExtensionType::try_calculate_account_len::<Mint>(extensions).unwrap();
+    let mut data = vec![0; len];
+    let mut mint = StateWithExtensionsMut::<Mint>::unpack_uninitialized(&mut data).unwrap();
+    init(&mut mint);
+    mint.base = Mint {
+        is_initialized: true,
+        decimals: 6,
+        ..Mint::default()
+    };
+    mint.pack_base();
+    mint.init_account_type().unwrap();
+    Account {
+        owner: spl_token_2022_interface::ID,
+        data,
+        ..Account::default()
+    }
+}
+
+/// A mock RPC answering one order-account lookup: an initialized token
+/// account of the seeded order's buy mint, then its sell and buy mints. Each
+/// canned response serves once, later cuts fail open and keep the orders.
 fn mock_rpc() -> SolanaRPC {
     let response = serde_json::json!({
         "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-        "value": [token_account_json([0xAB; 32])],
+        "value": [
+            token_account_json([0xAB; 32]),
+            mint_account_json(9),
+            mint_account_json(9),
+        ],
     });
     SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]))
 }
@@ -152,7 +197,7 @@ async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
+VALUES ($1, $2, $2, $3, $2, $6, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
         "#,
     )
     .bind(uid)
@@ -160,6 +205,7 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, 
     .bind(ByteArray([0xAB; 32]))
     .bind(i64::from(u32::MAX))
     .bind(ByteArray([0xB0; 32]))
+    .bind(ByteArray([0xAC; 32]))
     .execute(pool)
     .await
     .unwrap();

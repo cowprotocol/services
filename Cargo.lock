@@ -1524,6 +1524,7 @@ dependencies = [
  "solana-system-interface 3.2.0",
  "solana-testlib",
  "spl-associated-token-account-interface",
+ "spl-token-2022-interface 2.1.0",
  "spl-token-interface",
  "sqlx",
  "thiserror 1.0.69",
