@@ -156,8 +156,9 @@ fn validate(
     Ok(())
 }
 
-/// Whether a quote trades a token for itself. Native SOL can only be bought,
-/// and buying it counts as buying wSOL.
+/// Whether a quote trades a token for itself. The System Program ID stands
+/// for native SOL only on the buy side, where it counts as wSOL. A SOL sell
+/// names the wSOL mint.
 fn same_token(sell: &Pubkey, buy: &Pubkey) -> bool {
     sell == buy || (*sell == native_mint::ID && *buy == ENCODED_NATIVE_SOL_TRANSFER)
 }
@@ -173,7 +174,8 @@ mod tests {
         assert!(!same_token(&mint, &Pubkey::new_unique()));
         assert!(same_token(&native_mint::ID, &ENCODED_NATIVE_SOL_TRANSFER));
         assert!(!same_token(&mint, &ENCODED_NATIVE_SOL_TRANSFER));
-        // Native SOL can only be bought, so a native sell is no wSOL sell.
+        // As a sell token the System Program ID is not SOL. A SOL sell names
+        // the wSOL mint.
         assert!(!same_token(&ENCODED_NATIVE_SOL_TRANSFER, &native_mint::ID));
     }
 }
