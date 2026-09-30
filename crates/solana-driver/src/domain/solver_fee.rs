@@ -5,7 +5,9 @@
 //! direction: a sell order delivers less buy token and a buy order pulls more
 //! sell token than the route achieved. The difference is retained in the
 //! settlement program's buy-mint buffer PDA (sell orders) or the solver's own
-//! sell ATA (buy orders).
+//! sell ATA (buy orders). A sell order buying native SOL leaves it in the
+//! solver's own lamports: the settlement unwraps the whole swap output to the
+//! solver and moves only the payouts to the state PDA.
 //!
 //! The fee is applied to every fill before the driver reports solutions, so the
 //! autopilot ranks the same post-fee figure the user receives. A solution whose

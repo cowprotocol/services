@@ -151,8 +151,10 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             metrics()
                 .held_out_orders
                 .inc_by(u64::try_from(held_out.len()).unwrap_or(u64::MAX));
+            let uids: Vec<String> = held_out.iter().map(|order| order.uid.to_string()).collect();
             tracing::debug!(
                 held_out = held_out.len(),
+                ?uids,
                 "orders held out with settlements in flight"
             );
             order_events::store_detached(
