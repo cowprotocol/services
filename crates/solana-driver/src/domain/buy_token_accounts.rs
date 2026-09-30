@@ -10,7 +10,9 @@ use {
 /// within one deadline, so this only has to outlive that.
 const CACHE_TTL: Duration = Duration::from_secs(60);
 
-/// How an auction's buy token accounts stand on chain.
+/// How an auction's buy token accounts stand on chain. An order in neither
+/// set needs nothing from the settlement: its account is initialized, or it
+/// buys native SOL and the payout itself creates the receiving wallet.
 #[derive(Debug, Default)]
 pub struct BuyTokenAccounts {
     /// Orders whose account the settlement creates before it pays out, so the

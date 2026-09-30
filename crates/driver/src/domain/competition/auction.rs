@@ -88,15 +88,6 @@ impl Auction {
         })
     }
 
-    /// The id this auction is known by, as the solver engine sees it: the
-    /// competition auction's id, or the id of the quote it computes.
-    pub fn id(&self) -> i64 {
-        match self.id {
-            Kind::Competition(id) => id.0,
-            Kind::Quote(id) => id.0,
-        }
-    }
-
     /// The id of the competition auction this is, or [`None`] if it only
     /// computes a quote. Anything scoped to a real auction — archiving,
     /// settlement, solver notifications — applies in the former case only.
@@ -104,6 +95,15 @@ impl Auction {
         match self.id {
             Kind::Competition(id) => Some(id),
             Kind::Quote(_) => None,
+        }
+    }
+
+    /// The id of the quote this auction computes, or [`None`] if it is a
+    /// competition auction.
+    pub fn quote_id(&self) -> Option<crate::domain::quote::Id> {
+        match self.id {
+            Kind::Competition(_) => None,
+            Kind::Quote(id) => Some(id),
         }
     }
 
