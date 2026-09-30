@@ -1204,8 +1204,8 @@ async fn get_status(addr: SocketAddr, uid: &str) -> serde_json::Value {
 async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let pool = PgPool::connect("postgresql://").await.unwrap();
     sqlx::query(
-        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
-         CASCADE",
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.trades CASCADE",
     )
     .execute(&pool)
     .await
