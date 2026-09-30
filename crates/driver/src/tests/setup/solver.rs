@@ -493,6 +493,7 @@ impl Solver {
                 balances: Some((*config.blockchain.balances.address()).into()),
                 signatures: Some((*config.blockchain.signatures.address()).into()),
                 flashloan_router: Some((*config.blockchain.flashloan_router.address()).into()),
+                deadline_check: Some((*config.blockchain.deadline_check.address()).into()),
             },
             &shared::current_block::Arguments {
                 block_stream_poll_interval: None,
