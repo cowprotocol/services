@@ -89,18 +89,22 @@ impl Competition {
             .to_std()
             .unwrap_or_default()
             / 2;
-        let verdicts = futures::future::join_all(solutions.iter().map(|solution| {
-            tokio::time::timeout(
+        let verdicts = futures::future::join_all(solutions.iter().map(|solution| async move {
+            let started = Instant::now();
+            let verdict = tokio::time::timeout(
                 window,
                 self.simulate_solution(auction_id, auction, solution),
             )
+            .await
+            .unwrap_or(Err(Error::DeadlineExceeded));
+            (verdict, started.elapsed())
         }))
         .await;
 
         let auction = Arc::new(auction.clone());
+        let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
-        for (solution, verdict) in solutions.into_iter().zip(verdicts) {
-            let verdict = verdict.unwrap_or(Err(Error::DeadlineExceeded));
+        for (solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
             metrics()
                 .solve_simulations
                 .with_label_values(&[
@@ -108,16 +112,27 @@ impl Competition {
                     self.solver.name(),
                 ])
                 .inc();
-            if let Err(error) = &verdict {
-                let dropped = proves_failure(error);
-                tracing::warn!(
+            let elapsed_ms = elapsed.as_millis() as u64;
+            match &verdict {
+                Ok(()) => tracing::info!(
                     solution_id = solution.id,
-                    ?error,
-                    dropped,
-                    "solution simulation failed"
-                );
-                if dropped {
-                    continue;
+                    elapsed_ms,
+                    window_ms,
+                    "solution simulation passed"
+                ),
+                Err(error) => {
+                    let dropped = proves_failure(error);
+                    tracing::warn!(
+                        solution_id = solution.id,
+                        ?error,
+                        dropped,
+                        elapsed_ms,
+                        window_ms,
+                        "solution simulation failed"
+                    );
+                    if dropped {
+                        continue;
+                    }
                 }
             }
             self.solutions.insert(
@@ -148,10 +163,10 @@ impl Competition {
     ) -> Result<(), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
-        let mut bundle: Vec<_> = orders
+        let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
             .iter()
-            .filter_map(|order| auction.creations.get(&order.uid).cloned())
-            .collect();
+            .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
+            .unzip();
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
@@ -165,15 +180,35 @@ impl Competition {
             return Err(Error::TransactionTooLarge { size });
         }
         bundle.push(transaction);
+        tracing::debug!(
+            solution_id = solution.id,
+            creations = ?creation_uids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            bytes = bundle.iter().filter_map(encoded_size).sum::<u64>(),
+            "simulating settlement bundle"
+        );
 
         let results = self
             .blockchain
             .simulate_bundle(&bundle)
             .await
             .map_err(Error::Rpc)?;
-        for (transaction, result) in bundle.iter().zip(&results) {
+        if results.len() < bundle.len() {
+            tracing::warn!(
+                solution_id = solution.id,
+                executed = results.len(),
+                legs = bundle.len(),
+                "bundle simulation stopped short without a transaction error"
+            );
+        }
+        for (leg, (transaction, result)) in bundle.iter().zip(&results).enumerate() {
             if let Some(err) = &result.err {
-                tracing::warn!(logs = ?result.logs, "bundle simulation failed");
+                tracing::warn!(
+                    solution_id = solution.id,
+                    leg,
+                    creation = ?creation_uids.get(leg).map(ToString::to_string),
+                    logs = ?result.logs,
+                    "bundle simulation failed"
+                );
                 return Err(Error::SimulationFailed {
                     settlement_error: settlement_error(
                         program_id,
