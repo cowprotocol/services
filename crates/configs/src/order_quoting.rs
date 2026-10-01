@@ -9,6 +9,9 @@ const fn default_presign_onchain_quote_validity() -> Duration {
 const fn default_standard_offchain_quote_validity() -> Duration {
     Duration::from_mins(1)
 }
+const fn default_fast_path_quote_validity() -> Duration {
+    Duration::from_secs(30)
+}
 
 /// Reference to an external solver used for price estimation during quoting.
 #[derive(Debug, Clone, Deserialize)]
@@ -49,6 +52,11 @@ pub struct OrderQuoting {
     )]
     pub standard_offchain_quote_validity: Duration,
 
+    /// The time period a fast-path quote is valid. Kept short to
+    /// limit the free option a quote grants between pricing and settlement.
+    #[serde(with = "humantime_serde", default = "default_fast_path_quote_validity")]
+    pub fast_path_quote_validity: Duration,
+
     /// Upper bound on the sum of partner volume-fee factors declared in an
     /// order's app-data. Must mirror the autopilot's
     #[serde(default)]
@@ -83,6 +91,7 @@ impl crate::test_util::TestDefault for OrderQuoting {
             eip1271_onchain_quote_validity: default_eip1271_onchain_quote_validity(),
             presign_onchain_quote_validity: default_presign_onchain_quote_validity(),
             standard_offchain_quote_validity: default_standard_offchain_quote_validity(),
+            fast_path_quote_validity: default_fast_path_quote_validity(),
             max_partner_fee: None,
         }
     }
@@ -111,6 +120,7 @@ mod tests {
             config.standard_offchain_quote_validity,
             Duration::from_mins(1)
         );
+        assert_eq!(config.fast_path_quote_validity, Duration::from_secs(30));
         assert!(config.max_partner_fee.is_none());
     }
 
@@ -120,6 +130,7 @@ mod tests {
         eip1271-onchain-quote-validity = "5m"
         presign-onchain-quote-validity = "20m"
         standard-offchain-quote-validity = "30s"
+        fast-path-offchain-quote-validity = "3s"
         max-partner-fee = 0.01
 
         [[price-estimation-drivers]]
@@ -145,6 +156,7 @@ mod tests {
             config.standard_offchain_quote_validity,
             Duration::from_secs(30)
         );
+        assert_eq!(config.fast_path_quote_validity, Duration::from_secs(3));
         assert_eq!(config.max_partner_fee.map(|f| f.get()), Some(0.01));
     }
 
@@ -182,6 +194,7 @@ mod tests {
             eip1271_onchain_quote_validity: Duration::from_secs(300),
             presign_onchain_quote_validity: Duration::from_secs(600),
             standard_offchain_quote_validity: Duration::from_secs(60),
+            fast_path_quote_validity: Duration::from_secs(5),
             max_partner_fee: Some(FeeFactor::try_from(0.01).unwrap()),
         };
         let serialized = toml::to_string(&config).unwrap();
@@ -197,6 +210,10 @@ mod tests {
         assert_eq!(
             config.standard_offchain_quote_validity,
             deserialized.standard_offchain_quote_validity
+        );
+        assert_eq!(
+            config.fast_path_quote_validity,
+            deserialized.fast_path_quote_validity
         );
         assert_eq!(
             config.price_estimation_drivers.len(),
