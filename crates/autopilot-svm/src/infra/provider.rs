@@ -89,7 +89,8 @@ impl DbAuctionProvider {
     /// Record the orders a cut leaves out for `reason`: the per-reason gauge,
     /// a debug line with their uids and a `filtered` order event. An order
     /// repeats this on every cut while the reason holds, so the line stays at
-    /// debug. The gauge is set on every cut, so an empty reason reads zero.
+    /// debug. Every completed cut sets the gauge, so an empty reason reads
+    /// zero. A skipped cut leaves the previous values in place.
     fn track_filtered_orders(&self, reason: OrderFilterReason, uids: Vec<IntentHash>) {
         metrics()
             .filtered_orders
