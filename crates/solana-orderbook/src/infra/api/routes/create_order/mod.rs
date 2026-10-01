@@ -370,12 +370,14 @@ async fn check_accounts(
         .map(|key| Pubkey::new_from_array(key.0));
     let wallet = (buy == ENCODED_NATIVE_SOL_TRANSFER).then_some(buy_account);
     let mints: Vec<Pubkey> = token_mints(sell, buy).collect();
+    let lookup = sponsoring.mints.lookup(mints.iter().copied());
     let accounts = sponsoring
         .rpc
-        .multiple_accounts(mints.iter().copied().chain(wallet))
+        .multiple_accounts(lookup.unread().chain(wallet))
         .await
         .map_err(|err| internal_error_reply(err, "order account lookup failed"))?;
-    ensure_settleable(&accounts, mints)?;
+    let verdicts = lookup.resolve(&accounts);
+    ensure_settleable(&verdicts, mints)?;
     if let Some(wallet) = wallet
         && accounts
             .get(&wallet)
@@ -387,9 +389,9 @@ async fn check_accounts(
         .into());
     }
     let owned = token_programs.iter().all(|(mint, program)| {
-        accounts
+        verdicts
             .get(mint)
-            .is_some_and(|account| account.owner == *program)
+            .is_some_and(|verdict| verdict.is_ok_and(|owner| owner.address() == *program))
     });
     if !owned {
         return Err(PlacementError::InvalidTransaction(

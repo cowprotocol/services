@@ -151,6 +151,8 @@ pub struct Sponsoring {
     pub rpc: cow_solana_rpc::SolanaRPC,
     /// The most the funder will pay in priority fee for one creation.
     pub max_priority_fee_lamports: u64,
+    /// The verdicts on the mints placement and quoting read so far.
+    pub mints: solana_token::MintVerdicts,
 }
 
 impl State {

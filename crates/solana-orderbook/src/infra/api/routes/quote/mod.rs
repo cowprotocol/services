@@ -5,14 +5,13 @@ pub mod dto;
 use {
     super::mint::{ensure_settleable, token_mints},
     crate::infra::{
-        api::{State, ValidationParameters, error, extract},
+        api::{Sponsoring, State, ValidationParameters, error, extract},
         db,
         quoter,
     },
     axum::{Json, http::StatusCode},
     chrono::Utc,
     cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
-    cow_solana_rpc::SolanaRPC,
     database::{byte_array::ByteArray, solana::OrderKind},
     solana_sdk::pubkey::Pubkey,
     spl_token_interface::native_mint,
@@ -41,7 +40,7 @@ pub async fn quote(
     };
     validate(&request, valid_to, now_secs, &state.validation())?;
     if let Some(sponsoring) = state.sponsoring() {
-        check_mints(&sponsoring.rpc, &request).await?;
+        check_mints(sponsoring, &request).await?;
     }
 
     let (kind, amount) = request.side.kind_and_amount();
@@ -127,10 +126,11 @@ pub async fn quote(
 /// through the sponsoring RPC client, so the check is skipped without
 /// sponsoring and when the read fails: placement and the autopilot check the
 /// mints again.
-async fn check_mints(rpc: &SolanaRPC, request: &dto::Request) -> Result<(), error::Reply> {
+async fn check_mints(sponsoring: &Sponsoring, request: &dto::Request) -> Result<(), error::Reply> {
     let mints: Vec<Pubkey> = token_mints(request.sell_token, request.buy_token).collect();
-    match rpc.multiple_accounts(mints.iter().copied()).await {
-        Ok(accounts) => ensure_settleable(&accounts, mints),
+    let lookup = sponsoring.mints.lookup(mints.iter().copied());
+    match sponsoring.rpc.multiple_accounts(lookup.unread()).await {
+        Ok(accounts) => ensure_settleable(&lookup.resolve(&accounts), mints),
         Err(err) => {
             tracing::warn!(?err, "mint lookup failed, quoting unchecked");
             Ok(())

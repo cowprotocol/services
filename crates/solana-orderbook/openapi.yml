@@ -278,8 +278,7 @@ paths:
             `validTo` is closer than the configured minimum
             (default two minutes) or further than the configured maximum
             (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
-            or a mint the settlement program cannot move (`UnsupportedToken`,
-            checked on sponsoring deployments).
+            or a mint the settlement program cannot move (`UnsupportedToken`).
           content:
             application/json:
               schema:

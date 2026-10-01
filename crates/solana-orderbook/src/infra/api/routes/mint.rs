@@ -7,8 +7,8 @@ use {
         data::intent::ENCODED_NATIVE_SOL_TRANSFER,
         token_program::TokenProgram,
     },
-    solana_sdk::{account::Account, pubkey::Pubkey},
-    solana_token::unsettleable_mint,
+    solana_sdk::pubkey::Pubkey,
+    solana_token::{MintVerdict, UnsettleableMint},
     std::collections::HashMap,
 };
 
@@ -25,34 +25,28 @@ pub(super) fn token_mints(sell: Pubkey, buy: Pubkey) -> impl Iterator<Item = Pub
 }
 
 /// Answer `UnsupportedToken` for the first of `mints` the settlement program
-/// cannot move, reading each mint from `accounts`.
+/// cannot move, by its verdict in `verdicts`. A mint without a verdict counts
+/// as missing.
 pub(super) fn ensure_settleable(
-    accounts: &HashMap<Pubkey, Account>,
+    verdicts: &HashMap<Pubkey, MintVerdict>,
     mints: impl IntoIterator<Item = Pubkey>,
 ) -> Result<(), error::Reply> {
-    mints
-        .into_iter()
-        .try_for_each(|mint| match unsettleable_mint(accounts.get(&mint)) {
-            Some(reason) => Err(error::reply(
+    mints.into_iter().try_for_each(|mint| {
+        let verdict = verdicts.get(&mint).copied();
+        match verdict.unwrap_or(Err(UnsettleableMint::NotAMint)) {
+            Ok(_) => Ok(()),
+            Err(reason) => Err(error::reply(
                 StatusCode::BAD_REQUEST,
                 "UnsupportedToken",
                 format!("Token {mint} is unsupported: {reason}"),
             )),
-            None => Ok(()),
-        })
+        }
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        solana_testlib::{classic_mint, token_2022_mint},
-        spl_token_2022_interface::extension::{
-            BaseStateWithExtensionsMut,
-            ExtensionType,
-            transfer_fee::TransferFeeConfig,
-        },
-    };
+    use super::*;
 
     /// A native SOL buy has no buy mint to read.
     #[test]
@@ -67,27 +61,31 @@ mod tests {
     }
 
     /// The rejection names the mint and the reason, in the EVM
-    /// `UnsupportedToken` shape.
+    /// `UnsupportedToken` shape. A mint without a verdict is rejected as
+    /// missing.
     #[test]
     fn the_first_unsettleable_mint_is_rejected() {
         let good = Pubkey::new_unique();
         let bad = Pubkey::new_unique();
-        let accounts = HashMap::from([
-            (good, classic_mint(6)),
-            (
-                bad,
-                token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
-                    mint.init_extension::<TransferFeeConfig>(true).unwrap();
-                }),
-            ),
+        let verdicts = HashMap::from([
+            (good, Ok(TokenProgram::SplToken)),
+            (bad, Err(UnsettleableMint::TransferFee)),
         ]);
-        assert!(ensure_settleable(&accounts, [good]).is_ok());
-        let (status, body) = ensure_settleable(&accounts, [good, bad]).unwrap_err();
+        assert!(ensure_settleable(&verdicts, [good]).is_ok());
+        let (status, body) = ensure_settleable(&verdicts, [good, bad]).unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body.error_type, "UnsupportedToken");
         assert_eq!(
             body.description,
             format!("Token {bad} is unsupported: Token-2022 transfer fee extension")
+        );
+        let unknown = Pubkey::new_unique();
+        let (_, body) = ensure_settleable(&verdicts, [good, unknown]).unwrap_err();
+        assert_eq!(
+            body.description,
+            format!(
+                "Token {unknown} is unsupported: not a mint of the SPL Token or Token-2022 program"
+            )
         );
     }
 }

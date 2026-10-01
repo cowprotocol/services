@@ -100,6 +100,7 @@ pub async fn run(args: Args) {
                 CommitmentConfig::confirmed(),
             ),
             max_priority_fee_lamports: sponsoring.max_priority_fee_lamports,
+            mints: solana_token::MintVerdicts::default(),
         }
     });
     let api = Api {
