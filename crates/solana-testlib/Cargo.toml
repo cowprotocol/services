@@ -8,7 +8,10 @@ description = "Shared test helpers for Solana CoW Protocol crates"
 repository = "https://github.com/cowprotocol/services"
 
 [dependencies]
+base64 = { workspace = true }
+serde_json = { workspace = true }
 solana-sdk = { workspace = true }
+spl-token-interface = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]

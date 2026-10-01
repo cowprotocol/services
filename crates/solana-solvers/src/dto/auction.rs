@@ -42,7 +42,10 @@ pub struct Order {
     pub sell_mint: Pubkey,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_mint: Pubkey,
-    /// The buy-mint buffer the swap output lands in.
+    /// The account the swap output lands in: the buy-mint buffer, or the
+    /// taker's wSOL ATA for an order buying native SOL. The route must leave
+    /// that ATA open: the settlement closes it after the swap to unwrap the
+    /// payouts.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_destination: Pubkey,
     /// Sell-mint units: for a sell order the amount to fill, for a buy order
@@ -68,6 +71,15 @@ pub struct Order {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub full_buy_amount: u64,
     pub side: dex::Side,
+    /// True when the order's buy token account does not exist on chain
+    /// yet. The driver's settlement creates it and the solver keypair pays
+    /// its rent, a cost the solution should price in.
+    ///
+    /// TODO(token-2022): a token-2022 account rents more bytes, so once
+    /// those mints are supported this boolean becomes a `setupCostLamports`
+    /// number and engines stop having to know the rent math.
+    #[serde(default)]
+    pub missing_buy_token_account: bool,
 }
 
 impl Order {
