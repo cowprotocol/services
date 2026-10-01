@@ -130,7 +130,7 @@ mod tests {
         eip1271-onchain-quote-validity = "5m"
         presign-onchain-quote-validity = "20m"
         standard-offchain-quote-validity = "30s"
-        fast-path-offchain-quote-validity = "3s"
+        fast-path-quote-validity = "3s"
         max-partner-fee = 0.01
 
         [[price-estimation-drivers]]
