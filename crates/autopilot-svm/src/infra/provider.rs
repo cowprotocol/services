@@ -18,6 +18,7 @@ use {
     sqlx::PgPool,
     std::{
         collections::HashSet,
+        sync::Mutex,
         time::{SystemTime, UNIX_EPOCH},
     },
 };
@@ -29,6 +30,8 @@ pub struct DbAuctionProvider {
     /// Slots the indexer may lag behind the tip before cuts are skipped.
     max_indexer_lag: u64,
     prices: NativePrices,
+    /// Block height of the last successful lookup.
+    last_block_height: Mutex<Option<i64>>,
 }
 
 impl DbAuctionProvider {
@@ -38,6 +41,30 @@ impl DbAuctionProvider {
             rpc,
             max_indexer_lag,
             prices,
+            last_block_height: Mutex::default(),
+        }
+    }
+
+    /// The chain's block height, falling back to the last one read when the
+    /// lookup fails. `None` until a lookup succeeds. Block height only grows,
+    /// so a creation deadline checked against an older one can keep an order
+    /// that died since but never drops a live one.
+    async fn block_height(&self) -> Option<i64> {
+        match self.rpc.block_height().await {
+            Ok(height) => {
+                let height = Some(i64::try_from(u64::from(height)).unwrap_or(i64::MAX));
+                *self.last_block_height.lock().unwrap() = height;
+                height
+            }
+            Err(err) => {
+                let last = *self.last_block_height.lock().unwrap();
+                tracing::warn!(
+                    ?err,
+                    ?last,
+                    "block height lookup failed, using the last one"
+                );
+                last
+            }
         }
     }
 
@@ -146,16 +173,8 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         }
         let now = now_unix();
         // A pending sponsored order dies with its creation blockhash, so the
-        // cut drops the dead ones. A failed height fetch keeps them all: they
-        // then fall out at the countersign instead of the cut.
-        let block_height = match self.rpc.block_height().await {
-            Ok(height) => Some(i64::try_from(u64::from(height)).unwrap_or(i64::MAX)),
-            Err(err) => {
-                tracing::warn!(?err, "block height lookup failed, keeping pending orders");
-                None
-            }
-        };
-        let orders = db::cut(&self.pool, now, block_height)
+        // cut drops the dead ones.
+        let orders = db::cut(&self.pool, now, self.block_height().await)
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
@@ -527,6 +546,20 @@ mod tests {
         let orders = vec![order([0x01; 32], true)];
         let (kept, dropped) = provider.receivable_orders(orders).await;
         assert_eq!((kept.len(), dropped.len()), (1, 0));
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_the_last_block_height() {
+        let mut provider = provider(Mocks::from([(
+            RpcRequest::GetBlockHeight,
+            serde_json::json!(100),
+        )]));
+        assert_eq!(provider.block_height().await, Some(100));
+        provider.rpc = SolanaRPC::new_mock_with_mocks(Mocks::from([(
+            RpcRequest::GetBlockHeight,
+            serde_json::json!("not a height"),
+        )]));
+        assert_eq!(provider.block_height().await, Some(100));
     }
 
     /// The watermark trips past the allowed lag, on a never-written indexer,
