@@ -42,6 +42,7 @@ use {
 };
 
 pub mod auction;
+pub mod native_price_cache;
 pub mod order;
 mod pre_processing;
 pub mod quote_cache;
@@ -56,6 +57,7 @@ use {
 };
 pub use {
     auction::Auction,
+    native_price_cache::NativePriceCache,
     order::Order,
     pre_processing::DataAggregator,
     quote_cache::{CachedQuoteSolution, FastPathQuoteCache},
@@ -279,6 +281,9 @@ pub struct Competition {
     /// Fast-path quote solutions cached at quote time, keyed per solver
     /// account.
     quote_cache: FastPathQuoteCache,
+    /// Native prices observed in regular auctions, reused to bound absolute
+    /// slippage when re-encoding fast-path solutions.
+    native_price_cache: NativePriceCache,
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
@@ -299,6 +304,7 @@ impl Competition {
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
         quote_cache: FastPathQuoteCache,
+        native_price_cache: NativePriceCache,
     ) -> Arc<Self> {
         let submission_accounts = solver.submission_accounts().to_vec();
         if !submission_accounts.is_empty() {
@@ -320,6 +326,7 @@ impl Competition {
             mempools,
             settlements: Default::default(),
             quote_cache,
+            native_price_cache,
             risk_detector,
             fetcher,
             order_sorting_strategies,
@@ -351,6 +358,14 @@ impl Competition {
             Some(policy) => auction.with_solver_fee(&policy),
             None => auction,
         };
+
+        // Record the auction's native prices for the fast path to reuse.
+        let observed_prices: Vec<(eth::TokenAddress, auction::Price)> = auction
+            .tokens()
+            .iter()
+            .filter_map(|token| token.price.map(|price| (token.address, price)))
+            .collect();
+        self.native_price_cache.insert_many(observed_prices).await;
 
         let liquidity = async {
             match self.solver.liquidity() {
@@ -555,10 +570,6 @@ impl Competition {
     /// against the real signed `order`, and promote it into the regular settle
     /// queue. Returns the id of the queued solution, which
     /// [`Competition::settle`] settles by.
-    ///
-    /// `native_prices` (wei per 1e18 of each token) supply the token prices the
-    /// encoder needs to bound AMM-interaction slippage at the solver's
-    /// configured absolute cap.
     #[instrument(skip_all)]
     pub async fn reencode_quote_solution(
         &self,
@@ -566,7 +577,6 @@ impl Competition {
         quote_id: crate::domain::quote::Id,
         mut order: Order,
         limit_prices: solution::LimitPrices,
-        native_prices: HashMap<eth::Address, eth::U256>,
     ) -> Result<u64, Error> {
         let cached = self
             .quote_cache
@@ -583,17 +593,14 @@ impl Competition {
                 other => Error::FastPathInvalidOrder(other),
             })?;
         // The quote was solved outside of any auction; its settlement runs
-        // under the auction the autopilot allocated for it. The autopilot's
-        // native prices are overlaid onto the tokens so the encoder can bound
-        // absolute slippage.
-        let prices: auction::Prices = native_prices
-            .into_iter()
-            .filter_map(|(token, price)| {
-                auction::Price::try_new(price.into())
-                    .ok()
-                    .map(|price| (token.into(), price))
-            })
+        // under the auction the autopilot allocated for it.
+        let tokens: Vec<eth::TokenAddress> = cached
+            .auction
+            .tokens
+            .iter()
+            .map(|token| token.address)
             .collect();
+        let prices = self.native_price_cache.get_many(tokens).await;
         let auction = Auction {
             id: auction::Kind::Competition(auction_id),
             orders: vec![order],

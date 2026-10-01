@@ -1212,14 +1212,13 @@ impl Test {
         )
     }
 
-    /// Call `/settle_fast_path` for the cached quote, with the real `order`,
-    /// its `limit_prices`, and optional `native_prices`.
+    /// Call `/settle_fast_path` for the cached quote, with the real `order`
+    /// and its `limit_prices`.
     pub async fn settle_with_order(
         &self,
         quote_id: i64,
         order: serde_json::Value,
         limit_prices: serde_json::Value,
-        native_prices: Option<serde_json::Value>,
     ) -> Settle {
         let request = |deadline: u64| {
             driver::settle_fast_path_req(
@@ -1228,7 +1227,6 @@ impl Test {
                 &self.auction_id.to_string(),
                 order.clone(),
                 limit_prices.clone(),
-                native_prices.clone(),
             )
         };
         self.settle_request(solver::NAME, "settle_fast_path", request)

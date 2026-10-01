@@ -853,16 +853,18 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
 }
 
 /// The absolute AMM-slippage cap binds on the fast path, which only works
-/// because the autopilot forwards native prices into the re-encode.
+/// because the driver reuses the native prices it cached from regular auctions
+/// when re-encoding the fast-path solution.
 ///
-/// A token->WETH order is quoted and its solution cached. The pool is then
-/// moved adversely (minting token in makes the token cheaper), so re-executing
-/// the cached swap needs more token input than quoted, i.e. some slippage. The
+/// A regular order for the token settles first to prime that cache. A
+/// token->WETH order is then quoted and its solution cached. The pool is moved
+/// adversely (minting token in makes the token cheaper), so re-executing the
+/// cached swap needs more token input than quoted, i.e. some slippage. The
 /// solver's absolute slippage is set far below that need while its relative
-/// slippage (10%) would comfortably cover it. With native prices present the
+/// slippage (10%) would comfortably cover it. With the cached native price the
 /// encoder clamps to the tiny absolute cap, the fast-path settle can't cover
 /// the move and reverts, so the order stays open until the regular auction
-/// re-solves against the moved pool and settles it. If native-price forwarding
+/// re-solves against the moved pool and settles it. If the cache lookup
 /// regressed, `apply_to` would fall back to the 10% relative buffer, the
 /// fast-path settle would go through, and the order would fill during the
 /// exclusivity window - failing this test.
@@ -883,9 +885,14 @@ async fn fast_path_absolute_slippage_cap_binds(web3: Web3) {
 
     // The trader sells the token for WETH, so the settlement swaps token->WETH.
     let sell_amount = 10u64.eth();
-    token.mint(trader.address(), sell_amount).await;
+    // A small extra amount funds a warm-up order that primes the driver's
+    // native-price cache before the fast path runs (see below).
+    let warmup_amount = 1u64.eth();
     token
-        .approve(onchain.contracts().allowance, sell_amount)
+        .mint(trader.address(), sell_amount + warmup_amount)
+        .await;
+    token
+        .approve(onchain.contracts().allowance, sell_amount + warmup_amount)
         .from(trader.address())
         .send_and_watch()
         .await
@@ -936,6 +943,34 @@ async fn fast_path_absolute_slippage_cap_binds(web3: Web3) {
         with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
     services.start_autopilot(None, autopilot_config).await;
     services.start_api(orderbook_config).await;
+
+    // Warm the driver's native-price cache with a regular solve; the fast path
+    // reads it to bound absolute slippage and never triggers a solve itself.
+    tracing::info!("Warming the native-price cache with a regular order.");
+    let warmup = OrderCreation {
+        sell_token: *token.address(),
+        sell_amount: warmup_amount,
+        buy_token: *onchain.contracts().weth.address(),
+        buy_amount: U256::from(1u64),
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let warmup_uid = services.create_order(&warmup).await.unwrap();
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        services
+            .get_order(&warmup_uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
+    })
+    .await
+    .unwrap();
 
     let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
 
