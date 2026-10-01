@@ -149,7 +149,8 @@ impl Mempool {
             .provider
             .send_transaction(tx_request)
             .await
-            .map_err(explain_rpc_error);
+            .inspect_err(log_rpc_error_code)
+            .map_err(anyhow::Error::from);
 
         match submission {
             Ok(tx) => {
@@ -225,20 +226,18 @@ impl Mempool {
     }
 }
 
-/// Adds a hint for known JSON-RPC error codes. Codes in -32768..=-32000 mean
+/// Logs a hint for known JSON-RPC error codes. Codes in -32768..=-32000 mean
 /// different things per chain, so only map new codes once they're understood.
-fn explain_rpc_error(err: TransportError) -> anyhow::Error {
-    let code = err.as_error_resp().map(|resp| resp.code);
-    let err = anyhow::Error::from(err);
-    match code {
+fn log_rpc_error_code(err: &TransportError) {
+    match err.as_error_resp().map(|resp| resp.code) {
         // Standard error, e.g. "replacement transaction underpriced".
-        None | Some(-32000) => err,
+        None | Some(-32000) => {}
         // A proxy in front of the sequencer rejected the tx (seen on Ink).
-        // https://github.com/ethereum-optimism/infra/blob/main/proxyd/backend.go#L140-L144
-        Some(-32100) => err.context(
+        // https://github.com/ethereum-optimism/infra/blob/a4d73e6c8afed6b2dcb007d1c6f26455df45599f/proxyd/backend.go#L140-L144
+        Some(-32100) => tracing::warn!(
             "transaction rejected upstream (JSON-RPC -32100): the RPC's proxy refused it before \
-             the sequencer",
+             the sequencer"
         ),
-        Some(code) => err.context(format!("unexpected error code {code}")),
+        Some(code) => tracing::warn!("unexpected error code {code}"),
     }
 }
