@@ -161,7 +161,7 @@ pub fn encode_trade(
     (
         U256::from(sell_token_index),
         U256::from(buy_token_index),
-        order.receiver.unwrap_or(Address::ZERO),
+        order.receiver,
         order.sell_amount,
         order.buy_amount,
         order.valid_to,

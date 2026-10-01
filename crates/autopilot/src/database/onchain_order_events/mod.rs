@@ -612,7 +612,7 @@ fn convert_onchain_order_placement(
         creation_timestamp: Utc.timestamp_opt(event_timestamp, 0).unwrap(),
         sell_token: ByteArray(order_data.sell_token.0.0),
         buy_token: ByteArray(order_data.buy_token.0.0),
-        receiver: order_data.receiver.map(|addr| ByteArray(addr.0.0)),
+        receiver: Some(ByteArray(order_data.receiver.0.0)),
         sell_amount: u256_to_big_decimal(&order_data.sell_amount),
         buy_amount: u256_to_big_decimal(&order_data.buy_amount),
         valid_to: order_data.valid_to as i64,
@@ -657,15 +657,10 @@ fn extract_order_data_from_onchain_order_placement_event(
         _ => bail!("unreachable state while parsing owner"),
     };
 
-    let receiver = match order_placement.order.receiver {
-        Address(bytes) if bytes.0 == [0u8; 20] => None,
-        receiver => Some(receiver),
-    };
-
     let order_data = OrderData {
         sell_token: order_placement.order.sellToken,
         buy_token: order_placement.order.buyToken,
-        receiver,
+        receiver: order_placement.order.receiver,
         sell_amount: order_placement.order.sellAmount,
         buy_amount: order_placement.order.buyAmount,
         valid_to: order_placement.order.validTo,
@@ -898,7 +893,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token: sellToken,
             buy_token: buyToken,
-            receiver: Some(receiver),
+            receiver,
             sell_amount: sellAmount,
             buy_amount: buyAmount,
             valid_to: validTo,
@@ -948,7 +943,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token: sellToken,
             buy_token: buyToken,
-            receiver: None,
+            receiver: Address::ZERO,
             sell_amount: sellAmount,
             buy_amount: buyAmount,
             valid_to: validTo,
@@ -980,7 +975,7 @@ mod test {
         let order_data = OrderData {
             sell_token,
             buy_token,
-            receiver: Some(receiver),
+            receiver,
             sell_amount,
             buy_amount,
             valid_to,
@@ -1034,7 +1029,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token,
             buy_token,
-            receiver: Some(receiver),
+            receiver,
             sell_amount,
             buy_amount,
             valid_to,
@@ -1057,7 +1052,7 @@ mod test {
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0.0),
             buy_token: ByteArray(expected_order_data.buy_token.0.0),
-            receiver: expected_order_data.receiver.map(|addr| ByteArray(addr.0.0)),
+            receiver: Some(ByteArray(expected_order_data.receiver.0.0)),
             sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
             buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
@@ -1093,7 +1088,7 @@ mod test {
         let order_data = OrderData {
             sell_token,
             buy_token,
-            receiver: Some(receiver),
+            receiver,
             sell_amount,
             buy_amount,
             valid_to,
@@ -1148,7 +1143,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token,
             buy_token,
-            receiver: Some(receiver),
+            receiver,
             sell_amount,
             buy_amount,
             valid_to,
@@ -1171,7 +1166,7 @@ mod test {
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0.0),
             buy_token: ByteArray(expected_order_data.buy_token.0.0),
-            receiver: expected_order_data.receiver.map(|addr| ByteArray(addr.0.0)),
+            receiver: Some(ByteArray(expected_order_data.receiver.0.0)),
             sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
             buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
@@ -1316,7 +1311,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token,
             buy_token,
-            receiver: Some(receiver),
+            receiver,
             sell_amount,
             buy_amount,
             valid_to,

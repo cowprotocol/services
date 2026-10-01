@@ -508,8 +508,9 @@ async fn find_banned_user_orders(
     banned_users: &order_validation::banned::Users,
 ) -> Vec<OrderUid> {
     fn users_to_check(order: &Order) -> impl Iterator<Item = Address> {
+        let custom_receiver = (!order.data.receiver.is_zero()).then_some(order.data.receiver);
         std::iter::once(order.metadata.owner)
-            .chain(order.data.receiver)
+            .chain(custom_receiver)
             .chain(order.metadata.onchain_user)
     }
 
@@ -579,7 +580,7 @@ fn orders_with_balance<'a>(
             return true;
         }
 
-        if order.data.receiver.as_ref() == Some(&settlement_contract) {
+        if order.data.receiver == settlement_contract {
             // TODO: replace with proper detection logic
             // for now we assume that all orders with the settlement contract
             // as the receiver are flashloan orders which unlock the necessary
@@ -1031,20 +1032,21 @@ mod tests {
         let banned_users = hashset!(banned);
 
         // (owner, receiver, onchain_user) — exercise every combination of which
-        // field pulls a banned address in.
+        // field pulls a banned address in. `Address::ZERO` means "no custom
+        // receiver" (settlement contract pays the owner).
         let cases = [
             // 0: nothing banned → keep
-            (allowed, None, None),
+            (allowed, Address::ZERO, None),
             // 1: all three fields set but clean → keep
-            (allowed, Some(allowed), Some(allowed)),
+            (allowed, allowed, Some(allowed)),
             // 2: owner banned → filter
-            (banned, None, None),
+            (banned, Address::ZERO, None),
             // 3: receiver banned → filter
-            (allowed, Some(banned), None),
+            (allowed, banned, None),
             // 4: onchain_user banned → filter
-            (allowed, None, Some(banned)),
+            (allowed, Address::ZERO, Some(banned)),
             // 5: every field banned → filter (once)
-            (banned, Some(banned), Some(banned)),
+            (banned, banned, Some(banned)),
         ];
 
         let orders = cases
@@ -1212,7 +1214,7 @@ mod tests {
                     sell_amount: alloy::primitives::U256::from(200),
                     fee_amount: alloy::primitives::U256::ZERO,
                     partially_fillable: true,
-                    receiver: Some(settlement_contract),
+                    receiver: settlement_contract,
                     ..Default::default()
                 },
                 ..Default::default()

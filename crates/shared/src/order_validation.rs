@@ -419,8 +419,11 @@ pub struct PreOrderData {
 }
 
 fn actual_receiver(owner: Address, order: &OrderData) -> Address {
-    let receiver = order.receiver.unwrap_or_default();
-    if receiver.is_zero() { owner } else { receiver }
+    if order.receiver.is_zero() {
+        owner
+    } else {
+        order.receiver
+    }
 }
 
 impl PreOrderData {
@@ -994,7 +997,11 @@ impl OrderValidating for OrderValidator {
 
         let verification = Verification {
             from: owner,
-            receiver: order.receiver.unwrap_or(owner),
+            receiver: if order.receiver.is_zero() {
+                owner
+            } else {
+                order.receiver
+            },
             app_data: Arc::new(app_data.inner.document.clone()),
         };
 
@@ -3174,7 +3181,7 @@ mod tests {
                 full: "{}".to_string(),
             },
             from: Some(Address::repeat_byte(0xf0)),
-            receiver: Some(Address::repeat_byte(0xf0)),
+            receiver: Address::repeat_byte(0xf0),
             quote_id,
             ..Default::default()
         };

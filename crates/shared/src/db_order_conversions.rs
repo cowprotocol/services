@@ -114,7 +114,10 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     let data = OrderData {
         sell_token: Address::new(order.sell_token.0),
         buy_token: Address::new(order.buy_token.0),
-        receiver: order.receiver.map(|address| Address::new(address.0)),
+        receiver: order
+            .receiver
+            .map(|address| Address::new(address.0))
+            .unwrap_or_default(),
         sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
         buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
@@ -155,7 +158,10 @@ pub fn fast_path_order_into_model(order: &PendingFastPathOrderDb) -> Result<Orde
     let data = OrderData {
         sell_token: Address::new(order.sell_token.0),
         buy_token: Address::new(order.buy_token.0),
-        receiver: order.receiver.map(|address| Address::new(address.0)),
+        receiver: order
+            .receiver
+            .map(|address| Address::new(address.0))
+            .unwrap_or_default(),
         sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
         buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,

@@ -175,8 +175,8 @@ impl Solver {
                 "signature": if config.quote { "0x".to_string() } else { const_hex::encode_prefixed(quote.order_signature(config.blockchain)) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
-            if let Some(receiver) = quote.order.receiver {
-                order["receiver"] = json!(receiver.encode_hex_with_prefix());
+            if !quote.order.receiver.is_zero() {
+                order["receiver"] = json!(quote.order.receiver.encode_hex_with_prefix());
             }
             if let Some(flashloan) = quote.order.app_data.flashloan() {
                 order["flashloanHint"] = json!(FlashloanHint {
@@ -384,12 +384,12 @@ impl Solver {
                             jit.quoted_order.order = jit
                                 .quoted_order
                                 .order
-                                .receiver(Some(config.private_key.address()));
+                                .receiver(config.private_key.address());
                             let fee_amount = jit.quoted_order.order.solver_fee.unwrap_or_default();
                             let order = json!({
                                 "sellToken": config.blockchain.get_token(jit.quoted_order.order.sell_token),
                                 "buyToken": config.blockchain.get_token(jit.quoted_order.order.buy_token),
-                                "receiver": jit.quoted_order.order.receiver.unwrap_or_default().encode_hex_with_prefix(),
+                                "receiver": jit.quoted_order.order.receiver.encode_hex_with_prefix(),
                                 "sellAmount": jit.quoted_order.order.sell_amount.to_string(),
                                 "buyAmount": jit.quoted_order.order.buy_amount.unwrap_or_default().to_string(),
                                 "validTo": jit.quoted_order.order.valid_to,

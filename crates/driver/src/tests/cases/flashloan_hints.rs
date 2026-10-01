@@ -30,7 +30,7 @@ async fn solutions_with_flashloan() {
     )));
 
     let settlement = Address::repeat_byte(5);
-    let order = ab_order().app_data(app_data).receiver(Some(settlement));
+    let order = ab_order().app_data(app_data).receiver(settlement);
 
     let test = setup()
         .settlement_address(settlement)
@@ -66,7 +66,7 @@ async fn solutions_without_flashloan() {
         protocol_app_data,
     )));
     let settlement = Address::repeat_byte(5);
-    let order = ab_order().app_data(app_data).receiver(Some(settlement));
+    let order = ab_order().app_data(app_data).receiver(settlement);
 
     let test = setup()
         .settlement_address(settlement)

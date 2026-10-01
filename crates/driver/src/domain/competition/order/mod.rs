@@ -22,8 +22,9 @@ pub mod signature;
 #[derive(Debug, Clone)]
 pub struct OrderData {
     pub uid: Uid,
-    /// The user specified a custom address to receive the output of this order.
-    pub receiver: Option<eth::Address>,
+    /// The user specified a custom address to receive the output of this
+    /// order. `Address::ZERO` means "pay the owner".
+    pub receiver: eth::Address,
     pub created: util::Timestamp,
     pub valid_to: util::Timestamp,
     /// The minimum amount this order must buy when completely filled.
@@ -162,7 +163,11 @@ impl Order {
     /// address. Otherwise, return the address which was used to place the
     /// order.
     pub fn receiver(&self) -> eth::Address {
-        self.receiver.unwrap_or(self.signature.signer)
+        if self.receiver.is_zero() {
+            self.signature.signer
+        } else {
+            self.receiver
+        }
     }
 
     /// Returns the order's available amounts to be passed to a solver engine.

@@ -295,7 +295,11 @@ impl QuoteHandler {
                 side: request.side,
                 verification: Verification {
                     from: request.from,
-                    receiver: request.receiver.unwrap_or(request.from),
+                    receiver: if request.receiver.is_zero() {
+                        request.from
+                    } else {
+                        request.receiver
+                    },
                     app_data: Arc::new(app_data.inner.document.clone()),
                 },
                 signing_scheme: request.signing_scheme,

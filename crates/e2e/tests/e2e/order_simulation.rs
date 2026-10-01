@@ -74,7 +74,7 @@ async fn custom_order_simulation(web3: Web3) {
         sell_amount,
         buy_amount: 1u64.eth(),
         kind: OrderKind::Sell,
-        receiver: Some(Address::default()),
+        receiver: Address::default(),
         sell_token_balance: SellTokenSource::Erc20,
         buy_token_balance: BuyTokenDestination::Erc20,
         fee_amount: U256::ZERO,

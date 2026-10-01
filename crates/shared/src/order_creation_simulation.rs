@@ -262,10 +262,10 @@ fn allow_failed_buy_token_transfer(
     failed_state_overrides: &[AccountOverrideRequest],
     report: &SimulationReport,
 ) -> bool {
-    let receiver = match &order.data.receiver {
-        None => &order.metadata.owner,
-        Some(r) if r.is_zero() => &order.metadata.owner,
-        Some(receiver) => receiver,
+    let receiver = if order.data.receiver.is_zero() {
+        &order.metadata.owner
+    } else {
+        &order.data.receiver
     };
     let buy_token_transfer_failed = report.events.iter().any(|e| {
         matches!(e,

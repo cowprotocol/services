@@ -177,7 +177,7 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
     let order_data = OrderData {
         sell_token: sell_token_weth,
         buy_token: buy_token_gho,
-        receiver: Some(order_owner),
+        receiver: order_owner,
         sell_amount,
         buy_amount,
         valid_to,
@@ -287,7 +287,7 @@ async fn build_naturally_failing_replay_simulation(
     let order_data = OrderData {
         sell_token: sell_token_a_wbtc,
         buy_token: buy_token_usdt,
-        receiver: Some(order_owner),
+        receiver: order_owner,
         sell_amount,
         buy_amount,
         valid_to,

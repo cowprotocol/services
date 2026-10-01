@@ -862,7 +862,7 @@ impl ExtendedEthFlowOrder {
         let quote = &quote_response.quote;
         ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
             buyToken: quote.buy_token,
-            receiver: quote.receiver.expect("eth-flow order without receiver"),
+            receiver: quote.receiver,
             sellAmount: quote.sell_amount,
             buyAmount: quote.buy_amount,
             appData: quote.app_data.hash().0.into(),
@@ -885,7 +885,7 @@ impl ExtendedEthFlowOrder {
             .with_sell_token(*weth.address())
             .with_sell_amount(self.0.sellAmount)
             .with_fee_amount(self.0.feeAmount)
-            .with_receiver(Some(self.0.receiver))
+            .with_receiver(self.0.receiver)
             .with_buy_token(self.0.buyToken)
             .with_buy_amount(self.0.buyAmount)
             .with_valid_to(u32::MAX)
@@ -1034,7 +1034,7 @@ impl EthFlowTradeIntent {
             // Even if the user sells ETH, we request a quote for WETH
             sell_token: *weth.address(),
             buy_token: self.buy_token,
-            receiver: Some(self.receiver),
+            receiver: self.receiver,
             validity: Validity::For(3600),
             app_data: OrderCreationAppData::default(),
             signing_scheme: QuoteSigningScheme::Eip1271 {

@@ -126,8 +126,8 @@ pub struct OrderQuoteRequest {
     pub from: Address,
     pub sell_token: Address,
     pub buy_token: Address,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver: Option<Address>,
+    #[serde(default)]
+    pub receiver: Address,
     #[serde(flatten)]
     pub side: OrderQuoteSide,
     #[serde(flatten)]
@@ -324,7 +324,7 @@ pub enum SellAmount {
 pub struct OrderQuote {
     pub sell_token: Address,
     pub buy_token: Address,
-    pub receiver: Option<Address>,
+    pub receiver: Address,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -383,6 +383,7 @@ mod tests {
                 "from": "0x0000000000000000000000000000000000000000",
                 "sellToken": "0x0000000000000000000000000000000000000000",
                 "buyToken": "0x0000000000000000000000000000000000000000",
+                "receiver": "0x0000000000000000000000000000000000000000",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
                 "validFor": 1800,

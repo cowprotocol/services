@@ -32,7 +32,7 @@ pub struct Order {
     pub created: u32,
     pub valid_to: u32,
     pub kind: OrderKind,
-    pub receiver: Option<Address>,
+    pub receiver: Address,
     pub owner: Address,
     pub partially_fillable: bool,
     #[serde_as(as = "HexOrDecimalU256")]

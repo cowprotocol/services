@@ -484,7 +484,7 @@ impl TradeVerifier {
             sell_amount: fake_sell_amount,
             buy_token: query.buy_token,
             buy_amount: fake_buy_amount,
-            receiver: Some(*verification.effective_receiver()),
+            receiver: *verification.effective_receiver(),
             valid_to: u32::MAX,
             app_data: Default::default(),
             fee_amount: U256::ZERO,
@@ -871,7 +871,7 @@ fn encode_jit_orders(
             let order_data = OrderData {
                 sell_token: jit_order.sell_token,
                 buy_token: jit_order.buy_token,
-                receiver: Some(jit_order.receiver),
+                receiver: jit_order.receiver,
                 sell_amount: jit_order.sell_amount,
                 buy_amount: jit_order.buy_amount,
                 valid_to: jit_order.valid_to,

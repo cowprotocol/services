@@ -168,7 +168,7 @@ async fn insert_order(
         creation_timestamp: order.metadata.creation_date,
         sell_token: ByteArray(order.data.sell_token.0.0),
         buy_token: ByteArray(order.data.buy_token.0.0),
-        receiver: order.data.receiver.map(|addr| ByteArray(addr.0.0)),
+        receiver: Some(ByteArray(order.data.receiver.0.0)),
         sell_amount: u256_to_big_decimal(&order.data.sell_amount),
         buy_amount: u256_to_big_decimal(&order.data.buy_amount),
         valid_to: order.data.valid_to as i64,
@@ -652,7 +652,10 @@ fn full_order_with_quote_into_model_order(
     let data = OrderData {
         sell_token: Address::new(order.sell_token.0),
         buy_token: Address::new(order.buy_token.0),
-        receiver: order.receiver.map(|address| Address::new(address.0)),
+        receiver: order
+            .receiver
+            .map(|address| Address::new(address.0))
+            .unwrap_or_default(),
         sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
         buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,

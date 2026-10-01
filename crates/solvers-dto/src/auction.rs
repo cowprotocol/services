@@ -58,8 +58,8 @@ pub struct Order {
     pub penalty_cap_native: Option<U256>,
     pub valid_to: u32,
     pub kind: Kind,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver: Option<Address>,
+    #[serde(default)]
+    pub receiver: Address,
     pub owner: Address,
     pub partially_fillable: bool,
     pub pre_interactions: Vec<InteractionData>,

@@ -36,10 +36,10 @@ pub struct OrderSimulationRequest {
     pub kind: OrderKind,
     /// The address of the order's owner
     pub owner: Address,
-    /// The receiver of the `buy_token`. When this field is `None`, the receiver
-    /// is the same as the owner.
+    /// The receiver of the `buy_token`. The settlement contract treats
+    /// `0x0000…` as "pay the owner".
     #[serde(default)]
-    pub receiver: Option<Address>,
+    pub receiver: Address,
     /// Sell token's source — ERC20, internal vault or external vault (at the
     /// time of writing).
     #[serde(default)]
