@@ -325,8 +325,10 @@ impl Solver {
         self.config.timeouts
     }
 
-    /// Timeout configuration for `/quote` requests for this solver.
-    pub fn quote_timeouts(&self) -> Timeouts {
+    /// Timeout configuration for `/quote` requests. These are the same for
+    /// every solver because the driver doesn't do any per-solver
+    /// post-processing for quote responses.
+    pub fn quote_timeouts() -> Timeouts {
         Timeouts {
             // quote requests are tiny so the network buffer can be small
             http_delay: chrono::Duration::milliseconds(25),
@@ -398,7 +400,7 @@ impl Solver {
         let weth = self.eth.contracts().weth_address();
 
         let timeout_config = match auction.id {
-            auction::Kind::Quote(_) => self.quote_timeouts(),
+            auction::Kind::Quote(_) => Self::quote_timeouts(),
             auction::Kind::Competition(_) => self.solve_timeouts(),
         };
         let deadlines = auction.deadline(timeout_config);
