@@ -728,6 +728,7 @@ mod tests {
         },
         cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
         serde_json::Value,
+        solana_sdk::signer::keypair::Keypair,
         solana_testlib::multiple_accounts_json,
         std::slice,
     };
@@ -870,6 +871,24 @@ mod tests {
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
         assert_eq!(begin_input.orders.iter().count(), 1);
+    }
+
+    /// The unsigned transaction has the signed one's wire size.
+    #[tokio::test]
+    async fn unsigned_has_the_signed_wire_size() {
+        let program_id = pubkey(0xaa);
+        let signer = Signer::Keypair(Keypair::new());
+        let order = test_order(&program_id);
+        let uid = order.uid;
+        let settlement = test_settlement(&[order], &[trade(uid, 1_000, 2_000)]).unwrap();
+        let resolved = resolve_for_test(settlement);
+
+        let unsigned = resolved.unsigned(signer.pubkey()).unwrap();
+        let signed = resolved.encode(&signer, Hash::new_unique()).await.unwrap();
+        assert_eq!(
+            bincode::serialized_size(&unsigned).unwrap(),
+            bincode::serialized_size(&signed).unwrap()
+        );
     }
 
     /// The sell tokens are pulled into the payer's sell ATA, not a buffer, so
