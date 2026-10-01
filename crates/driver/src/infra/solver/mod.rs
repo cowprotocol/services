@@ -325,9 +325,7 @@ impl Solver {
         self.config.timeouts
     }
 
-    /// Timeout configuration for `/quote` requests. These are the same for
-    /// every solver because the driver doesn't do any per-solver
-    /// post-processing for quote responses.
+    /// Timeout configuration for `/quote` requests.
     pub fn quote_timeouts() -> Timeouts {
         Timeouts {
             // quote requests are tiny so the network buffer can be small
