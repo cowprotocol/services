@@ -1014,7 +1014,14 @@ impl Setup {
                 solutions: &solutions,
                 trusted: &trusted,
                 quoted_orders: &quotes,
-                deadline: time::Deadline::new(deadline, solver.timeouts),
+                deadline: time::Deadline::new(
+                    deadline,
+                    if self.quote {
+                        infra::solver::Solver::quote_timeouts()
+                    } else {
+                        solver.timeouts
+                    },
+                ),
                 quote: self.quote,
                 quote_id: self.quote.then_some(self.quote_id),
                 fee_handler: solver.fee_handler,
