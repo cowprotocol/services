@@ -6,6 +6,7 @@ description = "Which mints and token accounts the settlement program can move to
 
 [dependencies]
 cow-settlement-interface = { workspace = true }
+moka = { workspace = true, features = ["sync"] }
 solana-sdk = { workspace = true }
 spl-token-2022-interface = { workspace = true }
 

@@ -6,6 +6,7 @@
 
 use {
     cow_settlement_interface::token_program::TokenProgram,
+    moka::sync::Cache,
     solana_sdk::{account::Account, pubkey::Pubkey},
     spl_token_2022_interface::{
         extension::{
@@ -21,8 +22,15 @@ use {
         },
         state::{Account as TokenAccount, AccountState, Mint},
     },
-    std::fmt,
+    std::{collections::HashMap, fmt, time::Duration},
 };
+
+/// How long a mint's verdict stays cached. The freeze authority can flip the
+/// default account state at any time, and a missing mint can be created.
+const VERDICT_TTL: Duration = Duration::from_secs(60);
+
+/// How many mints the verdict cache holds.
+const VERDICT_CAPACITY: u64 = 10_000;
 
 /// Why the settlement program cannot move a mint's tokens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,33 +66,103 @@ impl fmt::Display for UnsettleableMint {
     }
 }
 
-/// Why the settlement program cannot move the tokens of the mint at
-/// `account`, `None` when it can.
+/// The settlement program's verdict on a mint: the token program it moves the
+/// mint's tokens through, or why it cannot move them.
+pub type MintVerdict = Result<TokenProgram, UnsettleableMint>;
+
+/// The verdict on the mint at `account`, which is `None` when the account
+/// does not exist.
 ///
 /// TODO(BE-344): a permanent delegate mint passes, although its issuer can
 /// move the buffer's balance of the token, retained fees included.
-pub fn unsettleable_mint(account: Option<&Account>) -> Option<UnsettleableMint> {
-    let Some(mint) = account
-        .filter(|account| TokenProgram::try_from(&account.owner).is_ok())
-        .and_then(|account| StateWithExtensions::<Mint>::unpack(&account.data).ok())
-    else {
-        return Some(UnsettleableMint::NotAMint);
+pub fn mint_verdict(account: Option<&Account>) -> MintVerdict {
+    let Some((program, mint)) = account.and_then(|account| {
+        let program = TokenProgram::try_from(&account.owner).ok()?;
+        let mint = StateWithExtensions::<Mint>::unpack(&account.data).ok()?;
+        Some((program, mint))
+    }) else {
+        return Err(UnsettleableMint::NotAMint);
     };
     if mint.get_extension::<TransferFeeConfig>().is_ok() {
-        Some(UnsettleableMint::TransferFee)
+        Err(UnsettleableMint::TransferFee)
     } else if mint.get_extension::<TransferHook>().is_ok() {
-        Some(UnsettleableMint::TransferHook)
+        Err(UnsettleableMint::TransferHook)
     } else if mint.get_extension::<PausableConfig>().is_ok() {
-        Some(UnsettleableMint::Pausable)
+        Err(UnsettleableMint::Pausable)
     } else if mint.get_extension::<NonTransferable>().is_ok() {
-        Some(UnsettleableMint::NonTransferable)
+        Err(UnsettleableMint::NonTransferable)
     } else if mint
         .get_extension::<DefaultAccountState>()
         .is_ok_and(|default| default.state == AccountState::Frozen as u8)
     {
-        Some(UnsettleableMint::FrozenByDefault)
+        Err(UnsettleableMint::FrozenByDefault)
     } else {
-        None
+        Ok(program)
+    }
+}
+
+/// The verdicts on the mints read so far, each kept for [`VERDICT_TTL`].
+/// Clones share one cache.
+#[derive(Clone)]
+pub struct MintVerdicts(Cache<Pubkey, MintVerdict>);
+
+impl Default for MintVerdicts {
+    fn default() -> Self {
+        Self(
+            Cache::builder()
+                .time_to_live(VERDICT_TTL)
+                .max_capacity(VERDICT_CAPACITY)
+                .build(),
+        )
+    }
+}
+
+impl MintVerdicts {
+    /// Start a lookup of `mints`: the cached verdicts are taken, the caller
+    /// reads [`MintLookup::unread`] from the chain and hands the accounts to
+    /// [`MintLookup::resolve`].
+    pub fn lookup(&self, mints: impl IntoIterator<Item = Pubkey>) -> MintLookup<'_> {
+        let mut lookup = MintLookup {
+            cache: self,
+            verdicts: HashMap::new(),
+            unread: Vec::new(),
+        };
+        for mint in mints {
+            match self.0.get(&mint) {
+                Some(verdict) => {
+                    lookup.verdicts.insert(mint, verdict);
+                }
+                None if lookup.unread.contains(&mint) => (),
+                None => lookup.unread.push(mint),
+            }
+        }
+        lookup
+    }
+}
+
+/// A lookup of mints in progress, see [`MintVerdicts::lookup`].
+pub struct MintLookup<'a> {
+    cache: &'a MintVerdicts,
+    verdicts: HashMap<Pubkey, MintVerdict>,
+    unread: Vec<Pubkey>,
+}
+
+impl MintLookup<'_> {
+    /// The mints without a cached verdict, in first-seen order, for the
+    /// caller's chain read.
+    pub fn unread(&self) -> impl Iterator<Item = Pubkey> + '_ {
+        self.unread.iter().copied()
+    }
+
+    /// Every mint's verdict. The unread mints are judged from `accounts`, a
+    /// mint absent from it as missing, and their verdicts are cached.
+    pub fn resolve(mut self, accounts: &HashMap<Pubkey, Account>) -> HashMap<Pubkey, MintVerdict> {
+        for mint in self.unread {
+            let verdict = mint_verdict(accounts.get(&mint));
+            self.cache.0.insert(mint, verdict);
+            self.verdicts.insert(mint, verdict);
+        }
+        self.verdicts
     }
 }
 
@@ -125,21 +203,28 @@ mod tests {
     };
 
     /// The program moves classic mints and Token-2022 mints whose extensions
-    /// leave a plain transfer alone, a permanent delegate included. Transfer
-    /// fee, transfer hook and pausable mints fail it, paused or not, and so do
-    /// non-transferable and frozen-by-default mints.
+    /// leave a plain transfer alone, a permanent delegate included, each under
+    /// its own token program. Transfer fee, transfer hook and pausable mints
+    /// fail it, paused or not, and so do non-transferable and
+    /// frozen-by-default mints.
     #[test]
     fn classifies_mints_by_their_extensions() {
         let with = |extension, init: fn(&mut StateWithExtensionsMut<Mint>)| {
-            unsettleable_mint(Some(&token_2022_mint(&[extension], init)))
+            mint_verdict(Some(&token_2022_mint(&[extension], init)))
         };
-        assert_eq!(unsettleable_mint(Some(&classic_mint(6))), None);
-        assert_eq!(unsettleable_mint(Some(&token_2022_mint(&[], |_| {}))), None);
+        assert_eq!(
+            mint_verdict(Some(&classic_mint(6))),
+            Ok(TokenProgram::SplToken)
+        );
+        assert_eq!(
+            mint_verdict(Some(&token_2022_mint(&[], |_| {}))),
+            Ok(TokenProgram::Token2022)
+        );
         assert_eq!(
             with(ExtensionType::MintCloseAuthority, |mint| {
                 mint.init_extension::<MintCloseAuthority>(true).unwrap();
             }),
-            None
+            Ok(TokenProgram::Token2022)
         );
         assert_eq!(
             with(ExtensionType::PermanentDelegate, |mint| {
@@ -147,37 +232,37 @@ mod tests {
                     .unwrap()
                     .delegate = Some(Pubkey::new_unique()).try_into().unwrap();
             }),
-            None
+            Ok(TokenProgram::Token2022)
         );
         assert_eq!(
             with(ExtensionType::TransferFeeConfig, |mint| {
                 mint.init_extension::<TransferFeeConfig>(true).unwrap();
             }),
-            Some(UnsettleableMint::TransferFee)
+            Err(UnsettleableMint::TransferFee)
         );
         assert_eq!(
             with(ExtensionType::TransferHook, |mint| {
                 mint.init_extension::<TransferHook>(true).unwrap();
             }),
-            Some(UnsettleableMint::TransferHook)
+            Err(UnsettleableMint::TransferHook)
         );
         assert_eq!(
             with(ExtensionType::Pausable, |mint| {
                 mint.init_extension::<PausableConfig>(true).unwrap().paused = true.into();
             }),
-            Some(UnsettleableMint::Pausable)
+            Err(UnsettleableMint::Pausable)
         );
         assert_eq!(
             with(ExtensionType::Pausable, |mint| {
                 mint.init_extension::<PausableConfig>(true).unwrap();
             }),
-            Some(UnsettleableMint::Pausable)
+            Err(UnsettleableMint::Pausable)
         );
         assert_eq!(
             with(ExtensionType::NonTransferable, |mint| {
                 mint.init_extension::<NonTransferable>(true).unwrap();
             }),
-            Some(UnsettleableMint::NonTransferable)
+            Err(UnsettleableMint::NonTransferable)
         );
         assert_eq!(
             with(ExtensionType::DefaultAccountState, |mint| {
@@ -185,7 +270,7 @@ mod tests {
                     .unwrap()
                     .state = AccountState::Frozen as u8;
             }),
-            Some(UnsettleableMint::FrozenByDefault)
+            Err(UnsettleableMint::FrozenByDefault)
         );
         assert_eq!(
             with(ExtensionType::DefaultAccountState, |mint| {
@@ -193,7 +278,7 @@ mod tests {
                     .unwrap()
                     .state = AccountState::Initialized as u8;
             }),
-            None
+            Ok(TokenProgram::Token2022)
         );
     }
 
@@ -205,18 +290,59 @@ mod tests {
             owner: Pubkey::new_unique(),
             ..classic_mint(6)
         };
-        assert_eq!(unsettleable_mint(None), Some(UnsettleableMint::NotAMint));
+        assert_eq!(mint_verdict(None), Err(UnsettleableMint::NotAMint));
         assert_eq!(
-            unsettleable_mint(Some(&token_2022_account(
+            mint_verdict(Some(&token_2022_account(
                 &Pubkey::new_unique(),
                 &[],
                 |_| {}
             ))),
-            Some(UnsettleableMint::NotAMint)
+            Err(UnsettleableMint::NotAMint)
         );
         assert_eq!(
-            unsettleable_mint(Some(&foreign)),
-            Some(UnsettleableMint::NotAMint)
+            mint_verdict(Some(&foreign)),
+            Err(UnsettleableMint::NotAMint)
+        );
+    }
+
+    /// The second lookup reads only the mint the first one did not judge:
+    /// the cached verdicts stand without an account, and a mint missing from
+    /// the accounts handed in is judged missing.
+    #[test]
+    fn a_lookup_reads_only_the_mints_without_a_cached_verdict() {
+        let cache = MintVerdicts::default();
+        let (classic, fee, absent) = (
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+        );
+        let fee_mint = token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
+            mint.init_extension::<TransferFeeConfig>(true).unwrap();
+        });
+
+        let lookup = cache.lookup([classic, fee, classic]);
+        assert_eq!(lookup.unread().collect::<Vec<_>>(), [classic, fee]);
+        let verdicts = lookup.resolve(&HashMap::from([
+            (classic, classic_mint(6)),
+            (fee, fee_mint),
+        ]));
+        assert_eq!(
+            verdicts,
+            HashMap::from([
+                (classic, Ok(TokenProgram::SplToken)),
+                (fee, Err(UnsettleableMint::TransferFee)),
+            ])
+        );
+
+        let lookup = cache.lookup([classic, fee, absent]);
+        assert_eq!(lookup.unread().collect::<Vec<_>>(), [absent]);
+        assert_eq!(
+            lookup.resolve(&HashMap::new()),
+            HashMap::from([
+                (classic, Ok(TokenProgram::SplToken)),
+                (fee, Err(UnsettleableMint::TransferFee)),
+                (absent, Err(UnsettleableMint::NotAMint)),
+            ])
         );
     }
 

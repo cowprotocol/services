@@ -11,11 +11,11 @@ use {
     cow_solana_rpc::SolanaRPC,
     database::solana::OrderEventLabel,
     solana_sdk::{account::Account, pubkey::Pubkey, rent::Rent},
-    solana_token::{receivable_token_account, unsettleable_mint},
+    solana_token::{MintVerdict, MintVerdicts, receivable_token_account},
     spl_token_interface::native_mint,
     sqlx::PgPool,
     std::{
-        collections::HashSet,
+        collections::{HashMap, HashSet},
         time::{SystemTime, UNIX_EPOCH},
     },
 };
@@ -27,6 +27,8 @@ pub struct DbAuctionProvider {
     /// Slots the indexer may lag behind the tip before cuts are skipped.
     max_indexer_lag: u64,
     prices: NativePrices,
+    /// The verdicts on the mints the cuts read so far.
+    mints: MintVerdicts,
 }
 
 impl DbAuctionProvider {
@@ -36,35 +38,46 @@ impl DbAuctionProvider {
             rpc,
             max_indexer_lag,
             prices,
+            mints: MintVerdicts::default(),
         }
     }
 
-    /// Drop orders whose settlement would revert. The program must be able to
-    /// move the sell and buy mints, and the buy token account must receive the
-    /// payout at `FinalizeSettle`. A native SOL buy pays a wallet instead,
-    /// which must be missing or owned by the System Program. A pending
-    /// sponsored token buy skips the account check, its creation transaction
-    /// creates the buy token account. The mints and the accounts share one
-    /// lookup. When it fails every order passes, a doomed order then costs one
-    /// failed settlement instead of the whole cut. Returns the kept orders and
-    /// the uids of those dropped for a mint.
-    async fn receivable_orders(&self, orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
-        let checked = |order: &Order| order.created_on_chain || order.buys_native_sol();
+    /// Drop orders whose settlement would revert: those on a mint the program
+    /// cannot move, then those whose buy token account cannot receive the
+    /// payout. The mints without a cached verdict and the buy token accounts
+    /// share one lookup. When it fails every order passes, a doomed order then
+    /// costs one failed settlement instead of the whole cut.
+    async fn checked_orders(&self, orders: Vec<Order>) -> Vec<Order> {
+        let lookup = self.mints.lookup(orders.iter().flat_map(token_mints));
         let buy_accounts = orders
             .iter()
-            .filter(|order| checked(order))
+            .filter(|order| buy_account_checked(order))
             .map(|order| Pubkey::new_from_array(order.buy_token_account.0));
-        let mints = orders.iter().flat_map(token_mints);
-        let accounts = match self.rpc.multiple_accounts(buy_accounts.chain(mints)).await {
+        let accounts = match self
+            .rpc
+            .multiple_accounts(buy_accounts.chain(lookup.unread()))
+            .await
+        {
             Ok(accounts) => accounts,
             Err(err) => {
                 tracing::warn!(?err, "order account lookup failed, keeping all orders");
-                return (orders, Vec::new());
+                return orders;
             }
         };
+        let orders = self.settleable_orders(orders, &lookup.resolve(&accounts));
+        receivable_orders(orders, &accounts)
+    }
+
+    /// Drop orders on a sell or buy mint the program cannot move, with a
+    /// `Filtered` event each.
+    fn settleable_orders(
+        &self,
+        orders: Vec<Order>,
+        verdicts: &HashMap<Pubkey, MintVerdict>,
+    ) -> Vec<Order> {
         let (orders, unsettleable): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
-            let unsettleable = token_mints(order)
-                .find_map(|mint| Some((mint, unsettleable_mint(accounts.get(&mint))?)));
+            let unsettleable =
+                token_mints(order).find_map(|mint| Some((mint, verdicts.get(&mint)?.err()?)));
             if let Some((mint, reason)) = unsettleable {
                 metrics().unsettleable_orders.inc();
                 tracing::debug!(
@@ -76,42 +89,58 @@ impl DbAuctionProvider {
             }
             unsettleable.is_none()
         });
-        let orders = orders
-            .into_iter()
-            .filter(|order| {
-                if !checked(order) {
-                    return true;
-                }
-                let account = Pubkey::new_from_array(order.buy_token_account.0);
-                let receivable = match accounts.get(&account) {
-                    found if order.buys_native_sol() => found.is_none_or(receivable_wallet),
-                    Some(found) => {
-                        receivable_token_account(found, &Pubkey::new_from_array(order.buy_token.0))
-                    }
-                    None => false,
-                    // TODO: flip on once the buy token account rent is priced,
-                    // with the program that owns the buy mint account.
-                    // None => account == associated_token_address(order, &program),
-                };
-                if !receivable {
-                    // A doomed order repeats this on every cut until it
-                    // expires: the counter is the alerting signal, the log
-                    // line stays at debug.
-                    metrics().unreceivable_orders.inc();
-                    tracing::debug!(
-                        order = %order.uid,
-                        %account,
-                        "excluding order, its buy token account cannot receive the payout"
-                    );
-                }
-                receivable
-            })
-            .collect();
-        (
-            orders,
-            unsettleable.into_iter().map(|order| order.uid).collect(),
-        )
+        if !unsettleable.is_empty() {
+            order_events::store_detached(
+                self.pool.clone(),
+                unsettleable.into_iter().map(|order| order.uid).collect(),
+                OrderEventLabel::Filtered,
+            );
+        }
+        orders
     }
+}
+
+/// Whether the cut checks the order's buy token account. A pending sponsored
+/// token buy skips the check, its creation transaction creates the account.
+fn buy_account_checked(order: &Order) -> bool {
+    order.created_on_chain || order.buys_native_sol()
+}
+
+/// Drop orders whose buy token account cannot receive the payout at
+/// `FinalizeSettle`. A native SOL buy pays a wallet instead, which must be
+/// missing or owned by the System Program.
+fn receivable_orders(orders: Vec<Order>, accounts: &HashMap<Pubkey, Account>) -> Vec<Order> {
+    orders
+        .into_iter()
+        .filter(|order| {
+            if !buy_account_checked(order) {
+                return true;
+            }
+            let account = Pubkey::new_from_array(order.buy_token_account.0);
+            let receivable = match accounts.get(&account) {
+                found if order.buys_native_sol() => found.is_none_or(receivable_wallet),
+                Some(found) => {
+                    receivable_token_account(found, &Pubkey::new_from_array(order.buy_token.0))
+                }
+                None => false,
+                // TODO: flip on once the buy token account rent is priced,
+                // with the program that owns the buy mint account.
+                // None => account == associated_token_address(order, &program),
+            };
+            if !receivable {
+                // A doomed order repeats this on every cut until it
+                // expires: the counter is the alerting signal, the log
+                // line stays at debug.
+                metrics().unreceivable_orders.inc();
+                tracing::debug!(
+                    order = %order.uid,
+                    %account,
+                    "excluding order, its buy token account cannot receive the payout"
+                );
+            }
+            receivable
+        })
+        .collect()
 }
 
 fn now_unix() -> i64 {
@@ -194,14 +223,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                 OrderEventLabel::Filtered,
             );
         }
-        let (orders, unsettleable) = self.receivable_orders(payable_orders(orders)).await;
-        if !unsettleable.is_empty() {
-            order_events::store_detached(
-                self.pool.clone(),
-                unsettleable,
-                OrderEventLabel::Filtered,
-            );
-        }
+        let orders = self.checked_orders(payable_orders(orders)).await;
         if orders.is_empty() {
             return None;
         }
@@ -393,9 +415,11 @@ mod tests {
         }
     }
 
+    /// Nothing listens on the pool's port, so the detached event writes fail
+    /// instead of landing anywhere.
     fn provider(mocks: Mocks) -> DbAuctionProvider {
         DbAuctionProvider::new(
-            sqlx::PgPool::connect_lazy("postgresql://").unwrap(),
+            sqlx::PgPool::connect_lazy("postgresql://127.0.0.1:1/").unwrap(),
             SolanaRPC::new_mock_with_mocks(mocks),
             150,
             NativePrices::seeded([]),
@@ -432,9 +456,8 @@ mod tests {
             order(ata, true),
         ];
         let kept: Vec<[u8; 32]> = provider
-            .receivable_orders(orders)
+            .checked_orders(orders)
             .await
-            .0
             .iter()
             .map(|order| order.buy_token_account.0)
             .collect();
@@ -477,9 +500,8 @@ mod tests {
             native([0x04; 32], false),
         ];
         let kept: Vec<[u8; 32]> = provider
-            .receivable_orders(orders)
+            .checked_orders(orders)
             .await
-            .0
             .iter()
             .map(|order| order.buy_token_account.0)
             .collect();
@@ -526,12 +548,13 @@ mod tests {
             serde_json::json!("not an account list"),
         )]));
         let orders = vec![order([0x01; 32], true)];
-        assert_eq!(provider.receivable_orders(orders).await.0.len(), 1);
+        assert_eq!(provider.checked_orders(orders).await.len(), 1);
     }
 
     /// Orders on a mint the program cannot move stay out, on either side of
-    /// the trade, and their uids come back for the `Filtered` event. A mint
-    /// missing from the lookup counts as one the program cannot move.
+    /// the trade. A mint missing from the lookup counts as one the program
+    /// cannot move. A later cut reuses the cached verdicts: the mock has no
+    /// answer left, so reading the mints again would judge them all missing.
     #[tokio::test]
     async fn drops_orders_on_mints_the_program_cannot_move() {
         let fee_mint = token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
@@ -565,20 +588,12 @@ mod tests {
                 ..order([0x04; 32], false)
             },
         ];
+        let uids = |orders: &[Order]| orders.iter().map(|order| order.uid).collect::<Vec<_>>();
 
-        let (kept, unsettleable) = provider.receivable_orders(orders).await;
-        assert_eq!(
-            kept.iter().map(|order| order.uid).collect::<Vec<_>>(),
-            [IntentHash([0x01; 32])]
-        );
-        assert_eq!(
-            unsettleable,
-            [
-                IntentHash([0x02; 32]),
-                IntentHash([0x03; 32]),
-                IntentHash([0x04; 32])
-            ]
-        );
+        let kept = provider.checked_orders(orders.clone()).await;
+        assert_eq!(uids(&kept), [IntentHash([0x01; 32])]);
+        let kept = provider.checked_orders(orders).await;
+        assert_eq!(uids(&kept), [IntentHash([0x01; 32])]);
     }
 
     /// The watermark trips past the allowed lag, on a never-written indexer,

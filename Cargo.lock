@@ -10331,6 +10331,7 @@ name = "solana-token"
 version = "0.1.0"
 dependencies = [
  "cow-settlement-interface",
+ "moka",
  "solana-sdk",
  "solana-testlib",
  "spl-token-2022-interface 2.1.0",
