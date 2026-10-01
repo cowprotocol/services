@@ -558,7 +558,16 @@ impl Solution {
         simulator: &Simulator,
         solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
-        Settlement::new(self, auction, eth, simulator, solver_native_token).await
+        let auction_id = auction.auction_id().ok_or(Error::MissingAuctionId)?;
+        Settlement::new(
+            self,
+            auction,
+            auction_id,
+            eth,
+            simulator,
+            solver_native_token,
+        )
+        .await
     }
 
     /// Swap this quote solution's single user order for the real signed
@@ -840,6 +849,8 @@ pub mod error {
         FastPathLimitNotMet,
         #[error(transparent)]
         Math(#[from] Math),
+        #[error("auction has no id (quote auctions cannot be settled)")]
+        MissingAuctionId,
     }
 
     // Custom conversion function because clippy wants us to box this

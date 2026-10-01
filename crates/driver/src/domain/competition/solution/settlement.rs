@@ -83,6 +83,7 @@ impl Settlement {
     pub(super) async fn new(
         solution: competition::Solution,
         auction: &competition::Auction,
+        auction_id: auction::Id,
         eth: &Ethereum,
         simulator: &Simulator,
         solver_native_token: ManageNativeToken,
@@ -111,7 +112,6 @@ impl Settlement {
             return Err(Error::NonBufferableTokensUsed(untrusted_tokens));
         }
 
-        let auction_id = auction.auction_id().unwrap();
         let native_prices = auction.native_prices();
 
         // Encode a reference internalized transaction (no deadline
