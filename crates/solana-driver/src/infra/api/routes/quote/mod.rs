@@ -39,7 +39,7 @@ pub(crate) async fn quote(
 
     let solutions = state
         .competition()
-        .compute_solutions(&auction)
+        .compute_solutions(&auction, &Default::default())
         .instrument(tracing::info_span!(
             "/quote",
             solver = %state.competition().solver_name(),

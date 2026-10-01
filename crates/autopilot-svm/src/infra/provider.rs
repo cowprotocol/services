@@ -10,8 +10,11 @@ use {
     chain_types::solana::{IntentHash, Pubkey as ChainPubkey},
     cow_solana_rpc::SolanaRPC,
     database::solana::OrderEventLabel,
-    solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey},
-    spl_token_interface::state::{Account as TokenAccount, AccountState},
+    solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey, rent::Rent},
+    spl_token_interface::{
+        native_mint,
+        state::{Account as TokenAccount, AccountState},
+    },
     sqlx::PgPool,
     std::{
         collections::HashSet,
@@ -39,15 +42,17 @@ impl DbAuctionProvider {
     }
 
     /// Drop orders whose buy token account cannot receive the settlement
-    /// payout: their settlement would revert at `FinalizeSettle`. Only orders
-    /// already created on chain are checked, a pending sponsored order
-    /// creates its own accounts at settlement time. When the account lookup
+    /// payout: their settlement would revert at `FinalizeSettle`. A native SOL
+    /// buy pays a wallet instead, which must be missing or owned by the System
+    /// Program. A pending sponsored token buy skips the check, its creation
+    /// transaction creates the buy token account. When the account lookup
     /// fails every order passes, a doomed order then costs one failed
     /// settlement instead of the whole cut.
     async fn receivable_orders(&self, orders: Vec<Order>) -> Vec<Order> {
+        let checked = |order: &Order| order.created_on_chain || order.buys_native_sol();
         let candidates = orders
             .iter()
-            .filter(|order| order.created_on_chain)
+            .filter(|order| checked(order))
             .map(|order| Pubkey::new_from_array(order.buy_token_account.0));
         let accounts = match self.rpc.multiple_accounts(candidates).await {
             Ok(accounts) => accounts,
@@ -59,13 +64,17 @@ impl DbAuctionProvider {
         orders
             .into_iter()
             .filter(|order| {
-                if !order.created_on_chain {
+                if !checked(order) {
                     return true;
                 }
                 let account = Pubkey::new_from_array(order.buy_token_account.0);
-                let receivable = accounts
-                    .get(&account)
-                    .is_some_and(|found| receivable_token_account(found, order.buy_token.0));
+                let receivable = match accounts.get(&account) {
+                    found if order.buys_native_sol() => found.is_none_or(receivable_wallet),
+                    Some(found) => receivable_token_account(found, order.buy_token.0),
+                    None => false,
+                    // TODO: flip on once the buy token account rent is priced.
+                    // None => account == associated_token_address(order),
+                };
                 if !receivable {
                     // A doomed order repeats this on every cut until it
                     // expires: the counter is the alerting signal, the log
@@ -163,7 +172,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                 OrderEventLabel::Filtered,
             );
         }
-        let orders = self.receivable_orders(orders).await;
+        let orders = self.receivable_orders(payable_orders(orders)).await;
         if orders.is_empty() {
             return None;
         }
@@ -233,6 +242,9 @@ struct Metrics {
     /// Orders excluded from auction cuts because their buy token account
     /// cannot receive the payout.
     unreceivable_orders: prometheus::IntCounter,
+    /// Native SOL buys excluded from auction cuts because the settlement
+    /// cannot pay them out.
+    unpayable_native_buys: prometheus::IntCounter,
     /// Auction cuts skipped because the indexer lags beyond the watermark.
     /// The loop keeps spinning and stays live through a skip, so this
     /// counter is the alerting signal for a stalled indexer.
@@ -256,6 +268,26 @@ fn indexer_lags(tip: u64, indexed: Option<i64>, max_lag: u64) -> bool {
     tip.saturating_sub(indexed) > max_lag
 }
 
+/// The order owner's associated token account for the buy mint under the
+/// classic SPL token program, the one account a settlement can create for
+/// the payout when it does not exist yet.
+/// TODO(token-2022): a token-2022 mint derives a different address, so its
+/// missing account is dropped here, like the driver cannot settle it yet.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the receivable check that uses it is held until solvers price the ATA rent"
+    )
+)]
+fn associated_token_address(order: &Order) -> Pubkey {
+    spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+        &Pubkey::new_from_array(order.owner.0),
+        &Pubkey::new_from_array(order.buy_token.0),
+        &spl_token_interface::ID,
+    )
+}
+
 /// An initialized, unfrozen account of the classic SPL token program holding
 /// the order's buy mint: anything else reverts the payout at settlement.
 /// TODO(token-2022): accounts of the token-2022 program are dropped here,
@@ -267,12 +299,44 @@ fn receivable_token_account(account: &Account, buy_mint: [u8; 32]) -> bool {
         })
 }
 
+/// Drop native SOL buys the settlement cannot pay out. A payout under the
+/// rent-exempt minimum of an empty wallet reverts the whole settlement, and a
+/// partial fill can land under it. A wSOL sell reaches solvers as wSOL for
+/// wSOL.
+fn payable_orders(mut orders: Vec<Order>) -> Vec<Order> {
+    // TODO: use the cluster's rent, refreshed periodically. The SDK default is
+    // above it since SIMD-0437, so this floor also drops small payouts that
+    // would settle.
+    let min_payout = Rent::default().minimum_balance(0);
+    orders.retain(|order| {
+        let payable = !order.buys_native_sol()
+            || (order.buy_amount >= min_payout
+                && !order.partially_fillable
+                && order.sell_token.0 != native_mint::ID.to_bytes());
+        if !payable {
+            metrics().unpayable_native_buys.inc();
+            tracing::debug!(
+                order = %order.uid,
+                "excluding native SOL buy, the settlement cannot pay it out"
+            );
+        }
+        payable
+    });
+    orders
+}
+
+/// Whether `account` is a System Program wallet. Lamports paid to a program
+/// or a sysvar revert the settlement, a program-owned account strands them.
+fn receivable_wallet(account: &Account) -> bool {
+    account.owner == solana_system_interface::program::ID
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
         crate::domain::auction::OrderKind,
-        chain_types::solana::{AppData, IntentHash, Pubkey as ChainPubkey},
+        chain_types::solana::{AppData, IntentHash, NATIVE_SOL, Pubkey as ChainPubkey},
         cow_solana_rpc::{Mocks, RpcRequest},
     };
 
@@ -304,9 +368,12 @@ mod tests {
         )
     }
 
-    /// The lookup answers for the three created orders in candidate order:
-    /// initialized with the buy mint, initialized with a wrong mint, absent.
-    /// The pending sponsored order is exempt from the check.
+    /// The lookup answers for the four created orders in candidate order:
+    /// initialized with the buy mint, initialized with a wrong mint, absent
+    /// at an arbitrary address, absent at the owner's associated token
+    /// address. An absent account is dropped either way while the settlement
+    /// creating it is held. The pending sponsored order is exempt from the
+    /// check.
     #[tokio::test]
     async fn drops_created_orders_with_unreceivable_buy_accounts() {
         let response = serde_json::json!({
@@ -315,22 +382,99 @@ mod tests {
                 crate::tests::token_account_json([0x44; 32]),
                 crate::tests::token_account_json([0x99; 32]),
                 null,
+                null,
             ],
         });
         let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
+        let ata = associated_token_address(&order([0; 32], true)).to_bytes();
         let orders = vec![
             order([0x01; 32], true),
             order([0x02; 32], false),
             order([0x03; 32], true),
             order([0x04; 32], true),
+            order(ata, true),
         ];
-        let kept: Vec<u8> = provider
+        let kept: Vec<[u8; 32]> = provider
             .receivable_orders(orders)
             .await
             .iter()
-            .map(|order| order.buy_token_account.0[0])
+            .map(|order| order.buy_token_account.0)
             .collect();
-        assert_eq!(kept, [0x01, 0x02]);
+        assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
+    }
+
+    /// A native SOL buy pays its wallet directly: a missing or system-owned
+    /// wallet receives it, an account of another program does not. A pending
+    /// sponsored native buy gets the same check.
+    #[tokio::test]
+    async fn native_buys_pay_system_wallets() {
+        let system_wallet = serde_json::json!({
+            "lamports": 1_000_000u64,
+            "data": ["", "base64"],
+            "owner": "11111111111111111111111111111111",
+            "executable": false,
+            "rentEpoch": 0u64,
+            "space": 0u64,
+        });
+        let response = serde_json::json!({
+            "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+            "value": [
+                null,
+                system_wallet,
+                crate::tests::token_account_json([0x44; 32]),
+                crate::tests::token_account_json([0x44; 32]),
+            ],
+        });
+        let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
+        let native = |wallet, created_on_chain| Order {
+            buy_token: NATIVE_SOL,
+            ..order(wallet, created_on_chain)
+        };
+        let orders = vec![
+            native([0x01; 32], true),
+            native([0x02; 32], true),
+            native([0x03; 32], true),
+            native([0x04; 32], false),
+        ];
+        let kept: Vec<[u8; 32]> = provider
+            .receivable_orders(orders)
+            .await
+            .iter()
+            .map(|order| order.buy_token_account.0)
+            .collect();
+        assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
+    }
+
+    /// Native SOL buys stay out under the rent-exempt minimum of an empty
+    /// account, when partially fillable, and when they sell wSOL. Token buys
+    /// pass whatever their amount.
+    #[test]
+    fn drops_native_buys_the_settlement_cannot_pay() {
+        let native = |buy_amount| Order {
+            buy_token: NATIVE_SOL,
+            buy_amount,
+            ..order([0x01; 32], true)
+        };
+        let orders = vec![
+            native(890_880),
+            native(890_879),
+            Order {
+                partially_fillable: true,
+                ..native(1_000_000_000)
+            },
+            Order {
+                sell_token: ChainPubkey(native_mint::ID.to_bytes()),
+                ..native(1_000_000_000)
+            },
+            Order {
+                buy_amount: 1,
+                ..order([0x02; 32], true)
+            },
+        ];
+        assert_eq!(
+            payable_orders(orders.clone()),
+            [orders[0].clone(), orders[4].clone()]
+        );
     }
 
     /// A failed lookup (here a malformed response) keeps every order.

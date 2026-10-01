@@ -77,12 +77,17 @@ impl AccountsSnapshot {
 
     /// The token program of the mint at `mint`: the account's owner, when it is
     /// one of the two token programs and the data reads as an initialized
-    /// mint. `None` for a missing account or anything else.
-    pub fn mint_token_program(&self, mint: &Pubkey) -> Option<TokenProgram> {
-        let account = self.accounts.get(mint)?;
-        let program = TokenProgram::try_from(&account.owner).ok()?;
-        StateWithExtensions::<Mint>::unpack(&account.data).ok()?;
-        Some(program)
+    /// mint.
+    pub fn mint_token_program(&self, mint: &Pubkey) -> Result<TokenProgram, InvalidMintReason> {
+        let account = self
+            .accounts
+            .get(mint)
+            .ok_or(InvalidMintReason::AccountNotFound)?;
+        let program =
+            TokenProgram::try_from(&account.owner).map_err(|_| InvalidMintReason::NotAMint)?;
+        StateWithExtensions::<Mint>::unpack(&account.data)
+            .map_err(|_| InvalidMintReason::NotAMint)?;
+        Ok(program)
     }
 
     /// Classify the state of the token account at `address` for a caller that
@@ -121,6 +126,15 @@ impl AccountsSnapshot {
             },
         }
     }
+
+    /// Whether the token account at `address` must be created before it can
+    /// hold tokens, see [`Self::token_account_state`].
+    pub fn token_account_needs_creation(&self, address: Pubkey) -> bool {
+        matches!(
+            self.token_account_state(&address),
+            TokenAccountState::NeedsCreation
+        )
+    }
 }
 
 /// The observed state of a token account, for a caller that creates missing
@@ -138,6 +152,18 @@ pub enum TokenAccountState {
     /// caller cannot use this account, and an idempotent create cannot
     /// replace it.
     Unexpected { owner: Pubkey, data_len: usize },
+}
+
+/// Why the snapshot rejected an account as a mint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum InvalidMintReason {
+    /// The account does not exist on chain.
+    #[error("account not found")]
+    AccountNotFound,
+    /// Neither token program owns the account, or its data does not read as
+    /// an initialized mint.
+    #[error("not a mint of either token program")]
+    NotAMint,
 }
 
 /// Why the snapshot rejected an account as an address lookup table.
@@ -463,14 +489,16 @@ mod tests {
         ]);
         assert_eq!(
             snapshot.mint_token_program(&spl),
-            Some(TokenProgram::SplToken)
+            Ok(TokenProgram::SplToken)
         );
         assert_eq!(
             snapshot.mint_token_program(&token_2022),
-            Some(TokenProgram::Token2022)
+            Ok(TokenProgram::Token2022)
         );
     }
 
+    /// A missing account is told apart from a token account or an account of
+    /// another program at a mint's address.
     #[test]
     fn only_a_token_program_mint_has_a_token_program() {
         let (token_account, foreign) = (pubkey(0x11), pubkey(0x12));
@@ -484,8 +512,17 @@ mod tests {
                 },
             ),
         ]);
-        assert_eq!(snapshot.mint_token_program(&pubkey(0x13)), None);
-        assert_eq!(snapshot.mint_token_program(&token_account), None);
-        assert_eq!(snapshot.mint_token_program(&foreign), None);
+        assert_eq!(
+            snapshot.mint_token_program(&pubkey(0x13)),
+            Err(InvalidMintReason::AccountNotFound)
+        );
+        assert_eq!(
+            snapshot.mint_token_program(&token_account),
+            Err(InvalidMintReason::NotAMint)
+        );
+        assert_eq!(
+            snapshot.mint_token_program(&foreign),
+            Err(InvalidMintReason::NotAMint)
+        );
     }
 }

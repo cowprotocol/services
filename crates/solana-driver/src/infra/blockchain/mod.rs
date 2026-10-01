@@ -8,7 +8,12 @@ mod accounts;
 mod token;
 
 pub use {
-    accounts::{AccountsSnapshot, InvalidAddressLookupTableReason, TokenAccountState},
+    accounts::{
+        AccountsSnapshot,
+        InvalidAddressLookupTableReason,
+        InvalidMintReason,
+        TokenAccountState,
+    },
     token::{
         associated_token_address,
         close_token_account,
@@ -99,27 +104,44 @@ impl Solana {
     }
 
     /// The token program of each of `mints`, fetching only the mints missing
-    /// from the cache. A mint that does not exist or is not a mint of either
-    /// token program is absent from the map.
+    /// from the cache. Only resolved programs are cached: a mint that is
+    /// missing or invalid is read again next time.
     pub async fn token_programs(
         &self,
         mints: impl IntoIterator<Item = Pubkey>,
-    ) -> Result<HashMap<Pubkey, TokenProgram>, Error> {
+    ) -> Result<MintPrograms, Error> {
         let (mut programs, unknown): (HashMap<_, _>, Vec<_>) =
             mints
                 .into_iter()
                 .partition_map(|mint| match self.token_programs.get(&mint) {
-                    Some(program) => Either::Left((mint, program)),
+                    Some(program) => Either::Left((mint, Ok(program))),
                     None => Either::Right(mint),
                 });
         let accounts = self.accounts_snapshot(unknown.iter().copied()).await?;
         for mint in unknown {
-            if let Some(program) = accounts.mint_token_program(&mint) {
+            let program = accounts.mint_token_program(&mint);
+            if let Ok(program) = program {
                 self.token_programs.insert(mint, program);
-                programs.insert(mint, program);
             }
+            programs.insert(mint, program);
         }
-        Ok(programs)
+        Ok(MintPrograms(programs))
+    }
+}
+
+/// The token program of each mint passed to [`Solana::token_programs`], or
+/// why the mint has none.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MintPrograms(HashMap<Pubkey, Result<TokenProgram, InvalidMintReason>>);
+
+impl MintPrograms {
+    /// `mint`'s token program. A mint that was not looked up reads as not
+    /// found.
+    pub fn get(&self, mint: Pubkey) -> Result<TokenProgram, InvalidMintReason> {
+        self.0
+            .get(&mint)
+            .copied()
+            .unwrap_or(Err(InvalidMintReason::AccountNotFound))
     }
 }
 
@@ -142,7 +164,10 @@ mod tests {
         )]);
         let solana = Solana::new(SolanaRPC::new_mock_with_mocks(mocks), Pubkey::new_unique());
 
-        let expected = HashMap::from([(mint, TokenProgram::SplToken)]);
+        let expected = MintPrograms(HashMap::from([
+            (mint, Ok(TokenProgram::SplToken)),
+            (absent, Err(InvalidMintReason::AccountNotFound)),
+        ]));
         assert_eq!(
             solana.token_programs([mint, absent]).await.unwrap(),
             expected
@@ -150,6 +175,10 @@ mod tests {
         assert_eq!(
             solana.token_programs([mint, absent]).await.unwrap(),
             expected
+        );
+        assert_eq!(
+            MintPrograms::default().get(mint),
+            Err(InvalidMintReason::AccountNotFound)
         );
     }
 }

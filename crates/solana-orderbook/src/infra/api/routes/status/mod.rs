@@ -3,6 +3,7 @@
 pub mod dto;
 
 use {
+    super::order::{self, now_unix},
     crate::infra::{
         api::{State, error, extract},
         db,
@@ -34,6 +35,12 @@ pub async fn order_status(
     // Cancellation is on-chain state, no auction event records it.
     if row.cancellation_timestamp.is_some() {
         return Ok(Json(dto::Status::Cancelled));
+    }
+    // Expiry depends on the clock and the chain height, no auction event
+    // records it.
+    let block_height = order::block_height_for(&state, &row).await;
+    if order::dto::status(&row, now_unix(), block_height) == order::dto::Status::Expired {
+        return Ok(Json(dto::Status::Expired));
     }
     if let Some(label) = db::find_latest_order_event(state.pool(), uid)
         .await

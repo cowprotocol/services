@@ -80,6 +80,7 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::DeadlineExceeded => Kind::DeadlineExceeded,
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
             competition::Error::Rpc(_) => Kind::Unknown,
+            competition::Error::BuyTokenAccounts(_) => Kind::Unknown,
             competition::Error::FailedToSubmit { .. } => Kind::FailedToSubmit,
             competition::Error::FailedToCreate(_) => Kind::FailedToCreate,
             competition::Error::SimulationFailed { .. } => Kind::SimulationFailed,
@@ -91,7 +92,8 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::Settlement(error) => match error {
                 settlement::Error::Compile(_)
                 | settlement::Error::Sign(_)
-                | settlement::Error::InstructionIndexOverflow => Kind::Unknown,
+                | settlement::Error::InstructionIndexOverflow
+                | settlement::Error::UnresolvedMint(_) => Kind::Unknown,
                 settlement::Error::NoTradeForOrder(_)
                 | settlement::Error::NoOrderForTrade(_)
                 | settlement::Error::ExecutedAmountOverflow
