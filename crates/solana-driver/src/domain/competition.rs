@@ -8,6 +8,7 @@ use {
         auction::Id,
         buy_token_accounts::BuyTokenAccountCache,
         order_uid::OrderUid,
+        priority_fee::{self, PriorityFeePolicy},
         solution::Solution,
     },
     crate::infra::{blockchain::Solana, solver::Solver},
@@ -63,6 +64,7 @@ pub(crate) struct Competition {
     /// Shared with the driver's other solver engines, which solve the same
     /// auction.
     buy_token_accounts: BuyTokenAccountCache,
+    priority_fee: PriorityFeePolicy,
     solutions: Cache<Key, CachedSolution>,
 }
 
@@ -71,11 +73,13 @@ impl Competition {
         solver: Solver,
         blockchain: Arc<Solana>,
         buy_token_accounts: BuyTokenAccountCache,
+        priority_fee: PriorityFeePolicy,
     ) -> Self {
         Self {
             solver,
             blockchain,
             buy_token_accounts,
+            priority_fee,
             solutions: Cache::builder().time_to_live(SOLUTION_CACHE_TTL).build(),
         }
     }
@@ -160,7 +164,8 @@ impl Competition {
     }
 
     /// The wire size of the solution's settlement transaction, `None` when
-    /// it cannot be built. The blockhash does not change the size.
+    /// it cannot be built. Neither the blockhash nor the compute unit price
+    /// changes the size.
     async fn transaction_size(
         &self,
         auction_id: Id,
@@ -180,7 +185,7 @@ impl Competition {
             .await
             .ok()?;
         let transaction = resolved
-            .encode(self.solver.keypair(), Hash::default())
+            .encode(self.solver.keypair(), Hash::default(), 0)
             .ok()?;
         encoded_size(&transaction)
     }
@@ -364,12 +369,18 @@ impl Competition {
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?;
 
+        let estimate = self.estimate_priority_fee(&resolved, cu_estimate).await?;
+
         let latest = self
             .blockchain
             .latest_confirmed_blockhash()
             .await
             .map_err(Error::Rpc)?;
-        let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
+        let transaction = resolved.encode(
+            self.solver.keypair(),
+            latest.blockhash,
+            estimate.compute_unit_price,
+        )?;
         if let Some(size) = observe_transaction(&transaction, cu_estimate)
             && size > MAX_TRANSACTION_BYTES
         {
@@ -504,6 +515,31 @@ impl Competition {
         }))
         .await?;
         Ok(())
+    }
+
+    /// The priority fee for the settlement transaction, from the fees recently
+    /// paid over the accounts it writes.
+    async fn estimate_priority_fee(
+        &self,
+        resolved: &super::settlement::ResolvedSettlement,
+        cu_estimate: Option<u32>,
+    ) -> Result<priority_fee::Estimate, Error> {
+        let writable = resolved.writable_accounts(self.solver.pubkey())?;
+        let fees = self
+            .blockchain
+            .recent_prioritization_fees(&writable)
+            .await
+            .map_err(Error::Rpc)?;
+        let estimate = self.priority_fee.estimate(&fees, cu_estimate)?;
+        metrics()
+            .compute_unit_price
+            .observe(estimate.compute_unit_price as f64);
+        tracing::info!(
+            compute_unit_price = estimate.compute_unit_price,
+            priority_fee_lamports = estimate.lamports,
+            "priority fee estimated"
+        );
+        Ok(estimate)
     }
 
     /// Simulate a settlement transaction before sending it.
@@ -648,6 +684,10 @@ pub(crate) enum Error {
     /// Nothing was sent.
     #[error("settlement transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
     TransactionTooLarge { size: u64 },
+    /// The transaction's priority fee is over the configured budget. Nothing
+    /// was sent.
+    #[error(transparent)]
+    PriorityFee(#[from] priority_fee::OverBudget),
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
@@ -679,6 +719,9 @@ struct Metrics {
         100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000., 1_400_000.
     ))]
     compute_units: prometheus::Histogram,
+    /// The transaction's compute unit price, in micro-lamports per unit.
+    #[metric(buckets(1_000., 10_000., 50_000., 100_000., 500_000., 1_000_000., 5_000_000.))]
+    compute_unit_price: prometheus::Histogram,
 }
 
 fn metrics() -> &'static Metrics {
@@ -743,6 +786,7 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",
         Error::TransactionTooLarge { .. } => "transaction_too_large",
+        Error::PriorityFee(_) => "priority_fee_too_high",
         Error::Resolve(_) => "resolve_failed",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",

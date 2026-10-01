@@ -16,7 +16,7 @@ pub use {
     },
 };
 use {
-    cow_solana_rpc::{Error, LatestBlockhash, SolanaRPC},
+    cow_solana_rpc::{Error, LatestBlockhash, RpcPrioritizationFee, SolanaRPC},
     solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
 };
 
@@ -46,6 +46,15 @@ impl Solana {
     /// The node's current slot at the client's commitment level.
     pub async fn slot(&self) -> Result<u64, Error> {
         self.rpc.slot().await
+    }
+
+    /// The prioritization fees recently paid by transactions locking
+    /// `addresses` as writable, one entry per recent slot.
+    pub async fn recent_prioritization_fees(
+        &self,
+        addresses: &[Pubkey],
+    ) -> Result<Vec<RpcPrioritizationFee>, Error> {
+        self.rpc.recent_prioritization_fees(addresses).await
     }
 
     /// Simulate a signed transaction without sending it. Returns the
