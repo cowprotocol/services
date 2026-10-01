@@ -174,10 +174,8 @@ impl Solver {
                 "appData": app_data::AppDataHash(quote.order.app_data.hash().0.0),
                 "signature": if config.quote { "0x".to_string() } else { const_hex::encode_prefixed(quote.order_signature(config.blockchain)) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
+                "receiver": quote.order.receiver.encode_hex_with_prefix(),
             });
-            if !quote.order.receiver.is_zero() {
-                order["receiver"] = json!(quote.order.receiver.encode_hex_with_prefix());
-            }
             if let Some(flashloan) = quote.order.app_data.flashloan() {
                 order["flashloanHint"] = json!(FlashloanHint {
                     liquidity_provider: flashloan.liquidity_provider,
