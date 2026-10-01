@@ -526,30 +526,20 @@ fn validate_orders(
         }
 
         let amounts = executed_amounts(order, solution)?;
-        let (filled, target) = match order.side {
-            Side::Sell => (amounts.sell, order.sell_amount),
-            Side::Buy => (amounts.buy, order.buy_amount),
+        let filled = match order.side {
+            Side::Sell => amounts.sell,
+            Side::Buy => amounts.buy,
         };
+        let target = order.remaining().target(order.side);
 
         // A non-partially-fillable order must be filled exactly.
         if !order.partially_fillable && filled != target {
             return Err(Error::NotExactlyFilled(order.uid));
         }
 
-        // No order may be filled for more than its target.
-        //
-        // Note: the fill caps compare against each order's *full* amounts, not
-        // its remaining amounts. The driver does not read the order
-        // PDA's fill state (`amount_withdrawn`/`amount_received`), so
-        // it cannot know how much prior settlements consumed.
-        //
-        // Prior fills only shrink the remaining amount, so the full amount is a
-        // hard upper bound. This check therefore never rejects a
-        // settlement that could succeed on chain. But a fill over the
-        // *remaining* amount and within the full amount passes here and
-        // fails on chain with `FillExceedsOrderAmount`. The program's
-        // cumulative check is the authority. This check exists only to
-        // avoid paying fees for transactions that are guaranteed to fail.
+        // `executed` can lag a settlement that just landed, so the program's
+        // cumulative check stays the authority; this one only saves a doomed
+        // transaction's fees.
         if filled > target {
             return Err(Error::Overfill(order.uid));
         }
@@ -665,7 +655,7 @@ pub enum Error {
     /// The order is not partially fillable but was not filled exactly.
     #[error("order {0} was not filled exactly")]
     NotExactlyFilled(OrderUid),
-    /// The order was filled for more than its target amount.
+    /// The order was filled for more than its remaining amount.
     #[error("order {0} was overfilled")]
     Overfill(OrderUid),
     /// The order's limit price was violated.
@@ -731,6 +721,7 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey::default(), // re-derived below
             app_data: [0x77; 32],
+            executed: 0,
         };
         customize(&mut order);
         let uid = OrderIntent::from(&order).uid();
@@ -981,6 +972,23 @@ mod tests {
             test_settlement(slice::from_ref(&order), &[trade(order.uid, 500, 1_000)]).unwrap();
 
         resolve_for_test(settlement).instructions(payer).unwrap();
+    }
+
+    /// The cap is what prior settlements left open, not the signed amount:
+    /// 400 of 1000 sold leaves 600, so filling 600 passes and 601 is
+    /// rejected.
+    #[test]
+    fn caps_a_partially_filled_order_at_its_remaining_amount() {
+        let program_id = pubkey(0xaa);
+        let order = test_order_with(&program_id, |order| {
+            order.partially_fillable = true;
+            order.executed = 400;
+        });
+        test_settlement(slice::from_ref(&order), &[trade(order.uid, 600, 1_200)])
+            .expect("filling the remainder must pass");
+        let err = test_settlement(slice::from_ref(&order), &[trade(order.uid, 601, 1_202)])
+            .expect_err("a fill over the remainder must be rejected");
+        assert_eq!(err, Error::Overfill(order.uid));
     }
 
     /// An order filled for more than its target is rejected.

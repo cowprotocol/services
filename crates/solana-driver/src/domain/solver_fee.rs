@@ -181,6 +181,7 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x67),
             app_data: [0x77; 32],
+            executed: 0,
         }
     }
 

@@ -79,6 +79,11 @@ pub struct Order {
     order_pda: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     app_data: AppData,
+    /// The cumulative fill on the order's own side. Absent from an autopilot
+    /// that predates partial fills.
+    #[serde(default)]
+    #[serde_as(as = "DisplayFromStr")]
+    executed: u64,
 }
 
 impl From<Order> for domain::Order {
@@ -97,6 +102,7 @@ impl From<Order> for domain::Order {
             partially_fillable: order.partially_fillable,
             order_pda: order.order_pda,
             app_data: order.app_data.0,
+            executed: order.executed,
         }
     }
 }
@@ -151,6 +157,7 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey::new_from_array([0x77; 32]),
             app_data: AppData([0; 32]),
+            executed: 0,
         }
     }
 
@@ -164,7 +171,7 @@ mod tests {
             deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![order()],
         };
-        let expected = serde_json::json!({
+        let mut expected = serde_json::json!({
             "id": 7,
             "deadline": "2026-01-01T00:00:00Z",
             "orders": [{
@@ -181,9 +188,18 @@ mod tests {
                 "partiallyFillable": false,
                 "orderPda": pubkey(0x77).to_string(),
                 "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "executed": "0",
             }]
         });
         assert_eq!(serde_json::to_value(&request).unwrap(), expected);
+
+        // An autopilot that predates partial fills sends no `executed`.
+        expected["orders"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("executed");
+        let parsed: SolveRequest = serde_json::from_value(expected).unwrap();
+        assert_eq!(parsed.orders[0].executed, 0);
     }
 
     #[test]

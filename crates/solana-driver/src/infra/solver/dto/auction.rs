@@ -47,8 +47,12 @@ pub struct Order {
     /// payouts.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_destination: Pubkey,
+    /// Sell-mint units left to fill: for a sell order the amount to fill,
+    /// for a buy order the most the fill may take.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub sell_amount: u64,
+    /// Buy-mint units left to fill: for a buy order the amount to fill, for
+    /// a sell order the least the fill must deliver.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_amount: u64,
     /// Sell amount for a sell, buy amount for a buy.
@@ -56,13 +60,15 @@ pub struct Order {
     /// TODO: remove once external solvers read `sellAmount`/`buyAmount`.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub amount: u64,
-    /// The signed sell amount, untouched by the solver fee.
+    /// The signed sell amount, before prior fills and the solver fee.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub full_sell_amount: u64,
-    /// The signed buy amount, untouched by the solver fee.
+    /// The signed buy amount, before prior fills and the solver fee.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub full_buy_amount: u64,
     pub side: Side,
+    /// Whether a fill may stop short of the order amount.
+    pub partially_fillable: bool,
     /// True when the order's buy token account does not exist on chain
     /// yet. The settlement creates it and the solver keypair pays its rent,
     /// so the solution should price that rent in.
@@ -103,9 +109,10 @@ impl Order {
         missing_buy_token_account: bool,
     ) -> Self {
         let tighten = |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
+        let remaining = order.remaining();
         let (sell_amount, buy_amount) = match order.side {
-            Side::Sell => (order.sell_amount, tighten(Side::Sell, order.buy_amount)),
-            Side::Buy => (tighten(Side::Buy, order.sell_amount), order.buy_amount),
+            Side::Sell => (remaining.sell, tighten(Side::Sell, remaining.buy)),
+            Side::Buy => (tighten(Side::Buy, remaining.sell), remaining.buy),
         };
         let (buy_mint, buy_destination) = if order.buys_native_sol() {
             (
@@ -132,6 +139,7 @@ impl Order {
             full_sell_amount: order.sell_amount,
             full_buy_amount: order.buy_amount,
             side: order.side,
+            partially_fillable: order.partially_fillable,
             missing_buy_token_account,
         }
     }
@@ -207,6 +215,7 @@ mod tests {
                 "fullSellAmount": "1000",
                 "fullBuyAmount": "2000",
                 "side": "sell",
+                "partiallyFillable": false,
             }],
             "deadline": "2026-01-01T00:00:00Z",
         });
@@ -225,6 +234,7 @@ mod tests {
                 full_sell_amount: 1_000,
                 full_buy_amount: 2_000,
                 side: Side::Sell,
+                partially_fillable: false,
                 missing_buy_token_account: false,
             }],
             deadline: chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
@@ -251,6 +261,7 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x67),
             app_data: [0x77; 32],
+            executed: 0,
         }
     }
 
@@ -295,6 +306,29 @@ mod tests {
         );
         assert_eq!((buy.sell_amount, buy.buy_amount), (952, 1_000));
         assert_eq!((buy.full_sell_amount, buy.full_buy_amount), (1_000, 1_000));
+    }
+
+    /// 400 of 1000 sold: 600 is left to sell, the 1000 buy limit scales to
+    /// 600 and the fee tightens that to 600 / 0.95 = 631.6. The signed
+    /// amounts go out untouched.
+    #[test]
+    fn a_partially_filled_order_sends_the_remaining_legs() {
+        let fee = Some(SolverFee::try_from(500).unwrap());
+        let sell = domain::Order {
+            partially_fillable: true,
+            executed: 400,
+            ..domain_order(Side::Sell)
+        };
+        let order = Order::new(&sell, pubkey(3), pubkey(0xaa), fee, false);
+        assert_eq!(
+            (order.sell_amount, order.buy_amount, order.amount),
+            (600, 632, 600)
+        );
+        assert_eq!(
+            (order.full_sell_amount, order.full_buy_amount),
+            (1_000, 1_000)
+        );
+        assert!(order.partially_fillable);
     }
 
     #[test]

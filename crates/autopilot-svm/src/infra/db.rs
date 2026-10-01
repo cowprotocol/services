@@ -30,6 +30,7 @@ pub struct OrderRow {
     pub order_pda: ByteArray<32>,
     pub app_data: ByteArray<32>,
     pub created_on_chain: bool,
+    pub executed: BigDecimal,
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
@@ -48,7 +49,11 @@ pub async fn open_orders(
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.order_pda, o.app_data,
-       p.order_uid IS NOT NULL AS created_on_chain
+       p.order_uid IS NOT NULL AS created_on_chain,
+       CASE o.kind
+           WHEN 'sell' THEN COALESCE(p.amount_withdrawn, 0)
+           ELSE COALESCE(p.amount_received, 0)
+       END AS executed
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.valid_to >= $1
@@ -537,6 +542,7 @@ impl TryFrom<OrderRow> for Order {
             order_pda: Pubkey(row.order_pda.0),
             app_data: AppData(row.app_data.0),
             created_on_chain: row.created_on_chain,
+            executed: to_amount(&row.executed).context("executed")?,
         })
     }
 }
@@ -552,7 +558,7 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
 mod tests {
     use {
         super::{in_flight_orders, last_indexed_slot, open_orders, skip_settlement_window},
-        bigdecimal::BigDecimal,
+        bigdecimal::{BigDecimal, ToPrimitive},
         chain_types::solana::Pubkey,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
@@ -574,6 +580,7 @@ mod tests {
             order_pda: ByteArray([7; 32]),
             app_data: ByteArray([0; 32]),
             created_on_chain: true,
+            executed: BigDecimal::from(0u64),
         }
     }
 
@@ -707,6 +714,11 @@ WHERE uid = $1
             orders.iter().map(|order| order.uid.0[0]).collect()
         };
         let orders = open_orders(&mut *tx, 1_000, Some(100)).await.unwrap();
+        let executed: Vec<u64> = orders
+            .iter()
+            .map(|order| order.executed.to_u64().unwrap())
+            .collect();
+        assert_eq!(executed, vec![0, 999, 0, 0]);
         assert_eq!(uids(orders), vec![1, 5, 6, 10]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
         assert_eq!(uids(orders), vec![1, 5, 6, 10]);

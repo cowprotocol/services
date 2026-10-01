@@ -39,6 +39,9 @@ pub struct Order {
     /// of a token buy) only at settlement time through its presigned
     /// transaction.
     pub created_on_chain: bool,
+    /// The cumulative fill on the order's own side: sell-token units for a
+    /// sell order, buy-token units for a buy order.
+    pub executed: u64,
 }
 
 impl Order {
@@ -96,6 +99,7 @@ mod tests {
             order_pda: chain_types::solana::Pubkey([7; 32]),
             app_data: AppData([0; 32]),
             created_on_chain: true,
+            executed: 0,
         }
     }
 

@@ -94,11 +94,15 @@ impl Competition {
             .resolve_buy_token_accounts(auction_id, &self.blockchain, &self.buy_token_accounts)
             .await
             .map_err(Error::BuyTokenAccounts)?;
-        auction
-            .orders
-            .retain(|order| !buy_token_accounts.unreceivable.contains(&order.uid));
+        auction.orders.retain(|order| {
+            if order.remaining().has_zero_leg() {
+                tracing::debug!(order = %order.uid, "dropping order, nothing left to fill");
+                return false;
+            }
+            !buy_token_accounts.unreceivable.contains(&order.uid)
+        });
         if auction.orders.is_empty() {
-            tracing::info!("no receivable order left; skipping solving");
+            tracing::info!("no fillable order left; skipping solving");
             return Ok(Vec::new());
         }
         let solutions = self
