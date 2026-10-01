@@ -87,9 +87,10 @@ paths:
     get:
       operationId: getOrderStatus
       description: |
-        The order's auction progress. A trade always reports `traded`,
-        otherwise the latest auction event decides, and an indexed order
-        without events is `scheduled`.
+        The order's auction progress. A trade always reports `traded`. An
+        untraded order reports `cancelled` or `expired` when the order's own
+        `status` says so. Otherwise the latest auction event decides, and an
+        indexed order without events is `scheduled`.
       parameters:
         - name: uid
           in: path
@@ -179,8 +180,9 @@ paths:
         sync it, and approve the settlement delegate, each omittable (the
         wrap steps only for native SOL sells), followed by the mandatory buy
         token account creation (idempotent, a no-op when the account already
-        exists). The order competes in auctions until the transaction's
-        blockhash expires (about a minute) or it settles.
+        exists). An order buying native SOL skips the creation, its payout
+        goes to the wallet. The order competes in auctions until the
+        transaction's blockhash expires (about a minute) or it settles.
       requestBody:
         required: true
         content:
@@ -233,11 +235,14 @@ paths:
             `WrongRentPayer`), a PDA not derived from the intent
             (`WrongOrderPda`), a delegation not targeting the settlement
             state PDA (`WrongDelegate`), an intent without the on-chain flag
-            (`InvalidIntentFlags`), equal mints (`SameBuyAndSellToken`), a
-            zero amount (`ZeroAmount`), a missing owner signature
-            (`InvalidSignature`), a validTo below the minimum validity
-            (`InsufficientValidTo`), a dead blockhash (`BlockhashExpired`),
-            or a known uid (`DuplicatedOrder`).
+            (`InvalidIntentFlags`), equal mints or wSOL sold for native SOL
+            (`SameBuyAndSellToken`), a zero amount (`ZeroAmount`), a native
+            SOL buy under 890880 lamports (the rent-exempt minimum of an empty
+            account), partially fillable, or paying an account the System
+            Program does not own (`InvalidNativeBuy`), a missing
+            owner signature (`InvalidSignature`), a validTo below the minimum
+            validity (`InsufficientValidTo`), a dead blockhash
+            (`BlockhashExpired`), or a known uid (`DuplicatedOrder`).
           content:
             application/json:
               schema:
@@ -265,8 +270,11 @@ paths:
         "400":
           description: |
             The body could not be parsed (`InvalidRequestBody`), buy and sell
-            token are the same (`SameBuyAndSellToken`), the amount is zero
-            (`ZeroAmount`), or `validTo` is closer than the configured minimum
+            token are the same, wSOL for native SOL included
+            (`SameBuyAndSellToken`), the amount is zero
+            (`ZeroAmount`), a native SOL buy is quoted under 890880 lamports,
+            the rent-exempt minimum of an empty account (`InvalidNativeBuy`),
+            or `validTo` is closer than the configured minimum
             (default two minutes) or further than the configured maximum
             (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`).
           content:
@@ -337,7 +345,9 @@ components:
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         buyToken:
-          description: The mint of the token being bought.
+          description: |
+            The mint of the token being bought, or the System Program ID
+            (`11111111111111111111111111111111`) for native SOL.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         sellTokenAccount:
@@ -345,7 +355,9 @@ components:
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         buyTokenAccount:
-          description: The owner's token account the buy tokens are paid to.
+          description: |
+            The owner's token account the buy tokens are paid to, or the
+            wallet for native SOL.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         sellAmount:
@@ -399,7 +411,7 @@ components:
       properties:
         type:
           type: string
-          enum: [open, scheduled, active, solved, executing, traded, cancelled]
+          enum: [open, scheduled, active, solved, executing, traded, cancelled, expired]
         value:
           description: |-
             A list of solvers who participated in the latest competition, sorted
@@ -505,7 +517,9 @@ components:
         sellToken:
           $ref: "#/components/schemas/Pubkey"
         buyToken:
-          $ref: "#/components/schemas/Pubkey"
+          description: The mint to buy, or the System Program ID for native SOL.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
         receiver:
           description: The buy token account proceeds land in. Echoed back untouched.
           allOf:
