@@ -102,8 +102,6 @@ impl Auction {
         blockchain: &Solana,
     ) -> Result<BuyTokenAccounts, cow_solana_rpc::Error> {
         let token_buys = || self.orders.iter().filter(|order| !order.buys_native_sol());
-        // The associated token address derives from the buy mint's token
-        // program, so the mints are read before the accounts.
         let programs = blockchain
             .token_programs(token_buys().map(|order| order.buy_token))
             .await?;
