@@ -161,17 +161,15 @@ impl Transaction {
                         .map_err(Error::SignatureRecover)?)
                         .into(),
                         executed: trade.executedAmount.into(),
-                        prices: Prices {
-                            uniform: uniform_sell_token_index.zip(uniform_buy_token_index).map(
-                                |(sell, buy)| ClearingPrices {
-                                    sell: clearing_prices[sell],
-                                    buy: clearing_prices[buy],
-                                },
-                            ),
-                            custom: ClearingPrices {
-                                sell: clearing_prices[sell_token_index],
-                                buy: clearing_prices[buy_token_index],
+                        uniform_prices: uniform_sell_token_index.zip(uniform_buy_token_index).map(
+                            |(sell, buy)| ClearingPrices {
+                                sell: clearing_prices[sell],
+                                buy: clearing_prices[buy],
                             },
+                        ),
+                        custom_prices: ClearingPrices {
+                            sell: clearing_prices[sell_token_index],
+                            buy: clearing_prices[buy_token_index],
                         },
                     })
                 }
@@ -284,14 +282,15 @@ pub struct EncodedTrade {
     pub partially_fillable: bool,
     pub signature: order::Signature,
     pub executed: order::TargetAmount,
-    pub prices: Prices,
+    /// Uniform prices of the traded tokens, if the settlement lists them. Only
+    /// liquidity JIT orders can do without, see [`super::Trade::new`].
+    pub uniform_prices: Option<ClearingPrices>,
+    pub custom_prices: ClearingPrices,
 }
 
 #[derive(Debug, Copy, Clone)]
 pub struct Prices {
-    /// `None` if the settlement doesn't list a uniform price for the traded
-    /// tokens.
-    pub uniform: Option<ClearingPrices>,
+    pub uniform: ClearingPrices,
     /// Adjusted uniform prices to account for fees (gas cost and protocol fees)
     pub custom: ClearingPrices,
 }

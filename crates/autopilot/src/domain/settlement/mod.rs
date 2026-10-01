@@ -212,7 +212,7 @@ impl Settlement {
             .trades
             .into_iter()
             .map(|trade| Trade::new(trade, &auction, settled.timestamp))
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         Ok(Self {
             block: settled.block,
@@ -310,6 +310,8 @@ pub enum Error {
     InconsistentData(InconsistentData),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
+    #[error("settlement lists no uniform clearing price for order {0}")]
+    MissingUniformPrice(domain::OrderUid),
 }
 
 /// Errors that can occur when fetching data from the persistence layer.
@@ -884,7 +886,7 @@ mod tests {
             orders: HashMap::from([(order_uid, vec![])]),
         };
 
-        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0).unwrap();
 
         // NOTE(historical): surplus (score) read from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
         assert_eq!(
@@ -1035,7 +1037,7 @@ mod tests {
                 }],
             )]),
         };
-        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0).unwrap();
 
         assert_eq!(
             trade.surplus_in_ether(&auction.prices).unwrap().0,
@@ -1202,7 +1204,7 @@ mod tests {
             id: 0,
             orders: Default::default(),
         };
-        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0).unwrap();
         println!("{}", trade.uid().owner());
         assert_eq!(
             trade.surplus_in_ether(&auction.prices).unwrap().0,
@@ -1389,7 +1391,8 @@ mod tests {
                 }],
             )]),
         };
-        let jit_trade = super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0);
+        let jit_trade =
+            super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0).unwrap();
         assert_eq!(
             jit_trade.fee_in_ether(&auction.prices).unwrap().0,
             eth::U256::ZERO

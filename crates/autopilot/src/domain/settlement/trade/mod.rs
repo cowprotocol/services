@@ -83,16 +83,26 @@ impl Trade {
         }
     }
 
-    pub fn new(trade: transaction::EncodedTrade, auction: &super::Auction, created: u32) -> Self {
+    pub fn new(
+        trade: transaction::EncodedTrade,
+        auction: &super::Auction,
+        created: u32,
+    ) -> Result<Self, super::Error> {
+        let uniform = trade
+            .uniform_prices
+            .ok_or(super::Error::MissingUniformPrice(trade.uid));
         if auction.orders.contains_key(&trade.uid) {
-            Trade::Fulfillment(Fulfillment {
+            Ok(Trade::Fulfillment(Fulfillment {
                 uid: trade.uid,
                 sell: trade.sell,
                 buy: trade.buy,
                 side: trade.side,
                 executed: trade.executed,
-                prices: trade.prices,
-            })
+                prices: Prices {
+                    uniform: uniform?,
+                    custom: trade.custom_prices,
+                },
+            }))
         } else {
             // All orders that were settled outside of the auction are JIT
             // orders. This includes regular JIT orders that the
@@ -101,7 +111,7 @@ impl Trade {
             let surplus_capturing = auction
                 .surplus_capturing_jit_order_owners
                 .contains(&trade.uid.owner());
-            Trade::Jit(Jit {
+            Ok(Trade::Jit(Jit {
                 uid: trade.uid,
                 sell: trade.sell,
                 buy: trade.buy,
@@ -116,20 +126,23 @@ impl Trade {
                 signature: trade.signature,
                 executed: trade.executed,
                 prices: if surplus_capturing {
-                    trade.prices
+                    Prices {
+                        uniform: uniform?,
+                        custom: trade.custom_prices,
+                    }
                 } else {
                     // for non-surplus capturing jit orders (AKA liquidity JIT
                     // orders) the expectation is that the
                     // trade was executed at its limit price, without
                     // incurred fees.
                     Prices {
-                        uniform: Some(trade.prices.custom),
-                        custom: trade.prices.custom,
+                        uniform: trade.custom_prices,
+                        custom: trade.custom_prices,
                     }
                 },
                 created,
                 surplus_capturing,
-            })
+            }))
         }
     }
 }

@@ -101,12 +101,10 @@ impl Trade {
     ) -> Result<eth::SellTokenAmount, Error> {
         let fee_in_sell_token = match self.side {
             order::Side::Buy => fee.0,
-            order::Side::Sell => {
-                let uniform = self.uniform_prices()?;
-                fee.0
-                    .checked_mul_ratio(&uniform.buy, &uniform.sell)
-                    .map_err(error::Math::from)?
-            }
+            order::Side::Sell => fee
+                .0
+                .checked_mul_ratio(&self.prices.uniform.buy, &self.prices.uniform.sell)
+                .map_err(error::Math::from)?,
         };
         Ok(eth::SellTokenAmount(fee_in_sell_token))
     }
@@ -283,19 +281,12 @@ impl Trade {
 
     /// Uses uniform prices to calculate the surplus as if the protocol fee and
     /// network fee are not applied.
-    fn surplus_over_limit_price_before_fee(&self) -> Result<eth::SurplusTokenAmount, Error> {
+    fn surplus_over_limit_price_before_fee(&self) -> Result<eth::SurplusTokenAmount, error::Math> {
         let limit_price = PriceLimits {
             sell: self.sell.amount,
             buy: self.buy.amount,
         };
-        Ok(self.surplus_over(self.uniform_prices()?, limit_price)?)
-    }
-
-    fn uniform_prices(&self) -> Result<&ClearingPrices, Error> {
-        self.prices
-            .uniform
-            .as_ref()
-            .ok_or(Error::MissingUniformPrice)
+        self.surplus_over(&self.prices.uniform, limit_price)
     }
 
     fn surplus_over_quote(
@@ -529,8 +520,6 @@ pub mod error {
     pub enum Error {
         #[error("missing native price for token {0:?}")]
         MissingPrice(eth::TokenAddress),
-        #[error("missing uniform clearing price")]
-        MissingUniformPrice,
         #[error(transparent)]
         Math(#[from] Math),
     }
@@ -589,7 +578,7 @@ mod tests {
             side,
             executed: order::TargetAmount(eth::U256::from(80500000000000000000_u128)),
             prices: Prices {
-                uniform: Some(prices),
+                uniform: prices,
                 custom: prices,
             },
         }
@@ -600,7 +589,7 @@ mod tests {
         let trade = incident_trade(order::Side::Buy);
         let surplus = trade
             .surplus_over(
-                &trade.prices.custom,
+                &trade.prices.uniform,
                 PriceLimits {
                     sell: trade.sell.amount,
                     buy: trade.buy.amount,
