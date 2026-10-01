@@ -1,6 +1,9 @@
 use {
     crate::ethflow::ExtendedEthFlowOrder,
-    ::alloy::primitives::{Address, B256, U256},
+    ::alloy::{
+        primitives::{Address, B256, U256},
+        providers::Provider,
+    },
     app_data::AppDataHash,
     configs::{
         autopilot::{
@@ -21,7 +24,7 @@ use {
     ethrpc::alloy::CallBuilderExt,
     model::{
         fee_policy::FeePolicy as TradeFeePolicy,
-        order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
+        order::{BUY_ETH_ADDRESS, OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         quote::{
             OrderQuoteRequest,
             OrderQuoteSide,
@@ -101,6 +104,12 @@ async fn local_node_fast_path_settle() {
 #[ignore]
 async fn local_node_fast_path_settle_buy_order() {
     run_test(|web3| fast_path_settle(web3, OrderKind::Buy)).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_fast_path_settle_buy_native_eth() {
+    run_test(fast_path_settle_buy_native_eth).await;
 }
 
 #[tokio::test]
@@ -321,6 +330,143 @@ async fn fast_path_settle(web3: Web3, side: OrderKind) {
     assert_eq!(
         filled_sell, signed_sell,
         "paid {filled_sell} but signed for exactly {signed_sell}",
+    );
+}
+
+/// A fast-path order that buys native ETH. The orderbook's price estimator
+/// rewrites `buy_token = BUY_ETH_ADDRESS` to WETH before it ever reaches the
+/// driver's `/quote`, so the cached quote solution's user trade holds WETH.
+/// The signed order sent to `/settle_fast_path` still carries the ETH marker;
+/// the driver has to recognise the two as equivalent and let the existing
+/// buy-ETH unwrap machinery deliver ETH to the trader.
+async fn fast_path_settle_buy_native_eth(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // Trader needs the ERC20 to sell and an allowance for the vault relayer.
+    let sell_amount = 1u64.eth();
+    let funded = sell_amount * U256::from(2u8);
+    token.mint(trader.address(), funded).await;
+    token
+        .approve(onchain.contracts().allowance, funded)
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    // A long exclusivity so only the fast path can settle the order within the
+    // test window: an on-chain fill this soon can only have come from the
+    // fast-path settle.
+    let exclusivity = Duration::from_secs(300);
+    let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
+        AutopilotConfiguration::test("test_solver", solver.address()),
+        configs::orderbook::Configuration::test_default(),
+        exclusivity,
+    );
+    services
+        .start_protocol_with_args(autopilot_config, orderbook_config, solver)
+        .await;
+
+    let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
+
+    tracing::info!("Quoting with enableFastPath.");
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *token.address(),
+        buy_token: BUY_ETH_ADDRESS,
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(sell_amount).unwrap(),
+            },
+        },
+        app_data: OrderCreationAppData::Full {
+            full: app_data.clone(),
+        },
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+    let quote_id = quote.id.expect("fast-path quote should carry an id");
+
+    // Snapshot the trader's ETH balance before placing the order so the delta
+    // check isn't confused by starting balance.
+    let eth_before = web3.provider.get_balance(trader.address()).await.unwrap();
+
+    tracing::info!("Placing the fast-path buy-ETH order.");
+    let order = OrderCreation {
+        quote_id: Some(quote_id),
+        sell_token: *token.address(),
+        sell_amount,
+        buy_token: BUY_ETH_ADDRESS,
+        buy_amount: quote.quote.buy_amount,
+        valid_to: model::time::now_in_epoch_seconds() + 3600,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full { full: app_data },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for the fast-path competition.");
+    wait_for_condition(TIMEOUT, || async {
+        services
+            .get_latest_solver_competition()
+            .await
+            .is_ok_and(|competition| {
+                competition
+                    .solutions
+                    .iter()
+                    .any(|solution| solution.orders.iter().any(|order| order.id == uid))
+            })
+    })
+    .await
+    .unwrap();
+    let fast_path_auction = services
+        .get_latest_solver_competition()
+        .await
+        .unwrap()
+        .auction_id;
+
+    tracing::info!("Waiting for the fast-path settlement.");
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        services
+            .get_order(&uid)
+            .await
+            .is_ok_and(|order| order.metadata.status == OrderStatus::Fulfilled)
+    })
+    .await
+    .unwrap();
+
+    // A settlement under any later auction means the fast-path attempt failed
+    // and the regular auction picked the order up instead.
+    let trade = services.get_trades(&uid).await.unwrap().pop().unwrap();
+    let tx_hash = trade.tx_hash.expect("settled trade has a transaction");
+    let settled_in = settled_competition(&services, tx_hash).await.auction_id;
+    assert_eq!(
+        settled_in, fast_path_auction,
+        "order settled under auction {settled_in} but the fast path staged {fast_path_auction}",
+    );
+
+    // The trader received native ETH, not WETH — the settlement contract
+    // unwrapped the WETH the solver produced.
+    let eth_after = web3.provider.get_balance(trader.address()).await.unwrap();
+    let filled_buy: U256 = trade.buy_amount.to_string().parse().unwrap();
+    assert_eq!(
+        eth_after - eth_before,
+        filled_buy,
+        "trader's ETH balance grew by {} but the trade recorded {filled_buy}",
+        eth_after - eth_before,
     );
 }
 
