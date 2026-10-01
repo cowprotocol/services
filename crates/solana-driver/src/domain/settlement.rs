@@ -32,8 +32,9 @@ use {
     solana_sdk::{
         hash::Hash,
         instruction::Instruction,
-        message::{AddressLookupTableAccount, v0::Message as MessageV0},
+        message::{AddressLookupTableAccount, VersionedMessage, v0::Message as MessageV0},
         pubkey::Pubkey,
+        signature::Signature,
         transaction::VersionedTransaction,
     },
     solana_system_interface::instruction::transfer,
@@ -278,23 +279,40 @@ impl ResolvedSettlement {
         Ok(instructions)
     }
 
+    /// Compile the resolved settlement into the v0 message `payer` signs.
+    fn message(&self, payer: Pubkey, blockhash: Hash) -> Result<MessageV0, Error> {
+        let instructions = self.instructions(payer)?;
+        Ok(MessageV0::try_compile(
+            &payer,
+            &instructions,
+            &self.lookup_tables,
+            blockhash,
+        )?)
+    }
+
     /// Encode the resolved settlement as a signed v0 transaction.
     pub async fn encode(
         self,
         signer: &Signer,
         blockhash: Hash,
     ) -> Result<VersionedTransaction, Error> {
-        let instructions = self.instructions(signer.pubkey())?;
-        let message = MessageV0::try_compile(
-            &signer.pubkey(),
-            &instructions,
-            &self.lookup_tables,
-            blockhash,
-        )?;
+        let message = self.message(signer.pubkey(), blockhash)?;
         signer
             .sign(message)
             .await
             .map_err(|err| Error::Sign(err.to_string()))
+    }
+
+    /// The resolved settlement as an unsigned transaction for `payer`.
+    /// Signatures and the blockhash are fixed-size, so it has the signed
+    /// transaction's wire size.
+    pub fn unsigned(&self, payer: Pubkey) -> Result<VersionedTransaction, Error> {
+        let message = self.message(payer, Hash::default())?;
+        let signatures = vec![Signature::default(); message.header.num_required_signatures.into()];
+        Ok(VersionedTransaction {
+            signatures,
+            message: VersionedMessage::V0(message),
+        })
     }
 }
 
