@@ -386,7 +386,7 @@ impl Competition {
                 }
             })?;
 
-        let deadline = auction.deadline(self.solver.timeouts()).driver();
+        let deadline = auction.deadline(self.solver.solve_timeouts()).driver();
         observe::postprocessing(&solutions, deadline);
 
         // Discard solutions that don't have unique ID.
