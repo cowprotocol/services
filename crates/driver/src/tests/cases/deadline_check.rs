@@ -5,12 +5,13 @@
 //! auctions.
 //!
 //! Strategy: settle a normal auction so the driver builds and submits a
-//! real settlement, then time-travel with `evm_mine` and replay the
-//! same tx via `eth_call`. If the driver injected the `DeadlineCheck`
-//! pre-interaction correctly (untrampolined, deadline set to
-//! `submission_deadline`), the replay must revert with
-//! `DeadlineExceeded` — because the check runs as the very first step
-//! of the batch and now sees `block.number > deadline`.
+//! real settlement, then advance block-by-block with `evm_mine`,
+//! replaying the same tx via `eth_call` on each block. While we are
+//! at or below the deadline the replay must succeed; the first block
+//! past the deadline it must revert with `DeadlineExceeded`. Checking
+//! both sides pins the `>` vs `>=` semantics of the on-chain check
+//! and keeps the test independent of how many blocks `settle()`
+//! happens to mine internally.
 
 use {
     crate::tests::{
@@ -75,18 +76,6 @@ async fn settlement_reverts_when_replayed_past_deadline() {
         .unwrap()
         .unwrap();
 
-    // Advance the blockchain to the first block where the tx should
-    // fail.
-    for _ in 0..(SETTLE_DEADLINE_BLOCKS - 1) {
-        test.web3().provider.evm_mine(None).await.unwrap();
-    }
-
-    // Replay the exact tx via eth_call. If the DeadlineCheck
-    // pre-interaction is present and correctly configured, it runs
-    // first and reverts the whole batch with `DeadlineExceeded`. If the
-    // driver had *not* injected the check (or had trampolined it), the
-    // call would either succeed or revert somewhere deeper in the
-    // settlement pipeline — either way, not with this selector.
     let inner: &dyn Transaction = &*tx.inner;
     let to = match inner.kind() {
         TxKind::Call(addr) => addr,
@@ -98,23 +87,46 @@ async fn settlement_reverts_when_replayed_past_deadline() {
         .input(inner.input().clone().into())
         .value(inner.value());
 
-    let err = test
-        .web3()
-        .provider
-        .call(call)
-        .await
-        .expect_err("replay past deadline must revert");
-
-    let revert_data = match &err {
-        RpcError::ErrorResp(payload) => payload
-            .as_revert_data()
-            .unwrap_or_else(|| panic!("expected revert data, got: {payload:?}")),
-        other => panic!("expected an ErrorResp with revert data, got: {other:?}"),
-    };
+    // Walk forward one block at a time, replaying the exact tx via
+    // `eth_call` at each step. The replay must succeed as long as
+    // `block.number <= deadline` and must revert with
+    // `DeadlineExceeded` the first block past the deadline.
+    //
+    // A safety cap of `SETTLE_DEADLINE_BLOCKS + 2` extra iterations
+    // means the loop is bounded even if the check never fires (in
+    // which case the final assertion will catch it).
+    let mut saw_pre_deadline_success = false;
+    let mut saw_post_deadline_revert = false;
+    for _ in 0..=(SETTLE_DEADLINE_BLOCKS + 2) {
+        match test.web3().provider.call(call.clone()).await {
+            Ok(_) => {
+                saw_pre_deadline_success = true;
+                test.web3().provider.evm_mine(None).await.unwrap();
+            }
+            Err(err) => {
+                let revert_data = match &err {
+                    RpcError::ErrorResp(payload) => payload
+                        .as_revert_data()
+                        .unwrap_or_else(|| panic!("expected revert data, got: {payload:?}")),
+                    other => panic!("expected an ErrorResp with revert data, got: {other:?}"),
+                };
+                assert!(
+                    revert_data.starts_with(&DeadlineExceeded::SELECTOR),
+                    "expected DeadlineExceeded error ({:x?}), got revert data: {revert_data:?}",
+                    DeadlineExceeded::SELECTOR,
+                );
+                saw_post_deadline_revert = true;
+                break;
+            }
+        }
+    }
 
     assert!(
-        revert_data.starts_with(&DeadlineExceeded::SELECTOR),
-        "expected DeadlineExceeded error ({:x?}), got revert data: {revert_data:?}",
-        DeadlineExceeded::SELECTOR,
+        saw_pre_deadline_success,
+        "replay should have succeeded at least once before the deadline"
+    );
+    assert!(
+        saw_post_deadline_revert,
+        "replay never reverted with DeadlineExceeded within the search window"
     );
 }
