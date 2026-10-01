@@ -878,7 +878,6 @@ impl Competition {
             .ok_or(Error::SolutionNotAvailable)?;
         let encoded = settlement
             .encode(&self.eth, None)
-            .await
             .map_err(Error::DeadlineReencodingFailed)?;
         Ok(Revealed {
             internalized_calldata: encoded.internalized.input,
@@ -950,7 +949,6 @@ impl Competition {
 
         let encoded = settlement
             .encode(&self.eth, Some(submission_deadline))
-            .await
             .map_err(|err| {
                 tracing::warn!(?err, "failed to encode settlement with deadline check");
                 Error::DeadlineReencodingFailed(err)
@@ -1020,7 +1018,7 @@ impl Competition {
 
     /// Returns whether the settlement can be executed or would revert.
     async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), SimulateError> {
-        let encoded = settlement.encode(&self.eth, None).await?;
+        let encoded = settlement.encode(&self.eth, None)?;
         let gas_needed_for_tx = self.simulator.gas(encoded.internalized.clone()).await?;
         if gas_needed_for_tx > encoded.gas.limit {
             return Err(simulator::Error::Revert(Box::new(RevertError {

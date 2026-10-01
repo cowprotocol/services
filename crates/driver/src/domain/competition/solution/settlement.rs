@@ -30,10 +30,10 @@ use {
 ///
 /// Encoding is two-phase. [`Settlement::new`] runs the invariant checks
 /// once (simulation, solver balance, internalization uses only trusted
-/// tokens), and stores the inputs — solution, auction id, native prices,
-/// gas parameters, access list — that don't depend on submission timing.
-/// [`Settlement::encode`] then rebuilds the actual calldata each time we
-/// need it, letting us splice in a `DeadlineCheck` pre-interaction bound
+/// tokens), fetches approvals from the chain, and stores every input
+/// that doesn't depend on submission timing. [`Settlement::encode`] is
+/// then a pure CPU operation that rebuilds the calldata from those
+/// cached inputs, splicing in a `DeadlineCheck` pre-interaction bound
 /// to a specific submission deadline.
 ///
 /// Publishing a settlement that violates the invariants would result in
@@ -55,6 +55,15 @@ pub struct Settlement {
     /// Native prices used to apply slippage constraints on interactions
     #[debug(ignore)]
     native_prices: auction::Prices,
+    /// On-chain approvals needed when encoding with
+    /// [`Internalization::Enable`]. Fetched once in [`Settlement::new`] so
+    /// [`Settlement::encode`] can stay synchronous and off the RPC path.
+    #[debug(ignore)]
+    approvals_enable: Vec<eth::allowance::Approval>,
+    /// On-chain approvals needed when encoding with
+    /// [`Internalization::Disable`]. Fetched once in [`Settlement::new`].
+    #[debug(ignore)]
+    approvals_disable: Vec<eth::allowance::Approval>,
 }
 
 /// Fully-encoded settlement with all additional information the
@@ -114,17 +123,27 @@ impl Settlement {
 
         let native_prices = auction.native_prices();
 
+        // Fetch approvals for both internalization modes concurrently.
+        // These are cached on the resulting [`Settlement`] so later
+        // [`Settlement::encode`] calls (reveal, settle, per-block
+        // re-simulation) stay off the RPC path.
+        let (approvals_enable, approvals_disable) = futures::try_join!(
+            solution.approvals(eth, Internalization::Enable),
+            solution.approvals(eth, Internalization::Disable),
+        )?;
+        let approvals_enable: Vec<_> = approvals_enable.collect();
+        let approvals_disable: Vec<_> = approvals_disable.collect();
+
         // Encode a reference internalized transaction (no deadline
         // pre-interaction) so we can simulate it and compute the access
         // list. This tx is discarded; the concrete calldata is
         // regenerated on demand via [`Settlement::encode`].
-        let approvals = solution.approvals(eth, Internalization::Enable).await?;
         let mut reference_tx = encoding::tx(
             auction_id,
             &native_prices,
             &solution,
             eth.contracts(),
-            approvals,
+            approvals_enable.iter().cloned(),
             Internalization::Enable,
             solver_native_token,
             None,
@@ -206,6 +225,8 @@ impl Settlement {
             access_list: partial_access_list.map(|l| l.0).unwrap_or_default(),
             solution,
             native_prices,
+            approvals_enable,
+            approvals_disable,
         })
     }
 
@@ -213,36 +234,38 @@ impl Settlement {
     ///
     /// If `deadline` is `Some`, an interaction will be inserted which will
     /// cause a revert when the tx gets mined after the deadline.
+    ///
+    /// Pure CPU: all RPC-dependent inputs (approvals, access list) were
+    /// resolved in [`Settlement::new`] and cached, so this can be called
+    /// freely on hot paths (per-block re-simulation, reveal, settle)
+    /// without triggering extra network roundtrips.
     #[instrument(name = "encode_settlement", skip_all)]
-    pub async fn encode(
+    pub fn encode(
         &self,
         eth: &Ethereum,
         deadline: Option<eth::BlockNo>,
     ) -> Result<EncodedSettlement, Error> {
-        let (approvals_enable, approvals_disable) = futures::try_join!(
-            self.solution.approvals(eth, Internalization::Enable),
-            self.solution.approvals(eth, Internalization::Disable),
-        )?;
         let deadline_pre_interaction = deadline.map(|deadline| {
             encoding::deadline_check_interaction(eth.contracts().deadline_check(), deadline)
         });
-        let encode_one = |approvals, internalization| -> Result<eth::Tx, Error> {
-            let mut tx = encoding::tx(
-                self.auction_id,
-                &self.native_prices,
-                &self.solution,
-                eth.contracts(),
-                approvals,
-                internalization,
-                self.solution.solver().solver_native_token(),
-                deadline_pre_interaction.clone(),
-            )?;
-            tx.set_access_list(self.access_list.clone());
-            Ok(tx)
-        };
+        let encode_one =
+            |approvals: &[eth::allowance::Approval], internalization| -> Result<eth::Tx, Error> {
+                let mut tx = encoding::tx(
+                    self.auction_id,
+                    &self.native_prices,
+                    &self.solution,
+                    eth.contracts(),
+                    approvals.iter().cloned(),
+                    internalization,
+                    self.solution.solver().solver_native_token(),
+                    deadline_pre_interaction.clone(),
+                )?;
+                tx.set_access_list(self.access_list.clone());
+                Ok(tx)
+            };
         Ok(EncodedSettlement {
-            internalized: encode_one(approvals_enable, Internalization::Enable)?,
-            uninternalized: encode_one(approvals_disable, Internalization::Disable)?,
+            internalized: encode_one(&self.approvals_enable, Internalization::Enable)?,
+            uninternalized: encode_one(&self.approvals_disable, Internalization::Disable)?,
             gas: self.gas,
             may_revert: self.solution.revertable(),
             gas_fee_override: self.solution.gas_fee_override(),
