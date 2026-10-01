@@ -297,10 +297,7 @@ impl ResolvedSettlement {
         blockhash: Hash,
     ) -> Result<VersionedTransaction, Error> {
         let message = self.message(signer.pubkey(), blockhash)?;
-        signer
-            .sign(message)
-            .await
-            .map_err(|err| Error::Sign(err.to_string()))
+        Ok(signer.sign(message).await?)
     }
 
     /// The resolved settlement as an unsigned transaction for `payer`.
@@ -711,7 +708,7 @@ pub enum Error {
     Compile(#[from] solana_sdk::message::CompileError),
     /// The transaction failed to sign.
     #[error("failed to sign transaction: {0}")]
-    Sign(String),
+    Sign(#[from] crate::infra::signer::Error),
     /// The instruction index does not fit in `u16`.
     #[error("instruction index does not fit in u16")]
     InstructionIndexOverflow,

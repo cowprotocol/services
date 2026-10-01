@@ -66,7 +66,7 @@ impl Solver {
                             error: error.to_string().into(),
                         }
                     })?;
-                signer::Signer::Keypair(Arc::new(keypair))
+                signer::Signer::Keypair(keypair)
             }
             config::SettlementSigner::KmsKey(key_id) => {
                 signer::Signer::Kms(signer::KmsSigner::new(key_id.clone()).await.map_err(

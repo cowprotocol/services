@@ -135,14 +135,12 @@ pub struct Solver {
     pub solver_fee_bps: Option<SolverFee>,
 }
 
-/// A settlement signer backend. One variant per config, enforced at parse
-/// time like the EVM driver's `Account`.
+/// A settlement signer backend. A config names exactly one.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SettlementSigner {
     /// Path to a keypair file.
-    /// TODO: plaintext keypair paths are temporary. Secrets must not live in
-    /// plaintext config long-term; prefer `kms-key`.
+    /// TODO: plaintext keypair paths are temporary, prefer `kms-key`.
     Keypair(PathBuf),
     /// Id, alias, or ARN of an AWS KMS Ed25519 key. The private key never
     /// reaches the driver.
