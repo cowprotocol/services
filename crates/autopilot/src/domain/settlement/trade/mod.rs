@@ -123,7 +123,7 @@ impl Trade {
                     // trade was executed at its limit price, without
                     // incurred fees.
                     Prices {
-                        uniform: trade.prices.custom,
+                        uniform: Some(trade.prices.custom),
                         custom: trade.prices.custom,
                     }
                 },

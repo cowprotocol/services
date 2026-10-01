@@ -121,16 +121,7 @@ impl Transaction {
                     ..
                 } = GPv2Settlement::GPv2Settlement::settleCall::abi_decode(data)?;
 
-                // Custom prices follow the uniform ones, so the lowest trade
-                // index marks the end of the uniform prices.
-                let uniform_len = decoded_trades
-                    .iter()
-                    .flat_map(|trade| [trade.sellTokenIndex, trade.buyTokenIndex])
-                    .min()
-                    .map_or(0, |index| {
-                        usize::try_from(index).expect("SC was able to look up this index")
-                    });
-
+                let uniform_tokens = uniform_tokens(&tokens, &decoded_trades);
                 let mut trades = Vec::with_capacity(decoded_trades.len());
                 for trade in decoded_trades {
                     let flags = tokenized::TradeFlags(trade.flags);
@@ -141,9 +132,9 @@ impl Transaction {
                     let sell_token = tokens[sell_token_index];
                     let buy_token = tokens[buy_token_index];
                     let uniform_sell_token_index =
-                        uniform_token_index(&tokens, uniform_len, sell_token, weth);
+                        uniform_tokens.iter().position(|token| *token == sell_token);
                     let uniform_buy_token_index =
-                        uniform_token_index(&tokens, uniform_len, buy_token, weth);
+                        uniform_buy_token_index(uniform_tokens, buy_token, weth);
                     trades.push(EncodedTrade {
                         uid: tokenized::order_uid(&trade, &tokens, domain_separator)
                             .map_err(Error::OrderUidRecover)?,
@@ -171,10 +162,12 @@ impl Transaction {
                         .into(),
                         executed: trade.executedAmount.into(),
                         prices: Prices {
-                            uniform: ClearingPrices {
-                                sell: clearing_prices[uniform_sell_token_index],
-                                buy: clearing_prices[uniform_buy_token_index],
-                            },
+                            uniform: uniform_sell_token_index.zip(uniform_buy_token_index).map(
+                                |(sell, buy)| ClearingPrices {
+                                    sell: clearing_prices[sell],
+                                    buy: clearing_prices[buy],
+                                },
+                            ),
                             custom: ClearingPrices {
                                 sell: clearing_prices[sell_token_index],
                                 buy: clearing_prices[buy_token_index],
@@ -188,22 +181,39 @@ impl Transaction {
     }
 }
 
-/// Index of `token`'s uniform price in `tokens[..uniform_len]`, with ETH and
-/// WETH standing in for each other. Falls back to the first occurrence.
-fn uniform_token_index(
-    tokens: &[eth::Address],
-    uniform_len: usize,
-    token: eth::Address,
-    weth: eth::WrappedNativeToken,
-) -> usize {
-    let uniform = &tokens[..uniform_len];
-    let erc20 = |token: eth::Address| eth::TokenAddress::from(token).as_erc20(weth);
-    uniform
+/// Tokens of the uniform clearing prices, which precede the custom prices the
+/// trades point at.
+fn uniform_tokens<'a>(
+    tokens: &'a [eth::Address],
+    trades: &[GPv2Settlement::GPv2Trade::Data],
+) -> &'a [eth::Address] {
+    let len = trades
         .iter()
-        .position(|t| *t == token)
-        .or_else(|| uniform.iter().position(|t| erc20(*t) == erc20(token)))
-        .or_else(|| tokens.iter().position(|t| *t == token))
-        .expect("token was read from `tokens`")
+        .flat_map(|trade| [trade.sellTokenIndex, trade.buyTokenIndex])
+        .min()
+        .map_or(0, |index| {
+            usize::try_from(index).expect("SC was able to look up this index")
+        });
+    &tokens[..len]
+}
+
+/// Index of the uniform clearing price of a trade's buy token. The native ETH
+/// sentinel only exists as a buy token and is paid out by unwrapping WETH, so
+/// ETH and WETH stand in for each other.
+fn uniform_buy_token_index(
+    uniform_tokens: &[eth::Address],
+    buy_token: eth::Address,
+    weth: eth::WrappedNativeToken,
+) -> Option<usize> {
+    let erc20 = |token: eth::Address| eth::TokenAddress::from(token).as_erc20(weth);
+    uniform_tokens
+        .iter()
+        .position(|token| *token == buy_token)
+        .or_else(|| {
+            uniform_tokens
+                .iter()
+                .position(|token| erc20(*token) == erc20(buy_token))
+        })
 }
 
 fn find_settlement_trace_and_callers(
@@ -279,7 +289,9 @@ pub struct EncodedTrade {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Prices {
-    pub uniform: ClearingPrices,
+    /// `None` if the settlement doesn't list a uniform price for the traded
+    /// tokens.
+    pub uniform: Option<ClearingPrices>,
     /// Adjusted uniform prices to account for fees (gas cost and protocol fees)
     pub custom: ClearingPrices,
 }
@@ -311,25 +323,29 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, alloy::primitives::U256};
 
     #[test]
-    fn uniform_token_index_treats_eth_and_weth_as_equivalent() {
-        let [a, b, weth] = [1, 2, 3].map(eth::Address::repeat_byte);
+    fn uniform_buy_token_index_accepts_weth_for_eth() {
+        let [a, weth] = [1, 2].map(eth::Address::repeat_byte);
         let eth = *eth::ETH_TOKEN;
-        let index = |tokens: &[eth::Address], uniform_len, token| {
-            uniform_token_index(tokens, uniform_len, token, weth.into())
+        let trade = |sell: u8, buy: u8| GPv2Settlement::GPv2Trade::Data {
+            sellTokenIndex: U256::from(sell),
+            buyTokenIndex: U256::from(buy),
+            ..Default::default()
+        };
+        let index = |tokens: &[eth::Address], trades: &[GPv2Settlement::GPv2Trade::Data]| {
+            uniform_buy_token_index(uniform_tokens(tokens, trades), eth, weth.into())
         };
 
+        // Only WETH has a uniform price, so both ETH buys use it.
+        let tokens = [a, weth, a, eth, a, eth];
+        let trades = [trade(2, 3), trade(4, 5)];
+        assert_eq!(uniform_tokens(&tokens, &trades), [a, weth]);
+        assert_eq!(index(&tokens, &trades), Some(1));
         // An explicit uniform ETH price wins over WETH.
-        assert_eq!(index(&[a, weth, eth, a, eth], 3, eth), 2);
-        // ETH falls back to WETH, also for a second trade buying ETH.
-        assert_eq!(index(&[a, weth, a, eth, b, eth], 2, eth), 1);
-        // WETH falls back to ETH.
-        assert_eq!(index(&[eth, a, weth, a], 1, weth), 0);
-        // Without a uniform section the first occurrence is used.
-        assert_eq!(index(&[a, weth, a, eth], 0, eth), 3);
-        // Other tokens never resolve to ETH or WETH.
-        assert_eq!(index(&[weth, a, b, a], 1, a), 1);
+        assert_eq!(index(&[a, weth, eth, a, eth], &[trade(3, 4)]), Some(2));
+        // No uniform prices at all.
+        assert_eq!(index(&[a, eth], &[trade(0, 1)]), None);
     }
 }
