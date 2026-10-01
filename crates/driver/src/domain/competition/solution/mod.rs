@@ -93,10 +93,19 @@ pub struct LimitPrices {
 }
 
 /// Whether `order` describes the same trade as `quoted`: same tokens, side and
-/// target amount. A partial check, not full order equality.
-fn compare_orders(order: &competition::Order, quoted: &competition::Order) -> bool {
-    order.sell.token == quoted.sell.token
-        && order.buy.token == quoted.buy.token
+/// target amount. Native ETH and WETH are treated as the same token: the
+/// orderbook rewrites buy-ETH quote requests to WETH before they hit the
+/// driver, so a cached fast-path solution's order holds WETH while the signed
+/// order carried into `/settle_fast_path` still carries the ETH marker.
+fn compare_orders(
+    order: &competition::Order,
+    quoted: &competition::Order,
+    weth: eth::WrappedNativeToken,
+) -> bool {
+    order.buy.token.as_erc20(weth) == quoted.buy.token.as_erc20(weth)
+        // only the BUY side has a sentinel value for ETH so sell tokens
+        // get compared as they are
+        && order.sell.token == quoted.sell.token
         && order.side == quoted.side
         && order.target() == quoted.target()
 }
@@ -573,7 +582,7 @@ impl Solution {
             return Err(error::Error::FastPathTradeCount(self.user_trades().count()));
         };
 
-        if !compare_orders(&order, user.order()) {
+        if !compare_orders(&order, user.order(), self.weth) {
             return Err(error::Error::FastPathOrderMismatch);
         }
 
