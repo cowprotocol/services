@@ -103,13 +103,13 @@ impl Solana {
         ))
     }
 
-    /// The token program of each of `mints`, fetching only the mints missing
-    /// from the cache. Only resolved programs are cached: a mint that is
-    /// missing or invalid is read again next time.
+    /// The token program of each of `mints`, or why the mint has none,
+    /// fetching only the mints missing from the cache. Only resolved programs
+    /// are cached: a mint that is missing or invalid is read again next time.
     pub async fn token_programs(
         &self,
         mints: impl IntoIterator<Item = Pubkey>,
-    ) -> Result<MintPrograms, Error> {
+    ) -> Result<HashMap<Pubkey, Result<TokenProgram, InvalidMintReason>>, Error> {
         let (mut programs, unknown): (HashMap<_, _>, Vec<_>) =
             mints
                 .into_iter()
@@ -125,23 +125,7 @@ impl Solana {
             }
             programs.insert(mint, program);
         }
-        Ok(MintPrograms(programs))
-    }
-}
-
-/// The token program of each mint passed to [`Solana::token_programs`], or
-/// why the mint has none.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MintPrograms(HashMap<Pubkey, Result<TokenProgram, InvalidMintReason>>);
-
-impl MintPrograms {
-    /// `mint`'s token program. A mint that was not looked up reads as not
-    /// found.
-    pub fn get(&self, mint: Pubkey) -> Result<TokenProgram, InvalidMintReason> {
-        self.0
-            .get(&mint)
-            .copied()
-            .unwrap_or(Err(InvalidMintReason::AccountNotFound))
+        Ok(programs)
     }
 }
 
@@ -164,10 +148,10 @@ mod tests {
         )]);
         let solana = Solana::new(SolanaRPC::new_mock_with_mocks(mocks), Pubkey::new_unique());
 
-        let expected = MintPrograms(HashMap::from([
+        let expected = HashMap::from([
             (mint, Ok(TokenProgram::SplToken)),
             (absent, Err(InvalidMintReason::AccountNotFound)),
-        ]));
+        ]);
         assert_eq!(
             solana.token_programs([mint, absent]).await.unwrap(),
             expected
@@ -175,10 +159,6 @@ mod tests {
         assert_eq!(
             solana.token_programs([mint, absent]).await.unwrap(),
             expected
-        );
-        assert_eq!(
-            MintPrograms::default().get(mint),
-            Err(InvalidMintReason::AccountNotFound)
         );
     }
 }

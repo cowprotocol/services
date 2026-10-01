@@ -79,9 +79,24 @@ pub(crate) struct ResolvedSettlement {
     /// orders' buy-mint ATAs missing on chain, plus the payer's wSOL ATA
     /// whenever the settlement uses it. Sorted and deduplicated.
     missing_atas: Vec<Ata>,
-    /// The token program of every mint in [`Settlement::mints`].
-    token_programs: HashMap<Pubkey, TokenProgram>,
+    token_programs: TokenPrograms,
 }
+
+/// The token program of every mint in [`Settlement::mints`].
+struct TokenPrograms(HashMap<Pubkey, TokenProgram>);
+
+impl TokenPrograms {
+    /// `mint`'s token program. A miss means `mint` is outside
+    /// [`Settlement::mints`].
+    fn get(&self, mint: Pubkey) -> Result<TokenProgram, UnresolvedMint> {
+        self.0.get(&mint).copied().ok_or(UnresolvedMint(mint))
+    }
+}
+
+/// A token program lookup for a mint outside [`Settlement::mints`].
+#[derive(Debug, PartialEq, thiserror::Error)]
+#[error("no token program resolved for mint {0}")]
+pub struct UnresolvedMint(pub Pubkey);
 
 impl Settlement {
     /// Build a settlement and validate its orders.
@@ -114,17 +129,19 @@ impl Settlement {
     ) -> Result<ResolvedSettlement, ResolveError> {
         // ATA addresses derive from the mint's token program, so the mints are
         // read before the accounts derived from them.
-        let mints = self.mints();
-        let programs = blockchain
-            .token_programs(mints.iter().copied())
+        let token_programs = blockchain
+            .token_programs(self.mints())
             .await
-            .map_err(ResolveError::Rpc)?;
-        let token_program = |mint: Pubkey| {
-            programs
-                .get(mint)
-                .map_err(|reason| ResolveError::InvalidMint { mint, reason })
-        };
-        let (buffers, payer_atas) = self.setup_accounts(payer, &token_program)?;
+            .map_err(ResolveError::Rpc)?
+            .into_iter()
+            .map(|(mint, program)| {
+                program
+                    .map(|program| (mint, program))
+                    .map_err(|reason| ResolveError::InvalidMint { mint, reason })
+            })
+            .collect::<Result<_, _>>()
+            .map(TokenPrograms)?;
+        let (buffers, payer_atas) = self.setup_accounts(payer, &token_programs)?;
 
         let addresses = self
             .solution
@@ -157,12 +174,8 @@ impl Settlement {
             &payer_atas,
             payer,
             &snapshot,
-            &token_program,
+            &token_programs,
         )?;
-        let token_programs = mints
-            .into_iter()
-            .map(|mint| Ok((mint, token_program(mint)?)))
-            .collect::<Result<_, ResolveError>>()?;
 
         Ok(ResolvedSettlement {
             settlement: self,
@@ -194,12 +207,11 @@ impl Settlement {
 
     /// The buffer PDAs and payer ATAs the settlement needs: a buffer per
     /// token buy mint, a payer ATA per sell mint, and the payer's wSOL ATA when
-    /// an order buys native SOL. `token_program` resolves the program an ATA
-    /// derives under.
+    /// an order buys native SOL.
     fn setup_accounts(
         &self,
         payer: Pubkey,
-        token_program: &impl Fn(Pubkey) -> Result<TokenProgram, ResolveError>,
+        token_programs: &TokenPrograms,
     ) -> Result<(Vec<SetupAccount>, Vec<SetupAccount>), ResolveError> {
         let buffers = self
             .orders
@@ -217,8 +229,14 @@ impl Settlement {
             .iter()
             .map(|order| order.sell_token)
             .chain(wsol)
-            .map(|mint| Ok(SetupAccount::new_ata(mint, payer, token_program(mint)?)))
-            .collect::<Result<_, _>>()?;
+            .map(|mint| {
+                Ok(SetupAccount::new_ata(
+                    mint,
+                    payer,
+                    token_programs.get(mint)?,
+                ))
+            })
+            .collect::<Result<_, ResolveError>>()?;
         Ok((buffers, payer_atas))
     }
 }
@@ -234,7 +252,7 @@ impl ResolvedSettlement {
             .iter()
             .map(|order| {
                 let amounts = executed_amounts(order, &self.settlement.solution)?;
-                let sell_program = self.token_program(order.sell_token)?;
+                let sell_program = self.token_programs.get(order.sell_token)?;
                 Ok(SettlementOrder::new(order, &payer, amounts, sell_program))
             })
             .collect::<Result<_, Error>>()?;
@@ -273,7 +291,7 @@ impl ResolvedSettlement {
         for program in TokenProgram::ALL {
             let mut mints = Vec::new();
             for mint in &self.missing_buffers {
-                if self.token_program(*mint)? == program {
+                if self.token_programs.get(*mint)? == program {
                     mints.push(*mint);
                 }
             }
@@ -296,7 +314,7 @@ impl ResolvedSettlement {
                 &payer,
                 &ata.owner,
                 &ata.mint,
-                self.token_program(ata.mint)?,
+                self.token_programs.get(ata.mint)?,
             ));
         }
 
@@ -335,15 +353,6 @@ impl ResolvedSettlement {
         );
 
         Ok(instructions)
-    }
-
-    /// The token program of `mint`, read for every mint of the settlement in
-    /// [`Settlement::resolve_accounts`].
-    fn token_program(&self, mint: Pubkey) -> Result<TokenProgram, Error> {
-        self.token_programs
-            .get(&mint)
-            .copied()
-            .ok_or(Error::UnresolvedMint(mint))
     }
 
     /// Encode the resolved settlement as a signed v0 transaction.
@@ -406,7 +415,7 @@ fn accounts_to_create(
     payer_atas: &[SetupAccount],
     payer: Pubkey,
     snapshot: &AccountsSnapshot,
-    token_program: &impl Fn(Pubkey) -> Result<TokenProgram, ResolveError>,
+    token_programs: &TokenPrograms,
 ) -> Result<(Vec<Pubkey>, Vec<Ata>), ResolveError> {
     let mut missing_buffers = missing_setup_accounts(buffers, snapshot)?;
     missing_buffers.sort_unstable();
@@ -430,7 +439,7 @@ fn accounts_to_create(
     let mut missing_atas: Vec<Ata> = missing_payer_atas.collect();
     for order in token_buys(orders) {
         if snapshot.token_account_needs_creation(order.buy_token_account)
-            && order.buy_token_account_is_ata(token_program(order.buy_token)?)
+            && order.buy_token_account_is_ata(token_programs.get(order.buy_token)?)
         {
             missing_atas.push(Ata {
                 owner: order.owner,
@@ -517,6 +526,8 @@ pub(crate) enum ResolveError {
         mint: Pubkey,
         reason: InvalidMintReason,
     },
+    #[error(transparent)]
+    UnresolvedMint(#[from] UnresolvedMint),
 }
 
 impl From<&Order> for OrderIntent {
@@ -774,9 +785,8 @@ pub enum Error {
     /// The instruction index does not fit in `u16`.
     #[error("instruction index does not fit in u16")]
     InstructionIndexOverflow,
-    /// No token program was resolved for a mint the instructions address.
-    #[error("no token program resolved for mint {0}")]
-    UnresolvedMint(Pubkey),
+    #[error(transparent)]
+    UnresolvedMint(#[from] UnresolvedMint),
 }
 
 #[cfg(test)]
@@ -875,17 +885,14 @@ mod tests {
     }
 
     /// Every mint of the settlement under the SPL Token program.
-    fn spl_token_programs(settlement: &Settlement) -> HashMap<Pubkey, TokenProgram> {
-        settlement
-            .mints()
-            .into_iter()
-            .map(|mint| (mint, TokenProgram::SplToken))
-            .collect()
-    }
-
-    /// Every mint resolves under the SPL Token program.
-    fn spl_token_program(_: Pubkey) -> Result<TokenProgram, ResolveError> {
-        Ok(TokenProgram::SplToken)
+    fn spl_token_programs(settlement: &Settlement) -> TokenPrograms {
+        TokenPrograms(
+            settlement
+                .mints()
+                .into_iter()
+                .map(|mint| (mint, TokenProgram::SplToken))
+                .collect(),
+        )
     }
 
     /// Answers the settlement's two `getMultipleAccounts` lookups in order:
@@ -1503,7 +1510,7 @@ mod tests {
         .unwrap();
 
         let (buffers, payer_atas) = settlement
-            .setup_accounts(payer, &spl_token_program)
+            .setup_accounts(payer, &spl_token_programs(&settlement))
             .unwrap();
         let buffer_mints: Vec<Pubkey> = buffers.iter().map(|account| account.mint).collect();
         assert_eq!(buffer_mints, vec![token_buy.buy_token]);
@@ -1649,12 +1656,12 @@ mod tests {
                     mint: token_2022.sell_token,
                 },
             ],
-            token_programs: HashMap::from([
+            token_programs: TokenPrograms(HashMap::from([
                 (spl.sell_token, TokenProgram::SplToken),
                 (spl.buy_token, TokenProgram::SplToken),
                 (token_2022.sell_token, TokenProgram::Token2022),
                 (token_2022.buy_token, TokenProgram::Token2022),
-            ]),
+            ])),
         };
 
         let instructions = resolved.instructions(payer).unwrap();
@@ -1776,8 +1783,8 @@ mod tests {
     }
 
     /// The mint lookup answers absent for both mints, then a token account at
-    /// both mints' addresses. Each fails the resolution for the sell mint,
-    /// the first mint an ATA derives for, with the matching reason.
+    /// both mints' addresses. Each fails the resolution with the matching
+    /// reason.
     #[tokio::test]
     async fn an_invalid_mint_fails_the_resolution() {
         let program_id = pubkey(0xaa);
@@ -1805,7 +1812,7 @@ mod tests {
                 panic!("an invalid mint fails the resolution");
             };
             assert!(
-                matches!(err, ResolveError::InvalidMint { mint, reason } if mint == order.sell_token && reason == expected),
+                matches!(err, ResolveError::InvalidMint { mint, reason } if [order.sell_token, order.buy_token].contains(&mint) && reason == expected),
                 "{err}"
             );
         }

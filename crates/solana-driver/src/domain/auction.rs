@@ -6,7 +6,12 @@ use {
         order_uid::OrderUid,
         slot::Slot,
     },
-    crate::infra::blockchain::{Solana, TokenAccountState, associated_token_address},
+    crate::infra::blockchain::{
+        InvalidMintReason,
+        Solana,
+        TokenAccountState,
+        associated_token_address,
+    },
     cow_settlement_interface::{
         data::intent::ENCODED_NATIVE_SOL_TRANSFER,
         token_program::TokenProgram,
@@ -107,7 +112,13 @@ impl Auction {
             .await?;
         let mut resolved = BuyTokenAccounts::default();
         for order in token_buys() {
-            let program = match programs.get(order.buy_token) {
+            // Every token buy's mint was fetched, so a missing entry only
+            // guards a bug and drops the order like an invalid mint.
+            let program = programs
+                .get(&order.buy_token)
+                .copied()
+                .unwrap_or(Err(InvalidMintReason::AccountNotFound));
+            let program = match program {
                 Ok(program) => program,
                 Err(reason) => {
                     tracing::warn!(
