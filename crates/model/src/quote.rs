@@ -1,6 +1,12 @@
 use {
     crate::{
-        order::{BuyTokenDestination, OrderCreationAppData, OrderKind, SellTokenSource},
+        order::{
+            BuyTokenDestination,
+            OrderCreationAppData,
+            OrderKind,
+            SellTokenSource,
+            deserialize_receiver_defaulting_to_zero,
+        },
         signature::SigningScheme,
         time,
     },
@@ -126,7 +132,7 @@ pub struct OrderQuoteRequest {
     pub from: Address,
     pub sell_token: Address,
     pub buy_token: Address,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_receiver_defaulting_to_zero")]
     pub receiver: Address,
     #[serde(flatten)]
     pub side: OrderQuoteSide,
@@ -395,6 +401,35 @@ mod tests {
                 "priceQuality": "verified",
             })
         );
+    }
+
+    /// Regression: before the `Option<Address>` → `Address` flip, clients
+    /// could send `"receiver": null` and the orderbook would parse it as
+    /// `None` → zero. Make sure the custom deserializer still accepts both
+    /// `null` and a missing field.
+    #[test]
+    fn quote_request_tolerates_null_receiver() {
+        let base = json!({
+            "from": "0x0000000000000000000000000000000000000000",
+            "sellToken": "0x0000000000000000000000000000000000000001",
+            "buyToken": "0x0000000000000000000000000000000000000002",
+            "kind": "buy",
+            "buyAmountAfterFee": "1",
+        });
+
+        for receiver in [
+            serde_json::Value::Null,
+            json!("0x0000000000000000000000000000000000000000"),
+        ] {
+            let mut body = base.clone();
+            body["receiver"] = receiver;
+            let parsed: OrderQuoteRequest = serde_json::from_value(body).unwrap();
+            assert_eq!(parsed.receiver, Address::ZERO);
+        }
+
+        // Missing field → still zero.
+        let parsed: OrderQuoteRequest = serde_json::from_value(base).unwrap();
+        assert_eq!(parsed.receiver, Address::ZERO);
     }
 
     #[test]

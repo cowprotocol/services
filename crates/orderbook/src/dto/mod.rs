@@ -5,7 +5,12 @@ use {
     alloy::primitives::U256,
     eth_domain_types::{Address, NonZeroU256},
     model::{
-        order::{BuyTokenDestination, OrderKind, SellTokenSource},
+        order::{
+            BuyTokenDestination,
+            OrderKind,
+            SellTokenSource,
+            deserialize_receiver_defaulting_to_zero,
+        },
         signature::Signature,
     },
     number::serialization::HexOrDecimalU256,
@@ -37,8 +42,9 @@ pub struct OrderSimulationRequest {
     /// The address of the order's owner
     pub owner: Address,
     /// The receiver of the `buy_token`. The settlement contract treats
-    /// `0x0000…` as "pay the owner".
-    #[serde(default)]
+    /// `0x0000…` as "pay the owner". Missing or `null` deserializes to
+    /// `0x0000…`.
+    #[serde(default, deserialize_with = "deserialize_receiver_defaulting_to_zero")]
     pub receiver: Address,
     /// Sell token's source — ERC20, internal vault or external vault (at the
     /// time of writing).

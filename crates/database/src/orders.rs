@@ -218,8 +218,17 @@ pub async fn read_order(
     ex: &mut PgConnection,
     id: &OrderUid,
 ) -> Result<Option<Order>, sqlx::Error> {
+    // Explicit column list (instead of `SELECT *`) so we can COALESCE the
+    // nullable `receiver` column into the zero address — matching the other
+    // read paths and keeping legacy NULL rows decodable.
     const QUERY: &str = r#"
-SELECT * FROM ORDERS
+SELECT uid, owner, creation_timestamp, sell_token, buy_token,
+    COALESCE(receiver, '\x0000000000000000000000000000000000000000'::bytea) AS receiver,
+    sell_amount, buy_amount, valid_to, app_data, fee_amount, kind,
+    partially_fillable, signature, signing_scheme, settlement_contract,
+    sell_token_balance, buy_token_balance, cancellation_timestamp,
+    valid_from, fast_path
+FROM orders
 WHERE uid = $1
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
