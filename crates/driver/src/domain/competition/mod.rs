@@ -876,9 +876,10 @@ impl Competition {
             .find(|s| s.solution().get() == solution_id && s.auction_id == auction_id)
             .cloned()
             .ok_or(Error::SolutionNotAvailable)?;
-        let encoded = settlement
-            .encode(&self.eth, None)
-            .map_err(Error::DeadlineReencodingFailed)?;
+        let encoded = settlement.encode(&self.eth, None).map_err(|err| {
+            tracing::warn!(?err, "failed to encode settlement for reveal");
+            Error::EncodingFailed(err)
+        })?;
         Ok(Revealed {
             internalized_calldata: encoded.internalized.input,
             uninternalized_calldata: encoded.uninternalized.input,
@@ -950,8 +951,8 @@ impl Competition {
         let encoded = settlement
             .encode(&self.eth, Some(submission_deadline))
             .map_err(|err| {
-                tracing::warn!(?err, "failed to encode settlement with deadline check");
-                Error::DeadlineReencodingFailed(err)
+                tracing::warn!(?err, "failed to encode settlement for submission");
+                Error::EncodingFailed(err)
             })?;
 
         // Asynchronously notify liquidity sources to not block settlement
@@ -1169,8 +1170,8 @@ pub enum Error {
     FastPathInvalidOrder(solution::Error),
     #[error("failed to build fast-path settlement: {0:?}")]
     FastPathSettlement(#[from] solution::Error),
-    #[error("failed to re-encode settlement with deadline pre-interaction: {0:?}")]
-    DeadlineReencodingFailed(solution::Error),
+    #[error("failed to encode settlement: {0:?}")]
+    EncodingFailed(solution::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
