@@ -612,7 +612,7 @@ fn convert_onchain_order_placement(
         creation_timestamp: Utc.timestamp_opt(event_timestamp, 0).unwrap(),
         sell_token: ByteArray(order_data.sell_token.0.0),
         buy_token: ByteArray(order_data.buy_token.0.0),
-        receiver: Some(ByteArray(order_data.receiver.0.0)),
+        receiver: ByteArray(order_data.receiver.0.0),
         sell_amount: u256_to_big_decimal(&order_data.sell_amount),
         buy_amount: u256_to_big_decimal(&order_data.buy_amount),
         valid_to: order_data.valid_to as i64,
@@ -1052,7 +1052,7 @@ mod test {
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0.0),
             buy_token: ByteArray(expected_order_data.buy_token.0.0),
-            receiver: Some(ByteArray(expected_order_data.receiver.0.0)),
+            receiver: ByteArray(expected_order_data.receiver.0.0),
             sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
             buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
@@ -1166,7 +1166,7 @@ mod test {
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0.0),
             buy_token: ByteArray(expected_order_data.buy_token.0.0),
-            receiver: Some(ByteArray(expected_order_data.receiver.0.0)),
+            receiver: ByteArray(expected_order_data.receiver.0.0),
             sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
             buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
