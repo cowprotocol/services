@@ -55,7 +55,7 @@ pub struct Config<'a> {
     pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
     pub allow_multiple_solve_requests: bool,
-    pub haircut_bps: u32,
+    pub solver_fee_bps: u32,
 }
 
 impl Solver {
@@ -100,12 +100,12 @@ impl Solver {
                             _ => {}
                         }
                     }
-                    // Make-room for the haircut: the driver subtracts a haircut
-                    // post-hoc from buy_amount() (sell orders) / adds it to
-                    // sell_amount() (buy orders). Tightening the auction limits
-                    // here ensures solvers bid with enough headroom.
-                    if config.haircut_bps > 0 {
-                        let factor = f64::from(config.haircut_bps) / 10_000.0;
+                    // The driver injects the solver fee as an additional volume
+                    // fee policy, so in driver fee-handling mode it tightens
+                    // the limits for it exactly like for
+                    // the volume policies above.
+                    if config.solver_fee_bps > 0 && config.fee_handler == FeeHandler::Driver {
+                        let factor = f64::from(config.solver_fee_bps) / 10_000.0;
                         current_sell_amount = eth::TokenAmount(current_sell_amount)
                             .apply_factor(1.0 / (1.0 + factor))
                             .unwrap()
@@ -137,10 +137,10 @@ impl Solver {
                             _ => {}
                         }
                     }
-                    // Make-room for the haircut (see comment in the buy-side
-                    // branch above).
-                    if config.haircut_bps > 0 {
-                        let factor = f64::from(config.haircut_bps) / 10_000.0;
+                    // Solver fee make-room (see comment in the buy-side branch
+                    // above).
+                    if config.solver_fee_bps > 0 && config.fee_handler == FeeHandler::Driver {
+                        let factor = f64::from(config.solver_fee_bps) / 10_000.0;
                         current_buy_amount = eth::TokenAmount(current_buy_amount)
                             .apply_factor(1.0 / (1.0 - factor))
                             .unwrap()
@@ -170,10 +170,7 @@ impl Solver {
                     order::Side::Buy => "buy",
                 },
                 "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
-                "class": match quote.order.kind {
-                    order::Kind::Market => "market",
-                    order::Kind::Limit => "limit",
-                },
+                "class": "limit",
                 "appData": app_data::AppDataHash(quote.order.app_data.hash().0.0),
                 "signature": if config.quote { "0x".to_string() } else { const_hex::encode_prefixed(quote.order_signature(config.blockchain)) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
@@ -191,22 +188,29 @@ impl Solver {
                 });
             }
             if config.fee_handler == FeeHandler::Solver {
-                order.as_object_mut().unwrap().insert(
-                    "feePolicies".to_owned(),
-                    match quote.order.kind {
-                        _ if config.quote => json!([]),
-                        order::Kind::Market => json!([]),
-                        order::Kind::Limit => {
-                            let fee_policies_json: Vec<serde_json::Value> = quote
-                                .order
-                                .fee_policy
-                                .iter()
-                                .map(|policy| policy.to_json_value())
-                                .collect();
-                            json!(fee_policies_json)
+                let mut fee_policies_json: Vec<serde_json::Value> = if config.quote {
+                    vec![]
+                } else {
+                    quote
+                        .order
+                        .fee_policy
+                        .iter()
+                        .map(|policy| policy.to_json_value())
+                        .collect()
+                };
+                // In solver fee-handling mode the injected solver fee is
+                // forwarded to the solver as a regular volume fee policy.
+                if config.solver_fee_bps > 0 {
+                    fee_policies_json.push(json!({
+                        "volume": {
+                            "factor": f64::from(config.solver_fee_bps) / 10_000.0,
                         }
-                    },
-                );
+                    }));
+                }
+                order
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("feePolicies".to_owned(), json!(fee_policies_json));
             }
             orders_json.push(order);
         }
@@ -514,13 +518,8 @@ impl Solver {
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
                     let base_fee = eth.current_block().borrow().base_fee;
                     let effective_gas_price = eth.gas_price().await.unwrap().effective(base_fee).to_string();
-                    let expected = json!({
-                        // Regular auctions use a fixed id; quote auctions carry
-                        // the quote id.
-                        "id": match config.quote {
-                            false => "1".to_owned(),
-                            true => config.quote_id.expect("quotes carry a quote id").to_string(),
-                        },
+                    let mut expected = json!({
+                        "id": (!config.quote).then_some("1"),
                         "tokens": tokens_json,
                         "orders": orders_json,
                         "liquidity": [],
@@ -528,6 +527,10 @@ impl Solver {
                         "deadline": config.deadline.solvers(),
                         "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
+                    if config.quote {
+                        expected["quoteId"] =
+                            config.quote_id.expect("quotes carry a quote id").to_string().into();
+                    }
                     check_solve_request(req, expected);
                     let mut state = state.0.lock().unwrap();
                     assert!(

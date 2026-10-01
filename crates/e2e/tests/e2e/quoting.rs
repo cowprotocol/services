@@ -334,7 +334,7 @@ async fn quote_timeout(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -343,7 +343,7 @@ async fn quote_timeout(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
@@ -410,8 +410,10 @@ async fn quote_timeout(web3: Web3) {
 
     let assert_within_variance = |start_timestamp: Instant, target| {
         const VARIANCE: u64 = 100; // small buffer to allow for variance in the test
-        const HTTP_BUFFER: u64 = 100;
-        let min = target - HTTP_BUFFER;
+        let http_buffer = driver::infra::Solver::quote_timeouts()
+            .http_delay
+            .num_milliseconds() as u64;
+        let min = target - http_buffer;
         let max = min + VARIANCE;
         let elapsed = start_timestamp.elapsed().as_millis() as u64;
         tracing::debug!(target, actual = ?elapsed, "finished request");
@@ -515,7 +517,7 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -524,7 +526,7 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
@@ -640,7 +642,7 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -649,7 +651,7 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
@@ -753,7 +755,7 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                 endpoint: custom_error_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -762,7 +764,7 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                 endpoint: no_liquidity_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],

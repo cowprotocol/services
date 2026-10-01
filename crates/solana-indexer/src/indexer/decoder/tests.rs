@@ -38,7 +38,7 @@ use {
     cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{Flags, OrderIntent, OrderKind as IntentOrderKind},
+        data::intent::{Asset, Flags, OrderIntent, OrderKind as IntentOrderKind, TokenAsset},
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
@@ -351,16 +351,18 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     (tx_from_instructions(pubkey(9), &[instruction]), expected)
 }
 
-/// The `CreateOrder` instruction and the event its decode must produce.
-fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) {
-    let settlement = pubkey(1);
-    let created_by = pubkey(12);
-    let intent = OrderIntent {
+/// The intent behind [`create_order_parts`] and the cancellation test.
+fn sample_intent() -> OrderIntent {
+    OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
-        buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
-        sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
-        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
-        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
+        sell: TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x66; 32]),
+            token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        },
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x55; 32]),
+            token_account: InterfacePubkey::new_from_array([0x22; 32]),
+        }),
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
@@ -370,7 +372,14 @@ fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) 
             partially_fillable: false,
         },
         app_data: [0x44; 32],
-    };
+    }
+}
+
+/// The `CreateOrder` instruction and the event its decode must produce.
+fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) {
+    let settlement = pubkey(1);
+    let created_by = pubkey(12);
+    let intent = sample_intent();
     let instruction = cow_settlement_client::instruction::CreateOrder {
         program_id: settlement,
         owner: pubkey(11),
@@ -396,6 +405,57 @@ fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) 
         app_data: [0x44; 32],
     };
     (instruction, expected)
+}
+
+/// `CancelOrder` carrying intent bytes created the order cancelled, so it
+/// decodes to the creation followed by the cancellation. Without them only
+/// the cancellation is emitted.
+#[test]
+fn cancel_order_decodes_to_the_cancellation() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (_, created) = create_order_parts();
+    let intent = sample_intent();
+    let cancelled = SettlementEvent::OrderCancelled {
+        signature: signature(6),
+        order_pda: find_order_pda(&settlement, &intent.uid()).0,
+    };
+    let creating: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instruction::CancelOrder {
+            program_id: settlement,
+            owner: pubkey(11),
+            created_by: pubkey(12),
+            intent: &intent,
+        }
+        .into();
+    let existing: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instruction::cancel_order::CancelOutstandingOrder {
+            program_id: settlement,
+            owner: pubkey(11),
+            created_by: pubkey(12),
+            intent: &intent,
+        }
+        .into();
+
+    for (instruction, expected) in [
+        (
+            creating,
+            vec![
+                SettlementEvent::OrderCreated(Box::new(created.clone())),
+                cancelled.clone(),
+            ],
+        ),
+        (existing, vec![cancelled.clone()]),
+    ] {
+        let tx = tx_from_instructions(pubkey(9), &[instruction]);
+        let ctx = TxContext {
+            slot: Slot(5),
+            signature: signature(6),
+            account_keys: build_account_keys(&tx),
+            post_token_balances: vec![],
+        };
+        let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
+        assert_eq!(decode_settlement(&instructions, &ctx), Ok(expected));
+    }
 }
 
 /// The RPC wire form of a signed transaction, as `getTransaction` returns it
@@ -728,10 +788,14 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let fee_payer = pubkey(9);
     let intent = OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
-        buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
-        sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
-        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
-        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
+        sell: TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x66; 32]),
+            token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        },
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x55; 32]),
+            token_account: InterfacePubkey::new_from_array([0x22; 32]),
+        }),
         sell_amount: 1_000,
         buy_amount: 1_234,
         valid_to: 42,
@@ -947,8 +1011,9 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
 }
 
 /// Backfill end to end: the watermark trails the tip past the replay window,
-/// RPC history supplies the missing transaction, and the watermark lands on
-/// the scanned tip with the recovered order persisted.
+/// RPC history supplies the missing transaction, and the watermark lands
+/// the signature index allowance below the scanned tip with the recovered
+/// order persisted.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
 async fn solana_db_backfill_recovers_the_gap() {
@@ -961,7 +1026,7 @@ async fn solana_db_backfill_recovers_the_gap() {
     let (instruction, expected) = create_order_parts();
     let tx = versioned_tx(instruction);
     let mut mocks = Mocks::default();
-    mocks.insert(RpcRequest::GetSlot, serde_json::json!(50u64));
+    mocks.insert(RpcRequest::GetSlot, serde_json::json!(100u64));
     mocks.insert(
         RpcRequest::GetSignaturesForAddress,
         serde_json::json!([{
@@ -988,7 +1053,7 @@ async fn solana_db_backfill_recovers_the_gap() {
 
     assert_eq!(
         persistence.last_indexed_slot().await.unwrap(),
-        Some(Slot(50))
+        Some(Slot(100 - super::backfill::SIGNATURE_INDEX_LAG))
     );
     let (uid, created_by_tx, created_in_slot): (Vec<u8>, Vec<u8>, i64) = sqlx::query_as(
         "SELECT o.uid, p.created_by_tx, p.created_in_slot

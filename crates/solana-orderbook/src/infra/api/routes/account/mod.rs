@@ -64,9 +64,16 @@ pub async fn account_orders(
             error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
         })?;
     let now = now_unix();
+    // Only a pending creation has a deadline to check against the chain.
+    let pending = rows.iter().any(|row| row.last_valid_block_height.is_some());
+    let block_height = if pending {
+        state.block_height().await
+    } else {
+        None
+    };
     Ok(Json(
         rows.into_iter()
-            .map(|row| dto::Order::new(row, now))
+            .map(|row| dto::Order::new(row, now, block_height))
             .collect(),
     ))
 }

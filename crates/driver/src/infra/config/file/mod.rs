@@ -325,12 +325,13 @@ struct SolverConfig {
     #[serde(default = "default_settle_queue_size")]
     settle_queue_size: usize,
 
-    /// Haircut in basis points (0-10000). Applied to solver-reported
-    /// economics to make bids more conservative by adjusting clearing prices
-    /// to report lower surplus. Useful for solvers prone to negative slippage.
-    /// Default: 0 (no haircut).
-    #[serde(default)]
-    haircut_bps: u32,
+    /// Volume-based solver fee in basis points (0-10000, exclusive). Injected
+    /// as an additional volume fee policy on every auction order, reusing the
+    /// protocol fee machinery to make bids and delivered prices more
+    /// conservative. Useful for solvers prone to negative slippage.
+    /// Default: 0 (no fee).
+    #[serde(default, alias = "haircut-bps")]
+    solver_fee_bps: u32,
 
     /// Additional EOAs that submit settlement txs on behalf of the solver
     /// via EIP-7702 delegation. When non-empty, enables parallel submission

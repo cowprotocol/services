@@ -224,8 +224,10 @@ components:
         - sell
         - buy
     OrderClass:
+      deprecated: true
       description: |
-        How the CoW Protocol order was classified.
+        Deprecated: every order is a `limit` order. Solvers should not rely on
+        this field, it is retained for compatibility and will be removed.
       type: string
       enum:
         - market
@@ -346,7 +348,6 @@ components:
         - postInteractions
         - sellTokenSource
         - buyTokenDestination
-        - class
         - appData
         - signingScheme
         - signature
@@ -408,7 +409,10 @@ components:
             - $ref: "#/components/schemas/BuyTokenBalance"
           default: erc20
         class:
-          $ref: "#/components/schemas/OrderClass"
+          allOf:
+            - $ref: "#/components/schemas/OrderClass"
+          deprecated: true
+          default: limit
         appData:
           $ref: "#/components/schemas/AppData"
         flashloanHint:
@@ -704,7 +708,6 @@ components:
         The abstract auction to be solved by the searcher.
       type: object
       required:
-        - id
         - tokens
         - orders
         - liquidity
@@ -714,10 +717,16 @@ components:
       properties:
         id:
           description: |
-            An opaque identifier for the auction or, for requests that are not
-            part of an auction, of the quote being computed. The order
-            eventually placed with a quote references the same quote id, so a
-            solver can match the two.
+            An opaque identifier for the auction. Will be set to `null` for
+            requests that are not part of an auction (when quoting token prices
+            for example).
+          type: string
+        quoteId:
+          description: |
+            An opaque identifier for the quote being computed. Only set for
+            requests that are not part of an auction. The order eventually
+            placed with a quote references the same quote id, so a solver can
+            match the two.
           type: string
         tokens:
           description: |

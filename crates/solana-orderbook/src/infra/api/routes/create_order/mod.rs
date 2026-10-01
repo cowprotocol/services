@@ -7,7 +7,9 @@
 //! SOL, delegate the sell account, create the buy token account. The
 //! buy-account creation is required even when the account exists (it is
 //! idempotent on chain): settlement pays out to it and never creates it,
-//! and the instruction proves receivability without a lookup or a race.
+//! and the instruction proves receivability without a lookup or a race. A
+//! native SOL buy has no buy token account: its payout goes to the wallet
+//! and creates it when missing, so placement looks the wallet up instead.
 
 use {
     crate::infra::{
@@ -17,7 +19,13 @@ use {
     axum::{Json, http::StatusCode},
     bigdecimal::ToPrimitive,
     cow_settlement_interface::{
-        data::intent::{EncodedOrderIntent, OrderIntent, OrderKind as IntentOrderKind},
+        data::intent::{
+            Asset,
+            ENCODED_NATIVE_SOL_TRANSFER,
+            OrderIntent,
+            OrderKind as IntentOrderKind,
+            hash_bytes,
+        },
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
         pda::{order::find_order_pda, state::find_state_pda},
     },
@@ -42,7 +50,9 @@ use {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Params {
     #[serde_as(as = "Base64")]
-    pub transaction: Vec<u8>,
+    // TODO: the alias is deprecated and should be dropped in the future
+    #[serde(alias = "transaction")]
+    pub partially_signed_tx: Vec<u8>,
     /// The id the quote endpoint answered for this order, if any.
     #[serde(default)]
     pub quote_id: Option<i64>,
@@ -62,6 +72,7 @@ enum PlacementError {
     WrongDelegate,
     SameBuyAndSellToken,
     ZeroAmount,
+    InvalidNativeBuy(&'static str),
     InsufficientValidTo,
     InvalidSignature,
     BlockhashExpired,
@@ -99,6 +110,7 @@ impl From<PlacementError> for error::Reply {
                 ("SameBuyAndSellToken", "buy and sell token must differ")
             }
             PlacementError::ZeroAmount => ("ZeroAmount", "order amounts must not be zero"),
+            PlacementError::InvalidNativeBuy(description) => ("InvalidNativeBuy", description),
             PlacementError::InsufficientValidTo => (
                 "InsufficientValidTo",
                 "validTo lies closer than the minimum validity",
@@ -131,12 +143,33 @@ pub async fn create_order(
     let Some(sponsoring) = state.sponsoring() else {
         return Err(PlacementError::SponsoringDisabled.into());
     };
-    let transaction: VersionedTransaction =
-        bincode::deserialize(&params.transaction).map_err(|_| {
+    let transaction: VersionedTransaction = bincode::deserialize(&params.partially_signed_tx)
+        .map_err(|_| {
             PlacementError::InvalidTransaction("the bytes do not decode to a transaction")
         })?;
     let mut order = validate(sponsoring, &transaction, state.validation().min_validity)?;
-    order.presigned_transaction = params.transaction;
+    order.presigned_transaction = params.partially_signed_tx;
+
+    // Lamports paid to a program or a sysvar revert the settlement, and a
+    // program-owned account strands them. The payout creates a missing
+    // wallet.
+    if order.buy_token.0 == ENCODED_NATIVE_SOL_TRANSFER.to_bytes() {
+        let wallet = Pubkey::new_from_array(order.buy_token_account.0);
+        let accounts = sponsoring
+            .rpc
+            .multiple_accounts([wallet])
+            .await
+            .map_err(|err| internal_error_reply(err, "native buy wallet lookup failed"))?;
+        if accounts
+            .get(&wallet)
+            .is_some_and(|account| account.owner != solana_system_interface::program::ID)
+        {
+            return Err(PlacementError::InvalidNativeBuy(
+                "a native SOL buy must pay a wallet owned by the System Program",
+            )
+            .into());
+        }
+    }
 
     // The countersign re-checks freshness, so the stored expiry only has to
     // be an upper bound: the tip cannot have moved past the blockhash's own
@@ -245,8 +278,9 @@ fn validate(
     if *input.created_by != sponsoring.funder {
         return Err(PlacementError::WrongRentPayer);
     }
-    let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
+    let intent = OrderIntent::try_from(&input.intent_bytes)
         .map_err(|_| PlacementError::InvalidTransaction("the intent bytes do not decode"))?;
+    let uid = hash_bytes(&input.intent_bytes);
     if !intent.flags.created_on_chain {
         return Err(PlacementError::InvalidIntentFlags);
     }
@@ -263,11 +297,29 @@ fn validate(
     if !keys.iter().take(signers).any(|key| *key == intent.owner) {
         return Err(PlacementError::InvalidSignature);
     }
-    if intent.sell_mint == intent.buy_mint {
+    // Buying native SOL counts as buying wSOL.
+    let buy_mint = match &intent.buy {
+        Asset::TokenProgram(buy) => buy.mint,
+        Asset::Native(_) => spl_token_interface::native_mint::ID,
+    };
+    if intent.sell.mint == buy_mint {
         return Err(PlacementError::SameBuyAndSellToken);
     }
     if intent.sell_amount == 0 || intent.buy_amount == 0 {
         return Err(PlacementError::ZeroAmount);
+    }
+    // A native payout under the rent-exempt minimum of an empty account
+    // reverts the whole settlement, and a partial fill can land under it.
+    let native_buy = matches!(intent.buy, Asset::Native(_));
+    if native_buy && intent.buy_amount < super::min_native_payout() {
+        return Err(PlacementError::InvalidNativeBuy(
+            "a native SOL buy must pay at least the rent-exempt minimum of an empty account",
+        ));
+    }
+    if native_buy && intent.flags.partially_fillable {
+        return Err(PlacementError::InvalidNativeBuy(
+            "a native SOL buy cannot be partially fillable",
+        ));
     }
     let order_pda = find_order_pda(&sponsoring.settlement_program, &uid).0;
     if *input.order_pda != order_pda {
@@ -280,8 +332,8 @@ fn validate(
     }
 
     // The preparation instructions may only follow the template: each step
-    // at most once, in template order. The buy-account creation is the one
-    // mandatory step, everything else is omittable.
+    // at most once, in template order. The buy-account creation is mandatory
+    // for a token buy, everything else is omittable.
     let state_pda = find_state_pda(&sponsoring.settlement_program).0;
     let mut last_step = 0;
     for preparation in preparations {
@@ -293,7 +345,7 @@ fn validate(
         }
         last_step = step;
     }
-    if last_step != CREATE_DESTINATION {
+    if !native_buy && last_step != CREATE_DESTINATION {
         return Err(PlacementError::InvalidTransaction(
             "the bundle must create the buy token account",
         ));
@@ -495,7 +547,7 @@ fn preparation_step(
     let accounts = resolve_accounts(instruction, keys)?;
     // Wrap steps only make sense when the order sells native SOL through the
     // wSOL mint.
-    let wrapped_sell = intent.sell_mint == spl_token_interface::native_mint::ID;
+    let wrapped_sell = intent.sell.mint == spl_token_interface::native_mint::ID;
 
     if *program == solana_system_interface::program::ID {
         if !matches!(
@@ -521,7 +573,7 @@ fn preparation_step(
                 "the wrap transfer must come from the order owner",
             ));
         }
-        if to != intent.sell_token_account {
+        if to != intent.sell.token_account {
             return Err(PlacementError::InvalidTransaction(
                 "the wrap transfer must fund the sell token account",
             ));
@@ -540,7 +592,7 @@ fn preparation_step(
                         "wrap steps apply only to orders selling native SOL",
                     ));
                 }
-                if account != intent.sell_token_account {
+                if account != intent.sell.token_account {
                     return Err(PlacementError::InvalidTransaction(
                         "the sync must target the sell token account",
                     ));
@@ -561,7 +613,7 @@ fn preparation_step(
                         "a checked approve names a source, a mint, a delegate, and an owner",
                     ));
                 };
-                if mint != intent.sell_mint {
+                if mint != intent.sell.mint {
                     return Err(PlacementError::InvalidTransaction(
                         "the approve must cover the sell mint",
                     ));
@@ -596,7 +648,7 @@ fn preparation_step(
                 "the account creation must be paid by the funder or the owner",
             ));
         }
-        if wrapped_sell && account == intent.sell_token_account && mint == intent.sell_mint {
+        if wrapped_sell && account == intent.sell.token_account && mint == intent.sell.mint {
             // An order sells its owner's funds, so the wSOL account is theirs.
             if owner != intent.owner {
                 return Err(PlacementError::InvalidTransaction(
@@ -604,7 +656,10 @@ fn preparation_step(
                 ));
             }
             Ok(WRAP_CREATE)
-        } else if account == intent.buy_token_account && mint == intent.buy_mint {
+        } else if let Asset::TokenProgram(buy) = &intent.buy
+            && account == buy.token_account
+            && mint == buy.mint
+        {
             // Any wallet may receive the proceeds: settlement pays out to the
             // account the intent names, whoever owns it.
             Ok(CREATE_DESTINATION)
@@ -629,7 +684,7 @@ fn approve_step(
     delegate: Pubkey,
     owner: Pubkey,
 ) -> Result<u8, PlacementError> {
-    if source != intent.sell_token_account {
+    if source != intent.sell.token_account {
         return Err(PlacementError::InvalidTransaction(
             "the approve must cover the sell token account",
         ));
@@ -651,13 +706,14 @@ fn build_order(
     uid: solana_sdk::hash::Hash,
     order_pda: Pubkey,
 ) -> db::SponsoredOrder {
+    let (buy_mint, buy_token_account) = intent.buy.encode();
     db::SponsoredOrder {
         uid: ByteArray(uid.to_bytes()),
         owner: ByteArray(intent.owner.to_bytes()),
-        sell_token: ByteArray(intent.sell_mint.to_bytes()),
-        buy_token: ByteArray(intent.buy_mint.to_bytes()),
-        sell_token_account: ByteArray(intent.sell_token_account.to_bytes()),
-        buy_token_account: ByteArray(intent.buy_token_account.to_bytes()),
+        sell_token: ByteArray(intent.sell.mint.to_bytes()),
+        buy_token: ByteArray(buy_mint.to_bytes()),
+        sell_token_account: ByteArray(intent.sell.token_account.to_bytes()),
+        buy_token_account: ByteArray(buy_token_account.to_bytes()),
         sell_amount: intent.sell_amount,
         buy_amount: intent.buy_amount,
         valid_to: intent.valid_to,
@@ -736,5 +792,12 @@ mod tests {
         assert!(budget.read(&[2, 1]).is_err());
         // Variants that cost the funder nothing are ignored, not parsed.
         assert!(budget.read(&[1, 0, 0, 4, 0]).is_ok());
+    }
+
+    #[test]
+    fn transaction_is_an_alias_of_partially_signed_tx() {
+        let params: Params =
+            serde_json::from_value(serde_json::json!({ "transaction": "AQID" })).unwrap();
+        assert_eq!(params.partially_signed_tx, [1, 2, 3]);
     }
 }

@@ -15,11 +15,15 @@ use {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    /// Id of the auction or, for quote requests, of the quote being computed.
-    /// The order eventually placed with a quote references the same quote
-    /// id, so a solver can match the two.
-    #[serde_as(as = "DisplayFromStr")]
-    pub id: i64,
+    /// Id of the auction, `None` for quote requests. Solvers rely on this to
+    /// tell quotes apart from auctions.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub id: Option<i64>,
+    /// Id of the quote being computed, only set for quote requests. The order
+    /// eventually placed with the quote references the same id.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote_id: Option<i64>,
     pub tokens: HashMap<Address, Token>,
     pub orders: Vec<Order>,
     pub liquidity: Vec<Liquidity>,
@@ -62,6 +66,9 @@ pub struct Order {
     pub post_interactions: Vec<InteractionData>,
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
+    /// Deprecated: every order is a limit order. Solvers should not rely on
+    /// this field, it is kept for backwards compatibility and will be removed.
+    #[serde(default)]
     pub class: Class,
     pub app_data: AppDataHash,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -135,10 +142,12 @@ pub enum Kind {
     Buy,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+/// Deprecated: every order is a limit order.
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Class {
     Market,
+    #[default]
     Limit,
 }
 
