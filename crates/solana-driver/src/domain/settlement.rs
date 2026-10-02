@@ -788,7 +788,11 @@ mod tests {
             RpcRequest::GetMultipleAccounts,
             multiple_accounts_json(accounts),
         )]);
-        Solana::new(SolanaRPC::new_mock_with_mocks(mocks), pubkey(0xaa))
+        Solana::new(
+            SolanaRPC::new_mock_with_mocks(mocks.clone()),
+            SolanaRPC::new_mock_with_mocks(mocks),
+            pubkey(0xaa),
+        )
     }
 
     fn resolve_for_test(settlement: Settlement) -> ResolvedSettlement {

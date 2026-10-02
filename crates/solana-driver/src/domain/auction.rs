@@ -128,28 +128,22 @@ impl Auction {
         if self.creations.is_empty() {
             return;
         }
-        let pending = || {
-            self.orders
-                .iter()
-                .filter(|order| self.creations.contains_key(&order.uid))
-        };
-        let snapshot = match blockchain
-            .accounts_snapshot(pending().map(|order| order.order_pda))
-            .await
-        {
+        let pdas = self
+            .orders
+            .iter()
+            .filter(|order| self.creations.contains_key(&order.uid))
+            .map(|order| order.order_pda);
+        let snapshot = match blockchain.accounts_snapshot(pdas).await {
             Ok(snapshot) => snapshot,
             Err(err) => {
                 tracing::warn!(?err, "could not check which creations already landed");
                 return;
             }
         };
-        let landed: Vec<OrderUid> = pending()
-            .filter(|order| snapshot.exists(&order.order_pda))
-            .map(|order| order.uid)
-            .collect();
-        for uid in landed {
-            tracing::info!(order_uid = %uid, "creation already landed, settling without it");
-            self.creations.remove(&uid);
+        for order in &self.orders {
+            if snapshot.exists(&order.order_pda) && self.creations.remove(&order.uid).is_some() {
+                tracing::info!(order_uid = %order.uid, "creation already landed, settling without it");
+            }
         }
     }
 }
@@ -245,7 +239,11 @@ mod tests {
     }
 
     fn blockchain(mocks: Mocks) -> Solana {
-        Solana::new(SolanaRPC::new_mock_with_mocks(mocks), pubkey(0xaa))
+        Solana::new(
+            SolanaRPC::new_mock_with_mocks(mocks.clone()),
+            SolanaRPC::new_mock_with_mocks(mocks),
+            pubkey(0xaa),
+        )
     }
 
     /// The lookup answers in order: an initialized token account, absent at

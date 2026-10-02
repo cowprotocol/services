@@ -51,10 +51,11 @@ pub async fn run(args: Args) {
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
     );
-    let blockchain = Arc::new(
-        blockchain::Solana::new(rpc, config.chain.settlement_program_id)
-            .with_bundle_rpc(bundle_rpc),
-    );
+    let blockchain = Arc::new(blockchain::Solana::new(
+        rpc,
+        bundle_rpc,
+        config.chain.settlement_program_id,
+    ));
     let api = Api {
         addr: config.http.bind_address,
         blockchain,

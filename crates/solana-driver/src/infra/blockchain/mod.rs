@@ -23,25 +23,18 @@ use {
 /// The Solana blockchain adapter.
 pub struct Solana {
     rpc: SolanaRPC,
-    /// Serves `simulateBundle`. `None` only in tests, where `rpc` serves it.
-    bundle_rpc: Option<SolanaRPC>,
+    /// Serves `simulateBundle`, which `rpc` need not support.
+    bundle_rpc: SolanaRPC,
     program_id: Pubkey,
 }
 
 impl Solana {
-    /// Build the adapter from the RPC client and the settlement program id.
-    pub fn new(rpc: SolanaRPC, program_id: Pubkey) -> Self {
+    pub fn new(rpc: SolanaRPC, bundle_rpc: SolanaRPC, program_id: Pubkey) -> Self {
         Self {
             rpc,
-            bundle_rpc: None,
+            bundle_rpc,
             program_id,
         }
-    }
-
-    /// Route `simulateBundle` to a dedicated client.
-    pub fn with_bundle_rpc(mut self, rpc: SolanaRPC) -> Self {
-        self.bundle_rpc = Some(rpc);
-        self
     }
 
     /// The settlement program id this driver settles against.
@@ -74,11 +67,7 @@ impl Solana {
         &self,
         transactions: &[VersionedTransaction],
     ) -> Result<Vec<cow_solana_rpc::RpcSimulateBundleTransactionResult>, Error> {
-        self.bundle_rpc
-            .as_ref()
-            .unwrap_or(&self.rpc)
-            .simulate_bundle(transactions)
-            .await
+        self.bundle_rpc.simulate_bundle(transactions).await
     }
 
     /// Send a signed transaction and wait for confirmation.

@@ -86,6 +86,7 @@ fn buy_token_account() -> Pubkey {
 
 fn blockchain(mocks: Mocks) -> Arc<Solana> {
     Arc::new(Solana::new(
+        SolanaRPC::new_mock_with_mocks(mocks.clone()),
         SolanaRPC::new_mock_with_mocks(mocks),
         cow_settlement_interface::id(),
     ))
@@ -524,6 +525,7 @@ async fn settle_rejects_a_passed_submission_deadline() {
     let mut mocks = Mocks::new();
     mocks.insert(RpcRequest::GetSlot, serde_json::json!(1000));
     let blockchain = Arc::new(Solana::new(
+        SolanaRPC::new_mock_with_mocks(mocks.clone()),
         SolanaRPC::new_mock_with_mocks(mocks),
         cow_settlement_interface::id(),
     ));
@@ -909,9 +911,7 @@ async fn solve_drops_a_solution_whose_bundle_simulation_fails() {
     );
     let addr = spawn_server_with_mocks(vec![solver], mocks).await;
 
-    let response = post_solve(addr, &sponsored_solve_request()).await;
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
-    let body: serde_json::Value = response.json().await.unwrap();
+    let body = call_solve_with(addr, sponsored_solve_request()).await;
     assert_eq!(response_ids(&body), Vec::<u64>::new());
 }
 
@@ -945,9 +945,7 @@ async fn solve_keeps_a_solution_whose_bundle_simulation_stops_short() {
     );
     let addr = spawn_server_with_mocks(vec![solver], mocks).await;
 
-    let response = post_solve(addr, &sponsored_solve_request()).await;
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
-    let body: serde_json::Value = response.json().await.unwrap();
+    let body = call_solve_with(addr, sponsored_solve_request()).await;
     assert_eq!(response_ids(&body), vec![42]);
 }
 
@@ -968,8 +966,6 @@ async fn solve_drops_a_solution_whose_creation_is_over_the_transaction_size_limi
         )),
     };
 
-    let response = post_solve(addr, &sponsored_solve_request_with(creation)).await;
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
-    let body: serde_json::Value = response.json().await.unwrap();
+    let body = call_solve_with(addr, sponsored_solve_request_with(creation)).await;
     assert_eq!(response_ids(&body), Vec::<u64>::new());
 }
