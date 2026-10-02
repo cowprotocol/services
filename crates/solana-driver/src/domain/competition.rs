@@ -8,16 +8,16 @@ use {
         auction::Id,
         buy_token_accounts::BuyTokenAccountCache,
         order_uid::OrderUid,
+        program_error::ProgramError,
         settlement::ResolveError,
         solution::Solution,
     },
     crate::infra::{blockchain::Solana, solver::Solver},
-    cow_settlement_interface::SettlementError,
+    base64::{Engine, prelude::BASE64_STANDARD},
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
         hash::Hash,
-        instruction::InstructionError,
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
@@ -39,6 +39,11 @@ const SLOT_DURATION_MS: u64 = 400;
 /// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
 /// rejects a larger transaction before it simulates anything.
 const MAX_TRANSACTION_BYTES: u64 = 1232;
+/// The runtime's per-transaction account lock limit, counting static keys and
+/// lookup-table loaded addresses. The SDK's `MAX_TX_ACCOUNT_LOCKS` (128)
+/// applies only under the `increase_tx_account_lock_limit` feature, inactive
+/// on mainnet.
+const MAX_TRANSACTION_ACCOUNTS: usize = 64;
 
 /// Cache key for a proposed solution.
 ///
@@ -183,11 +188,12 @@ impl Competition {
         Ok(kept)
     }
 
-    /// Check the solution's settlement fits the network's byte limit, then
-    /// simulate it as one atomic bundle behind the creations of its orders
-    /// not created on chain yet. Either failure would win the auction and
-    /// then fail to settle. An error that [`proves_failure`] is a verdict on
-    /// the solution; any other means the driver could not find out.
+    /// Check the solution's settlement fits the network's byte and account
+    /// lock limits, then simulate it as one atomic bundle behind the
+    /// creations of its orders not created on chain yet. Any failure would
+    /// win the auction and then fail to settle. An error that
+    /// [`proves_failure`] is a verdict on the solution; any other means the
+    /// driver could not find out.
     async fn simulate_solution(
         &self,
         auction_id: Id,
@@ -214,6 +220,13 @@ impl Competition {
         {
             return Err(Error::TransactionTooLarge { size });
         }
+        if let Some(accounts) = bundle
+            .iter()
+            .map(account_count)
+            .find(|accounts| *accounts > MAX_TRANSACTION_ACCOUNTS)
+        {
+            return Err(Error::TooManyAccounts { accounts });
+        }
         tracing::debug!(
             solution_id = solution.id,
             creations = ?creation_uids.iter().map(ToString::to_string).collect::<Vec<_>>(),
@@ -228,19 +241,21 @@ impl Competition {
             .map_err(Error::Rpc)?;
         for (leg, (transaction, result)) in bundle.iter().zip(&results).enumerate() {
             if let Some(err) = &result.err {
-                let error = TransactionError::from(err.clone());
                 // Named here because the bundle endpoint may return no logs
                 // for a failed leg.
                 tracing::warn!(
                     solution_id = solution.id,
                     leg,
                     creation = ?creation_uids.get(leg).map(ToString::to_string),
-                    program = ?failing_program(transaction, &error).map(|program| program.to_string()),
+                    program = ?failing_program(transaction, &err.clone().into()).map(|program| program.to_string()),
                     logs = ?result.logs,
                     "bundle simulation failed"
                 );
                 return Err(Error::SimulationFailed {
-                    settlement_error: settlement_error(program_id, transaction, &error),
+                    program_error: result
+                        .logs
+                        .as_deref()
+                        .and_then(|logs| ProgramError::from_logs(program_id, logs)),
                     err: err.clone(),
                 });
             }
@@ -490,12 +505,7 @@ impl Competition {
             }
             Error::DeadlineExceeded
         })?
-        .map_err(|err| Error::FailedToSubmit {
-            settlement_error: err
-                .get_transaction_error()
-                .and_then(|err| settlement_error(program_id, &transaction, &err)),
-            err,
-        })?;
+        .map_err(|err| Error::FailedToSubmit { err })?;
 
         // TODO: drop this log once protocol fees are implemented.
         for fee in &volume_fees {
@@ -584,39 +594,26 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         if let Some(err) = &simulation.err {
-            // Only the program logs surface here, the error itself carries
-            // the failure and its decoded settlement error to the settle
-            // task's log.
-            tracing::warn!(logs = ?simulation.logs, "settlement simulation failed");
+            // Only the program logs and the message surface here, the error
+            // itself carries the failure and its program error to the settle
+            // task's log. The message leaves out the signature, so the log
+            // cannot be broadcast.
+            tracing::warn!(
+                logs = ?simulation.logs,
+                message = %BASE64_STANDARD.encode(transaction.message.serialize()),
+                "settlement simulation failed"
+            );
             return Err(Error::SimulationFailed {
-                settlement_error: settlement_error(
-                    self.blockchain.program_id(),
-                    transaction,
-                    &err.clone().into(),
-                ),
+                program_error: simulation
+                    .logs
+                    .as_deref()
+                    .and_then(|logs| ProgramError::from_logs(self.blockchain.program_id(), logs)),
                 err: err.clone(),
             });
         }
         tracing::debug!("settlement simulation passed");
         Ok(())
     }
-}
-
-/// The settlement program's own error behind a failed transaction. Only the
-/// failing instruction's owner can interpret a custom code: a foreign
-/// program's code (a Jupiter route, for example) must not be read as ours,
-/// and a code newer than the interface crate decodes to nothing.
-fn settlement_error(
-    program_id: Pubkey,
-    transaction: &VersionedTransaction,
-    err: &TransactionError,
-) -> Option<SettlementError> {
-    let TransactionError::InstructionError(_, InstructionError::Custom(code)) = err else {
-        return None;
-    };
-    (failing_program(transaction, err)? == program_id)
-        .then(|| SettlementError::try_from(*code).ok())
-        .flatten()
 }
 
 /// The program whose instruction the error names. Programs are always static
@@ -707,20 +704,19 @@ pub(crate) enum Error {
     /// waiting on the lookup.
     #[error("buy token account lookup failed: {0}")]
     BuyTokenAccounts(#[source] Arc<cow_solana_rpc::Error>),
-    #[error("failed to submit or confirm settlement: {err}, settlement error {settlement_error:?}")]
+    #[error("failed to submit or confirm settlement: {err}")]
     FailedToSubmit {
         #[source]
         err: cow_solana_rpc::Error,
-        settlement_error: Option<SettlementError>,
     },
     #[error("failed to submit or confirm an order creation: {0}")]
     FailedToCreate(#[source] cow_solana_rpc::Error),
     /// The pre-submission simulation failed. The transaction was not sent.
-    #[error("settlement simulation failed: {err}, settlement error {settlement_error:?}")]
+    #[error("settlement simulation failed: {err}, program error {program_error:?}")]
     SimulationFailed {
         #[source]
         err: cow_solana_rpc::UiTransactionError,
-        settlement_error: Option<SettlementError>,
+        program_error: Option<ProgramError>,
     },
     /// The solve-time simulation did not answer within its share of the
     /// auction deadline.
@@ -734,6 +730,10 @@ pub(crate) enum Error {
     /// Nothing was sent.
     #[error("transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
     TransactionTooLarge { size: u64 },
+    /// A transaction locks more accounts than the runtime allows. Nothing was
+    /// sent.
+    #[error("transaction locks {accounts} accounts, over the {MAX_TRANSACTION_ACCOUNTS} limit")]
+    TooManyAccounts { accounts: usize },
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
@@ -823,7 +823,8 @@ fn proves_failure(error: &Error) -> bool {
     match error {
         Error::Settlement(_)
         | Error::SimulationFailed { .. }
-        | Error::TransactionTooLarge { .. } => true,
+        | Error::TransactionTooLarge { .. }
+        | Error::TooManyAccounts { .. } => true,
         Error::Resolve(error) => !matches!(error, ResolveError::Rpc(_)),
         _ => false,
     }
@@ -848,6 +849,7 @@ fn error_label(error: &Error) -> &'static str {
         Error::SimulationTimedOut => "simulation_timed_out",
         Error::IncompleteSimulation { .. } => "simulation_incomplete",
         Error::TransactionTooLarge { .. } => "transaction_too_large",
+        Error::TooManyAccounts { .. } => "too_many_accounts",
         Error::Resolve(_) => "resolve_failed",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",
@@ -858,36 +860,28 @@ fn error_label(error: &Error) -> &'static str {
 mod tests {
     use super::*;
 
-    /// Only a custom code from the settlement program's own instruction
-    /// decodes: a foreign program's code, an unknown code, and a non-custom
-    /// error read as nothing.
+    /// Addresses loaded from lookup tables count toward the account lock
+    /// limit like static keys.
     #[test]
-    fn decodes_only_own_custom_codes() {
-        let ours = Pubkey::new_unique();
-        let foreign = Pubkey::new_unique();
-        let message = solana_sdk::message::Message::new(
-            &[
-                solana_sdk::instruction::Instruction::new_with_bytes(foreign, &[], vec![]),
-                solana_sdk::instruction::Instruction::new_with_bytes(ours, &[], vec![]),
-            ],
-            Some(&Pubkey::new_unique()),
-        );
+    fn counts_lookup_table_accounts() {
+        let lookup = |writable_indexes, readonly_indexes| {
+            solana_sdk::message::v0::MessageAddressTableLookup {
+                account_key: Pubkey::new_unique(),
+                writable_indexes,
+                readonly_indexes,
+            }
+        };
         let transaction = VersionedTransaction {
             signatures: vec![],
-            message: solana_sdk::message::VersionedMessage::Legacy(message),
+            message: solana_sdk::message::VersionedMessage::V0(solana_sdk::message::v0::Message {
+                account_keys: vec![Pubkey::new_unique(); 3],
+                address_table_lookups: vec![
+                    lookup(vec![0, 1], vec![2, 3, 4]),
+                    lookup(vec![], vec![0]),
+                ],
+                ..Default::default()
+            }),
         };
-        let custom =
-            |index, code| TransactionError::InstructionError(index, InstructionError::Custom(code));
-
-        assert_eq!(
-            settlement_error(ours, &transaction, &custom(1, 16)),
-            Some(SettlementError::OrderExpired)
-        );
-        assert_eq!(settlement_error(ours, &transaction, &custom(0, 16)), None);
-        assert_eq!(settlement_error(ours, &transaction, &custom(1, 9999)), None);
-        assert_eq!(
-            settlement_error(ours, &transaction, &TransactionError::BlockhashNotFound),
-            None
-        );
+        assert_eq!(account_count(&transaction), 9);
     }
 }

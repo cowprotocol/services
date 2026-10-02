@@ -88,14 +88,16 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::TaskPanicked => Kind::Unknown,
             // Solve-time verdicts never leave `solve`.
             competition::Error::SimulationTimedOut
-            | competition::Error::IncompleteSimulation { .. } => Kind::Unknown,
+            | competition::Error::IncompleteSimulation { .. }
+            | competition::Error::TooManyAccounts { .. } => Kind::Unknown,
             // The solver is responsible for valid solutions. Map validation
             // errors to SolverFailed, as the EVM driver does. Map compile,
             // sign, or index-overflow errors to Unknown.
             competition::Error::Settlement(error) => match error {
                 settlement::Error::Compile(_)
                 | settlement::Error::Sign(_)
-                | settlement::Error::InstructionIndexOverflow => Kind::Unknown,
+                | settlement::Error::InstructionIndexOverflow
+                | settlement::Error::UnresolvedMint(_) => Kind::Unknown,
                 settlement::Error::NoTradeForOrder(_)
                 | settlement::Error::NoOrderForTrade(_)
                 | settlement::Error::ExecutedAmountOverflow
@@ -111,10 +113,12 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::Resolve(error) => match error {
                 // The solver supplied the lookup table keys.
                 settlement::ResolveError::InvalidAddressLookupTable { .. } => Kind::SolverFailed,
-                // RPC failures and unexpected setup accounts are outside solver
-                // control. Map them to Unknown.
+                // RPC failures, unexpected setup accounts and mint lookups are
+                // outside solver control. Map them to Unknown.
                 settlement::ResolveError::Rpc(_)
-                | settlement::ResolveError::UnexpectedSetupAccount { .. } => Kind::Unknown,
+                | settlement::ResolveError::UnexpectedSetupAccount { .. }
+                | settlement::ResolveError::InvalidMint { .. }
+                | settlement::ResolveError::UnresolvedMint(_) => Kind::Unknown,
             },
         }
         .into()

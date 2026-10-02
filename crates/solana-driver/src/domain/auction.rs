@@ -6,8 +6,16 @@ use {
         order_uid::OrderUid,
         slot::Slot,
     },
-    crate::infra::blockchain::{Solana, TokenAccountState, associated_token_address},
-    cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
+    crate::infra::blockchain::{
+        InvalidMintReason,
+        Solana,
+        TokenAccountState,
+        associated_token_address,
+    },
+    cow_settlement_interface::{
+        data::intent::ENCODED_NATIVE_SOL_TRANSFER,
+        token_program::TokenProgram,
+    },
     serde::Serialize,
     solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
     std::{collections::HashMap, fmt, sync::Arc},
@@ -90,19 +98,44 @@ impl Auction {
     /// Classify every token buy's buy token account, the settlement's payout
     /// destination, against the chain. A native SOL buy pays out to a wallet,
     /// which the payout creates when it is missing, so it needs no lookup.
+    ///
+    /// An order whose buy mint is missing or not a mint is unreceivable: no
+    /// settlement can pay it out.
     async fn classify_buy_token_accounts(
         &self,
         blockchain: &Solana,
     ) -> Result<BuyTokenAccounts, cow_solana_rpc::Error> {
         let token_buys = || self.orders.iter().filter(|order| !order.buys_native_sol());
+        let programs = blockchain
+            .token_programs(token_buys().map(|order| order.buy_token))
+            .await?;
         let snapshot = blockchain
             .accounts_snapshot(token_buys().map(|order| order.buy_token_account))
             .await?;
         let mut resolved = BuyTokenAccounts::default();
         for order in token_buys() {
+            // Every token buy's mint was fetched, so a missing entry only
+            // guards a bug and drops the order like an invalid mint.
+            let program = programs
+                .get(&order.buy_token)
+                .copied()
+                .unwrap_or(Err(InvalidMintReason::AccountNotFound));
+            let program = match program {
+                Ok(program) => program,
+                Err(reason) => {
+                    tracing::warn!(
+                        order = %order.uid,
+                        buy_token = %order.buy_token,
+                        %reason,
+                        "dropping order, its buy mint cannot be paid out"
+                    );
+                    resolved.unreceivable.insert(order.uid);
+                    continue;
+                }
+            };
             match snapshot.token_account_state(&order.buy_token_account) {
                 TokenAccountState::Initialized => (),
-                TokenAccountState::NeedsCreation if order.buy_token_account_is_ata() => {
+                TokenAccountState::NeedsCreation if order.buy_token_account_is_ata(program) => {
                     resolved.missing.insert(order.uid);
                 }
                 state => {
@@ -169,10 +202,10 @@ pub struct Order {
 
 impl Order {
     /// Whether `buy_token_account` is the owner's associated token account
-    /// for the buy mint, the only destination an idempotent create can
-    /// produce.
-    pub fn buy_token_account_is_ata(&self) -> bool {
-        self.buy_token_account == associated_token_address(&self.owner, &self.buy_token)
+    /// for the buy mint under the mint's token `program`, the only
+    /// destination an idempotent create can produce.
+    pub fn buy_token_account_is_ata(&self, program: TokenProgram) -> bool {
+        self.buy_token_account == associated_token_address(&self.owner, &self.buy_token, program)
     }
 
     /// Whether the order buys native SOL. The intent encodes it as the System
@@ -194,9 +227,15 @@ pub enum Side {
 mod tests {
     use {
         super::*,
-        cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
+        cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
         serde_json::{Value, json},
-        solana_testlib::{multiple_accounts_json, token_account_json},
+        solana_testlib::{
+            account_json,
+            mint_account_json,
+            multiple_accounts_json,
+            token_2022_mint,
+            token_account_json,
+        },
         std::collections::HashSet,
     };
 
@@ -238,21 +277,42 @@ mod tests {
         uids
     }
 
-    fn blockchain(mocks: Mocks) -> Solana {
+    /// Answers the classification's two `getMultipleAccounts` lookups in
+    /// order: `mints` for the token buys' buy mints, then `accounts` for their
+    /// buy token accounts, each in auction order.
+    fn blockchain(
+        mints: impl IntoIterator<Item = Value>,
+        accounts: impl IntoIterator<Item = Value>,
+    ) -> Solana {
+        let mocks = MocksMap::from_iter([
+            (
+                RpcRequest::GetMultipleAccounts,
+                multiple_accounts_json(mints),
+            ),
+            (
+                RpcRequest::GetMultipleAccounts,
+                multiple_accounts_json(accounts),
+            ),
+        ]);
+        blockchain_with_mocks_map(mocks)
+    }
+
+    fn blockchain_with_mocks_map(mocks: MocksMap) -> Solana {
         Solana::new(
-            SolanaRPC::new_mock_with_mocks(mocks.clone()),
-            SolanaRPC::new_mock_with_mocks(mocks),
+            SolanaRPC::new_mock_with_mocks_map(mocks.clone()),
+            SolanaRPC::new_mock_with_mocks_map(mocks),
             pubkey(0xaa),
         )
     }
 
-    /// The lookup answers in order: an initialized token account, absent at
-    /// the owner's associated token address, absent elsewhere, and an account
-    /// of another program. Only the absent associated token account is the
-    /// settlement's to create; the last two can never receive the payout.
+    /// The buy mint is an SPL Token mint. The account lookup answers in
+    /// order: an initialized token account, absent at the owner's associated
+    /// token address, absent elsewhere, and an account of another program.
+    /// Only the absent associated token account is the settlement's to
+    /// create. The last two can never receive the payout.
     #[tokio::test]
     async fn resolves_each_buy_token_account() {
-        let ata = associated_token_address(&pubkey(0x22), &pubkey(0x44));
+        let ata = associated_token_address(&pubkey(0x22), &pubkey(0x44), TokenProgram::SplToken);
         let foreign = json!({
             "lamports": 1u64,
             "data": ["", "base64"],
@@ -261,15 +321,15 @@ mod tests {
             "rentEpoch": 0u64,
             "space": 0u64,
         });
-        let mocks = Mocks::from([(
-            RpcRequest::GetMultipleAccounts,
-            multiple_accounts_json([
+        let blockchain = blockchain(
+            [mint_account_json()],
+            [
                 token_account_json(&pubkey(0x44), &pubkey(0x22)),
                 Value::Null,
                 Value::Null,
                 foreign,
-            ]),
-        )]);
+            ],
+        );
 
         let auction = auction(vec![
             order(1, pubkey(0x66)),
@@ -280,7 +340,7 @@ mod tests {
         let resolved = auction
             .resolve_buy_token_accounts(
                 Id::new(1).unwrap(),
-                &blockchain(mocks),
+                &blockchain,
                 &BuyTokenAccountCache::default(),
             )
             .await
@@ -290,25 +350,84 @@ mod tests {
         assert_eq!(uids(&resolved.unreceivable), [3, 4]);
     }
 
-    /// A native SOL buy pays out to a wallet, so it has no token account to
-    /// classify: the lookup answers only for the token buy, absent at the
-    /// owner's associated token address.
+    /// The associated token address derives under the buy mint's token
+    /// program: the Token-2022 mint's absent Token-2022 ATA is the
+    /// settlement's to create, while the same owner's SPL Token ATA for it is
+    /// not.
+    #[tokio::test]
+    async fn buy_atas_derive_under_the_buy_mints_token_program() {
+        let (owner, mint) = (pubkey(0x22), pubkey(0x44));
+        let blockchain = blockchain(
+            [account_json(&token_2022_mint(&[], |_| ()))],
+            [Value::Null, Value::Null],
+        );
+
+        let auction = auction(vec![
+            order(
+                1,
+                associated_token_address(&owner, &mint, TokenProgram::Token2022),
+            ),
+            order(
+                2,
+                associated_token_address(&owner, &mint, TokenProgram::SplToken),
+            ),
+        ]);
+        let resolved = auction
+            .resolve_buy_token_accounts(
+                Id::new(1).unwrap(),
+                &blockchain,
+                &BuyTokenAccountCache::default(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(uids(&resolved.missing), [1]);
+        assert_eq!(uids(&resolved.unreceivable), [2]);
+    }
+
+    /// The mint lookup answers absent for the buy mint, so no settlement can
+    /// pay the order out, whatever its buy token account holds.
+    #[tokio::test]
+    async fn an_order_with_an_invalid_buy_mint_is_unreceivable() {
+        let blockchain = blockchain(
+            [Value::Null],
+            [token_account_json(&pubkey(0x44), &pubkey(0x22))],
+        );
+        let auction = auction(vec![order(1, pubkey(0x66))]);
+
+        let resolved = auction
+            .resolve_buy_token_accounts(
+                Id::new(1).unwrap(),
+                &blockchain,
+                &BuyTokenAccountCache::default(),
+            )
+            .await
+            .unwrap();
+
+        assert!(resolved.missing.is_empty());
+        assert_eq!(uids(&resolved.unreceivable), [1]);
+    }
+
+    /// A native SOL buy pays out to a wallet, so it has no mint or token
+    /// account to classify: both lookups answer only for the token buy, an
+    /// SPL Token mint and an account absent at the owner's associated token
+    /// address.
     #[tokio::test]
     async fn a_native_sol_buy_has_no_buy_token_account_to_resolve() {
-        let mocks = Mocks::from([(
-            RpcRequest::GetMultipleAccounts,
-            multiple_accounts_json([Value::Null]),
-        )]);
+        let blockchain = blockchain([mint_account_json()], [Value::Null]);
         let native_buy = Order {
             buy_token: ENCODED_NATIVE_SOL_TRANSFER,
             ..order(1, pubkey(0x68))
         };
-        let token_buy = order(2, associated_token_address(&pubkey(0x22), &pubkey(0x44)));
+        let token_buy = order(
+            2,
+            associated_token_address(&pubkey(0x22), &pubkey(0x44), TokenProgram::SplToken),
+        );
 
         let resolved = auction(vec![native_buy, token_buy])
             .resolve_buy_token_accounts(
                 Id::new(1).unwrap(),
-                &blockchain(mocks),
+                &blockchain,
                 &BuyTokenAccountCache::default(),
             )
             .await
@@ -320,16 +439,13 @@ mod tests {
 
     #[tokio::test]
     async fn fails_when_the_lookup_fails() {
-        let mocks = Mocks::from([(
-            RpcRequest::GetMultipleAccounts,
-            json!("not an account list"),
-        )]);
+        let blockchain = blockchain([mint_account_json()], [json!("not an account list")]);
         let auction = auction(vec![order(1, pubkey(0x66))]);
 
         auction
             .resolve_buy_token_accounts(
                 Id::new(1).unwrap(),
-                &blockchain(mocks),
+                &blockchain,
                 &BuyTokenAccountCache::default(),
             )
             .await
@@ -348,7 +464,7 @@ mod tests {
             "rentEpoch": 0u64,
             "space": 0u64,
         });
-        let mocks = Mocks::from([(
+        let mocks = MocksMap::from_iter([(
             RpcRequest::GetMultipleAccounts,
             multiple_accounts_json([existing, Value::Null]),
         )]);
@@ -364,7 +480,9 @@ mod tests {
             (OrderUid([2; 32]), VersionedTransaction::default()),
         ]);
 
-        auction.drop_landed_creations(&blockchain(mocks)).await;
+        auction
+            .drop_landed_creations(&blockchain_with_mocks_map(mocks))
+            .await;
 
         assert_eq!(
             auction.creations.keys().collect::<Vec<_>>(),
@@ -374,14 +492,16 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_lookup_keeps_every_creation() {
-        let mocks = Mocks::from([(
+        let mocks = MocksMap::from_iter([(
             RpcRequest::GetMultipleAccounts,
             json!("not an account list"),
         )]);
         let mut auction = auction(vec![order(1, pubkey(0x66))]);
         auction.creations = HashMap::from([(OrderUid([1; 32]), VersionedTransaction::default())]);
 
-        auction.drop_landed_creations(&blockchain(mocks)).await;
+        auction
+            .drop_landed_creations(&blockchain_with_mocks_map(mocks))
+            .await;
 
         assert_eq!(auction.creations.len(), 1);
     }
