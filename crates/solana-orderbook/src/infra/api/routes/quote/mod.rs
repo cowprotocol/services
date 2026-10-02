@@ -3,8 +3,9 @@
 pub mod dto;
 
 use {
+    super::mint::{ensure_settleable, token_mints},
     crate::infra::{
-        api::{State, ValidationParameters, error, extract},
+        api::{Sponsoring, State, ValidationParameters, error, extract},
         db,
         quoter,
     },
@@ -38,6 +39,9 @@ pub async fn quote(
         None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
     };
     validate(&request, valid_to, now_secs, &state.validation())?;
+    if let Some(sponsoring) = state.sponsoring() {
+        check_mints(sponsoring, &request).await?;
+    }
 
     let (kind, amount) = request.side.kind_and_amount();
     let quoted = state
@@ -116,6 +120,22 @@ pub async fn quote(
         verified: false,
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
+}
+
+/// Reject a mint the settlement program cannot move. The chain read goes
+/// through the sponsoring RPC client, so the check is skipped without
+/// sponsoring and when the read fails: placement and the autopilot check the
+/// mints again.
+async fn check_mints(sponsoring: &Sponsoring, request: &dto::Request) -> Result<(), error::Reply> {
+    let mints: Vec<Pubkey> = token_mints(request.sell_token, request.buy_token).collect();
+    let lookup = sponsoring.mints.lookup(mints.iter().copied());
+    match sponsoring.rpc.multiple_accounts(lookup.unread()).await {
+        Ok(accounts) => ensure_settleable(&lookup.resolve(&accounts), mints),
+        Err(err) => {
+            tracing::warn!(?err, "mint lookup failed, quoting unchecked");
+            Ok(())
+        }
+    }
 }
 
 /// The checks an order must pass before it is worth quoting.
