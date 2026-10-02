@@ -245,9 +245,6 @@ impl Settlement {
         eth: &Ethereum,
         deadline: Option<eth::BlockNo>,
     ) -> Result<EncodedSettlement, Error> {
-        let deadline_pre_interaction = deadline.map(|deadline| {
-            encoding::deadline_check_interaction(eth.contracts().deadline_check(), deadline)
-        });
         let encode_one =
             |approvals: &[eth::allowance::Approval], internalization| -> Result<eth::Tx, Error> {
                 let mut tx = encoding::tx(
@@ -258,7 +255,7 @@ impl Settlement {
                     approvals.iter().cloned(),
                     internalization,
                     self.solution.solver().solver_native_token(),
-                    deadline_pre_interaction.clone(),
+                    deadline,
                 )?;
                 tx.set_access_list(self.access_list.clone());
                 Ok(tx)

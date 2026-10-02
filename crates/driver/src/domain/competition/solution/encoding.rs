@@ -44,13 +44,14 @@ pub fn tx(
     approvals: impl Iterator<Item = eth::allowance::Approval>,
     internalization: settlement::Internalization,
     solver_native_token: ManageNativeToken,
-    deadline_pre_interaction: Option<domain::Interaction>,
+    deadline_to_enforce: Option<eth::BlockNo>,
 ) -> Result<eth::Tx, Error> {
     let mut tokens = Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
     let mut clearing_prices =
         Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
     let mut trades: Vec<Trade> = Vec::with_capacity(solution.trades().len());
-    let mut pre_interactions = deadline_pre_interaction
+    let mut pre_interactions = deadline_to_enforce
+        .map(|deadline| deadline_check_interaction(contracts.deadline_check(), deadline))
         .into_iter()
         .chain(solution.pre_interactions.iter().cloned())
         .collect::<Vec<_>>();
@@ -350,7 +351,7 @@ fn unwrap(amount: eth::TokenAmount, weth: &WETH9::Instance) -> domain::Interacti
 /// This intentionally does **not** go through `HooksTrampoline` — the
 /// trampoline swallows reverts of user hooks, but we need the settlement
 /// itself to revert.
-pub fn deadline_check_interaction(
+fn deadline_check_interaction(
     contract: &contracts::support::DeadlineCheck::Instance,
     deadline: eth::BlockNo,
 ) -> domain::Interaction {
