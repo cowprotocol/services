@@ -32,9 +32,9 @@ use {
 /// once (simulation, solver balance, internalization uses only trusted
 /// tokens), fetches approvals from the chain, and stores every input
 /// that doesn't depend on submission timing. [`Settlement::encode`] is
-/// then a purely synchronous operation that rebuilds the calldata from
-/// those cached inputs, splicing in a `DeadlineCheck` pre-interaction
-/// bound to a specific submission deadline.
+/// then a synchronous operation that rebuilds the calldata from those
+/// cached inputs, splicing in a `DeadlineCheck` pre-interaction bound
+/// to a specific submission deadline.
 ///
 /// Publishing a settlement that violates the invariants would result in
 /// slashing for the solver (earning reduced rewards). Enforcing them
