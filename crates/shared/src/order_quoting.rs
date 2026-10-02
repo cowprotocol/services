@@ -894,11 +894,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             owner,
             sell_token: quote_request.sell_token,
             buy_token: quote_request.buy_token,
-            receiver: if quote_request.receiver.is_zero() {
-                owner
-            } else {
-                quote_request.receiver
-            },
+            receiver: quote_request.receiver,
             valid_to: quote_request.validity.actual_valid_to(),
             partially_fillable: false,
             buy_token_balance: quote_request.buy_token_balance,

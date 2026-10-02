@@ -418,14 +418,6 @@ pub struct PreOrderData {
     pub kind: OrderKind,
 }
 
-fn actual_receiver(owner: Address, order: &OrderData) -> Address {
-    if order.receiver.is_zero() {
-        owner
-    } else {
-        order.receiver
-    }
-}
-
 impl PreOrderData {
     pub fn from_order_creation(
         owner: Address,
@@ -436,7 +428,7 @@ impl PreOrderData {
             owner,
             sell_token: order.sell_token,
             buy_token: order.buy_token,
-            receiver: actual_receiver(owner, order),
+            receiver: order.receiver,
             valid_to: order.valid_to,
             partially_fillable: order.partially_fillable,
             buy_token_balance: order.buy_token_balance,
@@ -763,9 +755,12 @@ impl OrderValidator {
 impl OrderValidating for OrderValidator {
     #[instrument(skip_all)]
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
+        // A zero `receiver` means "pay the owner" — skip it so we don't
+        // consult the banned-user list for the zero address.
+        let custom_receiver = (!order.receiver.is_zero()).then_some(order.receiver);
         if !self
             .banned_users
-            .banned([order.receiver, order.owner])
+            .banned(std::iter::once(order.owner).chain(custom_receiver))
             .await
             .is_empty()
         {
@@ -997,11 +992,7 @@ impl OrderValidating for OrderValidator {
 
         let verification = Verification {
             from: owner,
-            receiver: if order.receiver.is_zero() {
-                owner
-            } else {
-                order.receiver
-            },
+            receiver: order.receiver,
             app_data: Arc::new(app_data.inner.document.clone()),
         };
 
