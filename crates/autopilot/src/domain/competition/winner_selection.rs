@@ -1174,7 +1174,7 @@ mod tests {
             },
             protocol_fees: vec![],
             side,
-            receiver: None,
+            receiver: Default::default(),
             owner: Default::default(),
             partially_fillable: false,
             executed: eth::U256::ZERO.into(),

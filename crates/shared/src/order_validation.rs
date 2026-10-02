@@ -19,6 +19,7 @@ use {
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
     contracts::{HooksTrampoline, WETH9},
+    eth_domain_types::Receiver,
     futures::future::OptionFuture,
     model::{
         DomainSeparator,
@@ -409,18 +410,13 @@ pub struct PreOrderData {
     pub owner: Address,
     pub sell_token: Address,
     pub buy_token: Address,
-    pub receiver: Address,
+    pub receiver: Receiver,
     pub valid_to: u32,
     pub partially_fillable: bool,
     pub buy_token_balance: BuyTokenDestination,
     pub sell_token_balance: SellTokenSource,
     pub signing_scheme: SigningScheme,
     pub kind: OrderKind,
-}
-
-fn actual_receiver(owner: Address, order: &OrderData) -> Address {
-    let receiver = order.receiver.unwrap_or_default();
-    if receiver.is_zero() { owner } else { receiver }
 }
 
 impl PreOrderData {
@@ -433,7 +429,7 @@ impl PreOrderData {
             owner,
             sell_token: order.sell_token,
             buy_token: order.buy_token,
-            receiver: actual_receiver(owner, order),
+            receiver: order.receiver,
             valid_to: order.valid_to,
             partially_fillable: order.partially_fillable,
             buy_token_balance: order.buy_token_balance,
@@ -760,9 +756,13 @@ impl OrderValidator {
 impl OrderValidating for OrderValidator {
     #[instrument(skip_all)]
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
+        // only check the receiver if it's actually different from the owner
+        let receiver = order.receiver.resolve(order.owner);
+        let receiver_check = receiver.ne(&order.owner).then_some(receiver);
+
         if !self
             .banned_users
-            .banned([order.receiver, order.owner])
+            .banned(std::iter::once(order.owner).chain(receiver_check))
             .await
             .is_empty()
         {
@@ -994,7 +994,7 @@ impl OrderValidating for OrderValidator {
 
         let verification = Verification {
             from: owner,
-            receiver: order.receiver.unwrap_or(owner),
+            receiver: order.receiver,
             app_data: Arc::new(app_data.inner.document.clone()),
         };
 
@@ -1426,7 +1426,7 @@ mod tests {
         std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
-                    receiver: Address::with_last_byte(1),
+                    receiver: Receiver::new(Address::with_last_byte(1)),
                     ..Default::default()
                 })
                 .await,
@@ -3107,7 +3107,7 @@ mod tests {
             hook_gas: 0,
             verification: Verification {
                 from: Address::from([0xf0; 20]),
-                receiver: Address::from([0xf0; 20]),
+                receiver: Receiver::new(Address::from([0xf0; 20])),
                 app_data: Arc::new("{}".to_string()),
             },
             fast_path: false,
@@ -3174,7 +3174,7 @@ mod tests {
                 full: "{}".to_string(),
             },
             from: Some(Address::repeat_byte(0xf0)),
-            receiver: Some(Address::repeat_byte(0xf0)),
+            receiver: Receiver::new(Address::repeat_byte(0xf0)),
             quote_id,
             ..Default::default()
         };

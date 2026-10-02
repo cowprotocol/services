@@ -171,7 +171,7 @@ impl Solution {
                             sell: jit.order().sell,
                             buy: jit.order().buy,
                             signature: jit.order().signature.clone(),
-                            receiver: Some(jit.order().receiver),
+                            receiver: jit.order().receiver,
                             created: u32::try_from(Utc::now().timestamp())
                                 .unwrap_or(u32::MIN)
                                 .into(),

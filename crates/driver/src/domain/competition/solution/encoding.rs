@@ -97,7 +97,7 @@ pub fn tx(
                         // indices are set below
                         sell_token_index: Default::default(),
                         buy_token_index: Default::default(),
-                        receiver: trade.order().receiver.unwrap_or_default(),
+                        receiver: eth::Address::from(*trade.order().receiver.raw_bytes()),
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
@@ -135,7 +135,7 @@ pub fn tx(
                         // indices are set below
                         sell_token_index: Default::default(),
                         buy_token_index: Default::default(),
-                        receiver: trade.order().receiver,
+                        receiver: eth::Address::from(*trade.order().receiver.raw_bytes()),
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
                         valid_to: trade.order().valid_to.into(),
