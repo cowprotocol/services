@@ -15,7 +15,6 @@ use {
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
-        hash::Hash,
         instruction::InstructionError,
         pubkey::Pubkey,
         signature::Signature,
@@ -160,7 +159,7 @@ impl Competition {
     }
 
     /// The wire size of the solution's settlement transaction, `None` when
-    /// it cannot be built. The blockhash does not change the size.
+    /// it cannot be built.
     async fn transaction_size(
         &self,
         auction_id: Id,
@@ -179,10 +178,7 @@ impl Competition {
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await
             .ok()?;
-        let transaction = resolved
-            .encode(self.solver.keypair(), Hash::default())
-            .ok()?;
-        encoded_size(&transaction)
+        encoded_size(&resolved.unsigned(self.solver.pubkey()).ok()?)
     }
 
     /// Send the auction to the solver engine and return its deduplicated
@@ -369,7 +365,9 @@ impl Competition {
             .latest_confirmed_blockhash()
             .await
             .map_err(Error::Rpc)?;
-        let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
+        let transaction = resolved
+            .encode(self.solver.signer(), latest.blockhash)
+            .await?;
         if let Some(size) = observe_transaction(&transaction, cu_estimate)
             && size > MAX_TRANSACTION_BYTES
         {
