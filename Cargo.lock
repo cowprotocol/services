@@ -1369,13 +1369,13 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.89"
+version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
+checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.118",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -1521,6 +1521,9 @@ dependencies = [
  "serde_json",
  "serde_with",
  "solana-sdk",
+ "solana-system-interface 3.2.0",
+ "solana-testlib",
+ "spl-associated-token-account-interface",
  "spl-token-interface",
  "sqlx",
  "thiserror 1.0.69",
@@ -4077,7 +4080,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.118",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -10305,7 +10308,10 @@ dependencies = [
 name = "solana-testlib"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "serde_json",
  "solana-sdk",
+ "spl-token-interface",
  "tempfile",
 ]
 

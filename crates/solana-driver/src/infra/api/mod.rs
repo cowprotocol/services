@@ -65,10 +65,15 @@ impl Api {
         let mut app = Router::new().route("/healthz", get(routes::healthz));
 
         // Mount one router per solver engine under `/{solver_name}`.
+        let buy_token_accounts = domain::buy_token_accounts::BuyTokenAccountCache::default();
         for solver in self.solvers {
             let solver_name = solver.name().to_owned();
             let solve_every_nth_auction = solver.solve_every_nth_auction();
-            let competition = domain::Competition::new(solver, self.blockchain.clone());
+            let competition = domain::Competition::new(
+                solver,
+                self.blockchain.clone(),
+                buy_token_accounts.clone(),
+            );
             let state = State::new(competition, solve_every_nth_auction);
 
             let router = Router::new()

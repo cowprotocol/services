@@ -320,9 +320,20 @@ impl Solver {
         self.config.account.clone()
     }
 
-    /// Timeout configuration for this solver.
-    pub fn timeouts(&self) -> Timeouts {
+    /// Timeout configuration for `/solve` requests for this solver.
+    pub fn solve_timeouts(&self) -> Timeouts {
         self.config.timeouts
+    }
+
+    /// Timeout configuration for `/quote` requests.
+    pub fn quote_timeouts() -> Timeouts {
+        Timeouts {
+            // quote requests are tiny so the network buffer can be small
+            http_delay: chrono::Duration::milliseconds(25),
+            // the driver doesn't do any post-processing for quote responses so we can use
+            // the entire time for computing solutions
+            solving_share_of_deadline: 1.0.try_into().expect("literal is in allowed range"),
+        }
     }
 
     /// Whether this solver supports fast-path (out-of-competition) execution.
@@ -386,6 +397,12 @@ impl Solver {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
 
+        let timeout_config = match auction.id {
+            auction::Kind::Quote(_) => Self::quote_timeouts(),
+            auction::Kind::Competition(_) => self.solve_timeouts(),
+        };
+        let deadlines = auction.deadline(timeout_config);
+
         let auction_dto = dto::auction::new(
             auction,
             liquidity,
@@ -394,7 +411,7 @@ impl Solver {
             self.config.solver_native_token,
             &flashloan_hints,
             &wrappers,
-            auction.deadline(self.timeouts()).solvers(),
+            deadlines.solvers(),
         );
 
         let url = shared::url::join(&self.config.endpoint, "solve");
@@ -440,7 +457,7 @@ impl Solver {
             });
         }
 
-        let timeout = match auction.deadline(self.timeouts()).solvers().remaining() {
+        let timeout = match deadlines.solvers().remaining() {
             Ok(timeout) => timeout,
             Err(_) => {
                 tracing::warn!("auction deadline exceeded before sending request to solver");
