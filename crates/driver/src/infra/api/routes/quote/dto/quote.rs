@@ -80,7 +80,7 @@ struct JitOrder {
     buy_amount: eth::U256,
     #[serde_as(as = "serde_ext::U256")]
     executed_amount: eth::U256,
-    receiver: eth::Address,
+    receiver: eth::Receiver,
     partially_fillable: bool,
     valid_to: u32,
     #[serde_as(as = "serde_ext::Hex")]
@@ -101,7 +101,7 @@ impl From<domain::competition::solution::trade::Jit> for JitOrder {
             sell_amount: jit.order().sell.amount.into(),
             buy_amount: jit.order().buy.amount.into(),
             executed_amount: jit.executed().into(),
-            receiver: jit.order().receiver.resolve(jit.order().signature.signer),
+            receiver: jit.order().receiver,
             partially_fillable: jit.order().partially_fillable,
             valid_to: jit.order().valid_to.into(),
             app_data: jit.order().app_data.into(),
