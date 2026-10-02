@@ -10,8 +10,9 @@ use {
 /// The Jupiter v6 aggregator program.
 const JUPITER: Pubkey = Pubkey::from_str_const("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
 
-/// Jupiter v6 error names by code, starting at 6000. Jupiter logs no name
-/// when it fails, so its codes need a table.
+/// Jupiter v6 error names by code, starting at 6000, as listed in its IDL:
+/// <https://github.com/jup-ag/rfq-v2-sdk/blob/d776a8b1f611c12c75d72467c7cfdbb9c2193bda/fill-decoder/idls/aggregator.json>.
+/// Jupiter logs no name when it fails, so its codes need a table.
 const JUPITER_ERRORS: [&str; 27] = [
     "EmptyRoute",
     "SlippageToleranceExceeded",
