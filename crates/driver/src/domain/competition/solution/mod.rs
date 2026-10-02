@@ -10,7 +10,7 @@ use {
         infra::{
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
-            solver::{ManageNativeToken, Solver},
+            solver::Solver,
         },
     },
     alloy::network::TxSigner,

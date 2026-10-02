@@ -15,7 +15,7 @@ use {
                 solution::{self, Interaction, Trade, error},
             },
         },
-        infra::{blockchain::Ethereum, solver::ManageNativeToken},
+        infra::blockchain::Ethereum,
     },
     alloy::primitives::U256,
     eth_domain_types as eth,
