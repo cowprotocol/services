@@ -53,6 +53,9 @@ pub struct Order {
     pub order_pda: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     pub app_data: AppData,
+    /// The cumulative fill on the order's own side.
+    #[serde_as(as = "DisplayFromStr")]
+    pub executed: u64,
 }
 
 /// Whether the order sells or buys an exact amount.
@@ -82,6 +85,7 @@ impl From<&auction::Order> for Order {
             partially_fillable: order.partially_fillable,
             order_pda: order.order_pda,
             app_data: order.app_data,
+            executed: order.executed,
         }
     }
 }
@@ -165,6 +169,7 @@ mod tests {
             order_pda: Pubkey([0x77; 32]),
             app_data: AppData([0; 32]),
             created_on_chain: true,
+            executed: 400,
         }
     }
 
@@ -187,6 +192,7 @@ mod tests {
         // u64::MAX survives as a decimal string.
         assert_eq!(json["orders"][0]["sellAmount"], "18446744073709551615");
         assert_eq!(json["orders"][0]["kind"], "sell");
+        assert_eq!(json["orders"][0]["executed"], "400");
         assert_eq!(
             json["orders"][0]["appData"],
             "0x0000000000000000000000000000000000000000000000000000000000000000"

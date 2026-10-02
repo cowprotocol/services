@@ -439,12 +439,12 @@ fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
         .map(|mint| Pubkey::new_from_array(mint.0))
 }
 
-/// Drop orders whose sell token account cannot fund the sell amount: their
-/// settlement would revert at `BeginSettle`. A partially fillable order needs
-/// the full amount too, since solvers see and may fill all of it. A pending
-/// sponsored order skips the check, its creation transaction can wrap and
-/// approve the sell funds. Returns the kept orders and the uids of the
-/// dropped ones.
+/// Drop orders whose sell token account cannot fund what is left to sell:
+/// their settlement would revert at `BeginSettle`. Solvers see the remaining
+/// legs and may fill all of them, so the remainder is the bar, partially
+/// fillable or not. A pending sponsored order skips the check, its creation
+/// transaction can wrap and approve the sell funds. Returns the kept orders
+/// and the uids of the dropped ones.
 fn funded_orders(
     orders: Vec<Order>,
     accounts: &HashMap<Pubkey, Account>,
@@ -462,7 +462,7 @@ fn funded_orders(
 }
 
 /// An initialized, unfrozen account of either token program holding the
-/// order's sell mint, with the sell amount both held and approved to a
+/// order's sell mint, with what is left to sell both held and approved to a
 /// delegate: anything else fails the pull at settlement. Any delegate passes
 /// because the cut does not know the settlement's state PDA.
 fn funded_token_account(account: &Account, order: &Order) -> bool {
@@ -470,7 +470,7 @@ fn funded_token_account(account: &Account, order: &Order) -> bool {
         && StateWithExtensions::<TokenAccount>::unpack(&account.data).is_ok_and(|state| {
             state.base.state == AccountState::Initialized
                 && state.base.mint.to_bytes() == order.sell_token.0
-                && state.base.amount.min(state.base.delegated_amount) >= order.sell_amount
+                && state.base.amount.min(state.base.delegated_amount) >= order.remaining().sell
         })
 }
 
@@ -532,6 +532,7 @@ mod tests {
             order_pda: ChainPubkey([0x77; 32]),
             app_data: AppData([0; 32]),
             created_on_chain,
+            executed: 0,
         }
     }
 
@@ -713,9 +714,10 @@ mod tests {
 
     /// A created order needs its full sell amount both held and approved in
     /// an initialized account of its sell mint, partially fillable or not,
-    /// under either token program. The orders share one receivable buy token
-    /// account, answered first, and the sell and buy mints come last. The
-    /// pending sponsored order is exempt from the check.
+    /// under either token program; a partially filled one needs only its
+    /// remainder. The orders share one receivable buy token account, answered
+    /// first, and the sell and buy mints come last. The pending sponsored
+    /// order is exempt from the check.
     #[tokio::test]
     async fn drops_created_orders_their_sell_account_cannot_fund() {
         let sell =
@@ -734,6 +736,7 @@ mod tests {
                 null,
                 sell(999, Some(999)),
                 token_2022,
+                sell(600, Some(600)),
                 crate::tests::mint_account_json(6),
                 crate::tests::mint_account_json(6),
             ],
@@ -757,6 +760,11 @@ mod tests {
             },
             selling(0x57, false),
             selling(0x58, true),
+            Order {
+                partially_fillable: true,
+                executed: 400,
+                ..selling(0x59, true)
+            },
         ];
         let (kept, unsettleable, unreceivable, unfunded) = provider.checked_orders(orders).await;
         let kept: Vec<IntentHash> = kept.iter().map(|order| order.uid).collect();
@@ -765,7 +773,8 @@ mod tests {
             [
                 IntentHash([0x50; 32]),
                 IntentHash([0x57; 32]),
-                IntentHash([0x58; 32])
+                IntentHash([0x58; 32]),
+                IntentHash([0x59; 32])
             ]
         );
         assert!(unsettleable.is_empty());

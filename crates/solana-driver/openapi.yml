@@ -229,6 +229,14 @@ components:
             - $ref: "#/components/schemas/Address"
         appData:
           $ref: "#/components/schemas/AppData"
+        executed:
+          description: |-
+            The cumulative fill on the order's own side from earlier
+            settlements: sell-token units for a `sell` order, buy-token units
+            for a `buy` order. Solvers are asked for what is left. Defaults
+            to `0`.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
       required:
         - uid
         - owner

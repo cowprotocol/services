@@ -71,14 +71,6 @@ impl Trade {
         price_sell: NonZero<u64>,
         price_buy: NonZero<u64>,
     ) -> Result<domain::Trade, Error> {
-        if self.executed_amount > order.target_amount() {
-            return Err(Error::ExecutedAmountExceedsOrderAmount(
-                self.order_uid,
-                self.executed_amount,
-                order.target_amount(),
-            ));
-        }
-
         // The engine reports one executed amount, on the order's own side, plus
         // uniform clearing prices per mint. Derive the counterpart leg from the
         // prices so the domain trade carries a real amount on both sides.
@@ -162,8 +154,8 @@ pub enum Error {
     /// A trade references an order that was not in the sent auction.
     #[error("trade references unknown order UID {0}")]
     UnknownOrderUid(OrderUid),
-    /// A trade executes more than the order amount.
-    #[error("trade {0} executes {1} but order amount is {2}")]
+    /// The trades of one order execute more than it has left to fill.
+    #[error("trades of {0} execute {1} but only {2} is left to fill")]
     ExecutedAmountExceedsOrderAmount(OrderUid, u64, u64),
     /// The engine did not report a clearing price for a mint a trade touches.
     #[error("trade {0} has no clearing price for mint {1}")]
@@ -176,9 +168,9 @@ pub enum Error {
 impl Solutions {
     /// Convert the wire solutions into domain solutions.
     ///
-    /// Each trade must reference an order from the auction the driver sent.
-    /// Any trade referencing an unknown order UID rejects the entire engine
-    /// response.
+    /// Each trade must reference an order from the auction the driver sent,
+    /// and the trades of one order may not fill more than it has left. Either
+    /// violation rejects the entire engine response.
     pub fn into_domain(
         self,
         auction: &Auction,
@@ -198,6 +190,9 @@ impl Solutions {
                     cu_estimate,
                     address_lookup_tables,
                 } = solution;
+                // The settlement sums the trades of one order into a single
+                // fill, so the cap is on their sum.
+                let mut filled = HashMap::<OrderUid, u64>::new();
                 let trades = trades
                     .into_iter()
                     .map(|trade| {
@@ -205,6 +200,15 @@ impl Solutions {
                             .get(&trade.order_uid)
                             .copied()
                             .ok_or(Error::UnknownOrderUid(trade.order_uid))?;
+                        let total = filled.entry(trade.order_uid).or_default();
+                        *total = total.saturating_add(trade.executed_amount);
+                        if *total > order.target_amount() {
+                            return Err(Error::ExecutedAmountExceedsOrderAmount(
+                                trade.order_uid,
+                                *total,
+                                order.target_amount(),
+                            ));
+                        }
                         let price_sell = prices.get(&order.sell_mint).copied().ok_or(
                             Error::MissingClearingPrice(trade.order_uid, order.sell_mint),
                         )?;
@@ -267,6 +271,7 @@ mod tests {
                 full_sell_amount: 1_000,
                 full_buy_amount: 0,
                 side: Side::Sell,
+                partially_fillable: false,
                 missing_buy_token_account: false,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
@@ -297,6 +302,43 @@ mod tests {
         assert_eq!(
             err,
             Error::ExecutedAmountExceedsOrderAmount(OrderUid([8; 32]), 1001, 1000)
+        );
+    }
+
+    /// Two trades of one order fill it together: 500 + 500 fills the 1000
+    /// exactly, 600 + 600 overfills it although each trade alone fits.
+    #[test]
+    fn caps_the_sum_of_an_orders_trades() {
+        let response = |executed: &str| {
+            let trade = json!({
+                "orderUid": format!("0x{}", "08".repeat(32)),
+                "executedAmount": executed,
+            });
+            serde_json::from_value::<Solutions>(json!({
+                "solutions": [{
+                    "id": 1,
+                    "prices": {
+                        (pubkey(1).to_string()): "2000",
+                        (pubkey(2).to_string()): "1000",
+                    },
+                    "trades": [trade.clone(), trade],
+                    "interactions": [],
+                }],
+            }))
+            .unwrap()
+        };
+
+        let domain = response("500")
+            .into_domain(&sample_auction_dto(), pubkey(6))
+            .unwrap();
+        assert_eq!(domain[0].trades.len(), 2);
+
+        let err = response("600")
+            .into_domain(&sample_auction_dto(), pubkey(6))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            Error::ExecutedAmountExceedsOrderAmount(OrderUid([8; 32]), 1200, 1000)
         );
     }
 
@@ -397,6 +439,7 @@ mod tests {
                 full_sell_amount: u64::MAX,
                 full_buy_amount: 0,
                 side: Side::Sell,
+                partially_fillable: false,
                 missing_buy_token_account: false,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),

@@ -166,9 +166,41 @@ pub struct Order {
     pub partially_fillable: bool,
     pub order_pda: Pubkey,
     pub app_data: [u8; 32],
+    /// The cumulative fill on the order's own side: sell-token units for a
+    /// sell order, buy-token units for a buy order.
+    pub executed: u64,
 }
 
 impl Order {
+    /// The amounts still open to fill: the order-side target less `executed`,
+    /// the other leg scaled in proportion. Rounds like the EVM driver, the
+    /// sell leg down and the buy leg up, so the scaled limit is never looser
+    /// than the signed one.
+    pub fn remaining(&self) -> Remaining {
+        let (target, other) = match self.side {
+            Side::Sell => (self.sell_amount, self.buy_amount),
+            Side::Buy => (self.buy_amount, self.sell_amount),
+        };
+        let open = target.saturating_sub(self.executed);
+        if open == 0 {
+            return Remaining { sell: 0, buy: 0 };
+        }
+        let scaled = u128::from(other) * u128::from(open);
+        let target = u128::from(target);
+        // `open <= target`, so the quotient never exceeds `other`.
+        let fits = |leg: u128| u64::try_from(leg).expect("a scaled leg fits u64");
+        match self.side {
+            Side::Sell => Remaining {
+                sell: open,
+                buy: fits(scaled.div_ceil(target)),
+            },
+            Side::Buy => Remaining {
+                sell: fits(scaled / target),
+                buy: open,
+            },
+        }
+    }
+
     /// Whether `buy_token_account` is the owner's associated token account
     /// for the buy mint under the mint's token `program`, the only
     /// destination an idempotent create can produce.
@@ -180,6 +212,29 @@ impl Order {
     /// Program ID in place of a buy mint.
     pub fn buys_native_sol(&self) -> bool {
         self.buy_token == ENCODED_NATIVE_SOL_TRANSFER
+    }
+}
+
+/// What is left of an order to fill, see [`Order::remaining`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Remaining {
+    pub sell: u64,
+    pub buy: u64,
+}
+
+impl Remaining {
+    /// The open amount on the order's own side.
+    pub fn target(self, side: Side) -> u64 {
+        match side {
+            Side::Sell => self.sell,
+            Side::Buy => self.buy,
+        }
+    }
+
+    /// Whether a leg scaled down to nothing. The program only accepts a fill
+    /// moving zero on that side, so no engine can fill the order.
+    pub fn has_zero_leg(self) -> bool {
+        self.sell == 0 || self.buy == 0
     }
 }
 
@@ -226,6 +281,7 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x77),
             app_data: [0; 32],
+            executed: 0,
         }
     }
 
@@ -409,6 +465,74 @@ mod tests {
             )
             .await
             .expect_err("a failed lookup fails the resolution");
+    }
+
+    #[test]
+    fn an_untouched_order_remains_whole() {
+        let order = order(1, pubkey(0x66));
+        assert_eq!(
+            order.remaining(),
+            Remaining {
+                sell: 1_000,
+                buy: 2_000
+            }
+        );
+        assert_eq!(order.remaining().target(Side::Sell), 1_000);
+    }
+
+    /// 999 of 1000 sold leaves 1 to sell; the 2000 buy limit scales to 2,
+    /// and a limit that does not divide evenly rounds up against the fill.
+    #[test]
+    fn a_partially_filled_sell_scales_the_buy_leg_up() {
+        let order = Order {
+            executed: 999,
+            ..order(1, pubkey(0x66))
+        };
+        assert_eq!(order.remaining(), Remaining { sell: 1, buy: 2 });
+        let order = Order {
+            buy_amount: 2_001,
+            ..order
+        };
+        assert_eq!(order.remaining(), Remaining { sell: 1, buy: 3 });
+    }
+
+    /// 1999 of 2000 bought leaves 1 to buy; the 1000 sell limit scales to
+    /// 0.5 and rounds down against the fill.
+    #[test]
+    fn a_partially_filled_buy_scales_the_sell_leg_down() {
+        let order = Order {
+            side: Side::Buy,
+            executed: 1_999,
+            ..order(1, pubkey(0x66))
+        };
+        assert_eq!(order.remaining(), Remaining { sell: 0, buy: 1 });
+        assert_eq!(order.remaining().target(Side::Buy), 1);
+        assert!(order.remaining().has_zero_leg());
+        assert!(
+            !Order {
+                executed: 1_998,
+                ..order
+            }
+            .remaining()
+            .has_zero_leg()
+        );
+    }
+
+    #[test]
+    fn remaining_amounts_survive_u64_products() {
+        let order = Order {
+            sell_amount: u64::MAX,
+            buy_amount: u64::MAX,
+            executed: 1,
+            ..order(1, pubkey(0x66))
+        };
+        assert_eq!(
+            order.remaining(),
+            Remaining {
+                sell: u64::MAX - 1,
+                buy: u64::MAX - 1
+            }
+        );
     }
 
     #[test]
