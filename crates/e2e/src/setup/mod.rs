@@ -7,7 +7,10 @@ mod solver;
 
 use {
     crate::nodes::{NODE_HOST, Node},
-    ::alloy::signers::local::{MnemonicBuilder, coins_bip39::English},
+    ::alloy::{
+        providers::Provider,
+        signers::local::{MnemonicBuilder, coins_bip39::English},
+    },
     anyhow::{Result, anyhow},
     ethrpc::Web3,
     futures::FutureExt,
@@ -215,6 +218,12 @@ async fn run<F, Fut, T>(
     }));
 
     let web3 = Web3::new_from_url(NODE_HOST);
+    // anvil >= 1.8 mines the block after `eth_sendRawTransaction` returns,
+    // so every watched transaction would otherwise wait out alloy's
+    // default poll interval.
+    web3.provider
+        .client()
+        .set_poll_interval(Duration::from_millis(10));
     let phrase = "test test test test test test test test test test test junk";
     let signers = (0..10).map(|i| {
         MnemonicBuilder::<English>::default()

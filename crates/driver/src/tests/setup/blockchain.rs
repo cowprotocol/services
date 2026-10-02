@@ -238,6 +238,12 @@ impl Blockchain {
         // node, will do this later
         let node = Node::new(&config.rpc_args).await;
         let web3 = Web3::new_from_url(&node.url());
+        // anvil >= 1.8 mines the block after `eth_sendRawTransaction` returns,
+        // so every watched transaction would otherwise wait out alloy's
+        // default poll interval.
+        web3.provider
+            .client()
+            .set_poll_interval(std::time::Duration::from_millis(10));
 
         let main_trader_address = config.main_trader_secret_key.address();
         web3.wallet
