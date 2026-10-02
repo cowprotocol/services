@@ -584,7 +584,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
 
         sqlx::query(
             "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount, \
-             buy_amount, fee_amount) VALUES ($1, 1, $2, 400, 200, 0)",
+             buy_amount, fee_amount, slot) VALUES ($1, 1, $2, 400, 200, 0, 42)",
         )
         .bind(ByteArray([9u8; 64]))
         .bind(ByteArray(uid))
@@ -602,7 +602,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         seed(&pool, uid, false).await;
         sqlx::query(
             "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid,              \
-             sell_amount, buy_amount, fee_amount) VALUES ($1, 1, $2, 400, 200, 0)",
+             sell_amount, buy_amount, fee_amount, slot) VALUES ($1, 1, $2, 400, 200, 0, 42)",
         )
         .bind(ByteArray([9u8; 64]))
         .bind(ByteArray(uid))
@@ -640,7 +640,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         // first, and an offset past the result set is empty.
         sqlx::query(
             "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid,              \
-             sell_amount, buy_amount, fee_amount) VALUES ($1, 2, $2, 100, 50, 0)",
+             sell_amount, buy_amount, fee_amount, slot) VALUES ($1, 2, $2, 100, 50, 0, 43)",
         )
         .bind(ByteArray([8u8; 64]))
         .bind(ByteArray(uid))

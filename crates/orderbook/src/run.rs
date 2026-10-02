@@ -373,7 +373,10 @@ pub async fn run(config: Configuration) {
             gas_price_estimator.clone(),
         )
         .unwrap();
-    let optimal_quoter = Arc::new(create_quoter(unverified_price_estimator));
+    let optimal_quoter = Arc::new(
+        create_quoter(unverified_price_estimator.clone())
+            .with_streaming_estimator(unverified_price_estimator),
+    );
 
     // Fast quoting is able to return early and if none of the produced quotes
     // are verifiable we are left with no quote at all. Since fast estimates
@@ -481,7 +484,7 @@ pub async fn run(config: Configuration) {
     )
     .with_verified_quoter(verified_quoter.clone())
     .with_fast_quoter(fast_quoter)
-    .with_streaming_quoter(verified_quoter.clone());
+    .with_streaming_quoters(optimal_quoter, verified_quoter);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
