@@ -81,7 +81,6 @@ enum PlacementError {
 
 impl From<PlacementError> for error::Reply {
     fn from(error: PlacementError) -> Self {
-        tracing::debug!(err = ?error, "error creating order");
         let (error_type, description) = match error {
             PlacementError::SponsoringDisabled => (
                 "SponsoringDisabled",
@@ -140,6 +139,19 @@ fn internal_error_reply(err: impl std::fmt::Debug, what: &str) -> error::Reply {
 pub async fn create_order(
     state: axum::extract::State<State>,
     Json(params): Json<Params>,
+) -> Result<(StatusCode, Json<String>), error::Reply> {
+    place(state, params).await.inspect_err(|(_, Json(error))| {
+        tracing::debug!(
+            error_type = error.error_type,
+            description = %error.description,
+            "error creating order"
+        );
+    })
+}
+
+async fn place(
+    state: axum::extract::State<State>,
+    params: Params,
 ) -> Result<(StatusCode, Json<String>), error::Reply> {
     let Some(sponsoring) = state.sponsoring() else {
         return Err(PlacementError::SponsoringDisabled.into());
