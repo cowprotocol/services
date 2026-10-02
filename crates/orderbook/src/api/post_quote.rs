@@ -81,6 +81,7 @@ mod tests {
         app_data::AppDataHash,
         bigdecimal::BigDecimal,
         chrono::{TimeZone, Utc},
+        eth_domain_types::Receiver,
         model::{
             order::{BuyTokenDestination, SellTokenSource},
             quote::{
@@ -121,7 +122,7 @@ mod tests {
                 from: Address::repeat_byte(0x01),
                 sell_token: Address::repeat_byte(0x02),
                 buy_token: Address::repeat_byte(0x03),
-                receiver: Address::ZERO,
+                receiver: Receiver::OWNER,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
                         value: NonZeroU256::try_from(1337).unwrap()
@@ -160,7 +161,7 @@ mod tests {
                 from: Address::repeat_byte(0x01),
                 sell_token: Address::repeat_byte(0x02),
                 buy_token: Address::repeat_byte(0x03),
-                receiver: Address::ZERO,
+                receiver: Receiver::OWNER,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::BeforeFee {
                         value: NonZeroU256::try_from(1337).unwrap()
@@ -194,7 +195,7 @@ mod tests {
                 from: Address::repeat_byte(0x01),
                 sell_token: Address::repeat_byte(0x02),
                 buy_token: Address::repeat_byte(0x03),
-                receiver: Address::repeat_byte(0x04),
+                receiver: Receiver::new(Address::repeat_byte(0x04)),
                 side: OrderQuoteSide::Buy {
                     buy_amount_after_fee: NonZeroU256::try_from(1337).unwrap(),
                 },
@@ -262,7 +263,7 @@ mod tests {
         let quote = OrderQuote {
             sell_token: Default::default(),
             buy_token: Default::default(),
-            receiver: Address::ZERO,
+            receiver: Receiver::OWNER,
             sell_amount: Default::default(),
             buy_amount: Default::default(),
             valid_to: 0,

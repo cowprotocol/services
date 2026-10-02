@@ -222,7 +222,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: *onchain.contracts().gp_settlement.address(),
-            receiver: Address::ZERO,
+            receiver: Address::ZERO.into(),
             ..request.clone()
         })
         .await
@@ -233,7 +233,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: *onchain.contracts().gp_settlement.address(),
-            receiver: *onchain.contracts().gp_settlement.address(),
+            receiver: (*onchain.contracts().gp_settlement.address()).into(),
             ..request.clone()
         })
         .await
@@ -244,7 +244,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: *onchain.contracts().gp_settlement.address(),
-            receiver: trader.address(),
+            receiver: trader.address().into(),
             ..request.clone()
         })
         .await
@@ -255,7 +255,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
-            receiver: *onchain.contracts().gp_settlement.address(),
+            receiver: (*onchain.contracts().gp_settlement.address()).into(),
             ..request.clone()
         })
         .await

@@ -295,7 +295,7 @@ impl JitOrder {
         OrderData {
             sell_token: self.0.sell_token,
             buy_token: self.0.buy_token,
-            receiver: self.0.receiver,
+            receiver: eth::Receiver::new(eth::Address::from(*self.0.receiver.raw_bytes())),
             sell_amount: self.0.sell_amount,
             buy_amount: self.0.buy_amount,
             valid_to: self.0.valid_to,

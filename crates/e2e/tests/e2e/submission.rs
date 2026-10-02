@@ -337,7 +337,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
 
     // check that a different receiver does not affect the quoted amount
     let quote_request_different_receiver = OrderQuoteRequest {
-        receiver: Address::repeat_byte(0x01),
+        receiver: Address::repeat_byte(0x01).into(),
         ..quote_request
     };
     let quote_response_different_receiver = services
@@ -509,7 +509,7 @@ async fn test_execute_same_sell_and_buy_native_token(web3: Web3) {
 
     // check that a different receiver does not affect the quoted amount
     let quote_request_different_receiver = OrderQuoteRequest {
-        receiver: Address::repeat_byte(0x01),
+        receiver: Address::repeat_byte(0x01).into(),
         ..quote_request
     };
     let quote_response_different_receiver = services
@@ -707,7 +707,7 @@ async fn test_execute_same_sell_and_buy_native_token_buy_order(web3: Web3) {
 
     // check that a different receiver does not affect the quoted amount
     let quote_request_different_receiver = OrderQuoteRequest {
-        receiver: Address::repeat_byte(0x01),
+        receiver: Address::repeat_byte(0x01).into(),
         ..quote_request
     };
     let quote_response_different_receiver = services

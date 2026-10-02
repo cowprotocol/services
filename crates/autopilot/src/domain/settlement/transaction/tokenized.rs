@@ -25,7 +25,7 @@ pub fn order_uid(
             [usize::try_from(trade.sellTokenIndex).expect("SC was able to look up this index")],
         buy_token: tokens
             [usize::try_from(trade.buyTokenIndex).expect("SC was able to look up this index")],
-        receiver: trade.receiver,
+        receiver: eth_domain_types::Receiver::new(trade.receiver),
         sell_amount: trade.sellAmount,
         buy_amount: trade.buyAmount,
         valid_to: trade.validTo,

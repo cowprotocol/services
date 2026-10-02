@@ -26,7 +26,7 @@ impl JitOrder {
         OrderData {
             sell_token: self.sell.token,
             buy_token: self.buy.token,
-            receiver: self.receiver,
+            receiver: eth_domain_types::Receiver::new(self.receiver),
             sell_amount: self.sell.amount,
             buy_amount: self.buy.amount,
             valid_to: self.valid_to,
@@ -70,6 +70,8 @@ impl JitOrder {
             sell_token: data.sell_token,
             buy_token: data.buy_token,
             receiver: data.receiver,
+            // ↑ `data.receiver` is already a `Receiver` after the Option→Address
+            // flip, so this stays wire-compatible.
             sell_amount: data.sell_amount,
             buy_amount: data.buy_amount,
             partially_fillable: data.partially_fillable,

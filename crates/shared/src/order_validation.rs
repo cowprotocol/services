@@ -19,6 +19,7 @@ use {
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
     contracts::{HooksTrampoline, WETH9},
+    eth_domain_types::Receiver,
     futures::future::OptionFuture,
     model::{
         DomainSeparator,
@@ -409,7 +410,7 @@ pub struct PreOrderData {
     pub owner: Address,
     pub sell_token: Address,
     pub buy_token: Address,
-    pub receiver: Address,
+    pub receiver: Receiver,
     pub valid_to: u32,
     pub partially_fillable: bool,
     pub buy_token_balance: BuyTokenDestination,
@@ -757,7 +758,7 @@ impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
         // A zero `receiver` means "pay the owner" — skip it so we don't
         // consult the banned-user list for the zero address.
-        let custom_receiver = (!order.receiver.is_zero()).then_some(order.receiver);
+        let custom_receiver = order.receiver.as_custom();
         if !self
             .banned_users
             .banned(std::iter::once(order.owner).chain(custom_receiver))
@@ -1424,7 +1425,7 @@ mod tests {
         std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
-                    receiver: Address::with_last_byte(1),
+                    receiver: Receiver::new(Address::with_last_byte(1)),
                     ..Default::default()
                 })
                 .await,
@@ -3105,7 +3106,7 @@ mod tests {
             hook_gas: 0,
             verification: Verification {
                 from: Address::from([0xf0; 20]),
-                receiver: Address::from([0xf0; 20]),
+                receiver: Receiver::new(Address::from([0xf0; 20])),
                 app_data: Arc::new("{}".to_string()),
             },
             fast_path: false,
@@ -3172,7 +3173,7 @@ mod tests {
                 full: "{}".to_string(),
             },
             from: Some(Address::repeat_byte(0xf0)),
-            receiver: Address::repeat_byte(0xf0),
+            receiver: Receiver::new(Address::repeat_byte(0xf0)),
             quote_id,
             ..Default::default()
         };

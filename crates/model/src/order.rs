@@ -16,11 +16,11 @@ use {
     bigdecimal::BigDecimal,
     chrono::{DateTime, offset::Utc},
     derive_more::Debug as DeriveDebug,
+    eth_domain_types::Receiver,
     hex_literal::hex,
     num::BigUint,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
-    serde_ext::deserialize_receiver_defaulting_to_zero,
     serde_with::{DisplayFromStr, serde_as},
     std::{
         collections::HashSet,
@@ -108,7 +108,7 @@ impl OrderBuilder {
         self
     }
 
-    pub fn with_receiver(mut self, receiver: Address) -> Self {
+    pub fn with_receiver(mut self, receiver: Receiver) -> Self {
         self.0.data.receiver = receiver;
         self
     }
@@ -186,10 +186,8 @@ impl OrderBuilder {
 pub struct OrderData {
     pub sell_token: Address,
     pub buy_token: Address,
-    /// Address that receives the `buy_token`. The settlement contract treats
-    /// `0x0000…` as "pay the owner".
     #[serde(default)]
-    pub receiver: Address,
+    pub receiver: Receiver,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -227,7 +225,7 @@ impl OrderData {
         // to 256 bits.
         hash_data[44..64].copy_from_slice(self.sell_token.as_slice());
         hash_data[76..96].copy_from_slice(self.buy_token.as_slice());
-        hash_data[108..128].copy_from_slice(self.receiver.as_slice());
+        hash_data[108..128].copy_from_slice(self.receiver.raw_bytes());
         hash_data[128..160].copy_from_slice(&self.sell_amount.to_be_bytes::<32>());
         hash_data[160..192].copy_from_slice(&self.buy_amount.to_be_bytes::<32>());
         hash_data[220..224].copy_from_slice(&self.valid_to.to_be_bytes());
@@ -284,10 +282,8 @@ pub struct OrderCreation {
     pub sell_token: Address,
     /// The address of the token being bought.
     pub buy_token: Address,
-    /// Address that receives the `buy_token`. Missing or `null` deserializes
-    /// to `0x0000…`, which the settlement contract treats as "pay the owner".
-    #[serde(default, deserialize_with = "deserialize_receiver_defaulting_to_zero")]
-    pub receiver: Address,
+    #[serde(default)]
+    pub receiver: Receiver,
     /// The *maximum* amount of `sell_token`s that may be sold.
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
@@ -1112,7 +1108,7 @@ mod tests {
             data: OrderData {
                 sell_token: Address::with_last_byte(10),
                 buy_token: Address::with_last_byte(9),
-                receiver: Address::with_last_byte(11),
+                receiver: Receiver::new(Address::with_last_byte(11)),
                 sell_amount: U256::ONE,
                 buy_amount: U256::ZERO,
                 valid_to: u32::MAX,
@@ -1189,7 +1185,7 @@ mod tests {
         let template_order = OrderCreation {
             sell_token: Address::repeat_byte(0x11),
             buy_token: Address::repeat_byte(0x22),
-            receiver: Address::repeat_byte(0x33),
+            receiver: Receiver::new(Address::repeat_byte(0x33)),
             sell_amount: U256::from(123),
             buy_amount: U256::from(456),
             valid_to: 1337,
@@ -1310,20 +1306,21 @@ mod tests {
 
         // Field missing entirely → ZERO.
         let missing: OrderCreation = serde_json::from_value(base.clone()).unwrap();
-        assert_eq!(missing.receiver, Address::ZERO);
+        assert_eq!(missing.receiver, Receiver::OWNER);
+        assert!(missing.receiver.is_default());
 
         // Field present but `null` → ZERO.
         let mut null = base.clone();
         null["receiver"] = serde_json::Value::Null;
         let null: OrderCreation = serde_json::from_value(null).unwrap();
-        assert_eq!(null.receiver, Address::ZERO);
+        assert_eq!(null.receiver, Receiver::OWNER);
 
         // Non-zero receiver → preserved as-is.
         let mut explicit = base;
         explicit["receiver"] =
             serde_json::Value::String("0x3333333333333333333333333333333333333333".into());
         let explicit: OrderCreation = serde_json::from_value(explicit).unwrap();
-        assert_eq!(explicit.receiver, Address::repeat_byte(0x33));
+        assert_eq!(explicit.receiver, Receiver::new(Address::repeat_byte(0x33)));
     }
 
     #[test]
@@ -1400,7 +1397,7 @@ mod tests {
             let order = OrderData {
                 sell_token: hex!("0101010101010101010101010101010101010101").into(),
                 buy_token: hex!("0202020202020202020202020202020202020202").into(),
-                receiver: hex!("0303030303030303030303030303030303030303").into(),
+                receiver: Receiver::new(hex!("0303030303030303030303030303030303030303").into()),
                 sell_amount: U256::from(0x0246ddf97976680000_u128),
                 buy_amount: U256::from(0xb98bc829a6f90000_u128),
                 valid_to: 0xffffffff,
@@ -1434,7 +1431,7 @@ mod tests {
         let order = OrderData {
             sell_token: hex!("0101010101010101010101010101010101010101").into(),
             buy_token: hex!("0202020202020202020202020202020202020202").into(),
-            receiver: hex!("0303030303030303030303030303030303030303").into(),
+            receiver: Receiver::new(hex!("0303030303030303030303030303030303030303").into()),
             sell_amount: U256::from(0x0246ddf97976680000_u128),
             buy_amount: U256::from(0xb98bc829a6f90000_u128),
             valid_to: 0xffffffff,

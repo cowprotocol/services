@@ -86,7 +86,7 @@ fn default_quote_request(
         from,
         sell_token: *weth.address(),
         buy_token,
-        receiver: RECEIVER,
+        receiver: RECEIVER.into(),
         validity: Validity::For(3600),
         signing_scheme: QuoteSigningScheme::Eip1271 {
             onchain_order: true,

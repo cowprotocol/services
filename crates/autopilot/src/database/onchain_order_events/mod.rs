@@ -27,6 +27,7 @@ use {
         onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
         orders::{Order, insert_quotes},
     },
+    eth_domain_types::Receiver,
     ethrpc::{Web3, block_stream::timestamp_of_block_in_seconds},
     event_indexing::{block_retriever::RangeInclusive, event_handler::EventStoring},
     futures::{StreamExt, stream},
@@ -612,7 +613,7 @@ fn convert_onchain_order_placement(
         creation_timestamp: Utc.timestamp_opt(event_timestamp, 0).unwrap(),
         sell_token: ByteArray(order_data.sell_token.0.0),
         buy_token: ByteArray(order_data.buy_token.0.0),
-        receiver: ByteArray(order_data.receiver.0.0),
+        receiver: ByteArray(*order_data.receiver.raw_bytes()),
         sell_amount: u256_to_big_decimal(&order_data.sell_amount),
         buy_amount: u256_to_big_decimal(&order_data.buy_amount),
         valid_to: order_data.valid_to as i64,
@@ -660,7 +661,7 @@ fn extract_order_data_from_onchain_order_placement_event(
     let order_data = OrderData {
         sell_token: order_placement.order.sellToken,
         buy_token: order_placement.order.buyToken,
-        receiver: order_placement.order.receiver,
+        receiver: Receiver::new(order_placement.order.receiver),
         sell_amount: order_placement.order.sellAmount,
         buy_amount: order_placement.order.buyAmount,
         valid_to: order_placement.order.validTo,
@@ -893,7 +894,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token: sellToken,
             buy_token: buyToken,
-            receiver,
+            receiver: Receiver::new(receiver),
             sell_amount: sellAmount,
             buy_amount: buyAmount,
             valid_to: validTo,
@@ -943,7 +944,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token: sellToken,
             buy_token: buyToken,
-            receiver: Address::ZERO,
+            receiver: Receiver::OWNER,
             sell_amount: sellAmount,
             buy_amount: buyAmount,
             valid_to: validTo,
@@ -975,7 +976,7 @@ mod test {
         let order_data = OrderData {
             sell_token,
             buy_token,
-            receiver,
+            receiver: Receiver::new(receiver),
             sell_amount,
             buy_amount,
             valid_to,
@@ -1029,7 +1030,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token,
             buy_token,
-            receiver,
+            receiver: Receiver::new(receiver),
             sell_amount,
             buy_amount,
             valid_to,
@@ -1052,7 +1053,7 @@ mod test {
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0.0),
             buy_token: ByteArray(expected_order_data.buy_token.0.0),
-            receiver: ByteArray(expected_order_data.receiver.0.0),
+            receiver: ByteArray(*expected_order_data.receiver.raw_bytes()),
             sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
             buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
@@ -1088,7 +1089,7 @@ mod test {
         let order_data = OrderData {
             sell_token,
             buy_token,
-            receiver,
+            receiver: Receiver::new(receiver),
             sell_amount,
             buy_amount,
             valid_to,
@@ -1143,7 +1144,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token,
             buy_token,
-            receiver,
+            receiver: Receiver::new(receiver),
             sell_amount,
             buy_amount,
             valid_to,
@@ -1166,7 +1167,7 @@ mod test {
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0.0),
             buy_token: ByteArray(expected_order_data.buy_token.0.0),
-            receiver: ByteArray(expected_order_data.receiver.0.0),
+            receiver: ByteArray(*expected_order_data.receiver.raw_bytes()),
             sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
             buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
@@ -1311,7 +1312,7 @@ mod test {
         let expected_order_data = OrderData {
             sell_token,
             buy_token,
-            receiver,
+            receiver: Receiver::new(receiver),
             sell_amount,
             buy_amount,
             valid_to,

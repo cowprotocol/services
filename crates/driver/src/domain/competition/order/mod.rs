@@ -24,7 +24,7 @@ pub struct OrderData {
     pub uid: Uid,
     /// The user specified a custom address to receive the output of this
     /// order. `Address::ZERO` means "pay the owner".
-    pub receiver: eth::Address,
+    pub receiver: eth::Receiver,
     pub created: util::Timestamp,
     pub valid_to: util::Timestamp,
     /// The minimum amount this order must buy when completely filled.
@@ -163,11 +163,7 @@ impl Order {
     /// address. Otherwise, return the address which was used to place the
     /// order.
     pub fn receiver(&self) -> eth::Address {
-        if self.receiver.is_zero() {
-            self.signature.signer
-        } else {
-            self.receiver
-        }
+        self.receiver.resolve(self.signature.signer)
     }
 
     /// Returns the order's available amounts to be passed to a solver engine.
@@ -399,7 +395,7 @@ pub struct Jit {
     /// The amount this order wants to buy when completely filled.
     /// The actual executed amount depends on partial fills and the order side.
     pub buy: eth::Asset,
-    pub receiver: eth::Address,
+    pub receiver: eth::Receiver,
     pub valid_to: util::Timestamp,
     pub partially_fillable: bool,
     pub app_data: app_data::AppDataHash,

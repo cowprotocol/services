@@ -9,6 +9,7 @@ use {
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
+    eth_domain_types::Receiver,
     number::{nonzero::NonZeroU256, serialization::HexOrDecimalU256},
     serde::{
         Deserialize,
@@ -18,7 +19,6 @@ use {
         de,
         ser::{self, SerializeStruct as _},
     },
-    serde_ext::deserialize_receiver_defaulting_to_zero,
     serde_with::{DisplayFromStr, serde_as},
     std::time::Duration,
 };
@@ -127,8 +127,8 @@ pub struct OrderQuoteRequest {
     pub from: Address,
     pub sell_token: Address,
     pub buy_token: Address,
-    #[serde(default, deserialize_with = "deserialize_receiver_defaulting_to_zero")]
-    pub receiver: Address,
+    #[serde(default)]
+    pub receiver: Receiver,
     #[serde(flatten)]
     pub side: OrderQuoteSide,
     #[serde(flatten)]
@@ -325,7 +325,7 @@ pub enum SellAmount {
 pub struct OrderQuote {
     pub sell_token: Address,
     pub buy_token: Address,
-    pub receiver: Address,
+    pub receiver: Receiver,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -419,12 +419,12 @@ mod tests {
             let mut body = base.clone();
             body["receiver"] = receiver;
             let parsed: OrderQuoteRequest = serde_json::from_value(body).unwrap();
-            assert_eq!(parsed.receiver, Address::ZERO);
+            assert_eq!(parsed.receiver, Receiver::OWNER);
         }
 
         // Missing field → still zero.
         let parsed: OrderQuoteRequest = serde_json::from_value(base).unwrap();
-        assert_eq!(parsed.receiver, Address::ZERO);
+        assert_eq!(parsed.receiver, Receiver::OWNER);
     }
 
     #[test]

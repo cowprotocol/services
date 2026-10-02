@@ -7,6 +7,7 @@ use {
         primitives::{Address, U256},
         signers::local::PrivateKeySigner,
     },
+    eth_domain_types::Receiver,
 };
 
 /// Order data used for calculating the order UID and signing.
@@ -43,7 +44,7 @@ impl Order {
             .with_buy_amount(self.buy_amount)
             .with_valid_to(self.valid_to)
             .with_fee_amount(self.user_fee)
-            .with_receiver(self.receiver)
+            .with_receiver(Receiver::new(self.receiver))
             .with_kind(match self.side {
                 competition::order::Side::Buy => model::order::OrderKind::Buy,
                 competition::order::Side::Sell => model::order::OrderKind::Sell,

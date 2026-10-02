@@ -27,7 +27,7 @@ pub struct Order {
     pub created: u32,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
-    pub receiver: Address,
+    pub receiver: eth::Receiver,
     pub owner: Address,
     pub partially_fillable: bool,
     #[serde_as(as = "HexOrDecimalU256")]

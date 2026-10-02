@@ -156,7 +156,7 @@ pub(crate) struct Order {
     valid_to: u32,
     kind: Kind,
     #[serde(default)]
-    receiver: eth::Address,
+    receiver: eth::Receiver,
     owner: eth::Address,
     partially_fillable: bool,
     /// Always zero if the order is not partially fillable.

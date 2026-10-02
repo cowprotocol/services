@@ -508,9 +508,8 @@ async fn find_banned_user_orders(
     banned_users: &order_validation::banned::Users,
 ) -> Vec<OrderUid> {
     fn users_to_check(order: &Order) -> impl Iterator<Item = Address> {
-        let custom_receiver = (!order.data.receiver.is_zero()).then_some(order.data.receiver);
         std::iter::once(order.metadata.owner)
-            .chain(custom_receiver)
+            .chain(order.data.receiver.as_custom())
             .chain(order.metadata.onchain_user)
     }
 
@@ -580,7 +579,7 @@ fn orders_with_balance<'a>(
             return true;
         }
 
-        if order.data.receiver == settlement_contract {
+        if order.data.receiver.as_custom() == Some(settlement_contract) {
             // TODO: replace with proper detection logic
             // for now we assume that all orders with the settlement contract
             // as the receiver are flashloan orders which unlock the necessary
@@ -734,6 +733,7 @@ mod tests {
         super::*,
         alloy::primitives::{Address, B256},
         bad_tokens::list_based::DenyListedTokens,
+        eth_domain_types::Receiver,
         futures::FutureExt,
         maplit::{btreemap, hashset},
         model::order::{OrderBuilder, OrderData, OrderMetadata, OrderUid},
@@ -1061,7 +1061,7 @@ mod tests {
                         ..Default::default()
                     },
                     data: OrderData {
-                        receiver,
+                        receiver: Receiver::new(receiver),
                         buy_amount: alloy::primitives::U256::ONE,
                         sell_amount: alloy::primitives::U256::ONE,
                         ..Default::default()
@@ -1214,7 +1214,7 @@ mod tests {
                     sell_amount: alloy::primitives::U256::from(200),
                     fee_amount: alloy::primitives::U256::ZERO,
                     partially_fillable: true,
-                    receiver: settlement_contract,
+                    receiver: Receiver::new(settlement_contract),
                     ..Default::default()
                 },
                 ..Default::default()

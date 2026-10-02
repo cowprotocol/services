@@ -1,6 +1,7 @@
 use {
     alloy_primitives::{U256, address},
     app_data::{AppDataHash, hash_full_app_data},
+    eth_domain_types::Receiver,
     hex_literal::hex,
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -177,7 +178,7 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
     let order_data = OrderData {
         sell_token: sell_token_weth,
         buy_token: buy_token_gho,
-        receiver: order_owner,
+        receiver: Receiver::new(order_owner),
         sell_amount,
         buy_amount,
         valid_to,
@@ -287,7 +288,7 @@ async fn build_naturally_failing_replay_simulation(
     let order_data = OrderData {
         sell_token: sell_token_a_wbtc,
         buy_token: buy_token_usdt,
-        receiver: order_owner,
+        receiver: Receiver::new(order_owner),
         sell_amount,
         buy_amount,
         valid_to,

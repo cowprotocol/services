@@ -101,7 +101,9 @@ impl From<domain::competition::solution::trade::Jit> for JitOrder {
             sell_amount: jit.order().sell.amount.into(),
             buy_amount: jit.order().buy.amount.into(),
             executed_amount: jit.executed().into(),
-            receiver: jit.order().receiver,
+            // The JSON contract exposes the resolved payout address; the
+            // zero-sentinel semantics stay inside the domain.
+            receiver: jit.order().receiver.resolve(jit.order().signature.signer),
             partially_fillable: jit.order().partially_fillable,
             valid_to: jit.order().valid_to.into(),
             app_data: jit.order().app_data.into(),

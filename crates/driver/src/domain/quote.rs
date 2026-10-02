@@ -221,7 +221,7 @@ impl Order {
             vec![competition::Order {
                 data: std::sync::Arc::new(competition::order::OrderData {
                     uid: Default::default(),
-                    receiver: eth::Address::ZERO,
+                    receiver: eth::Receiver::OWNER,
                     created: u32::try_from(Utc::now().timestamp())
                         .unwrap_or(u32::MIN)
                         .into(),
